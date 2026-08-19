@@ -6,11 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderItem {
-  productId: string;
-  productName: string;
+export interface AdminBrand {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
   /** @nullable */
-  variantValue?: string | null;
-  quantity: number;
-  price: number;
+  logoUrl?: string | null;
+  active: boolean;
+  productCount: number;
 }

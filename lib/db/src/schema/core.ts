@@ -137,6 +137,8 @@ export const productBrandsTable = pgTable("product_brands", {
   name: text("name").notNull().unique(),
   slug: text("slug").notNull().unique(),
   description: text("description").notNull(),
+  logoUrl: text("logo_url"),
+  active: boolean("active").notNull().default(true),
 });
 
 export const salonBrandsTable = pgTable("salon_brands", {

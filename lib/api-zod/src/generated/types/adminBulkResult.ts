@@ -6,9 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type OrderInputItemsItem = {
-  productId: string;
-  variantValue?: string;
-  /** @minimum 1 */
-  quantity: number;
-};
+export interface AdminBulkResult {
+  updated: number;
+}

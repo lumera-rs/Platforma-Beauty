@@ -1,4 +1,5 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
+import { shippingRulesTable } from "@workspace/db";
 import {
   appointmentsTable,
   beautyGlossaryTable,
@@ -426,77 +427,77 @@ async function seedB2BShopTaxonomy(): Promise<void> {
   const allCatRows = await db.select().from(productCategoriesTable);
   const catBySlug = new Map(allCatRows.map((r) => [r.slug, r]));
 
-  // Demo B2B products: [name, brand, categorySlug, subcategorySlug, price, discountPrice|null, unit, sku, stock, isNew, isBestseller, description, variants?]
-  type ProdSeed = [string, string, string, string, number, number | null, string, string, number, boolean, boolean, string, Array<{label: string; value: string; priceAdjust?: number}> | null];
+  // Demo B2B products: [name, brand, categorySlug, subcategorySlug, price, discountPrice|null, unit, sku, stock, isNew, isBestseller, description, variants?, weightGrams?]
+  type ProdSeed = [string, string, string, string, number, number | null, string, string, number, boolean, boolean, string, Array<{label: string; value: string; priceAdjust?: number}> | null, number?];
   const products: ProdSeed[] = [
-    // KOSA — Farbanje kose
-    ["Wella Koleston Perfect 60ml", "Wella Professionals", "kosa", "farbanje-kose", 980, 820, "60 ml", "WKP-001", 48, false, true, "Permanentna oksidacijska boja sa tehnologijom ME+ za minimalnu alergijsku reakciju.", [{label:"Nijansa", value:"6/0 Tamno plava"}, {label:"Nijansa", value:"7/43 Srednje plava bakar"}]],
-    ["Schwarzkopf Blondme Blanš 450g", "Schwarzkopf Professional", "kosa", "farbanje-kose", 2190, 1890, "450 g", "SBM-002", 30, false, true, "Visokoučinkoviti prašak za osvetljavanje do 9 nijansi sa zaštitom vlakana.", null],
-    ["Matrix Hidrogen 1000ml 6%", "Matrix", "kosa", "farbanje-kose", 650, null, "1000 ml", "MHD-003", 60, false, false, "Kremasti hidrogen stabilizovane koncentracije za precizno mešanje boje.", null],
-    ["L'Oréal Professionnel Spray Boja", "L'Oréal Professionnel", "kosa", "farbanje-kose", 1450, 1190, "75 ml", "LPS-004", 24, true, false, "Direktna boja u spreju, privremena, bez amonijaka, u 12 nijansi.", [{label:"Boja", value:"Crvena"}, {label:"Boja", value:"Roze"}, {label:"Boja", value:"Zlatna"}]],
+    // KOSA — Farbanje kose  [... weightGrams as last arg]
+    ["Wella Koleston Perfect 60ml", "Wella Professionals", "kosa", "farbanje-kose", 980, 820, "60 ml", "WKP-001", 48, false, true, "Permanentna oksidacijska boja sa tehnologijom ME+ za minimalnu alergijsku reakciju.", [{label:"Nijansa", value:"6/0 Tamno plava"}, {label:"Nijansa", value:"7/43 Srednje plava bakar"}], 130],
+    ["Schwarzkopf Blondme Blanš 450g", "Schwarzkopf Professional", "kosa", "farbanje-kose", 2190, 1890, "450 g", "SBM-002", 30, false, true, "Visokoučinkoviti prašak za osvetljavanje do 9 nijansi sa zaštitom vlakana.", null, 560],
+    ["Matrix Hidrogen 1000ml 6%", "Matrix", "kosa", "farbanje-kose", 650, null, "1000 ml", "MHD-003", 60, false, false, "Kremasti hidrogen stabilizovane koncentracije za precizno mešanje boje.", null, 1120],
+    ["L'Oréal Professionnel Spray Boja", "L'Oréal Professionnel", "kosa", "farbanje-kose", 1450, 1190, "75 ml", "LPS-004", 24, true, false, "Direktna boja u spreju, privremena, bez amonijaka, u 12 nijansi.", [{label:"Boja", value:"Crvena"}, {label:"Boja", value:"Roze"}, {label:"Boja", value:"Zlatna"}], 150],
     // KOSA — Nega kose
-    ["Kérastase Nutritive Masque 200ml", "Kérastase", "kosa", "nega-kose", 3490, null, "200 ml", "KNM-005", 20, false, true, "Intenzivna maska za suvu i neposlušnu kosu sa uljima shiea i makadamije.", null],
-    ["Olaplex No.3 Hair Perfector 100ml", "Olaplex", "kosa", "nega-kose", 3990, 3290, "100 ml", "OLP-006", 35, false, true, "Tretman za vezivanje i obnovu disulfidnih veza oštećenih vlakana kose.", null],
-    ["Redken All Soft Šampon 1000ml", "Redken", "kosa", "nega-kose", 2890, null, "1000 ml", "RAS-007", 18, false, false, "Profesionalni šampon za suvu i krtolomu kosu sa arganovim uljem.", null],
-    ["Schwarzkopf BC Moisture Kick Ampule 12x10ml", "Schwarzkopf Professional", "kosa", "nega-kose", 1890, 1590, "set 12", "SBA-008", 15, true, false, "Serum ampule za trenutnu i dubinsku hidrataciju suve kose.", null],
+    ["Kérastase Nutritive Masque 200ml", "Kérastase", "kosa", "nega-kose", 3490, null, "200 ml", "KNM-005", 20, false, true, "Intenzivna maska za suvu i neposlušnu kosu sa uljima shiea i makadamije.", null, 260],
+    ["Olaplex No.3 Hair Perfector 100ml", "Olaplex", "kosa", "nega-kose", 3990, 3290, "100 ml", "OLP-006", 35, false, true, "Tretman za vezivanje i obnovu disulfidnih veza oštećenih vlakana kose.", null, 180],
+    ["Redken All Soft Šampon 1000ml", "Redken", "kosa", "nega-kose", 2890, null, "1000 ml", "RAS-007", 18, false, false, "Profesionalni šampon za suvu i krtolomu kosu sa arganovim uljem.", null, 1080],
+    ["Schwarzkopf BC Moisture Kick Ampule 12x10ml", "Schwarzkopf Professional", "kosa", "nega-kose", 1890, 1590, "set 12", "SBA-008", 15, true, false, "Serum ampule za trenutnu i dubinsku hidrataciju suve kose.", null, 180],
     // KOSA — Stilizovanje kose
-    ["Wella EIMI Extra Volume Pena 300ml", "Wella Professionals", "kosa", "stilizovanje-kose", 1290, null, "300 ml", "WEP-009", 40, false, true, "Profesionalna pena za volumen i snažnu fiksaciju.", null],
-    ["Redken Brews Clay Pomada 100ml", "Redken", "kosa", "stilizovanje-kose", 1590, 1390, "100 ml", "RBC-010", 25, false, false, "Glinena pomada za mat završnicu sa jakim nagrizanjem.", null],
+    ["Wella EIMI Extra Volume Pena 300ml", "Wella Professionals", "kosa", "stilizovanje-kose", 1290, null, "300 ml", "WEP-009", 40, false, true, "Profesionalna pena za volumen i snažnu fiksaciju.", null, 380],
+    ["Redken Brews Clay Pomada 100ml", "Redken", "kosa", "stilizovanje-kose", 1590, 1390, "100 ml", "RBC-010", 25, false, false, "Glinena pomada za mat završnicu sa jakim nagrizanjem.", null, 170],
     // KOSA — Aparati za kosu
-    ["BaByliss Pro Titanium Express Presa", "BaByliss Pro", "kosa", "aparati-za-kosu", 12900, 10900, "kom", "BBP-011", 8, false, true, "Profesionalna presa sa titanijumskim pločama i regulacijom temperature do 235°C.", [{label:"Širina ploča", value:"25mm"}, {label:"Širina ploča", value:"38mm"}]],
-    ["Wahl Cordless Magic Clip Mašinica", "Wahl", "kosa", "aparati-za-kosu", 9900, null, "kom", "WMC-012", 12, true, false, "Bežična mašinica za šišanje sa litijumskom baterijom i 5-zvezdicom presiznosti.", null],
-    ["Valera Swiss Nano 9000 Fen 2400W", "Valera", "kosa", "aparati-za-kosu", 14900, 12900, "kom", "VSN-013", 6, false, true, "Lagan DC motor fen sa ionizatorom i brzim sušenjem.", null],
+    ["BaByliss Pro Titanium Express Presa", "BaByliss Pro", "kosa", "aparati-za-kosu", 12900, 10900, "kom", "BBP-011", 8, false, true, "Profesionalna presa sa titanijumskim pločama i regulacijom temperature do 235°C.", [{label:"Širina ploča", value:"25mm"}, {label:"Širina ploča", value:"38mm"}], 680],
+    ["Wahl Cordless Magic Clip Mašinica", "Wahl", "kosa", "aparati-za-kosu", 9900, null, "kom", "WMC-012", 12, true, false, "Bežična mašinica za šišanje sa litijumskom baterijom i 5-zvezdicom presiznosti.", null, 510],
+    ["Valera Swiss Nano 9000 Fen 2400W", "Valera", "kosa", "aparati-za-kosu", 14900, 12900, "kom", "VSN-013", 6, false, true, "Lagan DC motor fen sa ionizatorom i brzim sušenjem.", null, 590],
     // NOKTI — Nadogradnja noktiju
-    ["IBD Hard Gel Clear 56g", "IBD", "nokti", "nadogradnja-noktiju", 2490, null, "56 g", "IBD-014", 22, false, true, "Tvrdi UV/LED gel za nadogradnju, gradnju i ojačavanje prirodnih noktiju.", null],
-    ["Akrylicni Prah Cover Pink 100g", "Acryl One", "nokti", "nadogradnja-noktiju", 1890, 1590, "100 g", "AOC-015", 30, false, false, "Akrilatni prah roze nijanse za prirodni izgled nadogradnje.", null],
-    ["Gelish Dipping System Starter Kit", "Gelish", "nokti", "nadogradnja-noktiju", 8900, 7500, "set", "GDS-016", 10, true, false, "Kompletan starter set za dipping powder nadogradnju.", null],
+    ["IBD Hard Gel Clear 56g", "IBD", "nokti", "nadogradnja-noktiju", 2490, null, "56 g", "IBD-014", 22, false, true, "Tvrdi UV/LED gel za nadogradnju, gradnju i ojačavanje prirodnih noktiju.", null, 110],
+    ["Akrylicni Prah Cover Pink 100g", "Acryl One", "nokti", "nadogradnja-noktiju", 1890, 1590, "100 g", "AOC-015", 30, false, false, "Akrilatni prah roze nijanse za prirodni izgled nadogradnje.", null, 160],
+    ["Gelish Dipping System Starter Kit", "Gelish", "nokti", "nadogradnja-noktiju", 8900, 7500, "set", "GDS-016", 10, true, false, "Kompletan starter set za dipping powder nadogradnju.", null, 720],
     // NOKTI — Kolor gelovi
-    ["CND Shellac UV Color Top Coat 7.3ml", "CND", "nokti", "kolor-gelovi", 1390, null, "7.3 ml", "CSC-017", 50, false, true, "UV/LED gel trajni lak u 100+ nijansi sa zaštitnim slojem.", [{label:"Nijansa", value:"Romantique"}, {label:"Nijansa", value:"Blush Teddy"}, {label:"Nijansa", value:"Antique Garnet"}]],
-    ["Luxio Color Gel 15ml", "Luxio", "nokti", "kolor-gelovi", 1690, 1390, "15 ml", "LCG-018", 40, true, false, "Samopigmentisani gel lak bez lampe, 150+ nijansi.", null],
+    ["CND Shellac UV Color Top Coat 7.3ml", "CND", "nokti", "kolor-gelovi", 1390, null, "7.3 ml", "CSC-017", 50, false, true, "UV/LED gel trajni lak u 100+ nijansi sa zaštitnim slojem.", [{label:"Nijansa", value:"Romantique"}, {label:"Nijansa", value:"Blush Teddy"}, {label:"Nijansa", value:"Antique Garnet"}], 65],
+    ["Luxio Color Gel 15ml", "Luxio", "nokti", "kolor-gelovi", 1690, 1390, "15 ml", "LCG-018", 40, true, false, "Samopigmentisani gel lak bez lampe, 150+ nijansi.", null, 80],
     // NOKTI — Nail art
-    ["Swarovski Crystal Rhinestones Mix 1440kom", "Swarovski", "nokti", "nail-art", 3900, 3200, "1440 kom", "SWR-019", 15, false, true, "Originalni Swarovski kristali različitih veličina za nail art.", null],
-    ["Mirror Chrome Powder Set 5 boja", "Moyra", "nokti", "nail-art", 1490, null, "set 5", "MCP-020", 28, true, false, "Set mirror hrom prahova za ogledalni efekat na gel laku.", null],
+    ["Swarovski Crystal Rhinestones Mix 1440kom", "Swarovski", "nokti", "nail-art", 3900, 3200, "1440 kom", "SWR-019", 15, false, true, "Originalni Swarovski kristali različitih veličina za nail art.", null, 90],
+    ["Mirror Chrome Powder Set 5 boja", "Moyra", "nokti", "nail-art", 1490, null, "set 5", "MCP-020", 28, true, false, "Set mirror hrom prahova za ogledalni efekat na gel laku.", null, 75],
     // NOKTI — Aparati za manikir
-    ["Elegante UV/LED Lampa 48W", "Elegante", "nokti", "aparati-za-manikir", 4900, 3900, "kom", "EUL-021", 18, false, true, "Profesionalna UV/LED lampa sa senzorom pokreta i tajmerom.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Roze"}]],
-    ["Frezarka Električna Turpija 35000 rpm", "Calvetti", "nokti", "aparati-za-manikir", 7900, 6500, "kom", "CET-022", 12, false, false, "Profesionalna električna turpija sa regulacijom broja obrtaja.", null],
+    ["Elegante UV/LED Lampa 48W", "Elegante", "nokti", "aparati-za-manikir", 4900, 3900, "kom", "EUL-021", 18, false, true, "Profesionalna UV/LED lampa sa senzorom pokreta i tajmerom.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Roze"}], 480],
+    ["Frezarka Električna Turpija 35000 rpm", "Calvetti", "nokti", "aparati-za-manikir", 7900, 6500, "kom", "CET-022", 12, false, false, "Profesionalna električna turpija sa regulacijom broja obrtaja.", null, 620],
     // LICE & TELO — Nega lica
-    ["Mesoestetic Hydra Vital Factor K Krema 50ml", "Mesoestetic", "lice-telo", "nega-lica", 5900, null, "50 ml", "MVK-023", 15, false, true, "Intenzivna hidratantna krema za suvu i dehidriranu kožu sa faktorom K.", null],
-    ["Thalgo Collagen Aktif Serum 30ml", "Thalgo", "lice-telo", "nega-lica", 7900, 6500, "30 ml", "TCA-024", 10, false, true, "Morski kolagen serum za lifting i čvrstinu kože lica.", null],
-    ["Dermalogica Daily Microfoliant 74g", "Dermalogica", "lice-telo", "nega-lica", 5490, null, "74 g", "DDM-025", 20, false, true, "Rižin enzimski piling koji se aktivira kontaktom sa vodom.", null],
+    ["Mesoestetic Hydra Vital Factor K Krema 50ml", "Mesoestetic", "lice-telo", "nega-lica", 5900, null, "50 ml", "MVK-023", 15, false, true, "Intenzivna hidratantna krema za suvu i dehidriranu kožu sa faktorom K.", null, 120],
+    ["Thalgo Collagen Aktif Serum 30ml", "Thalgo", "lice-telo", "nega-lica", 7900, 6500, "30 ml", "TCA-024", 10, false, true, "Morski kolagen serum za lifting i čvrstinu kože lica.", null, 90],
+    ["Dermalogica Daily Microfoliant 74g", "Dermalogica", "lice-telo", "nega-lica", 5490, null, "74 g", "DDM-025", 20, false, true, "Rižin enzimski piling koji se aktivira kontaktom sa vodom.", null, 130],
     // LICE & TELO — Depilacija
-    ["Rica Black Pearl Vosak Za Zagrevanje 400ml", "Rica", "lice-telo", "depilacija-b2b", 1290, 990, "400 ml", "RBV-026", 36, false, true, "Topli vosak sa crnim biserom za osetljive zone.", null],
-    ["Perron Rigot Stripless Azulene Vosak 800ml", "Perron Rigot", "lice-telo", "depilacija-b2b", 2490, null, "800 ml", "PRZ-027", 24, false, false, "Premium tvrdi vosak sa azulenom za brazilsku depilaciju.", null],
-    ["Wax Roll-On Za Noge 100m", "BellaWax", "lice-telo", "depilacija-b2b", 890, 750, "100 m", "BWR-028", 50, false, false, "Netkana trola za hladno depiliranje, 100m.", null],
+    ["Rica Black Pearl Vosak Za Zagrevanje 400ml", "Rica", "lice-telo", "depilacija-b2b", 1290, 990, "400 ml", "RBV-026", 36, false, true, "Topli vosak sa crnim biserom za osetljive zone.", null, 480],
+    ["Perron Rigot Stripless Azulene Vosak 800ml", "Perron Rigot", "lice-telo", "depilacija-b2b", 2490, null, "800 ml", "PRZ-027", 24, false, false, "Premium tvrdi vosak sa azulenom za brazilsku depilaciju.", null, 880],
+    ["Wax Roll-On Za Noge 100m", "BellaWax", "lice-telo", "depilacija-b2b", 890, 750, "100 m", "BWR-028", 50, false, false, "Netkana trola za hladno depiliranje, 100m.", null, 400],
     // LICE & TELO — Masaža i SPA
-    ["Decléor Aromessence Rose d'Orient Ulje 55ml", "Decléor", "lice-telo", "masaza-spa", 4900, null, "55 ml", "DAR-029", 14, false, true, "Esencijalno ulje ruže za masažu lica sa aromaterapijskim efektom.", null],
-    ["Vulkansko Kamenje Set 20 kom", "SpaStone Pro", "lice-telo", "masaza-spa", 3900, 3200, "set 20", "VSK-030", 8, false, false, "Bazaltno kamenje za hot stone masažu, razne veličine.", null],
-    ["Relaxation Massage Oil Lavender 500ml", "Biotique", "lice-telo", "masaza-spa", 1890, 1590, "500 ml", "BML-031", 30, true, false, "Profesionalno ulje za relax masažu sa lavandinim ekstraktom.", null],
+    ["Decléor Aromessence Rose d'Orient Ulje 55ml", "Decléor", "lice-telo", "masaza-spa", 4900, null, "55 ml", "DAR-029", 14, false, true, "Esencijalno ulje ruže za masažu lica sa aromaterapijskim efektom.", null, 110],
+    ["Vulkansko Kamenje Set 20 kom", "SpaStone Pro", "lice-telo", "masaza-spa", 3900, 3200, "set 20", "VSK-030", 8, false, false, "Bazaltno kamenje za hot stone masažu, razne veličine.", null, 4200],
+    ["Relaxation Massage Oil Lavender 500ml", "Biotique", "lice-telo", "masaza-spa", 1890, 1590, "500 ml", "BML-031", 30, true, false, "Profesionalno ulje za relax masažu sa lavandinim ekstraktom.", null, 560],
     // LICE & TELO — Pedikir
-    ["Gehwol Fusskraft Zelena 125ml", "Gehwol", "lice-telo", "pedikir", 1490, null, "125 ml", "GFZ-032", 25, false, true, "Krema za negu stopala i potkoža, zaštita od vlage i mirisa.", null],
-    ["Clou de Paris Klešta Za Pedikir", "Clou de Paris", "lice-telo", "pedikir", 3900, 3200, "kom", "CDP-033", 15, false, false, "Profesionalna klešta od nehrđajućeg čelika za urasle nokte.", null],
+    ["Gehwol Fusskraft Zelena 125ml", "Gehwol", "lice-telo", "pedikir", 1490, null, "125 ml", "GFZ-032", 25, false, true, "Krema za negu stopala i potkoža, zaštita od vlage i mirisa.", null, 190],
+    ["Clou de Paris Klešta Za Pedikir", "Clou de Paris", "lice-telo", "pedikir", 3900, 3200, "kom", "CDP-033", 15, false, false, "Profesionalna klešta od nehrđajućeg čelika za urasle nokte.", null, 150],
     // LICE & TELO — Potrošni materijal
-    ["Jednokratne Rukavice Nitril M 100kom", "ProMed", "lice-telo", "potrosni-materijal-salone", 890, 750, "100 kom", "JRN-034", 100, false, true, "Nitrilne rukavice bez pudera, povećane elastičnosti.", null],
-    ["Jednokratni Ogrtač za Tretmane 10kom", "SalonPlus", "lice-telo", "potrosni-materijal-salone", 590, null, "10 kom", "JOT-035", 80, false, false, "Polipropilinski jednokratni ogrtač za klijente.", null],
+    ["Jednokratne Rukavice Nitril M 100kom", "ProMed", "lice-telo", "potrosni-materijal-salone", 890, 750, "100 kom", "JRN-034", 100, false, true, "Nitrilne rukavice bez pudera, povećane elastičnosti.", null, 900],
+    ["Jednokratni Ogrtač za Tretmane 10kom", "SalonPlus", "lice-telo", "potrosni-materijal-salone", 590, null, "10 kom", "JOT-035", 80, false, false, "Polipropilinski jednokratni ogrtač za klijente.", null, 300],
     // MAKEUP
-    ["MAC Lipstick Profesionalni 3g", "MAC", "makeup", "makeup-usne", 2990, null, "3 g", "MAC-036", 30, false, true, "Profesionalni ruž za usne u 200+ nijansi.", [{label:"Finish", value:"Matte"}, {label:"Finish", value:"Satin"}, {label:"Finish", value:"Amplified"}]],
-    ["NYX Pro Setting Spray 60ml", "NYX Professional", "makeup", "makeup-lice", 1490, 1190, "60 ml", "NYX-037", 40, false, false, "Profesionalni fiksator šminke koji produžava trajnost do 16h.", null],
-    ["Sigma Beauty Brush Set E55 Kompletan", "Sigma Beauty", "makeup", "cetkice-sminkanje", 8900, 7500, "set 12", "SBE-038", 10, true, true, "Set od 12 profesionalnih četkica za šminkanje, veganski dlake.", null],
+    ["MAC Lipstick Profesionalni 3g", "MAC", "makeup", "makeup-usne", 2990, null, "3 g", "MAC-036", 30, false, true, "Profesionalni ruž za usne u 200+ nijansi.", [{label:"Finish", value:"Matte"}, {label:"Finish", value:"Satin"}, {label:"Finish", value:"Amplified"}], 55],
+    ["NYX Pro Setting Spray 60ml", "NYX Professional", "makeup", "makeup-lice", 1490, 1190, "60 ml", "NYX-037", 40, false, false, "Profesionalni fiksator šminke koji produžava trajnost do 16h.", null, 120],
+    ["Sigma Beauty Brush Set E55 Kompletan", "Sigma Beauty", "makeup", "cetkice-sminkanje", 8900, 7500, "set 12", "SBE-038", 10, true, true, "Set od 12 profesionalnih četkica za šminkanje, veganski dlake.", null, 380],
     // FOR MEN
-    ["American Crew Beard Balm 60g", "American Crew", "for-men", "brada-brkovi", 1890, null, "60 g", "ACB-039", 25, false, true, "Balzam za oblikovanje brade sa kakaovim puterom.", null],
-    ["Baxter of California Pomada Za Kosu 60ml", "Baxter of California", "for-men", "nega-kose-muskarci", 2490, 2090, "60 ml", "BCN-040", 20, false, false, "Srednje fiksaciona pomada visokog sjaja za mušku kosu.", null],
-    ["Bulldog Original Face Wash 150ml", "Bulldog", "for-men", "nega-lica-muskarci", 890, null, "150 ml", "BFW-041", 40, true, false, "Gel za čišćenje lica za muškarce sa alojom i kaolinom.", null],
+    ["American Crew Beard Balm 60g", "American Crew", "for-men", "brada-brkovi", 1890, null, "60 g", "ACB-039", 25, false, true, "Balzam za oblikovanje brade sa kakaovim puterom.", null, 110],
+    ["Baxter of California Pomada Za Kosu 60ml", "Baxter of California", "for-men", "nega-kose-muskarci", 2490, 2090, "60 ml", "BCN-040", 20, false, false, "Srednje fiksaciona pomada visokog sjaja za mušku kosu.", null, 130],
+    ["Bulldog Original Face Wash 150ml", "Bulldog", "for-men", "nega-lica-muskarci", 890, null, "150 ml", "BFW-041", 40, true, false, "Gel za čišćenje lica za muškarce sa alojom i kaolinom.", null, 200],
     // OPREMA ZA SALONE
-    ["Kozmetički Krevet Električni Bela", "SalonPro", "oprema-za-salone", "oprema-kozmeticki", 89900, 79900, "kom", "SKB-042", 4, false, true, "Električni kozmetički krevet sa 3 motorisane pozicije.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Crna"}, {label:"Boja", value:"Siva"}]],
-    ["Frizerska Stolica Hydraulic Classic", "BarberStyle", "oprema-za-salone", "oprema-frizerski", 24900, 21900, "kom", "FSH-043", 6, false, false, "Hidraulična frizerska stolica na točkovima, nosivost 150kg.", [{label:"Boja", value:"Crna koža"}, {label:"Boja", value:"Bela koža"}]],
-    ["Sterilizator UV Kabinet 9W", "MedLine", "oprema-za-salone", "aparati-kozmeticki", 4900, null, "kom", "SUV-044", 15, false, true, "UV sterilizator za dezinfekciju pribora između tretmana.", null],
+    ["Kozmetički Krevet Električni Bela", "SalonPro", "oprema-za-salone", "oprema-kozmeticki", 89900, 79900, "kom", "SKB-042", 4, false, true, "Električni kozmetički krevet sa 3 motorisane pozicije.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Crna"}, {label:"Boja", value:"Siva"}], 38000],
+    ["Frizerska Stolica Hydraulic Classic", "BarberStyle", "oprema-za-salone", "oprema-frizerski", 24900, 21900, "kom", "FSH-043", 6, false, false, "Hidraulična frizerska stolica na točkovima, nosivost 150kg.", [{label:"Boja", value:"Crna koža"}, {label:"Boja", value:"Bela koža"}], 22000],
+    ["Sterilizator UV Kabinet 9W", "MedLine", "oprema-za-salone", "aparati-kozmeticki", 4900, null, "kom", "SUV-044", 15, false, true, "UV sterilizator za dezinfekciju pribora između tretmana.", null, 1800],
     // POKLONI
-    ["LUMERA E-Poklon Kartica 2000 RSD", "LUMERA", "pokloni", "e-poklon-kartice", 2000, null, "kom", "GPK-045", 999, false, false, "Digitalna poklon kartica za korišćenje u B2B shopu.", [{label:"Vrednost", value:"2000 RSD"}, {label:"Vrednost", value:"5000 RSD"}, {label:"Vrednost", value:"10000 RSD"}]],
-    ["Beauty Box Za Nju - Starterski Set", "LUMERA", "pokloni", "pokloni-za-nju", 4900, 4200, "set", "GPZ-046", 20, true, false, "Izabrani set profesionalnih kozmetičkih proizvoda za salome dame.", null],
-    ["Gentleman Box Za Njega", "LUMERA", "pokloni", "pokloni-za-njega", 4900, null, "set", "GPN-047", 15, true, false, "Odabrani set muških preparata za negu brade, kose i lica.", null],
+    ["LUMERA E-Poklon Kartica 2000 RSD", "LUMERA", "pokloni", "e-poklon-kartice", 2000, null, "kom", "GPK-045", 999, false, false, "Digitalna poklon kartica za korišćenje u B2B shopu.", [{label:"Vrednost", value:"2000 RSD", priceAdjust:0}, {label:"Vrednost", value:"5000 RSD", priceAdjust:3000}, {label:"Vrednost", value:"10000 RSD", priceAdjust:8000}], 10],
+    ["Beauty Box Za Nju - Starterski Set", "LUMERA", "pokloni", "pokloni-za-nju", 4900, 4200, "set", "GPZ-046", 20, true, false, "Izabrani set profesionalnih kozmetičkih proizvoda za salome dame.", null, 650],
+    ["Gentleman Box Za Njega", "LUMERA", "pokloni", "pokloni-za-njega", 4900, null, "set", "GPN-047", 15, true, false, "Odabrani set muških preparata za negu brade, kose i lica.", null, 580],
   ];
 
   const existingSkus = new Set((await db.select({ sku: productsTable.sku }).from(productsTable)).map((r) => r.sku));
-  const toInsert = products.filter(([, , , , , , , sku]) => !existingSkus.has(sku)).map(([name, brand, catSlug, subSlug, price, discountPrice, unit, sku, stock, isNew, isBestseller, description, variants]) => {
+  const toInsert = products.filter(([, , , , , , , sku]) => !existingSkus.has(sku)).map(([name, brand, catSlug, subSlug, price, discountPrice, unit, sku, stock, isNew, isBestseller, description, variants, weightGrams]) => {
     const cat = catBySlug.get(catSlug);
     const sub = catBySlug.get(subSlug);
     const parentCat = cat ? allCatRows.find((r) => r.id === cat.id) : null;
@@ -514,6 +515,7 @@ async function seedB2BShopTaxonomy(): Promise<void> {
       stock,
       sku,
       unit,
+      weightGrams: weightGrams ?? null,
       isNew,
       isBestseller,
       variants: variants ?? null,
@@ -521,6 +523,50 @@ async function seedB2BShopTaxonomy(): Promise<void> {
     };
   });
   if (toInsert.length) await db.insert(productsTable).values(toInsert);
+
+  // Older seed data stored gift-card values as labels without their price adjustments.
+  // Backfill only missing adjustments so existing admin-configured prices remain authoritative.
+  const [giftCard] = await db.select().from(productsTable).where(eq(productsTable.sku, "GPK-045")).limit(1);
+  if (giftCard?.variants?.some((variant) => variant.label === "Vrednost" && variant.priceAdjust === undefined)) {
+    const variants = giftCard.variants.map((variant) => {
+      if (variant.label !== "Vrednost" || variant.priceAdjust !== undefined) return variant;
+      const amount = Number.parseInt(variant.value.replace(/\D/g, ""), 10);
+      return Number.isFinite(amount) ? { ...variant, priceAdjust: amount - giftCard.price } : variant;
+    });
+    await db.update(productsTable).set({ variants }).where(eq(productsTable.id, giftCard.id));
+  }
+
+  // Backfill weight for any existing products that were seeded before this column was added.
+  // Use a deterministic heuristic so production/existing data is not left with null weights.
+  await db.execute(
+    sql`UPDATE products SET weight_grams = CASE
+      WHEN unit ~* '^[0-9]+\\s*ml$' THEN GREATEST(50, (substring(unit from '^([0-9]+)'))::int + 80)
+      WHEN unit ~* '^[0-9]+\\s*g$'  THEN GREATEST(50, (substring(unit from '^([0-9]+)'))::int + 60)
+      WHEN unit ~* 'set\\s*[0-9]+' OR unit ~* '^set$' THEN 500
+      WHEN unit ~* '[0-9]+\\s*kom$' THEN GREATEST(150, (substring(unit from '([0-9]+)\\s*kom'))::int * 5)
+      WHEN unit ~* '^[0-9]+\\s*m$' THEN 400
+      WHEN unit ~* 'kom' AND (name ~* 'krevet|stolica|frezark|fen|presa|mašinic|lampa|steriliz|aparat|kabinet') THEN 3500
+      WHEN unit ~* 'kom' THEN 400
+      ELSE 300
+    END
+    WHERE weight_grams IS NULL`
+  );
+  await seedShippingConfig();
+}
+
+async function seedShippingConfig(): Promise<void> {
+  const [existing] = await db.select().from(shippingRulesTable).limit(1);
+  if (existing) return;
+  await db.insert(shippingRulesTable).values({
+    freeShippingThreshold: 15000,
+    tiers: [
+      { maxWeightGrams: 1000, price: 390, label: "do 1 kg" },
+      { maxWeightGrams: 3000, price: 490, label: "do 3 kg" },
+      { maxWeightGrams: 5000, price: 690, label: "do 5 kg" },
+      { maxWeightGrams: 10000, price: 990, label: "do 10 kg" },
+      { maxWeightGrams: 20000, price: 1490, label: "do 20 kg" },
+    ],
+  });
 }
 
 async function seedMarketplaceTaxonomy(): Promise<void> {

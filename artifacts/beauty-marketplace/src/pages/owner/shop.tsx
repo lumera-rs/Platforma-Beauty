@@ -6,6 +6,8 @@ import {
   useGetShopSummary,
   useCreateOrder,
   useGetCurrentUser,
+  useGetShippingQuote,
+  getGetShippingQuoteQueryKey,
   getGetShopSummaryQueryKey,
 } from "@workspace/api-client-react";
 import type { Product, ProductCategory, ProductCategorySubcategoriesItem } from "@workspace/api-client-react";
@@ -58,7 +60,9 @@ function QuickView({
   onClose: () => void;
   onAdd: (id: string, variant?: string) => void;
 }) {
-  const [selectedVariant, setSelectedVariant] = useState(product.variants?.[0]?.value ?? "");
+  const [selectedVariant, setSelectedVariant] = useState(
+    product.variants?.find((variant) => variant.stock === undefined || variant.stock > 0)?.value ?? ""
+  );
   const effectivePrice =
     (product.variants?.find((v) => v.value === selectedVariant)?.priceAdjust ?? 0) +
     (product.discountPrice ?? product.price);
@@ -92,14 +96,15 @@ function QuickView({
                   {product.variants.map((v) => (
                     <button
                       key={v.value}
+                      disabled={v.stock !== undefined && v.stock <= 0}
                       onClick={() => setSelectedVariant(v.value)}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         selectedVariant === v.value
                           ? "border-primary bg-primary/10 text-primary font-semibold"
                           : "border-border text-muted-foreground hover:border-primary/60"
-                      }`}
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
                     >
-                      {v.value}
+                      {v.value}{v.stock !== undefined && v.stock <= 0 ? " (nema)" : ""}
                     </button>
                   ))}
                 </div>
@@ -122,6 +127,7 @@ function QuickView({
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Zatvori</Button>
             <Button
+              disabled={(product.variants?.length ?? 0) > 0 && !selectedVariant}
               onClick={() => {
                 onAdd(product.id, selectedVariant || undefined);
                 onClose();
@@ -411,12 +417,24 @@ export default function OwnerShop() {
     return sum + (base + variantAdjust) * item.qty;
   }, 0);
 
+  const cartWeightGrams = cart.reduce((sum, item) => {
+    const prod = allProducts.find((p) => p.id === item.id);
+    return sum + (prod?.weightGrams ?? 0) * item.qty;
+  }, 0);
+
+  const { data: shippingQuote } = useGetShippingQuote(
+    { weightGrams: cartWeightGrams, subtotal: cartTotal },
+    { query: { queryKey: getGetShippingQuoteQueryKey({ weightGrams: cartWeightGrams, subtotal: cartTotal }), enabled: cart.length > 0 } }
+  );
+  const shippingCost = shippingQuote?.shippingCost ?? 0;
+  const orderTotal = cartTotal + shippingCost;
+
   const placeOrder = () => {
     if (cart.length === 0) return;
     orderMutation.mutate(
       {
         data: {
-          items: cart.map((c) => ({ productId: c.id, quantity: c.qty })),
+          items: cart.map((c) => ({ productId: c.id, quantity: c.qty, ...(c.variantValue ? { variantValue: c.variantValue } : {}) })),
           shippingName: `${userResp?.user?.firstName ?? ""} ${userResp?.user?.lastName ?? ""}`.trim(),
           shippingAddress: "Adresa salona",
           paymentMethod: "CASH_ON_DELIVERY",
@@ -630,9 +648,40 @@ export default function OwnerShop() {
                             </div>
                           );
                         })}
-                        <div className="pt-1 flex justify-between items-center font-bold text-sm">
-                          <span>Ukupno:</span>
-                          <span className="text-primary">{cartTotal.toLocaleString("sr-RS")} RSD</span>
+                        <div className="pt-2 space-y-1.5 text-xs" data-testid="cart-shipping-info">
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>Međuzbir:</span>
+                            <span>{cartTotal.toLocaleString("sr-RS")} RSD</span>
+                          </div>
+                          {shippingQuote && (
+                            <>
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>Težina pošiljke:</span>
+                                <span>
+                                  {shippingQuote.totalWeightGrams >= 1000
+                                    ? `${(shippingQuote.totalWeightGrams / 1000).toLocaleString("sr-RS", { maximumFractionDigits: 2 })} kg`
+                                    : `${shippingQuote.totalWeightGrams} g`}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>Dostava:</span>
+                                {shippingQuote.freeShipping ? (
+                                  <span className="text-green-600 font-semibold">Besplatna</span>
+                                ) : (
+                                  <span>{shippingQuote.shippingCost.toLocaleString("sr-RS")} RSD</span>
+                                )}
+                              </div>
+                              {shippingQuote.message && (
+                                <p className={`text-[10px] rounded-md px-2 py-1.5 ${shippingQuote.freeShipping ? "bg-green-50 text-green-700 border border-green-200" : "bg-primary/5 text-primary border border-primary/20"}`}>
+                                  {shippingQuote.message}
+                                </p>
+                              )}
+                            </>
+                          )}
+                          <div className="pt-1 flex justify-between items-center font-bold text-sm border-t">
+                            <span>Ukupno:</span>
+                            <span className="text-primary" data-testid="cart-order-total">{orderTotal.toLocaleString("sr-RS")} RSD</span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -660,7 +709,7 @@ export default function OwnerShop() {
               <div className="xl:hidden fixed bottom-6 right-6 z-50">
                 <Button size="lg" className="rounded-full shadow-lg gap-2" onClick={placeOrder} disabled={orderMutation.isPending}>
                   <ShoppingCart className="w-5 h-5" />
-                  {cart.reduce((s, i) => s + i.qty, 0)} stavki — {cartTotal.toLocaleString("sr-RS")} RSD
+                  {cart.reduce((s, i) => s + i.qty, 0)} stavki — {orderTotal.toLocaleString("sr-RS")} RSD
                 </Button>
               </div>
             )}

@@ -1,1 +1,2 @@
 - [Orval and Zod compatibility](orval-zod-compatibility.md) — shared API generation needs Zod v3-safe OpenAPI schemas and a duplicate-export check.
+- [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.

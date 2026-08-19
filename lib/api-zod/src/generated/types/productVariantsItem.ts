@@ -10,4 +10,6 @@ export type ProductVariantsItem = {
   label: string;
   value: string;
   priceAdjust?: number;
+  /** @minimum 0 */
+  stock?: number;
 };

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   appointmentsTable,
   beautyGlossaryTable,
@@ -23,6 +23,7 @@ import {
   reviewsTable,
   salonHoursTable,
   salonBrandsTable,
+  shippingRulesTable,
   salonLoyaltyStatusesTable,
   salonsTable,
   serviceCategoriesTable,
@@ -32,8 +33,24 @@ import {
   usersTable,
 } from "@workspace/db";
 import {
+  AdminBulkUpdateProductsBody,
+  AdminCreateBrandBody,
   AdminCreateLoyaltyTierBody,
+  AdminCreateProductBody,
+  AdminCreateProductCategoryBody,
   AdminCreateSubscriptionPlanBody,
+  AdminDeleteBrandParams,
+  AdminDeleteProductCategoryParams,
+  AdminDeleteProductParams,
+  AdminListProductsQueryParams,
+  AdminUpdateBrandBody,
+  AdminUpdateBrandParams,
+  AdminUpdateProductBody,
+  AdminUpdateProductCategoryBody,
+  AdminUpdateProductCategoryParams,
+  AdminUpdateProductParams,
+  AdminUpdateShippingConfigBody,
+  GetShippingQuoteQueryParams,
   AdminDeleteLoyaltyTierParams,
   AdminDeleteReviewParams,
   AdminDeleteSubscriptionPlanParams,
@@ -942,7 +959,7 @@ async function loyaltyStatus(salonId: string) {
 router.get("/shop/categories", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   void access;
-  const allCats = await db.select().from(productCategoriesTable).orderBy(asc(productCategoriesTable.sortOrder));
+  const allCats = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.active, true)).orderBy(asc(productCategoriesTable.sortOrder));
   const parents = allCats.filter((c) => !c.parentId);
   const result = parents.map((p) => ({
     id: p.id,
@@ -958,13 +975,31 @@ router.get("/shop/categories", async (req, res): Promise<void> => {
   res.json(ListProductCategoriesResponse.parse(result));
 });
 
+function productBelongsToActiveCategory(
+  product: typeof productsTable.$inferSelect,
+  categories: Array<typeof productCategoriesTable.$inferSelect>,
+): boolean {
+  if (product.subcategoryName) {
+    const subcategory = categories.find((category) => category.name === product.subcategoryName);
+    if (!subcategory?.active || !subcategory.parentId) return false;
+    const parent = categories.find((category) => category.id === subcategory.parentId);
+    return Boolean(parent?.active && parent.name === product.categoryName);
+  }
+  const category = categories.find((item) => item.name === product.categoryName && !item.parentId);
+  return Boolean(category?.active);
+}
+
 router.get("/shop/products", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const normalized = normalizeBooleanQuery(req.query, ["onSale", "isNew", "isBestseller"]);
   if (!normalized) { res.status(400).json({ error: "Invalid boolean filter" }); return; }
   const parsed = ListProductsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let products = await db.select().from(productsTable).where(eq(productsTable.active, true));
+  const [catalogCategories, activeProducts] = await Promise.all([
+    db.select().from(productCategoriesTable),
+    db.select().from(productsTable).where(eq(productsTable.active, true)),
+  ]);
+  let products = activeProducts.filter((product) => productBelongsToActiveCategory(product, catalogCategories));
   const q = parsed.data;
   if (q.category) products = products.filter((item) => item.categoryName === q.category);
   if (q.subcategory) products = products.filter((item) => item.subcategoryName === q.subcategory);
@@ -975,8 +1010,56 @@ router.get("/shop/products", async (req, res): Promise<void> => {
   if (q.isBestseller) products = products.filter((item) => item.isBestseller);
   res.json(ListProductsResponse.parse(products.map((item) => {
     const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
-    return { id: item.id, name: item.name, category: item.categoryName, subcategory: item.subcategoryName ?? null, brand: item.brand ?? null, description: item.description, imageUrl: item.imageUrl, price: item.price, discountPrice: item.discountPrice ?? null, discountPercent, stock: item.stock, sku: item.sku, unit: item.unit, isNew: item.isNew, isBestseller: item.isBestseller, variants: item.variants ?? null };
+    return { id: item.id, name: item.name, category: item.categoryName, subcategory: item.subcategoryName ?? null, brand: item.brand ?? null, description: item.description, shortDescription: item.shortDescription ?? null, imageUrl: item.imageUrl, images: item.images ?? [], price: item.price, discountPrice: item.discountPrice ?? null, discountPercent, stock: item.stock, sku: item.sku, unit: item.unit, weightGrams: item.weightGrams ?? null, isNew: item.isNew, isBestseller: item.isBestseller, variants: item.variants ?? null };
   })));
+});
+
+// ── Shipping calculation ─────────────────────────────────────────────────────
+
+async function getShippingConfig() {
+  const [config] = await db.select().from(shippingRulesTable).limit(1);
+  if (config) return config;
+  const [created] = await db.insert(shippingRulesTable).values({ freeShippingThreshold: 0, tiers: [] }).returning();
+  return created!;
+}
+
+function calculateShipping(
+  config: { freeShippingThreshold: number; tiers: Array<{ maxWeightGrams: number; price: number; label: string }> },
+  totalWeightGrams: number,
+  subtotal: number,
+) {
+  const threshold = config.freeShippingThreshold;
+  const freeByThreshold = threshold > 0 && subtotal >= threshold;
+  const sorted = [...config.tiers].sort((a, b) => a.maxWeightGrams - b.maxWeightGrams);
+  let tierPrice = 0;
+  if (sorted.length > 0 && totalWeightGrams > 0) {
+    const match = sorted.find((t) => totalWeightGrams <= t.maxWeightGrams);
+    tierPrice = match ? match.price : sorted[sorted.length - 1]!.price;
+  }
+  const shippingCost = freeByThreshold ? 0 : tierPrice;
+  const amountToFreeShipping = threshold > 0 && !freeByThreshold ? threshold - subtotal : 0;
+  let message: string | null = null;
+  if (freeByThreshold) message = `Besplatna dostava jer je porudžbina preko ${threshold.toLocaleString("sr-RS")} RSD`;
+  else if (threshold > 0) message = `Još ${amountToFreeShipping.toLocaleString("sr-RS")} RSD do besplatne dostave`;
+  return {
+    totalWeightGrams,
+    shippingCost,
+    freeShipping: freeByThreshold,
+    freeShippingThreshold: threshold,
+    amountToFreeShipping,
+    message,
+  };
+}
+
+router.get("/shop/shipping-quote", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = GetShippingQuoteQueryParams.safeParse({
+    weightGrams: Number(req.query.weightGrams),
+    subtotal: Number(req.query.subtotal),
+  });
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const config = await getShippingConfig();
+  res.json(calculateShipping(config, parsed.data.weightGrams, parsed.data.subtotal));
 });
 
 router.get("/loyalty/status", async (req, res): Promise<void> => {
@@ -997,7 +1080,7 @@ router.get("/shop/orders", async (req, res): Promise<void> => {
   const { salon } = access;
   const orders = await db.select().from(ordersTable).where(eq(ordersTable.salonId, salon.id)).orderBy(asc(ordersTable.createdAt));
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((item) => item.id))) : [];
-  res.json(ListOrdersResponse.parse(orders.map((order) => ({ id: order.id, status: order.status, total: order.total, itemCount: items.filter((item) => item.orderId === order.id).reduce((sum, item) => sum + item.quantity, 0), createdAt: order.createdAt.toISOString(), items: items.filter((item) => item.orderId === order.id).map((item) => ({ productId: item.productId, productName: item.productName, quantity: item.quantity, price: item.price })) }))));
+  res.json(ListOrdersResponse.parse(orders.map((order) => ({ id: order.id, status: order.status, total: order.total, shippingCost: order.shippingCost, itemCount: items.filter((item) => item.orderId === order.id).reduce((sum, item) => sum + item.quantity, 0), createdAt: order.createdAt.toISOString(), items: items.filter((item) => item.orderId === order.id).map((item) => ({ productId: item.productId, productName: item.productName, variantValue: item.variantValue ?? null, quantity: item.quantity, price: item.price })) }))));
 });
 
 router.post("/shop/orders", async (req, res): Promise<void> => {
@@ -1007,12 +1090,136 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const productIds = parsed.data.items.map((item) => item.productId);
   const products = await db.select().from(productsTable).where(inArray(productsTable.id, productIds));
-  if (products.length !== productIds.length) { res.status(400).json({ error: "Jedan ili više proizvoda nisu dostupni." }); return; }
-  const total = parsed.data.items.reduce((sum, item) => sum + (products.find((product) => product.id === item.productId)!.discountPrice ?? products.find((product) => product.id === item.productId)!.price) * item.quantity, 0);
-  const [order] = await db.insert(ordersTable).values({ salonId: salon.id, status: "pending", total, shippingName: parsed.data.shippingName, shippingAddress: parsed.data.shippingAddress, paymentMethod: parsed.data.paymentMethod }).returning();
-  const items = parsed.data.items.map((item) => { const product = products.find((value) => value.id === item.productId)!; return { orderId: order!.id, productId: product.id, productName: product.name, quantity: item.quantity, price: product.discountPrice ?? product.price }; });
-  await db.insert(orderItemsTable).values(items);
-  res.status(201).json(CreateOrderResponse.parse({ id: order!.id, status: order!.status, total: order!.total, itemCount: items.reduce((sum, item) => sum + item.quantity, 0), createdAt: order!.createdAt.toISOString(), items: items.map((item) => ({ productId: item.productId, productName: item.productName, quantity: item.quantity, price: item.price })) }));
+  const catalogCategories = await db.select().from(productCategoriesTable);
+
+  // Aggregate quantities per product (handles duplicate line items)
+  const aggregated = new Map<string, number>();
+  for (const orderItem of parsed.data.items) {
+    aggregated.set(orderItem.productId, (aggregated.get(orderItem.productId) ?? 0) + orderItem.quantity);
+  }
+
+  // Validate each line: products with variants require a selection; products without variants reject one.
+  for (const orderItem of parsed.data.items) {
+    const product = products.find((p) => p.id === orderItem.productId);
+    if (!product) { res.status(400).json({ error: `Proizvod nije pronađen.` }); return; }
+    if (!product.active) { res.status(400).json({ error: `Proizvod "${product.name}" nije dostupan za naručivanje.` }); return; }
+    if (!productBelongsToActiveCategory(product, catalogCategories)) {
+      res.status(400).json({ error: `Kategorija proizvoda "${product.name}" trenutno nije dostupna za naručivanje.` }); return;
+    }
+    const variants = product.variants ?? [];
+    if (variants.length > 0 && orderItem.variantValue === undefined) {
+      res.status(400).json({ error: `Izaberite varijantu za proizvod "${product.name}".` }); return;
+    }
+    if (variants.length === 0 && orderItem.variantValue !== undefined) {
+      res.status(400).json({ error: `Proizvod "${product.name}" nema dostupne varijante.` }); return;
+    }
+    if (orderItem.variantValue !== undefined) {
+      const variant = variants.find((v) => v.value === orderItem.variantValue);
+      if (!variant) { res.status(400).json({ error: `Varijanta "${orderItem.variantValue}" ne postoji za proizvod "${product.name}".` }); return; }
+    }
+  }
+  for (const [productId, totalQty] of aggregated) {
+    const product = products.find((p) => p.id === productId)!;
+    if (product.stock < totalQty) {
+      res.status(400).json({ error: `Nedovoljno zaliha za "${product.name}". Na stanju: ${product.stock}, traženo: ${totalQty}.` }); return;
+    }
+  }
+
+  const shippingConfig = await getShippingConfig();
+
+  // Single transaction: locks products, updates product/variant stock, then creates order and items.
+  let conflictProductName: string | null = null;
+  const created = await db.transaction(async (tx) => {
+    const lockedProducts = new Map<string, typeof products[number]>();
+    for (const productId of [...aggregated.keys()].sort()) {
+      await tx.execute(sql`select id from products where id = ${productId} for update`);
+      const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+      if (!product || !product.active) {
+        conflictProductName = product?.name ?? "izabrani proizvod";
+        tx.rollback();
+      }
+      lockedProducts.set(productId, product!);
+    }
+
+    const variantQuantities = new Map<string, number>();
+    for (const item of parsed.data.items) {
+      const product = lockedProducts.get(item.productId)!;
+      const variants = product.variants ?? [];
+      if (
+        (variants.length > 0 && item.variantValue === undefined) ||
+        (variants.length === 0 && item.variantValue !== undefined)
+      ) {
+        conflictProductName = product.name;
+        tx.rollback();
+      }
+      if (item.variantValue !== undefined) {
+        const key = `${item.productId}\u0000${item.variantValue}`;
+        variantQuantities.set(key, (variantQuantities.get(key) ?? 0) + item.quantity);
+      }
+    }
+
+    for (const [productId, totalQty] of aggregated) {
+      const product = lockedProducts.get(productId)!;
+      if (product.stock < totalQty) {
+        conflictProductName = product.name;
+        tx.rollback();
+      }
+    }
+    for (const [key, quantity] of variantQuantities) {
+      const [productId, variantValue] = key.split("\u0000");
+      const product = lockedProducts.get(productId!)!;
+      const variant = (product.variants ?? []).find((value) => value.value === variantValue);
+      if (!variant || (variant.stock !== undefined && variant.stock < quantity)) {
+        conflictProductName = product.name;
+        tx.rollback();
+      }
+    }
+
+    const lineDetails = parsed.data.items.map((item) => {
+      const product = lockedProducts.get(item.productId)!;
+      const variant = item.variantValue !== undefined
+        ? (product.variants ?? []).find((value) => value.value === item.variantValue)
+        : undefined;
+      return {
+        product,
+        variantValue: item.variantValue ?? null,
+        quantity: item.quantity,
+        price: (product.discountPrice ?? product.price) + (variant?.priceAdjust ?? 0),
+      };
+    });
+    const subtotal = lineDetails.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const totalWeightGrams = lineDetails.reduce((sum, item) => sum + (item.product.weightGrams ?? 0) * item.quantity, 0);
+    const shipping = calculateShipping(shippingConfig, totalWeightGrams, subtotal);
+    const total = subtotal + shipping.shippingCost;
+
+    for (const [productId, totalQty] of aggregated) {
+      const product = lockedProducts.get(productId)!;
+      const updatedVariants = (product.variants ?? []).map((variant) => {
+        const quantity = variantQuantities.get(`${productId}\u0000${variant.value}`) ?? 0;
+        return quantity > 0 && variant.stock !== undefined ? { ...variant, stock: variant.stock - quantity } : variant;
+      });
+      const updated = await tx.update(productsTable)
+        .set({ stock: sql`stock - ${totalQty}`, variants: updatedVariants })
+        .where(and(eq(productsTable.id, productId), sql`stock >= ${totalQty}`))
+        .returning({ id: productsTable.id });
+      if (!updated.length) {
+        conflictProductName = product.name;
+        tx.rollback();
+      }
+    }
+    const [order] = await tx.insert(ordersTable).values({ salonId: salon.id, status: "pending", total, shippingCost: shipping.shippingCost, shippingName: parsed.data.shippingName, shippingAddress: parsed.data.shippingAddress, paymentMethod: parsed.data.paymentMethod }).returning();
+    const items = lineDetails.map((item) => ({ orderId: order!.id, productId: item.product.id, productName: item.product.name, variantValue: item.variantValue, quantity: item.quantity, price: item.price }));
+    await tx.insert(orderItemsTable).values(items);
+    return { order: order!, items };
+  }).catch((error: unknown) => {
+    if (conflictProductName !== null) return null;
+    throw error;
+  });
+  if (!created) {
+    res.status(409).json({ error: `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Pokušajte ponovo.` });
+    return;
+  }
+  res.status(201).json(CreateOrderResponse.parse({ id: created.order.id, status: created.order.status, total: created.order.total, shippingCost: created.order.shippingCost, itemCount: created.items.reduce((sum, item) => sum + item.quantity, 0), createdAt: created.order.createdAt.toISOString(), items: created.items.map((item) => ({ productId: item.productId, productName: item.productName, variantValue: item.variantValue, quantity: item.quantity, price: item.price })) }));
 });
 
 router.get("/education/courses", async (req, res): Promise<void> => {
@@ -1870,6 +2077,512 @@ router.delete("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
   await db.delete(reviewsTable).where(eq(reviewsTable.id, reviewId));
   res.sendStatus(204);
+});
+
+// ── Admin B2B Products ────────────────────────────────────────────────────────
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[čć]/g, "c").replace(/š/g, "s").replace(/ž/g, "z").replace(/đ/g, "dj")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function adminProductDto(item: typeof productsTable.$inferSelect) {
+  const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
+  return {
+    id: item.id,
+    name: item.name,
+    categoryId: item.categoryId ?? null,
+    categoryName: item.categoryName,
+    subcategoryName: item.subcategoryName ?? null,
+    brand: item.brand ?? null,
+    description: item.description,
+    shortDescription: item.shortDescription ?? null,
+    imageUrl: item.imageUrl,
+    images: item.images ?? [],
+    price: item.price,
+    discountPrice: item.discountPrice ?? null,
+    discountPercent,
+    stock: item.stock,
+    sku: item.sku,
+    unit: item.unit,
+    weightGrams: item.weightGrams ?? null,
+    isNew: item.isNew,
+    isBestseller: item.isBestseller,
+    variants: item.variants ?? null,
+    active: item.active,
+    createdAt: item.createdAt.toISOString(),
+  };
+}
+
+function validateVariantInventory(
+  variants: Array<{ label: string; value: string; priceAdjust?: number; stock?: number }> | null,
+  stock: number,
+): string | null {
+  if (!Number.isInteger(stock) || stock < 0) return "Ukupna zaliha proizvoda mora biti nenegativan ceo broj.";
+  if (!variants?.length) return null;
+  const values = new Set<string>();
+  for (const variant of variants) {
+    const value = variant.value.trim();
+    if (!value || values.has(value)) return "Svaka varijanta mora imati jedinstvenu vrednost.";
+    values.add(value);
+    if (variant.stock !== undefined && (!Number.isInteger(variant.stock) || variant.stock < 0)) {
+      return "Zaliha varijante mora biti nenegativan ceo broj.";
+    }
+  }
+  const variantsWithStock = variants.filter((variant) => variant.stock !== undefined);
+  if (variantsWithStock.length > 0 && variantsWithStock.length !== variants.length) {
+    return "Ako varijante imaju sopstvenu zalihu, unesite zalihu za svaku varijantu.";
+  }
+  if (variantsWithStock.length === variants.length) {
+    const totalVariantStock = variantsWithStock.reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
+    if (totalVariantStock !== stock) {
+      return "Ukupna zaliha proizvoda mora biti jednaka zbiru zaliha svih varijanti.";
+    }
+  }
+  return null;
+}
+
+async function categoryAssignment(categoryId: string) {
+  const [category] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId)).limit(1);
+  if (!category) return null;
+  if (!category.parentId) return { categoryId: category.id, categoryName: category.name, subcategoryName: null };
+  const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, category.parentId)).limit(1);
+  if (!parent) return null;
+  return { categoryId: category.id, categoryName: parent.name, subcategoryName: category.name };
+}
+
+router.get("/admin/products", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminListProductsQueryParams.safeParse({
+    ...req.query,
+    page: req.query.page !== undefined ? Number(req.query.page) : undefined,
+    pageSize: req.query.pageSize !== undefined ? Number(req.query.pageSize) : undefined,
+  });
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const q = parsed.data;
+  let products = await db.select().from(productsTable);
+  if (q.search) {
+    const term = q.search.toLowerCase();
+    products = products.filter((p) => `${p.name} ${p.sku} ${p.brand ?? ""} ${p.description}`.toLowerCase().includes(term));
+  }
+  if (q.category) products = products.filter((p) => p.categoryName === q.category);
+  if (q.subcategory) products = products.filter((p) => p.subcategoryName === q.subcategory);
+  if (q.brand) products = products.filter((p) => p.brand?.toLowerCase() === q.brand!.toLowerCase());
+  if (q.status === "in-stock") products = products.filter((p) => p.stock > 0);
+  if (q.status === "out-of-stock") products = products.filter((p) => p.stock <= 0);
+  if (q.status === "new") products = products.filter((p) => p.isNew);
+  if (q.status === "on-sale") products = products.filter((p) => p.discountPrice != null);
+  if (q.status === "inactive") products = products.filter((p) => !p.active);
+  const sortBy = q.sortBy ?? "createdAt";
+  const dir = (q.sortDir ?? "desc") === "asc" ? 1 : -1;
+  products.sort((a, b) => {
+    if (sortBy === "name") return a.name.localeCompare(b.name, "sr") * dir;
+    if (sortBy === "price") return ((a.discountPrice ?? a.price) - (b.discountPrice ?? b.price)) * dir;
+    if (sortBy === "stock") return (a.stock - b.stock) * dir;
+    return (a.createdAt.getTime() - b.createdAt.getTime()) * dir;
+  });
+  const page = q.page ?? 1;
+  const pageSize = q.pageSize ?? 20;
+  const total = products.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const items = products.slice((page - 1) * pageSize, page * pageSize);
+  res.json({ items: items.map(adminProductDto), total, page, pageSize, totalPages });
+});
+
+router.post("/admin/products", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateProductBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  if (body.discountPrice != null && body.discountPrice >= body.price) {
+    res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
+  }
+  if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
+  const assignment = await categoryAssignment(body.categoryId);
+  if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  const variantError = validateVariantInventory(body.variants ?? null, body.stock);
+  if (variantError) { res.status(400).json({ error: variantError }); return; }
+  const [existingSku] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, body.sku)).limit(1);
+  if (existingSku) { res.status(409).json({ error: "Proizvod sa ovim SKU već postoji." }); return; }
+  const [product] = await db.insert(productsTable).values({
+    name: body.name,
+    ...assignment,
+    brand: body.brand ?? null,
+    description: body.description,
+    shortDescription: body.shortDescription ?? null,
+    imageUrl: body.imageUrl,
+    images: body.images ?? [],
+    price: body.price,
+    discountPrice: body.discountPrice ?? null,
+    stock: body.stock,
+    sku: body.sku,
+    unit: body.unit,
+    weightGrams: body.weightGrams,
+    isNew: body.isNew ?? false,
+    isBestseller: body.isBestseller ?? false,
+    variants: body.variants ?? null,
+    active: body.active ?? true,
+  }).returning();
+  res.status(201).json(adminProductDto(product!));
+});
+
+router.post("/admin/products/bulk", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminBulkUpdateProductsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { productIds, action, categoryId, pricePercent } = parsed.data;
+  const products = await db.select().from(productsTable).where(inArray(productsTable.id, productIds));
+  if (!products.length) { res.status(404).json({ error: "Nijedan proizvod nije pronađen." }); return; }
+  let updated = 0;
+  if (action === "activate" || action === "deactivate") {
+    const result = await db.update(productsTable).set({ active: action === "activate" }).where(inArray(productsTable.id, productIds)).returning({ id: productsTable.id });
+    updated = result.length;
+  } else if (action === "set-new" || action === "unset-new") {
+    const result = await db.update(productsTable).set({ isNew: action === "set-new" }).where(inArray(productsTable.id, productIds)).returning({ id: productsTable.id });
+    updated = result.length;
+  } else if (action === "set-category") {
+    if (!categoryId) { res.status(400).json({ error: "categoryId je obavezan za promenu kategorije." }); return; }
+    const [category] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId)).limit(1);
+    if (!category) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+    const parent = category.parentId
+      ? (await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, category.parentId)).limit(1))[0]
+      : null;
+    const result = await db.update(productsTable).set({
+      categoryId: category.id,
+      categoryName: parent ? parent.name : category.name,
+      subcategoryName: parent ? category.name : null,
+    }).where(inArray(productsTable.id, productIds)).returning({ id: productsTable.id });
+    updated = result.length;
+  } else if (action === "adjust-price-percent") {
+    if (pricePercent === undefined || pricePercent === 0) { res.status(400).json({ error: "pricePercent je obavezan za promenu cena." }); return; }
+    for (const product of products) {
+      const factor = 1 + pricePercent / 100;
+      const newPrice = Math.max(1, Math.round(product.price * factor));
+      const newDiscount = product.discountPrice != null ? Math.max(1, Math.round(product.discountPrice * factor)) : null;
+      await db.update(productsTable).set({ price: newPrice, discountPrice: newDiscount }).where(eq(productsTable.id, product.id));
+      updated += 1;
+    }
+  }
+  res.json({ updated });
+});
+
+router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateProductParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { productId } = parsedParams.data;
+  const [existing] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const parsed = AdminUpdateProductBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const nextPrice = body.price ?? existing.price;
+  const nextDiscount = body.discountPrice !== undefined ? body.discountPrice : existing.discountPrice;
+  if (nextDiscount != null && nextDiscount >= nextPrice) {
+    res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
+  }
+  if (body.sku && body.sku !== existing.sku) {
+    const [skuTaken] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, body.sku)).limit(1);
+    if (skuTaken) { res.status(409).json({ error: "Proizvod sa ovim SKU već postoji." }); return; }
+  }
+  const nextStock = body.stock ?? existing.stock;
+  const nextVariants = body.variants !== undefined ? body.variants : existing.variants;
+  const variantError = validateVariantInventory(nextVariants, nextStock);
+  if (variantError) { res.status(400).json({ error: variantError }); return; }
+  let assignment: { categoryId: string; categoryName: string; subcategoryName: string | null } | null = null;
+  if (body.categoryId !== undefined) {
+    if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
+    assignment = await categoryAssignment(body.categoryId);
+    if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  }
+  const [product] = await db.update(productsTable).set({
+    name: body.name ?? existing.name,
+    categoryId: assignment?.categoryId ?? existing.categoryId,
+    categoryName: assignment?.categoryName ?? existing.categoryName,
+    subcategoryName: assignment?.subcategoryName ?? existing.subcategoryName,
+    brand: body.brand !== undefined ? body.brand : existing.brand,
+    description: body.description ?? existing.description,
+    shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
+    imageUrl: body.imageUrl ?? existing.imageUrl,
+    images: body.images ?? existing.images,
+    price: nextPrice,
+    discountPrice: nextDiscount,
+    stock: nextStock,
+    sku: body.sku ?? existing.sku,
+    unit: body.unit ?? existing.unit,
+    weightGrams: body.weightGrams ?? existing.weightGrams,
+    isNew: body.isNew ?? existing.isNew,
+    isBestseller: body.isBestseller ?? existing.isBestseller,
+    variants: nextVariants,
+    active: body.active ?? existing.active,
+  }).where(eq(productsTable.id, productId)).returning();
+  res.json(adminProductDto(product!));
+});
+
+router.delete("/admin/products/:productId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteProductParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { productId } = parsedParams.data;
+  const [existing] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const [inOrders] = await db.select({ count: count() }).from(orderItemsTable).where(eq(orderItemsTable.productId, productId));
+  if ((inOrders?.count ?? 0) > 0) {
+    const [deactivated] = await db.update(productsTable).set({ active: false }).where(eq(productsTable.id, productId)).returning();
+    res.json(adminProductDto(deactivated!));
+    return;
+  }
+  await db.delete(productsTable).where(eq(productsTable.id, productId));
+  res.json(adminProductDto({ ...existing, active: false }));
+});
+
+// ── Admin Product Categories ──────────────────────────────────────────────────
+
+async function adminCategoryDto(cat: typeof productCategoriesTable.$inferSelect) {
+  const [byId] = await db.select({ count: count() }).from(productsTable).where(eq(productsTable.categoryId, cat.id));
+  return {
+    id: cat.id,
+    name: cat.name,
+    slug: cat.slug,
+    parentId: cat.parentId ?? null,
+    sortOrder: cat.sortOrder,
+    icon: cat.icon ?? null,
+    imageUrl: cat.imageUrl ?? null,
+    active: cat.active,
+    productCount: byId?.count ?? 0,
+  };
+}
+
+router.get("/admin/product-categories", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [cats, productCounts] = await Promise.all([
+    db.select().from(productCategoriesTable).orderBy(asc(productCategoriesTable.sortOrder)),
+    db.select({ categoryId: productsTable.categoryId, count: count() }).from(productsTable).groupBy(productsTable.categoryId),
+  ]);
+  const countByCat = new Map(productCounts.map((c) => [c.categoryId, c.count]));
+  res.json(cats.map((cat) => ({
+    id: cat.id,
+    name: cat.name,
+    slug: cat.slug,
+    parentId: cat.parentId ?? null,
+    sortOrder: cat.sortOrder,
+    icon: cat.icon ?? null,
+    imageUrl: cat.imageUrl ?? null,
+    active: cat.active,
+    productCount: countByCat.get(cat.id) ?? 0,
+  })));
+});
+
+router.post("/admin/product-categories", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateProductCategoryBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const slug = slugify(body.name);
+  const [nameTaken] = await db.select({ id: productCategoriesTable.id }).from(productCategoriesTable).where(eq(productCategoriesTable.name, body.name)).limit(1);
+  if (nameTaken) { res.status(409).json({ error: "Kategorija sa ovim nazivom već postoji." }); return; }
+  if (body.parentId) {
+    const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, body.parentId)).limit(1);
+    if (!parent) { res.status(404).json({ error: "Nadređena kategorija nije pronađena." }); return; }
+    if (parent.parentId) { res.status(400).json({ error: "Podkategorija ne može imati sopstvene podkategorije." }); return; }
+  }
+  const [cat] = await db.insert(productCategoriesTable).values({
+    name: body.name,
+    slug,
+    parentId: body.parentId ?? null,
+    sortOrder: body.sortOrder ?? 0,
+    icon: body.icon ?? null,
+    imageUrl: body.imageUrl ?? null,
+    active: body.active ?? true,
+  }).returning();
+  res.status(201).json(await adminCategoryDto(cat!));
+});
+
+router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateProductCategoryParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { categoryId } = parsedParams.data;
+  const [existing] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  const parsed = AdminUpdateProductCategoryBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  if (body.parentId !== undefined && body.parentId !== existing.parentId) {
+    const [children] = await db.select({ count: count() }).from(productCategoriesTable).where(eq(productCategoriesTable.parentId, categoryId));
+    if ((children?.count ?? 0) > 0) {
+      res.status(409).json({ error: "Kategorija sa podkategorijama ne može se premestiti. Prvo premestite podkategorije." });
+      return;
+    }
+  }
+  if (body.parentId) {
+    if (body.parentId === categoryId) { res.status(400).json({ error: "Kategorija ne može biti sama sebi nadređena." }); return; }
+    const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, body.parentId)).limit(1);
+    if (!parent) { res.status(404).json({ error: "Nadređena kategorija nije pronađena." }); return; }
+    if (parent.parentId) { res.status(400).json({ error: "Podkategorija ne može imati sopstvene podkategorije." }); return; }
+  }
+  const newName = body.name ?? existing.name;
+  const newParentId = body.parentId !== undefined ? body.parentId : existing.parentId;
+  const [cat] = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(productCategoriesTable).set({
+      name: newName,
+      slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
+      parentId: newParentId,
+      sortOrder: body.sortOrder ?? existing.sortOrder,
+      icon: body.icon !== undefined ? body.icon : existing.icon,
+      imageUrl: body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl,
+      active: body.active ?? existing.active,
+    }).where(eq(productCategoriesTable.id, categoryId)).returning();
+
+    if (existing.parentId || newParentId) {
+      const parent = newParentId
+        ? (await tx.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, newParentId)).limit(1))[0]
+        : null;
+      await tx.update(productsTable).set({
+        categoryId: updated!.id,
+        categoryName: parent?.name ?? newName,
+        subcategoryName: parent ? newName : null,
+      }).where(or(
+        eq(productsTable.categoryId, categoryId),
+        eq(productsTable.subcategoryName, existing.name),
+        eq(productsTable.categoryName, existing.name),
+      ));
+    } else if (body.name && body.name !== existing.name) {
+      await tx.update(productsTable).set({ categoryName: newName }).where(eq(productsTable.categoryName, existing.name));
+    }
+    return [updated!];
+  });
+  res.json(await adminCategoryDto(cat!));
+});
+
+router.delete("/admin/product-categories/:categoryId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteProductCategoryParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { categoryId } = parsedParams.data;
+  const [existing] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
+  const [children] = await db.select({ count: count() }).from(productCategoriesTable).where(eq(productCategoriesTable.parentId, categoryId));
+  if ((children?.count ?? 0) > 0) { res.status(409).json({ error: "Kategorija ima podkategorije. Prvo obrišite ili premestite podkategorije." }); return; }
+  const [products] = await db.select({ count: count() }).from(productsTable).where(or(
+    eq(productsTable.categoryId, categoryId),
+    eq(productsTable.subcategoryName, existing.name),
+  ));
+  if ((products?.count ?? 0) > 0) { res.status(409).json({ error: "Kategorija sadrži proizvode. Prvo premestite proizvode u drugu kategoriju." }); return; }
+  await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+  res.sendStatus(204);
+});
+
+// ── Admin Brands ──────────────────────────────────────────────────────────────
+
+router.get("/admin/brands", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [brands, products] = await Promise.all([
+    db.select().from(productBrandsTable).orderBy(asc(productBrandsTable.name)),
+    db.select({ brand: productsTable.brand, count: count() }).from(productsTable).groupBy(productsTable.brand),
+  ]);
+  const countByBrand = new Map(products.map((p) => [p.brand?.toLowerCase(), p.count]));
+  res.json(brands.map((b) => ({
+    id: b.id,
+    name: b.name,
+    slug: b.slug,
+    description: b.description,
+    logoUrl: b.logoUrl ?? null,
+    active: b.active,
+    productCount: countByBrand.get(b.name.toLowerCase()) ?? 0,
+  })));
+});
+
+router.post("/admin/brands", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateBrandBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const [nameTaken] = await db.select({ id: productBrandsTable.id }).from(productBrandsTable).where(eq(productBrandsTable.name, body.name)).limit(1);
+  if (nameTaken) { res.status(409).json({ error: "Brend sa ovim nazivom već postoji." }); return; }
+  const [brand] = await db.insert(productBrandsTable).values({
+    name: body.name,
+    slug: slugify(body.name),
+    description: body.description ?? "",
+    logoUrl: body.logoUrl ?? null,
+    active: body.active ?? true,
+  }).returning();
+  res.status(201).json({ id: brand!.id, name: brand!.name, slug: brand!.slug, description: brand!.description, logoUrl: brand!.logoUrl ?? null, active: brand!.active, productCount: 0 });
+});
+
+router.patch("/admin/brands/:brandId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateBrandParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { brandId } = parsedParams.data;
+  const [existing] = await db.select().from(productBrandsTable).where(eq(productBrandsTable.id, brandId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Brend nije pronađen." }); return; }
+  const parsed = AdminUpdateBrandBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const [brand] = await db.update(productBrandsTable).set({
+    name: body.name ?? existing.name,
+    slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
+    description: body.description ?? existing.description,
+    logoUrl: body.logoUrl !== undefined ? body.logoUrl : existing.logoUrl,
+    active: body.active ?? existing.active,
+  }).where(eq(productBrandsTable.id, brandId)).returning();
+  // Keep denormalized product brand names in sync
+  if (body.name && body.name !== existing.name) {
+    await db.update(productsTable).set({ brand: body.name }).where(eq(productsTable.brand, existing.name));
+  }
+  const [productCount] = await db.select({ count: count() }).from(productsTable).where(eq(productsTable.brand, brand!.name));
+  res.json({ id: brand!.id, name: brand!.name, slug: brand!.slug, description: brand!.description, logoUrl: brand!.logoUrl ?? null, active: brand!.active, productCount: productCount?.count ?? 0 });
+});
+
+router.delete("/admin/brands/:brandId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteBrandParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { brandId } = parsedParams.data;
+  const [existing] = await db.select().from(productBrandsTable).where(eq(productBrandsTable.id, brandId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Brend nije pronađen." }); return; }
+  const [[inProducts], [inSalons]] = await Promise.all([
+    db.select({ count: count() }).from(productsTable).where(eq(productsTable.brand, existing.name)),
+    db.select({ count: count() }).from(salonBrandsTable).where(eq(salonBrandsTable.brandId, brandId)),
+  ]);
+  if ((inProducts?.count ?? 0) > 0 || (inSalons?.count ?? 0) > 0) {
+    const [deactivated] = await db.update(productBrandsTable).set({ active: false }).where(eq(productBrandsTable.id, brandId)).returning();
+    res.json({ id: deactivated!.id, name: deactivated!.name, slug: deactivated!.slug, description: deactivated!.description, logoUrl: deactivated!.logoUrl ?? null, active: deactivated!.active, productCount: inProducts?.count ?? 0 });
+    return;
+  }
+  await db.delete(productBrandsTable).where(eq(productBrandsTable.id, brandId));
+  res.json({ id: existing.id, name: existing.name, slug: existing.slug, description: existing.description, logoUrl: existing.logoUrl ?? null, active: false, productCount: 0 });
+});
+
+// ── Admin Shipping Configuration ──────────────────────────────────────────────
+
+router.get("/admin/shipping", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const config = await getShippingConfig();
+  res.json({ freeShippingThreshold: config.freeShippingThreshold, tiers: config.tiers, updatedAt: config.updatedAt.toISOString() });
+});
+
+router.put("/admin/shipping", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminUpdateShippingConfigBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const seen = new Set<number>();
+  for (const tier of body.tiers) {
+    if (seen.has(tier.maxWeightGrams)) { res.status(400).json({ error: "Dva ranga ne mogu imati istu maksimalnu težinu." }); return; }
+    seen.add(tier.maxWeightGrams);
+  }
+  const existing = await getShippingConfig();
+  const [config] = await db.update(shippingRulesTable).set({
+    freeShippingThreshold: body.freeShippingThreshold,
+    tiers: [...body.tiers].sort((a, b) => a.maxWeightGrams - b.maxWeightGrams),
+    updatedAt: new Date(),
+  }).where(eq(shippingRulesTable.id, existing.id)).returning();
+  res.json({ freeShippingThreshold: config!.freeShippingThreshold, tiers: config!.tiers, updatedAt: config!.updatedAt.toISOString() });
 });
 
 export default router;

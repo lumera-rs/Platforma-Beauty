@@ -6,9 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type OrderInputItemsItem = {
-  productId: string;
-  variantValue?: string;
-  /** @minimum 1 */
-  quantity: number;
+export type GetShippingQuoteParams = {
+/**
+ * @minimum 0
+ */
+weightGrams: number;
+/**
+ * @minimum 0
+ */
+subtotal: number;
 };

@@ -331,6 +331,8 @@ export type ProductVariantsItem = {
   label: string;
   value: string;
   priceAdjust?: number;
+  /** @minimum 0 */
+  stock?: number;
 };
 
 export interface Product {
@@ -348,11 +350,17 @@ export interface Product {
   discountPrice?: number | null;
   /** @nullable */
   discountPercent?: number | null;
+  /** @minimum 0 */
   stock: number;
   sku: string;
   unit: string;
   isNew: boolean;
   isBestseller: boolean;
+  /** @nullable */
+  weightGrams?: number | null;
+  /** @nullable */
+  shortDescription?: string | null;
+  images?: string[];
   /** @nullable */
   variants?: ProductVariantsItem[] | null;
 }
@@ -383,6 +391,8 @@ export const OrderStatus = {
 export interface OrderItem {
   productId: string;
   productName: string;
+  /** @nullable */
+  variantValue?: string | null;
   quantity: number;
   price: number;
 }
@@ -391,6 +401,7 @@ export interface Order {
   id: string;
   status: OrderStatus;
   total: number;
+  shippingCost: number;
   itemCount: number;
   createdAt: string;
   items: OrderItem[];
@@ -398,6 +409,7 @@ export interface Order {
 
 export type OrderInputItemsItem = {
   productId: string;
+  variantValue?: string;
   /** @minimum 1 */
   quantity: number;
 };
@@ -817,6 +829,265 @@ export interface AdminReviewUpdate {
   visible?: boolean;
 }
 
+export interface ApiError {
+  error: string;
+}
+
+export interface ProductVariant {
+  label: string;
+  value: string;
+  priceAdjust?: number;
+  /** @minimum 0 */
+  stock?: number;
+}
+
+export interface AdminProduct {
+  id: string;
+  name: string;
+  /** @nullable */
+  categoryId?: string | null;
+  categoryName: string;
+  /** @nullable */
+  subcategoryName?: string | null;
+  /** @nullable */
+  brand?: string | null;
+  description: string;
+  /** @nullable */
+  shortDescription?: string | null;
+  imageUrl: string;
+  images: string[];
+  price: number;
+  /** @nullable */
+  discountPrice?: number | null;
+  /** @nullable */
+  discountPercent?: number | null;
+  /** @minimum 0 */
+  stock: number;
+  sku: string;
+  unit: string;
+  /** @nullable */
+  weightGrams?: number | null;
+  isNew: boolean;
+  isBestseller: boolean;
+  /** @nullable */
+  variants?: ProductVariant[] | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface AdminProductList {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface AdminProductInput {
+  /** @minLength 1 */
+  name: string;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @minLength 1 */
+  categoryName: string;
+  /** @nullable */
+  subcategoryName?: string | null;
+  /** @nullable */
+  brand?: string | null;
+  /** @minLength 1 */
+  description: string;
+  /** @nullable */
+  shortDescription?: string | null;
+  /** @minLength 1 */
+  imageUrl: string;
+  images?: string[];
+  /** @minimum 0 */
+  price: number;
+  /** @nullable */
+  discountPrice?: number | null;
+  /** @minimum 0 */
+  stock: number;
+  /** @minLength 1 */
+  sku: string;
+  /** @minLength 1 */
+  unit: string;
+  /** @minimum 0 */
+  weightGrams: number;
+  isNew?: boolean;
+  isBestseller?: boolean;
+  /** @nullable */
+  variants?: ProductVariant[] | null;
+  active?: boolean;
+}
+
+export interface AdminProductUpdate {
+  /** @minLength 1 */
+  name?: string;
+  /** @nullable */
+  categoryId?: string | null;
+  /** @minLength 1 */
+  categoryName?: string;
+  /** @nullable */
+  subcategoryName?: string | null;
+  /** @nullable */
+  brand?: string | null;
+  /** @minLength 1 */
+  description?: string;
+  /** @nullable */
+  shortDescription?: string | null;
+  /** @minLength 1 */
+  imageUrl?: string;
+  images?: string[];
+  /** @minimum 0 */
+  price?: number;
+  /** @nullable */
+  discountPrice?: number | null;
+  /** @minimum 0 */
+  stock?: number;
+  /** @minLength 1 */
+  sku?: string;
+  /** @minLength 1 */
+  unit?: string;
+  /** @minimum 0 */
+  weightGrams?: number;
+  isNew?: boolean;
+  isBestseller?: boolean;
+  /** @nullable */
+  variants?: ProductVariant[] | null;
+  active?: boolean;
+}
+
+export type AdminProductBulkUpdateAction = typeof AdminProductBulkUpdateAction[keyof typeof AdminProductBulkUpdateAction];
+
+
+export const AdminProductBulkUpdateAction = {
+  activate: 'activate',
+  deactivate: 'deactivate',
+  'set-category': 'set-category',
+  'adjust-price-percent': 'adjust-price-percent',
+  'set-new': 'set-new',
+  'unset-new': 'unset-new',
+} as const;
+
+export interface AdminProductBulkUpdate {
+  /** @minItems 1 */
+  productIds: string[];
+  action: AdminProductBulkUpdateAction;
+  /** @nullable */
+  categoryId?: string | null;
+  /**
+     * @minimum -90
+     * @maximum 500
+     */
+  pricePercent?: number;
+}
+
+export interface AdminBulkResult {
+  updated: number;
+}
+
+export interface AdminProductCategory {
+  id: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  parentId?: string | null;
+  sortOrder: number;
+  /** @nullable */
+  icon?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  active: boolean;
+  productCount: number;
+}
+
+export interface AdminProductCategoryInput {
+  /** @minLength 1 */
+  name: string;
+  /** @nullable */
+  parentId?: string | null;
+  /** @minimum 0 */
+  sortOrder?: number;
+  /** @nullable */
+  icon?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  active?: boolean;
+}
+
+export interface AdminProductCategoryUpdate {
+  /** @minLength 1 */
+  name?: string;
+  /** @nullable */
+  parentId?: string | null;
+  /** @minimum 0 */
+  sortOrder?: number;
+  /** @nullable */
+  icon?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
+  active?: boolean;
+}
+
+export interface AdminBrand {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  /** @nullable */
+  logoUrl?: string | null;
+  active: boolean;
+  productCount: number;
+}
+
+export interface AdminBrandInput {
+  /** @minLength 1 */
+  name: string;
+  description?: string;
+  /** @nullable */
+  logoUrl?: string | null;
+  active?: boolean;
+}
+
+export interface AdminBrandUpdate {
+  /** @minLength 1 */
+  name?: string;
+  description?: string;
+  /** @nullable */
+  logoUrl?: string | null;
+  active?: boolean;
+}
+
+export interface ShippingTier {
+  /** @minimum 1 */
+  maxWeightGrams: number;
+  /** @minimum 0 */
+  price: number;
+  label: string;
+}
+
+export interface ShippingConfig {
+  freeShippingThreshold: number;
+  tiers: ShippingTier[];
+  updatedAt: string;
+}
+
+export interface ShippingConfigInput {
+  /** @minimum 0 */
+  freeShippingThreshold: number;
+  tiers: ShippingTier[];
+}
+
+export interface ShippingQuote {
+  totalWeightGrams: number;
+  shippingCost: number;
+  freeShipping: boolean;
+  freeShippingThreshold: number;
+  amountToFreeShipping: number;
+  /** @nullable */
+  message?: string | null;
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -927,6 +1198,17 @@ isNew?: boolean;
 isBestseller?: boolean;
 };
 
+export type GetShippingQuoteParams = {
+/**
+ * @minimum 0
+ */
+weightGrams: number;
+/**
+ * @minimum 0
+ */
+subtotal: number;
+};
+
 export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
@@ -1007,4 +1289,52 @@ minRating?: number;
  */
 maxRating?: number;
 };
+
+export type AdminListProductsParams = {
+search?: string;
+category?: string;
+subcategory?: string;
+brand?: string;
+status?: AdminListProductsStatus;
+sortBy?: AdminListProductsSortBy;
+sortDir?: AdminListProductsSortDir;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type AdminListProductsStatus = typeof AdminListProductsStatus[keyof typeof AdminListProductsStatus];
+
+
+export const AdminListProductsStatus = {
+  'in-stock': 'in-stock',
+  'out-of-stock': 'out-of-stock',
+  new: 'new',
+  'on-sale': 'on-sale',
+  inactive: 'inactive',
+} as const;
+
+export type AdminListProductsSortBy = typeof AdminListProductsSortBy[keyof typeof AdminListProductsSortBy];
+
+
+export const AdminListProductsSortBy = {
+  name: 'name',
+  price: 'price',
+  stock: 'stock',
+  createdAt: 'createdAt',
+} as const;
+
+export type AdminListProductsSortDir = typeof AdminListProductsSortDir[keyof typeof AdminListProductsSortDir];
+
+
+export const AdminListProductsSortDir = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
 

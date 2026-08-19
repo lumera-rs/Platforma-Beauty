@@ -5,12 +5,12 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminProduct } from './adminProduct';
 
-export interface OrderItem {
-  productId: string;
-  productName: string;
-  /** @nullable */
-  variantValue?: string | null;
-  quantity: number;
-  price: number;
+export interface AdminProductList {
+  items: AdminProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }

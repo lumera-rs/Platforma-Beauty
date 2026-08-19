@@ -5,10 +5,10 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ShippingTier } from './shippingTier';
 
-export type OrderInputItemsItem = {
-  productId: string;
-  variantValue?: string;
-  /** @minimum 1 */
-  quantity: number;
-};
+export interface ShippingConfig {
+  freeShippingThreshold: number;
+  tiers: ShippingTier[];
+  updatedAt: Date;
+}

@@ -12,6 +12,7 @@ export interface Order {
   id: string;
   status: OrderStatus;
   total: number;
+  shippingCost: number;
   itemCount: number;
   createdAt: Date;
   items: OrderItem[];

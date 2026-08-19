@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderItem {
-  productId: string;
-  productName: string;
+export interface ShippingQuote {
+  totalWeightGrams: number;
+  shippingCost: number;
+  freeShipping: boolean;
+  freeShippingThreshold: number;
+  amountToFreeShipping: number;
   /** @nullable */
-  variantValue?: string | null;
-  quantity: number;
-  price: number;
+  message?: string | null;
 }

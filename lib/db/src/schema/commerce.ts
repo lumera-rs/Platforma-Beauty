@@ -43,6 +43,8 @@ export const productCategoriesTable = pgTable("product_categories", {
   parentId: uuid("parent_id"),
   sortOrder: integer("sort_order").notNull().default(0),
   icon: text("icon"),
+  imageUrl: text("image_url"),
+  active: boolean("active").notNull().default(true),
 });
 
 export const productsTable = pgTable("products", {
@@ -53,16 +55,30 @@ export const productsTable = pgTable("products", {
   name: text("name").notNull(),
   brand: text("brand"),
   description: text("description").notNull(),
+  shortDescription: text("short_description"),
   imageUrl: text("image_url").notNull(),
+  images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
   discountPrice: integer("discount_price"),
   stock: integer("stock").notNull().default(0),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
+  weightGrams: integer("weight_grams"),
   isNew: boolean("is_new").notNull().default(false),
   isBestseller: boolean("is_bestseller").notNull().default(false),
-  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number }>>(),
+  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; stock?: number }>>(),
   active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shippingRulesTable = pgTable("shipping_rules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  freeShippingThreshold: integer("free_shipping_threshold").notNull().default(0),
+  tiers: jsonb("tiers")
+    .$type<Array<{ maxWeightGrams: number; price: number; label: string }>>()
+    .notNull()
+    .default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const loyaltyTiersTable = pgTable("loyalty_tiers", {
@@ -113,6 +129,7 @@ export const ordersTable = pgTable("orders", {
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id),
   status: orderStatusEnum("status").notNull().default("pending"),
   total: integer("total").notNull(),
+  shippingCost: integer("shipping_cost").notNull().default(0),
   shippingName: text("shipping_name").notNull(),
   shippingAddress: text("shipping_address").notNull(),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
@@ -124,6 +141,7 @@ export const orderItemsTable = pgTable("order_items", {
   orderId: uuid("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
   productId: uuid("product_id").notNull().references(() => productsTable.id),
   productName: text("product_name").notNull(),
+  variantValue: text("variant_value"),
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
 });

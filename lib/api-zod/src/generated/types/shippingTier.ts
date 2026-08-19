@@ -6,9 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type OrderInputItemsItem = {
-  productId: string;
-  variantValue?: string;
+export interface ShippingTier {
   /** @minimum 1 */
-  quantity: number;
-};
+  maxWeightGrams: number;
+  /** @minimum 0 */
+  price: number;
+  label: string;
+}
