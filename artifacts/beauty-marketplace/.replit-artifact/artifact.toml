@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LUMERA — Beauty & Wellness Marketplace"
+description = "A Serbian beauty, wellness, massage, salon, education, and professional supplies marketplace connecting customers with trusted providers and helping salons grow through bookings, CRM, loyalty, B2B shopping, and education."
+version = "1.0.0"
+id = "artifacts/beauty-marketplace"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23561
+
+[services.development]
+run = "pnpm --filter @workspace/beauty-marketplace run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/beauty-marketplace", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/beauty-marketplace/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23561"
+BASE_PATH = "/"

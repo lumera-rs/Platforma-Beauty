@@ -1,0 +1,191 @@
+import {
+  boolean,
+  date,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+export const userRoleEnum = pgEnum("user_role", [
+  "SUPER_ADMIN",
+  "ADMIN",
+  "SALON_OWNER",
+  "SALON_EMPLOYEE",
+  "EDUCATION_CENTER_OWNER",
+  "INSTRUCTOR",
+  "CUSTOMER",
+]);
+
+export const appointmentStatusEnum = pgEnum("appointment_status", [
+  "pending",
+  "confirmed",
+  "completed",
+  "cancelled",
+  "no-show",
+]);
+
+export const usersTable = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull().unique(),
+  phone: text("phone"),
+  passwordHash: text("password_hash").notNull(),
+  role: userRoleEnum("role").notNull().default("CUSTOMER"),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessionsTable = pgTable("sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const serviceCategoriesTable = pgTable("service_categories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  slug: text("slug").notNull().unique(),
+  description: text("description").notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+export const salonsTable = pgTable("salons", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: uuid("owner_id").notNull().references(() => usersTable.id),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  city: text("city").notNull(),
+  municipality: text("municipality").notNull(),
+  address: text("address").notNull(),
+  phone: text("phone").notNull(),
+  email: text("email").notNull(),
+  shortDescription: text("short_description").notNull(),
+  description: text("description").notNull(),
+  imageUrl: text("image_url").notNull(),
+  gallery: jsonb("gallery").$type<string[]>().notNull().default([]),
+  rating: integer("rating").notNull().default(0),
+  reviewCount: integer("review_count").notNull().default(0),
+  latitude: integer("latitude"),
+  longitude: integer("longitude"),
+  homeService: boolean("home_service").notNull().default(false),
+  featured: boolean("featured").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const employeesTable = pgTable("employees", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  role: text("role").notNull(),
+  bio: text("bio").notNull(),
+  avatarUrl: text("avatar_url").notNull(),
+  specialties: jsonb("specialties").$type<string[]>().notNull().default([]),
+  active: boolean("active").notNull().default(true),
+});
+
+export const employeeSchedulesTable = pgTable("employee_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  weekday: integer("weekday").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  breakStart: text("break_start"),
+  breakEnd: text("break_end"),
+});
+
+export const employeeTimeOffTable = pgTable("employee_time_off", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  reason: text("reason").notNull(),
+});
+
+export const servicesTable = pgTable("services", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  categoryId: uuid("category_id").references(() => serviceCategoriesTable.id, { onDelete: "set null" }),
+  categoryName: text("category_name").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  price: integer("price").notNull(),
+  promoPrice: integer("promo_price"),
+  imageUrl: text("image_url").notNull(),
+  active: boolean("active").notNull().default(true),
+});
+
+export const employeeServicesTable = pgTable("employee_services", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+});
+
+export const salonHoursTable = pgTable("salon_hours", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  weekday: integer("weekday").notNull(),
+  openTime: text("open_time").notNull(),
+  closeTime: text("close_time").notNull(),
+  closed: boolean("closed").notNull().default(false),
+});
+
+export const appointmentsTable = pgTable("appointments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").notNull().references(() => usersTable.id),
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
+  date: date("appointment_date", { mode: "string" }).notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  price: integer("price").notNull(),
+  status: appointmentStatusEnum("status").notNull().default("pending"),
+  notes: text("notes"),
+  cancellationReason: text("cancellation_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appointmentStatusHistoryTable = pgTable("appointment_status_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  status: appointmentStatusEnum("status").notNull(),
+  changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const reviewsTable = pgTable("reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").notNull().references(() => usersTable.id),
+  serviceName: text("service_name").notNull(),
+  rating: integer("rating").notNull(),
+  text: text("text").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const favoritesTable = pgTable("favorites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const customerNotesTable = pgTable("customer_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  customerId: uuid("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
