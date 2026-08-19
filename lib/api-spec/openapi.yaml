@@ -422,6 +422,19 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Employee" }
+  /shop/categories:
+    get:
+      operationId: listProductCategories
+      tags: [shop]
+      summary: List B2B product category tree
+      responses:
+        "200":
+          description: Category tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProductCategory" }
   /shop/products:
     get:
       operationId: listProducts
@@ -431,9 +444,24 @@ paths:
         - name: category
           in: query
           schema: { type: string }
+        - name: subcategory
+          in: query
+          schema: { type: string }
+        - name: brand
+          in: query
+          schema: { type: string }
         - name: search
           in: query
           schema: { type: string }
+        - name: onSale
+          in: query
+          schema: { type: boolean }
+        - name: isNew
+          in: query
+          schema: { type: boolean }
+        - name: isBestseller
+          in: query
+          schema: { type: boolean }
       responses:
         "200":
           description: Products
@@ -1483,20 +1511,53 @@ components:
         imageUrl: { type: string }
         active: { type: boolean }
       required: [category, name, description, durationMinutes, price, imageUrl, active]
+    ProductCategory:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        sortOrder: { type: number }
+        icon: { type: ["string", "null"] }
+        subcategories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              slug: { type: string }
+              sortOrder: { type: number }
+            required: [id, name, slug, sortOrder]
+      required: [id, name, slug, sortOrder, subcategories]
     Product:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
         category: { type: string }
+        subcategory: { type: ["string", "null"] }
+        brand: { type: ["string", "null"] }
         description: { type: string }
         imageUrl: { type: string }
         price: { type: number }
         discountPrice: { type: ["number", "null"] }
+        discountPercent: { type: ["number", "null"] }
         stock: { type: number }
         sku: { type: string }
         unit: { type: string }
-      required: [id, name, category, description, imageUrl, price, stock, sku, unit]
+        isNew: { type: boolean }
+        isBestseller: { type: boolean }
+        variants:
+          type: ["array", "null"]
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              value: { type: string }
+              priceAdjust: { type: number }
+            required: [label, value]
+      required: [id, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller]
     ShopSummary:
       type: object
       properties:

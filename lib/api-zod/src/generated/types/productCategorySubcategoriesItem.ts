@@ -6,12 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ListProductsParams = {
-category?: string;
-subcategory?: string;
-brand?: string;
-search?: string;
-onSale?: boolean;
-isNew?: boolean;
-isBestseller?: boolean;
+export type ProductCategorySubcategoriesItem = {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
 };

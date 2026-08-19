@@ -351,9 +351,182 @@ async function seed(): Promise<void> {
   void customer;
 }
 
+async function seedB2BShopTaxonomy(): Promise<void> {
+  // All product categories: [name, slug, parentSlug | null, sortOrder]
+  const b2bCategories: Array<[string, string, string | null, number]> = [
+    // Main categories
+    ["KOSA", "kosa", null, 1],
+    ["NOKTI", "nokti", null, 2],
+    ["LICE & TELO", "lice-telo", null, 3],
+    ["MAKEUP", "makeup", null, 4],
+    ["FOR MEN", "for-men", null, 5],
+    ["OPREMA ZA SALONE", "oprema-za-salone", null, 6],
+    ["POKLONI", "pokloni", null, 7],
+    // KOSA subcategories
+    ["Farbanje kose", "farbanje-kose", "kosa", 1],
+    ["Nega kose", "nega-kose", "kosa", 2],
+    ["Stilizovanje kose", "stilizovanje-kose", "kosa", 3],
+    ["Nadogradnja kose", "nadogradnja-kose", "kosa", 4],
+    ["Makaze - Četke - Češljevi", "makaze-cetke-cesljevi", "kosa", 5],
+    ["Aparati za kosu", "aparati-za-kosu", "kosa", 6],
+    ["Frizerski pribor", "frizerski-pribor", "kosa", 7],
+    // NOKTI subcategories
+    ["Nadogradnja noktiju", "nadogradnja-noktiju", "nokti", 1],
+    ["Kolor gelovi", "kolor-gelovi", "nokti", 2],
+    ["Trajni lak i preparati", "trajni-lak-preparati", "nokti", 3],
+    ["Pribor za manikir", "pribor-za-manikir", "nokti", 4],
+    ["Nega noktiju", "nega-noktiju", "nokti", 5],
+    ["Lak za nokte i preparati", "lak-za-nokte", "nokti", 6],
+    ["Aparati za manikir", "aparati-za-manikir", "nokti", 7],
+    ["Nail art", "nail-art", "nokti", 8],
+    // LICE & TELO subcategories
+    ["Nega lica", "nega-lica", "lice-telo", 1],
+    ["Nega tela", "nega-tela", "lice-telo", 2],
+    ["Depilacija", "depilacija-b2b", "lice-telo", 3],
+    ["Masaža i SPA tretmani", "masaza-spa", "lice-telo", 4],
+    ["Pedikir", "pedikir", "lice-telo", 5],
+    ["Parafinski tretmani", "parafinski-tretmani", "lice-telo", 6],
+    ["Papir - Rukavice - Folije - Maske", "potrosni-materijal-salone", "lice-telo", 7],
+    ["Kozmetika za sunčanje", "kozmetika-suncanje", "lice-telo", 8],
+    // MAKEUP subcategories
+    ["Usne", "makeup-usne", "makeup", 1],
+    ["Lice", "makeup-lice", "makeup", 2],
+    ["Oči", "makeup-oci", "makeup", 3],
+    ["Makeup palete", "makeup-palete", "makeup", 4],
+    ["Obrve", "makeup-obrve", "makeup", 5],
+    ["Trepavice", "makeup-trepavice", "makeup", 6],
+    ["Uklanjanje šminke", "uklanjanje-sminke", "makeup", 7],
+    ["Četkice za šminkanje", "cetkice-sminkanje", "makeup", 8],
+    ["Pribor za šminkanje", "pribor-sminkanje", "makeup", 9],
+    // FOR MEN subcategories
+    ["Brada i brkovi", "brada-brkovi", "for-men", 1],
+    ["Nega i stilizovanje kose za muškarce", "nega-kose-muskarci", "for-men", 2],
+    ["Nega lica i tela za muškarce", "nega-lica-muskarci", "for-men", 3],
+    // OPREMA ZA SALONE subcategories
+    ["Oprema za kozmetičke salone", "oprema-kozmeticki", "oprema-za-salone", 1],
+    ["Aparati za kozmetičke salone", "aparati-kozmeticki", "oprema-za-salone", 2],
+    ["Oprema za frizerske salone", "oprema-frizerski", "oprema-za-salone", 3],
+    // POKLONI subcategories
+    ["E-poklon kartice", "e-poklon-kartice", "pokloni", 1],
+    ["Pokloni za nju", "pokloni-za-nju", "pokloni", 2],
+    ["Pokloni za njega", "pokloni-za-njega", "pokloni", 3],
+  ];
+
+  for (const [name, slug, , sortOrder] of b2bCategories.filter(([, , p]) => p === null)) {
+    await db.insert(productCategoriesTable).values({ name, slug, sortOrder }).onConflictDoNothing();
+  }
+  const parentRows = await db.select().from(productCategoriesTable).orderBy(asc(productCategoriesTable.sortOrder));
+  const parentBySlug = new Map(parentRows.map((r) => [r.slug, r]));
+  for (const [name, slug, parentSlug, sortOrder] of b2bCategories.filter(([, , p]) => p !== null)) {
+    const parent = parentBySlug.get(parentSlug!);
+    if (!parent) continue;
+    await db.insert(productCategoriesTable).values({ name, slug, parentId: parent.id, sortOrder }).onConflictDoNothing();
+  }
+
+  const allCatRows = await db.select().from(productCategoriesTable);
+  const catBySlug = new Map(allCatRows.map((r) => [r.slug, r]));
+
+  // Demo B2B products: [name, brand, categorySlug, subcategorySlug, price, discountPrice|null, unit, sku, stock, isNew, isBestseller, description, variants?]
+  type ProdSeed = [string, string, string, string, number, number | null, string, string, number, boolean, boolean, string, Array<{label: string; value: string; priceAdjust?: number}> | null];
+  const products: ProdSeed[] = [
+    // KOSA — Farbanje kose
+    ["Wella Koleston Perfect 60ml", "Wella Professionals", "kosa", "farbanje-kose", 980, 820, "60 ml", "WKP-001", 48, false, true, "Permanentna oksidacijska boja sa tehnologijom ME+ za minimalnu alergijsku reakciju.", [{label:"Nijansa", value:"6/0 Tamno plava"}, {label:"Nijansa", value:"7/43 Srednje plava bakar"}]],
+    ["Schwarzkopf Blondme Blanš 450g", "Schwarzkopf Professional", "kosa", "farbanje-kose", 2190, 1890, "450 g", "SBM-002", 30, false, true, "Visokoučinkoviti prašak za osvetljavanje do 9 nijansi sa zaštitom vlakana.", null],
+    ["Matrix Hidrogen 1000ml 6%", "Matrix", "kosa", "farbanje-kose", 650, null, "1000 ml", "MHD-003", 60, false, false, "Kremasti hidrogen stabilizovane koncentracije za precizno mešanje boje.", null],
+    ["L'Oréal Professionnel Spray Boja", "L'Oréal Professionnel", "kosa", "farbanje-kose", 1450, 1190, "75 ml", "LPS-004", 24, true, false, "Direktna boja u spreju, privremena, bez amonijaka, u 12 nijansi.", [{label:"Boja", value:"Crvena"}, {label:"Boja", value:"Roze"}, {label:"Boja", value:"Zlatna"}]],
+    // KOSA — Nega kose
+    ["Kérastase Nutritive Masque 200ml", "Kérastase", "kosa", "nega-kose", 3490, null, "200 ml", "KNM-005", 20, false, true, "Intenzivna maska za suvu i neposlušnu kosu sa uljima shiea i makadamije.", null],
+    ["Olaplex No.3 Hair Perfector 100ml", "Olaplex", "kosa", "nega-kose", 3990, 3290, "100 ml", "OLP-006", 35, false, true, "Tretman za vezivanje i obnovu disulfidnih veza oštećenih vlakana kose.", null],
+    ["Redken All Soft Šampon 1000ml", "Redken", "kosa", "nega-kose", 2890, null, "1000 ml", "RAS-007", 18, false, false, "Profesionalni šampon za suvu i krtolomu kosu sa arganovim uljem.", null],
+    ["Schwarzkopf BC Moisture Kick Ampule 12x10ml", "Schwarzkopf Professional", "kosa", "nega-kose", 1890, 1590, "set 12", "SBA-008", 15, true, false, "Serum ampule za trenutnu i dubinsku hidrataciju suve kose.", null],
+    // KOSA — Stilizovanje kose
+    ["Wella EIMI Extra Volume Pena 300ml", "Wella Professionals", "kosa", "stilizovanje-kose", 1290, null, "300 ml", "WEP-009", 40, false, true, "Profesionalna pena za volumen i snažnu fiksaciju.", null],
+    ["Redken Brews Clay Pomada 100ml", "Redken", "kosa", "stilizovanje-kose", 1590, 1390, "100 ml", "RBC-010", 25, false, false, "Glinena pomada za mat završnicu sa jakim nagrizanjem.", null],
+    // KOSA — Aparati za kosu
+    ["BaByliss Pro Titanium Express Presa", "BaByliss Pro", "kosa", "aparati-za-kosu", 12900, 10900, "kom", "BBP-011", 8, false, true, "Profesionalna presa sa titanijumskim pločama i regulacijom temperature do 235°C.", [{label:"Širina ploča", value:"25mm"}, {label:"Širina ploča", value:"38mm"}]],
+    ["Wahl Cordless Magic Clip Mašinica", "Wahl", "kosa", "aparati-za-kosu", 9900, null, "kom", "WMC-012", 12, true, false, "Bežična mašinica za šišanje sa litijumskom baterijom i 5-zvezdicom presiznosti.", null],
+    ["Valera Swiss Nano 9000 Fen 2400W", "Valera", "kosa", "aparati-za-kosu", 14900, 12900, "kom", "VSN-013", 6, false, true, "Lagan DC motor fen sa ionizatorom i brzim sušenjem.", null],
+    // NOKTI — Nadogradnja noktiju
+    ["IBD Hard Gel Clear 56g", "IBD", "nokti", "nadogradnja-noktiju", 2490, null, "56 g", "IBD-014", 22, false, true, "Tvrdi UV/LED gel za nadogradnju, gradnju i ojačavanje prirodnih noktiju.", null],
+    ["Akrylicni Prah Cover Pink 100g", "Acryl One", "nokti", "nadogradnja-noktiju", 1890, 1590, "100 g", "AOC-015", 30, false, false, "Akrilatni prah roze nijanse za prirodni izgled nadogradnje.", null],
+    ["Gelish Dipping System Starter Kit", "Gelish", "nokti", "nadogradnja-noktiju", 8900, 7500, "set", "GDS-016", 10, true, false, "Kompletan starter set za dipping powder nadogradnju.", null],
+    // NOKTI — Kolor gelovi
+    ["CND Shellac UV Color Top Coat 7.3ml", "CND", "nokti", "kolor-gelovi", 1390, null, "7.3 ml", "CSC-017", 50, false, true, "UV/LED gel trajni lak u 100+ nijansi sa zaštitnim slojem.", [{label:"Nijansa", value:"Romantique"}, {label:"Nijansa", value:"Blush Teddy"}, {label:"Nijansa", value:"Antique Garnet"}]],
+    ["Luxio Color Gel 15ml", "Luxio", "nokti", "kolor-gelovi", 1690, 1390, "15 ml", "LCG-018", 40, true, false, "Samopigmentisani gel lak bez lampe, 150+ nijansi.", null],
+    // NOKTI — Nail art
+    ["Swarovski Crystal Rhinestones Mix 1440kom", "Swarovski", "nokti", "nail-art", 3900, 3200, "1440 kom", "SWR-019", 15, false, true, "Originalni Swarovski kristali različitih veličina za nail art.", null],
+    ["Mirror Chrome Powder Set 5 boja", "Moyra", "nokti", "nail-art", 1490, null, "set 5", "MCP-020", 28, true, false, "Set mirror hrom prahova za ogledalni efekat na gel laku.", null],
+    // NOKTI — Aparati za manikir
+    ["Elegante UV/LED Lampa 48W", "Elegante", "nokti", "aparati-za-manikir", 4900, 3900, "kom", "EUL-021", 18, false, true, "Profesionalna UV/LED lampa sa senzorom pokreta i tajmerom.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Roze"}]],
+    ["Frezarka Električna Turpija 35000 rpm", "Calvetti", "nokti", "aparati-za-manikir", 7900, 6500, "kom", "CET-022", 12, false, false, "Profesionalna električna turpija sa regulacijom broja obrtaja.", null],
+    // LICE & TELO — Nega lica
+    ["Mesoestetic Hydra Vital Factor K Krema 50ml", "Mesoestetic", "lice-telo", "nega-lica", 5900, null, "50 ml", "MVK-023", 15, false, true, "Intenzivna hidratantna krema za suvu i dehidriranu kožu sa faktorom K.", null],
+    ["Thalgo Collagen Aktif Serum 30ml", "Thalgo", "lice-telo", "nega-lica", 7900, 6500, "30 ml", "TCA-024", 10, false, true, "Morski kolagen serum za lifting i čvrstinu kože lica.", null],
+    ["Dermalogica Daily Microfoliant 74g", "Dermalogica", "lice-telo", "nega-lica", 5490, null, "74 g", "DDM-025", 20, false, true, "Rižin enzimski piling koji se aktivira kontaktom sa vodom.", null],
+    // LICE & TELO — Depilacija
+    ["Rica Black Pearl Vosak Za Zagrevanje 400ml", "Rica", "lice-telo", "depilacija-b2b", 1290, 990, "400 ml", "RBV-026", 36, false, true, "Topli vosak sa crnim biserom za osetljive zone.", null],
+    ["Perron Rigot Stripless Azulene Vosak 800ml", "Perron Rigot", "lice-telo", "depilacija-b2b", 2490, null, "800 ml", "PRZ-027", 24, false, false, "Premium tvrdi vosak sa azulenom za brazilsku depilaciju.", null],
+    ["Wax Roll-On Za Noge 100m", "BellaWax", "lice-telo", "depilacija-b2b", 890, 750, "100 m", "BWR-028", 50, false, false, "Netkana trola za hladno depiliranje, 100m.", null],
+    // LICE & TELO — Masaža i SPA
+    ["Decléor Aromessence Rose d'Orient Ulje 55ml", "Decléor", "lice-telo", "masaza-spa", 4900, null, "55 ml", "DAR-029", 14, false, true, "Esencijalno ulje ruže za masažu lica sa aromaterapijskim efektom.", null],
+    ["Vulkansko Kamenje Set 20 kom", "SpaStone Pro", "lice-telo", "masaza-spa", 3900, 3200, "set 20", "VSK-030", 8, false, false, "Bazaltno kamenje za hot stone masažu, razne veličine.", null],
+    ["Relaxation Massage Oil Lavender 500ml", "Biotique", "lice-telo", "masaza-spa", 1890, 1590, "500 ml", "BML-031", 30, true, false, "Profesionalno ulje za relax masažu sa lavandinim ekstraktom.", null],
+    // LICE & TELO — Pedikir
+    ["Gehwol Fusskraft Zelena 125ml", "Gehwol", "lice-telo", "pedikir", 1490, null, "125 ml", "GFZ-032", 25, false, true, "Krema za negu stopala i potkoža, zaštita od vlage i mirisa.", null],
+    ["Clou de Paris Klešta Za Pedikir", "Clou de Paris", "lice-telo", "pedikir", 3900, 3200, "kom", "CDP-033", 15, false, false, "Profesionalna klešta od nehrđajućeg čelika za urasle nokte.", null],
+    // LICE & TELO — Potrošni materijal
+    ["Jednokratne Rukavice Nitril M 100kom", "ProMed", "lice-telo", "potrosni-materijal-salone", 890, 750, "100 kom", "JRN-034", 100, false, true, "Nitrilne rukavice bez pudera, povećane elastičnosti.", null],
+    ["Jednokratni Ogrtač za Tretmane 10kom", "SalonPlus", "lice-telo", "potrosni-materijal-salone", 590, null, "10 kom", "JOT-035", 80, false, false, "Polipropilinski jednokratni ogrtač za klijente.", null],
+    // MAKEUP
+    ["MAC Lipstick Profesionalni 3g", "MAC", "makeup", "makeup-usne", 2990, null, "3 g", "MAC-036", 30, false, true, "Profesionalni ruž za usne u 200+ nijansi.", [{label:"Finish", value:"Matte"}, {label:"Finish", value:"Satin"}, {label:"Finish", value:"Amplified"}]],
+    ["NYX Pro Setting Spray 60ml", "NYX Professional", "makeup", "makeup-lice", 1490, 1190, "60 ml", "NYX-037", 40, false, false, "Profesionalni fiksator šminke koji produžava trajnost do 16h.", null],
+    ["Sigma Beauty Brush Set E55 Kompletan", "Sigma Beauty", "makeup", "cetkice-sminkanje", 8900, 7500, "set 12", "SBE-038", 10, true, true, "Set od 12 profesionalnih četkica za šminkanje, veganski dlake.", null],
+    // FOR MEN
+    ["American Crew Beard Balm 60g", "American Crew", "for-men", "brada-brkovi", 1890, null, "60 g", "ACB-039", 25, false, true, "Balzam za oblikovanje brade sa kakaovim puterom.", null],
+    ["Baxter of California Pomada Za Kosu 60ml", "Baxter of California", "for-men", "nega-kose-muskarci", 2490, 2090, "60 ml", "BCN-040", 20, false, false, "Srednje fiksaciona pomada visokog sjaja za mušku kosu.", null],
+    ["Bulldog Original Face Wash 150ml", "Bulldog", "for-men", "nega-lica-muskarci", 890, null, "150 ml", "BFW-041", 40, true, false, "Gel za čišćenje lica za muškarce sa alojom i kaolinom.", null],
+    // OPREMA ZA SALONE
+    ["Kozmetički Krevet Električni Bela", "SalonPro", "oprema-za-salone", "oprema-kozmeticki", 89900, 79900, "kom", "SKB-042", 4, false, true, "Električni kozmetički krevet sa 3 motorisane pozicije.", [{label:"Boja", value:"Bela"}, {label:"Boja", value:"Crna"}, {label:"Boja", value:"Siva"}]],
+    ["Frizerska Stolica Hydraulic Classic", "BarberStyle", "oprema-za-salone", "oprema-frizerski", 24900, 21900, "kom", "FSH-043", 6, false, false, "Hidraulična frizerska stolica na točkovima, nosivost 150kg.", [{label:"Boja", value:"Crna koža"}, {label:"Boja", value:"Bela koža"}]],
+    ["Sterilizator UV Kabinet 9W", "MedLine", "oprema-za-salone", "aparati-kozmeticki", 4900, null, "kom", "SUV-044", 15, false, true, "UV sterilizator za dezinfekciju pribora između tretmana.", null],
+    // POKLONI
+    ["LUMERA E-Poklon Kartica 2000 RSD", "LUMERA", "pokloni", "e-poklon-kartice", 2000, null, "kom", "GPK-045", 999, false, false, "Digitalna poklon kartica za korišćenje u B2B shopu.", [{label:"Vrednost", value:"2000 RSD"}, {label:"Vrednost", value:"5000 RSD"}, {label:"Vrednost", value:"10000 RSD"}]],
+    ["Beauty Box Za Nju - Starterski Set", "LUMERA", "pokloni", "pokloni-za-nju", 4900, 4200, "set", "GPZ-046", 20, true, false, "Izabrani set profesionalnih kozmetičkih proizvoda za salome dame.", null],
+    ["Gentleman Box Za Njega", "LUMERA", "pokloni", "pokloni-za-njega", 4900, null, "set", "GPN-047", 15, true, false, "Odabrani set muških preparata za negu brade, kose i lica.", null],
+  ];
+
+  const existingSkus = new Set((await db.select({ sku: productsTable.sku }).from(productsTable)).map((r) => r.sku));
+  const toInsert = products.filter(([, , , , , , , sku]) => !existingSkus.has(sku)).map(([name, brand, catSlug, subSlug, price, discountPrice, unit, sku, stock, isNew, isBestseller, description, variants]) => {
+    const cat = catBySlug.get(catSlug);
+    const sub = catBySlug.get(subSlug);
+    const parentCat = cat ? allCatRows.find((r) => r.id === cat.id) : null;
+    const parentName = parentCat?.name ?? catSlug.toUpperCase();
+    return {
+      categoryId: cat?.id ?? null,
+      categoryName: parentName,
+      subcategoryName: sub?.name ?? null,
+      name,
+      brand,
+      description,
+      imageUrl: "/lumera-media/product-1.jpg",
+      price,
+      discountPrice: discountPrice ?? null,
+      stock,
+      sku,
+      unit,
+      isNew,
+      isBestseller,
+      variants: variants ?? null,
+      active: true,
+    };
+  });
+  if (toInsert.length) await db.insert(productsTable).values(toInsert);
+}
+
 async function seedMarketplaceTaxonomy(): Promise<void> {
   const salons = await db.select().from(salonsTable);
   if (!salons.length) return;
+  await seedB2BShopTaxonomy();
   for (const [name, slug] of categories) {
     await db.insert(serviceCategoriesTable).values({
       name, slug, description: `Profesionalne ${name.toLowerCase()} usluge dostupne na LUMERA marketplace-u.`,

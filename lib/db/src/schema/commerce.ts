@@ -40,13 +40,18 @@ export const productCategoriesTable = pgTable("product_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull().unique(),
   slug: text("slug").notNull().unique(),
+  parentId: uuid("parent_id"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  icon: text("icon"),
 });
 
 export const productsTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
   categoryId: uuid("category_id").references(() => productCategoriesTable.id, { onDelete: "set null" }),
   categoryName: text("category_name").notNull(),
+  subcategoryName: text("subcategory_name"),
   name: text("name").notNull(),
+  brand: text("brand"),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),
   price: integer("price").notNull(),
@@ -54,6 +59,9 @@ export const productsTable = pgTable("products", {
   stock: integer("stock").notNull().default(0),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
+  isNew: boolean("is_new").notNull().default(false),
+  isBestseller: boolean("is_bestseller").notNull().default(false),
+  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number }>>(),
   active: boolean("active").notNull().default(true),
 });
 

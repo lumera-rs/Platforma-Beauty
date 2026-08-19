@@ -310,18 +310,51 @@ export interface ServiceInput {
   active: boolean;
 }
 
+export type ProductCategorySubcategoriesItem = {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
+};
+
+export interface ProductCategory {
+  id: string;
+  name: string;
+  slug: string;
+  sortOrder: number;
+  /** @nullable */
+  icon?: string | null;
+  subcategories: ProductCategorySubcategoriesItem[];
+}
+
+export type ProductVariantsItem = {
+  label: string;
+  value: string;
+  priceAdjust?: number;
+};
+
 export interface Product {
   id: string;
   name: string;
   category: string;
+  /** @nullable */
+  subcategory?: string | null;
+  /** @nullable */
+  brand?: string | null;
   description: string;
   imageUrl: string;
   price: number;
   /** @nullable */
   discountPrice?: number | null;
+  /** @nullable */
+  discountPercent?: number | null;
   stock: number;
   sku: string;
   unit: string;
+  isNew: boolean;
+  isBestseller: boolean;
+  /** @nullable */
+  variants?: ProductVariantsItem[] | null;
 }
 
 export interface ShopSummary {
@@ -886,7 +919,12 @@ status?: string;
 
 export type ListProductsParams = {
 category?: string;
+subcategory?: string;
+brand?: string;
 search?: string;
+onSale?: boolean;
+isNew?: boolean;
+isBestseller?: boolean;
 };
 
 export type ListCoursesParams = {

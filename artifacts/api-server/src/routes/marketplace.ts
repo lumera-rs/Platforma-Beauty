@@ -17,6 +17,7 @@ import {
   loyaltyTiersTable,
   orderItemsTable,
   ordersTable,
+  productCategoriesTable,
   productsTable,
   productBrandsTable,
   reviewsTable,
@@ -101,6 +102,7 @@ import {
   ListMyAppointmentsQueryParams,
   ListMyAppointmentsResponse,
   ListOrdersResponse,
+  ListProductCategoriesResponse,
   ListProductsQueryParams,
   ListProductsResponse,
   ListSalonAppointmentsQueryParams,
@@ -937,14 +939,44 @@ async function loyaltyStatus(salonId: string) {
   return GetLoyaltyStatusResponse.parse({ currentTier: current.name, monthlySpend: spend, tierThreshold: current.spendThreshold, amountToNextTier: next ? Math.max(next.spendThreshold - spend, 0) : 0, nextTier: next?.name ?? null, subscriptionDue: due, subscriptionDiscountPercent: current.subscriptionDiscountPercent, productDiscountPercent: current.productDiscountPercent, benefits: current.benefits, freeSubscription: current.freeSubscription });
 }
 
+router.get("/shop/categories", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  void access;
+  const allCats = await db.select().from(productCategoriesTable).orderBy(asc(productCategoriesTable.sortOrder));
+  const parents = allCats.filter((c) => !c.parentId);
+  const result = parents.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    sortOrder: p.sortOrder,
+    icon: p.icon ?? null,
+    subcategories: allCats
+      .filter((c) => c.parentId === p.id)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((c) => ({ id: c.id, name: c.name, slug: c.slug, sortOrder: c.sortOrder })),
+  }));
+  res.json(ListProductCategoriesResponse.parse(result));
+});
+
 router.get("/shop/products", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const parsed = ListProductsQueryParams.safeParse(req.query);
+  const normalized = normalizeBooleanQuery(req.query, ["onSale", "isNew", "isBestseller"]);
+  if (!normalized) { res.status(400).json({ error: "Invalid boolean filter" }); return; }
+  const parsed = ListProductsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let products = await db.select().from(productsTable).where(eq(productsTable.active, true));
-  if (parsed.data.category) products = products.filter((item) => item.categoryName === parsed.data.category);
-  if (parsed.data.search) products = products.filter((item) => `${item.name} ${item.description}`.toLowerCase().includes(parsed.data.search!.toLowerCase()));
-  res.json(ListProductsResponse.parse(products.map((item) => ({ id: item.id, name: item.name, category: item.categoryName, description: item.description, imageUrl: item.imageUrl, price: item.price, discountPrice: item.discountPrice, stock: item.stock, sku: item.sku, unit: item.unit }))));
+  const q = parsed.data;
+  if (q.category) products = products.filter((item) => item.categoryName === q.category);
+  if (q.subcategory) products = products.filter((item) => item.subcategoryName === q.subcategory);
+  if (q.brand) products = products.filter((item) => item.brand?.toLowerCase() === q.brand!.toLowerCase());
+  if (q.search) products = products.filter((item) => `${item.name} ${item.description} ${item.brand ?? ""}`.toLowerCase().includes(q.search!.toLowerCase()));
+  if (q.onSale) products = products.filter((item) => item.discountPrice != null);
+  if (q.isNew) products = products.filter((item) => item.isNew);
+  if (q.isBestseller) products = products.filter((item) => item.isBestseller);
+  res.json(ListProductsResponse.parse(products.map((item) => {
+    const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
+    return { id: item.id, name: item.name, category: item.categoryName, subcategory: item.subcategoryName ?? null, brand: item.brand ?? null, description: item.description, imageUrl: item.imageUrl, price: item.price, discountPrice: item.discountPrice ?? null, discountPercent, stock: item.stock, sku: item.sku, unit: item.unit, isNew: item.isNew, isBestseller: item.isBestseller, variants: item.variants ?? null };
+  })));
 });
 
 router.get("/loyalty/status", async (req, res): Promise<void> => {

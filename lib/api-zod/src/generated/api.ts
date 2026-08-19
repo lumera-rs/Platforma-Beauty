@@ -708,24 +708,58 @@ export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseIt
 
 
 /**
+ * @summary List B2B product category tree
+ */
+export const ListProductCategoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "sortOrder": zod.number(),
+  "icon": zod.string().nullish(),
+  "subcategories": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "sortOrder": zod.number()
+}))
+})
+export const ListProductCategoriesResponse = zod.array(ListProductCategoriesResponseItem)
+
+
+/**
  * @summary List professional products
  */
 export const ListProductsQueryParams = zod.object({
   "category": zod.coerce.string().optional(),
-  "search": zod.coerce.string().optional()
+  "subcategory": zod.coerce.string().optional(),
+  "brand": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional(),
+  "onSale": zod.coerce.boolean().optional(),
+  "isNew": zod.coerce.boolean().optional(),
+  "isBestseller": zod.coerce.boolean().optional()
 })
 
 export const ListProductsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
+  "subcategory": zod.string().nullish(),
+  "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
   "price": zod.number(),
   "discountPrice": zod.number().nullish(),
+  "discountPercent": zod.number().nullish(),
   "stock": zod.number(),
   "sku": zod.string(),
-  "unit": zod.string()
+  "unit": zod.string(),
+  "isNew": zod.boolean(),
+  "isBestseller": zod.boolean(),
+  "variants": zod.array(zod.object({
+  "label": zod.string(),
+  "value": zod.string(),
+  "priceAdjust": zod.number().optional()
+})).nullish()
 })
 export const ListProductsResponse = zod.array(ListProductsResponseItem)
 
