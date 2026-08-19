@@ -1,7 +1,7 @@
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Search, Sparkles, MapPin, Star, CalendarDays, ArrowRight } from "lucide-react";
+import { Search, MapPin, Star, CalendarDays, ArrowRight } from "lucide-react";
 import { useListSalons } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -142,25 +142,17 @@ export default function Home() {
         </div>
       </section>
       
-      {/* B2B / Pro CTA Section */}
-      <section className="py-24 bg-primary text-primary-foreground relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10 bg-[url('https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=2669&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay"></div>
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-2xl">
-            <h2 className="text-4xl md:text-5xl font-serif font-bold mb-6">Vlasnik ste salona?</h2>
-            <p className="text-lg md:text-xl text-primary-foreground/80 mb-10 font-light leading-relaxed">
-              Pridružite se platformi i unapredite svoje poslovanje. Zakažite više termina, upravljajte timom i nabavljajte profesionalnu opremu po povlašćenim B2B cenama kroz naš loyalty program.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <Button size="lg" variant="secondary" className="h-12 px-8 text-primary" asChild>
-                <Link href="/prijava?tab=register">Postani partner</Link>
-              </Button>
-              <Button size="lg" variant="outline" className="h-12 px-8 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10" asChild>
-                <Link href="/vlasnik/shop">Pregledaj B2B shop</Link>
-              </Button>
-            </div>
+      <section className="py-20 bg-primary text-primary-foreground">
+        <div className="container mx-auto px-4 text-center">
+          <CalendarDays className="mx-auto h-10 w-10 mb-5 text-primary-foreground/80" />
+          <h2 className="text-4xl md:text-5xl font-serif font-bold mb-5">Vaš sledeći termin je bliže nego što mislite.</h2>
+          <p className="text-lg text-primary-foreground/80 mb-8 max-w-2xl mx-auto">
+            Uporedite usluge, proverite slobodne termine i rezervišite vreme za sebe na jednom mestu.
+          </p>
+          <Button size="lg" variant="secondary" className="h-12 px-8 text-primary" asChild>
+            <Link href="/saloni">Pronađi salon</Link>
+          </Button>
           </div>
-        </div>
       </section>
     </Layout>
   );

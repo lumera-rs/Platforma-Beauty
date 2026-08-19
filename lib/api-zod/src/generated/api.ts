@@ -17,7 +17,7 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary Register a user account
+ * @summary Register a customer account
  */
 
 
@@ -30,11 +30,56 @@ export const RegisterBody = zod.object({
   "lastName": zod.string().min(1),
   "email": zod.string(),
   "password": zod.string().min(registerBodyPasswordMin),
-  "phone": zod.string().optional(),
-  "role": zod.enum(['CUSTOMER', 'SALON_OWNER', 'EDUCATION_CENTER_OWNER']).optional()
+  "phone": zod.string().optional()
 })
 
 export const RegisterResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean()
+}),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Register a salon or education-center owner
+ */
+
+
+export const registerBusinessBodyPasswordMin = 8;
+
+export const registerBusinessBodyPhoneMin = 6;
+
+export const registerBusinessBodyBusinessNameMin = 2;
+
+export const registerBusinessBodyCityMin = 2;
+
+export const registerBusinessBodyMunicipalityMin = 2;
+
+export const registerBusinessBodyAddressMin = 3;
+
+
+
+export const RegisterBusinessBody = zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().min(1),
+  "email": zod.string(),
+  "password": zod.string().min(registerBusinessBodyPasswordMin),
+  "phone": zod.string().min(registerBusinessBodyPhoneMin),
+  "businessType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
+  "city": zod.string().min(registerBusinessBodyCityMin),
+  "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
+  "address": zod.string().min(registerBusinessBodyAddressMin)
+})
+
+export const RegisterBusinessResponse = zod.object({
   "user": zod.object({
   "id": zod.string(),
   "firstName": zod.string(),

@@ -1,4 +1,4 @@
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Star, TrendingUp, Gift, Award, Check } from "lucide-react";
@@ -10,7 +10,7 @@ export default function OwnerLoyalty() {
   const { data: status, isLoading } = useGetLoyaltyStatus({ query: { enabled: !!userResp?.user, queryKey: getGetLoyaltyStatusQueryKey() }});
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/loyalty" />
         
@@ -81,6 +81,6 @@ export default function OwnerLoyalty() {
           )}
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   )
 }

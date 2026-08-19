@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { User, LogOut, Menu, X, Scissors, Calendar, LayoutDashboard, ShoppingBag, Award, GraduationCap, ChevronDown } from "lucide-react";
+import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, GraduationCap, ChevronDown, Heart, Settings, BriefcaseBusiness } from "lucide-react";
 import { Button } from "./ui/button";
 import { useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { homeForRole } from "@/lib/role-routing";
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
@@ -28,7 +29,6 @@ export function Navbar() {
   const navLinks = [
     { href: "/saloni", label: "Saloni" },
     { href: "/edukacije", label: "Edukacije" },
-    { href: "/vlasnik/shop", label: "Oprema (B2B)" },
   ];
 
   return (
@@ -59,6 +59,10 @@ export function Navbar() {
 
         <div className="flex items-center gap-4">
           <div className="hidden md:flex items-center gap-4">
+            <Link href="/za-biznise" className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-colors">
+              <BriefcaseBusiness className="h-3.5 w-3.5" />
+              Za salone i biznise
+            </Link>
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -77,28 +81,32 @@ export function Navbar() {
                     <p className="font-medium">{user.firstName} {user.lastName}</p>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </div>
-                  {user.role === 'SALON_OWNER' && (
+                  {user.role === 'CUSTOMER' && (
                     <>
-                      <DropdownMenuItem onClick={() => setLocation('/vlasnik')}>
-                        <LayoutDashboard className="mr-2 h-4 w-4" />
-                        Dashboard
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setLocation('/vlasnik/kalendar')}>
+                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=appointments')}>
                         <Calendar className="mr-2 h-4 w-4" />
-                        Kalendar
+                        Moji termini
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setLocation('/vlasnik/shop')}>
-                        <ShoppingBag className="mr-2 h-4 w-4" />
-                        Shop
+                      <DropdownMenuItem onClick={() => setLocation('/edukacije')}>
+                        <GraduationCap className="mr-2 h-4 w-4" />
+                        Moje edukacije
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=favorites')}>
+                        <Heart className="mr-2 h-4 w-4" />
+                        Omiljeni saloni
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=settings')}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Profil
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
                   )}
-                  {user.role === 'CUSTOMER' && (
+                  {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
                     <>
-                      <DropdownMenuItem onClick={() => setLocation('/moj-nalog')}>
-                        <User className="mr-2 h-4 w-4" />
-                        Moj nalog
+                      <DropdownMenuItem onClick={() => setLocation(homeForRole(user.role))}>
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Poslovni portal
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
@@ -158,20 +166,27 @@ export function Navbar() {
                 {link.label}
               </Link>
             ))}
+            <Link href="/za-biznise" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={() => setIsMobileMenuOpen(false)}>
+              <BriefcaseBusiness className="h-4 w-4" />
+              Za salone i biznise
+            </Link>
             
             <div className="h-px bg-border my-2" />
             
             {user ? (
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-muted-foreground px-2 py-1">Ulogovani ste kao {user.firstName}</p>
-                {user.role === 'SALON_OWNER' && (
-                  <Link href="/vlasnik" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
-                    Dashboard
-                  </Link>
-                )}
                 {user.role === 'CUSTOMER' && (
-                  <Link href="/moj-nalog" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
-                    Moj nalog
+                  <>
+                    <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Moji termini</Link>
+                    <Link href="/edukacije" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Moje edukacije</Link>
+                    <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Omiljeni saloni</Link>
+                    <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Profil</Link>
+                  </>
+                )}
+                {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
+                  <Link href={homeForRole(user.role)} className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
+                    Poslovni portal
                   </Link>
                 )}
                 {(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (

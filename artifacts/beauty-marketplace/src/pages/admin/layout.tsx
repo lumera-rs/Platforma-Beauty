@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -33,11 +33,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
   if (isLoading || !userResp?.user) {
     return (
-      <Layout>
+      <BusinessLayout>
         <div className="flex justify-center p-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" data-testid="admin-loading" />
         </div>
-      </Layout>
+      </BusinessLayout>
     );
   }
 
@@ -65,7 +65,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         {/* Mobile Header */}
         <div className="md:hidden w-full flex items-center justify-between bg-card p-4 rounded-xl border shadow-sm mb-4">
@@ -95,6 +95,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           {children}
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   );
 }

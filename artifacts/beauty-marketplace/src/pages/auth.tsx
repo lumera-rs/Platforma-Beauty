@@ -1,17 +1,18 @@
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
-import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { homeForRole } from "@/lib/role-routing";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Unesite validnu email adresu" }),
@@ -23,11 +24,10 @@ const registerSchema = z.object({
   lastName: z.string().min(1, { message: "Prezime je obavezno" }),
   email: z.string().email({ message: "Unesite validnu email adresu" }),
   password: z.string().min(8, { message: "Lozinka mora imati najmanje 8 karaktera" }),
-  role: z.enum(["CUSTOMER", "SALON_OWNER", "EDUCATION_CENTER_OWNER"]).default("CUSTOMER"),
 });
 
 export default function Login() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
   const tab = searchParams.get("tab") === "register" ? "register" : "login";
   
@@ -40,10 +40,7 @@ export default function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (userResp?.user) {
-      if (userResp.user.role === "SALON_OWNER") setLocation("/vlasnik");
-      else if (userResp.user.role === "CUSTOMER") setLocation("/moj-nalog");
-      else if (userResp.user.role === "SUPER_ADMIN") setLocation("/admin");
-      else setLocation("/");
+      setLocation(homeForRole(userResp.user.role));
     }
   }, [userResp, setLocation]);
 
@@ -54,16 +51,14 @@ export default function Login() {
 
   const registerForm = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { firstName: "", lastName: "", email: "", password: "", role: "CUSTOMER" },
+    defaultValues: { firstName: "", lastName: "", email: "", password: "" },
   });
 
   const onLoginSubmit = (values: z.infer<typeof loginSchema>) => {
     loginMutation.mutate({ data: values }, {
       onSuccess: (res) => {
         toast.success("Uspešna prijava", { description: "Dobrodošli nazad!" });
-        if (res.user.role === "SALON_OWNER") setLocation("/vlasnik");
-        else if (res.user.role === "CUSTOMER") setLocation("/moj-nalog");
-        else setLocation("/");
+        setLocation(homeForRole(res.user.role));
       },
       onError: (err) => {
         toast.error("Greška", { description: "Neispravni podaci. Pokušajte ponovo." });
@@ -74,10 +69,8 @@ export default function Login() {
   const onRegisterSubmit = (values: z.infer<typeof registerSchema>) => {
     registerMutation.mutate({ data: values }, {
       onSuccess: (res) => {
-        toast.success("Uspešna registracija", { description: "Vaš nalog je kreiran!" });
-        if (res.user.role === "SALON_OWNER") setLocation("/vlasnik");
-        else if (res.user.role === "CUSTOMER") setLocation("/moj-nalog");
-        else setLocation("/");
+        toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
+        setLocation(homeForRole(res.user.role));
       },
       onError: (err) => {
         toast.error("Greška", { description: "Došlo je do greške prilikom registracije." });
@@ -112,7 +105,7 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input placeholder="vas@email.com" {...field} />
+                            <Input type="email" autoComplete="email" placeholder="vas@email.com" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -125,7 +118,7 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Lozinka</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} />
+                            <Input type="password" autoComplete="current-password" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -149,7 +142,7 @@ export default function Login() {
                           <FormItem>
                             <FormLabel>Ime</FormLabel>
                             <FormControl>
-                              <Input placeholder="Ime" {...field} />
+                              <Input autoComplete="given-name" placeholder="Ime" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -162,7 +155,7 @@ export default function Login() {
                           <FormItem>
                             <FormLabel>Prezime</FormLabel>
                             <FormControl>
-                              <Input placeholder="Prezime" {...field} />
+                              <Input autoComplete="family-name" placeholder="Prezime" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -176,7 +169,7 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Email</FormLabel>
                           <FormControl>
-                            <Input placeholder="vas@email.com" {...field} />
+                            <Input type="email" autoComplete="email" placeholder="vas@email.com" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -189,30 +182,9 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Lozinka (min. 8 karaktera)</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} />
+                            <Input type="password" autoComplete="new-password" {...field} />
                           </FormControl>
                           <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={registerForm.control}
-                      name="role"
-                      render={({ field }) => (
-                        <FormItem className="pt-2">
-                          <FormLabel>Vrsta naloga</FormLabel>
-                          <div className="grid grid-cols-2 gap-3 mt-1">
-                            <label className={`border rounded-lg p-3 text-sm flex flex-col items-center gap-2 cursor-pointer transition-colors ${field.value === 'CUSTOMER' ? 'bg-primary/5 border-primary text-primary' : 'hover:bg-muted'}`}>
-                              <input type="radio" value="CUSTOMER" checked={field.value === 'CUSTOMER'} onChange={(e) => field.onChange(e.target.value)} className="sr-only" />
-                              <span className="font-medium">Klijent</span>
-                              <span className="text-xs text-center opacity-70">Želim da zakažem termin</span>
-                            </label>
-                            <label className={`border rounded-lg p-3 text-sm flex flex-col items-center gap-2 cursor-pointer transition-colors ${field.value === 'SALON_OWNER' ? 'bg-primary/5 border-primary text-primary' : 'hover:bg-muted'}`}>
-                              <input type="radio" value="SALON_OWNER" checked={field.value === 'SALON_OWNER'} onChange={(e) => field.onChange(e.target.value)} className="sr-only" />
-                              <span className="font-medium">Partner</span>
-                              <span className="text-xs text-center opacity-70">Vlasnik sam salona</span>
-                            </label>
-                          </div>
                         </FormItem>
                       )}
                     />
@@ -223,6 +195,12 @@ export default function Login() {
                 </Form>
               </TabsContent>
             </Tabs>
+            <div className="mt-6 border-t pt-5 text-center text-sm text-muted-foreground">
+              Imate salon ili edukativni centar?{" "}
+              <Link href="/poslovna-prijava" className="font-semibold text-primary hover:underline">
+                Poslovni pristup
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>

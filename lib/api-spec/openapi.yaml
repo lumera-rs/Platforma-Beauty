@@ -35,7 +35,7 @@ paths:
     post:
       operationId: register
       tags: [auth]
-      summary: Register a user account
+      summary: Register a customer account
       requestBody:
         required: true
         content:
@@ -45,6 +45,24 @@ paths:
       responses:
         "201":
           description: Registered user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+  /auth/business-register:
+    post:
+      operationId: registerBusiness
+      tags: [auth]
+      summary: Register a salon or education-center owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessRegistrationInput"
+      responses:
+        "201":
+          description: Registered business owner
           content:
             application/json:
               schema:
@@ -858,10 +876,23 @@ components:
         email: { type: string }
         password: { type: string, minLength: 8 }
         phone: { type: string }
-        role:
-          type: string
-          enum: [CUSTOMER, SALON_OWNER, EDUCATION_CENTER_OWNER]
       required: [firstName, lastName, email, password]
+    BusinessRegistrationInput:
+      type: object
+      properties:
+        firstName: { type: string, minLength: 1 }
+        lastName: { type: string, minLength: 1 }
+        email: { type: string }
+        password: { type: string, minLength: 8 }
+        phone: { type: string, minLength: 6 }
+        businessType:
+          type: string
+          enum: [SALON, EDUCATION_CENTER]
+        businessName: { type: string, minLength: 2 }
+        city: { type: string, minLength: 2 }
+        municipality: { type: string, minLength: 2 }
+        address: { type: string, minLength: 3 }
+      required: [firstName, lastName, email, password, phone, businessType, businessName, city, municipality, address]
     LoginInput:
       type: object
       properties:

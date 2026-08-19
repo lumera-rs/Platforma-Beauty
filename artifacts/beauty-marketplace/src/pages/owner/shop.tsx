@@ -1,4 +1,4 @@
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { useListProducts, useGetShopSummary, useCreateOrder, useGetCurrentUser, getGetShopSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +50,7 @@ export default function OwnerShop() {
   };
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/shop" />
         
@@ -172,6 +172,6 @@ export default function OwnerShop() {
           </div>
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   );
 }

@@ -33,15 +33,6 @@ export interface User {
   active: boolean;
 }
 
-export type RegisterInputRole = typeof RegisterInputRole[keyof typeof RegisterInputRole];
-
-
-export const RegisterInputRole = {
-  CUSTOMER: 'CUSTOMER',
-  SALON_OWNER: 'SALON_OWNER',
-  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
-} as const;
-
 export interface RegisterInput {
   /** @minLength 1 */
   firstName: string;
@@ -51,7 +42,35 @@ export interface RegisterInput {
   /** @minLength 8 */
   password: string;
   phone?: string;
-  role?: RegisterInputRole;
+}
+
+export type BusinessRegistrationInputBusinessType = typeof BusinessRegistrationInputBusinessType[keyof typeof BusinessRegistrationInputBusinessType];
+
+
+export const BusinessRegistrationInputBusinessType = {
+  SALON: 'SALON',
+  EDUCATION_CENTER: 'EDUCATION_CENTER',
+} as const;
+
+export interface BusinessRegistrationInput {
+  /** @minLength 1 */
+  firstName: string;
+  /** @minLength 1 */
+  lastName: string;
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  /** @minLength 6 */
+  phone: string;
+  businessType: BusinessRegistrationInputBusinessType;
+  /** @minLength 2 */
+  businessName: string;
+  /** @minLength 2 */
+  city: string;
+  /** @minLength 2 */
+  municipality: string;
+  /** @minLength 3 */
+  address: string;
 }
 
 export interface LoginInput {

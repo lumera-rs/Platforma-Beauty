@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useGetCurrentUser } from '@workspace/api-client-react';
+import { useGetCurrentUser, type UserRole } from '@workspace/api-client-react';
 import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -15,6 +15,9 @@ import {
 // Pages
 import Home from './pages/home';
 import Auth from './pages/auth';
+import BusinessAuth from './pages/business-auth';
+import BusinessLanding from './pages/business-landing';
+import BusinessHub from './pages/business-hub';
 import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
 import CustomerDashboard from './pages/customer-dashboard';
@@ -30,6 +33,7 @@ import AdminLoyalty from './pages/admin/loyalty';
 import AdminSubscriptions from './pages/admin/subscriptions';
 import AdminReviews from './pages/admin/reviews';
 import { Layout } from './components/layout';
+import { homeForRole } from './lib/role-routing';
 
 const queryClient = new QueryClient();
 
@@ -59,26 +63,31 @@ function PlaceholderPage({ title }: { title: string }) {
   )
 }
 
-function AdminGuard({ children }: { children: ReactNode }) {
+function RoleGuard({
+  children,
+  allowedRoles,
+  loginPath,
+}: {
+  children: ReactNode;
+  allowedRoles: UserRole[];
+  loginPath: string;
+}) {
   const [, setLocation] = useLocation();
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+  const allowed = user ? allowedRoles.includes(user.role) : false;
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user) setLocation('/prijava');
-    else if (user.role === 'CUSTOMER') setLocation('/moj-nalog');
-    else if (!isAdmin) setLocation('/');
-  }, [isAdmin, isLoading, setLocation, user]);
+    if (!user) setLocation(loginPath);
+    else if (!allowed) setLocation(homeForRole(user.role));
+  }, [allowed, isLoading, loginPath, setLocation, user]);
 
-  if (isLoading || !isAdmin) {
+  if (isLoading || !allowed) {
     return (
-      <Layout>
-        <div className="flex min-h-[50vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="admin-route-loading" />
-        </div>
-      </Layout>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="protected-route-loading" />
+      </div>
     );
   }
 
@@ -91,24 +100,36 @@ function Router() {
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/prijava" component={Auth} />
+        <Route path="/za-biznise" component={BusinessLanding} />
+        <Route path="/poslovna-prijava"><BusinessAuth initialTab="login" /></Route>
+        <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
         <Route path="/saloni" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
-        <Route path="/moj-nalog" component={CustomerDashboard} />
+        <Route path="/moj-nalog">
+          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+            <CustomerDashboard />
+          </RoleGuard>
+        </Route>
+        <Route path="/biznis">
+          <RoleGuard allowedRoles={['EDUCATION_CENTER_OWNER']} loginPath="/poslovna-prijava">
+            <BusinessHub />
+          </RoleGuard>
+        </Route>
         
-        <Route path="/vlasnik" component={OwnerDashboard} />
-        <Route path="/vlasnik/kalendar" component={OwnerCalendar} />
-        <Route path="/vlasnik/usluge" component={OwnerServices} />
-        <Route path="/vlasnik/shop" component={OwnerShop} />
-        <Route path="/vlasnik/loyalty" component={OwnerLoyalty} />
+        <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
+        <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+        <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
+        <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
         <Route path="/edukacije"><PlaceholderPage title="Edukacije" /></Route>
 
-        <Route path="/admin"><AdminGuard><AdminDashboard /></AdminGuard></Route>
-        <Route path="/admin/saloni"><AdminGuard><AdminSalons /></AdminGuard></Route>
-        <Route path="/admin/korisnici"><AdminGuard><AdminUsers /></AdminGuard></Route>
-        <Route path="/admin/loyalty"><AdminGuard><AdminLoyalty /></AdminGuard></Route>
-        <Route path="/admin/pretplate"><AdminGuard><AdminSubscriptions /></AdminGuard></Route>
-        <Route path="/admin/recenzije"><AdminGuard><AdminReviews /></AdminGuard></Route>
+        <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
+        <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
+        <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
+        <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
+        <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
         
         <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>
         <Route path="/politika-privatnosti"><PlaceholderPage title="Politika privatnosti" /></Route>

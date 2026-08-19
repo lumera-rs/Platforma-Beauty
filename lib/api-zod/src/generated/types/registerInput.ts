@@ -5,7 +5,6 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { RegisterInputRole } from './registerInputRole';
 
 export interface RegisterInput {
   /** @minLength 1 */
@@ -16,5 +15,4 @@ export interface RegisterInput {
   /** @minLength 8 */
   password: string;
   phone?: string;
-  role?: RegisterInputRole;
 }

@@ -26,6 +26,8 @@ export default function CustomerDashboard() {
   const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(undefined) }});
   
   const cancelMutation = useCancelAppointment();
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  const activeTab = requestedTab === "favorites" || requestedTab === "settings" ? requestedTab : "appointments";
 
   const handleCancel = (id: string) => {
     if(confirm("Da li ste sigurni da želite da otkažete termin?")) {
@@ -97,7 +99,7 @@ export default function CustomerDashboard() {
           </Card>
         </div>
 
-        <Tabs defaultValue="appointments" className="w-full">
+        <Tabs value={activeTab} onValueChange={(tab) => setLocation(`/moj-nalog?tab=${tab}`)} className="w-full">
           <TabsList className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto">
             <TabsTrigger value="appointments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Termini

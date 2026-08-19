@@ -1,4 +1,4 @@
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
 import { useEffect } from "react";
@@ -44,11 +44,11 @@ export default function OwnerDashboard() {
 
   const { data: dash, isLoading } = useGetSalonDashboard({ query: { enabled: !!userResp?.user && userResp.user.role === 'SALON_OWNER', queryKey: getGetSalonDashboardQueryKey() } });
 
-  if (isUserLoading || isLoading) return <Layout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin" /></div></Layout>;
+  if (isUserLoading || isLoading) return <BusinessLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin" /></div></BusinessLayout>;
   if (!dash) return null;
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik" />
         
@@ -137,6 +137,6 @@ export default function OwnerDashboard() {
           
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   );
 }

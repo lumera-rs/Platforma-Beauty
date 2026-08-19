@@ -77,6 +77,7 @@ import {
   ListSalonsResponse,
   LoginBody,
   LoginResponse,
+  RegisterBusinessBody,
   RegisterBody,
   RegisterResponse,
   ToggleFavoriteBody,
@@ -126,6 +127,50 @@ async function current(req: Request, res: Response) {
 async function ownedSalon(userId: string) {
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).limit(1);
   return salon ?? null;
+}
+
+async function employeeInSalon(employeeId: string, salonId: string) {
+  const [employee] = await db
+    .select()
+    .from(employeesTable)
+    .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.salonId, salonId)))
+    .limit(1);
+  return employee ?? null;
+}
+
+async function requireCustomer(req: Request, res: Response) {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (user.role !== "CUSTOMER") {
+    res.status(403).json({ error: "Ova funkcija je dostupna samo klijentima." });
+    return null;
+  }
+  return user;
+}
+
+async function requireSalonOwner(req: Request, res: Response) {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (user.role !== "SALON_OWNER") {
+    res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." });
+    return null;
+  }
+  const salon = await ownedSalon(user.id);
+  if (!salon) {
+    res.status(403).json({ error: "Nalog nije povezan sa salonom." });
+    return null;
+  }
+  return { user, salon };
+}
+
+function businessSlug(name: string, userId: string) {
+  const base = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "partner";
+  return `${base}-${userId.slice(0, 8)}`;
 }
 
 function card(salon: typeof salonsTable.$inferSelect, services: (typeof servicesTable.$inferSelect)[] = []) {
@@ -212,11 +257,72 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     email: parsed.data.email.toLowerCase(),
     phone: parsed.data.phone ?? null,
     passwordHash: await hashPassword(parsed.data.password),
-    role: parsed.data.role ?? "CUSTOMER",
+    role: "CUSTOMER",
   }).returning();
   const token = await createSession(user!.id);
   res.cookie(sessionCookieName, token, cookieOptions());
   res.status(201).json(RegisterResponse.parse({ user: publicUser(user!), message: "Dobro došli u Lumeru." }));
+});
+
+router.post("/auth/business-register", async (req, res): Promise<void> => {
+  await ensureDemoData();
+  const parsed = RegisterBusinessBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const input = parsed.data;
+  const email = input.email.toLowerCase();
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  if (existing) { res.status(409).json({ error: "Nalog sa ovom e-mail adresom već postoji." }); return; }
+
+  try {
+    const user = await db.transaction(async (tx) => {
+      const role = input.businessType === "SALON" ? "SALON_OWNER" : "EDUCATION_CENTER_OWNER";
+      const [created] = await tx.insert(usersTable).values({
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email,
+        phone: input.phone,
+        passwordHash: await hashPassword(input.password),
+        role,
+      }).returning();
+
+      if (input.businessType === "SALON") {
+        await tx.insert(salonsTable).values({
+          ownerId: created!.id,
+          name: input.businessName,
+          slug: businessSlug(input.businessName, created!.id),
+          city: input.city,
+          municipality: input.municipality,
+          address: input.address,
+          phone: input.phone,
+          email,
+          shortDescription: `${input.businessName} je novi LUMERA partner.`,
+          description: `Poslovni profil za ${input.businessName}. Dopunite ponudu, tim i radno vreme iz poslovnog portala.`,
+          imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=1200&auto=format&fit=crop",
+          active: false,
+        });
+      } else {
+        await tx.insert(educationCentersTable).values({
+          ownerId: created!.id,
+          name: input.businessName,
+          city: input.city,
+          description: `Edukativni centar ${input.businessName} na LUMERA platformi.`,
+          imageUrl: "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?q=80&w=1200&auto=format&fit=crop",
+        });
+      }
+
+      return created!;
+    });
+
+    const token = await createSession(user.id);
+    res.cookie(sessionCookieName, token, cookieOptions());
+    res.status(201).json(RegisterResponse.parse({ user: publicUser(user), message: "Poslovni nalog je kreiran." }));
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "Nalog ili poslovni profil sa ovim podacima već postoji." });
+      return;
+    }
+    throw error;
+  }
 });
 
 router.post("/auth/login", async (req, res): Promise<void> => {
@@ -313,7 +419,7 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
 });
 
 router.get("/appointments", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const parsed = ListMyAppointmentsQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let appointments = await appointmentList(eq(appointmentsTable.customerId, user.id));
@@ -324,13 +430,15 @@ router.get("/appointments", async (req, res): Promise<void> => {
 });
 
 router.post("/appointments", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const parsed = CreateAppointmentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, parsed.data.salonId))).limit(1);
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, parsed.data.salonId)).limit(1);
   if (!service || !salon) { res.status(404).json({ error: "Salon ili usluga nisu pronađeni." }); return; }
-  const [employee] = parsed.data.employeeId ? await db.select().from(employeesTable).where(eq(employeesTable.id, parsed.data.employeeId)).limit(1) : await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)).limit(1);
+  const employee = parsed.data.employeeId
+    ? await employeeInSalon(parsed.data.employeeId, salon.id)
+    : (await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)).limit(1))[0] ?? null;
   if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
   const startHour = Number(parsed.data.startTime.slice(0, 2));
   const endTime = `${String(startHour + Math.ceil(service.durationMinutes / 60)).padStart(2, "0")}:00`;
@@ -345,11 +453,15 @@ router.post("/appointments", async (req, res): Promise<void> => {
 });
 
 router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [UpdateAppointmentParams.safeParse(req.params), UpdateAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return; }
   const [appointment] = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.customerId, user.id))).limit(1);
   if (!appointment) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
+  if (body.data.employeeId && !(await employeeInSalon(body.data.employeeId, appointment.salonId))) {
+    res.status(400).json({ error: "Izabrani zaposleni ne pripada ovom salonu." });
+    return;
+  }
   const [updated] = await db.update(appointmentsTable).set({ date: body.data.date ? calendarDate(body.data.date) : appointment.date, startTime: body.data.startTime ?? appointment.startTime, employeeId: body.data.employeeId ?? appointment.employeeId, notes: body.data.notes ?? appointment.notes }).where(eq(appointmentsTable.id, appointment.id)).returning();
   const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
   const [employee] = updated!.employeeId ? await db.select().from(employeesTable).where(eq(employeesTable.id, updated!.employeeId)).limit(1) : [];
@@ -357,7 +469,7 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
 });
 
 router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [CancelAppointmentParams.safeParse(req.params), CancelAppointmentBody.safeParse(req.body ?? {})];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za otkazivanje nisu ispravni." }); return; }
   const [appointment] = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: body.data.reason ?? null }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.customerId, user.id))).returning();
@@ -367,7 +479,7 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
 });
 
 router.get("/customer/dashboard", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const appointments = await appointmentList(eq(appointmentsTable.customerId, user.id));
   const salons = await db.select().from(salonsTable).limit(3);
   const favorites = await db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id));
@@ -375,14 +487,14 @@ router.get("/customer/dashboard", async (req, res): Promise<void> => {
 });
 
 router.get("/customer/favorites", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const favorites = await db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id));
   const salons = favorites.length ? await db.select().from(salonsTable).where(inArray(salonsTable.id, favorites.map((item) => item.salonId))) : [];
   res.json(ListFavoritesResponse.parse(await salonCards(salons)));
 });
 
 router.post("/customer/favorites", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
+  const user = await requireCustomer(req, res); if (!user) return;
   const parsed = ToggleFavoriteBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [favorite] = await db.select().from(favoritesTable).where(and(eq(favoritesTable.userId, user.id), eq(favoritesTable.salonId, parsed.data.salonId))).limit(1);
@@ -392,9 +504,8 @@ router.post("/customer/favorites", async (req, res): Promise<void> => {
 });
 
 router.get("/salon/dashboard", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id);
-  if (!salon) { res.status(403).json({ error: "Ova kontrolna tabla je dostupna vlasnicima salona." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const [services, appointments, loyalty] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)), appointmentList(eq(appointmentsTable.salonId, salon.id)), db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1)]);
   const loyaltyData = await loyaltyStatus(salon.id);
   const completed = appointments.filter((item) => item.status === "completed");
@@ -402,8 +513,8 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
 });
 
 router.get("/salon/appointments", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const parsed = ListSalonAppointmentsQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let items = await appointmentList(eq(appointmentsTable.salonId, salon.id));
@@ -414,10 +525,17 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
 });
 
 router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const [params, body] = [UpdateSalonAppointmentParams.safeParse(req.params), UpdateSalonAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu nisu ispravni." }); return; }
+  const [target] = await db.select({ salonId: appointmentsTable.salonId }).from(appointmentsTable).where(eq(appointmentsTable.id, params.data.appointmentId)).limit(1);
+  if (!target) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
+  if (target.salonId !== salon.id) { res.status(403).json({ error: "Termin pripada drugom salonu." }); return; }
+  if (body.data.employeeId && !(await employeeInSalon(body.data.employeeId, salon.id))) {
+    res.status(403).json({ error: "Zaposleni pripada drugom salonu." });
+    return;
+  }
   const [updated] = await db.update(appointmentsTable).set({ status: body.data.status, employeeId: body.data.employeeId, notes: body.data.notes }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, salon.id))).returning();
   if (!updated) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
   const [service, customer, employee] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.id, updated.serviceId)).limit(1), db.select().from(usersTable).where(eq(usersTable.id, updated.customerId)).limit(1), updated.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId)).limit(1) : Promise.resolve([])]);
@@ -425,15 +543,15 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
 });
 
 router.get("/salon/services", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const services = await db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id));
   res.json(ListSalonServicesResponse.parse(services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active }))));
 });
 
 router.post("/salon/services", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
@@ -442,8 +560,8 @@ router.post("/salon/services", async (req, res): Promise<void> => {
 });
 
 router.get("/salon/employees", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const employees = await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id));
   res.json(ListSalonEmployeesResponse.parse(employees.map((item) => ({ id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties }))));
 });
@@ -459,7 +577,7 @@ async function loyaltyStatus(salonId: string) {
 }
 
 router.get("/shop/products", async (req, res): Promise<void> => {
-  await ensureDemoData();
+  const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = ListProductsQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let products = await db.select().from(productsTable).where(eq(productsTable.active, true));
@@ -469,29 +587,29 @@ router.get("/shop/products", async (req, res): Promise<void> => {
 });
 
 router.get("/loyalty/status", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   res.json(await loyaltyStatus(salon.id));
 });
 
 router.get("/shop/summary", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const loyalty = await loyaltyStatus(salon.id);
   res.json(GetShopSummaryResponse.parse({ monthlySpend: loyalty.monthlySpend, nextTierSpend: loyalty.monthlySpend + loyalty.amountToNextTier, amountToNextTier: loyalty.amountToNextTier, currentTier: loyalty.currentTier, subscriptionDue: loyalty.subscriptionDue, subscriptionDiscount: loyalty.subscriptionDiscountPercent, benefits: loyalty.benefits, cartCount: 0 }));
 });
 
 router.get("/shop/orders", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const orders = await db.select().from(ordersTable).where(eq(ordersTable.salonId, salon.id)).orderBy(asc(ordersTable.createdAt));
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((item) => item.id))) : [];
   res.json(ListOrdersResponse.parse(orders.map((order) => ({ id: order.id, status: order.status, total: order.total, itemCount: items.filter((item) => item.orderId === order.id).reduce((sum, item) => sum + item.quantity, 0), createdAt: order.createdAt.toISOString(), items: items.filter((item) => item.orderId === order.id).map((item) => ({ productId: item.productId, productName: item.productName, quantity: item.quantity, price: item.price })) }))));
 });
 
 router.post("/shop/orders", async (req, res): Promise<void> => {
-  const user = await current(req, res); if (!user) return;
-  const salon = await ownedSalon(user.id); if (!salon) { res.status(403).json({ error: "Nedozvoljen pristup." }); return; }
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
   const parsed = CreateOrderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const productIds = parsed.data.items.map((item) => item.productId);
@@ -515,8 +633,8 @@ router.get("/education/courses", async (req, res): Promise<void> => {
   res.json(ListCoursesResponse.parse(courses.map((item) => ({ id: item.id, title: item.title, instructor: "Lumera mentor", center: centers.find((center) => center.id === item.centerId)?.name ?? "Edukativni centar", category: item.category, format: item.format, city: item.city, price: item.price, duration: item.duration, rating: item.rating / 10, certification: item.certification, imageUrl: item.imageUrl }))));
 });
 
-router.get("/education/enrollments", async (_req, res): Promise<void> => {
-  await ensureDemoData();
+router.get("/education/enrollments", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
   res.json(ListEnrollmentsResponse.parse([]));
 });
 

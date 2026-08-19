@@ -1,4 +1,4 @@
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent } from "@/components/ui/card";
 import { CalendarDays, Loader2 } from "lucide-react";
@@ -9,7 +9,7 @@ export default function OwnerCalendar() {
   const { data: appointments, isLoading } = useListSalonAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListSalonAppointmentsQueryKey(undefined) }});
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/kalendar" />
         
@@ -33,6 +33,6 @@ export default function OwnerCalendar() {
           </Card>
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   )
 }

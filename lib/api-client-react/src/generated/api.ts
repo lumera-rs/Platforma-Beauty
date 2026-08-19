@@ -34,6 +34,7 @@ import type {
   AppointmentInput,
   AppointmentUpdate,
   AuthSession,
+  BusinessRegistrationInput,
   CancelAppointmentInput,
   Course,
   CurrentUserResponse,
@@ -182,7 +183,7 @@ export const getRegisterUrl = () => {
 }
 
 /**
- * @summary Register a user account
+ * @summary Register a customer account
  */
 export const register = async (registerInput: RegisterInput, options?: Parameters<typeof customFetch>[1]): Promise<AuthSession> => {
 
@@ -231,7 +232,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RegisterMutationError = ErrorType<unknown>
 
     /**
- * @summary Register a user account
+ * @summary Register a customer account
  */
 export const useRegister = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof register>>, TError,{data: BodyType<RegisterInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -242,6 +243,77 @@ export const useRegister = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRegisterMutationOptions(options));
+    }
+
+export const getRegisterBusinessUrl = () => {
+
+
+
+
+  return `/api/auth/business-register`
+}
+
+/**
+ * @summary Register a salon or education-center owner
+ */
+export const registerBusiness = async (businessRegistrationInput: BusinessRegistrationInput, options?: Parameters<typeof customFetch>[1]): Promise<AuthSession> => {
+
+  return customFetch<AuthSession>(getRegisterBusinessUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(businessRegistrationInput)
+  }
+);}
+
+
+
+
+
+export const getRegisterBusinessMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerBusiness>>, TError,{data: BodyType<BusinessRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerBusiness>>, TError,{data: BodyType<BusinessRegistrationInput>}, TContext> => {
+
+const mutationKey = ['registerBusiness'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerBusiness>>, {data: BodyType<BusinessRegistrationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerBusiness(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterBusinessMutationResult = NonNullable<Awaited<ReturnType<typeof registerBusiness>>>
+    export type RegisterBusinessMutationBody = BodyType<BusinessRegistrationInput>
+    export type RegisterBusinessMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Register a salon or education-center owner
+ */
+export const useRegisterBusiness = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerBusiness>>, TError,{data: BodyType<BusinessRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof registerBusiness>>,
+        TError,
+        {data: BodyType<BusinessRegistrationInput>},
+        TContext
+      > => {
+      return useMutation(getRegisterBusinessMutationOptions(options));
     }
 
 export const getLoginUrl = () => {

@@ -10,7 +10,7 @@ export function Footer() {
               <span className="font-serif text-2xl font-bold tracking-tight">LUMERA</span>
             </Link>
             <p className="text-sm text-background/70 leading-relaxed mb-6">
-              Premijum platforma za lepotu, wellness, edukacije i profesionalnu opremu u Srbiji. Spajamo vrhunske salone sa klijentima koji traže kvalitet.
+              Otkrijte proverene salone, rezervišite tretmane i pronađite beauty edukacije širom Srbije.
             </p>
           </div>
           
@@ -24,11 +24,11 @@ export function Footer() {
           </div>
           
           <div>
-            <h4 className="font-serif text-lg mb-4 text-accent">Za Salone</h4>
+            <h4 className="font-serif text-lg mb-4 text-accent">Moj nalog</h4>
             <ul className="space-y-3 text-sm text-background/80">
-              <li><Link href="/vlasnik/shop" className="hover:text-white transition-colors">B2B Prodavnica</Link></li>
-              <li><Link href="/vlasnik/loyalty" className="hover:text-white transition-colors">Loyalty Program</Link></li>
-              <li><Link href="/prijava?tab=register" className="hover:text-white transition-colors">Postani partner</Link></li>
+              <li><Link href="/moj-nalog?tab=appointments" className="hover:text-white transition-colors">Moji termini</Link></li>
+              <li><Link href="/moj-nalog?tab=favorites" className="hover:text-white transition-colors">Omiljeni saloni</Link></li>
+              <li><Link href="/moj-nalog?tab=settings" className="hover:text-white transition-colors">Profil</Link></li>
             </ul>
           </div>
 

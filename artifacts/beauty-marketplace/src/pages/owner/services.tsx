@@ -1,4 +1,4 @@
-import { Layout } from "@/components/layout";
+import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { useListSalonServices, useCreateSalonService, useGetCurrentUser, getListSalonServicesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +40,7 @@ export default function OwnerServices() {
   };
 
   return (
-    <Layout>
+    <BusinessLayout>
       <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8 items-start">
         <OwnerSidebar current="/vlasnik/usluge" />
         
@@ -124,6 +124,6 @@ export default function OwnerServices() {
           </Card>
         </div>
       </div>
-    </Layout>
+    </BusinessLayout>
   );
 }
