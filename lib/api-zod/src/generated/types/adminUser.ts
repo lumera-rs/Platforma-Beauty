@@ -5,15 +5,16 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { UserRole } from './userRole';
+import type { AdminUserRole } from './adminUserRole';
 
-export interface User {
+export interface AdminUser {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
   /** @nullable */
   phone?: string | null;
-  role: UserRole;
+  role: AdminUserRole;
   active: boolean;
+  createdAt: Date;
 }

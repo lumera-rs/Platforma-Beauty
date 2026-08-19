@@ -9,6 +9,8 @@ _Replace the heading above with the project's name, and this line with one sente
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
+- `scripts/post-merge.sh` — automatically installs dependencies and applies the Drizzle schema to the development database after task merges
+- Replit Publish applies the development-to-production schema diff; never run database DDL from API startup or deployment commands
 - Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
@@ -26,7 +28,7 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `ADMIN` can read the full admin workspace and perform day-to-day salon/review moderation. Only `SUPER_ADMIN` can change user roles/statuses, loyalty rules, or subscription-plan definitions.
 
 ## Product
 

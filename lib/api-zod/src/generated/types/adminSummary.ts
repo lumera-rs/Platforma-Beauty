@@ -10,9 +10,14 @@ import type { AdminSummaryTopCategoriesItem } from './adminSummaryTopCategoriesI
 export interface AdminSummary {
   totalUsers: number;
   totalSalons: number;
+  activeSalons: number;
   bookingsThisMonth: number;
+  bookingsLastMonth: number;
+  bookingsTrend: number;
   grossMerchandiseValue: number;
-  newSalons: number;
-  pendingReviews: number;
+  newSalonsThisMonth: number;
+  totalReviews: number;
+  hiddenReviews: number;
+  activeSubscriptions: number;
   topCategories: AdminSummaryTopCategoriesItem[];
 }

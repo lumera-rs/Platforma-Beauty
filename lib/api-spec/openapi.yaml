@@ -491,7 +491,7 @@ paths:
     get:
       operationId: getAdminSummary
       tags: [admin]
-      summary: Admin platform overview
+      summary: Admin platform overview with aggregates and trends
       responses:
         "200":
           description: Admin summary
@@ -499,6 +499,305 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminSummary"
+  /admin/salons:
+    get:
+      operationId: adminListSalons
+      tags: [admin]
+      summary: Searchable/filterable salon list with subscription and loyalty details
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: active
+          in: query
+          schema: { type: boolean }
+        - name: featured
+          in: query
+          schema: { type: boolean }
+        - name: subscriptionStatus
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Admin salon list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminSalon" }
+  /admin/salons/{salonId}:
+    patch:
+      operationId: adminUpdateSalon
+      tags: [admin]
+      summary: Update salon active or featured status
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSalonUpdate"
+      responses:
+        "200":
+          description: Updated salon
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSalon"
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      summary: Searchable/filterable user list with role and active status
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER]
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Admin user list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminUser" }
+  /admin/users/{userId}:
+    patch:
+      operationId: adminUpdateUser
+      tags: [admin]
+      summary: Update user role or active status (protects last active SUPER_ADMIN)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+  /admin/loyalty-tiers:
+    get:
+      operationId: adminListLoyaltyTiers
+      tags: [admin]
+      summary: List all loyalty tiers
+      responses:
+        "200":
+          description: Loyalty tiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LoyaltyTier" }
+    post:
+      operationId: adminCreateLoyaltyTier
+      tags: [admin]
+      summary: Create a loyalty tier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoyaltyTierInput"
+      responses:
+        "201":
+          description: Created loyalty tier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyTier"
+  /admin/loyalty-tiers/{tierId}:
+    patch:
+      operationId: adminUpdateLoyaltyTier
+      tags: [admin]
+      summary: Update or deactivate a loyalty tier
+      parameters:
+        - name: tierId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoyaltyTierInput"
+      responses:
+        "200":
+          description: Updated loyalty tier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyTier"
+    delete:
+      operationId: adminDeleteLoyaltyTier
+      tags: [admin]
+      summary: Delete or deactivate a loyalty tier
+      parameters:
+        - name: tierId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Deleted/deactivated loyalty tier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoyaltyTier"
+  /admin/subscription-plans:
+    get:
+      operationId: adminListSubscriptionPlans
+      tags: [admin]
+      summary: List all subscription plans
+      responses:
+        "200":
+          description: Subscription plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SubscriptionPlan" }
+    post:
+      operationId: adminCreateSubscriptionPlan
+      tags: [admin]
+      summary: Create a subscription plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionPlanInput"
+      responses:
+        "201":
+          description: Created subscription plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionPlan"
+  /admin/subscription-plans/{planId}:
+    patch:
+      operationId: adminUpdateSubscriptionPlan
+      tags: [admin]
+      summary: Update or deactivate a subscription plan
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionPlanInput"
+      responses:
+        "200":
+          description: Updated subscription plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionPlan"
+    delete:
+      operationId: adminDeleteSubscriptionPlan
+      tags: [admin]
+      summary: Delete or deactivate a subscription plan
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Deleted/deactivated subscription plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionPlan"
+  /admin/reviews:
+    get:
+      operationId: adminListReviews
+      tags: [admin]
+      summary: List reviews with salon and customer context
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: salonId
+          in: query
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        - name: visible
+          in: query
+          schema: { type: boolean }
+        - name: minRating
+          in: query
+          schema: { type: number, minimum: 1, maximum: 5 }
+        - name: maxRating
+          in: query
+          schema: { type: number, minimum: 1, maximum: 5 }
+      responses:
+        "200":
+          description: Admin review list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminReview" }
+  /admin/reviews/{reviewId}:
+    patch:
+      operationId: adminUpdateReview
+      tags: [admin]
+      summary: Moderate review visibility
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReviewUpdate"
+      responses:
+        "200":
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminReview"
+    delete:
+      operationId: adminDeleteReview
+      tags: [admin]
+      summary: Permanently delete a review
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "204":
+          description: Review deleted
 components:
   parameters:
     CityQuery:
@@ -526,7 +825,7 @@ components:
       name: salonId
       in: path
       required: true
-      schema: { type: string }
+      schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
     AppointmentId:
       name: appointmentId
       in: path
@@ -549,7 +848,8 @@ components:
         role:
           type: string
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER]
-      required: [id, firstName, lastName, email, role]
+        active: { type: boolean }
+      required: [id, firstName, lastName, email, role, active]
     RegisterInput:
       type: object
       properties:
@@ -878,10 +1178,15 @@ components:
       properties:
         totalUsers: { type: number }
         totalSalons: { type: number }
+        activeSalons: { type: number }
         bookingsThisMonth: { type: number }
+        bookingsLastMonth: { type: number }
+        bookingsTrend: { type: number }
         grossMerchandiseValue: { type: number }
-        newSalons: { type: number }
-        pendingReviews: { type: number }
+        newSalonsThisMonth: { type: number }
+        totalReviews: { type: number }
+        hiddenReviews: { type: number }
+        activeSubscriptions: { type: number }
         topCategories:
           type: array
           items:
@@ -890,4 +1195,127 @@ components:
               name: { type: string }
               count: { type: number }
             required: [name, count]
-      required: [totalUsers, totalSalons, bookingsThisMonth, grossMerchandiseValue, newSalons, pendingReviews, topCategories]
+      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, topCategories]
+    AdminSalon:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        city: { type: string }
+        active: { type: boolean }
+        featured: { type: boolean }
+        rating: { type: number }
+        reviewCount: { type: number }
+        subscriptionStatus: { type: ["string", "null"] }
+        subscriptionPlan: { type: ["string", "null"] }
+        loyaltyTier: { type: ["string", "null"] }
+        loyaltySpend: { type: number }
+        createdAt: { type: string, format: date-time }
+      required: [id, name, slug, city, active, featured, rating, reviewCount, loyaltySpend, createdAt]
+    AdminSalonUpdate:
+      type: object
+      properties:
+        active: { type: boolean }
+        featured: { type: boolean }
+    AdminUser:
+      type: object
+      properties:
+        id: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER]
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+      required: [id, firstName, lastName, email, role, active, createdAt]
+    AdminUserUpdate:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER]
+        active: { type: boolean }
+    LoyaltyTier:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        sortOrder: { type: number }
+        spendThreshold: { type: number }
+        period: { type: string }
+        subscriptionDiscountPercent: { type: number }
+        productDiscountPercent: { type: number }
+        freeSubscription: { type: boolean }
+        premiumListing: { type: boolean }
+        freeShipping: { type: boolean }
+        benefits:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+      required: [id, name, sortOrder, spendThreshold, period, subscriptionDiscountPercent, productDiscountPercent, freeSubscription, premiumListing, freeShipping, benefits, active]
+    LoyaltyTierInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        sortOrder: { type: number }
+        spendThreshold: { type: number, minimum: 0 }
+        period: { type: string }
+        subscriptionDiscountPercent: { type: number, minimum: 0, maximum: 100 }
+        productDiscountPercent: { type: number, minimum: 0, maximum: 100 }
+        freeSubscription: { type: boolean }
+        premiumListing: { type: boolean }
+        freeShipping: { type: boolean }
+        benefits:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+    SubscriptionPlan:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        price: { type: number }
+        trialDays: { type: number }
+        features:
+          type: array
+          items: { type: string }
+        limits:
+          type: object
+          additionalProperties: { type: number }
+        active: { type: boolean }
+      required: [id, name, price, trialDays, features, limits, active]
+    SubscriptionPlanInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        price: { type: number, minimum: 0 }
+        trialDays: { type: number, minimum: 0 }
+        features:
+          type: array
+          items: { type: string }
+        limits:
+          type: object
+          additionalProperties: { type: number }
+        active: { type: boolean }
+    AdminReview:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        salonName: { type: string }
+        customerId: { type: string }
+        customerName: { type: string }
+        serviceName: { type: string }
+        rating: { type: number, minimum: 1, maximum: 5 }
+        text: { type: string }
+        visible: { type: boolean }
+        date: { type: string, format: date-time }
+      required: [id, salonId, salonName, customerId, customerName, serviceName, rating, text, visible, date]
+    AdminReviewUpdate:
+      type: object
+      properties:
+        visible: { type: boolean }

@@ -103,7 +103,7 @@ export function Navbar() {
                       <DropdownMenuSeparator />
                     </>
                   )}
-                  {user.role === 'SUPER_ADMIN' && (
+                  {user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' ? (
                     <>
                       <DropdownMenuItem onClick={() => setLocation('/admin')}>
                         <Award className="mr-2 h-4 w-4" />
@@ -111,7 +111,7 @@ export function Navbar() {
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
-                  )}
+                  ) : null}
                   <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:bg-destructive/10">
                     <LogOut className="mr-2 h-4 w-4" />
                     Odjavi se
@@ -172,6 +172,11 @@ export function Navbar() {
                 {user.role === 'CUSTOMER' && (
                   <Link href="/moj-nalog" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
                     Moj nalog
+                  </Link>
+                )}
+                {(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
+                  <Link href="/admin" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
+                    Admin Panel
                   </Link>
                 )}
                 <button 

@@ -5,15 +5,14 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { UserRole } from './userRole';
+import type { SubscriptionPlanLimits } from './subscriptionPlanLimits';
 
-export interface User {
+export interface SubscriptionPlan {
   id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  /** @nullable */
-  phone?: string | null;
-  role: UserRole;
+  name: string;
+  price: number;
+  trialDays: number;
+  features: string[];
+  limits: SubscriptionPlanLimits;
   active: boolean;
 }

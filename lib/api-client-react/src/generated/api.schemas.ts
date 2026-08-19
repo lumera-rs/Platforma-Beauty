@@ -30,6 +30,7 @@ export interface User {
   /** @nullable */
   phone?: string | null;
   role: UserRole;
+  active: boolean;
 }
 
 export type RegisterInputRole = typeof RegisterInputRole[keyof typeof RegisterInputRole];
@@ -394,11 +395,169 @@ export type AdminSummaryTopCategoriesItem = {
 export interface AdminSummary {
   totalUsers: number;
   totalSalons: number;
+  activeSalons: number;
   bookingsThisMonth: number;
+  bookingsLastMonth: number;
+  bookingsTrend: number;
   grossMerchandiseValue: number;
-  newSalons: number;
-  pendingReviews: number;
+  newSalonsThisMonth: number;
+  totalReviews: number;
+  hiddenReviews: number;
+  activeSubscriptions: number;
   topCategories: AdminSummaryTopCategoriesItem[];
+}
+
+export interface AdminSalon {
+  id: string;
+  name: string;
+  slug: string;
+  city: string;
+  active: boolean;
+  featured: boolean;
+  rating: number;
+  reviewCount: number;
+  /** @nullable */
+  subscriptionStatus?: string | null;
+  /** @nullable */
+  subscriptionPlan?: string | null;
+  /** @nullable */
+  loyaltyTier?: string | null;
+  loyaltySpend: number;
+  createdAt: string;
+}
+
+export interface AdminSalonUpdate {
+  active?: boolean;
+  featured?: boolean;
+}
+
+export type AdminUserRole = typeof AdminUserRole[keyof typeof AdminUserRole];
+
+
+export const AdminUserRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+} as const;
+
+export interface AdminUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  /** @nullable */
+  phone?: string | null;
+  role: AdminUserRole;
+  active: boolean;
+  createdAt: string;
+}
+
+export type AdminUserUpdateRole = typeof AdminUserUpdateRole[keyof typeof AdminUserUpdateRole];
+
+
+export const AdminUserUpdateRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+} as const;
+
+export interface AdminUserUpdate {
+  role?: AdminUserUpdateRole;
+  active?: boolean;
+}
+
+export interface LoyaltyTier {
+  id: string;
+  name: string;
+  sortOrder: number;
+  spendThreshold: number;
+  period: string;
+  subscriptionDiscountPercent: number;
+  productDiscountPercent: number;
+  freeSubscription: boolean;
+  premiumListing: boolean;
+  freeShipping: boolean;
+  benefits: string[];
+  active: boolean;
+}
+
+export interface LoyaltyTierInput {
+  /** @minLength 1 */
+  name?: string;
+  sortOrder?: number;
+  /** @minimum 0 */
+  spendThreshold?: number;
+  period?: string;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  subscriptionDiscountPercent?: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  productDiscountPercent?: number;
+  freeSubscription?: boolean;
+  premiumListing?: boolean;
+  freeShipping?: boolean;
+  benefits?: string[];
+  active?: boolean;
+}
+
+export type SubscriptionPlanLimits = {[key: string]: number};
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  trialDays: number;
+  features: string[];
+  limits: SubscriptionPlanLimits;
+  active: boolean;
+}
+
+export type SubscriptionPlanInputLimits = {[key: string]: number};
+
+export interface SubscriptionPlanInput {
+  /** @minLength 1 */
+  name?: string;
+  /** @minimum 0 */
+  price?: number;
+  /** @minimum 0 */
+  trialDays?: number;
+  features?: string[];
+  limits?: SubscriptionPlanInputLimits;
+  active?: boolean;
+}
+
+export interface AdminReview {
+  id: string;
+  salonId: string;
+  salonName: string;
+  customerId: string;
+  customerName: string;
+  serviceName: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  text: string;
+  visible: boolean;
+  date: string;
+}
+
+export interface AdminReviewUpdate {
+  visible?: boolean;
 }
 
 export type CityQueryParameter = string;
@@ -510,4 +669,50 @@ export const ListCoursesFormat = {
   'in-person': 'in-person',
   hybrid: 'hybrid',
 } as const;
+
+export type AdminListSalonsParams = {
+search?: string;
+city?: string;
+active?: boolean;
+featured?: boolean;
+subscriptionStatus?: string;
+};
+
+export type AdminListUsersParams = {
+search?: string;
+role?: AdminListUsersRole;
+active?: boolean;
+};
+
+export type AdminListUsersRole = typeof AdminListUsersRole[keyof typeof AdminListUsersRole];
+
+
+export const AdminListUsersRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  SALON_OWNER: 'SALON_OWNER',
+  SALON_EMPLOYEE: 'SALON_EMPLOYEE',
+  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  INSTRUCTOR: 'INSTRUCTOR',
+  CUSTOMER: 'CUSTOMER',
+} as const;
+
+export type AdminListReviewsParams = {
+search?: string;
+/**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+salonId?: string;
+visible?: boolean;
+/**
+ * @minimum 1
+ * @maximum 5
+ */
+minRating?: number;
+/**
+ * @minimum 1
+ * @maximum 5
+ */
+maxRating?: number;
+};
 

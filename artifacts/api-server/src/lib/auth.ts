@@ -42,7 +42,11 @@ export async function getCurrentUser(req: Request) {
     .select({ user: usersTable })
     .from(sessionsTable)
     .innerJoin(usersTable, eq(sessionsTable.userId, usersTable.id))
-    .where(and(eq(sessionsTable.tokenHash, tokenHash), gt(sessionsTable.expiresAt, new Date())))
+    .where(and(
+      eq(sessionsTable.tokenHash, tokenHash),
+      gt(sessionsTable.expiresAt, new Date()),
+      eq(usersTable.active, true),
+    ))
     .limit(1);
   return session?.user ?? null;
 }
@@ -62,5 +66,10 @@ export function publicUser(user: typeof usersTable.$inferSelect) {
     email: user.email,
     phone: user.phone,
     role: user.role,
+    active: user.active,
   };
+}
+
+export function isAdmin(user: typeof usersTable.$inferSelect): boolean {
+  return user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 }

@@ -37,6 +37,7 @@ export const usersTable = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").notNull().default("CUSTOMER"),
   avatarUrl: text("avatar_url"),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -172,6 +173,7 @@ export const reviewsTable = pgTable("reviews", {
   serviceName: text("service_name").notNull(),
   rating: integer("rating").notNull(),
   text: text("text").notNull(),
+  visible: boolean("visible").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

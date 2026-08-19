@@ -1,5 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useGetCurrentUser } from '@workspace/api-client-react';
+import { Loader2 } from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,6 +23,12 @@ import OwnerServices from './pages/owner/services';
 import OwnerShop from './pages/owner/shop';
 import OwnerCalendar from './pages/owner/calendar';
 import OwnerLoyalty from './pages/owner/loyalty';
+import AdminDashboard from './pages/admin/dashboard';
+import AdminSalons from './pages/admin/salons';
+import AdminUsers from './pages/admin/users';
+import AdminLoyalty from './pages/admin/loyalty';
+import AdminSubscriptions from './pages/admin/subscriptions';
+import AdminReviews from './pages/admin/reviews';
 import { Layout } from './components/layout';
 
 const queryClient = new QueryClient();
@@ -51,6 +59,32 @@ function PlaceholderPage({ title }: { title: string }) {
   )
 }
 
+function AdminGuard({ children }: { children: ReactNode }) {
+  const [, setLocation] = useLocation();
+  const { data, isLoading } = useGetCurrentUser();
+  const user = data?.user;
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) setLocation('/prijava');
+    else if (user.role === 'CUSTOMER') setLocation('/moj-nalog');
+    else if (!isAdmin) setLocation('/');
+  }, [isAdmin, isLoading, setLocation, user]);
+
+  if (isLoading || !isAdmin) {
+    return (
+      <Layout>
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="admin-route-loading" />
+        </div>
+      </Layout>
+    );
+  }
+
+  return children;
+}
+
 function Router() {
   return (
     <RoutedErrorBoundary>
@@ -68,7 +102,13 @@ function Router() {
         <Route path="/vlasnik/loyalty" component={OwnerLoyalty} />
         
         <Route path="/edukacije"><PlaceholderPage title="Edukacije" /></Route>
-        <Route path="/admin"><PlaceholderPage title="Admin Panel" /></Route>
+
+        <Route path="/admin"><AdminGuard><AdminDashboard /></AdminGuard></Route>
+        <Route path="/admin/saloni"><AdminGuard><AdminSalons /></AdminGuard></Route>
+        <Route path="/admin/korisnici"><AdminGuard><AdminUsers /></AdminGuard></Route>
+        <Route path="/admin/loyalty"><AdminGuard><AdminLoyalty /></AdminGuard></Route>
+        <Route path="/admin/pretplate"><AdminGuard><AdminSubscriptions /></AdminGuard></Route>
+        <Route path="/admin/recenzije"><AdminGuard><AdminReviews /></AdminGuard></Route>
         
         <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>
         <Route path="/politika-privatnosti"><PlaceholderPage title="Politika privatnosti" /></Route>

@@ -41,7 +41,8 @@ export const RegisterResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER'])
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean()
 }),
   "message": zod.string()
 })
@@ -65,7 +66,8 @@ export const LoginResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER'])
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean()
 }),
   "message": zod.string()
 })
@@ -87,7 +89,8 @@ export const GetCurrentUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER'])
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean()
 }),zod.null()])
 })
 
@@ -206,8 +209,11 @@ export const GetSalonResponse = zod.object({
 /**
  * @summary Get available booking slots
  */
+export const getSalonAvailabilityPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
 export const GetSalonAvailabilityParams = zod.object({
-  "salonId": zod.coerce.string()
+  "salonId": zod.coerce.string().regex(getSalonAvailabilityPathSalonIdRegExp)
 })
 
 export const GetSalonAvailabilityQueryParams = zod.object({
@@ -743,19 +749,460 @@ export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
 
 
 /**
- * @summary Admin platform overview
+ * @summary Admin platform overview with aggregates and trends
  */
 export const GetAdminSummaryResponse = zod.object({
   "totalUsers": zod.number(),
   "totalSalons": zod.number(),
+  "activeSalons": zod.number(),
   "bookingsThisMonth": zod.number(),
+  "bookingsLastMonth": zod.number(),
+  "bookingsTrend": zod.number(),
   "grossMerchandiseValue": zod.number(),
-  "newSalons": zod.number(),
-  "pendingReviews": zod.number(),
+  "newSalonsThisMonth": zod.number(),
+  "totalReviews": zod.number(),
+  "hiddenReviews": zod.number(),
+  "activeSubscriptions": zod.number(),
   "topCategories": zod.array(zod.object({
   "name": zod.string(),
   "count": zod.number()
 }))
 })
+
+
+/**
+ * @summary Searchable/filterable salon list with subscription and loyalty details
+ */
+export const AdminListSalonsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "city": zod.coerce.string().optional(),
+  "active": zod.coerce.boolean().optional(),
+  "featured": zod.coerce.boolean().optional(),
+  "subscriptionStatus": zod.coerce.string().optional()
+})
+
+export const AdminListSalonsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "active": zod.boolean(),
+  "featured": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "loyaltyTier": zod.string().nullish(),
+  "loyaltySpend": zod.number(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListSalonsResponse = zod.array(AdminListSalonsResponseItem)
+
+
+/**
+ * @summary Update salon active or featured status
+ */
+export const adminUpdateSalonPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateSalonParams = zod.object({
+  "salonId": zod.coerce.string().regex(adminUpdateSalonPathSalonIdRegExp)
+})
+
+export const AdminUpdateSalonBody = zod.object({
+  "active": zod.boolean().optional(),
+  "featured": zod.boolean().optional()
+})
+
+export const AdminUpdateSalonResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "active": zod.boolean(),
+  "featured": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "loyaltyTier": zod.string().nullish(),
+  "loyaltySpend": zod.number(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Searchable/filterable user list with role and active status
+ */
+export const AdminListUsersQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']).optional(),
+  "active": zod.coerce.boolean().optional()
+})
+
+export const AdminListUsersResponseItem = zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
+
+
+/**
+ * @summary Update user role or active status (protects last active SUPER_ADMIN)
+ */
+export const adminUpdateUserPathUserIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateUserParams = zod.object({
+  "userId": zod.coerce.string().regex(adminUpdateUserPathUserIdRegExp)
+})
+
+export const AdminUpdateUserBody = zod.object({
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminUpdateUserResponse = zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List all loyalty tiers
+ */
+export const AdminListLoyaltyTiersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sortOrder": zod.number(),
+  "spendThreshold": zod.number(),
+  "period": zod.string(),
+  "subscriptionDiscountPercent": zod.number(),
+  "productDiscountPercent": zod.number(),
+  "freeSubscription": zod.boolean(),
+  "premiumListing": zod.boolean(),
+  "freeShipping": zod.boolean(),
+  "benefits": zod.array(zod.string()),
+  "active": zod.boolean()
+})
+export const AdminListLoyaltyTiersResponse = zod.array(AdminListLoyaltyTiersResponseItem)
+
+
+/**
+ * @summary Create a loyalty tier
+ */
+
+export const adminCreateLoyaltyTierBodySpendThresholdMin = 0;
+
+export const adminCreateLoyaltyTierBodySubscriptionDiscountPercentMin = 0;
+export const adminCreateLoyaltyTierBodySubscriptionDiscountPercentMax = 100;
+
+export const adminCreateLoyaltyTierBodyProductDiscountPercentMin = 0;
+export const adminCreateLoyaltyTierBodyProductDiscountPercentMax = 100;
+
+
+
+export const AdminCreateLoyaltyTierBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "sortOrder": zod.number().optional(),
+  "spendThreshold": zod.number().min(adminCreateLoyaltyTierBodySpendThresholdMin).optional(),
+  "period": zod.string().optional(),
+  "subscriptionDiscountPercent": zod.number().min(adminCreateLoyaltyTierBodySubscriptionDiscountPercentMin).max(adminCreateLoyaltyTierBodySubscriptionDiscountPercentMax).optional(),
+  "productDiscountPercent": zod.number().min(adminCreateLoyaltyTierBodyProductDiscountPercentMin).max(adminCreateLoyaltyTierBodyProductDiscountPercentMax).optional(),
+  "freeSubscription": zod.boolean().optional(),
+  "premiumListing": zod.boolean().optional(),
+  "freeShipping": zod.boolean().optional(),
+  "benefits": zod.array(zod.string()).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminCreateLoyaltyTierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sortOrder": zod.number(),
+  "spendThreshold": zod.number(),
+  "period": zod.string(),
+  "subscriptionDiscountPercent": zod.number(),
+  "productDiscountPercent": zod.number(),
+  "freeSubscription": zod.boolean(),
+  "premiumListing": zod.boolean(),
+  "freeShipping": zod.boolean(),
+  "benefits": zod.array(zod.string()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Update or deactivate a loyalty tier
+ */
+export const adminUpdateLoyaltyTierPathTierIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateLoyaltyTierParams = zod.object({
+  "tierId": zod.coerce.string().regex(adminUpdateLoyaltyTierPathTierIdRegExp)
+})
+
+
+export const adminUpdateLoyaltyTierBodySpendThresholdMin = 0;
+
+export const adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMin = 0;
+export const adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMax = 100;
+
+export const adminUpdateLoyaltyTierBodyProductDiscountPercentMin = 0;
+export const adminUpdateLoyaltyTierBodyProductDiscountPercentMax = 100;
+
+
+
+export const AdminUpdateLoyaltyTierBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "sortOrder": zod.number().optional(),
+  "spendThreshold": zod.number().min(adminUpdateLoyaltyTierBodySpendThresholdMin).optional(),
+  "period": zod.string().optional(),
+  "subscriptionDiscountPercent": zod.number().min(adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMin).max(adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMax).optional(),
+  "productDiscountPercent": zod.number().min(adminUpdateLoyaltyTierBodyProductDiscountPercentMin).max(adminUpdateLoyaltyTierBodyProductDiscountPercentMax).optional(),
+  "freeSubscription": zod.boolean().optional(),
+  "premiumListing": zod.boolean().optional(),
+  "freeShipping": zod.boolean().optional(),
+  "benefits": zod.array(zod.string()).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminUpdateLoyaltyTierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sortOrder": zod.number(),
+  "spendThreshold": zod.number(),
+  "period": zod.string(),
+  "subscriptionDiscountPercent": zod.number(),
+  "productDiscountPercent": zod.number(),
+  "freeSubscription": zod.boolean(),
+  "premiumListing": zod.boolean(),
+  "freeShipping": zod.boolean(),
+  "benefits": zod.array(zod.string()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Delete or deactivate a loyalty tier
+ */
+export const adminDeleteLoyaltyTierPathTierIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminDeleteLoyaltyTierParams = zod.object({
+  "tierId": zod.coerce.string().regex(adminDeleteLoyaltyTierPathTierIdRegExp)
+})
+
+export const AdminDeleteLoyaltyTierResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sortOrder": zod.number(),
+  "spendThreshold": zod.number(),
+  "period": zod.string(),
+  "subscriptionDiscountPercent": zod.number(),
+  "productDiscountPercent": zod.number(),
+  "freeSubscription": zod.boolean(),
+  "premiumListing": zod.boolean(),
+  "freeShipping": zod.boolean(),
+  "benefits": zod.array(zod.string()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary List all subscription plans
+ */
+export const AdminListSubscriptionPlansResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "trialDays": zod.number(),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number()),
+  "active": zod.boolean()
+})
+export const AdminListSubscriptionPlansResponse = zod.array(AdminListSubscriptionPlansResponseItem)
+
+
+/**
+ * @summary Create a subscription plan
+ */
+
+export const adminCreateSubscriptionPlanBodyPriceMin = 0;
+
+export const adminCreateSubscriptionPlanBodyTrialDaysMin = 0;
+
+
+
+export const AdminCreateSubscriptionPlanBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "price": zod.number().min(adminCreateSubscriptionPlanBodyPriceMin).optional(),
+  "trialDays": zod.number().min(adminCreateSubscriptionPlanBodyTrialDaysMin).optional(),
+  "features": zod.array(zod.string()).optional(),
+  "limits": zod.record(zod.string(), zod.number()).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminCreateSubscriptionPlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "trialDays": zod.number(),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Update or deactivate a subscription plan
+ */
+export const adminUpdateSubscriptionPlanPathPlanIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateSubscriptionPlanParams = zod.object({
+  "planId": zod.coerce.string().regex(adminUpdateSubscriptionPlanPathPlanIdRegExp)
+})
+
+
+export const adminUpdateSubscriptionPlanBodyPriceMin = 0;
+
+export const adminUpdateSubscriptionPlanBodyTrialDaysMin = 0;
+
+
+
+export const AdminUpdateSubscriptionPlanBody = zod.object({
+  "name": zod.string().min(1).optional(),
+  "price": zod.number().min(adminUpdateSubscriptionPlanBodyPriceMin).optional(),
+  "trialDays": zod.number().min(adminUpdateSubscriptionPlanBodyTrialDaysMin).optional(),
+  "features": zod.array(zod.string()).optional(),
+  "limits": zod.record(zod.string(), zod.number()).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminUpdateSubscriptionPlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "trialDays": zod.number(),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Delete or deactivate a subscription plan
+ */
+export const adminDeleteSubscriptionPlanPathPlanIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminDeleteSubscriptionPlanParams = zod.object({
+  "planId": zod.coerce.string().regex(adminDeleteSubscriptionPlanPathPlanIdRegExp)
+})
+
+export const AdminDeleteSubscriptionPlanResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "trialDays": zod.number(),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number()),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary List reviews with salon and customer context
+ */
+export const adminListReviewsQuerySalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminListReviewsQueryMinRatingMax = 5;
+
+export const adminListReviewsQueryMaxRatingMax = 5;
+
+
+
+export const AdminListReviewsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "salonId": zod.coerce.string().regex(adminListReviewsQuerySalonIdRegExp).optional(),
+  "visible": zod.coerce.boolean().optional(),
+  "minRating": zod.coerce.number().min(1).max(adminListReviewsQueryMinRatingMax).optional(),
+  "maxRating": zod.coerce.number().min(1).max(adminListReviewsQueryMaxRatingMax).optional()
+})
+
+export const adminListReviewsResponseRatingMax = 5;
+
+
+
+export const AdminListReviewsResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerId": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "rating": zod.number().min(1).max(adminListReviewsResponseRatingMax),
+  "text": zod.string(),
+  "visible": zod.boolean(),
+  "date": zod.coerce.date()
+})
+export const AdminListReviewsResponse = zod.array(AdminListReviewsResponseItem)
+
+
+/**
+ * @summary Moderate review visibility
+ */
+export const adminUpdateReviewPathReviewIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateReviewParams = zod.object({
+  "reviewId": zod.coerce.string().regex(adminUpdateReviewPathReviewIdRegExp)
+})
+
+export const AdminUpdateReviewBody = zod.object({
+  "visible": zod.boolean().optional()
+})
+
+export const adminUpdateReviewResponseRatingMax = 5;
+
+
+
+export const AdminUpdateReviewResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerId": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "rating": zod.number().min(1).max(adminUpdateReviewResponseRatingMax),
+  "text": zod.string(),
+  "visible": zod.boolean(),
+  "date": zod.coerce.date()
+})
+
+
+/**
+ * @summary Permanently delete a review
+ */
+export const adminDeleteReviewPathReviewIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminDeleteReviewParams = zod.object({
+  "reviewId": zod.coerce.string().regex(adminDeleteReviewPathReviewIdRegExp)
+})
+
+export const AdminDeleteReviewResponse = zod.void()
 
 

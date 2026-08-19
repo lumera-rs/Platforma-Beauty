@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   appointmentsTable,
   coursesTable,
@@ -17,10 +17,29 @@ import {
   salonsTable,
   serviceCategoriesTable,
   servicesTable,
+  subscriptionPlansTable,
   subscriptionsTable,
   usersTable,
 } from "@workspace/db";
 import {
+  AdminCreateLoyaltyTierBody,
+  AdminCreateSubscriptionPlanBody,
+  AdminDeleteLoyaltyTierParams,
+  AdminDeleteReviewParams,
+  AdminDeleteSubscriptionPlanParams,
+  AdminListReviewsQueryParams,
+  AdminListSalonsQueryParams,
+  AdminListUsersQueryParams,
+  AdminUpdateLoyaltyTierBody,
+  AdminUpdateLoyaltyTierParams,
+  AdminUpdateReviewBody,
+  AdminUpdateReviewParams,
+  AdminUpdateSalonBody,
+  AdminUpdateSalonParams,
+  AdminUpdateSubscriptionPlanBody,
+  AdminUpdateSubscriptionPlanParams,
+  AdminUpdateUserBody,
+  AdminUpdateUserParams,
   CancelAppointmentBody,
   CancelAppointmentParams,
   CancelAppointmentResponse,
@@ -69,13 +88,25 @@ import {
   UpdateSalonAppointmentParams,
   UpdateSalonAppointmentResponse,
 } from "@workspace/api-zod";
-import { createSession, destroySession, getCurrentUser, hashPassword, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
+import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import { ensureDemoData } from "../lib/seed";
 
 const router: IRouter = Router();
 
 function cookieOptions() {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", maxAge: 1000 * 60 * 60 * 24 * 14, path: "/" };
+}
+
+function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<string, unknown> | null {
+  const normalized: Record<string, unknown> = { ...query };
+  for (const key of keys) {
+    const value = normalized[key];
+    if (value === undefined) continue;
+    if (value === true || value === "true") normalized[key] = true;
+    else if (value === false || value === "false") normalized[key] = false;
+    else return null;
+  }
+  return normalized;
 }
 
 function calendarDate(value: string | Date): string {
@@ -193,7 +224,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
-  if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  if (!user || !user.active || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
     res.status(401).json({ error: "E-mail ili lozinka nisu ispravni." }); return;
   }
   const token = await createSession(user.id);
@@ -244,7 +275,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
     db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
     db.select().from(salonHoursTable).where(eq(salonHoursTable.salonId, salon.id)).orderBy(asc(salonHoursTable.weekday)),
-    db.select().from(reviewsTable).where(eq(reviewsTable.salonId, salon.id)),
+    db.select().from(reviewsTable).where(and(eq(reviewsTable.salonId, salon.id), eq(reviewsTable.visible, true))),
   ]);
   const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
   res.json(GetSalonResponse.parse({
@@ -491,9 +522,535 @@ router.get("/education/enrollments", async (_req, res): Promise<void> => {
 
 router.get("/admin/summary", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) { res.status(403).json({ error: "Samo administratori mogu da vide ovaj pregled." }); return; }
-  const [users, salons, appointments, orders] = await Promise.all([db.select().from(usersTable), db.select().from(salonsTable), db.select().from(appointmentsTable), db.select().from(ordersTable)]);
-  res.json(GetAdminSummaryResponse.parse({ totalUsers: users.length, totalSalons: salons.length, bookingsThisMonth: appointments.length, grossMerchandiseValue: orders.reduce((sum, item) => sum + item.total, 0), newSalons: salons.filter((item) => item.featured).length, pendingReviews: 0, topCategories: [{ name: "Masaža", count: 18 }, { name: "Lice", count: 13 }, { name: "Wellness", count: 9 }] }));
+  if (!isAdmin(user)) { res.status(403).json({ error: "Samo administratori mogu da vide ovaj pregled." }); return; }
+
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const [users, salons, allAppointments, orders, reviews, subscriptions, services] = await Promise.all([
+    db.select().from(usersTable),
+    db.select().from(salonsTable),
+    db.select().from(appointmentsTable),
+    db.select().from(ordersTable),
+    db.select().from(reviewsTable),
+    db.select({ status: subscriptionsTable.status }).from(subscriptionsTable),
+    db.select({ id: servicesTable.id, categoryName: servicesTable.categoryName }).from(servicesTable),
+  ]);
+
+  const bookingsThisMonth = allAppointments.filter((a) => a.createdAt >= thisMonthStart).length;
+  const bookingsLastMonth = allAppointments.filter((a) => a.createdAt >= lastMonthStart && a.createdAt < thisMonthStart).length;
+  const bookingsTrend = bookingsLastMonth > 0 ? Math.round(((bookingsThisMonth - bookingsLastMonth) / bookingsLastMonth) * 100) : 0;
+  const newSalonsThisMonth = salons.filter((s) => s.createdAt >= thisMonthStart).length;
+  const hiddenReviews = reviews.filter((r) => !r.visible).length;
+  const activeSubscriptions = subscriptions.filter((s) => s.status === "active" || s.status === "free_via_loyalty").length;
+
+  const categoryCount: Record<string, number> = {};
+  const categoryByService = new Map(services.map((service) => [service.id, service.categoryName]));
+  for (const appointment of allAppointments) {
+    const categoryName = categoryByService.get(appointment.serviceId);
+    if (categoryName) categoryCount[categoryName] = (categoryCount[categoryName] ?? 0) + 1;
+  }
+  const topCategories = Object.entries(categoryCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, cnt]) => ({ name, count: cnt }));
+
+  res.json(GetAdminSummaryResponse.parse({
+    totalUsers: users.length,
+    totalSalons: salons.length,
+    activeSalons: salons.filter((s) => s.active).length,
+    bookingsThisMonth,
+    bookingsLastMonth,
+    bookingsTrend,
+    grossMerchandiseValue: orders.reduce((sum, item) => sum + item.total, 0),
+    newSalonsThisMonth,
+    totalReviews: reviews.length,
+    hiddenReviews,
+    activeSubscriptions,
+    topCategories,
+  }));
+});
+
+// ── Admin helper ──────────────────────────────────────────────────────────────
+
+async function requireAdmin(req: Request, res: Response) {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (!isAdmin(user)) { res.status(403).json({ error: "Pristup dozvoljen samo administratorima." }); return null; }
+  return user;
+}
+
+async function requireSuperAdmin(req: Request, res: Response) {
+  const user = await requireAdmin(req, res);
+  if (!user) return null;
+  if (user.role !== "SUPER_ADMIN") {
+    res.status(403).json({ error: "Ova promena je dozvoljena samo super administratorima." });
+    return null;
+  }
+  return user;
+}
+
+// ── Admin Salons ──────────────────────────────────────────────────────────────
+
+router.get("/admin/salons", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+
+  let salons = await db.select().from(salonsTable);
+  const normalizedQuery = normalizeBooleanQuery(req.query, ["active", "featured"]);
+  if (!normalizedQuery) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
+  const parsedQuery = AdminListSalonsQueryParams.safeParse(normalizedQuery);
+  if (!parsedQuery.success) { res.status(400).json({ error: parsedQuery.error.message }); return; }
+  const { search, city, active, featured, subscriptionStatus } = parsedQuery.data;
+
+  if (search) {
+    const q = search.toLowerCase();
+    salons = salons.filter((s) => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q) || s.email.toLowerCase().includes(q));
+  }
+  if (city) salons = salons.filter((s) => s.city.toLowerCase() === city.toLowerCase());
+  if (active !== undefined) salons = salons.filter((s) => s.active === active);
+  if (featured !== undefined) salons = salons.filter((s) => s.featured === featured);
+
+  if (!salons.length) { res.json([]); return; }
+
+  const salonIds = salons.map((s) => s.id);
+  const [subs, loyalties, tiers] = await Promise.all([
+    db.select().from(subscriptionsTable)
+      .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+      .where(inArray(subscriptionsTable.salonId, salonIds)),
+    db.select().from(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds)),
+    db.select().from(loyaltyTiersTable),
+  ]);
+
+  let result = salons.map((s) => {
+    const sub = subs.find((sub) => sub.subscriptions.salonId === s.id);
+    const loyalty = loyalties.find((l) => l.salonId === s.id);
+    const tier = tiers.find((t) => t.id === loyalty?.tierId);
+    return {
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      city: s.city,
+      active: s.active,
+      featured: s.featured,
+      rating: s.rating / 10,
+      reviewCount: s.reviewCount,
+      subscriptionStatus: sub?.subscriptions.status ?? null,
+      subscriptionPlan: sub?.subscription_plans.name ?? null,
+      loyaltyTier: tier?.name ?? null,
+      loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
+      createdAt: s.createdAt.toISOString(),
+    };
+  });
+
+  if (subscriptionStatus) result = result.filter((s) => s.subscriptionStatus === subscriptionStatus);
+
+  res.json(result);
+});
+
+router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateSalonParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { salonId } = parsedParams.data;
+  const parsed = AdminUpdateSalonBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { active, featured } = parsed.data;
+
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+
+  const updates: Partial<typeof salonsTable.$inferInsert> = {};
+  if (active !== undefined) updates.active = active;
+  if (featured !== undefined) updates.featured = featured;
+
+  const [updated] = await db.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
+
+  const [subs, loyalties, tiers] = await Promise.all([
+    db.select().from(subscriptionsTable)
+      .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+      .where(eq(subscriptionsTable.salonId, salonId)),
+    db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salonId)),
+    db.select().from(loyaltyTiersTable),
+  ]);
+  const sub = subs[0];
+  const loyalty = loyalties[0];
+  const tier = tiers.find((t) => t.id === loyalty?.tierId);
+
+  res.json({
+    id: updated!.id,
+    name: updated!.name,
+    slug: updated!.slug,
+    city: updated!.city,
+    active: updated!.active,
+    featured: updated!.featured,
+    rating: updated!.rating / 10,
+    reviewCount: updated!.reviewCount,
+    subscriptionStatus: sub?.subscriptions.status ?? null,
+    subscriptionPlan: sub?.subscription_plans.name ?? null,
+    loyaltyTier: tier?.name ?? null,
+    loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
+    createdAt: updated!.createdAt.toISOString(),
+  });
+});
+
+// ── Admin Users ───────────────────────────────────────────────────────────────
+
+router.get("/admin/users", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+
+  let users = await db.select().from(usersTable);
+  const normalizedQuery = normalizeBooleanQuery(req.query, ["active"]);
+  if (!normalizedQuery) { res.status(400).json({ error: "Boolean filter prihvata samo true ili false." }); return; }
+  const parsedQuery = AdminListUsersQueryParams.safeParse(normalizedQuery);
+  if (!parsedQuery.success) { res.status(400).json({ error: parsedQuery.error.message }); return; }
+  const { search, role, active } = parsedQuery.data;
+
+  if (search) {
+    const q = search.toLowerCase();
+    users = users.filter((u) => u.email.toLowerCase().includes(q) || `${u.firstName} ${u.lastName}`.toLowerCase().includes(q));
+  }
+  if (role) users = users.filter((u) => u.role === role);
+  if (active !== undefined) users = users.filter((u) => u.active === active);
+
+  res.json(users.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    phone: u.phone,
+    role: u.role,
+    active: u.active,
+    createdAt: u.createdAt.toISOString(),
+  })));
+});
+
+router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
+  const admin = await requireSuperAdmin(req, res); if (!admin) return;
+  const parsedParams = AdminUpdateUserParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { userId } = parsedParams.data;
+  const parsed = AdminUpdateUserBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { role, active } = parsed.data;
+
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('lumera_active_super_admin_guard'))`);
+    const [target] = await tx.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!target) return { status: "not-found" as const };
+
+    const willRemoveActiveSuperAdmin =
+      target.role === "SUPER_ADMIN" &&
+      target.active &&
+      ((role !== undefined && role !== "SUPER_ADMIN") || active === false);
+
+    if (willRemoveActiveSuperAdmin) {
+      const [activeSuperAdmins] = await tx.select({ count: count() }).from(usersTable)
+        .where(and(eq(usersTable.role, "SUPER_ADMIN"), eq(usersTable.active, true)));
+      if ((activeSuperAdmins?.count ?? 0) <= 1) return { status: "protected" as const };
+    }
+
+    const updates: Partial<typeof usersTable.$inferInsert> = {};
+    if (role !== undefined) updates.role = role;
+    if (active !== undefined) updates.active = active;
+    const [updated] = await tx.update(usersTable).set(updates).where(eq(usersTable.id, userId)).returning();
+    return { status: "updated" as const, user: updated! };
+  });
+
+  if (result.status === "not-found") { res.status(404).json({ error: "Korisnik nije pronađen." }); return; }
+  if (result.status === "protected") {
+    res.status(409).json({ error: "Nije moguće ukloniti ili deaktivirati poslednjeg aktivnog super administratora." });
+    return;
+  }
+  const updated = result.user;
+
+  res.json({
+    id: updated!.id,
+    firstName: updated!.firstName,
+    lastName: updated!.lastName,
+    email: updated!.email,
+    phone: updated!.phone,
+    role: updated!.role,
+    active: updated!.active,
+    createdAt: updated!.createdAt.toISOString(),
+  });
+});
+
+// ── Admin Loyalty Tiers ───────────────────────────────────────────────────────
+
+router.get("/admin/loyalty-tiers", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const tiers = await db.select().from(loyaltyTiersTable).orderBy(asc(loyaltyTiersTable.sortOrder));
+  res.json(tiers.map((t) => ({
+    id: t.id, name: t.name, sortOrder: t.sortOrder, spendThreshold: t.spendThreshold,
+    period: t.period, subscriptionDiscountPercent: t.subscriptionDiscountPercent,
+    productDiscountPercent: t.productDiscountPercent, freeSubscription: t.freeSubscription,
+    premiumListing: t.premiumListing, freeShipping: t.freeShipping, benefits: t.benefits, active: t.active,
+  })));
+});
+
+router.post("/admin/loyalty-tiers", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateLoyaltyTierBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  if (!body.name || body.sortOrder === undefined || body.spendThreshold === undefined) {
+    res.status(400).json({ error: "Naziv, redosled i prag potrošnje su obavezni." }); return;
+  }
+  const [tier] = await db.insert(loyaltyTiersTable).values({
+    name: body.name,
+    sortOrder: body.sortOrder,
+    spendThreshold: body.spendThreshold,
+    period: body.period ?? "monthly",
+    subscriptionDiscountPercent: body.subscriptionDiscountPercent ?? 0,
+    productDiscountPercent: body.productDiscountPercent ?? 0,
+    freeSubscription: body.freeSubscription ?? false,
+    premiumListing: body.premiumListing ?? false,
+    freeShipping: body.freeShipping ?? false,
+    benefits: body.benefits ?? [],
+    active: body.active ?? true,
+  }).returning();
+  res.status(201).json({
+    id: tier!.id, name: tier!.name, sortOrder: tier!.sortOrder, spendThreshold: tier!.spendThreshold,
+    period: tier!.period, subscriptionDiscountPercent: tier!.subscriptionDiscountPercent,
+    productDiscountPercent: tier!.productDiscountPercent, freeSubscription: tier!.freeSubscription,
+    premiumListing: tier!.premiumListing, freeShipping: tier!.freeShipping, benefits: tier!.benefits, active: tier!.active,
+  });
+});
+
+router.patch("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateLoyaltyTierParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { tierId } = parsedParams.data;
+  const [existing] = await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.id, tierId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Nivo nije pronađen." }); return; }
+  const parsed = AdminUpdateLoyaltyTierBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const [tier] = await db.update(loyaltyTiersTable).set({
+    name: body.name ?? existing.name,
+    sortOrder: body.sortOrder ?? existing.sortOrder,
+    spendThreshold: body.spendThreshold ?? existing.spendThreshold,
+    period: body.period ?? existing.period,
+    subscriptionDiscountPercent: body.subscriptionDiscountPercent ?? existing.subscriptionDiscountPercent,
+    productDiscountPercent: body.productDiscountPercent ?? existing.productDiscountPercent,
+    freeSubscription: body.freeSubscription ?? existing.freeSubscription,
+    premiumListing: body.premiumListing ?? existing.premiumListing,
+    freeShipping: body.freeShipping ?? existing.freeShipping,
+    benefits: body.benefits ?? existing.benefits,
+    active: body.active ?? existing.active,
+  }).where(eq(loyaltyTiersTable.id, tierId)).returning();
+  res.json({
+    id: tier!.id, name: tier!.name, sortOrder: tier!.sortOrder, spendThreshold: tier!.spendThreshold,
+    period: tier!.period, subscriptionDiscountPercent: tier!.subscriptionDiscountPercent,
+    productDiscountPercent: tier!.productDiscountPercent, freeSubscription: tier!.freeSubscription,
+    premiumListing: tier!.premiumListing, freeShipping: tier!.freeShipping, benefits: tier!.benefits, active: tier!.active,
+  });
+});
+
+router.delete("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteLoyaltyTierParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { tierId } = parsedParams.data;
+  const [existing] = await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.id, tierId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Nivo nije pronađen." }); return; }
+  // Deactivate instead of hard-delete if there are active salons on this tier
+  const [inUse] = await db.select({ count: count() }).from(salonLoyaltyStatusesTable)
+    .where(eq(salonLoyaltyStatusesTable.tierId, tierId));
+  if ((inUse?.count ?? 0) > 0) {
+    const [deactivated] = await db.update(loyaltyTiersTable).set({ active: false }).where(eq(loyaltyTiersTable.id, tierId)).returning();
+    res.json({
+      id: deactivated!.id, name: deactivated!.name, sortOrder: deactivated!.sortOrder, spendThreshold: deactivated!.spendThreshold,
+      period: deactivated!.period, subscriptionDiscountPercent: deactivated!.subscriptionDiscountPercent,
+      productDiscountPercent: deactivated!.productDiscountPercent, freeSubscription: deactivated!.freeSubscription,
+      premiumListing: deactivated!.premiumListing, freeShipping: deactivated!.freeShipping, benefits: deactivated!.benefits, active: deactivated!.active,
+    });
+    return;
+  }
+  await db.delete(loyaltyTiersTable).where(eq(loyaltyTiersTable.id, tierId));
+  res.json({
+    id: existing.id, name: existing.name, sortOrder: existing.sortOrder, spendThreshold: existing.spendThreshold,
+    period: existing.period, subscriptionDiscountPercent: existing.subscriptionDiscountPercent,
+    productDiscountPercent: existing.productDiscountPercent, freeSubscription: existing.freeSubscription,
+    premiumListing: existing.premiumListing, freeShipping: existing.freeShipping, benefits: existing.benefits, active: false,
+  });
+});
+
+// ── Admin Subscription Plans ──────────────────────────────────────────────────
+
+router.get("/admin/subscription-plans", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const plans = await db.select().from(subscriptionPlansTable);
+  res.json(plans.map((p) => ({
+    id: p.id, name: p.name, price: p.price, trialDays: p.trialDays,
+    features: p.features, limits: p.limits, active: p.active,
+  })));
+});
+
+router.post("/admin/subscription-plans", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateSubscriptionPlanBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  if (!body.name || body.price === undefined) {
+    res.status(400).json({ error: "Naziv i cena su obavezni." }); return;
+  }
+  const [plan] = await db.insert(subscriptionPlansTable).values({
+    name: body.name,
+    price: body.price,
+    trialDays: body.trialDays ?? 0,
+    features: body.features ?? [],
+    limits: body.limits ?? {},
+    active: body.active ?? true,
+  }).returning();
+  res.status(201).json({
+    id: plan!.id, name: plan!.name, price: plan!.price, trialDays: plan!.trialDays,
+    features: plan!.features, limits: plan!.limits, active: plan!.active,
+  });
+});
+
+router.patch("/admin/subscription-plans/:planId", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateSubscriptionPlanParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { planId } = parsedParams.data;
+  const [existing] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Plan nije pronađen." }); return; }
+  const parsed = AdminUpdateSubscriptionPlanBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = parsed.data;
+  const [plan] = await db.update(subscriptionPlansTable).set({
+    name: body.name ?? existing.name,
+    price: body.price ?? existing.price,
+    trialDays: body.trialDays ?? existing.trialDays,
+    features: body.features ?? existing.features,
+    limits: body.limits ?? existing.limits,
+    active: body.active ?? existing.active,
+  }).where(eq(subscriptionPlansTable.id, planId)).returning();
+  res.json({
+    id: plan!.id, name: plan!.name, price: plan!.price, trialDays: plan!.trialDays,
+    features: plan!.features, limits: plan!.limits, active: plan!.active,
+  });
+});
+
+router.delete("/admin/subscription-plans/:planId", async (req, res): Promise<void> => {
+  const user = await requireSuperAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteSubscriptionPlanParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { planId } = parsedParams.data;
+  const [existing] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Plan nije pronađen." }); return; }
+  // Preserve the full subscription history by archiving every referenced plan.
+  const [inUse] = await db.select({ count: count() }).from(subscriptionsTable)
+    .where(eq(subscriptionsTable.planId, planId));
+  if ((inUse?.count ?? 0) > 0) {
+    const [deactivated] = await db.update(subscriptionPlansTable).set({ active: false }).where(eq(subscriptionPlansTable.id, planId)).returning();
+    res.json({
+      id: deactivated!.id, name: deactivated!.name, price: deactivated!.price, trialDays: deactivated!.trialDays,
+      features: deactivated!.features, limits: deactivated!.limits, active: deactivated!.active,
+    });
+    return;
+  }
+  await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
+  res.json({
+    id: existing.id, name: existing.name, price: existing.price, trialDays: existing.trialDays,
+    features: existing.features, limits: existing.limits, active: false,
+  });
+});
+
+// ── Admin Reviews ─────────────────────────────────────────────────────────────
+
+router.get("/admin/reviews", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+
+  let reviews = await db.select().from(reviewsTable).orderBy(desc(reviewsTable.createdAt));
+  const normalizedQuery = normalizeBooleanQuery(req.query, ["visible"]);
+  if (!normalizedQuery) { res.status(400).json({ error: "Boolean filter prihvata samo true ili false." }); return; }
+  const parsedQuery = AdminListReviewsQueryParams.safeParse(normalizedQuery);
+  if (!parsedQuery.success) { res.status(400).json({ error: parsedQuery.error.message }); return; }
+  const { search, salonId, visible, minRating, maxRating } = parsedQuery.data;
+
+  if (salonId) reviews = reviews.filter((r) => r.salonId === salonId);
+  if (visible !== undefined) reviews = reviews.filter((r) => r.visible === visible);
+  if (minRating !== undefined) reviews = reviews.filter((r) => r.rating >= minRating);
+  if (maxRating !== undefined) reviews = reviews.filter((r) => r.rating <= maxRating);
+  if (search) {
+    const q = search.toLowerCase();
+    reviews = reviews.filter((r) => r.text.toLowerCase().includes(q) || r.serviceName.toLowerCase().includes(q));
+  }
+
+  if (!reviews.length) { res.json([]); return; }
+
+  const salonIds = [...new Set(reviews.map((r) => r.salonId))];
+  const customerIds = [...new Set(reviews.map((r) => r.customerId))];
+  const [salons, customers] = await Promise.all([
+    db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
+    db.select().from(usersTable).where(inArray(usersTable.id, customerIds)),
+  ]);
+
+  res.json(reviews.map((r) => {
+    const salon = salons.find((s) => s.id === r.salonId);
+    const customer = customers.find((c) => c.id === r.customerId);
+    return {
+      id: r.id,
+      salonId: r.salonId,
+      salonName: salon?.name ?? "Nepoznat salon",
+      customerId: r.customerId,
+      customerName: customer ? `${customer.firstName} ${customer.lastName}` : "Nepoznat korisnik",
+      serviceName: r.serviceName,
+      rating: r.rating,
+      text: r.text,
+      visible: r.visible,
+      date: r.createdAt.toISOString(),
+    };
+  }));
+});
+
+router.patch("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminUpdateReviewParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { reviewId } = parsedParams.data;
+  const parsed = AdminUpdateReviewBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { visible } = parsed.data;
+
+  const [existing] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+
+  const updates: Partial<typeof reviewsTable.$inferInsert> = {};
+  if (visible !== undefined) updates.visible = visible;
+
+  const [updated] = await db.update(reviewsTable).set(updates).where(eq(reviewsTable.id, reviewId)).returning();
+  const [salon, customer] = await Promise.all([
+    db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1),
+    db.select().from(usersTable).where(eq(usersTable.id, updated!.customerId)).limit(1),
+  ]);
+  res.json({
+    id: updated!.id,
+    salonId: updated!.salonId,
+    salonName: salon[0]?.name ?? "Nepoznat salon",
+    customerId: updated!.customerId,
+    customerName: customer[0] ? `${customer[0].firstName} ${customer[0].lastName}` : "Nepoznat korisnik",
+    serviceName: updated!.serviceName,
+    rating: updated!.rating,
+    text: updated!.text,
+    visible: updated!.visible,
+    date: updated!.createdAt.toISOString(),
+  });
+});
+
+router.delete("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminDeleteReviewParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { reviewId } = parsedParams.data;
+  const [existing] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  await db.delete(reviewsTable).where(eq(reviewsTable.id, reviewId));
+  res.sendStatus(204);
 });
 
 export default router;
