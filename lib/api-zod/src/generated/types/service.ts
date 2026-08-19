@@ -15,6 +15,9 @@ export interface Service {
   price: number;
   /** @nullable */
   promoPrice?: number | null;
+  tags?: string[];
+  /** @nullable */
+  packageTreatments?: number | null;
   imageUrl: string;
   active: boolean;
 }

@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import {
   appointmentsTable,
+  beautyGlossaryTable,
   courseCategoriesTable,
   courseEnrollmentsTable,
   courseLessonsTable,
@@ -10,13 +11,16 @@ import {
   db,
   educationCentersTable,
   employeesTable,
+  inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
   orderItemsTable,
   ordersTable,
   productCategoriesTable,
+  productBrandsTable,
   productsTable,
   salonHoursTable,
+  salonBrandsTable,
   salonLoyaltyStatusesTable,
   salonsTable,
   serviceCategoriesTable,
@@ -43,16 +47,30 @@ const salonNames = [
 ] as const;
 
 const categories = [
-  ["Masaža", "masaza"],
-  ["Maderoterapija", "maderoterapija"],
-  ["Lice", "lice"],
-  ["Telo", "telo"],
+  ["Frizerski saloni", "frizerski-saloni"],
+  ["Muški frizeri", "muski-frizeri"],
+  ["Kozmetički saloni", "kozmeticki-saloni"],
   ["Depilacija", "depilacija"],
+  ["Lice", "lice"],
   ["Nokti", "nokti"],
-  ["Kosa", "kosa"],
-  ["Spa", "spa"],
+  ["Masaža", "masaza"],
+  ["Telo", "telo"],
   ["Wellness", "wellness"],
-  ["Obrve i trepavice", "obrve-trepavice"],
+  ["Lux tretmani", "lux-tretmani"],
+  ["Paketi usluga", "paketi-usluga"],
+  ["Ordinacije i poliklinike", "ordinacije-poliklinike"],
+] as const;
+
+const massageTags = [
+  "Opšta masaža", "Relax / antistres masaža", "Anticelulit masaža", "Dubinska masaža",
+  "Masaža glave", "Terapeutska masaža", "Masaža biljnim jastučićima", "Refleksologija stopala",
+  "Masaža za mršavljenje", "Refleksologija", "Šiacu masaža", "Masaža lica", "Thai masaža stopala",
+  "Švedska masaža", "Masaža teglama", "Masaža za parove", "Holistička masaža", "Indijska masaža",
+  "Ajurvedska masaža", "Masaža za trudnice", "Masaža protiv migrene", "Sportska masaža",
+  "Masaža za bebe", "Dečja masaža", "Masaža šaka", "Masaža stopala", "Thai joga masaža",
+  "Masaža vezivnog tkiva", "Masaža celog tela", "Masaža leđa", "Masaža ramena", "Masaža vrata",
+  "Tajlandska masaža", "Reiki masaža", "Masaža vulkanskim kamenjem", "Klasična masaža",
+  "Masaža u sedećem položaju", "Havajska masaža",
 ] as const;
 
 export async function ensureDemoData(): Promise<void> {
@@ -64,6 +82,7 @@ async function seed(): Promise<void> {
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existing) {
     await seedEducationContent();
+    await seedMarketplaceTaxonomy();
     return;
   }
 
@@ -108,6 +127,11 @@ async function seed(): Promise<void> {
       reviewCount: 18 + index * 7,
       homeService: index % 3 === 0,
       featured: index < 4,
+      topSalon: index < 3,
+      acceptsCards: index % 2 === 0,
+      instantBooking: index % 3 !== 1,
+      latitude: [44.7866, 45.2671, 43.3209, 44.8176, 44.0128, 45.2396, 46.1004, 44.8125, 43.8914, 44.8712][index]!,
+      longitude: [20.4489, 19.8335, 21.8958, 20.4124, 20.9114, 19.8227, 19.6676, 20.4012, 20.3496, 20.6417][index]!,
     })),
   ).returning();
 
@@ -323,7 +347,58 @@ async function seed(): Promise<void> {
   }).returning();
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, role: "ADMIN" });
+  await seedMarketplaceTaxonomy();
   void customer;
+}
+
+async function seedMarketplaceTaxonomy(): Promise<void> {
+  const salons = await db.select().from(salonsTable);
+  if (!salons.length) return;
+  for (const [name, slug] of categories) {
+    await db.insert(serviceCategoriesTable).values({
+      name, slug, description: `Profesionalne ${name.toLowerCase()} usluge dostupne na LUMERA marketplace-u.`,
+    }).onConflictDoNothing();
+  }
+  const categoryRows = await db.select().from(serviceCategoriesTable);
+  const categoryByName = new Map(categoryRows.map((item) => [item.name, item]));
+  const serviceSeeds: Array<[string, string, number, number, string[], number | null, number | null]> = [
+    ["Frizerski saloni", "Žensko šišanje i feniranje", 60, 2200, ["frizura", "feniranje"], null, null], ["Frizerski saloni", "Farbanje kose i preliv", 150, 6500, ["farbanje", "kosa"], 5500, null], ["Frizerski saloni", "Balayage i toniranje", 210, 11500, ["balayage", "kosa"], null, null],
+    ["Muški frizeri", "Muško šišanje", 40, 1400, ["muškarci", "brada"], null, null], ["Muški frizeri", "Šišanje i oblikovanje brade", 60, 2200, ["muškarci", "brada"], null, null], ["Muški frizeri", "Kraljevsko brijanje", 45, 1800, ["muškarci", "brijanje"], null, null],
+    ["Kozmetički saloni", "Lash lift i bojenje trepavica", 60, 3200, ["trepavice", "kozmetika"], null, null], ["Kozmetički saloni", "Laminacija obrva", 45, 2800, ["obrve", "kozmetika"], null, null], ["Kozmetički saloni", "Profesionalno šminkanje", 75, 5500, ["šminkanje", "event"], null, null],
+    ["Depilacija", "Depilacija voskom - cele noge", 45, 2200, ["vosak", "depilacija"], null, null], ["Depilacija", "Brazilska depilacija", 40, 2700, ["vosak", "intimna nega"], null, null], ["Depilacija", "Laser depilacija pazuha", 30, 3500, ["laser", "depilacija"], null, null],
+    ["Lice", "Hidratantni tretman lica", 60, 4200, ["nega lica", "hidratacija"], null, null], ["Lice", "Kiseonički tretman lica", 75, 5900, ["nega lica", "glow"], 4900, null], ["Lice", "Dnevna šminka", 50, 3800, ["šminkanje", "lice"], null, null],
+    ["Nokti", "Manikir sa gel lakom", 75, 2400, ["manikir", "gel lak"], null, null], ["Nokti", "Spa pedikir", 75, 3200, ["pedikir", "spa"], null, null], ["Nokti", "Izlivanje noktiju", 120, 3900, ["nokti", "gel"], null, null],
+    ["Telo", "Maderoterapija tela", 60, 3500, ["telo", "oblikovanje"], null, null], ["Telo", "Body wrapping tretman", 60, 4200, ["telo", "detoks"], null, null], ["Telo", "Limfna drenaža", 60, 4000, ["telo", "drenaža"], null, null],
+    ["Wellness", "Spa ritual sa saunom", 120, 6500, ["spa", "sauna"], null, null], ["Wellness", "Aroma kupka i ritual", 90, 4800, ["wellness", "aroma"], null, null], ["Wellness", "Float terapija", 60, 5200, ["wellness", "relaksacija"], null, null],
+    ["Lux tretmani", "Lux gold facial", 90, 8900, ["lux", "lice"], null, null], ["Lux tretmani", "Ritual vulkanskim kamenjem", 90, 7200, ["lux", "masaža"], null, null], ["Lux tretmani", "VIP bridal paket", 180, 14500, ["lux", "šminkanje"], null, null],
+    ["Paketi usluga", "Anticelulit masaža - paket od 10 tretmana", 45, 25000, ["paket", "anticelulit"], 22000, 10], ["Paketi usluga", "Beauty day paket", 180, 9000, ["paket", "lice", "nokti"], null, 3], ["Paketi usluga", "Paket za mladoženju", 120, 6500, ["paket", "muškarci"], null, 3],
+    ["Ordinacije i poliklinike", "Dermatološki pregled", 30, 3500, ["dermatologija", "pregled"], null, null], ["Ordinacije i poliklinike", "Mezoterapija lica", 60, 9500, ["medicina", "lice"], null, null], ["Ordinacije i poliklinike", "Konsultacija estetskog dermatologa", 30, 3000, ["medicina", "konsultacija"], null, null],
+  ];
+  massageTags.slice(0, 18).forEach((tag, index) => serviceSeeds.push([
+    "Masaža",
+    tag === "Relax / antistres masaža" ? "Relax masaža - 60 minuta" : tag === "Terapeutska masaža" ? "Terapeutska masaža - 30 minuta" : `${tag} - ${index % 2 ? 60 : 45} minuta`,
+    tag === "Terapeutska masaža" ? 30 : index % 2 ? 60 : 45,
+    tag === "Relax / antistres masaža" ? 3500 : tag === "Terapeutska masaža" ? 2500 : 2800 + index * 120,
+    ["masaža", tag], null, null,
+  ]));
+  const existingNames = new Set((await db.select({ name: servicesTable.name }).from(servicesTable)).map((item) => item.name));
+  const missing = serviceSeeds.filter(([, name]) => !existingNames.has(name)).map(([categoryName, name, durationMinutes, price, tags, promoPrice, packageTreatments], index) => {
+    const category = categoryByName.get(categoryName)!;
+    return { salonId: salons[index % salons.length]!.id, categoryId: category.id, categoryName, name, description: `Stručno izveden tretman: ${name}.`, durationMinutes, price, promoPrice, tags, packageTreatments, imageUrl: "/lumera-media/product-1.jpg", active: true };
+  });
+  if (missing.length) await db.insert(servicesTable).values(missing);
+  const brands = [["Kérastase", "kerastase"], ["Olaplex", "olaplex"], ["CND", "cnd"], ["Mesoestetic", "mesoestetic"], ["Thalgo", "thalgo"]];
+  for (const [name, slug] of brands) await db.insert(productBrandsTable).values({ name, slug, description: `${name} profesionalni proizvodi.` }).onConflictDoNothing();
+  const brandRows = await db.select().from(productBrandsTable);
+  const existingLinks = await db.select().from(salonBrandsTable);
+  const brandLinks = salons.flatMap((salon, index) => brandRows.slice(index % 2, (index % 2) + 2).filter((brand) => !existingLinks.some((link) => link.salonId === salon.id && link.brandId === brand.id)).map((brand) => ({ salonId: salon.id, brandId: brand.id })));
+  if (brandLinks.length) await db.insert(salonBrandsTable).values(brandLinks);
+  const glossary = [["Balayage", "balayage", "Tehnika slobodnog osvetljavanja pramenova za prirodan prelaz boje.", "Kosa"], ["Maderoterapija", "maderoterapija", "Masažna tehnika drvenim alatima za stimulaciju mikrocirkulacije.", "Telo"], ["Gel lak", "gel-lak", "Trajniji lak koji se suši u UV/LED lampi.", "Nokti"], ["Mezoterapija", "mezoterapija", "Tretman aktivnim sastojcima koji se radi nakon stručne konsultacije.", "Lice"], ["Lash lift", "lash-lift", "Podizanje i uvijanje prirodnih trepavica.", "Kozmetika"]];
+  for (const [term, slug, definition, category] of glossary) await db.insert(beautyGlossaryTable).values({ term, slug, definition, category }).onConflictDoNothing();
+  const existingInspiration = await db.select({ salonId: inspirationItemsTable.salonId }).from(inspirationItemsTable);
+  const services = await db.select().from(servicesTable);
+  const inspiration = salons.filter((salon) => !existingInspiration.some((item) => item.salonId === salon.id)).slice(0, 8).map((salon, index) => ({ salonId: salon.id, serviceId: services.find((service) => service.salonId === salon.id)?.id ?? null, title: ["Nude gel manikir", "Balayage inspiracija", "Glow tretman lica", "Relax ritual", "Svečana šminka"][index % 5]!, tags: [["nokti"], ["frizure"], ["lice"], ["masaža"], ["šminkanje"]][index % 5]!, imageUrl: salon.imageUrl }));
+  if (inspiration.length) await db.insert(inspirationItemsTable).values(inspiration);
 }
 
 async function seedEducationContent(): Promise<void> {

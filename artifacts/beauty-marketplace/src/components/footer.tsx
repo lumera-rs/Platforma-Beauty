@@ -18,6 +18,9 @@ export function Footer() {
             <h4 className="font-serif text-lg mb-4 text-accent">Klijenti</h4>
             <ul className="space-y-3 text-sm text-background/80">
               <li><Link href="/saloni" className="hover:text-white transition-colors">Pronađi salon</Link></li>
+              <li><Link href="/inspiracija" className="hover:text-white transition-colors">Inspiracija</Link></li>
+              <li><Link href="/recnik" className="hover:text-white transition-colors">Rečnik pojmova</Link></li>
+              <li><Link href="/brendovi" className="hover:text-white transition-colors">Brendovi u salonima</Link></li>
               <li><Link href="/prijava" className="hover:text-white transition-colors">Prijavi se</Link></li>
             </ul>
           </div>

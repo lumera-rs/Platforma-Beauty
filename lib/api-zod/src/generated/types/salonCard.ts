@@ -23,4 +23,16 @@ export interface SalonCard {
   earliestSlot?: string | null;
   homeService: boolean;
   featured: boolean;
+  topSalon: boolean;
+  acceptsCards: boolean;
+  instantBooking: boolean;
+  hasDiscount: boolean;
+  openSunday: boolean;
+  /** @nullable */
+  lastBookedAt?: Date | null;
+  createdAt: Date;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
 }

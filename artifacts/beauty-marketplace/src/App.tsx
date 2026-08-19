@@ -19,6 +19,7 @@ import BusinessAuth from './pages/business-auth';
 import BusinessLanding from './pages/business-landing';
 import BusinessHub from './pages/business-hub';
 import BusinessEducation from './pages/business-education';
+import MarketplaceGuides from './pages/marketplace-guides';
 import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
 import CustomerDashboard from './pages/customer-dashboard';
@@ -129,6 +130,9 @@ function Router() {
         <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
         <Route path="/saloni" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
+        <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
+        <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
+        <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
         <Route path="/moj-nalog">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
             <CustomerDashboard />

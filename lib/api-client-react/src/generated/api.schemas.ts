@@ -105,6 +105,18 @@ export interface SalonCard {
   earliestSlot?: string | null;
   homeService: boolean;
   featured: boolean;
+  topSalon: boolean;
+  acceptsCards: boolean;
+  instantBooking: boolean;
+  hasDiscount: boolean;
+  openSunday: boolean;
+  /** @nullable */
+  lastBookedAt?: string | null;
+  createdAt: string;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
 }
 
 export interface OpeningHour {
@@ -132,6 +144,9 @@ export interface Service {
   price: number;
   /** @nullable */
   promoPrice?: number | null;
+  tags?: string[];
+  /** @nullable */
+  packageTreatments?: number | null;
   imageUrl: string;
   active: boolean;
 }
@@ -621,6 +636,7 @@ export interface AdminSalon {
   city: string;
   active: boolean;
   featured: boolean;
+  topSalon?: boolean;
   rating: number;
   reviewCount: number;
   /** @nullable */
@@ -636,6 +652,7 @@ export interface AdminSalon {
 export interface AdminSalonUpdate {
   active?: boolean;
   featured?: boolean;
+  topSalon?: boolean;
 }
 
 export type AdminUserRole = typeof AdminUserRole[keyof typeof AdminUserRole];
@@ -783,6 +800,7 @@ export const SortQueryParameter = {
   nearest: 'nearest',
   'first-available': 'first-available',
   'most-popular': 'most-popular',
+  newest: 'newest',
 } as const;
 
 export type ListSalonsParams = {
@@ -791,6 +809,7 @@ category?: CategoryQueryParameter;
 treatment?: TreatmentQueryParameter;
 sort?: SortQueryParameter;
 priceMax?: number;
+municipality?: string;
 /**
  * @minimum 0
  * @maximum 5
@@ -799,6 +818,14 @@ minRating?: number;
 availability?: ListSalonsAvailability;
 homeService?: boolean;
 gender?: ListSalonsGender;
+discountsOnly?: boolean;
+acceptsCards?: boolean;
+openSunday?: boolean;
+instantBooking?: boolean;
+topSalon?: boolean;
+brand?: string;
+latitude?: number;
+longitude?: number;
 };
 
 export type ListSalonsAvailability = typeof ListSalonsAvailability[keyof typeof ListSalonsAvailability];

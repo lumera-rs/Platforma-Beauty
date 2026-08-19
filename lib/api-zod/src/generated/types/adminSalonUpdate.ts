@@ -9,4 +9,5 @@
 export interface AdminSalonUpdate {
   active?: boolean;
   featured?: boolean;
+  topSalon?: boolean;
 }

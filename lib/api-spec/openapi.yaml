@@ -118,6 +118,9 @@ paths:
         - name: priceMax
           in: query
           schema: { type: number }
+        - name: municipality
+          in: query
+          schema: { type: string }
         - name: minRating
           in: query
           schema: { type: number, minimum: 0, maximum: 5 }
@@ -130,6 +133,30 @@ paths:
         - name: gender
           in: query
           schema: { type: string, enum: [all, women, men, everyone] }
+        - name: discountsOnly
+          in: query
+          schema: { type: boolean }
+        - name: acceptsCards
+          in: query
+          schema: { type: boolean }
+        - name: openSunday
+          in: query
+          schema: { type: boolean }
+        - name: instantBooking
+          in: query
+          schema: { type: boolean }
+        - name: topSalon
+          in: query
+          schema: { type: boolean }
+        - name: brand
+          in: query
+          schema: { type: string }
+        - name: latitude
+          in: query
+          schema: { type: number }
+        - name: longitude
+          in: query
+          schema: { type: number }
       responses:
         "200":
           description: Salon results
@@ -1151,7 +1178,7 @@ components:
     SortQuery:
       name: sort
       in: query
-      schema: { type: string, enum: [recommended, top-rated, cheapest, nearest, first-available, most-popular], default: recommended }
+      schema: { type: string, enum: [recommended, top-rated, cheapest, nearest, first-available, most-popular, newest], default: recommended }
     SalonSlug:
       name: slug
       in: path
@@ -1276,7 +1303,16 @@ components:
         earliestSlot: { type: ["string", "null"] }
         homeService: { type: boolean }
         featured: { type: boolean }
-      required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured]
+        topSalon: { type: boolean }
+        acceptsCards: { type: boolean }
+        instantBooking: { type: boolean }
+        hasDiscount: { type: boolean }
+        openSunday: { type: boolean }
+        lastBookedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        latitude: { type: ["number", "null"], format: double }
+        longitude: { type: ["number", "null"], format: double }
+      required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, hasDiscount, openSunday, createdAt, latitude, longitude]
     SalonProfile:
       allOf:
         - $ref: "#/components/schemas/SalonCard"
@@ -1333,6 +1369,8 @@ components:
         durationMinutes: { type: number }
         price: { type: number }
         promoPrice: { type: ["number", "null"] }
+        tags: { type: array, items: { type: string } }
+        packageTreatments: { type: ["number", "null"] }
         imageUrl: { type: string }
         active: { type: boolean }
       required: [id, category, name, description, durationMinutes, price, imageUrl, active]
@@ -1699,6 +1737,7 @@ components:
         city: { type: string }
         active: { type: boolean }
         featured: { type: boolean }
+        topSalon: { type: boolean }
         rating: { type: number }
         reviewCount: { type: number }
         subscriptionStatus: { type: ["string", "null"] }
@@ -1712,6 +1751,7 @@ components:
       properties:
         active: { type: boolean }
         featured: { type: boolean }
+        topSalon: { type: boolean }
     AdminUser:
       type: object
       properties:

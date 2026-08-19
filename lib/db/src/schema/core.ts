@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  doublePrecision,
   integer,
   jsonb,
   pgEnum,
@@ -74,10 +75,13 @@ export const salonsTable = pgTable("salons", {
   gallery: jsonb("gallery").$type<string[]>().notNull().default([]),
   rating: integer("rating").notNull().default(0),
   reviewCount: integer("review_count").notNull().default(0),
-  latitude: integer("latitude"),
-  longitude: integer("longitude"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   homeService: boolean("home_service").notNull().default(false),
   featured: boolean("featured").notNull().default(false),
+  topSalon: boolean("top_salon").notNull().default(false),
+  acceptsCards: boolean("accepts_cards").notNull().default(false),
+  instantBooking: boolean("instant_booking").notNull().default(false),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -122,8 +126,41 @@ export const servicesTable = pgTable("services", {
   durationMinutes: integer("duration_minutes").notNull(),
   price: integer("price").notNull(),
   promoPrice: integer("promo_price"),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  packageTreatments: integer("package_treatments"),
   imageUrl: text("image_url").notNull(),
   active: boolean("active").notNull().default(true),
+});
+
+export const productBrandsTable = pgTable("product_brands", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  slug: text("slug").notNull().unique(),
+  description: text("description").notNull(),
+});
+
+export const salonBrandsTable = pgTable("salon_brands", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  brandId: uuid("brand_id").notNull().references(() => productBrandsTable.id, { onDelete: "cascade" }),
+});
+
+export const inspirationItemsTable = pgTable("inspiration_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  serviceId: uuid("service_id").references(() => servicesTable.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  imageUrl: text("image_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const beautyGlossaryTable = pgTable("beauty_glossary", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  term: text("term").notNull().unique(),
+  slug: text("slug").notNull().unique(),
+  definition: text("definition").notNull(),
+  category: text("category").notNull(),
 });
 
 export const employeeServicesTable = pgTable("employee_services", {

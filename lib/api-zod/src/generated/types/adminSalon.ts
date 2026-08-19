@@ -13,6 +13,7 @@ export interface AdminSalon {
   city: string;
   active: boolean;
   featured: boolean;
+  topSalon?: boolean;
   rating: number;
   reviewCount: number;
   /** @nullable */

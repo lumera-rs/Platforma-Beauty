@@ -82,6 +82,9 @@ export default function SalonProfile() {
           <div>
             <div className="flex items-center gap-3 mb-4">
               <Badge className="bg-primary/20 text-primary border-none hover:bg-primary/30">Salon</Badge>
+              {salon.featured && <Badge className="bg-white/15 text-white border-white/20">Istaknuto</Badge>}
+              {salon.topSalon && <Badge className="bg-amber-300/20 text-amber-200 border-amber-200/20">Top Salon</Badge>}
+              {salon.instantBooking && <Badge className="bg-emerald-300/20 text-emerald-100 border-emerald-200/20">Instant zakazivanje</Badge>}
               <div className="flex items-center gap-1 text-accent font-medium text-sm">
                 <Star className="w-4 h-4 fill-current" /> {salon.rating.toFixed(1)} ({salon.reviewCount} recenzija)
               </div>
@@ -129,8 +132,10 @@ export default function SalonProfile() {
                     <p className="text-muted-foreground text-sm mt-1">{service.description}</p>
                     <div className="flex items-center gap-4 mt-3 text-sm font-medium">
                       <span className="flex items-center gap-1 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
-                      <span className="text-foreground">{service.price} RSD</span>
+                       <span className="text-foreground">{service.promoPrice ? <><span className="line-through text-muted-foreground mr-2">{service.price} RSD</span><span className="text-primary font-bold">{service.promoPrice} RSD</span></> : `${service.price} RSD`}</span>
                     </div>
+                    {service.tags?.length ? <div className="mt-2 flex flex-wrap gap-1">{service.tags.map((tag) => <Badge key={tag} variant="secondary" className="text-[10px]">{tag}</Badge>)}</div> : null}
+                    {service.packageTreatments ? <p className="mt-2 text-xs font-medium text-primary">Paket od {service.packageTreatments} tretmana</p> : null}
                   </div>
                   <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedService === service.id ? 'border-primary bg-primary' : 'border-muted-foreground/30'}`}>
                     {selectedService === service.id && <Check className="w-4 h-4 text-primary-foreground" />}
@@ -138,6 +143,11 @@ export default function SalonProfile() {
                 </div>
               ))}
             </div>
+          </section>
+
+          <section id="hours">
+            <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2"><span className="w-8 h-px bg-primary inline-block"></span>Radno vreme</h2>
+            <div className="grid sm:grid-cols-2 gap-2">{salon.hours.map((hour) => <div key={hour.day} className="rounded-lg border px-4 py-3 flex justify-between text-sm"><span className="font-medium">{hour.day}</span><span className={hour.closed ? "text-muted-foreground" : "text-primary"}>{hour.closed ? "Ne radi" : `${hour.open} – ${hour.close}`}</span></div>)}</div>
           </section>
           
           <section id="staff">

@@ -153,12 +153,21 @@ export const ListSalonsQueryParams = zod.object({
   "city": zod.coerce.string().optional(),
   "category": zod.coerce.string().optional(),
   "treatment": zod.coerce.string().optional(),
-  "sort": zod.enum(['recommended', 'top-rated', 'cheapest', 'nearest', 'first-available', 'most-popular']).default(listSalonsQuerySortDefault),
+  "sort": zod.enum(['recommended', 'top-rated', 'cheapest', 'nearest', 'first-available', 'most-popular', 'newest']).default(listSalonsQuerySortDefault),
   "priceMax": zod.coerce.number().optional(),
+  "municipality": zod.coerce.string().optional(),
   "minRating": zod.coerce.number().min(listSalonsQueryMinRatingMin).max(listSalonsQueryMinRatingMax).optional(),
   "availability": zod.enum(['today', 'tomorrow', 'this-week']).optional(),
   "homeService": zod.coerce.boolean().optional(),
-  "gender": zod.enum(['all', 'women', 'men', 'everyone']).optional()
+  "gender": zod.enum(['all', 'women', 'men', 'everyone']).optional(),
+  "discountsOnly": zod.coerce.boolean().optional(),
+  "acceptsCards": zod.coerce.boolean().optional(),
+  "openSunday": zod.coerce.boolean().optional(),
+  "instantBooking": zod.coerce.boolean().optional(),
+  "topSalon": zod.coerce.boolean().optional(),
+  "brand": zod.coerce.string().optional(),
+  "latitude": zod.coerce.number().optional(),
+  "longitude": zod.coerce.number().optional()
 })
 
 export const ListSalonsResponseItem = zod.object({
@@ -176,7 +185,16 @@ export const ListSalonsResponseItem = zod.object({
   "startingPrice": zod.number(),
   "earliestSlot": zod.string().nullish(),
   "homeService": zod.boolean(),
-  "featured": zod.boolean()
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
 })
 export const ListSalonsResponse = zod.array(ListSalonsResponseItem)
 
@@ -207,7 +225,16 @@ export const GetSalonResponse = zod.object({
   "startingPrice": zod.number(),
   "earliestSlot": zod.string().nullish(),
   "homeService": zod.boolean(),
-  "featured": zod.boolean()
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
 }).and(zod.object({
   "gallery": zod.array(zod.string()),
   "description": zod.string(),
@@ -237,6 +264,8 @@ export const GetSalonResponse = zod.object({
   "durationMinutes": zod.number(),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
   "active": zod.boolean()
 })),
@@ -426,7 +455,16 @@ export const GetCustomerDashboardResponse = zod.object({
   "startingPrice": zod.number(),
   "earliestSlot": zod.string().nullish(),
   "homeService": zod.boolean(),
-  "featured": zod.boolean()
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
 })),
   "favoriteCount": zod.number(),
   "visitCount": zod.number()
@@ -451,7 +489,16 @@ export const ListFavoritesResponseItem = zod.object({
   "startingPrice": zod.number(),
   "earliestSlot": zod.string().nullish(),
   "homeService": zod.boolean(),
-  "featured": zod.boolean()
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
 })
 export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem)
 
@@ -488,7 +535,16 @@ export const GetSalonDashboardResponse = zod.object({
   "startingPrice": zod.number(),
   "earliestSlot": zod.string().nullish(),
   "homeService": zod.boolean(),
-  "featured": zod.boolean()
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
 }),
   "todayAppointments": zod.array(zod.object({
   "id": zod.string(),
@@ -593,6 +649,8 @@ export const ListSalonServicesResponseItem = zod.object({
   "durationMinutes": zod.number(),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
   "active": zod.boolean()
 })
@@ -628,6 +686,8 @@ export const CreateSalonServiceResponse = zod.object({
   "durationMinutes": zod.number(),
   "price": zod.number(),
   "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
   "active": zod.boolean()
 })
@@ -1513,6 +1573,7 @@ export const AdminListSalonsResponseItem = zod.object({
   "city": zod.string(),
   "active": zod.boolean(),
   "featured": zod.boolean(),
+  "topSalon": zod.boolean().optional(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "subscriptionStatus": zod.string().nullish(),
@@ -1536,7 +1597,8 @@ export const AdminUpdateSalonParams = zod.object({
 
 export const AdminUpdateSalonBody = zod.object({
   "active": zod.boolean().optional(),
-  "featured": zod.boolean().optional()
+  "featured": zod.boolean().optional(),
+  "topSalon": zod.boolean().optional()
 })
 
 export const AdminUpdateSalonResponse = zod.object({
@@ -1546,6 +1608,7 @@ export const AdminUpdateSalonResponse = zod.object({
   "city": zod.string(),
   "active": zod.boolean(),
   "featured": zod.boolean(),
+  "topSalon": zod.boolean().optional(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
   "subscriptionStatus": zod.string().nullish(),

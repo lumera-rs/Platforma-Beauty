@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   appointmentsTable,
+  beautyGlossaryTable,
   courseEnrollmentsTable,
   courseLessonsTable,
   courseModulesTable,
@@ -11,13 +12,16 @@ import {
   educationCentersTable,
   employeesTable,
   favoritesTable,
+  inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
   orderItemsTable,
   ordersTable,
   productsTable,
+  productBrandsTable,
   reviewsTable,
   salonHoursTable,
+  salonBrandsTable,
   salonLoyaltyStatusesTable,
   salonsTable,
   serviceCategoriesTable,
@@ -401,7 +405,15 @@ function businessSlug(name: string, userId: string) {
   return `${base}-${userId.slice(0, 8)}`;
 }
 
-function card(salon: typeof salonsTable.$inferSelect, services: (typeof servicesTable.$inferSelect)[] = []) {
+function card(
+  salon: typeof salonsTable.$inferSelect,
+  services: (typeof servicesTable.$inferSelect)[] = [],
+  hours: (typeof salonHoursTable.$inferSelect)[] = [],
+  appointments: (typeof appointmentsTable.$inferSelect)[] = [],
+  employees: (typeof employeesTable.$inferSelect)[] = [],
+) {
+  const lastBookedAt = appointments.reduce<Date | null>((latest, item) => !latest || item.createdAt > latest ? item.createdAt : latest, null);
+  const earliestSlot = findEarliestSlot(services, hours, appointments, employees);
   return {
     id: salon.id,
     slug: salon.slug,
@@ -415,16 +427,69 @@ function card(salon: typeof salonsTable.$inferSelect, services: (typeof services
     shortDescription: salon.shortDescription,
     popularServices: services.slice(0, 3).map((item) => item.name),
     startingPrice: services.length ? Math.min(...services.map((item) => item.promoPrice ?? item.price)) : 0,
-    earliestSlot: "Danas, 16:30",
+    earliestSlot,
     homeService: salon.homeService,
     featured: salon.featured,
+    topSalon: salon.topSalon,
+    acceptsCards: salon.acceptsCards,
+    instantBooking: salon.instantBooking,
+    hasDiscount: services.some((item) => item.promoPrice !== null && item.promoPrice < item.price),
+    openSunday: hours.some((item) => item.weekday === 7 && !item.closed),
+    lastBookedAt: lastBookedAt?.toISOString() ?? null,
+    createdAt: salon.createdAt.toISOString(),
+    latitude: salon.latitude,
+    longitude: salon.longitude,
   };
+}
+
+function findEarliestSlot(
+  services: (typeof servicesTable.$inferSelect)[],
+  hours: (typeof salonHoursTable.$inferSelect)[],
+  appointments: (typeof appointmentsTable.$inferSelect)[],
+  employees: (typeof employeesTable.$inferSelect)[],
+) {
+  const service = services.find((item) => item.active);
+  if (!service || !employees.length) return null;
+  const durationHours = Math.max(1, Math.ceil(service.durationMinutes / 60));
+  const now = new Date();
+  for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+    const day = new Date(now);
+    day.setDate(now.getDate() + dayOffset);
+    const weekday = day.getDay() === 0 ? 7 : day.getDay();
+    const workingHours = hours.find((item) => item.weekday === weekday && !item.closed);
+    if (!workingHours) continue;
+    const date = day.toISOString().slice(0, 10);
+    const firstHour = Math.max(Number(workingHours.openTime.slice(0, 2)), dayOffset === 0 ? now.getHours() + 1 : 0);
+    const lastHour = Number(workingHours.closeTime.slice(0, 2)) - durationHours;
+    for (let hour = firstHour; hour <= lastHour; hour += 1) {
+      const start = `${String(hour).padStart(2, "0")}:00`;
+      const end = `${String(hour + durationHours).padStart(2, "0")}:00`;
+      const available = employees.some((employee) => !appointments.some((appointment) =>
+        appointment.employeeId === employee.id && appointment.date === date && appointment.status !== "cancelled"
+          && appointment.startTime < end && appointment.endTime > start,
+      ));
+      if (available) return `${date}T${start}:00.000Z`;
+    }
+  }
+  return null;
 }
 
 async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
   if (!salons.length) return [];
-  const allServices = await db.select().from(servicesTable).where(inArray(servicesTable.salonId, salons.map((salon) => salon.id)));
-  return salons.map((salon) => card(salon, allServices.filter((service) => service.salonId === salon.id)));
+  const ids = salons.map((salon) => salon.id);
+  const [allServices, allHours, allAppointments, allEmployees] = await Promise.all([
+    db.select().from(servicesTable).where(inArray(servicesTable.salonId, ids)),
+    db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, ids)),
+    db.select().from(appointmentsTable).where(inArray(appointmentsTable.salonId, ids)),
+    db.select().from(employeesTable).where(and(inArray(employeesTable.salonId, ids), eq(employeesTable.active, true))),
+  ]);
+  return salons.map((salon) => card(
+    salon,
+    allServices.filter((service) => service.salonId === salon.id),
+    allHours.filter((hour) => hour.salonId === salon.id),
+    allAppointments.filter((appointment) => appointment.salonId === salon.id),
+    allEmployees.filter((employee) => employee.salonId === salon.id),
+  ));
 }
 
 function appointmentView(
@@ -580,21 +645,57 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 
 router.get("/salons", async (req, res): Promise<void> => {
   await ensureDemoData();
-  const parsed = ListSalonsQueryParams.safeParse(req.query);
+  const normalized = normalizeBooleanQuery(req.query, ["homeService", "discountsOnly", "acceptsCards", "openSunday", "instantBooking", "topSalon"]);
+  if (!normalized) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
+  const parsed = ListSalonsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let salons = await db.select().from(salonsTable).where(eq(salonsTable.active, true));
   const query = parsed.data;
   if (query.city) salons = salons.filter((item) => item.city.toLowerCase() === query.city!.toLowerCase());
+  if (query.municipality) salons = salons.filter((item) => item.municipality.toLowerCase() === query.municipality!.toLowerCase());
   if (query.homeService !== undefined) salons = salons.filter((item) => item.homeService === query.homeService);
   const allCards = await salonCards(salons);
-  const filtered = query.category || query.treatment
-    ? allCards.filter((item) => item.popularServices.join(" ").toLowerCase().includes((query.treatment ?? query.category ?? "").toLowerCase()))
-    : allCards;
+  const allServices = salons.length ? await db.select().from(servicesTable).where(inArray(servicesTable.salonId, salons.map((item) => item.id))) : [];
+  const linkedBrands = salons.length ? await db.select().from(salonBrandsTable).where(inArray(salonBrandsTable.salonId, salons.map((item) => item.id))) : [];
+  const brands = linkedBrands.length ? await db.select().from(productBrandsTable).where(inArray(productBrandsTable.id, linkedBrands.map((item) => item.brandId))) : [];
+  const treatment = (query.treatment ?? query.category ?? "").toLowerCase();
+  const filtered = allCards.filter((item) => {
+    const services = allServices.filter((service) => service.salonId === item.id);
+    const matchesTreatment = !treatment || services.some((service) => `${service.categoryName} ${service.name} ${service.tags.join(" ")}`.toLowerCase().includes(treatment));
+    const matchesPrice = query.priceMax === undefined || item.startingPrice <= query.priceMax;
+    const matchesRating = query.minRating === undefined || item.rating >= query.minRating;
+    const matchesMen = query.gender !== "men" || services.some((service) => service.categoryName === "Muški frizeri" || service.tags.some((tag) => tag.toLowerCase().includes("muškar")));
+    const matchesBrand = !query.brand || linkedBrands.filter((link) => link.salonId === item.id).some((link) => brands.find((brand) => brand.id === link.brandId)?.name.toLowerCase() === query.brand!.toLowerCase());
+    return matchesTreatment && matchesPrice && matchesRating && matchesMen && matchesBrand
+      && (query.discountsOnly === undefined || item.hasDiscount === query.discountsOnly)
+      && (query.acceptsCards === undefined || item.acceptsCards === query.acceptsCards)
+      && (query.openSunday === undefined || item.openSunday === query.openSunday)
+      && (query.instantBooking === undefined || item.instantBooking === query.instantBooking)
+      && (query.topSalon === undefined || item.topSalon === query.topSalon);
+  });
   const sorted = [...filtered].sort((a, b) => {
     if (query.sort === "top-rated") return b.rating - a.rating;
     if (query.sort === "cheapest") return a.startingPrice - b.startingPrice;
     if (query.sort === "most-popular") return b.reviewCount - a.reviewCount;
-    return Number(b.featured) - Number(a.featured) || b.rating - a.rating;
+    if (query.sort === "newest") return b.createdAt.localeCompare(a.createdAt);
+    if (query.sort === "first-available") {
+      if (!a.earliestSlot) return 1;
+      if (!b.earliestSlot) return -1;
+      return a.earliestSlot.localeCompare(b.earliestSlot);
+    }
+    if (query.sort === "nearest" && query.latitude !== undefined && query.longitude !== undefined) {
+      const distance = (item: typeof a) => {
+        const source = salons.find((salon) => salon.id === item.id);
+        if (source?.latitude === null || source?.latitude === undefined || source?.longitude === null || source?.longitude === undefined) return Number.POSITIVE_INFINITY;
+        const toRadians = (value: number) => value * Math.PI / 180;
+        const latitudeDelta = toRadians(source.latitude - query.latitude!);
+        const longitudeDelta = toRadians(source.longitude - query.longitude!);
+        const base = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(toRadians(query.latitude!)) * Math.cos(toRadians(source.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
+        return 6371 * 2 * Math.atan2(Math.sqrt(base), Math.sqrt(1 - base));
+      };
+      return distance(a) - distance(b);
+    }
+    return Number(b.topSalon) - Number(a.topSalon) || Number(b.featured) - Number(a.featured) || b.rating - a.rating;
   });
   res.json(ListSalonsResponse.parse(sorted));
 });
@@ -605,15 +706,16 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.slug, parsed.data.slug)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
-  const [services, staff, hours, reviews] = await Promise.all([
+  const [services, staff, hours, reviews, appointments] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
     db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
     db.select().from(salonHoursTable).where(eq(salonHoursTable.salonId, salon.id)).orderBy(asc(salonHoursTable.weekday)),
     db.select().from(reviewsTable).where(and(eq(reviewsTable.salonId, salon.id), eq(reviewsTable.visible, true))),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id)),
   ]);
   const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
   res.json(GetSalonResponse.parse({
-    ...card(salon, services),
+    ...card(salon, services, hours, appointments, staff),
     gallery: salon.gallery,
     description: salon.description,
     phone: salon.phone,
@@ -622,9 +724,40 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     longitude: salon.longitude ?? 20.46,
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
     staff: staff.map((item) => ({ id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties })),
-    services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active })),
+    services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active })),
     reviews: reviews.map((item) => ({ id: item.id, authorName: `${reviewUsers.find((user) => user.id === item.customerId)?.firstName ?? "Gost"} ${reviewUsers.find((user) => user.id === item.customerId)?.lastName ?? ""}`.trim(), rating: item.rating, text: item.text, date: item.createdAt.toISOString().slice(0, 10), serviceName: item.serviceName })),
   }));
+});
+
+router.get("/inspiracija", async (_req, res): Promise<void> => {
+  await ensureDemoData();
+  const [items, salons, services] = await Promise.all([
+    db.select().from(inspirationItemsTable).orderBy(desc(inspirationItemsTable.createdAt)),
+    db.select().from(salonsTable).where(eq(salonsTable.active, true)),
+    db.select().from(servicesTable),
+  ]);
+  res.json(items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    tags: item.tags,
+    imageUrl: item.imageUrl,
+    salon: salons.find((salon) => salon.id === item.salonId) ? { name: salons.find((salon) => salon.id === item.salonId)!.name, slug: salons.find((salon) => salon.id === item.salonId)!.slug } : null,
+    serviceName: services.find((service) => service.id === item.serviceId)?.name ?? null,
+  })));
+});
+
+router.get("/recnik", async (_req, res): Promise<void> => {
+  await ensureDemoData();
+  res.json(await db.select().from(beautyGlossaryTable).orderBy(asc(beautyGlossaryTable.term)));
+});
+
+router.get("/brendovi", async (_req, res): Promise<void> => {
+  await ensureDemoData();
+  const [brands, links, salons] = await Promise.all([db.select().from(productBrandsTable), db.select().from(salonBrandsTable), db.select().from(salonsTable)]);
+  res.json(brands.map((brand) => ({
+    id: brand.id, name: brand.name, slug: brand.slug, description: brand.description,
+    salonCount: links.filter((link) => link.brandId === brand.id && salons.some((salon) => salon.id === link.salonId && salon.active)).length,
+  })));
 });
 
 router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
@@ -1284,6 +1417,7 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
       city: s.city,
       active: s.active,
       featured: s.featured,
+      topSalon: s.topSalon,
       rating: s.rating / 10,
       reviewCount: s.reviewCount,
       subscriptionStatus: sub?.subscriptions.status ?? null,
@@ -1306,7 +1440,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const { salonId } = parsedParams.data;
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { active, featured } = parsed.data;
+  const { active, featured, topSalon } = parsed.data;
 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
@@ -1314,6 +1448,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
   if (active !== undefined) updates.active = active;
   if (featured !== undefined) updates.featured = featured;
+  if (topSalon !== undefined) updates.topSalon = topSalon;
 
   const [updated] = await db.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
 
@@ -1335,6 +1470,7 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
     city: updated!.city,
     active: updated!.active,
     featured: updated!.featured,
+    topSalon: updated!.topSalon,
     rating: updated!.rating / 10,
     reviewCount: updated!.reviewCount,
     subscriptionStatus: sub?.subscriptions.status ?? null,

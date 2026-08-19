@@ -18,6 +18,7 @@ category?: CategoryQueryParameter;
 treatment?: TreatmentQueryParameter;
 sort?: SortQueryParameter;
 priceMax?: number;
+municipality?: string;
 /**
  * @minimum 0
  * @maximum 5
@@ -26,4 +27,12 @@ minRating?: number;
 availability?: ListSalonsAvailability;
 homeService?: boolean;
 gender?: ListSalonsGender;
+discountsOnly?: boolean;
+acceptsCards?: boolean;
+openSunday?: boolean;
+instantBooking?: boolean;
+topSalon?: boolean;
+brand?: string;
+latitude?: number;
+longitude?: number;
 };

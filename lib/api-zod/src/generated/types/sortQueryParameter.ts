@@ -16,4 +16,5 @@ export const SortQueryParameter = {
   nearest: 'nearest',
   'first-available': 'first-available',
   'most-popular': 'most-popular',
+  newest: 'newest',
 } as const;
