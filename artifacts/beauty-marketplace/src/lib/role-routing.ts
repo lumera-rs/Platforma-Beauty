@@ -21,9 +21,9 @@ export function homeForRole(role: UserRole): string {
     case "SUPER_ADMIN":
       return "/admin";
     case "INSTRUCTOR":
-      return "/edukacije";
-    case "SALON_EMPLOYEE":
       return "/za-biznise";
+    case "SALON_EMPLOYEE":
+      return "/biznis/edukacije";
     default:
       return "/";
   }

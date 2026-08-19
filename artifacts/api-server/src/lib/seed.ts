@@ -1,11 +1,16 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
   appointmentsTable,
   courseCategoriesTable,
+  courseEnrollmentsTable,
+  courseLessonsTable,
+  courseModulesTable,
+  courseSessionsTable,
   coursesTable,
   db,
   educationCentersTable,
   employeesTable,
+  lessonProgressTable,
   loyaltyTiersTable,
   orderItemsTable,
   ordersTable,
@@ -57,7 +62,10 @@ export async function ensureDemoData(): Promise<void> {
 
 async function seed(): Promise<void> {
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
-  if (existing) return;
+  if (existing) {
+    await seedEducationContent();
+    return;
+  }
 
   const passwordHash = await hashPassword("LumeraDemo2026!");
   const demoUsers = await db.insert(usersTable).values([
@@ -65,6 +73,7 @@ async function seed(): Promise<void> {
     { firstName: "Ana", lastName: "Petrović", email: "salon@lumera.local", passwordHash, role: "SALON_OWNER" },
     { firstName: "Jelena", lastName: "Marković", email: "edukacija@lumera.local", passwordHash, role: "EDUCATION_CENTER_OWNER" },
     { firstName: "Teodora", lastName: "Nikolić", email: "kupac@lumera.local", passwordHash, role: "CUSTOMER" },
+    { firstName: "Maja", lastName: "Milošević", email: "zaposleni@lumera.local", passwordHash, role: "SALON_EMPLOYEE" },
     ...Array.from({ length: 30 }, (_, i) => ({
       firstName: ["Katarina", "Marija", "Sofija", "Lana", "Una"][i % 5]!,
       lastName: ["Ilić", "Kovačević", "Simić", "Pavlović", "Đorđević"][i % 5]!,
@@ -76,6 +85,7 @@ async function seed(): Promise<void> {
 
   const owner = demoUsers[1]!;
   const customer = demoUsers[3]!;
+  const employeeLearner = demoUsers[4]!;
   const categoryRows = await db.insert(serviceCategoriesTable).values(
     categories.map(([name, slug]) => ({ name, slug, description: `Pažljivo izabrane ${name.toLowerCase()} usluge za svakodnevnu negu.` })),
   ).returning();
@@ -113,6 +123,7 @@ async function seed(): Promise<void> {
       })),
     ),
   ).returning();
+  await db.update(employeesTable).set({ userId: employeeLearner.id }).where(eq(employeesTable.id, employeeRows[0]!.id));
 
   const serviceRows = await db.insert(servicesTable).values(
     salons.flatMap((salon, salonIndex) =>
@@ -240,7 +251,7 @@ async function seed(): Promise<void> {
     { ownerId: demoUsers[2]!.id, name: "Studio Forma Edu", city: "Novi Sad", description: "Znanje kroz praksu i mentorske radionice.", imageUrl: "/lumera-media/course-1.jpg" },
     { ownerId: demoUsers[2]!.id, name: "Wellbeing Institut", city: "Niš", description: "Usavršavanje za terapeute nove generacije.", imageUrl: "/lumera-media/course-1.jpg" },
   ]).returning();
-  await db.insert(coursesTable).values(Array.from({ length: 8 }, (_, index) => ({
+  const educationCourses = await db.insert(coursesTable).values(Array.from({ length: 8 }, (_, index) => ({
     centerId: centers[index % centers.length]!.id,
     categoryId: courseCategory!.id,
     title: ["Maderoterapija od osnova do prakse", "Manualna limfna drenaža", "Rituali nege lica", "Biznis za beauty studio"][index % 4]!,
@@ -252,7 +263,140 @@ async function seed(): Promise<void> {
     rating: 45 + (index % 5),
     certification: true,
     imageUrl: "/lumera-media/course-1.jpg",
-  })));
+    description: "Praktičan program za beauty profesionalce, uz jasno strukturisane lekcije i mentorsku podršku.",
+    startDate: `2026-09-${String(4 + index).padStart(2, "0")}`,
+  }))).returning();
+  const [salonCourse] = await db.insert(coursesTable).values({
+    salonId: salons[0]!.id,
+    categoryId: courseCategory!.id,
+    title: "Napredni spa rituali za salon timove",
+    description: "Kombinacija praktičnih protokola, saveta za tim i standarda vrhunske usluge.",
+    category: "Stručne tehnike",
+    format: "hybrid",
+    city: salons[0]!.city,
+    price: 12400,
+    duration: "3 nedelje",
+    rating: 48,
+    certification: true,
+    imageUrl: "/lumera-media/course-1.jpg",
+    startDate: "2026-09-18",
+  }).returning();
+  const [module] = await db.insert(courseModulesTable).values({
+    courseId: educationCourses[0]!.id,
+    title: "Osnove i bezbedan rad",
+    description: "Postavite standarde tretmana pre praktičnih vežbi.",
+    sortOrder: 1,
+  }).returning();
+  const lessons = await db.insert(courseLessonsTable).values([
+    { moduleId: module!.id, title: "Uvod u protokol", description: "Ciljevi kursa i očekivani rezultati.", content: "Prođite kroz osnovni protokol i pripremu radnog prostora.", durationMinutes: 20, sortOrder: 1 },
+    { moduleId: module!.id, title: "Priprema klijenta", description: "Konsultacija, kontraindikacije i komfor.", content: "Proverite zdravstveni upitnik i pripremite individualni plan tretmana.", durationMinutes: 35, sortOrder: 2 },
+  ]).returning();
+  const [practiceModule] = await db.insert(courseModulesTable).values({
+    courseId: educationCourses[0]!.id,
+    title: "Praksa i evaluacija",
+    description: "Vežba uz mentorsku listu provere.",
+    sortOrder: 2,
+  }).returning();
+  await db.insert(courseLessonsTable).values({
+    moduleId: practiceModule!.id,
+    title: "Završna praktična vežba",
+    description: "Sprovedite kompletan tretman prema standardu.",
+    content: "Zabeležite svaki korak i ocenite rezultat uz mentorsku kontrolnu listu.",
+    durationMinutes: 60,
+    sortOrder: 1,
+  });
+  await db.insert(courseSessionsTable).values([
+    { courseId: educationCourses[1]!.id, startsAt: new Date("2026-09-11T09:00:00.000Z"), endsAt: new Date("2026-09-11T16:00:00.000Z"), location: "Beograd, Vračar", capacity: 12 },
+    { courseId: salonCourse!.id, startsAt: new Date("2026-09-18T10:00:00.000Z"), endsAt: new Date("2026-09-18T15:00:00.000Z"), location: salons[0]!.address, capacity: 10 },
+  ]);
+  const [enrollment] = await db.insert(courseEnrollmentsTable).values({
+    courseId: educationCourses[0]!.id,
+    userId: owner.id,
+    salonId: salons[0]!.id,
+    employeeId: employeeRows[0]!.id,
+    purchaserId: owner.id,
+    status: "active",
+    paymentStatus: "paid",
+    progress: 33,
+    nextLesson: lessons[1]!.id,
+    auditData: { source: "demo-seed" },
+  }).returning();
+  await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, role: "ADMIN" });
   void customer;
+}
+
+async function seedEducationContent(): Promise<void> {
+  const [course] = await db.select().from(coursesTable).limit(1);
+  if (!course) return;
+  let [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, course.id)).limit(1);
+  if (!module) {
+    [module] = await db.insert(courseModulesTable).values({
+      courseId: course.id,
+      title: "Uvod u program",
+      description: "Osnovne smernice i priprema za prvi praktični rad.",
+      sortOrder: 1,
+    }).returning();
+    await db.insert(courseLessonsTable).values([
+      { moduleId: module!.id, title: "Dobrodošli", description: "Pregled ciljeva i sadržaja.", content: "Upoznajte strukturu programa i plan napretka.", durationMinutes: 15, sortOrder: 1 },
+      { moduleId: module!.id, title: "Prvi koraci", description: "Priprema pre praktične vežbe.", content: "Pripremite prostor, alat i listu provere.", durationMinutes: 30, sortOrder: 2 },
+    ]);
+  }
+  const lessons = await db.select().from(courseLessonsTable).where(eq(courseLessonsTable.moduleId, module!.id)).orderBy(asc(courseLessonsTable.sortOrder));
+  const [existingSession] = await db.select({ id: courseSessionsTable.id }).from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).limit(1);
+  if (course.format !== "online" && !existingSession) {
+    await db.insert(courseSessionsTable).values({
+      courseId: course.id,
+      startsAt: new Date("2026-09-24T09:00:00.000Z"),
+      endsAt: new Date("2026-09-24T15:00:00.000Z"),
+      location: course.city ?? "LUMERA edukativni prostor",
+      capacity: 15,
+    });
+  }
+  const [owner] = await db.select().from(usersTable).where(eq(usersTable.role, "SALON_OWNER")).limit(1);
+  if (!owner) return;
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, owner.id)).limit(1);
+  if (!salon) return;
+  let [employee] = await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)).limit(1);
+  if (employee && !employee.userId) {
+    let [learner] = await db.select().from(usersTable).where(eq(usersTable.email, "zaposleni@lumera.local")).limit(1);
+    if (!learner) {
+      [learner] = await db.insert(usersTable).values({
+        firstName: employee.name.split(" ")[0] ?? "Zaposleni",
+        lastName: employee.name.split(" ").slice(1).join(" ") || "salona",
+        email: "zaposleni@lumera.local",
+        passwordHash: await hashPassword("LumeraDemo2026!"),
+        role: "SALON_EMPLOYEE",
+      }).returning();
+    }
+    [employee] = await db.update(employeesTable).set({ userId: learner!.id }).where(eq(employeesTable.id, employee.id)).returning();
+  }
+  const [existingEnrollment] = await db.select({
+    id: courseEnrollmentsTable.id,
+    nextLesson: courseEnrollmentsTable.nextLesson,
+  }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.courseId, course.id)).limit(1);
+  if (existingEnrollment) {
+    const normalizedNextLesson = existingEnrollment.nextLesson
+      ? lessons.find((lesson) => lesson.id === existingEnrollment.nextLesson || lesson.title === existingEnrollment.nextLesson)?.id ?? null
+      : null;
+    if (normalizedNextLesson !== existingEnrollment.nextLesson) {
+      await db.update(courseEnrollmentsTable).set({ nextLesson: normalizedNextLesson, updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, existingEnrollment.id));
+    }
+    return;
+  }
+  const [enrollment] = await db.insert(courseEnrollmentsTable).values({
+    courseId: course.id,
+    userId: owner.id,
+    salonId: salon.id,
+    employeeId: employee?.id ?? null,
+    purchaserId: owner.id,
+    status: "active",
+    paymentStatus: "paid",
+    progress: lessons.length > 1 ? 50 : 0,
+    nextLesson: lessons[1]?.id ?? lessons[0]?.id ?? null,
+    auditData: { source: "incremental-demo-seed" },
+  }).returning();
+  if (lessons[0]) {
+    await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0].id, completedByUserId: owner.id });
+  }
 }

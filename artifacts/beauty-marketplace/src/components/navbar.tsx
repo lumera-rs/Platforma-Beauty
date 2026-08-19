@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, GraduationCap, ChevronDown, Heart, Settings, BriefcaseBusiness } from "lucide-react";
+import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness } from "lucide-react";
 import { Button } from "./ui/button";
 import { useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
@@ -28,7 +28,6 @@ export function Navbar() {
 
   const navLinks = [
     { href: "/saloni", label: "Saloni" },
-    { href: "/edukacije", label: "Edukacije" },
   ];
 
   return (
@@ -86,10 +85,6 @@ export function Navbar() {
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=appointments')}>
                         <Calendar className="mr-2 h-4 w-4" />
                         Moji termini
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setLocation('/edukacije')}>
-                        <GraduationCap className="mr-2 h-4 w-4" />
-                        Moje edukacije
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=favorites')}>
                         <Heart className="mr-2 h-4 w-4" />
@@ -179,7 +174,6 @@ export function Navbar() {
                 {user.role === 'CUSTOMER' && (
                   <>
                     <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Moji termini</Link>
-                    <Link href="/edukacije" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Moje edukacije</Link>
                     <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Omiljeni saloni</Link>
                     <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Profil</Link>
                   </>

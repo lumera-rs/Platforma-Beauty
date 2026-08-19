@@ -2,11 +2,16 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   appointmentsTable,
+  courseEnrollmentsTable,
+  courseLessonsTable,
+  courseModulesTable,
+  courseSessionsTable,
   coursesTable,
   db,
   educationCentersTable,
   employeesTable,
   favoritesTable,
+  lessonProgressTable,
   loyaltyTiersTable,
   orderItemsTable,
   ordersTable,
@@ -60,8 +65,33 @@ import {
   GetSalonParams,
   GetSalonResponse,
   GetShopSummaryResponse,
+  ArchiveEducationCourseParams,
+  CompleteEducationLessonParams,
+  CompleteEducationLessonResponse,
+  CreateEducationCourseBody,
+  CreateEducationCourseResponse,
+  CreateEducationLessonBody,
+  CreateEducationLessonParams,
+  CreateEducationLessonResponse,
+  CreateEducationModuleBody,
+  CreateEducationModuleParams,
+  CreateEducationModuleResponse,
+  CreateEducationSessionBody,
+  CreateEducationSessionParams,
+  CreateEducationSessionResponse,
+  EnrollInEducationCourseBody,
+  EnrollInEducationCourseParams,
+  EnrollInEducationCourseResponse,
+  GetEducationCourseParams,
+  GetEducationCourseResponse,
+  GetEducationLmsParams,
+  GetEducationLmsResponse,
   ListCoursesQueryParams,
   ListCoursesResponse,
+  ListEducationModulesParams,
+  ListEducationModulesResponse,
+  ListEducationSessionsParams,
+  ListEducationSessionsResponse,
   ListEnrollmentsResponse,
   ListFavoritesResponse,
   ListMyAppointmentsQueryParams,
@@ -80,8 +110,21 @@ import {
   RegisterBusinessBody,
   RegisterBody,
   RegisterResponse,
+  PublishEducationCourseParams,
   ToggleFavoriteBody,
   ToggleFavoriteResponse,
+  UpdateEducationCourseBody,
+  UpdateEducationCourseParams,
+  UpdateEducationCourseResponse,
+  UpdateEducationLessonBody,
+  UpdateEducationLessonParams,
+  UpdateEducationLessonResponse,
+  UpdateEducationModuleBody,
+  UpdateEducationModuleParams,
+  UpdateEducationModuleResponse,
+  UpdateEducationSessionBody,
+  UpdateEducationSessionParams,
+  UpdateEducationSessionResponse,
   UpdateAppointmentBody,
   UpdateAppointmentParams,
   UpdateAppointmentResponse,
@@ -136,6 +179,191 @@ async function employeeInSalon(employeeId: string, salonId: string) {
     .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.salonId, salonId)))
     .limit(1);
   return employee ?? null;
+}
+
+type EducationAccess = {
+  user: typeof usersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect | null;
+  centers: (typeof educationCentersTable.$inferSelect)[];
+  admin: boolean;
+};
+
+async function requireEducationAccess(req: Request, res: Response): Promise<EducationAccess | null> {
+  await ensureDemoData();
+  const user = await getCurrentUser(req);
+  if (!user || !["SALON_OWNER", "EDUCATION_CENTER_OWNER", "ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+    res.status(403).json({ error: "Edukacije su dostupne samo poslovnim nalozima." });
+    return null;
+  }
+  const admin = isAdmin(user);
+  const [salon, centers] = await Promise.all([
+    user.role === "SALON_OWNER" ? ownedSalon(user.id) : Promise.resolve(null),
+    user.role === "EDUCATION_CENTER_OWNER"
+      ? db.select().from(educationCentersTable).where(eq(educationCentersTable.ownerId, user.id))
+      : Promise.resolve([] as (typeof educationCentersTable.$inferSelect)[]),
+  ]);
+  if (!admin && !salon && !centers.length) {
+    res.status(403).json({ error: "Poslovni nalog nije povezan sa izdavačem edukacija." });
+    return null;
+  }
+  return { user, salon, centers, admin };
+}
+
+type LmsAccess = {
+  access: EducationAccess;
+  learnerEmployeeId: string | null;
+};
+
+async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess | null> {
+  await ensureDemoData();
+  const user = await getCurrentUser(req);
+  if (!user) {
+    res.status(403).json({ error: "LMS je dostupan samo upisanim poslovnim korisnicima." });
+    return null;
+  }
+  if (["SALON_OWNER", "EDUCATION_CENTER_OWNER", "ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+    const access = await requireEducationAccess(req, res);
+    return access ? { access, learnerEmployeeId: null } : null;
+  }
+  if (user.role !== "SALON_EMPLOYEE") {
+    res.status(403).json({ error: "LMS je dostupan samo upisanim poslovnim korisnicima." });
+    return null;
+  }
+  const [employee] = await db.select().from(employeesTable)
+    .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
+  if (!employee) {
+    res.status(403).json({ error: "Poslovni nalog nije povezan sa aktivnim zaposlenim." });
+    return null;
+  }
+  return {
+    access: { user, salon: null, centers: [], admin: false },
+    learnerEmployeeId: employee.id,
+  };
+}
+
+function isCourseOwner(access: EducationAccess, course: typeof coursesTable.$inferSelect) {
+  if (access.admin) return false;
+  return Boolean(
+    (access.salon && course.salonId === access.salon.id)
+    || access.centers.some((center) => center.id === course.centerId),
+  );
+}
+
+async function requireOwnedCourse(access: EducationAccess, courseId: string, res: Response) {
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1);
+  if (!course) {
+    res.status(404).json({ error: "Kurs nije pronađen." });
+    return null;
+  }
+  if (!isCourseOwner(access, course)) {
+    res.status(403).json({ error: access.admin ? "Administratori imaju samo uvid u tuđe kurseve." : "Nemate pravo izmene ovog kursa." });
+    return null;
+  }
+  return course;
+}
+
+async function modulesForCourse(courseId: string, completedLessonIds = new Set<string>(), includeLessonContent = false) {
+  const modules = await db.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, courseId)).orderBy(asc(courseModulesTable.sortOrder));
+  if (!modules.length) return [];
+  const lessons = await db.select().from(courseLessonsTable).where(inArray(courseLessonsTable.moduleId, modules.map((module) => module.id))).orderBy(asc(courseLessonsTable.sortOrder));
+  return modules.map((module) => ({
+    id: module.id,
+    title: module.title,
+    description: module.description,
+    sortOrder: module.sortOrder,
+    lessons: lessons
+      .filter((lesson) => lesson.moduleId === module.id)
+      .map((lesson) => ({
+        id: lesson.id,
+        title: lesson.title,
+        description: lesson.description,
+        ...(includeLessonContent ? { content: lesson.content } : {}),
+        durationMinutes: lesson.durationMinutes,
+        sortOrder: lesson.sortOrder,
+        completed: completedLessonIds.has(lesson.id),
+      })),
+  }));
+}
+
+async function sessionsForCourse(courseId: string) {
+  const sessions = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, courseId)).orderBy(asc(courseSessionsTable.startsAt));
+  return sessions.map((session) => ({
+    id: session.id,
+    startsAt: session.startsAt.toISOString(),
+    endsAt: session.endsAt.toISOString(),
+    location: session.location,
+    capacity: session.capacity,
+    reservedSeats: session.reservedSeats,
+    availableSeats: Math.max(0, session.capacity - session.reservedSeats),
+  }));
+}
+
+async function educationCourseView(
+  course: typeof coursesTable.$inferSelect,
+  access?: EducationAccess,
+  completedLessonIds = new Set<string>(),
+  includeLessonContent = false,
+) {
+  const mayReadLessonContent = includeLessonContent || Boolean(access && (access.admin || isCourseOwner(access, course)));
+  const [center, salon, sessions, modules] = await Promise.all([
+    course.centerId ? db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1) : Promise.resolve([]),
+    course.salonId ? db.select().from(salonsTable).where(eq(salonsTable.id, course.salonId)).limit(1) : Promise.resolve([]),
+    sessionsForCourse(course.id),
+    modulesForCourse(course.id, completedLessonIds, mayReadLessonContent),
+  ]);
+  const publisher = salon[0] ?? center[0];
+  const enrollment = access
+    ? (await db.select().from(courseEnrollmentsTable).where(and(eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, access.user.id))).limit(1))[0]
+    : undefined;
+  return {
+    id: course.id,
+    title: course.title,
+    description: course.description,
+    instructor: course.instructorId ? "LUMERA mentor" : "Stručni tim",
+    publisher: publisher?.name ?? "LUMERA partner",
+    publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
+    category: course.category,
+    format: course.format,
+    city: course.city,
+    price: course.price,
+    duration: course.duration,
+    rating: course.rating / 10,
+    certification: course.certification,
+    imageUrl: course.imageUrl,
+    startDate: course.startDate,
+    published: course.published,
+    archived: course.archived,
+    availableSeats: sessions.length ? Math.max(...sessions.map((session) => session.availableSeats)) : null,
+    enrollmentStatus: enrollment?.status ?? null,
+    modules,
+    sessions,
+  };
+}
+
+async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable.$inferSelect) {
+  const [course, employee, purchaser, modules] = await Promise.all([
+    db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1),
+    enrollment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, enrollment.employeeId)).limit(1) : Promise.resolve([]),
+    db.select().from(usersTable).where(eq(usersTable.id, enrollment.purchaserId)).limit(1),
+    modulesForCourse(enrollment.courseId),
+  ]);
+  // `nextLesson` used to contain a title in early demo data. Normalize that
+  // legacy value at the boundary so the protected LMS can always select by ID.
+  const nextLesson = enrollment.nextLesson
+    ? modules.flatMap((item) => item.lessons).find((lesson) => lesson.id === enrollment.nextLesson || lesson.title === enrollment.nextLesson)?.id ?? null
+    : null;
+  return {
+    id: enrollment.id,
+    courseId: enrollment.courseId,
+    courseTitle: course[0]?.title ?? "Arhivirani kurs",
+    learnerName: employee[0]?.name ?? `${purchaser[0]?.firstName ?? "Poslovni"} ${purchaser[0]?.lastName ?? "korisnik"}`,
+    employeeId: enrollment.employeeId,
+    status: enrollment.status,
+    paymentStatus: enrollment.paymentStatus,
+    progress: enrollment.progress,
+    nextLesson,
+    purchasedAt: enrollment.purchasedAt.toISOString(),
+  };
 }
 
 async function requireCustomer(req: Request, res: Response) {
@@ -623,19 +851,324 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
 });
 
 router.get("/education/courses", async (req, res): Promise<void> => {
-  await ensureDemoData();
+  const access = await requireEducationAccess(req, res); if (!access) return;
   const parsed = ListCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let courses = await db.select().from(coursesTable).where(eq(coursesTable.published, true));
-  if (parsed.data.format) courses = courses.filter((item) => item.format === parsed.data.format);
-  if (parsed.data.city) courses = courses.filter((item) => item.city === parsed.data.city);
-  const centers = await db.select().from(educationCentersTable);
-  res.json(ListCoursesResponse.parse(courses.map((item) => ({ id: item.id, title: item.title, instructor: "Lumera mentor", center: centers.find((center) => center.id === item.centerId)?.name ?? "Edukativni centar", category: item.category, format: item.format, city: item.city, price: item.price, duration: item.duration, rating: item.rating / 10, certification: item.certification, imageUrl: item.imageUrl }))));
+  const query = parsed.data;
+  let courses = await db.select().from(coursesTable);
+  courses = courses.filter((course) => {
+    const owned = isCourseOwner(access, course);
+    if (query.mine) return access.admin || owned;
+    return !course.archived && (course.published || owned || access.admin);
+  });
+  if (query.format) courses = courses.filter((course) => course.format === query.format);
+  if (query.city) courses = courses.filter((course) => course.city?.toLowerCase() === query.city!.toLowerCase());
+  if (query.category) courses = courses.filter((course) => course.category.toLowerCase().includes(query.category!.toLowerCase()));
+  if (query.certification !== undefined) courses = courses.filter((course) => course.certification === query.certification);
+  if (query.minPrice !== undefined) courses = courses.filter((course) => course.price >= query.minPrice!);
+  if (query.maxPrice !== undefined) courses = courses.filter((course) => course.price <= query.maxPrice!);
+  if (query.minRating !== undefined) courses = courses.filter((course) => course.rating / 10 >= query.minRating!);
+  if (query.startDate) {
+    const earliestStartDate = calendarDate(query.startDate);
+    courses = courses.filter((course) => course.startDate !== null && course.startDate >= earliestStartDate);
+  }
+  if (query.center) {
+    const publishers = await Promise.all(courses.map(async (course) => (await educationCourseView(course, access)).publisher));
+    courses = courses.filter((_, index) => publishers[index]!.toLowerCase().includes(query.center!.toLowerCase()));
+  }
+  const views = await Promise.all(courses.map((course) => educationCourseView(course, access)));
+  res.json(ListCoursesResponse.parse(views));
+});
+
+router.post("/education/courses", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = CreateEducationCourseBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const publisher = access.salon ?? access.centers[0];
+  if (!publisher || access.admin) { res.status(403).json({ error: "Administrator ne može da objavi kurs u ime drugog izdavača." }); return; }
+  const data = parsed.data;
+  const [course] = await db.insert(coursesTable).values({
+    salonId: access.salon?.id ?? null,
+    centerId: access.centers[0]?.id ?? null,
+    title: data.title,
+    description: data.description ?? "",
+    category: data.category,
+    format: data.format,
+    city: data.city ?? publisher.city,
+    price: data.price,
+    duration: data.duration,
+    certification: data.certification ?? false,
+    imageUrl: data.imageUrl,
+    startDate: data.startDate ? calendarDate(data.startDate) : null,
+    published: false,
+    archived: false,
+  }).returning();
+  const view = await educationCourseView(course!, access);
+  res.status(201).json(CreateEducationCourseResponse.parse(view));
+});
+
+router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = GetEducationCourseParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
+  if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  if ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin) {
+    res.status(403).json({ error: "Ovaj kurs nije dostupan u katalogu." }); return;
+  }
+  res.json(GetEducationCourseResponse.parse(await educationCourseView(course, access)));
+});
+
+router.patch("/education/courses/:courseId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [UpdateEducationCourseParams.safeParse(req.params), UpdateEducationCourseBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
+  const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
+  const data = body.data;
+  const [updated] = await db.update(coursesTable).set({
+    ...data,
+    startDate: data.startDate === undefined ? course.startDate : data.startDate ? calendarDate(data.startDate) : null,
+    updatedAt: new Date(),
+  }).where(eq(coursesTable.id, course.id)).returning();
+  res.json(UpdateEducationCourseResponse.parse(await educationCourseView(updated!, access)));
+});
+
+router.post("/education/courses/:courseId/publish", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = PublishEducationCourseParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
+  const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
+  res.json(GetEducationCourseResponse.parse(await educationCourseView(updated!, access)));
+});
+
+router.delete("/education/courses/:courseId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = ArchiveEducationCourseParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
+  await db.update(coursesTable).set({ archived: true, published: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id));
+  res.sendStatus(204);
+});
+
+router.get("/education/courses/:courseId/modules", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = ListEducationModulesParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
+  if (!course || ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin)) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  res.json(ListEducationModulesResponse.parse(await modulesForCourse(course.id, new Set(), access.admin || isCourseOwner(access, course))));
+});
+
+router.post("/education/courses/:courseId/modules", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [CreateEducationModuleParams.safeParse(req.params), CreateEducationModuleBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci modula nisu ispravni." }); return; }
+  const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
+  const [module] = await db.insert(courseModulesTable).values({ courseId: course.id, title: body.data.title, description: body.data.description ?? "", sortOrder: body.data.sortOrder ?? 0 }).returning();
+  res.status(201).json(CreateEducationModuleResponse.parse({ id: module!.id, title: module!.title, description: module!.description, sortOrder: module!.sortOrder, lessons: [] }));
+});
+
+router.patch("/education/modules/:moduleId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [UpdateEducationModuleParams.safeParse(req.params), UpdateEducationModuleBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci modula nisu ispravni." }); return; }
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, params.data.moduleId)).limit(1);
+  if (!module) { res.status(404).json({ error: "Modul nije pronađen." }); return; }
+  const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
+  const [updated] = await db.update(courseModulesTable).set(body.data).where(eq(courseModulesTable.id, module.id)).returning();
+  const lessons = await modulesForCourse(course.id);
+  res.json(UpdateEducationModuleResponse.parse(lessons.find((item) => item.id === updated!.id)!));
+});
+
+router.delete("/education/modules/:moduleId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const moduleId = String(req.params.moduleId ?? "");
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, moduleId)).limit(1);
+  if (!module) { res.status(404).json({ error: "Modul nije pronađen." }); return; }
+  const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
+  await db.delete(courseModulesTable).where(eq(courseModulesTable.id, module.id));
+  res.sendStatus(204);
+});
+
+router.post("/education/modules/:moduleId/lessons", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [CreateEducationLessonParams.safeParse(req.params), CreateEducationLessonBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci lekcije nisu ispravni." }); return; }
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, params.data.moduleId)).limit(1);
+  if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
+  const [lesson] = await db.insert(courseLessonsTable).values({ moduleId: module.id, title: body.data.title, description: body.data.description ?? "", content: body.data.content ?? "", durationMinutes: body.data.durationMinutes ?? 30, sortOrder: body.data.sortOrder ?? 0 }).returning();
+  res.status(201).json(CreateEducationLessonResponse.parse({ ...lesson!, completed: false }));
+});
+
+router.patch("/education/lessons/:lessonId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [UpdateEducationLessonParams.safeParse(req.params), UpdateEducationLessonBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci lekcije nisu ispravni." }); return; }
+  const [lesson] = await db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, params.data.lessonId)).limit(1);
+  if (!lesson) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
+  if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
+  const [updated] = await db.update(courseLessonsTable).set(body.data).where(eq(courseLessonsTable.id, lesson.id)).returning();
+  res.json(UpdateEducationLessonResponse.parse({ ...updated!, completed: false }));
+});
+
+router.delete("/education/lessons/:lessonId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const lessonId = String(req.params.lessonId ?? "");
+  const [lesson] = await db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, lessonId)).limit(1);
+  if (!lesson) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
+  if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
+  await db.delete(courseLessonsTable).where(eq(courseLessonsTable.id, lesson.id));
+  res.sendStatus(204);
+});
+
+router.get("/education/courses/:courseId/sessions", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const parsed = ListEducationSessionsParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
+  if (!course || ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin)) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  res.json(ListEducationSessionsResponse.parse(await sessionsForCourse(course.id)));
+});
+
+router.post("/education/courses/:courseId/sessions", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [CreateEducationSessionParams.safeParse(req.params), CreateEducationSessionBody.safeParse(req.body)];
+  if (!params.success || !body.success || body.data.endsAt <= body.data.startsAt) { res.status(400).json({ error: "Termin kursa nije ispravan." }); return; }
+  const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
+  const [session] = await db.insert(courseSessionsTable).values({ courseId: course.id, startsAt: body.data.startsAt, endsAt: body.data.endsAt, location: body.data.location ?? null, capacity: body.data.capacity }).returning();
+  res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: session!.startsAt.toISOString(), endsAt: session!.endsAt.toISOString(), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity }));
+});
+
+router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, params.data.courseId)).limit(1);
+  if (!course || !course.published || course.archived) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
+  let employee: typeof employeesTable.$inferSelect | null = null;
+  if (body.data.employeeId) {
+    if (!access.salon) { res.status(403).json({ error: "Zaposlenog možete prijaviti samo preko salona." }); return; }
+    employee = await employeeInSalon(body.data.employeeId, access.salon.id);
+    if (!employee) { res.status(403).json({ error: "Izabrani zaposleni ne pripada vašem salonu." }); return; }
+  }
+  const existing = await db.select().from(courseEnrollmentsTable).where(and(eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, access.user.id)));
+  if (existing.some((item) => (item.employeeId ?? null) === (employee?.id ?? null) && item.status !== "cancelled")) { res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." }); return; }
+  const sessions = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt));
+  const session = sessions.find((item) => item.reservedSeats < item.capacity);
+  if (course.format !== "online" && !session) { res.status(409).json({ error: "Nema slobodnih mesta u narednim terminima." }); return; }
+  if (session) await db.update(courseSessionsTable).set({ reservedSeats: session.reservedSeats + 1 }).where(eq(courseSessionsTable.id, session.id));
+  const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
+  const [enrollment] = await db.insert(courseEnrollmentsTable).values({
+    courseId: course.id,
+    userId: access.user.id,
+    salonId: access.salon?.id ?? null,
+    employeeId: employee?.id ?? null,
+    purchaserId: access.user.id,
+    status: "active",
+    paymentStatus: "paid",
+    nextLesson: firstLesson?.id ?? null,
+    auditData: { source: "business-workspace", sessionId: session?.id ?? null },
+  }).returning();
+  res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment!)));
+});
+
+router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const [params, body] = [UpdateEducationSessionParams.safeParse(req.params), UpdateEducationSessionBody.safeParse(req.body)];
+  if (!params.success || !body.success || body.data.endsAt <= body.data.startsAt) { res.status(400).json({ error: "Termin kursa nije ispravan." }); return; }
+  const [session] = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, params.data.sessionId)).limit(1);
+  if (!session || !(await requireOwnedCourse(access, session.courseId, res))) return;
+  if (body.data.capacity < session.reservedSeats) { res.status(409).json({ error: "Kapacitet ne može biti manji od postojećih rezervacija." }); return; }
+  const [updated] = await db.update(courseSessionsTable).set({
+    startsAt: body.data.startsAt,
+    endsAt: body.data.endsAt,
+    location: body.data.location ?? null,
+    capacity: body.data.capacity,
+  }).where(eq(courseSessionsTable.id, session.id)).returning();
+  res.json(UpdateEducationSessionResponse.parse({
+    id: updated!.id,
+    startsAt: updated!.startsAt.toISOString(),
+    endsAt: updated!.endsAt.toISOString(),
+    location: updated!.location,
+    capacity: updated!.capacity,
+    reservedSeats: updated!.reservedSeats,
+    availableSeats: Math.max(0, updated!.capacity - updated!.reservedSeats),
+  }));
+});
+
+router.delete("/education/sessions/:sessionId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const sessionId = String(req.params.sessionId ?? "");
+  const [session] = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.id, sessionId)).limit(1);
+  if (!session || !(await requireOwnedCourse(access, session.courseId, res))) return;
+  if (session.reservedSeats > 0) { res.status(409).json({ error: "Termin sa rezervacijama ne može biti obrisan." }); return; }
+  await db.delete(courseSessionsTable).where(eq(courseSessionsTable.id, session.id));
+  res.sendStatus(204);
 });
 
 router.get("/education/enrollments", async (req, res): Promise<void> => {
-  const user = await requireCustomer(req, res); if (!user) return;
-  res.json(ListEnrollmentsResponse.parse([]));
+  const lmsAccess = await requireLmsAccess(req, res); if (!lmsAccess) return;
+  const [enrollments, courses] = await Promise.all([db.select().from(courseEnrollmentsTable), db.select().from(coursesTable)]);
+  const visible = enrollments.filter((enrollment) => {
+    if (lmsAccess.learnerEmployeeId) return enrollment.employeeId === lmsAccess.learnerEmployeeId;
+    if (lmsAccess.access.admin || enrollment.purchaserId === lmsAccess.access.user.id) return true;
+    const course = courses.find((item) => item.id === enrollment.courseId);
+    return Boolean(course && isCourseOwner(lmsAccess.access, course));
+  });
+  res.json(ListEnrollmentsResponse.parse(await Promise.all(visible.map(educationEnrollmentView))));
+});
+
+router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise<void> => {
+  const lmsAccess = await requireLmsAccess(req, res); if (!lmsAccess) return;
+  const parsed = GetEducationLmsParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1);
+  if (!enrollment) { res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." }); return; }
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+  if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
+  if (!lmsAccess.access.admin && enrollment.purchaserId !== lmsAccess.access.user.id && enrollment.employeeId !== lmsAccess.learnerEmployeeId && !isCourseOwner(lmsAccess.access, course)) {
+    res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." });
+    return;
+  }
+  const progress = await db.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, enrollment.id));
+  res.json(GetEducationLmsResponse.parse({
+    enrollment: await educationEnrollmentView(enrollment),
+    course: await educationCourseView(course, lmsAccess.access, new Set(progress.map((item) => item.lessonId)), true),
+  }));
+});
+
+router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", async (req, res): Promise<void> => {
+  const lmsAccess = await requireLmsAccess(req, res); if (!lmsAccess) return;
+  const parsed = CompleteEducationLessonParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [enrollment, lesson] = await Promise.all([
+    db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1),
+    db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, parsed.data.lessonId)).limit(1),
+  ]);
+  if (!enrollment[0] || (enrollment[0].purchaserId !== lmsAccess.access.user.id && enrollment[0].employeeId !== lmsAccess.learnerEmployeeId) || enrollment[0].status !== "active") { res.status(403).json({ error: "Nemate pravo izmene ovog napretka." }); return; }
+  if (!lesson[0]) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
+  const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson[0].moduleId)).limit(1);
+  if (!module || module.courseId !== enrollment[0].courseId) { res.status(400).json({ error: "Lekcija ne pripada ovom kursu." }); return; }
+  const completed = await db.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, enrollment[0].id));
+  if (!completed.some((item) => item.lessonId === lesson[0].id)) {
+    await db.insert(lessonProgressTable).values({ enrollmentId: enrollment[0].id, lessonId: lesson[0].id, completedByUserId: lmsAccess.access.user.id });
+  }
+  const modules = await modulesForCourse(enrollment[0].courseId);
+  const allLessons = modules.flatMap((item) => item.lessons);
+  const completedIds = new Set([...completed.map((item) => item.lessonId), lesson[0].id]);
+  const progress = allLessons.length ? Math.round((completedIds.size / allLessons.length) * 100) : 0;
+  const nextLesson = allLessons.find((item) => !completedIds.has(item.id))?.id ?? null;
+  const [updated] = await db.update(courseEnrollmentsTable).set({
+    progress,
+    nextLesson,
+    status: progress === 100 ? "completed" : "active",
+    completedAt: progress === 100 ? new Date() : null,
+    updatedAt: new Date(),
+  }).where(eq(courseEnrollmentsTable.id, enrollment[0].id)).returning();
+  res.json(CompleteEducationLessonResponse.parse(await educationEnrollmentView(updated!)));
 });
 
 router.get("/admin/summary", async (req, res): Promise<void> => {

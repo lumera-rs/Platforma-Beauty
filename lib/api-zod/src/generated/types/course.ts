@@ -5,13 +5,17 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CourseEnrollmentStatus } from './courseEnrollmentStatus';
 import type { CourseFormat } from './courseFormat';
+import type { CoursePublisherType } from './coursePublisherType';
 
 export interface Course {
   id: string;
   title: string;
+  description: string;
   instructor: string;
-  center: string;
+  publisher: string;
+  publisherType: CoursePublisherType;
   category: string;
   format: CourseFormat;
   /** @nullable */
@@ -21,4 +25,12 @@ export interface Course {
   rating: number;
   certification: boolean;
   imageUrl: string;
+  /** @nullable */
+  startDate?: Date | null;
+  published: boolean;
+  archived: boolean;
+  /** @nullable */
+  availableSeats?: number | null;
+  /** @nullable */
+  enrollmentStatus?: CourseEnrollmentStatus;
 }

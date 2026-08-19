@@ -76,9 +76,9 @@ export default function BusinessHub() {
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
-                  <Link href="/edukacije">
+                  <Link href="/biznis/edukacije">
                     <BookOpen className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <span className="font-medium">Javni katalog edukacija</span>
+                    <span className="font-medium">Katalog edukacija</span>
                   </Link>
                 </Button>
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-accent/10 hover:text-accent hover:border-accent/30 border-border shadow-sm group transition-all" asChild>
@@ -102,11 +102,11 @@ export default function BusinessHub() {
               </div>
               <h3 className="text-2xl md:text-3xl font-serif font-bold text-white mb-3">Predstavite svoje edukacije pravoj publici</h3>
               <p className="text-background/70 text-base leading-relaxed">
-                Javni katalog pomaže polaznicima da otkriju programe i edukativne centre na jednom mestu.
+                Poslovni katalog povezuje programe, salone i edukativne centre na jednom mestu.
               </p>
             </div>
             <Button size="lg" className="relative z-10 shrink-0 bg-accent text-accent-foreground hover:bg-accent/90 shadow-lg shadow-accent/20 transition-transform hover:scale-105 h-14 px-8 text-base" asChild>
-              <Link href="/edukacije">Pregledaj katalog <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link href="/biznis/edukacije">Pregledaj katalog <ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
           </div>
         </div>

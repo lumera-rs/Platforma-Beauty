@@ -39,11 +39,12 @@ export function BusinessNavbar() {
           { href: "/vlasnik/kalendar", label: "Kalendar" },
           { href: "/vlasnik/usluge", label: "Usluge" },
           { href: "/vlasnik/shop", label: "Shop" },
+          { href: "/biznis/edukacije", label: "Edukacije" },
         ];
       case 'EDUCATION_CENTER_OWNER':
         return [
           { href: "/biznis", label: "Dashboard" },
-          { href: "/edukacije", label: "Edukacije (Javno)" },
+          { href: "/biznis/edukacije", label: "Edukacije" },
         ];
       case 'ADMIN':
       case 'SUPER_ADMIN':
@@ -51,6 +52,7 @@ export function BusinessNavbar() {
           { href: "/admin", label: "Admin Panel" },
           { href: "/admin/saloni", label: "Saloni" },
           { href: "/admin/korisnici", label: "Korisnici" },
+          { href: "/biznis/edukacije", label: "Edukacije" },
         ];
       default:
         return [];

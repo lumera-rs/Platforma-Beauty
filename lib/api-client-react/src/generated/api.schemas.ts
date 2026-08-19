@@ -371,6 +371,14 @@ export interface OrderInput {
   paymentMethod: OrderInputPaymentMethod;
 }
 
+export type CoursePublisherType = typeof CoursePublisherType[keyof typeof CoursePublisherType];
+
+
+export const CoursePublisherType = {
+  SALON: 'SALON',
+  EDUCATION_CENTER: 'EDUCATION_CENTER',
+} as const;
+
 export type CourseFormat = typeof CourseFormat[keyof typeof CourseFormat];
 
 
@@ -380,11 +388,26 @@ export const CourseFormat = {
   hybrid: 'hybrid',
 } as const;
 
+/**
+ * @nullable
+ */
+export type CourseEnrollmentStatus = typeof CourseEnrollmentStatus[keyof typeof CourseEnrollmentStatus] | null;
+
+
+export const CourseEnrollmentStatus = {
+  pending: 'pending',
+  active: 'active',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
 export interface Course {
   id: string;
   title: string;
+  description: string;
   instructor: string;
-  center: string;
+  publisher: string;
+  publisherType: CoursePublisherType;
   category: string;
   format: CourseFormat;
   /** @nullable */
@@ -394,16 +417,181 @@ export interface Course {
   rating: number;
   certification: boolean;
   imageUrl: string;
+  /** @nullable */
+  startDate?: string | null;
+  published: boolean;
+  archived: boolean;
+  /** @nullable */
+  availableSeats?: number | null;
+  /** @nullable */
+  enrollmentStatus?: CourseEnrollmentStatus;
 }
 
-export interface Enrollment {
+export type EducationCourseInputFormat = typeof EducationCourseInputFormat[keyof typeof EducationCourseInputFormat];
+
+
+export const EducationCourseInputFormat = {
+  online: 'online',
+  'in-person': 'in-person',
+  hybrid: 'hybrid',
+} as const;
+
+export interface EducationCourseInput {
+  /** @minLength 2 */
+  title: string;
+  description?: string;
+  /** @minLength 2 */
+  category: string;
+  format: EducationCourseInputFormat;
+  /** @nullable */
+  city?: string | null;
+  /** @minimum 0 */
+  price: number;
+  /** @minLength 1 */
+  duration: string;
+  certification?: boolean;
+  /** @minLength 1 */
+  imageUrl: string;
+  /** @nullable */
+  startDate?: string | null;
+}
+
+export type EducationCourseUpdateFormat = typeof EducationCourseUpdateFormat[keyof typeof EducationCourseUpdateFormat];
+
+
+export const EducationCourseUpdateFormat = {
+  online: 'online',
+  'in-person': 'in-person',
+  hybrid: 'hybrid',
+} as const;
+
+export interface EducationCourseUpdate {
+  /** @minLength 2 */
+  title?: string;
+  description?: string;
+  /** @minLength 2 */
+  category?: string;
+  format?: EducationCourseUpdateFormat;
+  /** @nullable */
+  city?: string | null;
+  /** @minimum 0 */
+  price?: number;
+  /** @minLength 1 */
+  duration?: string;
+  certification?: boolean;
+  /** @minLength 1 */
+  imageUrl?: string;
+  /** @nullable */
+  startDate?: string | null;
+  published?: boolean;
+}
+
+export interface EducationSession {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  location?: string | null;
+  capacity: number;
+  reservedSeats: number;
+  availableSeats: number;
+}
+
+export interface EducationSessionInput {
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  location?: string | null;
+  /** @minimum 1 */
+  capacity: number;
+}
+
+export interface EducationLesson {
+  id: string;
+  title: string;
+  description: string;
+  /** Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment. */
+  content?: string;
+  durationMinutes: number;
+  sortOrder: number;
+  completed: boolean;
+}
+
+export interface EducationLessonInput {
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  content?: string;
+  /** @minimum 1 */
+  durationMinutes?: number;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export interface EducationModule {
+  id: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+  lessons: EducationLesson[];
+}
+
+export interface EducationModuleInput {
+  /** @minLength 1 */
+  title: string;
+  description?: string;
+  /** @minimum 0 */
+  sortOrder?: number;
+}
+
+export type EducationCourseDetail = Course & {
+  modules: EducationModule[];
+  sessions: EducationSession[];
+};
+
+export interface EducationEnrollmentInput {
+  /** @nullable */
+  employeeId?: string | null;
+}
+
+export type EducationEnrollmentStatus = typeof EducationEnrollmentStatus[keyof typeof EducationEnrollmentStatus];
+
+
+export const EducationEnrollmentStatus = {
+  pending: 'pending',
+  active: 'active',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export type EducationEnrollmentPaymentStatus = typeof EducationEnrollmentPaymentStatus[keyof typeof EducationEnrollmentPaymentStatus];
+
+
+export const EducationEnrollmentPaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+} as const;
+
+export interface EducationEnrollment {
   id: string;
   courseId: string;
   courseTitle: string;
+  learnerName: string;
+  /** @nullable */
+  employeeId?: string | null;
+  status: EducationEnrollmentStatus;
+  paymentStatus: EducationEnrollmentPaymentStatus;
   progress: number;
   /** @nullable */
   nextLesson?: string | null;
   purchasedAt: string;
+}
+
+export interface EducationLms {
+  enrollment: EducationEnrollment;
+  course: EducationCourseDetail;
 }
 
 export type AdminSummaryTopCategoriesItem = {
@@ -678,6 +866,26 @@ export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
 category?: string;
+center?: string;
+certification?: boolean;
+/**
+ * @minimum 0
+ */
+minPrice?: number;
+/**
+ * @minimum 0
+ */
+maxPrice?: number;
+/**
+ * Include courses that start on or after this date.
+ */
+startDate?: string;
+/**
+ * @minimum 0
+ * @maximum 5
+ */
+minRating?: number;
+mine?: boolean;
 };
 
 export type ListCoursesFormat = typeof ListCoursesFormat[keyof typeof ListCoursesFormat];

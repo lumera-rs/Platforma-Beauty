@@ -11,4 +11,24 @@ export type ListCoursesParams = {
 format?: ListCoursesFormat;
 city?: string;
 category?: string;
+center?: string;
+certification?: boolean;
+/**
+ * @minimum 0
+ */
+minPrice?: number;
+/**
+ * @minimum 0
+ */
+maxPrice?: number;
+/**
+ * Include courses that start on or after this date.
+ */
+startDate?: string;
+/**
+ * @minimum 0
+ * @maximum 5
+ */
+minRating?: number;
+mine?: boolean;
 };

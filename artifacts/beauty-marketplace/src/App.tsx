@@ -18,6 +18,7 @@ import Auth from './pages/auth';
 import BusinessAuth from './pages/business-auth';
 import BusinessLanding from './pages/business-landing';
 import BusinessHub from './pages/business-hub';
+import BusinessEducation from './pages/business-education';
 import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
 import CustomerDashboard from './pages/customer-dashboard';
@@ -61,6 +62,29 @@ function PlaceholderPage({ title }: { title: string }) {
       </div>
     </Layout>
   )
+}
+
+function LegacyEducationRedirect() {
+  const [, setLocation] = useLocation();
+  const { data, isLoading } = useGetCurrentUser();
+
+  useEffect(() => {
+    if (isLoading) return;
+    const role = data?.user?.role;
+    if (role === "SALON_OWNER" || role === "EDUCATION_CENTER_OWNER" || role === "ADMIN" || role === "SUPER_ADMIN") {
+      setLocation("/biznis/edukacije");
+    } else if (role === "CUSTOMER") {
+      setLocation("/moj-nalog");
+    } else {
+      setLocation("/saloni");
+    }
+  }, [data?.user?.role, isLoading, setLocation]);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" aria-label="Preusmeravanje" />
+    </div>
+  );
 }
 
 function RoleGuard({
@@ -110,6 +134,21 @@ function Router() {
             <CustomerDashboard />
           </RoleGuard>
         </Route>
+        <Route path="/biznis/edukacije">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
+        <Route path="/biznis/edukacije/lms/:enrollmentId">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
+        <Route path="/biznis/edukacije/:courseId">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
         <Route path="/biznis">
           <RoleGuard allowedRoles={['EDUCATION_CENTER_OWNER']} loginPath="/poslovna-prijava">
             <BusinessHub />
@@ -122,7 +161,7 @@ function Router() {
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
-        <Route path="/edukacije"><PlaceholderPage title="Edukacije" /></Route>
+        <Route path="/edukacije"><LegacyEducationRedirect /></Route>
 
         <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>

@@ -6,12 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Enrollment {
-  id: string;
-  courseId: string;
-  courseTitle: string;
-  progress: number;
+export interface EducationSessionInput {
+  startsAt: Date;
+  endsAt: Date;
   /** @nullable */
-  nextLesson?: string | null;
-  purchasedAt: Date;
+  location?: string | null;
+  /** @minimum 1 */
+  capacity: number;
 }

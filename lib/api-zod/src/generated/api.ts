@@ -754,19 +754,37 @@ export const GetLoyaltyStatusResponse = zod.object({
 
 
 /**
- * @summary Browse education courses
+ * @summary Browse business education courses
  */
+export const listCoursesQueryMinPriceMin = 0;
+
+export const listCoursesQueryMaxPriceMin = 0;
+
+export const listCoursesQueryMinRatingMin = 0;
+export const listCoursesQueryMinRatingMax = 5;
+
+
+
 export const ListCoursesQueryParams = zod.object({
   "format": zod.enum(['online', 'in-person', 'hybrid']).optional(),
   "city": zod.coerce.string().optional(),
-  "category": zod.coerce.string().optional()
+  "category": zod.coerce.string().optional(),
+  "center": zod.coerce.string().optional(),
+  "certification": zod.coerce.boolean().optional(),
+  "minPrice": zod.coerce.number().min(listCoursesQueryMinPriceMin).optional(),
+  "maxPrice": zod.coerce.number().min(listCoursesQueryMaxPriceMin).optional(),
+  "startDate": zod.coerce.string().optional(),
+  "minRating": zod.coerce.number().min(listCoursesQueryMinRatingMin).max(listCoursesQueryMinRatingMax).optional(),
+  "mine": zod.coerce.boolean().optional()
 })
 
 export const ListCoursesResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
+  "description": zod.string(),
   "instructor": zod.string(),
-  "center": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
   "format": zod.enum(['online', 'in-person', 'hybrid']),
   "city": zod.string().nullish(),
@@ -774,23 +792,685 @@ export const ListCoursesResponseItem = zod.object({
   "duration": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
-  "imageUrl": zod.string()
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 })
 export const ListCoursesResponse = zod.array(ListCoursesResponseItem)
 
 
 /**
- * @summary List course enrollments
+ * @summary Create a course owned by the current business
+ */
+export const createEducationCourseBodyTitleMin = 2;
+
+export const createEducationCourseBodyCategoryMin = 2;
+
+export const createEducationCourseBodyPriceMin = 0;
+
+
+
+
+
+export const CreateEducationCourseBody = zod.object({
+  "title": zod.string().min(createEducationCourseBodyTitleMin),
+  "description": zod.string().optional(),
+  "category": zod.string().min(createEducationCourseBodyCategoryMin),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number().min(createEducationCourseBodyPriceMin),
+  "duration": zod.string().min(1),
+  "certification": zod.boolean().optional(),
+  "imageUrl": zod.string().min(1),
+  "startDate": zod.coerce.date().nullish()
+})
+
+export const CreateEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+
+
+/**
+ * @summary Get a business course and its curriculum
+ */
+export const GetEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const GetEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+
+
+/**
+ * @summary Update an owned course
+ */
+export const UpdateEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const updateEducationCourseBodyTitleMin = 2;
+
+export const updateEducationCourseBodyCategoryMin = 2;
+
+export const updateEducationCourseBodyPriceMin = 0;
+
+
+
+
+
+export const UpdateEducationCourseBody = zod.object({
+  "title": zod.string().min(updateEducationCourseBodyTitleMin).optional(),
+  "description": zod.string().optional(),
+  "category": zod.string().min(updateEducationCourseBodyCategoryMin).optional(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']).optional(),
+  "city": zod.string().nullish(),
+  "price": zod.number().min(updateEducationCourseBodyPriceMin).optional(),
+  "duration": zod.string().min(1).optional(),
+  "certification": zod.boolean().optional(),
+  "imageUrl": zod.string().min(1).optional(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean().optional()
+})
+
+export const UpdateEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+
+
+/**
+ * @summary Archive an owned course
+ */
+export const ArchiveEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const ArchiveEducationCourseResponse = zod.void()
+
+
+/**
+ * @summary Publish an owned course
+ */
+export const PublishEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const PublishEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+
+
+/**
+ * @summary List course modules and lessons
+ */
+export const ListEducationModulesParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const ListEducationModulesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})
+export const ListEducationModulesResponse = zod.array(ListEducationModulesResponseItem)
+
+
+/**
+ * @summary Create a module in an owned course
+ */
+export const CreateEducationModuleParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+
+export const createEducationModuleBodySortOrderMin = 0;
+
+
+
+export const CreateEducationModuleBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "sortOrder": zod.number().min(createEducationModuleBodySortOrderMin).optional()
+})
+
+export const CreateEducationModuleResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Update a module
+ */
+export const UpdateEducationModuleParams = zod.object({
+  "moduleId": zod.coerce.string()
+})
+
+
+export const updateEducationModuleBodySortOrderMin = 0;
+
+
+
+export const UpdateEducationModuleBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "sortOrder": zod.number().min(updateEducationModuleBodySortOrderMin).optional()
+})
+
+export const UpdateEducationModuleResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Delete a module
+ */
+export const DeleteEducationModuleParams = zod.object({
+  "moduleId": zod.coerce.string()
+})
+
+export const DeleteEducationModuleResponse = zod.void()
+
+
+/**
+ * @summary Create a lesson in an owned module
+ */
+export const CreateEducationLessonParams = zod.object({
+  "moduleId": zod.coerce.string()
+})
+
+
+
+export const createEducationLessonBodySortOrderMin = 0;
+
+
+
+export const CreateEducationLessonBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "content": zod.string().optional(),
+  "durationMinutes": zod.number().min(1).optional(),
+  "sortOrder": zod.number().min(createEducationLessonBodySortOrderMin).optional()
+})
+
+export const CreateEducationLessonResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+})
+
+
+/**
+ * @summary Update a lesson
+ */
+export const UpdateEducationLessonParams = zod.object({
+  "lessonId": zod.coerce.string()
+})
+
+
+
+export const updateEducationLessonBodySortOrderMin = 0;
+
+
+
+export const UpdateEducationLessonBody = zod.object({
+  "title": zod.string().min(1),
+  "description": zod.string().optional(),
+  "content": zod.string().optional(),
+  "durationMinutes": zod.number().min(1).optional(),
+  "sortOrder": zod.number().min(updateEducationLessonBodySortOrderMin).optional()
+})
+
+export const UpdateEducationLessonResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+})
+
+
+/**
+ * @summary Delete a lesson
+ */
+export const DeleteEducationLessonParams = zod.object({
+  "lessonId": zod.coerce.string()
+})
+
+export const DeleteEducationLessonResponse = zod.void()
+
+
+/**
+ * @summary List course sessions
+ */
+export const ListEducationSessionsParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const ListEducationSessionsResponseItem = zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+})
+export const ListEducationSessionsResponse = zod.array(ListEducationSessionsResponseItem)
+
+
+/**
+ * @summary Schedule a live course session
+ */
+export const CreateEducationSessionParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+
+
+
+export const CreateEducationSessionBody = zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number().min(1)
+})
+
+export const CreateEducationSessionResponse = zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+})
+
+
+/**
+ * @summary Reserve or purchase a course place for the owner or an employee
+ */
+export const EnrollInEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const EnrollInEducationCourseBody = zod.object({
+  "employeeId": zod.string().nullish()
+})
+
+export const EnrollInEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a live course session
+ */
+export const UpdateEducationSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+
+
+
+export const UpdateEducationSessionBody = zod.object({
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number().min(1)
+})
+
+export const UpdateEducationSessionResponse = zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+})
+
+
+/**
+ * @summary Delete a live course session
+ */
+export const DeleteEducationSessionParams = zod.object({
+  "sessionId": zod.coerce.string()
+})
+
+export const DeleteEducationSessionResponse = zod.void()
+
+
+/**
+ * @summary List business course enrollments
  */
 export const ListEnrollmentsResponseItem = zod.object({
   "id": zod.string(),
   "courseId": zod.string(),
   "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
   "purchasedAt": zod.coerce.date()
 })
 export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
+
+
+/**
+ * @summary Open the enrolled learner LMS
+ */
+export const GetEducationLmsParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const GetEducationLmsResponse = zod.object({
+  "enrollment": zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date()
+}),
+  "course": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+})
+
+
+/**
+ * @summary Mark an enrolled lesson as complete
+ */
+export const CompleteEducationLessonParams = zod.object({
+  "enrollmentId": zod.coerce.string(),
+  "lessonId": zod.coerce.string()
+})
+
+export const CompleteEducationLessonResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date()
+})
 
 
 /**

@@ -473,7 +473,7 @@ paths:
     get:
       operationId: listCourses
       tags: [education]
-      summary: Browse education courses
+      summary: Browse business education courses
       parameters:
         - name: format
           in: query
@@ -484,6 +484,29 @@ paths:
         - name: category
           in: query
           schema: { type: string }
+        - name: center
+          in: query
+          schema: { type: string }
+        - name: certification
+          in: query
+          schema: { type: boolean }
+        - name: minPrice
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: maxPrice
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            description: Include courses that start on or after this date.
+        - name: minRating
+          in: query
+          schema: { type: number, minimum: 0, maximum: 5 }
+        - name: mine
+          in: query
+          schema: { type: boolean }
       responses:
         "200":
           description: Courses
@@ -492,11 +515,276 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Course" }
+        "403":
+          description: Business access required
+    post:
+      operationId: createEducationCourse
+      tags: [education]
+      summary: Create a course owned by the current business
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCourseInput" }
+      responses:
+        "201":
+          description: Course created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Business access required }
+  /education/courses/{courseId}:
+    get:
+      operationId: getEducationCourse
+      tags: [education]
+      summary: Get a business course and its curriculum
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Course detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Business access required }
+        "404": { description: Course not found }
+    patch:
+      operationId: updateEducationCourse
+      tags: [education]
+      summary: Update an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCourseUpdate" }
+      responses:
+        "200":
+          description: Updated course
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Business access required }
+    delete:
+      operationId: archiveEducationCourse
+      tags: [education]
+      summary: Archive an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "204": { description: Course archived }
+        "403": { description: Business access required }
+  /education/courses/{courseId}/publish:
+    post:
+      operationId: publishEducationCourse
+      tags: [education]
+      summary: Publish an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Published course
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Business access required }
+  /education/courses/{courseId}/modules:
+    get:
+      operationId: listEducationModules
+      tags: [education]
+      summary: List course modules and lessons
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Course modules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationModule" }
+        "403": { description: Business access required }
+    post:
+      operationId: createEducationModule
+      tags: [education]
+      summary: Create a module in an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationModuleInput" }
+      responses:
+        "201":
+          description: Module created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationModule" }
+        "403": { description: Business access required }
+  /education/modules/{moduleId}:
+    patch:
+      operationId: updateEducationModule
+      tags: [education]
+      summary: Update a module
+      parameters:
+        - $ref: "#/components/parameters/ModuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationModuleInput" }
+      responses:
+        "200":
+          description: Updated module
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationModule" }
+        "403": { description: Business access required }
+    delete:
+      operationId: deleteEducationModule
+      tags: [education]
+      summary: Delete a module
+      parameters:
+        - $ref: "#/components/parameters/ModuleId"
+      responses:
+        "204": { description: Module deleted }
+        "403": { description: Business access required }
+  /education/modules/{moduleId}/lessons:
+    post:
+      operationId: createEducationLesson
+      tags: [education]
+      summary: Create a lesson in an owned module
+      parameters:
+        - $ref: "#/components/parameters/ModuleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationLessonInput" }
+      responses:
+        "201":
+          description: Lesson created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationLesson" }
+        "403": { description: Business access required }
+  /education/lessons/{lessonId}:
+    patch:
+      operationId: updateEducationLesson
+      tags: [education]
+      summary: Update a lesson
+      parameters:
+        - $ref: "#/components/parameters/LessonId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationLessonInput" }
+      responses:
+        "200":
+          description: Updated lesson
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationLesson" }
+        "403": { description: Business access required }
+    delete:
+      operationId: deleteEducationLesson
+      tags: [education]
+      summary: Delete a lesson
+      parameters:
+        - $ref: "#/components/parameters/LessonId"
+      responses:
+        "204": { description: Lesson deleted }
+        "403": { description: Business access required }
+  /education/courses/{courseId}/sessions:
+    get:
+      operationId: listEducationSessions
+      tags: [education]
+      summary: List course sessions
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Course sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationSession" }
+        "403": { description: Business access required }
+    post:
+      operationId: createEducationSession
+      tags: [education]
+      summary: Schedule a live course session
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationSessionInput" }
+      responses:
+        "201":
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationSession" }
+        "403": { description: Business access required }
+  /education/courses/{courseId}/enrollments:
+    post:
+      operationId: enrollInEducationCourse
+      tags: [education]
+      summary: Reserve or purchase a course place for the owner or an employee
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationEnrollmentInput" }
+      responses:
+        "201":
+          description: Enrollment created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationEnrollment" }
+        "403": { description: Business access required }
+        "409": { description: Course is full or already enrolled }
+  /education/sessions/{sessionId}:
+    patch:
+      operationId: updateEducationSession
+      tags: [education]
+      summary: Update a live course session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationSessionInput" }
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationSession" }
+        "403": { description: Business access required }
+    delete:
+      operationId: deleteEducationSession
+      tags: [education]
+      summary: Delete a live course session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "204": { description: Session deleted }
+        "403": { description: Business access required }
   /education/enrollments:
     get:
       operationId: listEnrollments
       tags: [education]
-      summary: List course enrollments
+      summary: List business course enrollments
       responses:
         "200":
           description: Enrollments
@@ -504,7 +792,37 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Enrollment" }
+                items: { $ref: "#/components/schemas/EducationEnrollment" }
+        "403": { description: Business access required }
+  /education/enrollments/{enrollmentId}/lms:
+    get:
+      operationId: getEducationLms
+      tags: [education]
+      summary: Open the enrolled learner LMS
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      responses:
+        "200":
+          description: LMS course content and progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationLms" }
+        "403": { description: Enrollment access required }
+  /education/enrollments/{enrollmentId}/lessons/{lessonId}/complete:
+    post:
+      operationId: completeEducationLesson
+      tags: [education]
+      summary: Mark an enrolled lesson as complete
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+        - $ref: "#/components/parameters/LessonId"
+      responses:
+        "200":
+          description: Updated enrollment progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationEnrollment" }
+        "403": { description: Enrollment access required }
   /admin/summary:
     get:
       operationId: getAdminSummary
@@ -849,6 +1167,31 @@ components:
       in: path
       required: true
       schema: { type: string }
+    CourseId:
+      name: courseId
+      in: path
+      required: true
+      schema: { type: string }
+    ModuleId:
+      name: moduleId
+      in: path
+      required: true
+      schema: { type: string }
+    LessonId:
+      name: lessonId
+      in: path
+      required: true
+      schema: { type: string }
+    EnrollmentId:
+      name: enrollmentId
+      in: path
+      required: true
+      schema: { type: string }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
   schemas:
     HealthStatus:
       type: object
@@ -1183,8 +1526,10 @@ components:
       properties:
         id: { type: string }
         title: { type: string }
+        description: { type: string }
         instructor: { type: string }
-        center: { type: string }
+        publisher: { type: string }
+        publisherType: { type: string, enum: [SALON, EDUCATION_CENTER] }
         category: { type: string }
         format: { type: string, enum: [online, in-person, hybrid] }
         city: { type: ["string", "null"] }
@@ -1193,17 +1538,135 @@ components:
         rating: { type: number }
         certification: { type: boolean }
         imageUrl: { type: string }
-      required: [id, title, instructor, center, category, format, price, duration, rating, certification, imageUrl]
-    Enrollment:
+        startDate: { type: ["string", "null"], format: date }
+        published: { type: boolean }
+        archived: { type: boolean }
+        availableSeats: { type: ["number", "null"] }
+        enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
+      required: [id, title, description, instructor, publisher, publisherType, category, format, price, duration, rating, certification, imageUrl, published, archived]
+    EducationCourseInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 2 }
+        description: { type: string }
+        category: { type: string, minLength: 2 }
+        format: { type: string, enum: [online, in-person, hybrid] }
+        city: { type: ["string", "null"] }
+        price: { type: number, minimum: 0 }
+        duration: { type: string, minLength: 1 }
+        certification: { type: boolean }
+        imageUrl: { type: string, minLength: 1 }
+        startDate: { type: ["string", "null"], format: date }
+      required: [title, category, format, price, duration, imageUrl]
+    EducationCourseUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 2 }
+        description: { type: string }
+        category: { type: string, minLength: 2 }
+        format: { type: string, enum: [online, in-person, hybrid] }
+        city: { type: ["string", "null"] }
+        price: { type: number, minimum: 0 }
+        duration: { type: string, minLength: 1 }
+        certification: { type: boolean }
+        imageUrl: { type: string, minLength: 1 }
+        startDate: { type: ["string", "null"], format: date }
+        published: { type: boolean }
+    EducationSession:
+      type: object
+      properties:
+        id: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        location: { type: ["string", "null"] }
+        capacity: { type: number }
+        reservedSeats: { type: number }
+        availableSeats: { type: number }
+      required: [id, startsAt, endsAt, capacity, reservedSeats, availableSeats]
+    EducationSessionInput:
+      type: object
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        location: { type: ["string", "null"] }
+        capacity: { type: number, minimum: 1 }
+      required: [startsAt, endsAt, capacity]
+    EducationLesson:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        content:
+          type: string
+          description: Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.
+        durationMinutes: { type: number }
+        sortOrder: { type: number }
+        completed: { type: boolean }
+      required: [id, title, description, durationMinutes, sortOrder, completed]
+    EducationLessonInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        content: { type: string }
+        durationMinutes: { type: number, minimum: 1 }
+        sortOrder: { type: number, minimum: 0 }
+      required: [title]
+    EducationModule:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        sortOrder: { type: number }
+        lessons:
+          type: array
+          items: { $ref: "#/components/schemas/EducationLesson" }
+      required: [id, title, description, sortOrder, lessons]
+    EducationModuleInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        sortOrder: { type: number, minimum: 0 }
+      required: [title]
+    EducationCourseDetail:
+      allOf:
+        - $ref: "#/components/schemas/Course"
+        - type: object
+          properties:
+            modules:
+              type: array
+              items: { $ref: "#/components/schemas/EducationModule" }
+            sessions:
+              type: array
+              items: { $ref: "#/components/schemas/EducationSession" }
+          required: [modules, sessions]
+    EducationEnrollmentInput:
+      type: object
+      properties:
+        employeeId: { type: ["string", "null"] }
+    EducationEnrollment:
       type: object
       properties:
         id: { type: string }
         courseId: { type: string }
         courseTitle: { type: string }
+        learnerName: { type: string }
+        employeeId: { type: ["string", "null"] }
+        status: { type: string, enum: [pending, active, completed, cancelled] }
+        paymentStatus: { type: string, enum: [pending, paid, failed, refunded] }
         progress: { type: number }
         nextLesson: { type: ["string", "null"] }
         purchasedAt: { type: string, format: date-time }
-      required: [id, courseId, courseTitle, progress, purchasedAt]
+      required: [id, courseId, courseTitle, learnerName, status, paymentStatus, progress, purchasedAt]
+    EducationLms:
+      type: object
+      properties:
+        enrollment: { $ref: "#/components/schemas/EducationEnrollment" }
+        course: { $ref: "#/components/schemas/EducationCourseDetail" }
+      required: [enrollment, course]
     AdminSummary:
       type: object
       properties:
