@@ -1,3 +1,4 @@
 - [Orval and Zod compatibility](orval-zod-compatibility.md) — shared API generation needs Zod v3-safe OpenAPI schemas and a duplicate-export check.
 - [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.
 - [Social sign-in safety](social-signin-safety.md) — never infer a usable password from a stored hash on OAuth-created accounts.
+- [Integration configuration security](integration-configuration-security.md) — credentials in database settings require deployment-held encryption and approved provider origins.

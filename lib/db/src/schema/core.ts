@@ -35,6 +35,7 @@ export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued"
 export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
 export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "sent", "failed", "skipped"]);
 export const smsMessageTypeEnum = pgEnum("sms_message_type", ["appointment_confirmation", "appointment_reminder"]);
+export const integrationKeyEnum = pgEnum("integration_key", ["sms", "brevo", "google_oauth", "facebook_oauth"]);
 
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -79,6 +80,19 @@ export const oauthLoginStatesTable = pgTable("oauth_login_states", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const integrationSettingsTable = pgTable("integration_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  integration: integrationKeyEnum("integration").notNull(),
+  settingKey: text("setting_key").notNull(),
+  encryptedValue: text("encrypted_value").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("integration_settings_integration_key_unique").on(table.integration, table.settingKey),
+]);
 
 export const emailDeliveriesTable = pgTable("email_deliveries", {
   id: uuid("id").defaultRandom().primaryKey(),

@@ -2,17 +2,20 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 import { db, emailDeliveriesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { integrationSettings, integrationValue } from "./integrations";
 
 type Recipient = { email: string; name?: string | null };
 
-function sender() {
-  const email = process.env["BREVO_SENDER_EMAIL"];
+async function sender() {
+  const email = await integrationValue("brevo", "senderEmail", process.env["BREVO_SENDER_EMAIL"]);
   if (!email) return null;
-  return { email, name: process.env["BREVO_SENDER_NAME"] || "LUMERA" };
+  return { email, name: await integrationValue("brevo", "senderName", process.env["BREVO_SENDER_NAME"]) || "LUMERA" };
 }
 
 async function brevoFetch(path: string, init: RequestInit): Promise<Response> {
-  const apiKey = process.env["BREVO_API_KEY"];
+  const settings = await integrationSettings("brevo");
+  if (!settings.enabled) throw new Error("Brevo integracija je isključena u admin podešavanjima.");
+  const apiKey = settings.values.apiKey ?? process.env["BREVO_API_KEY"];
   if (apiKey) {
     return fetch(`https://api.brevo.com/v3${path}`, {
       ...init,
@@ -63,7 +66,7 @@ export async function sendTransactionalEmail(input: {
   }).onConflictDoNothing().returning();
   if (!delivery) return { deduplicated: true };
 
-  const from = sender();
+  const from = await sender();
   if (!from) {
     await db.update(emailDeliveriesTable).set({
       status: "skipped",
@@ -102,7 +105,7 @@ export async function createBrevoMarketingCampaign(input: {
   recipients: Recipient[];
   scheduledAt?: Date | null;
 }) {
-  const from = sender();
+  const from = await sender();
   if (!from) throw new Error("BREVO_SENDER_EMAIL nije podešen.");
   if (!input.recipients.length) throw new Error("Izabrana publika nema primaoce.");
 

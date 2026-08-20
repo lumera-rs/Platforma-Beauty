@@ -222,8 +222,9 @@ import {
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, sendTransactionalEmail } from "../lib/brevo";
 import { ensureDemoData } from "../lib/seed";
-import { maskPhone, sendSms } from "../lib/sms";
+import { maskPhone, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
+import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
 
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
@@ -345,19 +346,19 @@ async function campaignRecipients(audience: "customers" | "salons" | "loyalty", 
   return rows.map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
 }
 
-function oauthProviderConfig(provider: OAuthProvider) {
+async function oauthProviderConfig(provider: OAuthProvider) {
   if (provider === "google") {
-    const clientId = process.env["GOOGLE_CLIENT_ID"];
-    const clientSecret = process.env["GOOGLE_CLIENT_SECRET"];
+    const clientId = await integrationValue("google_oauth", "clientId", process.env["GOOGLE_CLIENT_ID"]);
+    const clientSecret = await integrationValue("google_oauth", "clientSecret", process.env["GOOGLE_CLIENT_SECRET"]);
     return clientId && clientSecret ? { clientId, clientSecret } : null;
   }
-  const clientId = process.env["FACEBOOK_APP_ID"];
-  const clientSecret = process.env["FACEBOOK_APP_SECRET"];
+  const clientId = await integrationValue("facebook_oauth", "clientId", process.env["FACEBOOK_APP_ID"]);
+  const clientSecret = await integrationValue("facebook_oauth", "clientSecret", process.env["FACEBOOK_APP_SECRET"]);
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
 async function resolveOAuthProfile(provider: OAuthProvider, code: string, redirectUri: string, codeVerifier?: string | null): Promise<OAuthProfile> {
-  const config = oauthProviderConfig(provider);
+  const config = await oauthProviderConfig(provider);
   if (!config) throw new Error("OAuth provajder nije konfigurisan.");
   const tokenUrl = provider === "google" ? "https://oauth2.googleapis.com/token" : "https://graph.facebook.com/v20.0/oauth/access_token";
   const tokenBody = new URLSearchParams({
@@ -860,7 +861,8 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
   const provider = req.params.provider;
   const flow = req.query.flow === "business" ? "business" : "customer";
   if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
-  if (!oauthProviderConfig(provider)) { res.redirect(oauthFailurePath(flow, "OAuth prijava trenutno nije podešena.")); return; }
+  const oauthConfig = await oauthProviderConfig(provider);
+  if (!oauthConfig) { res.redirect(oauthFailurePath(flow, "OAuth prijava trenutno nije podešena.")); return; }
   const redirectUri = oauthRedirect(req, provider);
   if (!redirectUri) { res.redirect(oauthFailurePath(flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
   const state = randomBytes(32).toString("base64url");
@@ -874,7 +876,7 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
     path: "/api/auth/oauth",
   });
   const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://www.facebook.com/v20.0/dialog/oauth");
-  url.searchParams.set("client_id", oauthProviderConfig(provider)!.clientId);
+  url.searchParams.set("client_id", oauthConfig.clientId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
@@ -998,6 +1000,94 @@ router.get("/admin/sms-deliveries", async (req, res): Promise<void> => {
     recipientPhone: maskPhone(delivery.recipientPhone), messageType: delivery.messageType, status: delivery.status,
     errorMessage: delivery.errorMessage, createdAt: delivery.createdAt,
   }))));
+});
+
+const integrationDefinitions: Record<IntegrationName, { keys: string[]; required: string[] }> = {
+  sms: { keys: ["apiKey", "senderName", "baseUrl"], required: ["apiKey", "senderName"] },
+  brevo: { keys: ["apiKey", "senderEmail", "senderName"], required: ["apiKey", "senderEmail"] },
+  google_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
+  facebook_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
+};
+
+function integrationName(value: string): value is IntegrationName {
+  return value in integrationDefinitions;
+}
+
+function requestOrigin(req: Request) {
+  const host = req.get("host") ?? "localhost";
+  return `${req.protocol}://${host}`;
+}
+
+router.get("/admin/integrations", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const entries = await Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
+    name,
+    await integrationDisplay(name as IntegrationName, definition.keys, definition.required),
+  ]));
+  const origin = requestOrigin(req);
+  res.json({
+    integrations: Object.fromEntries(entries),
+    redirectUris: {
+      google: `${origin}/api/auth/oauth/google/callback`,
+      facebook: `${origin}/api/auth/oauth/facebook/callback`,
+    },
+    smsReminder: {
+      command: "pnpm --filter @workspace/scripts run sms-reminders",
+      active: false,
+      instructions: [
+        "U Replit Deployments izaberite Create deployment, zatim Scheduled deployment.",
+        "Podesite jutarnji raspored, na primer 08:00 po vremenu Beograda.",
+        "Kao komandu unesite prikazanu komandu ispod.",
+        "Dodajte LUMERA_API_BASE_URL i SMS_REMINDER_JOB_SECRET u podešavanja scheduled deployment-a.",
+      ],
+    },
+  });
+});
+
+router.put("/admin/integrations/:integration", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  if (!integrationName(req.params.integration)) { res.status(404).json({ error: "Nepoznata integracija." }); return; }
+  const body = req.body as { enabled?: unknown; values?: unknown };
+  if (typeof body.enabled !== "boolean" || !body.values || typeof body.values !== "object" || Array.isArray(body.values)) {
+    res.status(400).json({ error: "Pošaljite enabled vrednost i polja integracije." }); return;
+  }
+  const definition = integrationDefinitions[req.params.integration];
+  const values = Object.fromEntries(Object.entries(body.values as Record<string, unknown>)
+    .filter(([key, value]) => definition.keys.includes(key) && typeof value === "string")
+    .map(([key, value]) => [key, value as string]));
+  if (req.params.integration === "sms" && values.baseUrl) {
+    try { infobipBaseUrl(values.baseUrl); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "SMS base URL nije ispravan." }); return; }
+  }
+  await saveIntegrationSettings({ integration: req.params.integration, enabled: body.enabled, values, updatedByUserId: user.id });
+  res.json(await integrationDisplay(req.params.integration, definition.keys, definition.required));
+});
+
+router.post("/admin/integrations/:integration/test", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  if (!integrationName(req.params.integration)) { res.status(404).json({ error: "Nepoznata integracija." }); return; }
+  const recipient = typeof req.body?.recipient === "string" ? req.body.recipient.trim() : "";
+  try {
+    if (req.params.integration === "sms") {
+      if (!recipient) { res.status(400).json({ error: "Unesite broj za test SMS." }); return; }
+      await sendTestSms(recipient);
+      res.json({ message: "Test SMS je poslat." }); return;
+    }
+    if (req.params.integration === "brevo") {
+      if (!recipient || !recipient.includes("@")) { res.status(400).json({ error: "Unesite ispravnu e-mail adresu za test." }); return; }
+      const result = await sendTransactionalEmail({
+        eventKey: `integration-test-email:${Date.now()}`, emailType: "integration_test", to: { email: recipient, name: "LUMERA administrator" },
+        subject: "LUMERA — test Brevo integracije", htmlContent: lumeraEmailHtml("Test e-mail", "<p>Brevo integracija je uspešno povezana.</p>"),
+      });
+      if ("failed" in result || "skipped" in result) throw new Error("Brevo nije poslao test e-mail. Proverite podešavanja.");
+      res.json({ message: "Test e-mail je poslat." }); return;
+    }
+    const config = await integrationSettings(req.params.integration);
+    const definition = integrationDefinitions[req.params.integration];
+    if (!config.enabled || !definition.required.every((key) => Boolean(config.values[key]))) throw new Error("Popunite i aktivirajte obavezna OAuth polja pre testa.");
+    res.json({ message: "OAuth konfiguracija je potpuna. Redirect URI je spreman za unos kod provajdera." });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Test integracije nije uspeo." });
+  }
 });
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
@@ -1279,6 +1369,9 @@ router.get("/brendovi", async (_req, res): Promise<void> => {
 
 router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
   await ensureDemoData();
+  if (typeof req.query.serviceId !== "string" || !req.query.serviceId.trim()) {
+    res.status(400).json({ error: "serviceId je obavezan parametar." }); return;
+  }
   const [params, query] = [GetSalonAvailabilityParams.safeParse(req.params), GetSalonAvailabilityQueryParams.safeParse(req.query)];
   if (!params.success || !query.success) { res.status(400).json({ error: "Parametri za dostupnost nisu ispravni." }); return; }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, query.data.serviceId), eq(servicesTable.salonId, params.data.salonId))).limit(1);
