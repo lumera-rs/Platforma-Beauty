@@ -19,7 +19,9 @@ import {
   useCreateSalonAppointment,
   useCreateSalonAppointmentSeries,
   usePreviewSalonAppointmentSeries,
+  usePreviewSalonAppointmentSeriesMove,
   useCancelSalonAppointmentSeries,
+  useMoveSalonAppointmentSeries,
   useGetCurrentUser,
   useListSalonAppointments,
   useListSalonCustomers,
@@ -111,6 +113,10 @@ function buildSeriesSlots(form: OwnerBookingForm): SeriesSlot[] {
   });
 }
 
+function seriesMoveFingerprint(value: { seriesId: string; dayOffset: string; startTime: string }) {
+  return `${value.seriesId}:${value.dayOffset.trim()}:${value.startTime}`;
+}
+
 export default function OwnerCalendar() {
   const { data: userResp } = useGetCurrentUser();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -130,7 +136,7 @@ export default function OwnerCalendar() {
       to: dateKey(new Date(year, month + 1, 0)),
     };
   }, [visibleMonth]);
-  const { data: monthAppointments } = useListSalonAppointments(monthParams, {
+  const { data: monthAppointments, refetch: refetchMonthAppointments } = useListSalonAppointments(monthParams, {
     query: {
       enabled: !!userResp?.user,
       queryKey: getListSalonAppointmentsQueryKey(monthParams),
@@ -142,7 +148,9 @@ export default function OwnerCalendar() {
   const create = useCreateSalonAppointment();
   const createSeries = useCreateSalonAppointmentSeries();
   const previewSeries = usePreviewSalonAppointmentSeries();
+  const previewSeriesMove = usePreviewSalonAppointmentSeriesMove();
   const cancelSeries = useCancelSalonAppointmentSeries();
+  const moveSeries = useMoveSalonAppointmentSeries();
   const updateAppointment = useUpdateSalonAppointment();
   const updateCustomer = useUpdateSalonCustomer();
   const { toast } = useToast();
@@ -151,6 +159,9 @@ export default function OwnerCalendar() {
   const [isSeries, setIsSeries] = useState(false);
   const [seriesSlots, setSeriesSlots] = useState<SeriesSlot[]>([]);
   const [editing, setEditing] = useState<{ id: string; seriesId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
+  const [seriesMove, setSeriesMove] = useState<{ seriesId: string; dayOffset: string; startTime: string } | null>(null);
+  const [seriesMovePreviewKey, setSeriesMovePreviewKey] = useState<string | null>(null);
+  const hasCurrentSeriesMovePreview = Boolean(seriesMove && seriesMovePreviewKey === seriesMoveFingerprint(seriesMove));
   const sorted = useMemo(() => [...(appointments ?? [])].sort((a, b) => a.startTime.localeCompare(b.startTime)), [appointments]);
   const appointmentDateKeys = useMemo(() => new Set((monthAppointments ?? []).map((appointment) => appointmentDateKey(appointment.date))), [monthAppointments]);
   const quickDates = useMemo(() => {
@@ -178,6 +189,7 @@ export default function OwnerCalendar() {
   };
 
   useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, seriesSlots]);
+  useEffect(() => { previewSeriesMove.reset(); setSeriesMovePreviewKey(null); }, [seriesMove?.seriesId, seriesMove?.dayOffset, seriesMove?.startTime]);
 
   const createAppointment = (event: React.FormEvent) => {
     event.preventDefault();
@@ -242,6 +254,60 @@ export default function OwnerCalendar() {
     previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: form.employeeId || null, slots: seriesSlots } });
   };
 
+  const openSeriesMove = (seriesId: string) => {
+    setEditing(null);
+    setSeriesMovePreviewKey(null);
+    setSeriesMove({ seriesId, dayOffset: "7", startTime: "" });
+  };
+
+  const seriesMoveData = () => {
+    if (!seriesMove) return null;
+    const dayOffset = Number(seriesMove.dayOffset);
+    if (!Number.isInteger(dayOffset) || dayOffset < -365 || dayOffset > 365) {
+      toast.error("Unesite ceo broj dana od -365 do 365.");
+      return null;
+    }
+    if (dayOffset === 0 && !seriesMove.startTime) {
+      toast.error("Unesite broj dana za pomeranje ili novo vreme.");
+      return null;
+    }
+    return { dayOffset, ...(seriesMove.startTime ? { startTime: seriesMove.startTime } : {}) };
+  };
+
+  const runSeriesMovePreview = () => {
+    const data = seriesMoveData();
+    if (!seriesMove || !data) return;
+    const requestKey = seriesMoveFingerprint(seriesMove);
+    setSeriesMovePreviewKey(null);
+    previewSeriesMove.mutate({ seriesId: seriesMove.seriesId, data }, {
+      onSuccess: () => setSeriesMovePreviewKey(requestKey),
+      onError: (error) => toast.error("Pregled pomeranja nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }),
+    });
+  };
+
+  const confirmSeriesMove = () => {
+    const data = seriesMoveData();
+    if (!seriesMove || !data) return;
+    if (!hasCurrentSeriesMovePreview || !previewSeriesMove.data?.allAvailable) {
+      toast.error("Pre potvrde rešite sve prikazane konflikte.");
+      return;
+    }
+    moveSeries.mutate({ seriesId: seriesMove.seriesId, data }, {
+      onSuccess: (result) => {
+        toast.success(`Pomerena su ${result.movedAppointments} termina iz serije.`, { description: "Klijent dobija ažuriranu potvrdu za svaki promenjeni termin." });
+        const firstDate = result.appointments[0] ? appointmentDateKey(result.appointments[0].date) : null;
+        setSeriesMove(null);
+        setSeriesMovePreviewKey(null);
+        previewSeriesMove.reset();
+        refetchAppointments();
+        refetchMonthAppointments();
+        refetchCustomers();
+        if (firstDate) selectDate(firstDate);
+      },
+      onError: (error) => toast.error("Serija nije pomerena", { description: error instanceof Error ? error.message : "Nijedan termin nije izmenjen. Proverite konflikte i pokušajte ponovo." }),
+    });
+  };
+
   return (
     <BusinessLayout>
       <div className="container mx-auto flex w-full max-w-[1600px] flex-col items-start gap-8 px-4 py-8 lg:px-6 xl:flex-row">
@@ -276,7 +342,27 @@ export default function OwnerCalendar() {
                 <div className="space-y-2"><Label>Status</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as typeof editing.status })}><option value="pending">Na čekanju</option><option value="confirmed">Potvrđen</option><option value="completed">Završen</option><option value="cancelled">Otkazan</option><option value="no-show">Nije došao</option></select></div>
                 <div className="space-y-2"><Label>Napomena</Label><Textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
                 <Button className="w-full" onClick={saveAppointmentUpdate} disabled={updateAppointment.isPending}>{updateAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj izmene</Button>
+                 {editing.seriesId && <Button className="w-full" variant="outline" onClick={() => openSeriesMove(editing.seriesId!)}><Repeat2 className="mr-2 h-4 w-4" /> Pomeri preostale termine serije</Button>}
                 {editing.seriesId && <Button className="w-full" variant="destructive" disabled={cancelSeries.isPending} onClick={() => cancelSeries.mutate({ seriesId: editing.seriesId! }, { onSuccess: (result) => { toast.success(`Otkazano je ${result.cancelledAppointments} budućih termina iz serije.`); setEditing(null); refetchAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Serija nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži sve buduće termine serije</Button>}
+              </div>}
+            </DialogContent>
+          </Dialog>
+          <Dialog open={!!seriesMove} onOpenChange={(isOpen) => { if (!isOpen) { setSeriesMove(null); setSeriesMovePreviewKey(null); previewSeriesMove.reset(); } }}>
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+              <DialogHeader><DialogTitle>Pomeri preostale termine serije</DialogTitle></DialogHeader>
+              {seriesMove && <div className="space-y-5">
+                <p className="text-sm text-muted-foreground">Biće pomereni samo budući termini koji nisu završeni. Prvo pregledajte konflikte; nijedna izmena se ne čuva dok je ne potvrdite.</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2"><Label>Pomerite datume za (dana)</Label><Input type="number" min="-365" max="365" step="1" value={seriesMove.dayOffset} onChange={(event) => setSeriesMove({ ...seriesMove, dayOffset: event.target.value })} /><p className="text-xs text-muted-foreground">Pozitivan broj pomera unapred, negativan unazad.</p></div>
+                  <div className="space-y-2"><Label>Novo vreme <span className="text-muted-foreground">(opciono)</span></Label><Input type="time" value={seriesMove.startTime} onChange={(event) => setSeriesMove({ ...seriesMove, startTime: event.target.value })} /><p className="text-xs text-muted-foreground">Ako ostane prazno, zadržava se postojeće vreme.</p></div>
+                </div>
+                <Button className="w-full" variant="outline" onClick={runSeriesMovePreview} disabled={previewSeriesMove.isPending}>{previewSeriesMove.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Pregledaj konflikte</Button>
+                {hasCurrentSeriesMovePreview && previewSeriesMove.data && <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold">Pregled {previewSeriesMove.data.slots.length} termina</p><Badge variant={previewSeriesMove.data.allAvailable ? "secondary" : "destructive"}>{previewSeriesMove.data.allAvailable ? "Svi termini su slobodni" : "Postoje konflikti"}</Badge></div>
+                  <div className="max-h-60 space-y-2 overflow-y-auto">{previewSeriesMove.data.slots.map((slot) => <div className="rounded-lg border bg-background p-3 text-sm" key={slot.appointmentId}><div className="flex flex-wrap items-center justify-between gap-2"><span>{shortDateLabel(appointmentDateKey(slot.currentDate))} · {slot.currentStartTime} <span className="text-muted-foreground">→</span> {shortDateLabel(appointmentDateKey(slot.date))} · {slot.startTime}</span><span className={cn("font-medium", slot.available ? "text-emerald-700" : "text-destructive")}>{slot.available ? "Slobodno" : "Konflikt"}</span></div>{slot.reason && <p className="mt-1 text-xs text-destructive">{slot.reason}</p>}</div>)}</div>
+                  {!previewSeriesMove.data.allAvailable && <p className="text-sm text-destructive">Serija ne može biti pomerena dok svi termini ne budu slobodni. Promenite broj dana ili vreme pa ponovo proverite.</p>}
+                </div>}
+                <Button className="w-full" onClick={confirmSeriesMove} disabled={!hasCurrentSeriesMovePreview || !previewSeriesMove.data?.allAvailable || moveSeries.isPending}>{moveSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Potvrdi pomeranje serije</Button>
               </div>}
             </DialogContent>
           </Dialog>

@@ -499,6 +499,48 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesCancellation" }
+  /salon/appointment-series/{seriesId}/move/preview:
+    post:
+      operationId: previewSalonAppointmentSeriesMove
+      tags: [salon-management]
+      summary: Preview conflicts before moving all future unfinished appointments in a series
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppointmentSeriesMoveInput" }
+      responses:
+        "200":
+          description: Series move availability preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppointmentSeriesMovePreview" }
+  /salon/appointment-series/{seriesId}/move:
+    post:
+      operationId: moveSalonAppointmentSeries
+      tags: [salon-management]
+      summary: Atomically move all future unfinished appointments in a series
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppointmentSeriesMoveInput" }
+      responses:
+        "200":
+          description: Moved appointments
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppointmentSeriesMoveResult" }
   /salon/customers:
     get:
       operationId: listSalonCustomers
@@ -2521,6 +2563,40 @@ components:
         id: { type: string }
         cancelledAppointments: { type: number }
       required: [id, cancelledAppointments]
+    AppointmentSeriesMoveInput:
+      type: object
+      properties:
+        dayOffset: { type: number, minimum: -365, maximum: 365, multipleOf: 1 }
+        startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+    AppointmentSeriesMovePreviewSlot:
+      type: object
+      properties:
+        appointmentId: { type: string }
+        currentDate: { type: string, format: date }
+        currentStartTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        date: { type: string, format: date }
+        startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        endTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        available: { type: boolean }
+        reason: { type: ["string", "null"] }
+      required: [appointmentId, currentDate, currentStartTime, date, startTime, endTime, available, reason]
+    AppointmentSeriesMovePreview:
+      type: object
+      properties:
+        slots:
+          type: array
+          items: { $ref: "#/components/schemas/AppointmentSeriesMovePreviewSlot" }
+        allAvailable: { type: boolean }
+      required: [slots, allAvailable]
+    AppointmentSeriesMoveResult:
+      type: object
+      properties:
+        id: { type: string }
+        movedAppointments: { type: number }
+        appointments:
+          type: array
+          items: { $ref: "#/components/schemas/Appointment" }
+      required: [id, movedAppointments, appointments]
     CustomerAppointmentSeries:
       type: object
       properties:

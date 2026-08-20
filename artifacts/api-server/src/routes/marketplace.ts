@@ -226,8 +226,14 @@ import {
   CreateEmployeeAppointmentSeriesResponse,
   PreviewSalonAppointmentSeriesBody,
   PreviewSalonAppointmentSeriesResponse,
+  PreviewSalonAppointmentSeriesMoveBody,
+  PreviewSalonAppointmentSeriesMoveParams,
+  PreviewSalonAppointmentSeriesMoveResponse,
   PreviewEmployeeAppointmentSeriesBody,
   PreviewEmployeeAppointmentSeriesResponse,
+  MoveSalonAppointmentSeriesBody,
+  MoveSalonAppointmentSeriesParams,
+  MoveSalonAppointmentSeriesResponse,
   UpdateSalonCustomerBody,
   UpdateSalonCustomerParams,
   UpdateSalonCustomerResponse,
@@ -534,6 +540,7 @@ async function availableEmployeeWithDb(
   endTime: string,
   preferredEmployeeId?: string | null,
   reservedAppointments: ReservedAppointment[] = [],
+  ignoredAppointmentIds: Set<string> = new Set(),
 ) {
   const employees = await store.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
   const ids = employees.map((employee: typeof employeesTable.$inferSelect) => employee.id);
@@ -551,7 +558,7 @@ async function availableEmployeeWithDb(
   const reservedSameDay = reservedAppointments.filter((appointment) => appointment.date === date);
   const reservedSameWeek = reservedAppointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
   const available = candidates.filter((employee: typeof employeesTable.$inferSelect) => employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
-    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
+    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => !ignoredAppointmentIds.has(appointment.id) && appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
     && !reservedSameDay.some((appointment) => appointment.employeeId === employee.id && appointment.startTime < endTime && appointment.endTime > startTime));
   if (!available.length) return null;
   return [...available].sort((a, b) => {
@@ -711,6 +718,159 @@ async function createAppointmentSeries(input: {
   });
 }
 
+type SeriesMoveSlot = {
+  appointment: typeof appointmentsTable.$inferSelect;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+function futureUnfinishedSeriesAppointments(appointments: (typeof appointmentsTable.$inferSelect)[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  return appointments
+    .filter((appointment) => appointment.date >= today && ["pending", "confirmed"].includes(appointment.status))
+    .sort((a, b) => `${a.date}:${a.startTime}`.localeCompare(`${b.date}:${b.startTime}`));
+}
+
+function shiftCalendarDate(date: string, dayOffset: number) {
+  const result = new Date(`${date}T12:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + dayOffset);
+  return result.toISOString().slice(0, 10);
+}
+
+function prepareSeriesMoveSlots(
+  appointments: (typeof appointmentsTable.$inferSelect)[],
+  input: { dayOffset?: number; startTime?: string },
+) {
+  const dayOffset = input.dayOffset ?? 0;
+  if (dayOffset === 0 && !input.startTime) {
+    throw new AppointmentSeriesError("Unesite broj dana za pomeranje ili novo vreme termina.", 400);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const slots = appointments.map((appointment) => {
+    const date = shiftCalendarDate(appointment.date, dayOffset);
+    const startTime = input.startTime ?? appointment.startTime;
+    const endTime = appointmentEndTime(startTime, appointment.durationMinutes);
+    if (date < today || !endTime) {
+      throw new AppointmentSeriesError("Novo vreme svakog termina mora biti danas ili u budućnosti i završiti se istog dana.", 400);
+    }
+    return { appointment, date, startTime, endTime };
+  });
+  if (!slots.some((slot) => slot.date !== slot.appointment.date || slot.startTime !== slot.appointment.startTime)) {
+    throw new AppointmentSeriesError("Novo vreme je isto kao postojeće; unesite stvarnu promenu.", 400);
+  }
+  return slots;
+}
+
+async function previewSeriesMove(
+  store: any,
+  salonId: string,
+  slots: SeriesMoveSlot[],
+) {
+  const ignoredAppointmentIds = new Set(slots.map((slot) => slot.appointment.id));
+  const reservedAppointments: ReservedAppointment[] = [];
+  const result: Array<{
+    appointmentId: string;
+    currentDate: string;
+    currentStartTime: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    available: boolean;
+    reason: string | null;
+  }> = [];
+  for (const slot of slots) {
+    const employee = await availableEmployeeWithDb(
+      store,
+      salonId,
+      slot.appointment.serviceId,
+      slot.date,
+      slot.startTime,
+      slot.endTime,
+      slot.appointment.employeeId,
+      reservedAppointments,
+      ignoredAppointmentIds,
+    );
+    result.push({
+      appointmentId: slot.appointment.id,
+      currentDate: slot.appointment.date,
+      currentStartTime: slot.appointment.startTime,
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      available: Boolean(employee),
+      reason: employee ? null : "Zaposleni nije slobodan u novom terminu ili tada ne radi.",
+    });
+    if (employee) {
+      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+    }
+  }
+  return { slots: result, allAvailable: result.every((slot) => slot.available) };
+}
+
+async function moveAppointmentSeries(input: {
+  salonId: string;
+  seriesId: string;
+  move: { dayOffset?: number; startTime?: string };
+}) {
+  return db.transaction(async (tx) => {
+    const initial = futureUnfinishedSeriesAppointments(await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, input.salonId),
+      eq(appointmentsTable.seriesId, input.seriesId),
+    )).for("update"));
+    if (!initial.length) throw new AppointmentSeriesError("U ovoj seriji nema budućih nezavršenih termina za pomeranje.", 409);
+    const initialSlots = prepareSeriesMoveSlots(initial, input.move);
+    const lockDates = [...new Set([
+      ...initial.map((appointment) => appointment.date),
+      ...initialSlots.map((slot) => slot.date),
+    ])].sort();
+    for (const date of lockDates) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${date}`}))`);
+    }
+
+    const appointments = futureUnfinishedSeriesAppointments(await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, input.salonId),
+      eq(appointmentsTable.seriesId, input.seriesId),
+    )).for("update"));
+    if (!appointments.length) throw new AppointmentSeriesError("U ovoj seriji više nema budućih nezavršenih termina za pomeranje.", 409);
+    const slots = prepareSeriesMoveSlots(appointments, input.move);
+    const ignoredAppointmentIds = new Set(slots.map((slot) => slot.appointment.id));
+    const reservedAppointments: ReservedAppointment[] = [];
+    const allocations: Array<{ slot: SeriesMoveSlot; employee: typeof employeesTable.$inferSelect }> = [];
+    for (const slot of slots) {
+      const employee = await availableEmployeeWithDb(
+        tx,
+        input.salonId,
+        slot.appointment.serviceId,
+        slot.date,
+        slot.startTime,
+        slot.endTime,
+        slot.appointment.employeeId,
+        reservedAppointments,
+        ignoredAppointmentIds,
+      );
+      if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
+      allocations.push({ slot, employee });
+      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+    }
+    const moved: (typeof appointmentsTable.$inferSelect)[] = [];
+    for (const { slot, employee } of allocations) {
+      const [appointment] = await tx.update(appointmentsTable).set({
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        employeeId: employee.id,
+      }).where(and(
+        eq(appointmentsTable.id, slot.appointment.id),
+        inArray(appointmentsTable.status, ["pending", "confirmed"]),
+      )).returning();
+      if (!appointment) throw new AppointmentSeriesError("Jedan od termina serije je u međuvremenu promenjen. Ponovo pregledajte konflikte.");
+      moved.push(appointment!);
+    }
+    return moved;
+  });
+}
+
 async function sendSeriesConfirmations(input: {
   appointments: (typeof appointmentsTable.$inferSelect)[];
   contact: typeof salonCustomersTable.$inferSelect;
@@ -729,6 +889,34 @@ async function sendSeriesConfirmations(input: {
         to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
         subject: "LUMERA — potvrda termina",
         htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je zakazan za <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
+      });
+    }
+  }
+}
+
+async function sendSeriesUpdates(input: {
+  appointments: (typeof appointmentsTable.$inferSelect)[];
+  contact: typeof salonCustomersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+}) {
+  for (const appointment of input.appointments) {
+    await sendSms({
+      eventKey: `appointment-rescheduled:${appointment.id}:${appointment.date}:${appointment.startTime}`,
+      salonId: input.salon.id,
+      appointmentId: appointment.id,
+      type: "appointment_confirmation",
+      phone: input.contact.phone,
+      smsOptOut: input.contact.smsOptOut,
+      text: `LUMERA: termin u salonu ${input.salon.name} je pomeren na ${appointment.date} u ${appointment.startTime}.`,
+    });
+    if (input.contact.email) {
+      await sendTransactionalEmail({
+        eventKey: `appointment-rescheduled:${appointment.id}:${appointment.date}:${appointment.startTime}:email`,
+        emailType: "appointment_rescheduled",
+        to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
+        subject: "LUMERA — termin je pomeren",
+        htmlContent: lumeraEmailHtml("Termin je pomeren", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je pomeren na <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
+        metadata: { appointmentId: appointment.id, salonId: input.salon.id },
       });
     }
   }
@@ -2106,6 +2294,57 @@ router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<v
   const cancelled = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: "Otkazana preostala serija termina." })
     .where(and(eq(appointmentsTable.seriesId, series.id), sql`${appointmentsTable.date} >= ${today}`, inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning({ id: appointmentsTable.id });
   res.json(CancelSalonAppointmentSeriesResponse.parse({ id: series.id, cancelledAppointments: cancelled.length }));
+});
+
+router.post("/salon/appointment-series/:seriesId/move/preview", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [params, body] = [PreviewSalonAppointmentSeriesMoveParams.safeParse(req.params), PreviewSalonAppointmentSeriesMoveBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za pomeranje serije nisu ispravni." }); return; }
+  const [series] = await db.select().from(appointmentSeriesTable).where(and(
+    eq(appointmentSeriesTable.id, params.data.seriesId),
+    eq(appointmentSeriesTable.salonId, access.salon.id),
+  )).limit(1);
+  if (!series) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
+  const appointments = futureUnfinishedSeriesAppointments(await db.select().from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, access.salon.id),
+    eq(appointmentsTable.seriesId, series.id),
+  )));
+  if (!appointments.length) { res.status(409).json({ error: "U ovoj seriji nema budućih nezavršenih termina za pomeranje." }); return; }
+  try {
+    const slots = prepareSeriesMoveSlots(appointments, body.data);
+    res.json(PreviewSalonAppointmentSeriesMoveResponse.parse(await previewSeriesMove(db, access.salon.id, slots)));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Pregled pomeranja serije nije uspeo.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
+});
+
+router.post("/salon/appointment-series/:seriesId/move", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [params, body] = [MoveSalonAppointmentSeriesParams.safeParse(req.params), MoveSalonAppointmentSeriesBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za pomeranje serije nisu ispravni." }); return; }
+  const [series] = await db.select().from(appointmentSeriesTable).where(and(
+    eq(appointmentSeriesTable.id, params.data.seriesId),
+    eq(appointmentSeriesTable.salonId, access.salon.id),
+  )).limit(1);
+  if (!series) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
+  try {
+    const moved = await moveAppointmentSeries({ salonId: access.salon.id, seriesId: series.id, move: body.data });
+    const [contact] = series.salonCustomerId
+      ? await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, series.salonCustomerId), eq(salonCustomersTable.salonId, access.salon.id))).limit(1)
+      : [];
+    if (contact) await sendSeriesUpdates({ appointments: moved, contact, salon: access.salon });
+    const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, moved.map((appointment) => appointment.id))));
+    const viewById = new Map(views.map((appointment) => [appointment.id, appointment]));
+    res.json(MoveSalonAppointmentSeriesResponse.parse({
+      id: series.id,
+      movedAppointments: moved.length,
+      appointments: moved.map((appointment) => viewById.get(appointment.id)!),
+    }));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Pomeranje serije nije uspelo.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
 });
 
 router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<void> => {

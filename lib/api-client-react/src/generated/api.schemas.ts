@@ -459,6 +459,42 @@ export interface AppointmentSeriesCancellation {
   cancelledAppointments: number;
 }
 
+export interface AppointmentSeriesMoveInput {
+  /**
+     * @minimum -365
+     * @maximum 365
+     */
+  dayOffset?: number;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime?: string;
+}
+
+export interface AppointmentSeriesMovePreviewSlot {
+  appointmentId: string;
+  currentDate: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  currentStartTime: string;
+  date: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  endTime: string;
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+}
+
+export interface AppointmentSeriesMovePreview {
+  slots: AppointmentSeriesMovePreviewSlot[];
+  allAvailable: boolean;
+}
+
+export interface AppointmentSeriesMoveResult {
+  id: string;
+  movedAppointments: number;
+  appointments: Appointment[];
+}
+
 export interface SalonCustomerUpdate {
   smsOptOut: boolean;
 }

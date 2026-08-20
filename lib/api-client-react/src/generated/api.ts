@@ -54,6 +54,9 @@ import type {
   Appointment,
   AppointmentInput,
   AppointmentSeriesCancellation,
+  AppointmentSeriesMoveInput,
+  AppointmentSeriesMovePreview,
+  AppointmentSeriesMoveResult,
   AppointmentSeriesPreview,
   AppointmentSeriesPreviewInput,
   AppointmentSeriesResult,
@@ -2186,6 +2189,150 @@ export const useCancelSalonAppointmentSeries = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCancelSalonAppointmentSeriesMutationOptions(options));
+    }
+
+export const getPreviewSalonAppointmentSeriesMoveUrl = (seriesId: string,) => {
+
+
+
+
+  return `/api/salon/appointment-series/${seriesId}/move/preview`
+}
+
+/**
+ * @summary Preview conflicts before moving all future unfinished appointments in a series
+ */
+export const previewSalonAppointmentSeriesMove = async (seriesId: string,
+    appointmentSeriesMoveInput: AppointmentSeriesMoveInput, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesMovePreview> => {
+
+  return customFetch<AppointmentSeriesMovePreview>(getPreviewSalonAppointmentSeriesMoveUrl(seriesId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentSeriesMoveInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewSalonAppointmentSeriesMoveMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext> => {
+
+const mutationKey = ['previewSalonAppointmentSeriesMove'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>, {seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}> = (props) => {
+          const {seriesId,data} = props ?? {};
+
+          return  previewSalonAppointmentSeriesMove(seriesId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewSalonAppointmentSeriesMoveMutationResult = NonNullable<Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>>
+    export type PreviewSalonAppointmentSeriesMoveMutationBody = BodyType<AppointmentSeriesMoveInput>
+    export type PreviewSalonAppointmentSeriesMoveMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Preview conflicts before moving all future unfinished appointments in a series
+ */
+export const usePreviewSalonAppointmentSeriesMove = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewSalonAppointmentSeriesMove>>,
+        TError,
+        {seriesId: string;data: BodyType<AppointmentSeriesMoveInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewSalonAppointmentSeriesMoveMutationOptions(options));
+    }
+
+export const getMoveSalonAppointmentSeriesUrl = (seriesId: string,) => {
+
+
+
+
+  return `/api/salon/appointment-series/${seriesId}/move`
+}
+
+/**
+ * @summary Atomically move all future unfinished appointments in a series
+ */
+export const moveSalonAppointmentSeries = async (seriesId: string,
+    appointmentSeriesMoveInput: AppointmentSeriesMoveInput, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSeriesMoveResult> => {
+
+  return customFetch<AppointmentSeriesMoveResult>(getMoveSalonAppointmentSeriesUrl(seriesId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appointmentSeriesMoveInput)
+  }
+);}
+
+
+
+
+
+export const getMoveSalonAppointmentSeriesMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext> => {
+
+const mutationKey = ['moveSalonAppointmentSeries'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, {seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}> = (props) => {
+          const {seriesId,data} = props ?? {};
+
+          return  moveSalonAppointmentSeries(seriesId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MoveSalonAppointmentSeriesMutationResult = NonNullable<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>>
+    export type MoveSalonAppointmentSeriesMutationBody = BodyType<AppointmentSeriesMoveInput>
+    export type MoveSalonAppointmentSeriesMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Atomically move all future unfinished appointments in a series
+ */
+export const useMoveSalonAppointmentSeries = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof moveSalonAppointmentSeries>>, TError,{seriesId: string;data: BodyType<AppointmentSeriesMoveInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof moveSalonAppointmentSeries>>,
+        TError,
+        {seriesId: string;data: BodyType<AppointmentSeriesMoveInput>},
+        TContext
+      > => {
+      return useMutation(getMoveSalonAppointmentSeriesMutationOptions(options));
     }
 
 export const getListSalonCustomersUrl = () => {

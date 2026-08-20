@@ -879,6 +879,86 @@ export const CancelSalonAppointmentSeriesResponse = zod.object({
 
 
 /**
+ * @summary Preview conflicts before moving all future unfinished appointments in a series
+ */
+export const PreviewSalonAppointmentSeriesMoveParams = zod.object({
+  "seriesId": zod.coerce.string()
+})
+
+export const previewSalonAppointmentSeriesMoveBodyDayOffsetMin = -365;
+export const previewSalonAppointmentSeriesMoveBodyDayOffsetMax = 365;
+export const previewSalonAppointmentSeriesMoveBodyDayOffsetMultipleOf = 1;
+
+export const previewSalonAppointmentSeriesMoveBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const PreviewSalonAppointmentSeriesMoveBody = zod.object({
+  "dayOffset": zod.number().min(previewSalonAppointmentSeriesMoveBodyDayOffsetMin).max(previewSalonAppointmentSeriesMoveBodyDayOffsetMax).multipleOf(previewSalonAppointmentSeriesMoveBodyDayOffsetMultipleOf).optional(),
+  "startTime": zod.string().regex(previewSalonAppointmentSeriesMoveBodyStartTimeRegExp).optional()
+})
+
+export const previewSalonAppointmentSeriesMoveResponseSlotsItemCurrentStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonAppointmentSeriesMoveResponseSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonAppointmentSeriesMoveResponseSlotsItemEndTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const PreviewSalonAppointmentSeriesMoveResponse = zod.object({
+  "slots": zod.array(zod.object({
+  "appointmentId": zod.string(),
+  "currentDate": zod.coerce.date(),
+  "currentStartTime": zod.string().regex(previewSalonAppointmentSeriesMoveResponseSlotsItemCurrentStartTimeRegExp),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewSalonAppointmentSeriesMoveResponseSlotsItemStartTimeRegExp),
+  "endTime": zod.string().regex(previewSalonAppointmentSeriesMoveResponseSlotsItemEndTimeRegExp),
+  "available": zod.boolean(),
+  "reason": zod.string().nullable()
+})),
+  "allAvailable": zod.boolean()
+})
+
+
+/**
+ * @summary Atomically move all future unfinished appointments in a series
+ */
+export const MoveSalonAppointmentSeriesParams = zod.object({
+  "seriesId": zod.coerce.string()
+})
+
+export const moveSalonAppointmentSeriesBodyDayOffsetMin = -365;
+export const moveSalonAppointmentSeriesBodyDayOffsetMax = 365;
+export const moveSalonAppointmentSeriesBodyDayOffsetMultipleOf = 1;
+
+export const moveSalonAppointmentSeriesBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const MoveSalonAppointmentSeriesBody = zod.object({
+  "dayOffset": zod.number().min(moveSalonAppointmentSeriesBodyDayOffsetMin).max(moveSalonAppointmentSeriesBodyDayOffsetMax).multipleOf(moveSalonAppointmentSeriesBodyDayOffsetMultipleOf).optional(),
+  "startTime": zod.string().regex(moveSalonAppointmentSeriesBodyStartTimeRegExp).optional()
+})
+
+export const MoveSalonAppointmentSeriesResponse = zod.object({
+  "id": zod.string(),
+  "movedAppointments": zod.number(),
+  "appointments": zod.array(zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "employeeName": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "seriesId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "notes": zod.string().nullish()
+}))
+})
+
+
+/**
  * @summary List salon CRM customers
  */
 export const ListSalonCustomersResponseItem = zod.object({
