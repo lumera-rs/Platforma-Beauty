@@ -1,5 +1,6 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CalendarDays, CheckCircle2, Clock3, Loader2, Plus, UserRound, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 
 type Appointment = { id: string; date: string; startTime: string; endTime: string; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; notes: string | null; serviceName: string; customerName: string; customerPhone: string | null };
 type Portal = {
@@ -39,21 +41,24 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function EmployeePasswordChange() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [saving, setSaving] = useState(false);
-  const save = async () => {
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (password.length < 8) { toast.error("Lozinka mora imati najmanje 8 karaktera."); return; }
     if (password !== confirm) { toast.error("Lozinke se ne podudaraju."); return; }
     setSaving(true);
     try {
       await api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ newPassword: password }) });
+      await queryClient.refetchQueries({ queryKey: getGetCurrentUserQueryKey() });
       toast.success("Lozinka je promenjena.");
       setLocation("/zaposleni");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Promena lozinke nije uspela."); }
     finally { setSaving(false); }
   };
-  return <BusinessLayout><div className="container mx-auto flex max-w-lg flex-1 items-center px-4 py-12"><Card className="w-full"><CardHeader><CardTitle>Postavite svoju lozinku</CardTitle><p className="text-sm text-muted-foreground">Radi bezbednosti, privremenu lozinku morate promeniti pre pristupa portalu.</p></CardHeader><CardContent className="space-y-4"><div><Label>Nova lozinka</Label><Input className="mt-1" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></div><div><Label>Ponovite lozinku</Label><Input className="mt-1" type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} /></div><Button className="w-full" onClick={save} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Sačuvaj novu lozinku</Button></CardContent></Card></div></BusinessLayout>;
+  return <BusinessLayout><div className="container mx-auto flex max-w-lg flex-1 items-center px-4 py-12"><Card className="w-full"><CardHeader><CardTitle>Postavite svoju lozinku</CardTitle><p className="text-sm text-muted-foreground">Radi bezbednosti, privremenu lozinku morate promeniti pre pristupa portalu.</p></CardHeader><CardContent><form className="space-y-4" onSubmit={save}><div><Label>Nova lozinka</Label><Input className="mt-1" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></div><div><Label>Ponovite lozinku</Label><Input className="mt-1" type="password" autoComplete="new-password" value={confirm} onChange={(event) => setConfirm(event.target.value)} /></div><Button className="w-full" type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Sačuvaj novu lozinku</Button></form></CardContent></Card></div></BusinessLayout>;
 }
 
 export default function EmployeePortal() {
