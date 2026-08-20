@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Trash2, Truck, Info, PackageCheck } from "lucide-react";
+import { Loader2, Plus, Trash2, Truck, Info, PackageCheck, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function formatWeight(grams: number) {
@@ -26,6 +26,10 @@ export default function AdminShipping() {
 
   const [tiers, setTiers] = useState<ShippingTier[]>([]);
   const [threshold, setThreshold] = useState(0);
+  const [personalEnabled, setPersonalEnabled] = useState(false);
+  const [personalName, setPersonalName] = useState("Lična dostava u Beogradu");
+  const [personalPrice, setPersonalPrice] = useState(0);
+  const [personalDescription, setPersonalDescription] = useState("Dostava na adresu u Beogradu.");
   const [draftWeight, setDraftWeight] = useState("");
   const [draftPrice, setDraftPrice] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -34,6 +38,10 @@ export default function AdminShipping() {
     if (config && !dirty) {
       setTiers(config.tiers);
       setThreshold(config.freeShippingThreshold);
+      setPersonalEnabled(config.personalDeliveryEnabled);
+      setPersonalName(config.personalDeliveryName);
+      setPersonalPrice(config.personalDeliveryPrice);
+      setPersonalDescription(config.personalDeliveryDescription);
     }
   }, [config, dirty]);
 
@@ -61,7 +69,7 @@ export default function AdminShipping() {
 
   const handleSave = () => {
     updateConfig.mutate(
-      { data: { freeShippingThreshold: threshold, tiers } },
+      { data: { freeShippingThreshold: threshold, tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: personalName, personalDeliveryPrice: personalPrice, personalDeliveryDescription: personalDescription } },
       {
         onSuccess: () => {
           toast.success("Sačuvano", { description: "Podešavanja dostave su ažurirana." });
@@ -139,6 +147,17 @@ export default function AdminShipping() {
                 <Button type="button" variant="secondary" onClick={addTier} className="gap-1 w-full sm:w-auto" data-testid="btn-add-tier">
                   <Plus className="w-4 h-4" /> Dodaj rang
                 </Button>
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl border shadow-sm p-6 space-y-4">
+              <div className="flex items-center gap-2"><MapPin className="w-5 h-5 text-primary" /><h2 className="font-semibold">Lična dostava u Beogradu</h2></div>
+              <p className="text-sm text-muted-foreground">Alternativna metoda isporuke prikazuje se samo kada kupac unese adresu u Beogradu. Cena se potvrđuje na serveru pri kreiranju porudžbine.</p>
+              <label className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer"><input type="checkbox" checked={personalEnabled} onChange={e => { setPersonalEnabled(e.target.checked); setDirty(true); }} /><span className="text-sm font-medium">Uključi ličnu dostavu</span></label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1"><Label>Naziv metode</Label><Input value={personalName} onChange={e => { setPersonalName(e.target.value); setDirty(true); }} /></div>
+                <div className="space-y-1"><Label>Cena (RSD)</Label><Input type="number" min="0" value={personalPrice} onChange={e => { setPersonalPrice(Number(e.target.value)); setDirty(true); }} /></div>
+                <div className="space-y-1 sm:col-span-2"><Label>Opis za kupca</Label><Input value={personalDescription} onChange={e => { setPersonalDescription(e.target.value); setDirty(true); }} /></div>
               </div>
             </div>
 

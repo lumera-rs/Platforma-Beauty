@@ -720,6 +720,12 @@ paths:
         - name: search
           in: query
           schema: { type: string }
+        - name: paymentStatus
+          in: query
+          schema: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+        - name: deliveryMethod
+          in: query
+          schema: { type: string, enum: [courier, personal_belgrade] }
       responses:
         "200":
           description: Admin order list
@@ -727,7 +733,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Order" }
+                items: { $ref: "#/components/schemas/AdminOrder" }
   /admin/orders/{orderId}:
     get:
       operationId: adminGetOrder
@@ -743,11 +749,11 @@ paths:
           description: Admin order detail
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Order" }
+              schema: { $ref: "#/components/schemas/AdminOrder" }
     patch:
       operationId: adminUpdateOrderStatus
       tags: [admin]
-      summary: Update a B2B order status through an allowed transition
+      summary: Update B2B order fulfillment, payment and internal operational details
       parameters:
         - name: orderId
           in: path
@@ -757,13 +763,31 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/OrderStatusUpdate" }
+            schema: { $ref: "#/components/schemas/AdminOrderUpdate" }
       responses:
         "200":
           description: Updated order
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Order" }
+              schema: { $ref: "#/components/schemas/AdminOrder" }
+  /admin/orders/bulk:
+    patch:
+      operationId: adminBulkUpdateOrders
+      tags: [admin]
+      summary: Apply one operational update to selected B2B orders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOrderBulkUpdate" }
+      responses:
+        "200":
+          description: Updated orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminOrder" }
   /loyalty/status:
     get:
       operationId: getLoyaltyStatus
@@ -2236,14 +2260,19 @@ components:
           allOf:
             - $ref: "#/components/schemas/BillingDetailsInput"
         paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+        deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
         note: { type: ["string", "null"], maxLength: 1000 }
         termsAccepted: { type: boolean }
-      required: [useSalonAddress, paymentMethod, termsAccepted]
+      required: [useSalonAddress, paymentMethod, deliveryMethod, termsAccepted]
     Order:
       type: object
       properties:
         id: { type: string }
         status: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+        deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+        courierService: { type: ["string", "null"] }
+        trackingNumber: { type: ["string", "null"] }
         total: { type: number, multipleOf: 1 }
         subtotal: { type: number, multipleOf: 1 }
         shippingCost: { type: number, multipleOf: 1 }
@@ -2281,7 +2310,15 @@ components:
             postalCode: { type: string }
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+      required: [id, status, paymentStatus, deliveryMethod, courierService, trackingNumber, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+    AdminOrder:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          properties:
+            adminNote: { type: ["string", "null"] }
+            history: { type: array, items: { $ref: "#/components/schemas/OrderHistoryEvent" } }
+          required: [adminNote, history]
     OrderItem:
       type: object
       properties:
@@ -2331,11 +2368,32 @@ components:
         shippingAddress: { type: string }
         paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
       required: [items, paymentMethod]
-    OrderStatusUpdate:
+    AdminOrderUpdate:
       type: object
       properties:
         status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
-      required: [status]
+        paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+        courierService: { type: ["string", "null"], maxLength: 120 }
+        trackingNumber: { type: ["string", "null"], maxLength: 120 }
+        adminNote: { type: ["string", "null"], maxLength: 2000 }
+    AdminOrderBulkUpdate:
+      type: object
+      properties:
+        orderIds: { type: array, minItems: 1, items: { type: string } }
+        status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
+        paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
+      required: [orderIds]
+    OrderHistoryEvent:
+      type: object
+      properties:
+        id: { type: string }
+        actorName: { type: string }
+        field: { type: string }
+        previousValue: { type: ["string", "null"] }
+        nextValue: { type: ["string", "null"] }
+        note: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, actorName, field, previousValue, nextValue, note, createdAt]
     LoyaltyStatus:
       type: object
       properties:
@@ -2846,8 +2904,12 @@ components:
         tiers:
           type: array
           items: { $ref: "#/components/schemas/ShippingTier" }
+        personalDeliveryEnabled: { type: boolean }
+        personalDeliveryName: { type: string }
+        personalDeliveryPrice: { type: number, minimum: 0, multipleOf: 1 }
+        personalDeliveryDescription: { type: string }
         updatedAt: { type: string, format: date-time }
-      required: [freeShippingThreshold, tiers, updatedAt]
+      required: [freeShippingThreshold, tiers, personalDeliveryEnabled, personalDeliveryName, personalDeliveryPrice, personalDeliveryDescription, updatedAt]
     ShippingConfigInput:
       type: object
       properties:
@@ -2855,7 +2917,11 @@ components:
         tiers:
           type: array
           items: { $ref: "#/components/schemas/ShippingTier" }
-      required: [freeShippingThreshold, tiers]
+        personalDeliveryEnabled: { type: boolean }
+        personalDeliveryName: { type: string, minLength: 1, maxLength: 120 }
+        personalDeliveryPrice: { type: number, minimum: 0, multipleOf: 1 }
+        personalDeliveryDescription: { type: string, maxLength: 500 }
+      required: [freeShippingThreshold, tiers, personalDeliveryEnabled, personalDeliveryName, personalDeliveryPrice, personalDeliveryDescription]
     ShippingQuote:
       type: object
       properties:
@@ -2865,4 +2931,16 @@ components:
         freeShippingThreshold: { type: number }
         amountToFreeShipping: { type: number }
         message: { type: ["string", "null"] }
-      required: [totalWeightGrams, shippingCost, freeShipping, freeShippingThreshold, amountToFreeShipping]
+        availableMethods:
+          type: array
+          items: { $ref: "#/components/schemas/DeliveryMethodOption" }
+      required: [totalWeightGrams, shippingCost, freeShipping, freeShippingThreshold, amountToFreeShipping, message, availableMethods]
+    DeliveryMethodOption:
+      type: object
+      properties:
+        id: { type: string, enum: [courier, personal_belgrade] }
+        name: { type: string }
+        description: { type: string }
+        price: { type: number, minimum: 0, multipleOf: 1 }
+        available: { type: boolean }
+      required: [id, name, description, price, available]

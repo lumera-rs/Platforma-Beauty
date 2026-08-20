@@ -1260,6 +1260,9 @@ export const getShopCheckoutPreviewResponseCartSubtotalMultipleOf = 1;
 export const getShopCheckoutPreviewResponseCartTotalWeightGramsMin = 0;
 export const getShopCheckoutPreviewResponseCartTotalWeightGramsMultipleOf = 1;
 
+export const getShopCheckoutPreviewResponseShippingAvailableMethodsItemPriceMin = 0;
+export const getShopCheckoutPreviewResponseShippingAvailableMethodsItemPriceMultipleOf = 1;
+
 export const getShopCheckoutPreviewResponseTotalMin = 0;
 export const getShopCheckoutPreviewResponseTotalMultipleOf = 1;
 
@@ -1291,7 +1294,14 @@ export const GetShopCheckoutPreviewResponse = zod.object({
   "freeShipping": zod.boolean(),
   "freeShippingThreshold": zod.number(),
   "amountToFreeShipping": zod.number(),
-  "message": zod.string().nullish()
+  "message": zod.string().nullable(),
+  "availableMethods": zod.array(zod.object({
+  "id": zod.enum(['courier', 'personal_belgrade']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().min(getShopCheckoutPreviewResponseShippingAvailableMethodsItemPriceMin).multipleOf(getShopCheckoutPreviewResponseShippingAvailableMethodsItemPriceMultipleOf),
+  "available": zod.boolean()
+}))
 }),
   "total": zod.number().min(getShopCheckoutPreviewResponseTotalMin).multipleOf(getShopCheckoutPreviewResponseTotalMultipleOf),
   "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
@@ -1336,6 +1346,7 @@ export const CheckoutShopCartBody = zod.object({
   "postalCode": zod.string().min(1)
 }).nullish(),
   "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
   "note": zod.string().max(checkoutShopCartBodyNoteMax).nullish(),
   "termsAccepted": zod.boolean()
 })
@@ -1357,6 +1368,10 @@ export const checkoutShopCartResponseItemsItemPriceMultipleOf = 1;
 export const CheckoutShopCartResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
   "total": zod.number().multipleOf(checkoutShopCartResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(checkoutShopCartResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(checkoutShopCartResponseShippingCostMultipleOf),
@@ -1419,6 +1434,10 @@ export const listOrdersResponseItemsItemPriceMultipleOf = 1;
 export const ListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
   "total": zod.number().multipleOf(listOrdersResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(listOrdersResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(listOrdersResponseShippingCostMultipleOf),
@@ -1493,6 +1512,10 @@ export const getOrderResponseItemsItemPriceMultipleOf = 1;
 export const GetOrderResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
   "total": zod.number().multipleOf(getOrderResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(getOrderResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(getOrderResponseShippingCostMultipleOf),
@@ -1551,13 +1574,25 @@ export const GetShippingQuoteQueryParams = zod.object({
   "subtotal": zod.coerce.number().min(getShippingQuoteQuerySubtotalMin).multipleOf(getShippingQuoteQuerySubtotalMultipleOf)
 })
 
+export const getShippingQuoteResponseAvailableMethodsItemPriceMin = 0;
+export const getShippingQuoteResponseAvailableMethodsItemPriceMultipleOf = 1;
+
+
+
 export const GetShippingQuoteResponse = zod.object({
   "totalWeightGrams": zod.number(),
   "shippingCost": zod.number(),
   "freeShipping": zod.boolean(),
   "freeShippingThreshold": zod.number(),
   "amountToFreeShipping": zod.number(),
-  "message": zod.string().nullish()
+  "message": zod.string().nullable(),
+  "availableMethods": zod.array(zod.object({
+  "id": zod.enum(['courier', 'personal_belgrade']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().min(getShippingQuoteResponseAvailableMethodsItemPriceMin).multipleOf(getShippingQuoteResponseAvailableMethodsItemPriceMultipleOf),
+  "available": zod.boolean()
+}))
 })
 
 
@@ -1569,30 +1604,36 @@ export const AdminListOrdersQueryParams = zod.object({
   "salon": zod.coerce.string().optional(),
   "from": zod.date().optional(),
   "to": zod.date().optional(),
-  "search": zod.coerce.string().optional()
+  "search": zod.coerce.string().optional(),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional()
 })
 
-export const adminListOrdersResponseTotalMultipleOf = 1;
+export const adminListOrdersResponseOneTotalMultipleOf = 1;
 
-export const adminListOrdersResponseSubtotalMultipleOf = 1;
+export const adminListOrdersResponseOneSubtotalMultipleOf = 1;
 
-export const adminListOrdersResponseShippingCostMultipleOf = 1;
+export const adminListOrdersResponseOneShippingCostMultipleOf = 1;
 
-export const adminListOrdersResponseTotalWeightGramsMultipleOf = 1;
+export const adminListOrdersResponseOneTotalWeightGramsMultipleOf = 1;
 
-export const adminListOrdersResponseItemsItemQuantityMultipleOf = 1;
+export const adminListOrdersResponseOneItemsItemQuantityMultipleOf = 1;
 
-export const adminListOrdersResponseItemsItemPriceMultipleOf = 1;
+export const adminListOrdersResponseOneItemsItemPriceMultipleOf = 1;
 
 
 
 export const AdminListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
-  "total": zod.number().multipleOf(adminListOrdersResponseTotalMultipleOf),
-  "subtotal": zod.number().multipleOf(adminListOrdersResponseSubtotalMultipleOf),
-  "shippingCost": zod.number().multipleOf(adminListOrdersResponseShippingCostMultipleOf),
-  "totalWeightGrams": zod.number().multipleOf(adminListOrdersResponseTotalWeightGramsMultipleOf),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminListOrdersResponseOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminListOrdersResponseOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminListOrdersResponseOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminListOrdersResponseOneTotalWeightGramsMultipleOf),
   "itemCount": zod.number(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1625,10 +1666,21 @@ export const AdminListOrdersResponseItem = zod.object({
   "variantValue": zod.string().nullish(),
   "variantLabel": zod.string().nullish(),
   "productSku": zod.string().nullish(),
-  "quantity": zod.number().multipleOf(adminListOrdersResponseItemsItemQuantityMultipleOf),
-  "price": zod.number().multipleOf(adminListOrdersResponseItemsItemPriceMultipleOf)
+  "quantity": zod.number().multipleOf(adminListOrdersResponseOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminListOrdersResponseOneItemsItemPriceMultipleOf)
 }))
-})
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 export const AdminListOrdersResponse = zod.array(AdminListOrdersResponseItem)
 
 
@@ -1639,27 +1691,31 @@ export const AdminGetOrderParams = zod.object({
   "orderId": zod.coerce.string()
 })
 
-export const adminGetOrderResponseTotalMultipleOf = 1;
+export const adminGetOrderResponseOneTotalMultipleOf = 1;
 
-export const adminGetOrderResponseSubtotalMultipleOf = 1;
+export const adminGetOrderResponseOneSubtotalMultipleOf = 1;
 
-export const adminGetOrderResponseShippingCostMultipleOf = 1;
+export const adminGetOrderResponseOneShippingCostMultipleOf = 1;
 
-export const adminGetOrderResponseTotalWeightGramsMultipleOf = 1;
+export const adminGetOrderResponseOneTotalWeightGramsMultipleOf = 1;
 
-export const adminGetOrderResponseItemsItemQuantityMultipleOf = 1;
+export const adminGetOrderResponseOneItemsItemQuantityMultipleOf = 1;
 
-export const adminGetOrderResponseItemsItemPriceMultipleOf = 1;
+export const adminGetOrderResponseOneItemsItemPriceMultipleOf = 1;
 
 
 
 export const AdminGetOrderResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
-  "total": zod.number().multipleOf(adminGetOrderResponseTotalMultipleOf),
-  "subtotal": zod.number().multipleOf(adminGetOrderResponseSubtotalMultipleOf),
-  "shippingCost": zod.number().multipleOf(adminGetOrderResponseShippingCostMultipleOf),
-  "totalWeightGrams": zod.number().multipleOf(adminGetOrderResponseTotalWeightGramsMultipleOf),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminGetOrderResponseOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminGetOrderResponseOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminGetOrderResponseOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminGetOrderResponseOneTotalWeightGramsMultipleOf),
   "itemCount": zod.number(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1692,44 +1748,71 @@ export const AdminGetOrderResponse = zod.object({
   "variantValue": zod.string().nullish(),
   "variantLabel": zod.string().nullish(),
   "productSku": zod.string().nullish(),
-  "quantity": zod.number().multipleOf(adminGetOrderResponseItemsItemQuantityMultipleOf),
-  "price": zod.number().multipleOf(adminGetOrderResponseItemsItemPriceMultipleOf)
+  "quantity": zod.number().multipleOf(adminGetOrderResponseOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminGetOrderResponseOneItemsItemPriceMultipleOf)
 }))
-})
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 
 
 /**
- * @summary Update a B2B order status through an allowed transition
+ * @summary Update B2B order fulfillment, payment and internal operational details
  */
 export const AdminUpdateOrderStatusParams = zod.object({
   "orderId": zod.coerce.string()
 })
 
+export const adminUpdateOrderStatusBodyCourierServiceMax = 120;
+
+export const adminUpdateOrderStatusBodyTrackingNumberMax = 120;
+
+export const adminUpdateOrderStatusBodyAdminNoteMax = 2000;
+
+
+
 export const AdminUpdateOrderStatusBody = zod.object({
-  "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled'])
+  "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled']).optional(),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
+  "courierService": zod.string().max(adminUpdateOrderStatusBodyCourierServiceMax).nullish(),
+  "trackingNumber": zod.string().max(adminUpdateOrderStatusBodyTrackingNumberMax).nullish(),
+  "adminNote": zod.string().max(adminUpdateOrderStatusBodyAdminNoteMax).nullish()
 })
 
-export const adminUpdateOrderStatusResponseTotalMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneTotalMultipleOf = 1;
 
-export const adminUpdateOrderStatusResponseSubtotalMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneSubtotalMultipleOf = 1;
 
-export const adminUpdateOrderStatusResponseShippingCostMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneShippingCostMultipleOf = 1;
 
-export const adminUpdateOrderStatusResponseTotalWeightGramsMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneTotalWeightGramsMultipleOf = 1;
 
-export const adminUpdateOrderStatusResponseItemsItemQuantityMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneItemsItemQuantityMultipleOf = 1;
 
-export const adminUpdateOrderStatusResponseItemsItemPriceMultipleOf = 1;
+export const adminUpdateOrderStatusResponseOneItemsItemPriceMultipleOf = 1;
 
 
 
 export const AdminUpdateOrderStatusResponse = zod.object({
   "id": zod.string(),
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
-  "total": zod.number().multipleOf(adminUpdateOrderStatusResponseTotalMultipleOf),
-  "subtotal": zod.number().multipleOf(adminUpdateOrderStatusResponseSubtotalMultipleOf),
-  "shippingCost": zod.number().multipleOf(adminUpdateOrderStatusResponseShippingCostMultipleOf),
-  "totalWeightGrams": zod.number().multipleOf(adminUpdateOrderStatusResponseTotalWeightGramsMultipleOf),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminUpdateOrderStatusResponseOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminUpdateOrderStatusResponseOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminUpdateOrderStatusResponseOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminUpdateOrderStatusResponseOneTotalWeightGramsMultipleOf),
   "itemCount": zod.number(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
@@ -1762,10 +1845,108 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "variantValue": zod.string().nullish(),
   "variantLabel": zod.string().nullish(),
   "productSku": zod.string().nullish(),
-  "quantity": zod.number().multipleOf(adminUpdateOrderStatusResponseItemsItemQuantityMultipleOf),
-  "price": zod.number().multipleOf(adminUpdateOrderStatusResponseItemsItemPriceMultipleOf)
+  "quantity": zod.number().multipleOf(adminUpdateOrderStatusResponseOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminUpdateOrderStatusResponseOneItemsItemPriceMultipleOf)
 }))
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Apply one operational update to selected B2B orders
+ */
+
+
+
+export const AdminBulkUpdateOrdersBody = zod.object({
+  "orderIds": zod.array(zod.string()).min(1),
+  "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled']).optional(),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional()
 })
+
+export const adminBulkUpdateOrdersResponseOneTotalMultipleOf = 1;
+
+export const adminBulkUpdateOrdersResponseOneSubtotalMultipleOf = 1;
+
+export const adminBulkUpdateOrdersResponseOneShippingCostMultipleOf = 1;
+
+export const adminBulkUpdateOrdersResponseOneTotalWeightGramsMultipleOf = 1;
+
+export const adminBulkUpdateOrdersResponseOneItemsItemQuantityMultipleOf = 1;
+
+export const adminBulkUpdateOrdersResponseOneItemsItemPriceMultipleOf = 1;
+
+
+
+export const AdminBulkUpdateOrdersResponseItem = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierService": zod.string().nullable(),
+  "trackingNumber": zod.string().nullable(),
+  "total": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneTotalWeightGramsMultipleOf),
+  "itemCount": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "salon": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string()
+}),
+  "delivery": zod.object({
+  "recipientName": zod.string(),
+  "address": zod.string(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "usesSalonAddress": zod.boolean()
+}),
+  "billing": zod.object({
+  "companyName": zod.string(),
+  "pib": zod.string(),
+  "registrationNumber": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string()
+}).nullable(),
+  "items": zod.array(zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "variantValue": zod.string().nullish(),
+  "variantLabel": zod.string().nullish(),
+  "productSku": zod.string().nullish(),
+  "quantity": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneItemsItemPriceMultipleOf)
+}))
+}).and(zod.object({
+  "adminNote": zod.string().nullable(),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "actorName": zod.string(),
+  "field": zod.string(),
+  "previousValue": zod.string().nullable(),
+  "nextValue": zod.string().nullable(),
+  "note": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+export const AdminBulkUpdateOrdersResponse = zod.array(AdminBulkUpdateOrdersResponseItem)
 
 
 /**
@@ -3568,6 +3749,9 @@ export const adminGetShippingConfigResponseTiersItemMaxWeightGramsMultipleOf = 1
 export const adminGetShippingConfigResponseTiersItemPriceMin = 0;
 export const adminGetShippingConfigResponseTiersItemPriceMultipleOf = 1;
 
+export const adminGetShippingConfigResponsePersonalDeliveryPriceMin = 0;
+export const adminGetShippingConfigResponsePersonalDeliveryPriceMultipleOf = 1;
+
 
 
 export const AdminGetShippingConfigResponse = zod.object({
@@ -3577,6 +3761,10 @@ export const AdminGetShippingConfigResponse = zod.object({
   "price": zod.number().min(adminGetShippingConfigResponseTiersItemPriceMin).multipleOf(adminGetShippingConfigResponseTiersItemPriceMultipleOf),
   "label": zod.string()
 })),
+  "personalDeliveryEnabled": zod.boolean(),
+  "personalDeliveryName": zod.string(),
+  "personalDeliveryPrice": zod.number().min(adminGetShippingConfigResponsePersonalDeliveryPriceMin).multipleOf(adminGetShippingConfigResponsePersonalDeliveryPriceMultipleOf),
+  "personalDeliveryDescription": zod.string(),
   "updatedAt": zod.coerce.date()
 })
 
@@ -3592,6 +3780,13 @@ export const adminUpdateShippingConfigBodyTiersItemMaxWeightGramsMultipleOf = 1;
 export const adminUpdateShippingConfigBodyTiersItemPriceMin = 0;
 export const adminUpdateShippingConfigBodyTiersItemPriceMultipleOf = 1;
 
+export const adminUpdateShippingConfigBodyPersonalDeliveryNameMax = 120;
+
+export const adminUpdateShippingConfigBodyPersonalDeliveryPriceMin = 0;
+export const adminUpdateShippingConfigBodyPersonalDeliveryPriceMultipleOf = 1;
+
+export const adminUpdateShippingConfigBodyPersonalDeliveryDescriptionMax = 500;
+
 
 
 export const AdminUpdateShippingConfigBody = zod.object({
@@ -3600,13 +3795,20 @@ export const AdminUpdateShippingConfigBody = zod.object({
   "maxWeightGrams": zod.number().min(1).multipleOf(adminUpdateShippingConfigBodyTiersItemMaxWeightGramsMultipleOf),
   "price": zod.number().min(adminUpdateShippingConfigBodyTiersItemPriceMin).multipleOf(adminUpdateShippingConfigBodyTiersItemPriceMultipleOf),
   "label": zod.string()
-}))
+})),
+  "personalDeliveryEnabled": zod.boolean(),
+  "personalDeliveryName": zod.string().min(1).max(adminUpdateShippingConfigBodyPersonalDeliveryNameMax),
+  "personalDeliveryPrice": zod.number().min(adminUpdateShippingConfigBodyPersonalDeliveryPriceMin).multipleOf(adminUpdateShippingConfigBodyPersonalDeliveryPriceMultipleOf),
+  "personalDeliveryDescription": zod.string().max(adminUpdateShippingConfigBodyPersonalDeliveryDescriptionMax)
 })
 
 export const adminUpdateShippingConfigResponseTiersItemMaxWeightGramsMultipleOf = 1;
 
 export const adminUpdateShippingConfigResponseTiersItemPriceMin = 0;
 export const adminUpdateShippingConfigResponseTiersItemPriceMultipleOf = 1;
+
+export const adminUpdateShippingConfigResponsePersonalDeliveryPriceMin = 0;
+export const adminUpdateShippingConfigResponsePersonalDeliveryPriceMultipleOf = 1;
 
 
 
@@ -3617,6 +3819,10 @@ export const AdminUpdateShippingConfigResponse = zod.object({
   "price": zod.number().min(adminUpdateShippingConfigResponseTiersItemPriceMin).multipleOf(adminUpdateShippingConfigResponseTiersItemPriceMultipleOf),
   "label": zod.string()
 })),
+  "personalDeliveryEnabled": zod.boolean(),
+  "personalDeliveryName": zod.string(),
+  "personalDeliveryPrice": zod.number().min(adminUpdateShippingConfigResponsePersonalDeliveryPriceMin).multipleOf(adminUpdateShippingConfigResponsePersonalDeliveryPriceMultipleOf),
+  "personalDeliveryDescription": zod.string(),
   "updatedAt": zod.coerce.date()
 })
 

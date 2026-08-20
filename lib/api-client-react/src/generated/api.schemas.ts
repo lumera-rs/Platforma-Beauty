@@ -517,6 +517,23 @@ export const ShopCheckoutPreviewPaymentMethodsItem = {
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
 } as const;
 
+export type DeliveryMethodOptionId = typeof DeliveryMethodOptionId[keyof typeof DeliveryMethodOptionId];
+
+
+export const DeliveryMethodOptionId = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export interface DeliveryMethodOption {
+  id: DeliveryMethodOptionId;
+  name: string;
+  description: string;
+  /** @minimum 0 */
+  price: number;
+  available: boolean;
+}
+
 export interface ShippingQuote {
   totalWeightGrams: number;
   shippingCost: number;
@@ -524,7 +541,8 @@ export interface ShippingQuote {
   freeShippingThreshold: number;
   amountToFreeShipping: number;
   /** @nullable */
-  message?: string | null;
+  message: string | null;
+  availableMethods: DeliveryMethodOption[];
 }
 
 export interface ShopCheckoutPreview {
@@ -544,12 +562,21 @@ export const ShopCheckoutInputPaymentMethod = {
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
 } as const;
 
+export type ShopCheckoutInputDeliveryMethod = typeof ShopCheckoutInputDeliveryMethod[keyof typeof ShopCheckoutInputDeliveryMethod];
+
+
+export const ShopCheckoutInputDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
 export interface ShopCheckoutInput {
   useSalonAddress: boolean;
   deliveryAddress?: DeliveryAddressInput;
   /** @nullable */
   billingDetails?: BillingDetailsInput | null;
   paymentMethod: ShopCheckoutInputPaymentMethod;
+  deliveryMethod: ShopCheckoutInputDeliveryMethod;
   /**
      * @maxLength 1000
      * @nullable
@@ -569,6 +596,25 @@ export const OrderStatus = {
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+} as const;
+
+export type OrderPaymentStatus = typeof OrderPaymentStatus[keyof typeof OrderPaymentStatus];
+
+
+export const OrderPaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export type OrderDeliveryMethod = typeof OrderDeliveryMethod[keyof typeof OrderDeliveryMethod];
+
+
+export const OrderDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
 } as const;
 
 export type OrderSalon = {
@@ -620,6 +666,12 @@ export interface OrderItem {
 export interface Order {
   id: string;
   status: OrderStatus;
+  paymentStatus: OrderPaymentStatus;
+  deliveryMethod: OrderDeliveryMethod;
+  /** @nullable */
+  courierService: string | null;
+  /** @nullable */
+  trackingNumber: string | null;
   total: number;
   subtotal: number;
   shippingCost: number;
@@ -633,6 +685,25 @@ export interface Order {
   billing: OrderBilling;
   items: OrderItem[];
 }
+
+export interface OrderHistoryEvent {
+  id: string;
+  actorName: string;
+  field: string;
+  /** @nullable */
+  previousValue: string | null;
+  /** @nullable */
+  nextValue: string | null;
+  /** @nullable */
+  note: string | null;
+  createdAt: string;
+}
+
+export type AdminOrder = Order & ({
+  /** @nullable */
+  adminNote: string | null;
+  history: OrderHistoryEvent[];
+});
 
 export type OrderInputItemsItem = {
   productId: string;
@@ -695,18 +766,73 @@ export interface OrderInput {
   paymentMethod: OrderInputPaymentMethod;
 }
 
-export type OrderStatusUpdateStatus = typeof OrderStatusUpdateStatus[keyof typeof OrderStatusUpdateStatus];
+export type AdminOrderUpdateStatus = typeof AdminOrderUpdateStatus[keyof typeof AdminOrderUpdateStatus];
 
 
-export const OrderStatusUpdateStatus = {
+export const AdminOrderUpdateStatus = {
   confirmed: 'confirmed',
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
 } as const;
 
-export interface OrderStatusUpdate {
-  status: OrderStatusUpdateStatus;
+export type AdminOrderUpdatePaymentStatus = typeof AdminOrderUpdatePaymentStatus[keyof typeof AdminOrderUpdatePaymentStatus];
+
+
+export const AdminOrderUpdatePaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export interface AdminOrderUpdate {
+  status?: AdminOrderUpdateStatus;
+  paymentStatus?: AdminOrderUpdatePaymentStatus;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  courierService?: string | null;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  trackingNumber?: string | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  adminNote?: string | null;
+}
+
+export type AdminOrderBulkUpdateStatus = typeof AdminOrderBulkUpdateStatus[keyof typeof AdminOrderBulkUpdateStatus];
+
+
+export const AdminOrderBulkUpdateStatus = {
+  confirmed: 'confirmed',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export type AdminOrderBulkUpdatePaymentStatus = typeof AdminOrderBulkUpdatePaymentStatus[keyof typeof AdminOrderBulkUpdatePaymentStatus];
+
+
+export const AdminOrderBulkUpdatePaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export interface AdminOrderBulkUpdate {
+  /** @minItems 1 */
+  orderIds: string[];
+  status?: AdminOrderBulkUpdateStatus;
+  paymentStatus?: AdminOrderBulkUpdatePaymentStatus;
 }
 
 export type CoursePublisherType = typeof CoursePublisherType[keyof typeof CoursePublisherType];
@@ -1357,6 +1483,11 @@ export interface ShippingTier {
 export interface ShippingConfig {
   freeShippingThreshold: number;
   tiers: ShippingTier[];
+  personalDeliveryEnabled: boolean;
+  personalDeliveryName: string;
+  /** @minimum 0 */
+  personalDeliveryPrice: number;
+  personalDeliveryDescription: string;
   updatedAt: string;
 }
 
@@ -1364,6 +1495,16 @@ export interface ShippingConfigInput {
   /** @minimum 0 */
   freeShippingThreshold: number;
   tiers: ShippingTier[];
+  personalDeliveryEnabled: boolean;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  personalDeliveryName: string;
+  /** @minimum 0 */
+  personalDeliveryPrice: number;
+  /** @maxLength 500 */
+  personalDeliveryDescription: string;
 }
 
 export type CityQueryParameter = string;
@@ -1493,6 +1634,8 @@ salon?: string;
 from?: string;
 to?: string;
 search?: string;
+paymentStatus?: AdminListOrdersPaymentStatus;
+deliveryMethod?: AdminListOrdersDeliveryMethod;
 };
 
 export type AdminListOrdersStatus = typeof AdminListOrdersStatus[keyof typeof AdminListOrdersStatus];
@@ -1506,6 +1649,25 @@ export const AdminListOrdersStatus = {
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+} as const;
+
+export type AdminListOrdersPaymentStatus = typeof AdminListOrdersPaymentStatus[keyof typeof AdminListOrdersPaymentStatus];
+
+
+export const AdminListOrdersPaymentStatus = {
+  unpaid: 'unpaid',
+  pending: 'pending',
+  paid: 'paid',
+  refunded: 'refunded',
+  failed: 'failed',
+} as const;
+
+export type AdminListOrdersDeliveryMethod = typeof AdminListOrdersDeliveryMethod[keyof typeof AdminListOrdersDeliveryMethod];
+
+
+export const AdminListOrdersDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
 } as const;
 
 export type ListCoursesParams = {

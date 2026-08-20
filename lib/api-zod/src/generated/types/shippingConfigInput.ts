@@ -11,4 +11,14 @@ export interface ShippingConfigInput {
   /** @minimum 0 */
   freeShippingThreshold: number;
   tiers: ShippingTier[];
+  personalDeliveryEnabled: boolean;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  personalDeliveryName: string;
+  /** @minimum 0 */
+  personalDeliveryPrice: number;
+  /** @maxLength 500 */
+  personalDeliveryDescription: string;
 }

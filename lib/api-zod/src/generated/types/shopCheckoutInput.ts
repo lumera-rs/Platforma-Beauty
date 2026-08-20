@@ -7,6 +7,7 @@
  */
 import type { BillingDetailsInput } from './billingDetailsInput';
 import type { DeliveryAddressInput } from './deliveryAddressInput';
+import type { ShopCheckoutInputDeliveryMethod } from './shopCheckoutInputDeliveryMethod';
 import type { ShopCheckoutInputPaymentMethod } from './shopCheckoutInputPaymentMethod';
 
 export interface ShopCheckoutInput {
@@ -15,6 +16,7 @@ export interface ShopCheckoutInput {
   /** @nullable */
   billingDetails?: BillingDetailsInput | null;
   paymentMethod: ShopCheckoutInputPaymentMethod;
+  deliveryMethod: ShopCheckoutInputDeliveryMethod;
   /**
      * @maxLength 1000
      * @nullable

@@ -240,6 +240,7 @@ export function OwnerCartPage() {
 
 const deliverySchema = z.object({
   useSalonAddress: z.boolean(),
+  deliveryMethod: z.enum(["courier", "personal_belgrade"]),
   deliveryAddress: z.object({
     recipientName: z.string().min(2, "Unesite ime primaoca"),
     street: z.string().min(2, "Unesite ulicu i broj"),
@@ -290,6 +291,7 @@ export function OwnerCheckoutDeliveryPage() {
     resolver: zodResolver(deliverySchema),
     defaultValues: {
       useSalonAddress: true,
+      deliveryMethod: "courier",
       useBilling: false,
     }
   });
@@ -313,6 +315,7 @@ export function OwnerCheckoutDeliveryPage() {
         form.reset({
           useSalonAddress: savedSalonAddressIsComplete,
           useBilling: !!profile.billingDefaults,
+           deliveryMethod: "courier",
           billingDetails: profile.billingDefaults ? {
             companyName: profile.billingDefaults.companyName,
             pib: profile.billingDefaults.pib,
@@ -343,6 +346,10 @@ export function OwnerCheckoutDeliveryPage() {
 
   const useSalonAddress = form.watch("useSalonAddress");
   const useBilling = form.watch("useBilling");
+  const deliveryMethod = form.watch("deliveryMethod");
+  const destinationCity = useSalonAddress ? profile?.salonAddress.city : form.watch("deliveryAddress.city");
+  const personalOption = preview?.shipping.availableMethods.find(method => method.id === "personal_belgrade");
+  const personalAvailable = !!personalOption?.available && /beograd/i.test(destinationCity ?? "");
   const savedSalonAddressIsComplete = !!profile && [
     profile.salonAddress.recipientName,
     profile.salonAddress.street,
@@ -474,6 +481,20 @@ export function OwnerCheckoutDeliveryPage() {
                           </div>
                         </div>
                       )}
+                      <FormField control={form.control} name="deliveryMethod" render={({ field }) => (
+                        <FormItem className="pt-2">
+                          <FormLabel>Način dostave</FormLabel>
+                          <FormControl><RadioGroup value={field.value} onValueChange={field.onChange} className="grid gap-3 sm:grid-cols-2">
+                            <Label className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 has-[[data-state=checked]]:border-primary">
+                              <RadioGroupItem value="courier" /><span><b>Kurirska služba</b><small className="mt-1 block text-muted-foreground">Cena se računa prema težini pošiljke.</small></span>
+                            </Label>
+                            <Label className={`flex items-start gap-3 rounded-lg border p-4 ${personalAvailable ? "cursor-pointer has-[[data-state=checked]]:border-primary" : "cursor-not-allowed opacity-60"}`}>
+                              <RadioGroupItem value="personal_belgrade" disabled={!personalAvailable} /><span><b>{personalOption?.name ?? "Lična dostava u Beogradu"}</b><small className="mt-1 block text-muted-foreground">{personalAvailable ? `${money(personalOption?.price ?? 0)} · ${personalOption?.description ?? ""}` : "Dostupno samo za adresu u Beogradu."}</small></span>
+                            </Label>
+                          </RadioGroup></FormControl>
+                          {deliveryMethod === "personal_belgrade" && !personalAvailable && <FormDescription className="text-destructive">Izaberite adresu u Beogradu ili kurirsku dostavu.</FormDescription>}
+                        </FormItem>
+                      )} />
                     </div>
                   </div>
 
@@ -620,6 +641,7 @@ export function OwnerCheckoutReviewPage() {
     if (!draft) return;
     const payload = {
       useSalonAddress: draft.useSalonAddress,
+      deliveryMethod: draft.deliveryMethod,
       deliveryAddress: draft.useSalonAddress ? undefined : draft.deliveryAddress,
       billingDetails: draft.useBilling ? draft.billingDetails : null,
       paymentMethod: values.paymentMethod,
@@ -673,7 +695,7 @@ export function OwnerCheckoutReviewPage() {
                   </CardHeader>
                   <CardContent className="py-4 text-sm text-muted-foreground space-y-1">
                     {draft.useSalonAddress ? (
-                       <p>Isporuka na adresu salona iz profila.</p>
+                       <p>{draft.deliveryMethod === "personal_belgrade" ? "Lična dostava na adresu salona u Beogradu." : "Kurirska isporuka na adresu salona iz profila."}</p>
                     ) : (
                       <>
                         <p className="font-medium text-foreground">{draft.deliveryAddress?.recipientName}</p>
@@ -810,8 +832,8 @@ export function OwnerCheckoutReviewPage() {
                         <span>{money(preview.cart.subtotal)}</span>
                      </div>
                      <div className="flex justify-between text-muted-foreground">
-                        <span>Dostava {(preview.shipping.totalWeightGrams / 1000).toFixed(1)}kg</span>
-                        <span>{preview.shipping.freeShipping ? <span className="text-green-600 font-medium">Besplatna</span> : money(preview.shipping.shippingCost)}</span>
+                         <span>Dostava {draft.deliveryMethod === "personal_belgrade" ? "— lična BG" : `${(preview.shipping.totalWeightGrams / 1000).toFixed(1)}kg`}</span>
+                         <span>{draft.deliveryMethod === "personal_belgrade" ? money(preview.shipping.availableMethods.find(m => m.id === "personal_belgrade")?.price ?? 0) : preview.shipping.freeShipping ? <span className="text-green-600 font-medium">Besplatna</span> : money(preview.shipping.shippingCost)}</span>
                      </div>
                      {preview.shipping.message && (
                        <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 p-2 rounded text-xs">
@@ -822,7 +844,7 @@ export function OwnerCheckoutReviewPage() {
                    <Separator className="bg-border/50" />
                    <div className="flex justify-between font-black text-xl text-foreground items-end">
                      <span>Ukupno</span>
-                     <span className="text-primary">{money(preview.total)}</span>
+                      <span className="text-primary">{money(preview.cart.subtotal + (draft.deliveryMethod === "personal_belgrade" ? preview.shipping.availableMethods.find(m => m.id === "personal_belgrade")?.price ?? 0 : preview.shipping.shippingCost))}</span>
                    </div>
                    <p className="text-[10px] text-muted-foreground text-right leading-tight">Uključen PDV (ako je primenjivo).</p>
                 </CardContent>

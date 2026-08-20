@@ -5,6 +5,8 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminListOrdersDeliveryMethod } from './adminListOrdersDeliveryMethod';
+import type { AdminListOrdersPaymentStatus } from './adminListOrdersPaymentStatus';
 import type { AdminListOrdersStatus } from './adminListOrdersStatus';
 
 export type AdminListOrdersParams = {
@@ -13,4 +15,6 @@ salon?: string;
 from?: Date;
 to?: Date;
 search?: string;
+paymentStatus?: AdminListOrdersPaymentStatus;
+deliveryMethod?: AdminListOrdersDeliveryMethod;
 };

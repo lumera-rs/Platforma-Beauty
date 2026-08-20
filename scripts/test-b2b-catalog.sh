@@ -73,7 +73,7 @@ restore_shared_state() {
     status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/shipping")"
     [[ "$status" == "200" ]] || return 1
     jq -e --argjson original "$ORIGINAL_SHIPPING" \
-      '{freeShippingThreshold,tiers} == $original' "$BODY" >/dev/null || return 1
+      '{freeShippingThreshold,tiers,personalDeliveryEnabled,personalDeliveryName,personalDeliveryPrice,personalDeliveryDescription} == $original' "$BODY" >/dev/null || return 1
   fi
 
   if [[ -n "$TARGET_ID" && -n "$ORIGINAL_ROLE" && -n "$ORIGINAL_ACTIVE" ]]; then
@@ -291,7 +291,7 @@ for subject in anonymous CUSTOMER SALON_OWNER; do
     'POST|/admin/products/bulk|{"productIds":["not-a-uuid"],"action":"activate"}|bulk product update' \
     'POST|/admin/product-categories|{"name":"Blocked mutation"}|category creation' \
     'POST|/admin/brands|{"name":"Blocked mutation"}|brand creation' \
-    'PUT|/admin/shipping|{"freeShippingThreshold":0,"tiers":[]}|shipping configuration'; do
+    'PUT|/admin/shipping|{"freeShippingThreshold":0,"tiers":[],"personalDeliveryEnabled":false,"personalDeliveryName":"Lična dostava u Beogradu","personalDeliveryPrice":0,"personalDeliveryDescription":"Dostava na adresu u Beogradu."}|shipping configuration'; do
     IFS='|' read -r method endpoint payload label <<<"$mutation"
     status="$(request_json_as "$cookie" "$method" "$endpoint" "$payload")"
     expect_status "$expected" "$status" "$subject denied $label"
@@ -345,18 +345,18 @@ echo "PASS: API target and DATABASE_URL share the isolated test database"
 # database are the same environment.
 status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/shipping")"
 expect_status 200 "$status" "read shipping configuration for isolation"
-ORIGINAL_SHIPPING="$(jq -c '{freeShippingThreshold,tiers}' "$BODY")"
+ORIGINAL_SHIPPING="$(jq -c '{freeShippingThreshold,tiers,personalDeliveryEnabled,personalDeliveryName,personalDeliveryPrice,personalDeliveryDescription}' "$BODY")"
 
 status="$(request -b "$SUPER_COOKIE" -X PUT \
   -H "Content-Type: application/json" \
-  --data '{"freeShippingThreshold":15000,"tiers":[{"maxWeightGrams":1000,"price":111,"label":"test do 1 kg"},{"maxWeightGrams":3000,"price":222,"label":"test do 3 kg"},{"maxWeightGrams":10000,"price":333,"label":"test do 10 kg"}]}' \
+  --data '{"freeShippingThreshold":15000,"tiers":[{"maxWeightGrams":1000,"price":111,"label":"test do 1 kg"},{"maxWeightGrams":3000,"price":222,"label":"test do 3 kg"},{"maxWeightGrams":10000,"price":333,"label":"test do 10 kg"}],"personalDeliveryEnabled":true,"personalDeliveryName":"Test lična dostava","personalDeliveryPrice":444,"personalDeliveryDescription":"Test samo za Beograd"}' \
   "$BASE_URL/admin/shipping")"
 expect_status 200 "$status" "SUPER_ADMIN replaces shipping tiers"
-expect_json '.freeShippingThreshold == 15000 and [.tiers[].maxWeightGrams] == [1000,3000,10000]' "shipping tiers are sorted and persisted"
+expect_json '.freeShippingThreshold == 15000 and [.tiers[].maxWeightGrams] == [1000,3000,10000] and .personalDeliveryEnabled == true and .personalDeliveryPrice == 444' "shipping tiers and personal delivery are persisted"
 
 status="$(request -b "$ADMIN_COOKIE" -X PUT \
   -H "Content-Type: application/json" \
-  --data '{"freeShippingThreshold":15000,"tiers":[{"maxWeightGrams":1000,"price":111,"label":"test do 1 kg"},{"maxWeightGrams":1000,"price":222,"label":"duplicate"}]}' \
+  --data '{"freeShippingThreshold":15000,"tiers":[{"maxWeightGrams":1000,"price":111,"label":"test do 1 kg"},{"maxWeightGrams":1000,"price":222,"label":"duplicate"}],"personalDeliveryEnabled":true,"personalDeliveryName":"Test lična dostava","personalDeliveryPrice":444,"personalDeliveryDescription":"Test samo za Beograd"}' \
   "$BASE_URL/admin/shipping")"
 expect_status 400 "$status" "duplicate shipping weight rejected"
 
@@ -600,22 +600,23 @@ expect_json '.shippingCost == 111 and .freeShipping == false and .amountToFreeSh
 status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/shipping-quote?weightGrams=3000&subtotal=15000")"
 expect_status 200 "$status" "SALON_OWNER reads free-shipping quote"
 expect_json '.shippingCost == 0 and .freeShipping == true and .amountToFreeShipping == 0' "free-shipping threshold is inclusive"
+expect_json '[.availableMethods[] | select(.id == "personal_belgrade") | .price][0] == 0' "personal delivery quote is also free at the threshold"
 
 status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items \
   "{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Standard\",\"quantity\":5}")"
 expect_status 200 "$status" "SALON_OWNER adds threshold items to persistent cart"
 expect_json ".itemCount == 5 and .subtotal == 15000" "cart total is server-calculated before threshold checkout"
 status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
-  '{"useSalonAddress":true,"paymentMethod":"BANK_TRANSFER","termsAccepted":true}')"
+  '{"useSalonAddress":true,"deliveryMethod":"personal_belgrade","paymentMethod":"BANK_TRANSFER","termsAccepted":true}')"
 expect_status 201 "$status" "SALON_OWNER creates threshold order with seeded salon address"
 THRESHOLD_ORDER_ID="$(json_field '.id')"
-expect_json ".shippingCost == 0 and .total == 15000 and .itemCount == 5 and .items[0].price == 3000 and .delivery.postalCode == \"11000\"" "threshold order gets server-side free shipping and saved salon delivery data"
+expect_json ".shippingCost == 0 and .total == 15000 and .deliveryMethod == \"personal_belgrade\" and .itemCount == 5 and .items[0].price == 3000 and .delivery.postalCode == \"11000\"" "threshold order gets server-side free personal delivery and saved salon delivery data"
 
 status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items \
   "{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Premium\",\"quantity\":2}")"
 expect_status 200 "$status" "SALON_OWNER adds weighted items to persistent cart"
 status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
-  "{\"useSalonAddress\":false,\"deliveryAddress\":{\"recipientName\":\"$TEST_SHIPPING_NAME\",\"street\":\"Test 1\",\"city\":\"Beograd\",\"postalCode\":\"11000\",\"phone\":\"+38160111222\",\"email\":\"b2b-regression@example.com\"},\"paymentMethod\":\"BANK_TRANSFER\",\"termsAccepted\":true}")"
+  "{\"useSalonAddress\":false,\"deliveryAddress\":{\"recipientName\":\"$TEST_SHIPPING_NAME\",\"street\":\"Test 1\",\"city\":\"Beograd\",\"postalCode\":\"11000\",\"phone\":\"+38160111222\",\"email\":\"b2b-regression@example.com\"},\"deliveryMethod\":\"courier\",\"paymentMethod\":\"BANK_TRANSFER\",\"termsAccepted\":true}")"
 expect_status 201 "$status" "SALON_OWNER creates weighted order from persistent cart"
 WEIGHTED_ORDER_ID="$(json_field '.id')"
 expect_json ".shippingCost == 222 and .total == 7222 and .itemCount == 2 and .items[0].price == 3500" "weighted order total uses server-side variant price and shipping"

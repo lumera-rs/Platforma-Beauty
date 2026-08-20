@@ -7,13 +7,21 @@
  */
 import type { OrderBilling } from './orderBilling';
 import type { OrderDelivery } from './orderDelivery';
+import type { OrderDeliveryMethod } from './orderDeliveryMethod';
 import type { OrderItem } from './orderItem';
+import type { OrderPaymentStatus } from './orderPaymentStatus';
 import type { OrderSalon } from './orderSalon';
 import type { OrderStatus } from './orderStatus';
 
 export interface Order {
   id: string;
   status: OrderStatus;
+  paymentStatus: OrderPaymentStatus;
+  deliveryMethod: OrderDeliveryMethod;
+  /** @nullable */
+  courierService: string | null;
+  /** @nullable */
+  trackingNumber: string | null;
   total: number;
   subtotal: number;
   shippingCost: number;

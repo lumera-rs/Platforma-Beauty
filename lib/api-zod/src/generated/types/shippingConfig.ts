@@ -10,5 +10,10 @@ import type { ShippingTier } from './shippingTier';
 export interface ShippingConfig {
   freeShippingThreshold: number;
   tiers: ShippingTier[];
+  personalDeliveryEnabled: boolean;
+  personalDeliveryName: string;
+  /** @minimum 0 */
+  personalDeliveryPrice: number;
+  personalDeliveryDescription: string;
   updatedAt: Date;
 }

@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type OrderStatusUpdateStatus = typeof OrderStatusUpdateStatus[keyof typeof OrderStatusUpdateStatus];
+export type AdminOrderUpdateStatus = typeof AdminOrderUpdateStatus[keyof typeof AdminOrderUpdateStatus];
 
 
-export const OrderStatusUpdateStatus = {
+export const AdminOrderUpdateStatus = {
   confirmed: 'confirmed',
   shipped: 'shipped',
   delivered: 'delivered',

@@ -16,6 +16,7 @@ import {
   lessonProgressTable,
   loyaltyTiersTable,
   orderItemsTable,
+  orderStatusHistoryTable,
   ordersTable,
   salonNotificationsTable,
   productReviewsTable,
@@ -61,6 +62,7 @@ import {
   AdminUpdateOrderStatusBody,
   AdminUpdateOrderStatusParams,
   AdminUpdateOrderStatusResponse,
+  AdminBulkUpdateOrdersBody,
   GetShippingQuoteQueryParams,
   GetOrderParams,
   GetOrderResponse,
@@ -1166,9 +1168,18 @@ async function getShippingConfig() {
 }
 
 function calculateShipping(
-  config: { freeShippingThreshold: number; tiers: Array<{ maxWeightGrams: number; price: number; label: string }> },
+  config: {
+    freeShippingThreshold: number;
+    tiers: Array<{ maxWeightGrams: number; price: number; label: string }>;
+    personalDeliveryEnabled: boolean;
+    personalDeliveryName: string;
+    personalDeliveryPrice: number;
+    personalDeliveryDescription: string;
+  },
   totalWeightGrams: number,
   subtotal: number,
+  deliveryMethod: "courier" | "personal_belgrade" = "courier",
+  destinationCity?: string | null,
 ) {
   const threshold = config.freeShippingThreshold;
   const freeByThreshold = threshold > 0 && subtotal >= threshold;
@@ -1178,7 +1189,11 @@ function calculateShipping(
     const match = sorted.find((t) => totalWeightGrams <= t.maxWeightGrams);
     tierPrice = match ? match.price : sorted[sorted.length - 1]!.price;
   }
-  const shippingCost = freeByThreshold ? 0 : tierPrice;
+  const isBelgrade = /beograd/i.test(destinationCity ?? "");
+  const personalAvailable = config.personalDeliveryEnabled && (destinationCity == null || isBelgrade);
+  const shippingCost = freeByThreshold ? 0 : deliveryMethod === "personal_belgrade"
+    ? config.personalDeliveryPrice
+    : tierPrice;
   const amountToFreeShipping = threshold > 0 && !freeByThreshold ? threshold - subtotal : 0;
   let message: string | null = null;
   if (freeByThreshold) message = `Besplatna dostava jer je porudžbina preko ${threshold.toLocaleString("sr-RS")} RSD`;
@@ -1190,6 +1205,10 @@ function calculateShipping(
     freeShippingThreshold: threshold,
     amountToFreeShipping,
     message,
+    availableMethods: [
+      { id: "courier" as const, name: "Kurirska služba", description: "Standardna dostava prema težini pošiljke.", price: freeByThreshold ? 0 : tierPrice, available: true },
+      { id: "personal_belgrade" as const, name: config.personalDeliveryName, description: config.personalDeliveryDescription, price: freeByThreshold ? 0 : config.personalDeliveryPrice, available: personalAvailable },
+    ],
   };
 }
 
@@ -1401,13 +1420,17 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
   if (!delivery || [delivery.recipientName, delivery.street, delivery.city, delivery.postalCode, delivery.phone, delivery.email].some((value) => !value?.trim())) {
     res.status(400).json({ error: "Unesite sve obavezne podatke za dostavu, uključujući poštanski broj i email." }); return;
   }
+  const config = await getShippingConfig();
+  const deliveryMethod = parsed.data.deliveryMethod;
+  if (deliveryMethod === "personal_belgrade" && (!config.personalDeliveryEnabled || !/beograd/i.test(delivery.city))) {
+    res.status(400).json({ error: "Lična dostava je dostupna samo na adresama u Beogradu kada je uključena u administraciji." }); return;
+  }
   const billing = parsed.data.billingDetails ?? null;
   if (billing && [billing.companyName, billing.pib, billing.registrationNumber, billing.street, billing.city, billing.postalCode].some((value) => !value?.trim())) {
     res.status(400).json({ error: "Unesite kompletne podatke firme za fakturisanje." }); return;
   }
   const [cart] = await db.select().from(shoppingCartsTable).where(eq(shoppingCartsTable.salonId, salon.id)).limit(1);
   if (!cart) { res.status(400).json({ error: "Vaša korpa je prazna." }); return; }
-  const config = await getShippingConfig();
   let conflictProductName: string | null = null;
   const created = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
@@ -1473,7 +1496,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     }
     const subtotal = details.reduce((sum, line) => sum + line.price * line.quantity, 0);
     const totalWeightGrams = details.reduce((sum, line) => sum + (line.product.weightGrams ?? 0) * line.quantity, 0);
-    const shipping = calculateShipping(config, totalWeightGrams, subtotal);
+    const shipping = calculateShipping(config, totalWeightGrams, subtotal, deliveryMethod, delivery.city);
     for (const [productId, quantity] of productQuantities) {
       const product = lockedProducts.get(productId)!;
       const updatedVariants = (product.variants ?? []).map((variant) => {
@@ -1508,6 +1531,8 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       billingCity: billing?.city ?? null,
       billingPostalCode: billing?.postalCode ?? null,
       paymentMethod: parsed.data.paymentMethod,
+      paymentStatus: parsed.data.paymentMethod === "CARD" ? "pending" : "unpaid",
+      deliveryMethod,
     }).returning();
     const orderItems = details.map((line) => ({
       orderId: order!.id,
@@ -1567,6 +1592,10 @@ function orderDto(
   return {
     id: order.id,
     status: order.status,
+    paymentStatus: order.paymentStatus,
+    deliveryMethod: order.deliveryMethod,
+    courierService: order.courierService ?? null,
+    trackingNumber: order.trackingNumber ?? null,
     total: order.total,
     subtotal: order.subtotal,
     shippingCost: order.shippingCost,
@@ -1593,6 +1622,27 @@ function orderDto(
       productSku: item.productSku ?? null,
       quantity: item.quantity,
       price: item.price,
+    })),
+  };
+}
+
+function adminOrderDto(
+  order: typeof ordersTable.$inferSelect,
+  items: Array<typeof orderItemsTable.$inferSelect>,
+  salon: typeof salonsTable.$inferSelect,
+  history: Array<typeof orderStatusHistoryTable.$inferSelect>,
+) {
+  return {
+    ...orderDto(order, items, salon),
+    adminNote: order.adminNote ?? null,
+    history: history.map((event) => ({
+      id: event.id,
+      actorName: event.actorName,
+      field: event.field,
+      previousValue: event.previousValue ?? null,
+      nextValue: event.nextValue ?? null,
+      note: event.note ?? null,
+      createdAt: event.createdAt.toISOString(),
     })),
   };
 }
@@ -1824,6 +1874,8 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   let orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt));
   const salons = await db.select().from(salonsTable);
   if (q.status) orders = orders.filter((order) => order.status === q.status);
+  if (q.paymentStatus) orders = orders.filter((order) => order.paymentStatus === q.paymentStatus);
+  if (q.deliveryMethod) orders = orders.filter((order) => order.deliveryMethod === q.deliveryMethod);
   if (q.salon) {
     const term = q.salon.toLowerCase();
     orders = orders.filter((order) => {
@@ -1841,10 +1893,64 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   if (q.from) orders = orders.filter((order) => order.createdAt >= new Date(`${q.from}T00:00:00.000Z`));
   if (q.to) orders = orders.filter((order) => order.createdAt <= new Date(`${q.to}T23:59:59.999Z`));
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((order) => order.id))) : [];
+  const histories = orders.length ? await db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orders.map((order) => order.id))).orderBy(desc(orderStatusHistoryTable.createdAt)) : [];
   res.json(AdminListOrdersResponse.parse(orders.flatMap((order) => {
     const salon = salons.find((item) => item.id === order.salonId);
-    return salon ? [orderDto(order, items.filter((item) => item.orderId === order.id), salon)] : [];
+    return salon ? [adminOrderDto(order, items.filter((item) => item.orderId === order.id), salon, histories.filter((event) => event.orderId === order.id))] : [];
   })));
+});
+
+const allowedOrderTransitions: Record<string, string[]> = {
+  pending: ["confirmed", "cancelled"],
+  confirmed: ["shipped", "cancelled"],
+  paid: ["shipped", "cancelled"],
+  processing: ["shipped", "cancelled"],
+  shipped: ["delivered", "cancelled"],
+  delivered: [],
+  cancelled: [],
+};
+
+router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const body = AdminBulkUpdateOrdersBody.safeParse(req.body);
+  if (!body.success || (!body.data.status && !body.data.paymentStatus)) {
+    res.status(400).json({ error: body.success ? "Izaberite status isporuke ili plaćanja." : body.error.message }); return;
+  }
+  const selected = await db.select().from(ordersTable).where(inArray(ordersTable.id, body.data.orderIds));
+  if (selected.length !== body.data.orderIds.length) { res.status(404).json({ error: "Jedna ili više porudžbina nije pronađena." }); return; }
+  if (body.data.status && selected.some((order) => !allowedOrderTransitions[order.status]?.includes(body.data.status!))) {
+    res.status(400).json({ error: "Masovna promena bi preskočila dozvoljeni tok isporuke. Obradite porudžbine po redosledu statusa." }); return;
+  }
+  const changed = await db.transaction(async (tx) => {
+    const result = [];
+    for (const order of selected) {
+      const update = {
+        ...(body.data.status ? { status: body.data.status } : {}),
+        ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
+        updatedAt: new Date(),
+      };
+      const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
+      for (const [field, previousValue, nextValue] of [
+        ["status", order.status, body.data.status],
+        ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
+      ] as const) {
+        if (nextValue && previousValue !== nextValue) {
+          await tx.insert(orderStatusHistoryTable).values({
+            orderId: order.id, actorUserId: user.id, actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
+            field, previousValue, nextValue,
+          });
+        }
+      }
+      result.push(saved!);
+    }
+    return result;
+  });
+  const itemRows = changed.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, changed.map((order) => order.id))) : [];
+  const salonRows = await db.select().from(salonsTable);
+  res.json(changed.flatMap((order) => {
+    const salon = salonRows.find((candidate) => candidate.id === order.salonId);
+    return salon ? [adminOrderDto(order, itemRows.filter((item) => item.orderId === order.id), salon, [])] : [];
+  }));
 });
 
 router.get("/admin/orders/:orderId", async (req, res): Promise<void> => {
@@ -1856,7 +1962,8 @@ router.get("/admin/orders/:orderId", async (req, res): Promise<void> => {
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, order.salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon porudžbine nije pronađen." }); return; }
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
-  res.json(AdminGetOrderResponse.parse(orderDto(order, items, salon)));
+  const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, order.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
+  res.json(AdminGetOrderResponse.parse(adminOrderDto(order, items, salon, history)));
 });
 
 router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
@@ -1866,24 +1973,40 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
   if (!params.success || !body.success) { res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." }); return; }
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.orderId)).limit(1);
   if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
-  const allowed: Record<string, string[]> = {
-    pending: ["confirmed", "cancelled"],
-    confirmed: ["shipped", "cancelled"],
-    paid: ["shipped", "cancelled"],
-    processing: ["shipped", "cancelled"],
-    shipped: ["delivered", "cancelled"],
-    delivered: [],
-    cancelled: [],
-  };
-  if (!allowed[order.status]?.includes(body.data.status)) {
+  if (body.data.status && !allowedOrderTransitions[order.status]?.includes(body.data.status)) {
     res.status(400).json({ error: "Ova promena statusa nije dozvoljena." }); return;
   }
-  const [updated] = await db.update(ordersTable)
-    .set({ status: body.data.status, updatedAt: new Date() })
-    .where(eq(ordersTable.id, order.id)).returning();
+  const update = {
+    ...(body.data.status ? { status: body.data.status } : {}),
+    ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
+    ...(body.data.courierService !== undefined ? { courierService: body.data.courierService } : {}),
+    ...(body.data.trackingNumber !== undefined ? { trackingNumber: body.data.trackingNumber } : {}),
+    ...(body.data.adminNote !== undefined ? { adminNote: body.data.adminNote } : {}),
+    updatedAt: new Date(),
+  };
+  const [updated] = await db.transaction(async (tx) => {
+    const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
+    const changes = [
+      ["status", order.status, body.data.status],
+      ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
+      ["courierService", order.courierService, body.data.courierService],
+      ["trackingNumber", order.trackingNumber, body.data.trackingNumber],
+      ["adminNote", order.adminNote, body.data.adminNote],
+    ] as const;
+    for (const [field, previousValue, nextValue] of changes) {
+      if (nextValue !== undefined && previousValue !== nextValue) {
+        await tx.insert(orderStatusHistoryTable).values({
+          orderId: order.id, actorUserId: user.id, actorName: `${user.firstName} ${user.lastName}`.trim() || "Administrator",
+          field, previousValue: previousValue ?? null, nextValue: nextValue ?? null,
+        });
+      }
+    }
+    return [saved!];
+  });
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1);
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated!.id));
-  res.json(AdminUpdateOrderStatusResponse.parse(orderDto(updated!, items, salon!)));
+  const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, updated!.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
+  res.json(AdminUpdateOrderStatusResponse.parse(adminOrderDto(updated!, items, salon!, history)));
 });
 
 router.get("/education/courses", async (req, res): Promise<void> => {
@@ -3233,7 +3356,12 @@ router.delete("/admin/brands/:brandId", async (req, res): Promise<void> => {
 router.get("/admin/shipping", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const config = await getShippingConfig();
-  res.json({ freeShippingThreshold: config.freeShippingThreshold, tiers: config.tiers, updatedAt: config.updatedAt.toISOString() });
+  res.json({
+    freeShippingThreshold: config.freeShippingThreshold, tiers: config.tiers,
+    personalDeliveryEnabled: config.personalDeliveryEnabled, personalDeliveryName: config.personalDeliveryName,
+    personalDeliveryPrice: config.personalDeliveryPrice, personalDeliveryDescription: config.personalDeliveryDescription,
+    updatedAt: config.updatedAt.toISOString(),
+  });
 });
 
 router.put("/admin/shipping", async (req, res): Promise<void> => {
@@ -3250,9 +3378,18 @@ router.put("/admin/shipping", async (req, res): Promise<void> => {
   const [config] = await db.update(shippingRulesTable).set({
     freeShippingThreshold: body.freeShippingThreshold,
     tiers: [...body.tiers].sort((a, b) => a.maxWeightGrams - b.maxWeightGrams),
+    personalDeliveryEnabled: body.personalDeliveryEnabled,
+    personalDeliveryName: body.personalDeliveryName,
+    personalDeliveryPrice: body.personalDeliveryPrice,
+    personalDeliveryDescription: body.personalDeliveryDescription,
     updatedAt: new Date(),
   }).where(eq(shippingRulesTable.id, existing.id)).returning();
-  res.json({ freeShippingThreshold: config!.freeShippingThreshold, tiers: config!.tiers, updatedAt: config!.updatedAt.toISOString() });
+  res.json({
+    freeShippingThreshold: config!.freeShippingThreshold, tiers: config!.tiers,
+    personalDeliveryEnabled: config!.personalDeliveryEnabled, personalDeliveryName: config!.personalDeliveryName,
+    personalDeliveryPrice: config!.personalDeliveryPrice, personalDeliveryDescription: config!.personalDeliveryDescription,
+    updatedAt: config!.updatedAt.toISOString(),
+  });
 });
 
 export default router;

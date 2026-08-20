@@ -29,6 +29,9 @@ import type {
   AdminListReviewsParams,
   AdminListSalonsParams,
   AdminListUsersParams,
+  AdminOrder,
+  AdminOrderBulkUpdate,
+  AdminOrderUpdate,
   AdminProduct,
   AdminProductBulkUpdate,
   AdminProductCategory,
@@ -82,7 +85,6 @@ import type {
   LoyaltyTier,
   LoyaltyTierInput,
   Order,
-  OrderStatusUpdate,
   Product,
   ProductCategory,
   ProductDetail,
@@ -3116,9 +3118,9 @@ export const getAdminListOrdersUrl = (params?: AdminListOrdersParams,) => {
 /**
  * @summary List all B2B orders for administration
  */
-export const adminListOrders = async (params?: AdminListOrdersParams, options?: Parameters<typeof customFetch>[1]): Promise<Order[]> => {
+export const adminListOrders = async (params?: AdminListOrdersParams, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrder[]> => {
 
-  return customFetch<Order[]>(getAdminListOrdersUrl(params),
+  return customFetch<AdminOrder[]>(getAdminListOrdersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3193,9 +3195,9 @@ export const getAdminGetOrderUrl = (orderId: string,) => {
 /**
  * @summary Get complete B2B order for administration
  */
-export const adminGetOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<Order> => {
+export const adminGetOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrder> => {
 
-  return customFetch<Order>(getAdminGetOrderUrl(orderId),
+  return customFetch<AdminOrder>(getAdminGetOrderUrl(orderId),
   {
     ...options,
     method: 'GET'
@@ -3268,17 +3270,17 @@ export const getAdminUpdateOrderStatusUrl = (orderId: string,) => {
 }
 
 /**
- * @summary Update a B2B order status through an allowed transition
+ * @summary Update B2B order fulfillment, payment and internal operational details
  */
 export const adminUpdateOrderStatus = async (orderId: string,
-    orderStatusUpdate: OrderStatusUpdate, options?: Parameters<typeof customFetch>[1]): Promise<Order> => {
+    adminOrderUpdate: AdminOrderUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrder> => {
 
-  return customFetch<Order>(getAdminUpdateOrderStatusUrl(orderId),
+  return customFetch<AdminOrder>(getAdminUpdateOrderStatusUrl(orderId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(orderStatusUpdate)
+    body: JSON.stringify(adminOrderUpdate)
   }
 );}
 
@@ -3287,8 +3289,8 @@ export const adminUpdateOrderStatus = async (orderId: string,
 
 
 export const getAdminUpdateOrderStatusMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<OrderStatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<OrderStatusUpdate>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<AdminOrderUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<AdminOrderUpdate>}, TContext> => {
 
 const mutationKey = ['adminUpdateOrderStatus'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3300,7 +3302,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, {orderId: string;data: BodyType<OrderStatusUpdate>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, {orderId: string;data: BodyType<AdminOrderUpdate>}> = (props) => {
           const {orderId,data} = props ?? {};
 
           return  adminUpdateOrderStatus(orderId,data,requestOptions)
@@ -3314,21 +3316,92 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateOrderStatusMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateOrderStatus>>>
-    export type AdminUpdateOrderStatusMutationBody = BodyType<OrderStatusUpdate>
+    export type AdminUpdateOrderStatusMutationBody = BodyType<AdminOrderUpdate>
     export type AdminUpdateOrderStatusMutationError = ErrorType<unknown>
 
     /**
- * @summary Update a B2B order status through an allowed transition
+ * @summary Update B2B order fulfillment, payment and internal operational details
  */
 export const useAdminUpdateOrderStatus = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<OrderStatusUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateOrderStatus>>, TError,{orderId: string;data: BodyType<AdminOrderUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateOrderStatus>>,
         TError,
-        {orderId: string;data: BodyType<OrderStatusUpdate>},
+        {orderId: string;data: BodyType<AdminOrderUpdate>},
         TContext
       > => {
       return useMutation(getAdminUpdateOrderStatusMutationOptions(options));
+    }
+
+export const getAdminBulkUpdateOrdersUrl = () => {
+
+
+
+
+  return `/api/admin/orders/bulk`
+}
+
+/**
+ * @summary Apply one operational update to selected B2B orders
+ */
+export const adminBulkUpdateOrders = async (adminOrderBulkUpdate: AdminOrderBulkUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminOrder[]> => {
+
+  return customFetch<AdminOrder[]>(getAdminBulkUpdateOrdersUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminOrderBulkUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminBulkUpdateOrdersMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminBulkUpdateOrders>>, TError,{data: BodyType<AdminOrderBulkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminBulkUpdateOrders>>, TError,{data: BodyType<AdminOrderBulkUpdate>}, TContext> => {
+
+const mutationKey = ['adminBulkUpdateOrders'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminBulkUpdateOrders>>, {data: BodyType<AdminOrderBulkUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminBulkUpdateOrders(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminBulkUpdateOrdersMutationResult = NonNullable<Awaited<ReturnType<typeof adminBulkUpdateOrders>>>
+    export type AdminBulkUpdateOrdersMutationBody = BodyType<AdminOrderBulkUpdate>
+    export type AdminBulkUpdateOrdersMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Apply one operational update to selected B2B orders
+ */
+export const useAdminBulkUpdateOrders = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminBulkUpdateOrders>>, TError,{data: BodyType<AdminOrderBulkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminBulkUpdateOrders>>,
+        TError,
+        {data: BodyType<AdminOrderBulkUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminBulkUpdateOrdersMutationOptions(options));
     }
 
 export const getGetLoyaltyStatusUrl = () => {

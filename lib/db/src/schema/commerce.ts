@@ -29,6 +29,19 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "FREE",
 ]);
 
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "unpaid",
+  "pending",
+  "paid",
+  "refunded",
+  "failed",
+]);
+
+export const deliveryMethodEnum = pgEnum("delivery_method", [
+  "courier",
+  "personal_belgrade",
+]);
+
 export const subscriptionStatusEnum = pgEnum("subscription_status", [
   "trial",
   "active",
@@ -81,6 +94,10 @@ export const shippingRulesTable = pgTable("shipping_rules", {
     .$type<Array<{ maxWeightGrams: number; price: number; label: string }>>()
     .notNull()
     .default([]),
+  personalDeliveryEnabled: boolean("personal_delivery_enabled").notNull().default(false),
+  personalDeliveryName: text("personal_delivery_name").notNull().default("Lična dostava u Beogradu"),
+  personalDeliveryPrice: integer("personal_delivery_price").notNull().default(0),
+  personalDeliveryDescription: text("personal_delivery_description").notNull().default("Dostava na adresu u Beogradu."),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -150,8 +167,25 @@ export const ordersTable = pgTable("orders", {
   subtotal: integer("subtotal").notNull().default(0),
   totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
+  paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
+  deliveryMethod: deliveryMethodEnum("delivery_method").notNull().default("courier"),
+  courierService: text("courier_service"),
+  trackingNumber: text("tracking_number"),
+  adminNote: text("admin_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orderStatusHistoryTable = pgTable("order_status_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id"),
+  actorName: text("actor_name").notNull().default("Administrator"),
+  field: text("field").notNull(),
+  previousValue: text("previous_value"),
+  nextValue: text("next_value"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const shoppingCartsTable = pgTable("shopping_carts", {
