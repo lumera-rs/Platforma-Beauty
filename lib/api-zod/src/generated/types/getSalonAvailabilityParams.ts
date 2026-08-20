@@ -9,5 +9,5 @@
 export type GetSalonAvailabilityParams = {
 serviceId: string;
 employeeId?: string;
-date: Date;
+date: string;
 };

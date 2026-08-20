@@ -7,7 +7,7 @@ import { useParams, useLocation } from "wouter";
 import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, User as UserIcon, Loader2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { format, parseISO } from "date-fns";
+import { format, isValid, parseISO } from "date-fns";
 import { srLatn } from "date-fns/locale";
 
 export default function SalonProfile() {
@@ -240,7 +240,12 @@ export default function SalonProfile() {
                         type="date" 
                         value={dateStr}
                         min={format(new Date(), 'yyyy-MM-dd')}
-                        onChange={(e) => { setSelectedDate(new Date(e.target.value)); setSelectedSlot(null); }}
+                        onChange={(e) => {
+                          const nextDate = parseISO(e.target.value);
+                          if (!isValid(nextDate)) return;
+                          setSelectedDate(nextDate);
+                          setSelectedSlot(null);
+                        }}
                         className="w-full border rounded-md p-2 text-sm bg-background"
                       />
                     </div>

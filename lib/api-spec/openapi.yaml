@@ -225,7 +225,7 @@ paths:
         - name: date
           in: query
           required: true
-          schema: { type: string, format: date }
+          schema: { type: string }
       responses:
         "200":
           description: Available slots

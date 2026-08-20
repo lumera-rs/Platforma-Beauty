@@ -98,6 +98,7 @@ async function seed(): Promise<void> {
     await seedEducationContent();
     await seedMarketplaceTaxonomy();
     await seedCourierServices();
+    await seedFutureBookingAvailability();
     return;
   }
 
@@ -201,27 +202,7 @@ async function seed(): Promise<void> {
     })),
   ));
 
-  await db.insert(appointmentsTable).values(
-    Array.from({ length: 20 }, (_, index) => {
-      const salon = salons[index % salons.length]!;
-      const service = serviceRows.find((item) => item.salonId === salon.id)!;
-      const employee = employeeRows.find((item) => item.salonId === salon.id)!;
-      const day = String(10 + (index % 15)).padStart(2, "0");
-      return {
-        salonId: salon.id,
-        customerId: demoUsers[4 + (index % 20)]!.id,
-        employeeId: employee.id,
-        serviceId: service.id,
-        date: `2026-08-${day}`,
-        startTime: `${String(9 + (index % 8)).padStart(2, "0")}:00`,
-        endTime: `${String(10 + (index % 8)).padStart(2, "0")}:00`,
-        durationMinutes: service.durationMinutes,
-        price: service.promoPrice ?? service.price,
-        status: index % 5 === 0 ? "completed" as const : "confirmed" as const,
-        notes: index % 4 === 0 ? "Želi tišu sobu ako je dostupna." : null,
-      };
-    }),
-  );
+  await seedFutureBookingAvailability();
 
   const productCategoryRows = await db.insert(productCategoriesTable).values([
     { name: "Masažna ulja", slug: "masazna-ulja" },
@@ -366,6 +347,79 @@ async function seed(): Promise<void> {
   await seedMarketplaceTaxonomy();
   await seedCourierServices();
   void customer;
+}
+
+/**
+ * Keeps the demo booking calendar useful regardless of when the workspace is opened.
+ * Salon hours are recurring, while appointments intentionally move with today's date.
+ */
+async function seedFutureBookingAvailability(): Promise<void> {
+  const [salons, employees, services, customers, existingHours, existingAppointments] = await Promise.all([
+    db.select().from(salonsTable),
+    db.select().from(employeesTable),
+    db.select().from(servicesTable),
+    db.select().from(usersTable),
+    db.select().from(salonHoursTable),
+    db.select().from(appointmentsTable),
+  ]);
+  const customerRows = customers.filter((user) => user.role === "CUSTOMER");
+  if (!salons.length || !employees.length || !services.length || !customerRows.length) return;
+
+  const hourKeys = new Set(existingHours.map((hour) => `${hour.salonId}:${hour.weekday}`));
+  const missingHours: (typeof salonHoursTable.$inferInsert)[] = [];
+  for (const salon of salons) {
+    for (let weekday = 1; weekday <= 6; weekday += 1) {
+      if (!hourKeys.has(`${salon.id}:${weekday}`)) {
+        missingHours.push({ salonId: salon.id, weekday, openTime: "09:00", closeTime: "18:00", closed: false });
+      }
+    }
+  }
+  if (missingHours.length) await db.insert(salonHoursTable).values(missingHours);
+
+  const occupiedKeys = new Set(existingAppointments
+    .filter((appointment) => appointment.status !== "cancelled")
+    .map((appointment) => `${appointment.employeeId}:${appointment.date}:${appointment.startTime}`));
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const busyStartHours = [9, 11, 14, 16];
+  const demoAppointments: (typeof appointmentsTable.$inferInsert)[] = [];
+
+  for (let offset = 1; offset <= 21; offset += 1) {
+    const day = new Date(today);
+    day.setUTCDate(today.getUTCDate() + offset);
+    const weekday = day.getUTCDay();
+    if (weekday === 0) continue;
+    const date = day.toISOString().slice(0, 10);
+
+    for (const salon of salons) {
+      const service = services.find((item) => item.salonId === salon.id);
+      if (!service) continue;
+      const salonEmployees = employees.filter((employee) => employee.salonId === salon.id);
+      for (const employee of salonEmployees) {
+        for (const [slotIndex, startHour] of busyStartHours.entries()) {
+          const startTime = `${String(startHour).padStart(2, "0")}:00`;
+          const occupiedKey = `${employee.id}:${date}:${startTime}`;
+          if (occupiedKeys.has(occupiedKey)) continue;
+          const customer = customerRows[(offset + slotIndex + salonEmployees.indexOf(employee)) % customerRows.length]!;
+          demoAppointments.push({
+            salonId: salon.id,
+            customerId: customer.id,
+            employeeId: employee.id,
+            serviceId: service.id,
+            date,
+            startTime,
+            endTime: `${String(startHour + 1).padStart(2, "0")}:00`,
+            durationMinutes: service.durationMinutes,
+            price: service.promoPrice ?? service.price,
+            status: "confirmed",
+            notes: "[demo-availability] Zauzet demo termin za realističan kalendar.",
+          });
+          occupiedKeys.add(occupiedKey);
+        }
+      }
+    }
+  }
+  if (demoAppointments.length) await db.insert(appointmentsTable).values(demoAppointments);
 }
 
 async function seedCourierServices(): Promise<void> {

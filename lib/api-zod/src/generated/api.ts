@@ -359,7 +359,7 @@ export const GetSalonAvailabilityParams = zod.object({
 export const GetSalonAvailabilityQueryParams = zod.object({
   "serviceId": zod.coerce.string(),
   "employeeId": zod.coerce.string().optional(),
-  "date": zod.date()
+  "date": zod.coerce.string()
 })
 
 export const GetSalonAvailabilityResponseItem = zod.object({
