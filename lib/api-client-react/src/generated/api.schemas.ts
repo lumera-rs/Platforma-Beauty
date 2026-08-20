@@ -337,6 +337,75 @@ export interface SalonAppointmentUpdate {
   notes?: string;
 }
 
+export interface SalonCustomer {
+  id: string;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone: string | null;
+  smsOptOut: boolean;
+  visitCount: number;
+  isRegistered: boolean;
+}
+
+export interface SalonCustomerUpdate {
+  smsOptOut: boolean;
+}
+
+export type SalonAppointmentCreateGuest = {
+  /** @minLength 1 */
+  firstName: string;
+  /** @minLength 1 */
+  lastName: string;
+  /** @minLength 5 */
+  phone: string;
+  email?: string;
+};
+
+export interface SalonAppointmentCreate {
+  serviceId: string;
+  /** @nullable */
+  employeeId?: string | null;
+  date: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime: string;
+  notes?: string;
+  salonCustomerId?: string;
+  guest?: SalonAppointmentCreateGuest;
+}
+
+export type SmsDeliveryMessageType = typeof SmsDeliveryMessageType[keyof typeof SmsDeliveryMessageType];
+
+
+export const SmsDeliveryMessageType = {
+  appointment_confirmation: 'appointment_confirmation',
+  appointment_reminder: 'appointment_reminder',
+} as const;
+
+export type SmsDeliveryStatus = typeof SmsDeliveryStatus[keyof typeof SmsDeliveryStatus];
+
+
+export const SmsDeliveryStatus = {
+  queued: 'queued',
+  sent: 'sent',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+export interface SmsDelivery {
+  id: string;
+  /** @nullable */
+  salonName?: string | null;
+  recipientPhone: string;
+  messageType: SmsDeliveryMessageType;
+  status: SmsDeliveryStatus;
+  /** @nullable */
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
 export interface CancelAppointmentInput {
   reason?: string;
 }

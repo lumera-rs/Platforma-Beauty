@@ -207,6 +207,21 @@ export const AdminCreateEmailCampaignResponse = zod.object({
 
 
 /**
+ * @summary List transactional SMS delivery records
+ */
+export const AdminListSmsDeliveriesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonName": zod.string().nullish(),
+  "recipientPhone": zod.string(),
+  "messageType": zod.enum(['appointment_confirmation', 'appointment_reminder']),
+  "status": zod.enum(['queued', 'sent', 'failed', 'skipped']),
+  "errorMessage": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const AdminListSmsDeliveriesResponse = zod.array(AdminListSmsDeliveriesResponseItem)
+
+
+/**
  * @summary Search salons
  */
 export const listSalonsQuerySortDefault = `recommended`;
@@ -672,6 +687,87 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "notes": zod.string().nullish()
 })
 export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResponseItem)
+
+
+/**
+ * @summary Create a salon appointment for a CRM customer or walk-in guest
+ */
+export const createSalonAppointmentBodyStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const createSalonAppointmentBodyGuestPhoneMin = 5;
+
+
+
+export const CreateSalonAppointmentBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createSalonAppointmentBodyStartTimeRegExp),
+  "notes": zod.string().optional(),
+  "salonCustomerId": zod.string().optional(),
+  "guest": zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().min(1),
+  "phone": zod.string().min(createSalonAppointmentBodyGuestPhoneMin),
+  "email": zod.string().optional()
+}).optional()
+})
+
+export const CreateSalonAppointmentResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "employeeName": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "notes": zod.string().nullish()
+})
+
+
+/**
+ * @summary List salon CRM customers
+ */
+export const ListSalonCustomersResponseItem = zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullable(),
+  "smsOptOut": zod.boolean(),
+  "visitCount": zod.number(),
+  "isRegistered": zod.boolean()
+})
+export const ListSalonCustomersResponse = zod.array(ListSalonCustomersResponseItem)
+
+
+/**
+ * @summary Update a salon CRM customer
+ */
+export const UpdateSalonCustomerParams = zod.object({
+  "customerId": zod.coerce.string()
+})
+
+export const UpdateSalonCustomerBody = zod.object({
+  "smsOptOut": zod.boolean()
+})
+
+export const UpdateSalonCustomerResponse = zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullable(),
+  "smsOptOut": zod.boolean(),
+  "visitCount": zod.number(),
+  "isRegistered": zod.boolean()
+})
 
 
 /**

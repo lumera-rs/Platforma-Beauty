@@ -134,6 +134,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmailMarketingCampaign"
+  /admin/sms-deliveries:
+    get:
+      operationId: adminListSmsDeliveries
+      tags: [admin]
+      summary: List transactional SMS delivery records
+      responses:
+        "200":
+          description: SMS delivery log
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SmsDelivery" }
   /salons:
     get:
       operationId: listSalons
@@ -388,6 +401,55 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Appointment" }
+    post:
+      operationId: createSalonAppointment
+      tags: [salon-management]
+      summary: Create a salon appointment for a CRM customer or walk-in guest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonAppointmentCreate" }
+      responses:
+        "201":
+          description: Created appointment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Appointment" }
+  /salon/customers:
+    get:
+      operationId: listSalonCustomers
+      tags: [salon-management]
+      summary: List salon CRM customers
+      responses:
+        "200":
+          description: Salon CRM customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonCustomer" }
+  /salon/customers/{customerId}:
+    patch:
+      operationId: updateSalonCustomer
+      tags: [salon-management]
+      summary: Update a salon CRM customer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonCustomerUpdate" }
+      responses:
+        "200":
+          description: Updated CRM customer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonCustomer" }
   /salon/appointments/{appointmentId}:
     patch:
       operationId: updateSalonAppointment
@@ -2191,6 +2253,52 @@ components:
           enum: [pending, confirmed, completed, cancelled, no-show]
         employeeId: { type: ["string", "null"] }
         notes: { type: string }
+    SalonCustomer:
+      type: object
+      properties:
+        id: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        smsOptOut: { type: boolean }
+        visitCount: { type: number }
+        isRegistered: { type: boolean }
+      required: [id, firstName, lastName, phone, smsOptOut, visitCount, isRegistered]
+    SalonCustomerUpdate:
+      type: object
+      properties:
+        smsOptOut: { type: boolean }
+      required: [smsOptOut]
+    SalonAppointmentCreate:
+      type: object
+      properties:
+        serviceId: { type: string }
+        employeeId: { type: ["string", "null"] }
+        date: { type: string, format: date }
+        startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        notes: { type: string }
+        salonCustomerId: { type: string }
+        guest:
+          type: object
+          properties:
+            firstName: { type: string, minLength: 1 }
+            lastName: { type: string, minLength: 1 }
+            phone: { type: string, minLength: 5 }
+            email: { type: string }
+          required: [firstName, lastName, phone]
+      required: [serviceId, date, startTime]
+    SmsDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        salonName: { type: ["string", "null"] }
+        recipientPhone: { type: string }
+        messageType: { type: string, enum: [appointment_confirmation, appointment_reminder] }
+        status: { type: string, enum: [queued, sent, failed, skipped] }
+        errorMessage: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, recipientPhone, messageType, status, createdAt]
     CancelAppointmentInput:
       type: object
       properties:

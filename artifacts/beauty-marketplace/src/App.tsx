@@ -43,6 +43,7 @@ import AdminBrands from './pages/admin/brands';
 import AdminShipping from './pages/admin/shipping';
 import AdminOrders from './pages/admin/orders';
 import AdminEmailMarketing from './pages/admin/email-marketing';
+import AdminSmsDeliveries from './pages/admin/sms-deliveries';
 import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, OwnerOrderConfirmationPage } from './pages/owner/checkout';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
@@ -196,6 +197,7 @@ function Router() {
         <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>
         <Route path="/admin/dostava"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShipping /></RoleGuard></Route>
         <Route path="/admin/email-marketing"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEmailMarketing /></RoleGuard></Route>
+        <Route path="/admin/sms-evidencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSmsDeliveries /></RoleGuard></Route>
         <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>

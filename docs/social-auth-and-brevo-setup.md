@@ -13,6 +13,9 @@ U **Secrets** dodajte sledeće vrednosti pre uključivanja funkcionalnosti u pro
 | `BREVO_SENDER_EMAIL` | Verifikovana Brevo e-mail adresa pošiljaoca |
 | `BREVO_SENDER_NAME` | Opcioni prikazani naziv pošiljaoca, npr. `LUMERA` |
 | `BREVO_API_KEY` | Opciona alternativa Replit Brevo konekciji za direktan Brevo API pristup |
+| `SMS_PROVIDER_API_KEY` | Infobip API ključ za transakcione SMS poruke |
+| `SMS_SENDER_NAME` | Odobreni Infobip naziv pošiljaoca, npr. `LUMERA` |
+| `SMS_REMINDER_JOB_SECRET` | Nasumična tajna vrednost kojom dnevni posao poziva zaštićeni reminder endpoint |
 
 U produkciji dodajte i običnu environment promenljivu `APP_BASE_URL` sa tačnim HTTPS korenom aplikacije, na primer `https://lumera.example.rs`. OAuth callback URL se nikada ne izvodi iz dolaznog zahteva u produkciji.
 
@@ -36,3 +39,14 @@ Google aplikacija mora zahtevati `openid`, `email` i `profile` dozvole. Facebook
 - OAuth dugmad vraćaju korisnika na odgovarajuću LUMERA prijavu sa jasnom porukom dok provajder nije konfigurisan.
 - Slanje e-maila se evidentira kao preskočeno ako sender nije podešen; rezervacija, porudžbina ili edukacija se zbog toga ne prekidaju.
 - Marketinška kampanja se ne kreira ako nema Brevo sender identitet ili ciljana publika nema primaoce.
+- SMS potvrde se evidentiraju kao `skipped` dok SMS provider nije podešen, bez prekidanja rezervacije.
+
+## Dnevni SMS podsetnici
+
+Pokrenite zaseban Replit Scheduled Deployment svakog jutra (npr. `08:00` po vremenu Beograda) komandom:
+
+```text
+pnpm --filter @workspace/scripts run sms-reminders
+```
+
+Tom scheduled poslu dodajte `LUMERA_API_BASE_URL` (objavljeni HTTPS koren aplikacije) i isti `SMS_REMINDER_JOB_SECRET` kao API servisu. Posao poziva zaštićeni endpoint, bira potvrđene termine tog dana u zoni `Europe/Belgrade` i koristi idempotentni ključ, pa ponovljeno izvršavanje ne šalje duplikate.

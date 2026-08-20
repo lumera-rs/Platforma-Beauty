@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navLinks = [
@@ -18,6 +18,7 @@ const navLinks = [
   { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
   { href: "/admin/dostava", label: "Dostava", icon: Truck },
   { href: "/admin/email-marketing", label: "E-mail marketing", icon: Mail },
+  { href: "/admin/sms-evidencija", label: "SMS evidencija", icon: MessageSquareText },
 ];
 
 export function AdminLayout({ children }: { children: ReactNode }) {

@@ -33,6 +33,8 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
 export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]);
 export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "sent", "failed", "skipped"]);
 export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
+export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "sent", "failed", "skipped"]);
+export const smsMessageTypeEnum = pgEnum("sms_message_type", ["appointment_confirmation", "appointment_reminder"]);
 
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -247,10 +249,26 @@ export const salonHoursTable = pgTable("salon_hours", {
   closed: boolean("closed").notNull().default(false),
 });
 
+export const salonCustomersTable = pgTable("salon_customers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  smsOptOut: boolean("sms_opt_out").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
+]);
+
 export const appointmentsTable = pgTable("appointments", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
-  customerId: uuid("customer_id").notNull().references(() => usersTable.id),
+  customerId: uuid("customer_id").references(() => usersTable.id),
+  salonCustomerId: uuid("salon_customer_id").references(() => salonCustomersTable.id, { onDelete: "set null" }),
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
   date: date("appointment_date", { mode: "string" }).notNull(),
@@ -261,6 +279,21 @@ export const appointmentsTable = pgTable("appointments", {
   status: appointmentStatusEnum("status").notNull().default("pending"),
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const smsDeliveriesTable = pgTable("sms_deliveries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventKey: text("event_key").notNull().unique(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "set null" }),
+  appointmentId: uuid("appointment_id").references(() => appointmentsTable.id, { onDelete: "set null" }),
+  messageType: smsMessageTypeEnum("message_type").notNull(),
+  recipientPhone: text("recipient_phone").notNull(),
+  body: text("body").notNull(),
+  status: smsDeliveryStatusEnum("status").notNull().default("queued"),
+  providerMessageId: text("provider_message_id"),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

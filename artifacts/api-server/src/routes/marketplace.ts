@@ -36,10 +36,12 @@ import {
   shoppingCartsTable,
   salonLoyaltyStatusesTable,
   salonsTable,
+  salonCustomersTable,
   serviceCategoriesTable,
   servicesTable,
   subscriptionPlansTable,
   subscriptionsTable,
+  smsDeliveriesTable,
   usersTable,
 } from "@workspace/db";
 import {
@@ -166,6 +168,7 @@ import {
   ListProductsResponse,
   ListSalonAppointmentsQueryParams,
   ListSalonAppointmentsResponse,
+  ListSalonCustomersResponse,
   ListSalonEmployeesResponse,
   ListSalonServicesResponse,
   ListSalonsQueryParams,
@@ -203,6 +206,12 @@ import {
   UpdateSalonAppointmentBody,
   UpdateSalonAppointmentParams,
   UpdateSalonAppointmentResponse,
+  CreateSalonAppointmentBody,
+  CreateSalonAppointmentResponse,
+  UpdateSalonCustomerBody,
+  UpdateSalonCustomerParams,
+  UpdateSalonCustomerResponse,
+  AdminListSmsDeliveriesResponse,
   UpdateShopCartItemBody,
   UpdateShopCartItemParams,
   UpdateShopCartItemResponse,
@@ -210,6 +219,8 @@ import {
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, sendTransactionalEmail } from "../lib/brevo";
 import { ensureDemoData } from "../lib/seed";
+import { maskPhone, sendSms } from "../lib/sms";
+import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
@@ -410,6 +421,32 @@ async function employeeInSalon(employeeId: string, salonId: string) {
     .where(and(eq(employeesTable.id, employeeId), eq(employeesTable.salonId, salonId)))
     .limit(1);
   return employee ?? null;
+}
+
+function appointmentEndTime(startTime: string, durationMinutes: number) {
+  const [hours, minutes] = startTime.split(":").map(Number);
+  const end = hours * 60 + minutes + durationMinutes;
+  if (!Number.isFinite(end) || end > 24 * 60) return null;
+  return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+}
+
+function overlapsAppointment(startTime: string, endTime: string, appointment: typeof appointmentsTable.$inferSelect) {
+  return appointment.status !== "cancelled" && appointment.startTime < endTime && appointment.endTime > startTime;
+}
+
+async function availableEmployee(salonId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
+  const candidates = preferredEmployeeId
+    ? [await employeeInSalon(preferredEmployeeId, salonId)].filter(Boolean)
+    : await db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
+  for (const employee of candidates) {
+    const existing = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.employeeId, employee!.id), eq(appointmentsTable.date, date)));
+    if (!existing.some((appointment) => overlapsAppointment(startTime, endTime, appointment))) return employee!;
+  }
+  return null;
+}
+
+function normalizedPhone(phone: string) {
+  return phone.replace(/[^\d]/g, "").replace(/^00/, "");
 }
 
 type EducationAccess = {
@@ -723,7 +760,7 @@ function appointmentView(
   appointment: typeof appointmentsTable.$inferSelect,
   salon: typeof salonsTable.$inferSelect,
   service: typeof servicesTable.$inferSelect,
-  customer: typeof usersTable.$inferSelect,
+  customer: Pick<typeof usersTable.$inferSelect, "firstName" | "lastName"> | Pick<typeof salonCustomersTable.$inferSelect, "firstName" | "lastName">,
   employee: typeof employeesTable.$inferSelect | undefined,
 ) {
   return {
@@ -748,19 +785,21 @@ async function appointmentList(where?: ReturnType<typeof eq>) {
   if (!appointments.length) return [];
   const salonIds = [...new Set(appointments.map((item) => item.salonId))];
   const serviceIds = [...new Set(appointments.map((item) => item.serviceId))];
-  const customerIds = [...new Set(appointments.map((item) => item.customerId))];
+  const customerIds = [...new Set(appointments.flatMap((item) => item.customerId ? [item.customerId] : []))];
+  const salonCustomerIds = [...new Set(appointments.flatMap((item) => item.salonCustomerId ? [item.salonCustomerId] : []))];
   const employeeIds = appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []);
-  const [salons, services, customers, employees] = await Promise.all([
+  const [salons, services, customers, salonCustomers, employees] = await Promise.all([
     db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
     db.select().from(servicesTable).where(inArray(servicesTable.id, serviceIds)),
-    db.select().from(usersTable).where(inArray(usersTable.id, customerIds)),
+    customerIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
+    salonCustomerIds.length ? db.select().from(salonCustomersTable).where(inArray(salonCustomersTable.id, salonCustomerIds)) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
     employeeIds.length ? db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : Promise.resolve([]),
   ]);
   return appointments.map((item) => appointmentView(
     item,
     salons.find((salon) => salon.id === item.salonId)!,
     services.find((service) => service.id === item.serviceId)!,
-    customers.find((customer) => customer.id === item.customerId)!,
+    customers.find((customer) => customer.id === item.customerId) ?? salonCustomers.find((customer) => customer.id === item.salonCustomerId) ?? { firstName: "Gost", lastName: "" },
     (employees as (typeof employeesTable.$inferSelect)[]).find((employee) => employee.id === item.employeeId),
   ));
 }
@@ -914,6 +953,27 @@ router.post("/admin/email-marketing/campaigns", async (req, res): Promise<void> 
     }).where(eq(emailCampaignsTable.id, campaign!.id)).returning();
     res.status(502).json({ error: failed?.errorMessage ?? "Brevo kampanja nije kreirana." });
   }
+});
+
+router.get("/admin/sms-deliveries", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const deliveries = await db.select().from(smsDeliveriesTable).orderBy(desc(smsDeliveriesTable.createdAt)).limit(500);
+  const salonIds = deliveries.flatMap((item) => item.salonId ? [item.salonId] : []);
+  const salons = salonIds.length ? await db.select().from(salonsTable).where(inArray(salonsTable.id, [...new Set(salonIds)])) : [];
+  res.json(AdminListSmsDeliveriesResponse.parse(deliveries.map((delivery) => ({
+    id: delivery.id, salonName: delivery.salonId ? salons.find((salon) => salon.id === delivery.salonId)?.name ?? null : null,
+    recipientPhone: maskPhone(delivery.recipientPhone), messageType: delivery.messageType, status: delivery.status,
+    errorMessage: delivery.errorMessage, createdAt: delivery.createdAt,
+  }))));
+});
+
+router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
+  const expected = process.env["SMS_REMINDER_JOB_SECRET"];
+  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const date = typeof req.body?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : undefined;
+  const result = await sendDailyAppointmentReminders(date);
+  req.log.info(result, "SMS reminder batch finished");
+  res.json(result);
 });
 
 router.post("/auth/business-register", async (req, res): Promise<void> => {
@@ -1170,19 +1230,24 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, parsed.data.salonId))).limit(1);
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, parsed.data.salonId)).limit(1);
   if (!service || !salon) { res.status(404).json({ error: "Salon ili usluga nisu pronađeni." }); return; }
-  const employee = parsed.data.employeeId
-    ? await employeeInSalon(parsed.data.employeeId, salon.id)
-    : (await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)).limit(1))[0] ?? null;
+  const appointmentDate = calendarDate(parsed.data.date);
+  const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
+  if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
+  const employee = await availableEmployee(salon.id, appointmentDate, parsed.data.startTime, endTime, parsed.data.employeeId);
   if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
-  const startHour = Number(parsed.data.startTime.slice(0, 2));
-  const endTime = `${String(startHour + Math.ceil(service.durationMinutes / 60)).padStart(2, "0")}:00`;
-  const existing = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.employeeId, employee.id), eq(appointmentsTable.date, calendarDate(parsed.data.date))));
-  if (existing.some((item) => item.status !== "cancelled" && item.startTime < endTime && item.endTime > parsed.data.startTime)) {
-    res.status(409).json({ error: "Ovaj termin je upravo zauzet. Izaberite drugi termin." }); return;
-  }
   const [appointment] = await db.insert(appointmentsTable).values({
-    salonId: salon.id, customerId: user.id, employeeId: employee.id, serviceId: service.id, date: calendarDate(parsed.data.date), startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
+    salonId: salon.id, customerId: user.id, employeeId: employee.id, serviceId: service.id, date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
   }).returning();
+  const [createdContact] = await db.insert(salonCustomersTable).values({
+    salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
+  }).onConflictDoNothing().returning();
+  const crmContact = createdContact ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
+  if (crmContact) await db.update(appointmentsTable).set({ salonCustomerId: crmContact.id }).where(eq(appointmentsTable.id, appointment!.id));
+  await sendSms({
+    eventKey: `appointment-confirmation:${appointment!.id}`, salonId: salon.id, appointmentId: appointment!.id,
+    type: "appointment_confirmation", phone: user.phone, smsOptOut: crmContact?.smsOptOut,
+    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${calendarDate(appointment!.date)} u ${appointment!.startTime}.`,
+  });
   await sendAppointmentEmails({ event: "created", appointment: appointment!, customer: user, salon, service });
   res.status(201).json(CreateAppointmentResponse.parse(appointmentView(appointment!, salon, service, user, employee)));
 });
@@ -1261,6 +1326,72 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
   res.json(ListSalonAppointmentsResponse.parse(items));
 });
 
+router.get("/salon/customers", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id)).orderBy(asc(salonCustomersTable.lastName), asc(salonCustomersTable.firstName));
+  const appointments = await db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, access.salon.id));
+  res.json(ListSalonCustomersResponse.parse(contacts.map((contact) => ({
+    id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
+    smsOptOut: contact.smsOptOut, visitCount: appointments.filter((item) => item.salonCustomerId === contact.id).length, isRegistered: Boolean(contact.userId),
+  }))));
+});
+
+router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [params, body] = [UpdateSalonCustomerParams.safeParse(req.params), UpdateSalonCustomerBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za CRM klijenta nisu ispravni." }); return; }
+  const [contact] = await db.update(salonCustomersTable).set({ smsOptOut: body.data.smsOptOut, updatedAt: new Date() })
+    .where(and(eq(salonCustomersTable.id, params.data.customerId), eq(salonCustomersTable.salonId, access.salon.id))).returning();
+  if (!contact) { res.status(404).json({ error: "CRM klijent nije pronađen." }); return; }
+  const appointments = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(eq(appointmentsTable.salonCustomerId, contact.id));
+  res.json(UpdateSalonCustomerResponse.parse({
+    id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
+    smsOptOut: contact.smsOptOut, visitCount: appointments.length, isRegistered: Boolean(contact.userId),
+  }));
+});
+
+router.post("/salon/appointments", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonAppointmentBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { salon } = access;
+  if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
+    res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
+  }
+  const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))).limit(1);
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
+  const date = calendarDate(parsed.data.date);
+  const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
+  if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
+  const employee = await availableEmployee(salon.id, date, parsed.data.startTime, endTime, parsed.data.employeeId);
+  if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
+  let contact: typeof salonCustomersTable.$inferSelect | undefined;
+  if (parsed.data.salonCustomerId) {
+    contact = (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, parsed.data.salonCustomerId), eq(salonCustomersTable.salonId, salon.id))).limit(1))[0];
+    if (!contact) { res.status(404).json({ error: "CRM klijent ne pripada ovom salonu." }); return; }
+  } else {
+    const submittedPhone = normalizedPhone(parsed.data.guest!.phone);
+    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
+    contact = contacts.find((item) => item.phone && normalizedPhone(item.phone) === submittedPhone);
+    if (!contact) {
+      [contact] = await db.insert(salonCustomersTable).values({
+        salonId: salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
+        phone: submittedPhone, email: parsed.data.guest!.email?.trim().toLowerCase() || null,
+      }).returning();
+    }
+  }
+  const [appointment] = await db.insert(appointmentsTable).values({
+    salonId: salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, employeeId: employee.id, serviceId: service.id,
+    date, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "confirmed", notes: parsed.data.notes ?? null,
+  }).returning();
+  await sendSms({
+    eventKey: `appointment-confirmation:${appointment!.id}`, salonId: salon.id, appointmentId: appointment!.id,
+    type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
+    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment!.startTime}.`,
+  });
+  res.status(201).json(CreateSalonAppointmentResponse.parse(appointmentView(appointment!, salon, service, contact!, employee)));
+});
+
 router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
@@ -1275,8 +1406,8 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   }
   const [updated] = await db.update(appointmentsTable).set({ status: body.data.status, employeeId: body.data.employeeId, notes: body.data.notes }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, salon.id))).returning();
   if (!updated) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
-  const [service, customer, employee] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.id, updated.serviceId)).limit(1), db.select().from(usersTable).where(eq(usersTable.id, updated.customerId)).limit(1), updated.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId)).limit(1) : Promise.resolve([])]);
-  res.json(UpdateSalonAppointmentResponse.parse(appointmentView(updated, salon, service[0]!, customer[0]!, employee[0])));
+  const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id))))[0];
+  res.json(UpdateSalonAppointmentResponse.parse(view));
 });
 
 router.get("/salon/services", async (req, res): Promise<void> => {

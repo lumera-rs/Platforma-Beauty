@@ -98,8 +98,11 @@ import type {
   ProductReview,
   ProductReviewInput,
   RegisterInput,
+  SalonAppointmentCreate,
   SalonAppointmentUpdate,
   SalonCard,
+  SalonCustomer,
+  SalonCustomerUpdate,
   SalonDashboard,
   SalonNotification,
   SalonProfile,
@@ -115,6 +118,7 @@ import type {
   ShopCheckoutPreview,
   ShopCheckoutProfile,
   ShopSummary,
+  SmsDelivery,
   SubscriptionPlan,
   SubscriptionPlanInput,
   TimeSlot
@@ -732,6 +736,83 @@ export const useAdminCreateEmailCampaign = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAdminCreateEmailCampaignMutationOptions(options));
     }
+
+export const getAdminListSmsDeliveriesUrl = () => {
+
+
+
+
+  return `/api/admin/sms-deliveries`
+}
+
+/**
+ * @summary List transactional SMS delivery records
+ */
+export const adminListSmsDeliveries = async ( options?: Parameters<typeof customFetch>[1]): Promise<SmsDelivery[]> => {
+
+  return customFetch<SmsDelivery[]>(getAdminListSmsDeliveriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListSmsDeliveriesQueryKey = () => {
+    return [
+    `/api/admin/sms-deliveries`
+    ] as const;
+    }
+
+
+export const getAdminListSmsDeliveriesQueryOptions = <TData = Awaited<ReturnType<typeof adminListSmsDeliveries>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSmsDeliveries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListSmsDeliveriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListSmsDeliveries>>> = ({ signal }) => adminListSmsDeliveries({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListSmsDeliveries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListSmsDeliveriesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListSmsDeliveries>>>
+export type AdminListSmsDeliveriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List transactional SMS delivery records
+ */
+
+export function useAdminListSmsDeliveries<TData = Awaited<ReturnType<typeof adminListSmsDeliveries>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListSmsDeliveries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListSmsDeliveriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListSalonsUrl = (params?: ListSalonsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -1667,6 +1748,226 @@ export function useListSalonAppointments<TData = Awaited<ReturnType<typeof listS
 
 
 
+
+export const getCreateSalonAppointmentUrl = () => {
+
+
+
+
+  return `/api/salon/appointments`
+}
+
+/**
+ * @summary Create a salon appointment for a CRM customer or walk-in guest
+ */
+export const createSalonAppointment = async (salonAppointmentCreate: SalonAppointmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<Appointment> => {
+
+  return customFetch<Appointment>(getCreateSalonAppointmentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonAppointmentCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonAppointmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext> => {
+
+const mutationKey = ['createSalonAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonAppointment>>, {data: BodyType<SalonAppointmentCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonAppointment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonAppointment>>>
+    export type CreateSalonAppointmentMutationBody = BodyType<SalonAppointmentCreate>
+    export type CreateSalonAppointmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a salon appointment for a CRM customer or walk-in guest
+ */
+export const useCreateSalonAppointment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonAppointment>>, TError,{data: BodyType<SalonAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonAppointment>>,
+        TError,
+        {data: BodyType<SalonAppointmentCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonAppointmentMutationOptions(options));
+    }
+
+export const getListSalonCustomersUrl = () => {
+
+
+
+
+  return `/api/salon/customers`
+}
+
+/**
+ * @summary List salon CRM customers
+ */
+export const listSalonCustomers = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonCustomer[]> => {
+
+  return customFetch<SalonCustomer[]>(getListSalonCustomersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonCustomersQueryKey = () => {
+    return [
+    `/api/salon/customers`
+    ] as const;
+    }
+
+
+export const getListSalonCustomersQueryOptions = <TData = Awaited<ReturnType<typeof listSalonCustomers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonCustomersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonCustomers>>> = ({ signal }) => listSalonCustomers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonCustomersQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonCustomers>>>
+export type ListSalonCustomersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List salon CRM customers
+ */
+
+export function useListSalonCustomers<TData = Awaited<ReturnType<typeof listSalonCustomers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonCustomersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSalonCustomerUrl = (customerId: string,) => {
+
+
+
+
+  return `/api/salon/customers/${customerId}`
+}
+
+/**
+ * @summary Update a salon CRM customer
+ */
+export const updateSalonCustomer = async (customerId: string,
+    salonCustomerUpdate: SalonCustomerUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SalonCustomer> => {
+
+  return customFetch<SalonCustomer>(getUpdateSalonCustomerUrl(customerId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonCustomerUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateSalonCustomerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonCustomer>>, TError,{customerId: string;data: BodyType<SalonCustomerUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalonCustomer>>, TError,{customerId: string;data: BodyType<SalonCustomerUpdate>}, TContext> => {
+
+const mutationKey = ['updateSalonCustomer'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalonCustomer>>, {customerId: string;data: BodyType<SalonCustomerUpdate>}> = (props) => {
+          const {customerId,data} = props ?? {};
+
+          return  updateSalonCustomer(customerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalonCustomerMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonCustomer>>>
+    export type UpdateSalonCustomerMutationBody = BodyType<SalonCustomerUpdate>
+    export type UpdateSalonCustomerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a salon CRM customer
+ */
+export const useUpdateSalonCustomer = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonCustomer>>, TError,{customerId: string;data: BodyType<SalonCustomerUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalonCustomer>>,
+        TError,
+        {customerId: string;data: BodyType<SalonCustomerUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalonCustomerMutationOptions(options));
+    }
 
 export const getUpdateSalonAppointmentUrl = (appointmentId: string,) => {
 
