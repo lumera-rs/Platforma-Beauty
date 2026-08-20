@@ -332,6 +332,10 @@ export type ProductVariantsItem = {
   value: string;
   priceAdjust?: number;
   /** @minimum 0 */
+  price?: number;
+  /** @minLength 1 */
+  sku?: string;
+  /** @minimum 0 */
   stock?: number;
 };
 
@@ -360,10 +364,43 @@ export interface Product {
   weightGrams?: number | null;
   /** @nullable */
   shortDescription?: string | null;
-  images?: string[];
+  images: string[];
   /** @nullable */
   variants?: ProductVariantsItem[] | null;
+  /** @nullable */
+  variantType: string | null;
+  /** @nullable */
+  averageRating?: number | null;
+  reviewCount: number;
 }
+
+export interface ProductReview {
+  id: string;
+  salonName: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  createdAt: string;
+  mine: boolean;
+}
+
+export interface ProductReviewInput {
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /** @maxLength 2000 */
+  comment?: string;
+}
+
+export type ProductDetail = Product & {
+  reviews: ProductReview[];
+  relatedProducts: Product[];
+};
 
 export interface ShopSummary {
   monthlySpend: number;
@@ -381,6 +418,7 @@ export type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
 
 export const OrderStatus = {
   pending: 'pending',
+  confirmed: 'confirmed',
   paid: 'paid',
   processing: 'processing',
   shipped: 'shipped',
@@ -388,11 +426,48 @@ export const OrderStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type OrderSalon = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+};
+
+export type OrderDelivery = {
+  recipientName: string;
+  address: string;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  note?: string | null;
+  usesSalonAddress: boolean;
+};
+
+/**
+ * @nullable
+ */
+export type OrderBilling = {
+  companyName: string;
+  pib: string;
+  registrationNumber: string;
+  address: string;
+  city: string;
+  postalCode: string;
+} | null;
+
 export interface OrderItem {
   productId: string;
   productName: string;
   /** @nullable */
   variantValue?: string | null;
+  /** @nullable */
+  variantLabel?: string | null;
+  /** @nullable */
+  productSku?: string | null;
   quantity: number;
   price: number;
 }
@@ -401,9 +476,16 @@ export interface Order {
   id: string;
   status: OrderStatus;
   total: number;
+  subtotal: number;
   shippingCost: number;
+  totalWeightGrams: number;
   itemCount: number;
   createdAt: string;
+  updatedAt: string;
+  salon: OrderSalon;
+  delivery: OrderDelivery;
+  /** @nullable */
+  billing: OrderBilling;
   items: OrderItem[];
 }
 
@@ -413,6 +495,39 @@ export type OrderInputItemsItem = {
   /** @minimum 1 */
   quantity: number;
 };
+
+export type OrderInputDeliveryAddress = {
+  /** @minLength 1 */
+  recipientName: string;
+  /** @minLength 1 */
+  street: string;
+  /** @minLength 1 */
+  city: string;
+  /** @minLength 1 */
+  postalCode: string;
+  /** @minLength 1 */
+  phone: string;
+  /** @nullable */
+  note?: string | null;
+};
+
+/**
+ * @nullable
+ */
+export type OrderInputBillingDetails = {
+  /** @minLength 1 */
+  companyName: string;
+  /** @minLength 1 */
+  pib: string;
+  /** @minLength 1 */
+  registrationNumber: string;
+  /** @minLength 1 */
+  street: string;
+  /** @minLength 1 */
+  city: string;
+  /** @minLength 1 */
+  postalCode: string;
+} | null;
 
 export type OrderInputPaymentMethod = typeof OrderInputPaymentMethod[keyof typeof OrderInputPaymentMethod];
 
@@ -426,9 +541,27 @@ export const OrderInputPaymentMethod = {
 export interface OrderInput {
   /** @minItems 1 */
   items: OrderInputItemsItem[];
-  shippingName: string;
-  shippingAddress: string;
+  useSalonAddress?: boolean;
+  deliveryAddress?: OrderInputDeliveryAddress;
+  /** @nullable */
+  billingDetails?: OrderInputBillingDetails;
+  shippingName?: string;
+  shippingAddress?: string;
   paymentMethod: OrderInputPaymentMethod;
+}
+
+export type OrderStatusUpdateStatus = typeof OrderStatusUpdateStatus[keyof typeof OrderStatusUpdateStatus];
+
+
+export const OrderStatusUpdateStatus = {
+  confirmed: 'confirmed',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
+
+export interface OrderStatusUpdate {
+  status: OrderStatusUpdateStatus;
 }
 
 export type CoursePublisherType = typeof CoursePublisherType[keyof typeof CoursePublisherType];
@@ -838,7 +971,11 @@ export interface ProductVariant {
   value: string;
   priceAdjust?: number;
   /** @minimum 0 */
+  price?: number;
+  /** @minimum 0 */
   stock?: number;
+  /** @minLength 1 */
+  sku?: string;
 }
 
 export interface AdminProduct {
@@ -871,6 +1008,8 @@ export interface AdminProduct {
   isBestseller: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
+  /** @nullable */
+  variantType?: string | null;
   active: boolean;
   createdAt: string;
 }
@@ -917,6 +1056,8 @@ export interface AdminProductInput {
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
+  /** @nullable */
+  variantType?: string | null;
   active?: boolean;
 }
 
@@ -954,6 +1095,8 @@ export interface AdminProductUpdate {
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
+  /** @nullable */
+  variantType?: string | null;
   active?: boolean;
 }
 
@@ -1208,6 +1351,27 @@ weightGrams: number;
  */
 subtotal: number;
 };
+
+export type AdminListOrdersParams = {
+status?: AdminListOrdersStatus;
+salon?: string;
+from?: string;
+to?: string;
+search?: string;
+};
+
+export type AdminListOrdersStatus = typeof AdminListOrdersStatus[keyof typeof AdminListOrdersStatus];
+
+
+export const AdminListOrdersStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  paid: 'paid',
+  processing: 'processing',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;
 
 export type ListCoursesParams = {
 format?: ListCoursesFormat;

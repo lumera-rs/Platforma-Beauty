@@ -32,7 +32,12 @@ export interface Product {
   weightGrams?: number | null;
   /** @nullable */
   shortDescription?: string | null;
-  images?: string[];
+  images: string[];
   /** @nullable */
   variants?: ProductVariantsItem[] | null;
+  /** @nullable */
+  variantType: string | null;
+  /** @nullable */
+  averageRating?: number | null;
+  reviewCount: number;
 }

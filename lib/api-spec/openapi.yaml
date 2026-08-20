@@ -470,6 +470,60 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Product" }
+  /shop/products/{productId}:
+    get:
+      operationId: getShopProduct
+      tags: [shop]
+      summary: Get a professional product with reviews and related products
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductDetail" }
+  /shop/products/{productId}/reviews:
+    get:
+      operationId: listProductReviews
+      tags: [shop]
+      summary: List visible reviews for a product
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProductReview" }
+    post:
+      operationId: upsertProductReview
+      tags: [shop]
+      summary: Create or update the current salon review after purchase
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductReviewInput" }
+      responses:
+        "200":
+          description: Saved review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductReview" }
   /shop/summary:
     get:
       operationId: getShopSummary
@@ -512,6 +566,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Order"
+  /shop/orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [shop]
+      summary: Get one order belonging to the current salon
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Order detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
   /shop/shipping-quote:
     get:
       operationId: getShippingQuote
@@ -533,6 +603,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShippingQuote"
+  /admin/orders:
+    get:
+      operationId: adminListOrders
+      tags: [admin]
+      summary: List all B2B orders for administration
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        - name: salon
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Admin order list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+  /admin/orders/{orderId}:
+    get:
+      operationId: adminGetOrder
+      tags: [admin]
+      summary: Get complete B2B order for administration
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Admin order detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+    patch:
+      operationId: adminUpdateOrderStatus
+      tags: [admin]
+      summary: Update a B2B order status through an allowed transition
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderStatusUpdate" }
+      responses:
+        "200":
+          description: Updated order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
   /loyalty/status:
     get:
       operationId: getLoyaltyStatus
@@ -1865,9 +2000,42 @@ components:
               label: { type: string }
               value: { type: string }
               priceAdjust: { type: number, multipleOf: 1 }
+              price: { type: number, minimum: 0, multipleOf: 1 }
+              sku: { type: string, minLength: 1 }
               stock: { type: number, minimum: 0, multipleOf: 1 }
             required: [label, value]
-      required: [id, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller]
+        variantType: { type: ["string", "null"] }
+        averageRating: { type: ["number", "null"] }
+        reviewCount: { type: number }
+      required: [id, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount]
+    ProductReview:
+      type: object
+      properties:
+        id: { type: string }
+        salonName: { type: string }
+        rating: { type: number, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+        mine: { type: boolean }
+      required: [id, salonName, rating, comment, createdAt, mine]
+    ProductReviewInput:
+      type: object
+      properties:
+        rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
+        comment: { type: string, maxLength: 2000 }
+      required: [rating]
+    ProductDetail:
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          properties:
+            reviews:
+              type: array
+              items: { $ref: "#/components/schemas/ProductReview" }
+            relatedProducts:
+              type: array
+              items: { $ref: "#/components/schemas/Product" }
+          required: [reviews, relatedProducts]
     ShopSummary:
       type: object
       properties:
@@ -1886,19 +2054,53 @@ components:
       type: object
       properties:
         id: { type: string }
-        status: { type: string, enum: [pending, paid, processing, shipped, delivered, cancelled] }
-        total: { type: number }
-        shippingCost: { type: number }
+        status: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
+        total: { type: number, multipleOf: 1 }
+        subtotal: { type: number, multipleOf: 1 }
+        shippingCost: { type: number, multipleOf: 1 }
+        totalWeightGrams: { type: number, multipleOf: 1 }
         itemCount: { type: number }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        salon:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            phone: { type: string }
+            email: { type: string }
+          required: [id, name, phone, email]
+        delivery:
+          type: object
+          properties:
+            recipientName: { type: string }
+            address: { type: string }
+            city: { type: ["string", "null"] }
+            postalCode: { type: ["string", "null"] }
+            phone: { type: ["string", "null"] }
+            note: { type: ["string", "null"] }
+            usesSalonAddress: { type: boolean }
+          required: [recipientName, address, usesSalonAddress]
+        billing:
+          type: ["object", "null"]
+          properties:
+            companyName: { type: string }
+            pib: { type: string }
+            registrationNumber: { type: string }
+            address: { type: string }
+            city: { type: string }
+            postalCode: { type: string }
+          required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, total, shippingCost, itemCount, createdAt, items]
+      required: [id, status, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
     OrderItem:
       type: object
       properties:
         productId: { type: string }
         productName: { type: string }
         variantValue: { type: ["string", "null"] }
+        variantLabel: { type: ["string", "null"] }
+        productSku: { type: ["string", "null"] }
         quantity: { type: number, multipleOf: 1 }
         price: { type: number, multipleOf: 1 }
       required: [productId, productName, quantity, price]
@@ -1915,10 +2117,36 @@ components:
               variantValue: { type: string }
               quantity: { type: number, minimum: 1, multipleOf: 1 }
             required: [productId, quantity]
+        useSalonAddress: { type: boolean }
+        deliveryAddress:
+          type: object
+          properties:
+            recipientName: { type: string, minLength: 1 }
+            street: { type: string, minLength: 1 }
+            city: { type: string, minLength: 1 }
+            postalCode: { type: string, minLength: 1 }
+            phone: { type: string, minLength: 1 }
+            note: { type: ["string", "null"] }
+          required: [recipientName, street, city, postalCode, phone]
+        billingDetails:
+          type: ["object", "null"]
+          properties:
+            companyName: { type: string, minLength: 1 }
+            pib: { type: string, minLength: 1 }
+            registrationNumber: { type: string, minLength: 1 }
+            street: { type: string, minLength: 1 }
+            city: { type: string, minLength: 1 }
+            postalCode: { type: string, minLength: 1 }
+          required: [companyName, pib, registrationNumber, street, city, postalCode]
         shippingName: { type: string }
         shippingAddress: { type: string }
         paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
-      required: [items, shippingName, shippingAddress, paymentMethod]
+      required: [items, paymentMethod]
+    OrderStatusUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
+      required: [status]
     LoyaltyStatus:
       type: object
       properties:
@@ -2238,7 +2466,9 @@ components:
         label: { type: string }
         value: { type: string }
         priceAdjust: { type: number, multipleOf: 1 }
+        price: { type: number, minimum: 0, multipleOf: 1 }
         stock: { type: number, minimum: 0, multipleOf: 1 }
+        sku: { type: string, minLength: 1 }
       required: [label, value]
     AdminProduct:
       type: object
@@ -2267,6 +2497,7 @@ components:
         variants:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
+        variantType: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
       required: [id, name, categoryName, description, imageUrl, images, price, stock, sku, unit, isNew, isBestseller, active, createdAt]
@@ -2306,6 +2537,7 @@ components:
         variants:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
+        variantType: { type: ["string", "null"] }
         active: { type: boolean }
       required: [name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
@@ -2333,6 +2565,7 @@ components:
         variants:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
+        variantType: { type: ["string", "null"] }
         active: { type: boolean }
     AdminProductBulkUpdate:
       type: object

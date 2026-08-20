@@ -41,5 +41,7 @@ export interface AdminProductUpdate {
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
+  /** @nullable */
+  variantType?: string | null;
   active?: boolean;
 }

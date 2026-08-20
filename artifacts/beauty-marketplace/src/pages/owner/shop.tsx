@@ -1,5 +1,6 @@
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
+import { Link } from "wouter";
 import {
   useListProducts,
   useListProductCategories,
@@ -63,9 +64,8 @@ function QuickView({
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.find((variant) => variant.stock === undefined || variant.stock > 0)?.value ?? ""
   );
-  const effectivePrice =
-    (product.variants?.find((v) => v.value === selectedVariant)?.priceAdjust ?? 0) +
-    (product.discountPrice ?? product.price);
+  const selected = product.variants?.find((v) => v.value === selectedVariant);
+  const effectivePrice = selected?.price ?? ((product.discountPrice ?? product.price) + (selected?.priceAdjust ?? 0));
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -125,7 +125,7 @@ function QuickView({
             <span className="text-xs text-muted-foreground ml-1">/{product.unit}</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>Zatvori</Button>
+            <Button variant="outline" asChild><Link href={`/vlasnik/shop/proizvodi/${product.id}`}>Detalji</Link></Button>
             <Button
               disabled={(product.variants?.length ?? 0) > 0 && !selectedVariant}
               onClick={() => {
@@ -198,7 +198,7 @@ function ProductCard({
           </span>
         )}
         <span className="text-[10px] text-muted-foreground">{product.subcategory ?? product.category}</span>
-        <h3 className="font-semibold text-sm leading-tight line-clamp-2 mt-0.5">{product.name}</h3>
+        <h3 className="font-semibold text-sm leading-tight line-clamp-2 mt-0.5"><Link className="hover:text-primary" href={`/vlasnik/shop/proizvodi/${product.id}`}>{product.name}</Link></h3>
 
         {/* Variants preview */}
         {product.variants && product.variants.length > 0 && (
@@ -362,6 +362,10 @@ export default function OwnerShop() {
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const { toast } = useToast();
   const orderMutation = useCreateOrder();
+  const [useSalonAddress, setUseSalonAddress] = useState(true);
+  const [deliveryAddress, setDeliveryAddress] = useState({ recipientName: "", street: "", city: "", postalCode: "", phone: "", note: "" });
+  const [billing, setBilling] = useState(false);
+  const [billingDetails, setBillingDetails] = useState({ companyName: "", pib: "", registrationNumber: "", street: "", city: "", postalCode: "" });
 
   const [filters, setFilters] = useState<FilterState>({
     category: "",
@@ -412,9 +416,10 @@ export default function OwnerShop() {
   const cartTotal = cart.reduce((sum, item) => {
     const prod = allProducts.find((p) => p.id === item.id);
     if (!prod) return sum;
-    const variantAdjust = prod.variants?.find((v) => v.value === item.variantValue)?.priceAdjust ?? 0;
+    const variant = prod.variants?.find((v) => v.value === item.variantValue);
+    const variantAdjust = variant?.priceAdjust ?? 0;
     const base = prod.discountPrice ?? prod.price;
-    return sum + (base + variantAdjust) * item.qty;
+    return sum + (variant?.price ?? (base + variantAdjust)) * item.qty;
   }, 0);
 
   const cartWeightGrams = cart.reduce((sum, item) => {
@@ -435,8 +440,9 @@ export default function OwnerShop() {
       {
         data: {
           items: cart.map((c) => ({ productId: c.id, quantity: c.qty, ...(c.variantValue ? { variantValue: c.variantValue } : {}) })),
-          shippingName: `${userResp?.user?.firstName ?? ""} ${userResp?.user?.lastName ?? ""}`.trim(),
-          shippingAddress: "Adresa salona",
+          useSalonAddress,
+          ...(!useSalonAddress ? { deliveryAddress } : {}),
+          ...(billing ? { billingDetails } : {}),
           paymentMethod: "CASH_ON_DELIVERY",
         },
       },
@@ -631,8 +637,9 @@ export default function OwnerShop() {
                         {cart.map((item) => {
                           const p = allProducts.find((prod) => prod.id === item.id);
                           if (!p) return null;
-                          const varAdj = p.variants?.find((v) => v.value === item.variantValue)?.priceAdjust ?? 0;
-                          const unitPrice = (p.discountPrice ?? p.price) + varAdj;
+                           const variant = p.variants?.find((v) => v.value === item.variantValue);
+                           const varAdj = variant?.priceAdjust ?? 0;
+                           const unitPrice = variant?.price ?? ((p.discountPrice ?? p.price) + varAdj);
                           return (
                             <div key={`${item.id}-${item.variantValue}`} className="flex justify-between items-start text-xs border-b pb-1.5">
                               <div className="pr-1 flex-1 min-w-0">
@@ -686,7 +693,13 @@ export default function OwnerShop() {
                       </div>
                     )}
                   </CardContent>
-                  <CardFooter className="p-3 border-t bg-muted/10">
+                   {cart.length > 0 && <div className="p-3 border-t space-y-2 text-xs">
+                     <div className="flex gap-2"><Button type="button" size="sm" variant={useSalonAddress ? "default" : "outline"} onClick={() => setUseSalonAddress(true)}>Adresa salona</Button><Button type="button" size="sm" variant={!useSalonAddress ? "default" : "outline"} onClick={() => setUseSalonAddress(false)}>Druga adresa</Button></div>
+                     {!useSalonAddress && <div className="grid grid-cols-2 gap-2">{(["recipientName","street","city","postalCode","phone"] as const).map(key => <Input key={key} value={deliveryAddress[key]} onChange={e => setDeliveryAddress({...deliveryAddress,[key]:e.target.value})} placeholder={{recipientName:"Primalac",street:"Ulica i broj",city:"Grad",postalCode:"Poštanski broj",phone:"Telefon"}[key]}/>)}</div>}
+                     <Button type="button" size="sm" variant={billing ? "default" : "outline"} onClick={() => setBilling(!billing)}>Kupovina na firmu / faktura</Button>
+                     {billing && <div className="grid grid-cols-2 gap-2">{(["companyName","pib","registrationNumber","street","city","postalCode"] as const).map(key => <Input key={key} value={billingDetails[key]} onChange={e => setBillingDetails({...billingDetails,[key]:e.target.value})} placeholder={{companyName:"Naziv firme",pib:"PIB",registrationNumber:"Matični broj",street:"Ulica i broj",city:"Grad",postalCode:"Poštanski broj"}[key]}/>)}</div>}
+                   </div>}
+                   <CardFooter className="p-3 border-t bg-muted/10">
                     <Button
                       className="w-full text-sm"
                       disabled={cart.length === 0 || orderMutation.isPending}

@@ -6,15 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OrderItem {
-  productId: string;
-  productName: string;
+export type OrderDelivery = {
+  recipientName: string;
+  address: string;
   /** @nullable */
-  variantValue?: string | null;
+  city?: string | null;
   /** @nullable */
-  variantLabel?: string | null;
+  postalCode?: string | null;
   /** @nullable */
-  productSku?: string | null;
-  quantity: number;
-  price: number;
-}
+  phone?: string | null;
+  /** @nullable */
+  note?: string | null;
+  usesSalonAddress: boolean;
+};

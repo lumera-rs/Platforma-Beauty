@@ -5,15 +5,25 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { OrderBilling } from './orderBilling';
+import type { OrderDelivery } from './orderDelivery';
 import type { OrderItem } from './orderItem';
+import type { OrderSalon } from './orderSalon';
 import type { OrderStatus } from './orderStatus';
 
 export interface Order {
   id: string;
   status: OrderStatus;
   total: number;
+  subtotal: number;
   shippingCost: number;
+  totalWeightGrams: number;
   itemCount: number;
   createdAt: Date;
+  updatedAt: Date;
+  salon: OrderSalon;
+  delivery: OrderDelivery;
+  /** @nullable */
+  billing: OrderBilling;
   items: OrderItem[];
 }

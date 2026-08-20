@@ -11,5 +11,9 @@ export interface ProductVariant {
   value: string;
   priceAdjust?: number;
   /** @minimum 0 */
+  price?: number;
+  /** @minimum 0 */
   stock?: number;
+  /** @minLength 1 */
+  sku?: string;
 }

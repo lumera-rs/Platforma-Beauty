@@ -37,6 +37,8 @@ export interface AdminProduct {
   isBestseller: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
+  /** @nullable */
+  variantType?: string | null;
   active: boolean;
   createdAt: Date;
 }

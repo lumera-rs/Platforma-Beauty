@@ -11,5 +11,9 @@ export type ProductVariantsItem = {
   value: string;
   priceAdjust?: number;
   /** @minimum 0 */
+  price?: number;
+  /** @minLength 1 */
+  sku?: string;
+  /** @minimum 0 */
   stock?: number;
 };

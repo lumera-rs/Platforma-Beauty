@@ -13,6 +13,7 @@ const navLinks = [
   { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },
   { href: "/admin/recenzije", label: "Recenzije", icon: MessageSquare },
   { href: "/admin/proizvodi", label: "B2B Proizvodi", icon: Package },
+  { href: "/admin/porudzbine", label: "Porudžbine", icon: Package },
   { href: "/admin/kategorije", label: "Kategorije", icon: FolderTree },
   { href: "/admin/brendovi", label: "Brendovi", icon: Tags },
   { href: "/admin/dostava", label: "Dostava", icon: Truck },

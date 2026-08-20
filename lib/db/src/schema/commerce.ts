@@ -6,12 +6,14 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { salonsTable } from "./core";
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
+  "confirmed",
   "paid",
   "processing",
   "shipped",
@@ -66,7 +68,8 @@ export const productsTable = pgTable("products", {
   weightGrams: integer("weight_grams"),
   isNew: boolean("is_new").notNull().default(false),
   isBestseller: boolean("is_bestseller").notNull().default(false),
-  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; stock?: number }>>(),
+  variantType: text("variant_type"),
+  variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string }>>(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -132,8 +135,22 @@ export const ordersTable = pgTable("orders", {
   shippingCost: integer("shipping_cost").notNull().default(0),
   shippingName: text("shipping_name").notNull(),
   shippingAddress: text("shipping_address").notNull(),
+  shippingPhone: text("shipping_phone"),
+  shippingCity: text("shipping_city"),
+  shippingPostalCode: text("shipping_postal_code"),
+  shippingNote: text("shipping_note"),
+  shippingIsSalonAddress: boolean("shipping_is_salon_address").notNull().default(true),
+  billingCompanyName: text("billing_company_name"),
+  billingTaxId: text("billing_tax_id"),
+  billingRegistrationNumber: text("billing_registration_number"),
+  billingAddress: text("billing_address"),
+  billingCity: text("billing_city"),
+  billingPostalCode: text("billing_postal_code"),
+  subtotal: integer("subtotal").notNull().default(0),
+  totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const orderItemsTable = pgTable("order_items", {
@@ -142,6 +159,20 @@ export const orderItemsTable = pgTable("order_items", {
   productId: uuid("product_id").notNull().references(() => productsTable.id),
   productName: text("product_name").notNull(),
   variantValue: text("variant_value"),
+  variantLabel: text("variant_label"),
+  productSku: text("product_sku"),
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
 });
+
+export const productReviewsTable = pgTable("product_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),
+  comment: text("comment").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("product_reviews_product_salon_unique").on(table.productId, table.salonId),
+]);

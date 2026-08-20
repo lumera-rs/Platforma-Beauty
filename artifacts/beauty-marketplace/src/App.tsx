@@ -28,6 +28,8 @@ import OwnerServices from './pages/owner/services';
 import OwnerShop from './pages/owner/shop';
 import OwnerCalendar from './pages/owner/calendar';
 import OwnerLoyalty from './pages/owner/loyalty';
+import OwnerOrders from './pages/owner/orders';
+import OwnerProductDetail from './pages/owner/product-detail';
 import AdminDashboard from './pages/admin/dashboard';
 import AdminSalons from './pages/admin/salons';
 import AdminUsers from './pages/admin/users';
@@ -38,6 +40,7 @@ import AdminProducts from './pages/admin/products';
 import AdminCategories from './pages/admin/categories';
 import AdminBrands from './pages/admin/brands';
 import AdminShipping from './pages/admin/shipping';
+import AdminOrders from './pages/admin/orders';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
 
@@ -167,6 +170,9 @@ function Router() {
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+        <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
         <Route path="/edukacije"><LegacyEducationRedirect /></Route>
@@ -179,6 +185,7 @@ function Router() {
         <Route path="/admin/kategorije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCategories /></RoleGuard></Route>
         <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>
         <Route path="/admin/dostava"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShipping /></RoleGuard></Route>
+        <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
         

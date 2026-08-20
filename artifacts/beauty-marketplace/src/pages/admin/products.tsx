@@ -59,6 +59,7 @@ const emptyForm: AdminProductInput = {
   weightGrams: 0,
   isNew: false,
   isBestseller: false,
+  variantType: null,
   variants: null,
   active: true,
 };
@@ -107,6 +108,7 @@ function ProductFormDialog({
           weightGrams: editing.weightGrams ?? 0,
           isNew: editing.isNew,
           isBestseller: editing.isBestseller,
+           variantType: editing.variantType ?? editing.variants?.[0]?.label ?? null,
           variants: editing.variants ?? null,
           active: editing.active,
         }
@@ -163,14 +165,16 @@ function ProductFormDialog({
 
   const addVariant = () => {
     if (!variantDraft.label.trim() || !variantDraft.value.trim()) return;
+    const label = form.variantType?.trim() || variantDraft.label.trim();
+    if (!label) return;
     const nextVariant: ProductVariant = variantInventoryMode === "per-variant"
-      ? { ...variantDraft, stock: variantDraft.stock ?? 0 }
-      : { label: variantDraft.label, value: variantDraft.value, priceAdjust: variantDraft.priceAdjust };
+      ? { ...variantDraft, label, stock: variantDraft.stock ?? 0 }
+      : { ...variantDraft, label };
     setForm((f) => {
       const variants: ProductVariant[] = [...(f.variants ?? []), nextVariant];
       return { ...f, variants, stock: variantInventoryMode === "per-variant" ? variants.reduce((sum, variant) => sum + (variant.stock ?? 0), 0) : f.stock };
     });
-    setVariantDraft({ label: variantDraft.label, value: "", priceAdjust: 0, ...(variantInventoryMode === "per-variant" ? { stock: 0 } : {}) });
+    setVariantDraft({ label, value: "", priceAdjust: 0, ...(variantInventoryMode === "per-variant" ? { stock: 0 } : {}) });
   };
 
   const removeVariant = (idx: number) => {
@@ -488,18 +492,24 @@ function ProductFormDialog({
 
           {/* ── Varijante ── */}
           <section className="space-y-4 border rounded-xl p-4">
-            <h4 className="text-sm font-semibold text-foreground">Varijante (boja, nijansa, veličina...)</h4>
+            <h4 className="text-sm font-semibold text-foreground">Varijante proizvoda</h4>
+            <div className="space-y-1 max-w-sm">
+              <Label className="text-xs">Tip varijante</Label>
+              <Input
+                value={form.variantType ?? ""}
+                onChange={(e) => setForm({ ...form, variantType: e.target.value || null })}
+                placeholder="npr. Zapremina, Boja/Nijansa, Veličina"
+                data-testid="input-product-variant-type"
+              />
+              <p className="text-xs text-muted-foreground">Jedan tip važi za sve opcije ovog proizvoda.</p>
+            </div>
             <div className="flex flex-wrap gap-2 items-center text-xs">
               <span className="font-medium">Model zaliha:</span>
               <Button type="button" size="sm" variant={variantInventoryMode === "shared" ? "default" : "outline"} onClick={() => changeVariantInventoryMode("shared")}>Zajednička zaliha</Button>
               <Button type="button" size="sm" variant={variantInventoryMode === "per-variant" ? "default" : "outline"} onClick={() => changeVariantInventoryMode("per-variant")}>Po varijanti</Button>
               <span className="text-muted-foreground">{variantInventoryMode === "shared" ? "Sve varijante koriste stanje proizvoda." : "Stanje proizvoda je zbir stanja varijanti."}</span>
             </div>
-            <div className={`grid grid-cols-2 ${variantInventoryMode === "per-variant" ? "sm:grid-cols-5" : "sm:grid-cols-4"} gap-2 items-end`}>
-              <div className="space-y-1">
-                <Label className="text-xs">Tip</Label>
-                <Input value={variantDraft.label} onChange={(e) => setVariantDraft({ ...variantDraft, label: e.target.value })} placeholder="Nijansa" />
-              </div>
+            <div className={`grid grid-cols-2 ${variantInventoryMode === "per-variant" ? "sm:grid-cols-6" : "sm:grid-cols-5"} gap-2 items-end`}>
               <div className="space-y-1">
                 <Label className="text-xs">Vrednost</Label>
                 <Input value={variantDraft.value} onChange={(e) => setVariantDraft({ ...variantDraft, value: e.target.value })} placeholder="6/0 Tamno plava" />
@@ -507,6 +517,14 @@ function ProductFormDialog({
               <div className="space-y-1">
                 <Label className="text-xs">± Cena (RSD)</Label>
                 <Input type="number" step="1" value={variantDraft.priceAdjust ?? 0} onChange={(e) => setVariantDraft({ ...variantDraft, priceAdjust: Number(e.target.value) })} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Posebna cena</Label>
+                <Input type="number" min="0" step="1" value={variantDraft.price ?? ""} onChange={(e) => setVariantDraft({ ...variantDraft, price: e.target.value === "" ? undefined : Number(e.target.value) })} placeholder="Opciono" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">SKU varijante</Label>
+                <Input value={variantDraft.sku ?? ""} onChange={(e) => setVariantDraft({ ...variantDraft, sku: e.target.value || undefined })} placeholder="Opciono" />
               </div>
               {variantInventoryMode === "per-variant" && <div className="space-y-1">
                 <Label className="text-xs">Stanje</Label>
@@ -519,9 +537,10 @@ function ProductFormDialog({
                 {(form.variants ?? []).map((v, i) => (
                   <li key={i} className="flex items-center justify-between text-sm bg-muted/30 border rounded-md px-3 py-1.5">
                     <span>
-                      <span className="text-muted-foreground text-xs mr-2">{v.label}:</span>
+                      <span className="text-muted-foreground text-xs mr-2">{form.variantType || v.label}:</span>
                       <span className="font-medium">{v.value}</span>
-                      {v.priceAdjust ? <span className="ml-2 text-xs text-muted-foreground">({v.priceAdjust > 0 ? "+" : ""}{v.priceAdjust} RSD)</span> : null}
+                      {v.price != null ? <span className="ml-2 text-xs text-muted-foreground">cena: {formatRSD(v.price)}</span> : v.priceAdjust ? <span className="ml-2 text-xs text-muted-foreground">({v.priceAdjust > 0 ? "+" : ""}{v.priceAdjust} RSD)</span> : null}
+                      {v.sku ? <span className="ml-2 text-xs text-muted-foreground">SKU: {v.sku}</span> : null}
                       {v.stock != null ? <span className="ml-2 text-xs text-muted-foreground">stanje: {v.stock}</span> : null}
                     </span>
                     <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => removeVariant(i)}><X className="w-3.5 h-3.5" /></Button>

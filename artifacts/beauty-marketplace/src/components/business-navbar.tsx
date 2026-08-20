@@ -39,6 +39,7 @@ export function BusinessNavbar() {
           { href: "/vlasnik/kalendar", label: "Kalendar" },
           { href: "/vlasnik/usluge", label: "Usluge" },
           { href: "/vlasnik/shop", label: "Shop" },
+          { href: "/vlasnik/porudzbine", label: "Porudžbine" },
           { href: "/biznis/edukacije", label: "Edukacije" },
         ];
       case 'EDUCATION_CENTER_OWNER':
