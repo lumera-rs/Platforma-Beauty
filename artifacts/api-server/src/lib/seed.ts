@@ -23,6 +23,7 @@ import {
   productsTable,
   salonHoursTable,
   salonBrandsTable,
+  salonCustomersTable,
   salonLoyaltyStatusesTable,
   salonsTable,
   serviceCategoriesTable,
@@ -109,6 +110,7 @@ async function seed(): Promise<void> {
     await seedMarketplaceTaxonomy();
     await seedCourierServices();
     await seedFutureBookingAvailability();
+    await backfillSalonCustomers();
     return;
   }
 
@@ -215,6 +217,7 @@ async function seed(): Promise<void> {
   ));
 
   await seedFutureBookingAvailability();
+  await backfillSalonCustomers();
 
   const productCategoryRows = await db.insert(productCategoriesTable).values([
     { name: "Masažna ulja", slug: "masazna-ulja" },
@@ -432,6 +435,41 @@ async function seedFutureBookingAvailability(): Promise<void> {
     }
   }
   if (demoAppointments.length) await db.insert(appointmentsTable).values(demoAppointments);
+}
+
+/**
+ * Gives each salon a CRM contact for registered customers from older online
+ * appointments. The insert is intentionally additive so a salon's existing
+ * contact data, especially SMS opt-out, remains authoritative.
+ */
+async function backfillSalonCustomers(): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO ${salonCustomersTable}
+      (salon_id, user_id, first_name, last_name, email, phone)
+    SELECT DISTINCT ON (a.salon_id, a.customer_id)
+      a.salon_id, u.id, u.first_name, u.last_name, u.email, u.phone
+    FROM ${appointmentsTable} a
+    INNER JOIN ${usersTable} u ON u.id = a.customer_id
+    WHERE a.customer_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${salonCustomersTable} existing_contact
+        WHERE existing_contact.salon_id = a.salon_id
+          AND existing_contact.user_id = a.customer_id
+      )
+    ORDER BY a.salon_id, a.customer_id, a.created_at
+    ON CONFLICT (salon_id, user_id) DO NOTHING
+  `);
+
+  await db.execute(sql`
+    UPDATE ${appointmentsTable} a
+    SET salon_customer_id = contact.id
+    FROM ${salonCustomersTable} contact
+    WHERE a.salon_customer_id IS NULL
+      AND a.customer_id IS NOT NULL
+      AND contact.salon_id = a.salon_id
+      AND contact.user_id = a.customer_id
+  `);
 }
 
 async function seedCourierServices(): Promise<void> {
