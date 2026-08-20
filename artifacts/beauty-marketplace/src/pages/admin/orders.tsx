@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import {
-  getAdminGetSalonQueryKey, getAdminListOrdersQueryKey, useAdminBulkUpdateOrders, useAdminGetOrder,
+  getAdminGetOrderQueryKey, getAdminGetSalonQueryKey, getAdminListOrdersQueryKey, useAdminBulkUpdateOrders, useAdminGetOrder,
   useAdminGetSalon, useAdminListOrders, useAdminUpdateOrderStatus,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -70,7 +70,7 @@ function AdminOrderDetail({ orderId }: { orderId: string }) {
   const salonId = order?.salon.id ?? "";
   const { data: salonProfile } = useAdminGetSalon(salonId, { query: { enabled: Boolean(salonId), queryKey: getAdminGetSalonQueryKey(salonId) } });
   const qc = useQueryClient(); const { toast } = useToast();
-  const update = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey({}) }); qc.invalidateQueries({ queryKey: ["adminGetOrder", orderId] }); toast.success("Operativni podaci su sačuvani."); } } });
+  const update = useAdminUpdateOrderStatus({ mutation: { onSuccess: () => { qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); qc.invalidateQueries({ queryKey: getAdminGetOrderQueryKey(orderId) }); toast.success("Operativni podaci su sačuvani."); } } });
   const [courier, setCourier] = useState(""); const [tracking, setTracking] = useState(""); const [note, setNote] = useState("");
   const [printMode, setPrintMode] = useState<"packing" | "invoice">("packing");
   const printOrder = (mode: "packing" | "invoice") => { setPrintMode(mode); requestAnimationFrame(() => requestAnimationFrame(() => window.print())); };
@@ -97,7 +97,7 @@ export default function AdminOrders() {
   const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const [paymentStatus, setPaymentStatus] = useState("all"); const [deliveryMethod, setDeliveryMethod] = useState("all"); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [selected, setSelected] = useState<string[]>([]); const [bulkPrintMode, setBulkPrintMode] = useState<"packing" | "invoice">("packing");
   const params = useMemo(() => ({ ...(search ? { search } : {}), ...(status !== "all" ? { status: status as typeof statuses[number] } : {}), ...(paymentStatus !== "all" ? { paymentStatus: paymentStatus as typeof paymentStatuses[number] } : {}), ...(deliveryMethod !== "all" ? { deliveryMethod: deliveryMethod as "courier" | "personal_belgrade" } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) }), [search, status, paymentStatus, deliveryMethod, from, to]);
   const { data: orders = [], isLoading } = useAdminListOrders(params, { query: { enabled: !routeParams?.orderId, queryKey: getAdminListOrdersQueryKey(params) } });
-  const bulk = useAdminBulkUpdateOrders({ mutation: { onSuccess: () => { setSelected([]); qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey(params) }); toast.success("Izabrane porudžbine su ažurirane."); } } });
+  const bulk = useAdminBulkUpdateOrders({ mutation: { onSuccess: () => { setSelected([]); qc.invalidateQueries({ queryKey: getAdminListOrdersQueryKey() }); toast.success("Izabrane porudžbine su ažurirane."); } } });
   const selectedOrders = orders.filter(order => selected.includes(order.id));
   const toggle = (id: string) => setSelected(ids => ids.includes(id) ? ids.filter(candidate => candidate !== id) : [...ids, id]);
   const exportCsv = () => { const lines = [["Broj", "Salon", "Status isporuke", "Status plaćanja", "Dostava", "Ukupno"], ...selectedOrders.map(order => [order.id, order.salon.name, order.status, order.paymentStatus, order.deliveryMethod, order.total])]; const blob = new Blob([lines.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "lumera-porudzbine.csv"; link.click(); URL.revokeObjectURL(url); };
