@@ -1,3 +1,4 @@
+import { BookingWidget, MobileBookingTrigger, MobileBookingDrawer } from "@/components/booking-widget";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,10 @@ export default function SalonProfile() {
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [favoriteEmployeeId, setFavoriteEmployeeId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string, employeeId?: string|null} | null>(null);
+  const [bookingStep, setBookingStep] = useState(1);
+  const [hasInteractedWithEmployee, setHasInteractedWithEmployee] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   
@@ -51,6 +56,14 @@ export default function SalonProfile() {
     if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) setSelectedEmployee(null);
     if (!selectedEmployee && favoriteEmployeeId && eligibleStaff.some((employee) => employee.id === favoriteEmployeeId)) setSelectedEmployee(favoriteEmployeeId);
   }, [eligibleStaff, favoriteEmployeeId, selectedEmployee]);
+
+  useEffect(() => {
+    if (selectedService && bookingStep === 1) setBookingStep(2);
+  }, [selectedService]);
+
+  useEffect(() => {
+    if (selectedEmployee) setHasInteractedWithEmployee(true);
+  }, [selectedEmployee]);
 
   const setFavorite = async (employeeId: string) => {
     if (!user) { setLocation("/prijava"); return; }
@@ -78,8 +91,7 @@ export default function SalonProfile() {
       }
     }, {
       onSuccess: () => {
-        toast.success("Uspešno!", { description: "Vaš termin je uspešno zakazan." });
-        setLocation("/moj-nalog");
+        setIsSuccess(true);
       },
       onError: () => {
         toast.error("Greška", { description: "Došlo je do greške prilikom zakazivanja." });
@@ -90,9 +102,14 @@ export default function SalonProfile() {
   const handleSelectService = (serviceId: string) => {
     setSelectedService(serviceId);
     setSelectedSlot(null);
-    setTimeout(() => {
-      document.getElementById('booking-widget')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
+    setBookingStep(2);
+    if (window.innerWidth < 1024) {
+      setIsMobileDrawerOpen(true);
+    } else {
+      setTimeout(() => {
+        document.getElementById('booking-widget')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
   };
 
   const mediaItems: MediaItem[] = useMemo(() => {
@@ -377,118 +394,73 @@ export default function SalonProfile() {
         </div>
 
         {/* Right Column: Booking Widget */}
-        <aside className="w-full lg:w-[400px] shrink-0" id="booking-widget">
-          <div className="sticky top-24 z-10">
-            <Card className="border-primary/20 shadow-xl overflow-hidden">
-              <CardHeader className="bg-primary border-b pb-4 pt-5">
-                <CardTitle className="font-serif text-xl flex items-center gap-2 text-primary-foreground">
-                  <CalendarDays className="w-5 h-5 text-primary-foreground/80" />
-                  Zakažite termin
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-6 bg-card">
-                
-                {!selectedService ? (
-                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center">
-                      <Check className="w-8 h-8 text-primary/30" />
-                    </div>
-                    <p className="font-medium text-base">Prvo izaberite uslugu sa liste</p>
-                    <Button variant="outline" className="mt-2" onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}>
-                      Pregledaj usluge
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 text-sm relative">
-                      <button onClick={() => setSelectedService(null)} className="absolute top-2 right-2 p-1 text-muted-foreground hover:text-foreground transition-colors" title="Ukloni uslugu">
-                        <X className="w-4 h-4" />
-                      </button>
-                      <div className="font-bold text-base pr-6">{salonData.services.find(s => s.id === selectedService)?.name}</div>
-                      <div className="mt-2 flex justify-between items-center">
-                        <span className="text-muted-foreground flex items-center gap-1.5"><Clock className="w-4 h-4" /> {salonData.services.find(s => s.id === selectedService)?.durationMinutes} min</span>
-                        <span className="font-bold text-foreground bg-background px-2 py-1 rounded-md shadow-sm border">{salonData.services.find(s => s.id === selectedService)?.price} RSD</span>
-                      </div>
-                    </div>
-
-                     <div className="space-y-3">
-                       <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
-                         Izaberite zaposlenog
-                       </h4>
-                       <button type="button" onClick={() => { setSelectedEmployee(null); setSelectedSlot(null); }} className={`w-full rounded-xl border p-3.5 text-left text-sm transition-all ${selectedEmployee === null ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/50 bg-background"}`}><span className="font-bold text-foreground">Bilo koji dostupan zaposleni</span><span className="mt-1.5 block text-muted-foreground leading-snug">Sistem bira slobodnog člana tima sa najmanje termina tog dana i nedelje.</span></button>
-                       <div className="space-y-2">{[...eligibleStaff].sort((a, b) => Number(b.id === favoriteEmployeeId) - Number(a.id === favoriteEmployeeId)).map((employee) => <button key={employee.id} type="button" onClick={() => { setSelectedEmployee(employee.id); setSelectedSlot(null); }} className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${selectedEmployee === employee.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/50 bg-background"}`}><img src={employee.avatarUrl || "https://i.pravatar.cc/100"} className="h-10 w-10 rounded-full object-cover shadow-sm border border-border" alt="" /><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-bold text-foreground">{employee.name}{employee.id === favoriteEmployeeId && <Badge className="text-[10px] bg-primary/20 text-primary border-none">Omiljeni</Badge>}</span><span className="block truncate text-xs text-muted-foreground mt-0.5">{employee.bio || employee.specialties?.join(" · ") || employee.role}</span></span></button>)}</div>
-                       {!eligibleStaff.length && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 border border-amber-200 font-medium">Trenutno nema zaposlenog dodeljenog ovoj usluzi.</p>}
-                     </div>
-
-                     <div className="space-y-3">
-                      <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
-                        Izaberite datum
-                      </h4>
-                      <input 
-                        type="date" 
-                        value={dateStr}
-                        min={format(new Date(), 'yyyy-MM-dd')}
-                        onChange={(e) => {
-                          const nextDate = parseISO(e.target.value);
-                          if (!isValid(nextDate)) return;
-                          setSelectedDate(nextDate);
-                          setSelectedSlot(null);
-                        }}
-                        className="w-full border rounded-xl p-3 text-sm bg-background font-medium focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all shadow-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
-                        Slobodni termini {isLoadingAvailability && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
-                      </h4>
-                      
-                      {!isLoadingAvailability && (!availability || availability.length === 0) ? (
-                        <div className="text-sm text-amber-800 bg-amber-50 p-4 rounded-xl border border-amber-200 font-medium flex items-center gap-3">
-                          <CalendarDays className="w-5 h-5 opacity-70" />
-                          Nema slobodnih termina za izabrani datum. Pokušajte drugi.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-2 pb-2 custom-scrollbar">
-                          {availability?.map((slot, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setSelectedSlot(slot)}
-                              className={`py-2.5 px-1 text-sm rounded-xl border font-bold transition-all shadow-sm ${
-                                selectedSlot?.start === slot.start && selectedSlot?.employeeId === slot.employeeId
-                                  ? 'bg-primary text-primary-foreground border-primary scale-[1.02]'
-                                  : 'hover:border-primary/50 hover:bg-muted bg-background'
-                              }`}
-                            >
-                              {slot.start}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-              </CardContent>
-              <CardFooter className="p-6 pt-0 border-t bg-muted/30 flex-col items-stretch gap-3 mt-auto">
-                {selectedSlot && (
-                  <div className="text-sm bg-primary/10 p-4 rounded-xl mb-1 border border-primary/20">
-                    Zakazujete za <span className="font-bold text-primary">{format(selectedDate, 'dd.MM.yyyy')}</span> u <span className="font-bold text-primary">{selectedSlot.start}</span>
-                  </div>
-                )}
-                <Button 
-                  className="w-full h-14 text-base font-bold shadow-md rounded-xl hover:scale-[1.01] transition-all"
-                  disabled={!selectedService || !selectedSlot || createAppointment.isPending}
-                  onClick={handleBook}
-                >
-                  {createAppointment.isPending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : null}
-                  Potvrdi rezervaciju
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
+        <aside className="hidden lg:block w-[400px] shrink-0" id="booking-widget">
+          <BookingWidget
+            salon={salonData}
+            user={user}
+            eligibleStaff={eligibleStaff}
+            selectedService={selectedService}
+            setSelectedService={handleSelectService}
+            selectedEmployee={selectedEmployee}
+            setSelectedEmployee={setSelectedEmployee}
+            favoriteEmployeeId={favoriteEmployeeId}
+            setFavorite={setFavorite}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            selectedSlot={selectedSlot}
+            setSelectedSlot={setSelectedSlot}
+            availability={availability}
+            isLoadingAvailability={isLoadingAvailability}
+            onBook={handleBook}
+            isBooking={createAppointment.isPending}
+            isSuccess={isSuccess}
+            onViewAppointments={() => setLocation("/moj-nalog")}
+            step={bookingStep}
+            setStep={setBookingStep}
+            hasInteractedWithEmployee={hasInteractedWithEmployee}
+            setHasInteractedWithEmployee={setHasInteractedWithEmployee}
+            className="sticky top-24 h-[calc(100vh-120px)] shadow-2xl border border-primary/10 rounded-2xl"
+          />
         </aside>
 
+      </div>
+
+      {/* Mobile Sticky Bar & Drawer */}
+      <div className="lg:hidden">
+        <MobileBookingTrigger
+          salon={salonData}
+          selectedService={selectedService}
+          selectedSlot={selectedSlot}
+          onOpen={() => setIsMobileDrawerOpen(true)}
+        />
+        <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)}>
+          <BookingWidget
+            salon={salonData}
+            user={user}
+            eligibleStaff={eligibleStaff}
+            selectedService={selectedService}
+            setSelectedService={handleSelectService}
+            selectedEmployee={selectedEmployee}
+            setSelectedEmployee={setSelectedEmployee}
+            favoriteEmployeeId={favoriteEmployeeId}
+            setFavorite={setFavorite}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            selectedSlot={selectedSlot}
+            setSelectedSlot={setSelectedSlot}
+            availability={availability}
+            isLoadingAvailability={isLoadingAvailability}
+            onBook={handleBook}
+            isBooking={createAppointment.isPending}
+            isSuccess={isSuccess}
+            onViewAppointments={() => setLocation("/moj-nalog")}
+            step={bookingStep}
+            setStep={setBookingStep}
+            hasInteractedWithEmployee={hasInteractedWithEmployee}
+            setHasInteractedWithEmployee={setHasInteractedWithEmployee}
+            className="h-full rounded-none border-0 shadow-none bg-background"
+          />
+        </MobileBookingDrawer>
       </div>
     </Layout>
   );
