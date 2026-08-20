@@ -13,7 +13,10 @@ export interface AdminSalon {
   city: string;
   active: boolean;
   featured: boolean;
-  topSalon?: boolean;
+  isVerified: boolean;
+  topSalon: boolean;
+  /** @nullable */
+  videoUrl: string | null;
   rating: number;
   reviewCount: number;
   /** @nullable */

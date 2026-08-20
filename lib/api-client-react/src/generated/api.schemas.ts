@@ -221,6 +221,7 @@ export interface SalonCard {
   topSalon: boolean;
   acceptsCards: boolean;
   instantBooking: boolean;
+  isVerified: boolean;
   hasDiscount: boolean;
   openSunday: boolean;
   /** @nullable */
@@ -239,6 +240,23 @@ export interface PlatformTrustStats {
   bookingsThisMonth: number;
   /** @minimum 0 */
   customerAccounts: number;
+}
+
+export interface PopularSalonService {
+  id: string;
+  name: string;
+  description: string;
+  /** @minimum 1 */
+  durationMinutes: number;
+  /** @minimum 0 */
+  price: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  promoPrice: number | null;
+  /** @minimum 1 */
+  bookingCount: number;
 }
 
 export interface OpeningHour {
@@ -288,18 +306,36 @@ export interface Review {
   serviceName: string;
 }
 
-export type SalonProfile = SalonCard & {
+export type SalonProfile = SalonCard & ({
   gallery: string[];
+  /** @nullable */
+  videoUrl: string | null;
   description: string;
   phone: string;
   email: string;
-  latitude: number;
-  longitude: number;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
+  topServices: PopularSalonService[];
   hours: OpeningHour[];
   staff: Employee[];
   services: Service[];
   reviews: Review[];
-};
+});
+
+export interface SalonProfileMedia {
+  id: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  videoUrl: string | null;
+}
+
+export interface SalonProfileMediaUpdate {
+  /** @nullable */
+  videoUrl: string | null;
+}
 
 export interface TimeSlot {
   start: string;
@@ -1500,7 +1536,10 @@ export interface AdminSalon {
   city: string;
   active: boolean;
   featured: boolean;
-  topSalon?: boolean;
+  isVerified: boolean;
+  topSalon: boolean;
+  /** @nullable */
+  videoUrl: string | null;
   rating: number;
   reviewCount: number;
   /** @nullable */
@@ -1516,7 +1555,10 @@ export interface AdminSalon {
 export interface AdminSalonUpdate {
   active?: boolean;
   featured?: boolean;
+  isVerified?: boolean;
   topSalon?: boolean;
+  /** @nullable */
+  videoUrl?: string | null;
 }
 
 export interface AdminSalonOrderSummary {

@@ -24,6 +24,7 @@ import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
 import CustomerDashboard from './pages/customer-dashboard';
 import OwnerDashboard from './pages/owner/dashboard';
+import OwnerSalonProfile from './pages/owner/profile';
 import OwnerServices from './pages/owner/services';
 import OwnerShop from './pages/owner/shop';
 import OwnerCalendar from './pages/owner/calendar';
@@ -183,6 +184,7 @@ function Router() {
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
+        <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
         <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>

@@ -7,19 +7,25 @@
  */
 import type { Employee } from './employee';
 import type { OpeningHour } from './openingHour';
+import type { PopularSalonService } from './popularSalonService';
 import type { Review } from './review';
 import type { SalonCard } from './salonCard';
 import type { Service } from './service';
 
-export type SalonProfile = SalonCard & {
+export type SalonProfile = SalonCard & ({
   gallery: string[];
+  /** @nullable */
+  videoUrl: string | null;
   description: string;
   phone: string;
   email: string;
-  latitude: number;
-  longitude: number;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
+  topServices: PopularSalonService[];
   hours: OpeningHour[];
   staff: Employee[];
   services: Service[];
   reviews: Review[];
-};
+});

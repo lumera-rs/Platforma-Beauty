@@ -116,6 +116,8 @@ import type {
   SalonDashboard,
   SalonNotification,
   SalonProfile,
+  SalonProfileMedia,
+  SalonProfileMediaUpdate,
   Service,
   ServiceInput,
   ShippingConfig,
@@ -1900,6 +1902,154 @@ export function useGetSalonDashboard<TData = Awaited<ReturnType<typeof getSalonD
 
 
 
+
+export const getGetManagedSalonProfileUrl = () => {
+
+
+
+
+  return `/api/salon/profile`
+}
+
+/**
+ * @summary Get editable public profile media for the active owned salon
+ */
+export const getManagedSalonProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonProfileMedia> => {
+
+  return customFetch<SalonProfileMedia>(getGetManagedSalonProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetManagedSalonProfileQueryKey = () => {
+    return [
+    `/api/salon/profile`
+    ] as const;
+    }
+
+
+export const getGetManagedSalonProfileQueryOptions = <TData = Awaited<ReturnType<typeof getManagedSalonProfile>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManagedSalonProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetManagedSalonProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getManagedSalonProfile>>> = ({ signal }) => getManagedSalonProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getManagedSalonProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetManagedSalonProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getManagedSalonProfile>>>
+export type GetManagedSalonProfileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get editable public profile media for the active owned salon
+ */
+
+export function useGetManagedSalonProfile<TData = Awaited<ReturnType<typeof getManagedSalonProfile>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getManagedSalonProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetManagedSalonProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateManagedSalonProfileUrl = () => {
+
+
+
+
+  return `/api/salon/profile`
+}
+
+/**
+ * @summary Update editable public profile media for the active owned salon
+ */
+export const updateManagedSalonProfile = async (salonProfileMediaUpdate: SalonProfileMediaUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SalonProfileMedia> => {
+
+  return customFetch<SalonProfileMedia>(getUpdateManagedSalonProfileUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonProfileMediaUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateManagedSalonProfileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateManagedSalonProfile>>, TError,{data: BodyType<SalonProfileMediaUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateManagedSalonProfile>>, TError,{data: BodyType<SalonProfileMediaUpdate>}, TContext> => {
+
+const mutationKey = ['updateManagedSalonProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateManagedSalonProfile>>, {data: BodyType<SalonProfileMediaUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateManagedSalonProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateManagedSalonProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateManagedSalonProfile>>>
+    export type UpdateManagedSalonProfileMutationBody = BodyType<SalonProfileMediaUpdate>
+    export type UpdateManagedSalonProfileMutationError = ErrorType<void>
+
+    /**
+ * @summary Update editable public profile media for the active owned salon
+ */
+export const useUpdateManagedSalonProfile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateManagedSalonProfile>>, TError,{data: BodyType<SalonProfileMediaUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateManagedSalonProfile>>,
+        TError,
+        {data: BodyType<SalonProfileMediaUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateManagedSalonProfileMutationOptions(options));
+    }
 
 export const getListSalonAppointmentsUrl = (params?: ListSalonAppointmentsParams,) => {
   const normalizedParams = new URLSearchParams();

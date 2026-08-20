@@ -139,6 +139,7 @@ import {
   GetSalonAvailabilityQueryParams,
   GetSalonAvailabilityResponse,
   GetSalonDashboardResponse,
+  GetManagedSalonProfileResponse,
   GetSalonParams,
   GetSalonResponse,
   GetShopSummaryResponse,
@@ -220,6 +221,7 @@ import {
   UpdateSalonAppointmentBody,
   UpdateSalonAppointmentParams,
   UpdateSalonAppointmentResponse,
+  UpdateManagedSalonProfileBody,
   CreateSalonAppointmentBody,
   CreateSalonAppointmentResponse,
   CreateSalonAppointmentSeriesBody,
@@ -428,6 +430,16 @@ function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<
 
 function calendarDate(value: string | Date): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+}
+
+function isHttpVideoUrl(value: string | null): boolean {
+  if (value === null) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 async function current(req: Request, res: Response) {
@@ -1266,6 +1278,7 @@ function card(
     earliestSlot,
     homeService: salon.homeService,
     featured: salon.featured,
+    isVerified: salon.isVerified,
     topSalon: salon.topSalon,
     acceptsCards: salon.acceptsCards,
     instantBooking: salon.instantBooking,
@@ -2001,14 +2014,35 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   ]);
   const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
   const employeeLinks = staff.length ? await db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, staff.map((item) => item.id))) : [];
+  const bookingsByServiceId = new Map<string, number>();
+  for (const appointment of appointments) {
+    if (appointment.status === "cancelled") continue;
+    bookingsByServiceId.set(appointment.serviceId, (bookingsByServiceId.get(appointment.serviceId) ?? 0) + 1);
+  }
+  const topServices = services
+    .map((service) => ({ ...service, bookingCount: bookingsByServiceId.get(service.id) ?? 0 }))
+    .filter((service) => service.bookingCount > 0)
+    .sort((a, b) => b.bookingCount - a.bookingCount || a.name.localeCompare(b.name, "sr"))
+    .slice(0, 3)
+    .map((service) => ({
+      id: service.id,
+      name: service.name,
+      description: service.description,
+      durationMinutes: service.durationMinutes,
+      price: service.price,
+      promoPrice: service.promoPrice,
+      bookingCount: service.bookingCount,
+    }));
   res.json(GetSalonResponse.parse({
     ...card(salon, services, hours, appointments, staff),
     gallery: salon.gallery,
+    videoUrl: salon.videoUrl,
     description: salon.description,
     phone: salon.phone,
     email: salon.email,
-    latitude: salon.latitude ?? 44.8,
-    longitude: salon.longitude ?? 20.46,
+    latitude: salon.latitude,
+    longitude: salon.longitude,
+    topServices,
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
     staff: staff.map((item) => {
       const serviceIds = employeeLinks.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
@@ -2248,6 +2282,34 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
   const loyaltyData = await loyaltyStatus(salon.id);
   const completed = appointments.filter((item) => item.status === "completed");
   res.json(GetSalonDashboardResponse.parse({ salon: card(salon, services), todayAppointments: appointments.slice(0, 5), revenueThisMonth: completed.reduce((sum, item) => sum + item.price, 0), bookingsThisMonth: appointments.length, newCustomers: new Set(appointments.map((item) => item.customerName)).size, rating: salon.rating / 10, revenueChange: 12, loyalty: loyaltyData }));
+});
+
+router.get("/salon/profile", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const { salon } = access;
+  res.json(GetManagedSalonProfileResponse.parse({
+    id: salon.id,
+    name: salon.name,
+    slug: salon.slug,
+    videoUrl: salon.videoUrl,
+  }));
+});
+
+router.patch("/salon/profile", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (!isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  const [updated] = await db.update(salonsTable)
+    .set({ videoUrl: parsed.data.videoUrl })
+    .where(eq(salonsTable.id, access.salon.id))
+    .returning();
+  res.json(GetManagedSalonProfileResponse.parse({
+    id: updated!.id,
+    name: updated!.name,
+    slug: updated!.slug,
+    videoUrl: updated!.videoUrl,
+  }));
 });
 
 router.get("/salon/managed-salons", async (req, res): Promise<void> => {
@@ -4670,7 +4732,9 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
       city: s.city,
       active: s.active,
       featured: s.featured,
+      isVerified: s.isVerified,
       topSalon: s.topSalon,
+      videoUrl: s.videoUrl,
       rating: s.rating / 10,
       reviewCount: s.reviewCount,
       subscriptionStatus: sub?.subscriptions.status ?? null,
@@ -4735,7 +4799,9 @@ router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
     email: profile.email,
     active: profile.active,
     featured: profile.featured,
+    isVerified: profile.isVerified,
     topSalon: profile.topSalon,
+    videoUrl: profile.videoUrl,
     rating: profile.rating / 10,
     reviewCount: profile.reviewCount,
     subscriptionStatus: subscription?.subscriptions.status ?? null,
@@ -4756,7 +4822,8 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const { salonId } = parsedParams.data;
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { active, featured, topSalon } = parsed.data;
+  const { active, featured, isVerified, topSalon, videoUrl } = parsed.data;
+  if (videoUrl !== undefined && !isHttpVideoUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
 
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
@@ -4764,7 +4831,9 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
   if (active !== undefined) updates.active = active;
   if (featured !== undefined) updates.featured = featured;
+  if (isVerified !== undefined) updates.isVerified = isVerified;
   if (topSalon !== undefined) updates.topSalon = topSalon;
+  if (videoUrl !== undefined) updates.videoUrl = videoUrl;
 
   const [updated] = await db.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
 
@@ -4786,7 +4855,9 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
     city: updated!.city,
     active: updated!.active,
     featured: updated!.featured,
+    isVerified: updated!.isVerified,
     topSalon: updated!.topSalon,
+    videoUrl: updated!.videoUrl,
     rating: updated!.rating / 10,
     reviewCount: updated!.reviewCount,
     subscriptionStatus: sub?.subscriptions.status ?? null,

@@ -6,11 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AdminSalonUpdate {
-  active?: boolean;
-  featured?: boolean;
-  isVerified?: boolean;
-  topSalon?: boolean;
+export interface SalonProfileMedia {
+  id: string;
+  name: string;
+  slug: string;
   /** @nullable */
-  videoUrl?: string | null;
+  videoUrl: string | null;
 }

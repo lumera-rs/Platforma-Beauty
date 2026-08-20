@@ -2,7 +2,7 @@ import { BusinessLayout } from "@/components/business-layout";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
 import { useEffect } from "react";
-import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package } from "lucide-react";
+import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ export function OwnerSidebar({ current }: { current: string }) {
     { href: "/vlasnik", label: "Dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/kalendar", label: "Kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/usluge", label: "Usluge", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/profil", label: "Profil salona", icon: <Store className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/zaposleni", label: "Zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/shop", label: "B2B Oprema", icon: <DollarSign className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/porudzbine", label: "Porudžbine", icon: <Package className="w-4 h-4 mr-2" /> },

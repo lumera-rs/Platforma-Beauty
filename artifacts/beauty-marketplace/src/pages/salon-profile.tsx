@@ -4,11 +4,12 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, getGetSalonAvailabilityQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
-import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, User as UserIcon, Loader2, Heart } from "lucide-react";
+import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, Loader2, Heart, ShieldCheck, Flame, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
-import { srLatn } from "date-fns/locale";
+import { SalonGallery, MediaItem } from "@/components/salon-gallery";
+import { SimpleMap } from "@/components/simple-map";
 
 export default function SalonProfile() {
   const { slug } = useParams();
@@ -18,6 +19,8 @@ export default function SalonProfile() {
   const { data: salon, isLoading } = useGetSalon(slug || "");
   const { data: userResp } = useGetCurrentUser();
   const user = userResp?.user;
+
+  const salonData = salon;
   
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -28,21 +31,21 @@ export default function SalonProfile() {
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   
   const { data: availability, isLoading: isLoadingAvailability } = useGetSalonAvailability(
-    salon?.id || "", 
+    salonData?.id || "",
     { serviceId: selectedService || "", date: dateStr, employeeId: selectedEmployee || undefined },
-    { query: { enabled: !!salon?.id && !!selectedService, queryKey: getGetSalonAvailabilityQueryKey(salon?.id || "", { serviceId: selectedService || "", date: dateStr, employeeId: selectedEmployee || undefined }) } }
+    { query: { enabled: !!salonData?.id && !!selectedService, queryKey: getGetSalonAvailabilityQueryKey(salonData?.id || "", { serviceId: selectedService || "", date: dateStr, employeeId: selectedEmployee || undefined }) } }
   );
 
   const createAppointment = useCreateAppointment();
-  const eligibleStaff = useMemo(() => selectedService ? salon?.staff.filter((employee) => employee.serviceIds.includes(selectedService)) ?? [] : salon?.staff ?? [], [salon?.staff, selectedService]);
+  const eligibleStaff = useMemo(() => selectedService ? salonData?.staff.filter((employee) => employee.serviceIds.includes(selectedService)) ?? [] : salonData?.staff ?? [], [salonData?.staff, selectedService]);
 
   useEffect(() => {
-    if (!salon?.id || user?.role !== "CUSTOMER") return;
-    fetch(`/api/customer/favorite-employees/${salon.id}`, { credentials: "include" })
+    if (!salonData?.id || user?.role !== "CUSTOMER") return;
+    fetch(`/api/customer/favorite-employees/${salonData.id}`, { credentials: "include" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => setFavoriteEmployeeId(data?.employeeId ?? null))
       .catch(() => setFavoriteEmployeeId(null));
-  }, [salon?.id, user?.role]);
+  }, [salonData?.id, user?.role]);
 
   useEffect(() => {
     if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) setSelectedEmployee(null);
@@ -51,7 +54,7 @@ export default function SalonProfile() {
 
   const setFavorite = async (employeeId: string) => {
     if (!user) { setLocation("/prijava"); return; }
-    const response = await fetch(`/api/customer/favorite-employees/${salon?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) });
+    const response = await fetch(`/api/customer/favorite-employees/${salonData?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) });
     if (!response.ok) { toast.error("Omiljeni zaposleni nije sačuvan."); return; }
     setFavoriteEmployeeId(employeeId); setSelectedEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
   };
@@ -63,11 +66,11 @@ export default function SalonProfile() {
       return;
     }
     
-    if (!salon || !selectedService || !selectedSlot) return;
+    if (!salonData || !selectedService || !selectedSlot) return;
 
     createAppointment.mutate({
       data: {
-        salonId: salon.id,
+        salonId: salonData.id,
         serviceId: selectedService,
         date: dateStr,
         startTime: selectedSlot.start,
@@ -84,6 +87,37 @@ export default function SalonProfile() {
     });
   };
 
+  const handleSelectService = (serviceId: string) => {
+    setSelectedService(serviceId);
+    setSelectedSlot(null);
+    setTimeout(() => {
+      document.getElementById('booking-widget')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  const mediaItems: MediaItem[] = useMemo(() => {
+    if (!salonData) return [];
+    const items: MediaItem[] = [];
+    if (salonData.videoUrl) {
+      items.push({ type: 'video', url: salonData.videoUrl });
+    }
+    if (salonData.imageUrl) {
+      items.push({ type: 'image', url: salonData.imageUrl });
+    }
+    if (salonData.gallery && Array.isArray(salonData.gallery)) {
+      salonData.gallery.forEach(url => {
+        if (url && url !== salonData.imageUrl) {
+           items.push({ type: 'image', url });
+        }
+      });
+    }
+    // Fallbacks if completely empty
+    if (items.length === 0) {
+      items.push({ type: 'image', url: "https://images.unsplash.com/photo-1519014816548-bf5fe059c98b?q=80&w=800" });
+    }
+    return items;
+  }, [salonData]);
+
   if (isLoading) {
     return (
       <Layout>
@@ -94,72 +128,155 @@ export default function SalonProfile() {
     );
   }
 
-  if (!salon) return <Layout><div className="p-12 text-center">Salon nije pronađen.</div></Layout>;
+  if (!salonData) return <Layout><div className="p-12 text-center">Salon nije pronađen.</div></Layout>;
 
   return (
     <Layout>
-      {/* Header / Gallery */}
-      <div className="w-full bg-foreground text-background">
-        <div className="container mx-auto px-4 py-12 md:py-16 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <Badge className="bg-primary/20 text-primary border-none hover:bg-primary/30">Salon</Badge>
-              {salon.featured && <Badge className="bg-white/15 text-white border-white/20">Istaknuto</Badge>}
-              {salon.topSalon && <Badge className="bg-amber-300/20 text-amber-200 border-amber-200/20">Top Salon</Badge>}
-              {salon.instantBooking && <Badge className="bg-emerald-300/20 text-emerald-100 border-emerald-200/20">Instant zakazivanje</Badge>}
-              <div className="flex items-center gap-1 text-accent font-medium text-sm">
-                <Star className="w-4 h-4 fill-current" /> {salon.rating.toFixed(1)} ({salon.reviewCount} recenzija)
-              </div>
-            </div>
-            <h1 className="text-4xl md:text-6xl font-serif font-bold mb-4">{salon.name}</h1>
-            <p className="text-background/80 text-lg mb-6 leading-relaxed max-w-xl">
-              {salon.description}
-            </p>
-            <div className="flex flex-col gap-2 text-sm text-background/90 font-medium">
-              <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> {salon.address}, {salon.city}</div>
-              <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-primary" /> {salon.phone}</div>
-              <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-primary" /> {salon.email}</div>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-2 h-[300px] md:h-[400px] rounded-2xl overflow-hidden">
-            <img src={salon.imageUrl} alt={salon.name} className="w-full h-full object-cover" />
-            <div className="grid grid-rows-2 gap-2">
-              <img src={salon.gallery?.[0] || "https://images.unsplash.com/photo-1519014816548-bf5fe059c98b?q=80&w=800"} className="w-full h-full object-cover" />
-              <img src={salon.gallery?.[1] || "https://images.unsplash.com/photo-1600880292203-757bb62b4baf?q=80&w=800"} className="w-full h-full object-cover" />
-            </div>
+      <div className="w-full bg-background">
+        <div className="container mx-auto px-4 py-8 md:py-12">
+          {/* Top Section */}
+          <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-start">
+             <div className="w-full lg:w-1/2 xl:w-[55%]">
+                <SalonGallery media={mediaItems} salonName={salonData.name} />
+             </div>
+
+             <div className="w-full lg:w-1/2 xl:w-[45%] flex flex-col justify-center space-y-6 pt-2 lg:pt-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Badge className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-3 py-1">Salon</Badge>
+                  {salonData.featured && <Badge className="bg-amber-100 text-amber-800 border-none px-3 py-1">Istaknuto</Badge>}
+                  {salonData.topSalon && <Badge className="bg-rose-100 text-rose-800 border-none px-3 py-1">Top Salon</Badge>}
+                  {salonData.instantBooking && <Badge className="bg-emerald-100 text-emerald-800 border-none px-3 py-1">Instant zakazivanje</Badge>}
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-baseline gap-4 mb-4">
+                    <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif font-bold flex items-center gap-2">
+                      {salonData.name}
+                       {salonData.isVerified && <Badge className="gap-1.5 bg-primary/10 px-2.5 py-1 text-sm text-primary hover:bg-primary/15"><ShieldCheck className="h-4 w-4" />Verifikovan</Badge>}
+                    </h1>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const reviews = document.getElementById("reviews");
+                      if (!reviews) return;
+                      window.scrollTo({ top: Math.max(0, reviews.getBoundingClientRect().top + window.scrollY - 88), behavior: "auto" });
+                    }}
+                    className="flex items-center gap-2 text-lg font-medium hover:text-primary transition-colors group mb-2"
+                  >
+                    <div className="flex items-center">
+                      <Star className="w-6 h-6 fill-accent text-accent" />
+                      <span className="ml-1.5 text-xl font-bold">{salonData.rating.toFixed(1)}</span>
+                    </div>
+                    <span className="text-muted-foreground text-base group-hover:underline decoration-dotted underline-offset-4">
+                      ({salonData.reviewCount} recenzija)
+                    </span>
+                  </button>
+                </div>
+
+                <p className="text-muted-foreground text-lg leading-relaxed max-w-xl">
+                  {salonData.description}
+                </p>
+
+                <div className="flex flex-col gap-3 pt-6 border-t">
+                  <div className="flex items-center gap-4 text-foreground font-medium">
+                    <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                      <MapPin className="w-5 h-5 text-primary" />
+                    </div>
+                    <span>{salonData.address}, {salonData.city}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-foreground font-medium">
+                    <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                      <Phone className="w-5 h-5 text-primary" />
+                    </div>
+                    <span>{salonData.phone}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-foreground font-medium">
+                    <div className="w-10 h-10 rounded-full bg-primary/5 flex items-center justify-center shrink-0">
+                      <Mail className="w-5 h-5 text-primary" />
+                    </div>
+                    <span>{salonData.email}</span>
+                  </div>
+                </div>
+             </div>
           </div>
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-12 flex flex-col lg:flex-row gap-8">
+      <div className="container mx-auto px-4 py-8 md:py-12 flex flex-col lg:flex-row gap-8 lg:gap-12 relative">
         
         {/* Left Column: Services & Staff */}
-        <div className="flex-1 space-y-12">
+        <div className="flex-1 space-y-16">
           
+           {salonData.topServices.length > 0 && (
+            <section id="popular-services">
+              <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2">
+                <span className="w-8 h-px bg-primary inline-block"></span>
+                <Flame className="w-5 h-5 text-primary" />
+                Popularne usluge
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {salonData.topServices.map(service => (
+                   <Card key={service.id} className="group hover:border-primary/50 transition-colors flex flex-col shadow-sm hover:shadow-md">
+                     <CardContent className="p-5 flex-1 flex flex-col">
+                       <div className="flex justify-between items-start mb-3">
+                         <h3 className="font-bold text-lg group-hover:text-primary transition-colors pr-2 leading-tight">{service.name}</h3>
+                         <Badge variant="secondary" className="bg-primary/5 text-primary border-none shrink-0">
+                           {service.bookingCount}+ zakazivanja
+                         </Badge>
+                       </div>
+                       <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{service.description}</p>
+                       <div className="flex items-center gap-4 text-sm font-medium mt-auto bg-muted/30 p-2.5 rounded-lg">
+                         <span className="flex items-center gap-1.5 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
+                         <span className="text-foreground ml-auto">
+                           {service.promoPrice ? (
+                             <div className="flex items-center gap-2">
+                               <span className="line-through text-muted-foreground text-xs">{service.price} RSD</span>
+                               <span className="text-primary font-bold text-base">{service.promoPrice} RSD</span>
+                             </div>
+                           ) : <span className="font-bold">{service.price} RSD</span>}
+                         </span>
+                       </div>
+                     </CardContent>
+                     <CardFooter className="p-5 pt-0 mt-auto">
+                       <Button
+                         variant="outline"
+                         className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all font-semibold"
+                         onClick={() => handleSelectService(service.id)}
+                       >
+                         Zakaži odmah
+                       </Button>
+                     </CardFooter>
+                   </Card>
+                 ))}
+              </div>
+            </section>
+          )}
+
           <section id="services">
             <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2">
               <span className="w-8 h-px bg-primary inline-block"></span>
-              Usluge
+              Sve usluge
             </h2>
             <div className="space-y-4">
-              {salon.services?.map(service => (
+              {salonData.services?.map(service => (
                 <div 
                   key={service.id} 
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${selectedService === service.id ? 'border-primary ring-1 ring-primary shadow-sm bg-primary/5' : 'hover:border-primary/50 hover:bg-muted/30'}`}
-                   onClick={() => { setSelectedService(service.id); setSelectedSlot(null); }}
+                  className={`p-5 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${selectedService === service.id ? 'border-primary ring-1 ring-primary shadow-sm bg-primary/5' : 'hover:border-primary/50 hover:bg-muted/10 bg-card'}`}
+                   onClick={() => handleSelectService(service.id)}
                 >
-                  <div>
+                  <div className="pr-4">
                     <h4 className="font-bold text-lg">{service.name}</h4>
-                    <p className="text-muted-foreground text-sm mt-1">{service.description}</p>
+                    <p className="text-muted-foreground text-sm mt-1.5 leading-relaxed">{service.description}</p>
                     <div className="flex items-center gap-4 mt-3 text-sm font-medium">
-                      <span className="flex items-center gap-1 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
-                       <span className="text-foreground">{service.promoPrice ? <><span className="line-through text-muted-foreground mr-2">{service.price} RSD</span><span className="text-primary font-bold">{service.promoPrice} RSD</span></> : `${service.price} RSD`}</span>
+                      <span className="flex items-center gap-1.5 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
+                       <span className="text-foreground">{service.promoPrice ? <><span className="line-through text-muted-foreground mr-2">{service.price} RSD</span><span className="text-primary font-bold">{service.promoPrice} RSD</span></> : <span className="font-semibold">{service.price} RSD</span>}</span>
                     </div>
-                    {service.tags?.length ? <div className="mt-2 flex flex-wrap gap-1">{service.tags.map((tag) => <Badge key={tag} variant="secondary" className="text-[10px]">{tag}</Badge>)}</div> : null}
-                    {service.packageTreatments ? <p className="mt-2 text-xs font-medium text-primary">Paket od {service.packageTreatments} tretmana</p> : null}
+                    {service.tags?.length ? <div className="mt-3 flex flex-wrap gap-1.5">{service.tags.map((tag) => <Badge key={tag} variant="secondary" className="text-[10px] uppercase font-bold tracking-wider">{tag}</Badge>)}</div> : null}
+                    {service.packageTreatments ? <p className="mt-2 text-xs font-medium text-primary bg-primary/10 inline-block px-2 py-1 rounded-md">Paket od {service.packageTreatments} tretmana</p> : null}
                   </div>
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedService === service.id ? 'border-primary bg-primary' : 'border-muted-foreground/30'}`}>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selectedService === service.id ? 'border-primary bg-primary' : 'border-muted-foreground/30'}`}>
                     {selectedService === service.id && <Check className="w-4 h-4 text-primary-foreground" />}
                   </div>
                 </div>
@@ -169,7 +286,7 @@ export default function SalonProfile() {
 
           <section id="hours">
             <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2"><span className="w-8 h-px bg-primary inline-block"></span>Radno vreme</h2>
-            <div className="grid sm:grid-cols-2 gap-2">{salon.hours.map((hour) => <div key={hour.day} className="rounded-lg border px-4 py-3 flex justify-between text-sm"><span className="font-medium">{hour.day}</span><span className={hour.closed ? "text-muted-foreground" : "text-primary"}>{hour.closed ? "Ne radi" : `${hour.open} – ${hour.close}`}</span></div>)}</div>
+            <div className="grid sm:grid-cols-2 gap-3">{salonData.hours.map((hour) => <div key={hour.day} className="rounded-xl border bg-card px-5 py-3.5 flex justify-between items-center text-sm"><span className="font-medium text-foreground">{hour.day}</span><span className={`font-semibold ${hour.closed ? "text-muted-foreground" : "text-primary"}`}>{hour.closed ? "Ne radi" : `${hour.open} – ${hour.close}`}</span></div>)}</div>
           </section>
           
           <section id="staff">
@@ -181,17 +298,17 @@ export default function SalonProfile() {
               {eligibleStaff.map(employee => (
                 <div 
                   key={employee.id} 
-                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center gap-4 ${selectedEmployee === employee.id ? 'border-primary ring-1 ring-primary bg-primary/5' : 'hover:border-primary/50'}`}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center gap-4 bg-card ${selectedEmployee === employee.id ? 'border-primary ring-1 ring-primary bg-primary/5 shadow-sm' : 'hover:border-primary/50'}`}
                   onClick={() => setSelectedEmployee(selectedEmployee === employee.id ? null : employee.id)}
                 >
-                  <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-16 h-16 rounded-full object-cover border" />
+                  <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-16 h-16 rounded-full object-cover border-2 border-background shadow-sm" />
                    <div className="min-w-0 flex-1">
                     <h4 className="font-bold">{employee.name}</h4>
                     <p className="text-sm text-muted-foreground">{employee.role}</p>
-                     {employee.specialties?.length ? <p className="mt-1 text-xs text-muted-foreground">{employee.specialties.join(" · ")}</p> : null}
-                     {employee.serviceNames?.length ? <p className="mt-1 text-xs text-primary">{employee.serviceNames.join(", ")}</p> : null}
+                     {employee.specialties?.length ? <p className="mt-1.5 text-xs text-muted-foreground truncate">{employee.specialties.join(" · ")}</p> : null}
+                     {employee.serviceNames?.length ? <p className="mt-1 text-xs text-primary truncate">{employee.serviceNames.join(", ")}</p> : null}
                   </div>
-                   {user?.role === "CUSTOMER" && <button aria-label={`Omiljeni zaposleni ${employee.name}`} onClick={(event) => { event.stopPropagation(); setFavorite(employee.id).catch(() => toast.error("Omiljeni zaposleni nije sačuvan.")); }}><Heart className={`h-4 w-4 ${favoriteEmployeeId === employee.id ? "fill-primary text-primary" : "text-muted-foreground"}`} /></button>}
+                   {user?.role === "CUSTOMER" && <button className="p-2 hover:bg-muted rounded-full transition-colors" aria-label={`Omiljeni zaposleni ${employee.name}`} onClick={(event) => { event.stopPropagation(); setFavorite(employee.id).catch(() => toast.error("Omiljeni zaposleni nije sačuvan.")); }}><Heart className={`h-5 w-5 transition-colors ${favoriteEmployeeId === employee.id ? "fill-primary text-primary" : "text-muted-foreground"}`} /></button>}
                 </div>
               ))}
             </div>
@@ -203,71 +320,110 @@ export default function SalonProfile() {
               Recenzije
             </h2>
             <div className="space-y-4">
-              {salon.reviews?.map(review => (
-                <div key={review.id} className="p-5 rounded-xl border bg-card">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+              {salonData.reviews?.map(review => (
+                <div key={review.id} className="p-6 rounded-xl border bg-card shadow-sm">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
                         {review.authorName[0]}
                       </div>
-                      <span className="font-medium text-sm">{review.authorName}</span>
+                      <div>
+                        <span className="font-bold text-sm block">{review.authorName}</span>
+                        <span className="text-xs text-muted-foreground">{format(parseISO(review.date), 'dd.MM.yyyy')}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 bg-muted/50 px-2 py-1 rounded-md">
                       {Array(5).fill(0).map((_, i) => (
                         <Star key={i} className={`w-3.5 h-3.5 ${i < review.rating ? 'fill-accent text-accent' : 'text-muted'}`} />
                       ))}
                     </div>
                   </div>
-                  <p className="text-foreground/80 text-sm mb-2 italic">"{review.text}"</p>
-                  <div className="flex justify-between items-center text-xs text-muted-foreground">
-                    <span>{review.serviceName}</span>
-                    <span>{format(parseISO(review.date), 'dd.MM.yyyy')}</span>
+                  <p className="text-foreground/90 text-sm mb-3 leading-relaxed">"{review.text}"</p>
+                  <div className="text-xs text-primary font-medium inline-block bg-primary/5 px-2 py-1 rounded-md">
+                    Usluga: {review.serviceName}
                   </div>
                 </div>
               ))}
+              {(!salonData.reviews || salonData.reviews.length === 0) && (
+                <div className="p-8 text-center border rounded-xl bg-muted/20 text-muted-foreground">
+                  Još uvek nema recenzija za ovaj salon.
+                </div>
+              )}
             </div>
+          </section>
+
+          <section id="location">
+            <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2">
+              <span className="w-8 h-px bg-primary inline-block"></span>
+              Lokacija
+            </h2>
+            {salonData.latitude !== null && salonData.longitude !== null ? (
+              <div className="h-[350px] overflow-hidden rounded-2xl border shadow-sm md:h-[400px]">
+                <SimpleMap markers={[{
+                  id: salonData.id,
+                  latitude: salonData.latitude,
+                  longitude: salonData.longitude,
+                  label: salonData.name,
+                  active: true,
+                }]} />
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed bg-muted/20 p-8 text-center text-muted-foreground">
+                Salon još nije dodao tačnu lokaciju na mapi.
+              </div>
+            )}
           </section>
 
         </div>
 
         {/* Right Column: Booking Widget */}
-        <aside className="w-full lg:w-[400px] shrink-0">
-          <div className="sticky top-24">
-            <Card className="border-primary/20 shadow-lg">
-              <CardHeader className="bg-primary/5 border-b pb-4 rounded-t-xl">
-                <CardTitle className="font-serif text-xl flex items-center gap-2">
-                  <CalendarDays className="w-5 h-5 text-primary" />
+        <aside className="w-full lg:w-[400px] shrink-0" id="booking-widget">
+          <div className="sticky top-24 z-10">
+            <Card className="border-primary/20 shadow-xl overflow-hidden">
+              <CardHeader className="bg-primary border-b pb-4 pt-5">
+                <CardTitle className="font-serif text-xl flex items-center gap-2 text-primary-foreground">
+                  <CalendarDays className="w-5 h-5 text-primary-foreground/80" />
                   Zakažite termin
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-6 space-y-6">
+              <CardContent className="p-6 space-y-6 bg-card">
                 
                 {!selectedService ? (
-                  <div className="text-center py-8 text-muted-foreground flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                      <Check className="w-6 h-6 text-muted-foreground/50" />
+                  <div className="text-center py-10 text-muted-foreground flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center">
+                      <Check className="w-8 h-8 text-primary/30" />
                     </div>
-                    <p>Prvo izaberite uslugu sa liste</p>
+                    <p className="font-medium text-base">Prvo izaberite uslugu sa liste</p>
+                    <Button variant="outline" className="mt-2" onClick={() => document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' })}>
+                      Pregledaj usluge
+                    </Button>
                   </div>
                 ) : (
                   <>
-                    <div className="bg-secondary/30 p-3 rounded-lg border border-secondary text-sm">
-                      <div className="font-bold">{salon.services.find(s => s.id === selectedService)?.name}</div>
-                      <div className="text-muted-foreground mt-1 flex justify-between">
-                        <span>{salon.services.find(s => s.id === selectedService)?.durationMinutes} min</span>
-                        <span className="font-medium text-foreground">{salon.services.find(s => s.id === selectedService)?.price} RSD</span>
+                    <div className="bg-primary/5 p-4 rounded-xl border border-primary/20 text-sm relative">
+                      <button onClick={() => setSelectedService(null)} className="absolute top-2 right-2 p-1 text-muted-foreground hover:text-foreground transition-colors" title="Ukloni uslugu">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <div className="font-bold text-base pr-6">{salonData.services.find(s => s.id === selectedService)?.name}</div>
+                      <div className="mt-2 flex justify-between items-center">
+                        <span className="text-muted-foreground flex items-center gap-1.5"><Clock className="w-4 h-4" /> {salonData.services.find(s => s.id === selectedService)?.durationMinutes} min</span>
+                        <span className="font-bold text-foreground bg-background px-2 py-1 rounded-md shadow-sm border">{salonData.services.find(s => s.id === selectedService)?.price} RSD</span>
                       </div>
                     </div>
 
                      <div className="space-y-3">
-                       <h4 className="text-sm font-semibold">Izaberite zaposlenog</h4>
-                       <button type="button" onClick={() => { setSelectedEmployee(null); setSelectedSlot(null); }} className={`w-full rounded-lg border p-3 text-left text-sm ${selectedEmployee === null ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}><span className="font-semibold">Bilo koji dostupan zaposleni</span><span className="mt-1 block text-muted-foreground">Sistem bira slobodnog člana tima sa najmanje termina tog dana i nedelje.</span></button>
-                       <div className="space-y-2">{[...eligibleStaff].sort((a, b) => Number(b.id === favoriteEmployeeId) - Number(a.id === favoriteEmployeeId)).map((employee) => <button key={employee.id} type="button" onClick={() => { setSelectedEmployee(employee.id); setSelectedSlot(null); }} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left ${selectedEmployee === employee.id ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}><img src={employee.avatarUrl || "https://i.pravatar.cc/100"} className="h-10 w-10 rounded-full object-cover" alt="" /><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{employee.name}{employee.id === favoriteEmployeeId && <Badge className="text-[10px]">Omiljeni</Badge>}</span><span className="block truncate text-xs text-muted-foreground">{employee.bio || employee.specialties?.join(" · ") || employee.role}</span></span></button>)}</div>
-                       {!eligibleStaff.length && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">Trenutno nema zaposlenog dodeljenog ovoj usluzi.</p>}
+                       <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
+                         Izaberite zaposlenog
+                       </h4>
+                       <button type="button" onClick={() => { setSelectedEmployee(null); setSelectedSlot(null); }} className={`w-full rounded-xl border p-3.5 text-left text-sm transition-all ${selectedEmployee === null ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/50 bg-background"}`}><span className="font-bold text-foreground">Bilo koji dostupan zaposleni</span><span className="mt-1.5 block text-muted-foreground leading-snug">Sistem bira slobodnog člana tima sa najmanje termina tog dana i nedelje.</span></button>
+                       <div className="space-y-2">{[...eligibleStaff].sort((a, b) => Number(b.id === favoriteEmployeeId) - Number(a.id === favoriteEmployeeId)).map((employee) => <button key={employee.id} type="button" onClick={() => { setSelectedEmployee(employee.id); setSelectedSlot(null); }} className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${selectedEmployee === employee.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/50 bg-background"}`}><img src={employee.avatarUrl || "https://i.pravatar.cc/100"} className="h-10 w-10 rounded-full object-cover shadow-sm border border-border" alt="" /><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-bold text-foreground">{employee.name}{employee.id === favoriteEmployeeId && <Badge className="text-[10px] bg-primary/20 text-primary border-none">Omiljeni</Badge>}</span><span className="block truncate text-xs text-muted-foreground mt-0.5">{employee.bio || employee.specialties?.join(" · ") || employee.role}</span></span></button>)}</div>
+                       {!eligibleStaff.length && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800 border border-amber-200 font-medium">Trenutno nema zaposlenog dodeljenog ovoj usluzi.</p>}
                      </div>
 
                      <div className="space-y-3">
-                      <h4 className="text-sm font-semibold">Izaberite datum</h4>
+                      <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
+                        Izaberite datum
+                      </h4>
                       <input 
                         type="date" 
                         value={dateStr}
@@ -278,29 +434,30 @@ export default function SalonProfile() {
                           setSelectedDate(nextDate);
                           setSelectedSlot(null);
                         }}
-                        className="w-full border rounded-md p-2 text-sm bg-background"
+                        className="w-full border rounded-xl p-3 text-sm bg-background font-medium focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all shadow-sm"
                       />
                     </div>
 
                     <div className="space-y-3">
-                      <h4 className="text-sm font-semibold flex items-center gap-2">
-                        Slobodni termini {isLoadingAvailability && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <h4 className="text-sm font-bold flex items-center gap-2 text-foreground/80 uppercase tracking-wider">
+                        Slobodni termini {isLoadingAvailability && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
                       </h4>
                       
                       {!isLoadingAvailability && (!availability || availability.length === 0) ? (
-                        <div className="text-sm text-red-500 bg-red-50 p-3 rounded-md">
-                          Nema slobodnih termina za ovaj datum.
+                        <div className="text-sm text-amber-800 bg-amber-50 p-4 rounded-xl border border-amber-200 font-medium flex items-center gap-3">
+                          <CalendarDays className="w-5 h-5 opacity-70" />
+                          Nema slobodnih termina za izabrani datum. Pokušajte drugi.
                         </div>
                       ) : (
-                        <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto pr-2 pb-2">
+                        <div className="grid grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-2 pb-2 custom-scrollbar">
                           {availability?.map((slot, i) => (
                             <button
                               key={i}
                               onClick={() => setSelectedSlot(slot)}
-                              className={`py-2 px-1 text-sm rounded-md border font-medium transition-all ${
+                              className={`py-2.5 px-1 text-sm rounded-xl border font-bold transition-all shadow-sm ${
                                 selectedSlot?.start === slot.start && selectedSlot?.employeeId === slot.employeeId
-                                  ? 'bg-primary text-primary-foreground border-primary' 
-                                  : 'hover:border-primary/50'
+                                  ? 'bg-primary text-primary-foreground border-primary scale-[1.02]'
+                                  : 'hover:border-primary/50 hover:bg-muted bg-background'
                               }`}
                             >
                               {slot.start}
@@ -313,18 +470,18 @@ export default function SalonProfile() {
                 )}
 
               </CardContent>
-              <CardFooter className="p-6 pt-0 border-t bg-muted/10 rounded-b-xl flex-col items-stretch gap-3">
+              <CardFooter className="p-6 pt-0 border-t bg-muted/30 flex-col items-stretch gap-3 mt-auto">
                 {selectedSlot && (
-                  <div className="text-sm bg-primary/10 p-3 rounded-md mb-2">
-                    Termin: <span className="font-bold">{format(selectedDate, 'dd.MM.yyyy')}</span> u <span className="font-bold">{selectedSlot.start}</span>
+                  <div className="text-sm bg-primary/10 p-4 rounded-xl mb-1 border border-primary/20">
+                    Zakazujete za <span className="font-bold text-primary">{format(selectedDate, 'dd.MM.yyyy')}</span> u <span className="font-bold text-primary">{selectedSlot.start}</span>
                   </div>
                 )}
                 <Button 
-                  className="w-full h-12 text-base shadow-sm" 
+                  className="w-full h-14 text-base font-bold shadow-md rounded-xl hover:scale-[1.01] transition-all"
                   disabled={!selectedService || !selectedSlot || createAppointment.isPending}
                   onClick={handleBook}
                 >
-                  {createAppointment.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  {createAppointment.isPending ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : null}
                   Potvrdi rezervaciju
                 </Button>
               </CardFooter>

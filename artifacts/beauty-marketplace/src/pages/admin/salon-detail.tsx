@@ -1,10 +1,15 @@
 import { Link, useRoute } from "wouter";
-import { getAdminGetSalonQueryKey, useAdminGetSalon } from "@workspace/api-client-react";
+import { getAdminGetSalonQueryKey, getAdminListSalonsQueryKey, useAdminGetSalon, useAdminUpdateSalon } from "@workspace/api-client-react";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Building2, Crown, Loader2, ReceiptText, Store } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Building2, Crown, Loader2, ReceiptText, Save, Store, Video } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
 
 const money = (amount: number) => `${amount.toLocaleString("sr-RS")} RSD`;
 const statusLabel: Record<string, string> = {
@@ -17,6 +22,25 @@ export default function AdminSalonDetail() {
   const [, params] = useRoute("/admin/saloni/:salonId");
   const salonId = params?.salonId ?? "";
   const { data: salon, isLoading } = useAdminGetSalon(salonId, { query: { enabled: Boolean(salonId), queryKey: getAdminGetSalonQueryKey(salonId) } });
+  const updateSalon = useAdminUpdateSalon();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [videoUrl, setVideoUrl] = useState("");
+
+  useEffect(() => {
+    setVideoUrl(salon?.videoUrl ?? "");
+  }, [salon?.videoUrl]);
+
+  const update = (data: { isVerified?: boolean; videoUrl?: string | null }) => {
+    updateSalon.mutate({ salonId, data }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getAdminGetSalonQueryKey(salonId) });
+        queryClient.invalidateQueries({ queryKey: getAdminListSalonsQueryKey() });
+        toast.success("Podaci salona su ažurirani.");
+      },
+      onError: () => toast.error("Podaci salona nisu ažurirani."),
+    });
+  };
 
   return <AdminLayout>
     {isLoading ? <div className="p-10 text-center"><Loader2 className="inline animate-spin" /></div>
@@ -25,7 +49,7 @@ export default function AdminSalonDetail() {
           <Button asChild variant="ghost"><Link href="/admin/saloni"><ArrowLeft className="mr-2 h-4 w-4" />Nazad na salone</Link></Button>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h1 className="text-3xl font-serif font-bold">{salon.name}</h1><p className="text-muted-foreground">Administrativni profil salona i B2B porudžbine.</p></div>
-            <div className="flex gap-2"><Badge variant={salon.active ? "default" : "secondary"}>{salon.active ? "Aktivan" : "Neaktivan"}</Badge>{salon.featured && <Badge variant="outline">Izdvojen</Badge>}</div>
+            <div className="flex gap-2"><Badge variant={salon.active ? "default" : "secondary"}>{salon.active ? "Aktivan" : "Neaktivan"}</Badge>{salon.featured && <Badge variant="outline">Izdvojen</Badge>}{salon.isVerified && <Badge className="gap-1"><BadgeCheck className="h-3.5 w-3.5" />Verifikovan</Badge>}</div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -43,6 +67,23 @@ export default function AdminSalonDetail() {
               <p><b>Pretplata:</b> {salon.subscriptionPlan ?? "Bez aktivnog paketa"}</p><p><b>Status:</b> {salon.subscriptionStatus ?? "—"}</p><p className="flex items-center gap-2"><Crown className="h-4 w-4 text-amber-500" /><b>Loyalty:</b> {salon.loyaltyTier ?? "Nije dodeljen"}</p>
             </CardContent></Card>
           </div>
+
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Video className="h-5 w-5" />Javni profil</CardTitle></CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div><p className="font-medium">Verifikovan salon</p><p className="text-sm text-muted-foreground">Bedž je vidljiv klijentima tek kada ga administracija potvrdi.</p></div>
+                <Switch checked={salon.isVerified} onCheckedChange={(checked) => update({ isVerified: checked })} disabled={updateSalon.isPending} />
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="admin-video-url" className="text-sm font-medium">Video URL</label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input id="admin-video-url" type="url" placeholder="https://..." value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} />
+                  <Button type="button" disabled={updateSalon.isPending} onClick={() => update({ videoUrl: videoUrl.trim() || null })}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ReceiptText className="h-5 w-5" />Porudžbine</CardTitle></CardHeader><CardContent>
             {salon.orders.length === 0 ? <p className="text-sm text-muted-foreground">Salon još nema B2B porudžbine.</p> : <div className="space-y-2">

@@ -26,6 +26,7 @@ export interface SalonCard {
   topSalon: boolean;
   acceptsCards: boolean;
   instantBooking: boolean;
+  isVerified: boolean;
   hasDiscount: boolean;
   openSunday: boolean;
   /** @nullable */

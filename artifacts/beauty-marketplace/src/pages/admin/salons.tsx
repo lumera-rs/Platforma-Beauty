@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Search, Store, Building2, MapPin, CheckCircle, XCircle, Crown, FilterX } from "lucide-react";
+import { Loader2, Search, Store, Building2, MapPin, CheckCircle, Crown, FilterX, BadgeCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -48,7 +48,7 @@ export default function AdminSalons() {
   const mutateFnRef = useRef(updateSalon.mutate);
   mutateFnRef.current = updateSalon.mutate;
 
-  const handleToggle = (id: string, field: 'active' | 'featured', currentValue: boolean) => {
+  const handleToggle = (id: string, field: 'active' | 'featured' | 'isVerified', currentValue: boolean) => {
     mutateFnRef.current({
       salonId: id,
       data: { [field]: !currentValue }
@@ -160,6 +160,7 @@ export default function AdminSalons() {
                     <th className="px-6 py-4">Pretplata & Loyalty</th>
                     <th className="px-6 py-4 text-center">Aktivno</th>
                     <th className="px-6 py-4 text-center">Izdvojeno</th>
+                    <th className="px-6 py-4 text-center">Verifikovan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -167,7 +168,7 @@ export default function AdminSalons() {
                     <tr key={salon.id} className="hover:bg-muted/20 transition-colors" data-testid={`row-salon-${salon.id}`}>
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <Link href={`/admin/saloni/${salon.id}`} className="font-semibold text-foreground text-base hover:text-primary hover:underline">{salon.name}</Link>
+                          <Link href={`/admin/saloni/${salon.id}`} className="inline-flex items-center gap-1 font-semibold text-foreground text-base hover:text-primary hover:underline">{salon.name}{salon.isVerified && <BadgeCheck className="h-4 w-4 text-primary" aria-label="Verifikovan salon" />}</Link>
                           <span className="text-xs text-muted-foreground">Priključeno: {new Date(salon.createdAt).toLocaleDateString('sr-RS')}</span>
                         </div>
                       </td>
@@ -203,11 +204,23 @@ export default function AdminSalons() {
                       </td>
                       <td className="px-6 py-4 text-center align-middle">
                         <div className="flex justify-center">
-                          <Switch 
-                            checked={salon.featured} 
+                          <Switch
+                            checked={salon.featured}
                             onCheckedChange={() => handleToggle(salon.id, 'featured', salon.featured)}
                             disabled={updateSalon.isPending}
+                            aria-label={`Izdvoji salon ${salon.name}`}
                             data-testid={`toggle-featured-${salon.id}`}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center align-middle">
+                        <div className="flex justify-center">
+                          <Switch
+                            checked={salon.isVerified}
+                            onCheckedChange={() => handleToggle(salon.id, 'isVerified', salon.isVerified)}
+                            disabled={updateSalon.isPending}
+                            aria-label={`Verifikuj salon ${salon.name}`}
+                            data-testid={`toggle-verified-${salon.id}`}
                           />
                         </div>
                       </td>
