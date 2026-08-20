@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   appointmentSeriesTable,
@@ -134,6 +134,7 @@ import {
   GetCurrentUserResponse,
   GetCustomerDashboardResponse,
   GetLoyaltyStatusResponse,
+  GetPlatformTrustStatsResponse,
   GetSalonAvailabilityParams,
   GetSalonAvailabilityQueryParams,
   GetSalonAvailabilityResponse,
@@ -1966,6 +1967,23 @@ router.get("/salons", async (req, res): Promise<void> => {
     return Number(b.topSalon) - Number(a.topSalon) || Number(b.featured) - Number(a.featured) || b.rating - a.rating;
   });
   res.json(ListSalonsResponse.parse(sorted));
+});
+
+router.get("/platform/trust-stats", async (_req, res): Promise<void> => {
+  await ensureDemoData();
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [[activeSalons], [bookingsThisMonth], [customerAccounts]] = await Promise.all([
+    db.select({ value: count() }).from(salonsTable).where(eq(salonsTable.active, true)),
+    db.select({ value: count() }).from(appointmentsTable).where(and(gte(appointmentsTable.createdAt, monthStart), ne(appointmentsTable.status, "cancelled"))),
+    db.select({ value: count() }).from(usersTable).where(and(eq(usersTable.role, "CUSTOMER"), eq(usersTable.active, true))),
+  ]);
+  res.set("Cache-Control", "public, max-age=60");
+  res.json(GetPlatformTrustStatsResponse.parse({
+    activeSalons: Number(activeSalons?.value ?? 0),
+    bookingsThisMonth: Number(bookingsThisMonth?.value ?? 0),
+    customerAccounts: Number(customerAccounts?.value ?? 0),
+  }));
 });
 
 router.get("/salons/:slug", async (req, res): Promise<void> => {

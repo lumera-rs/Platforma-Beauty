@@ -150,6 +150,7 @@ export * from './orderItem';
 export * from './orderPaymentStatus';
 export * from './orderSalon';
 export * from './orderStatus';
+export * from './platformTrustStats';
 export * from './product';
 export * from './productCategory';
 export * from './productCategorySubcategoriesItem';

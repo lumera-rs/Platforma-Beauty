@@ -100,6 +100,7 @@ import type {
   LoyaltyTier,
   LoyaltyTierInput,
   Order,
+  PlatformTrustStats,
   Product,
   ProductCategory,
   ProductDetail,
@@ -1044,6 +1045,83 @@ export function useListSalons<TData = Awaited<ReturnType<typeof listSalons>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSalonsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPlatformTrustStatsUrl = () => {
+
+
+
+
+  return `/api/platform/trust-stats`
+}
+
+/**
+ * @summary Get public marketplace trust statistics
+ */
+export const getPlatformTrustStats = async ( options?: Parameters<typeof customFetch>[1]): Promise<PlatformTrustStats> => {
+
+  return customFetch<PlatformTrustStats>(getGetPlatformTrustStatsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPlatformTrustStatsQueryKey = () => {
+    return [
+    `/api/platform/trust-stats`
+    ] as const;
+    }
+
+
+export const getGetPlatformTrustStatsQueryOptions = <TData = Awaited<ReturnType<typeof getPlatformTrustStats>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformTrustStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlatformTrustStatsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlatformTrustStats>>> = ({ signal }) => getPlatformTrustStats({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlatformTrustStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlatformTrustStatsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlatformTrustStats>>>
+export type GetPlatformTrustStatsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get public marketplace trust statistics
+ */
+
+export function useGetPlatformTrustStats<TData = Awaited<ReturnType<typeof getPlatformTrustStats>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlatformTrustStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlatformTrustStatsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

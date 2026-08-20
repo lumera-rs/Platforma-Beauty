@@ -321,6 +321,24 @@ export const ListSalonsResponse = zod.array(ListSalonsResponseItem)
 
 
 /**
+ * @summary Get public marketplace trust statistics
+ */
+export const getPlatformTrustStatsResponseActiveSalonsMin = 0;
+
+export const getPlatformTrustStatsResponseBookingsThisMonthMin = 0;
+
+export const getPlatformTrustStatsResponseCustomerAccountsMin = 0;
+
+
+
+export const GetPlatformTrustStatsResponse = zod.object({
+  "activeSalons": zod.number().min(getPlatformTrustStatsResponseActiveSalonsMin),
+  "bookingsThisMonth": zod.number().min(getPlatformTrustStatsResponseBookingsThisMonthMin),
+  "customerAccounts": zod.number().min(getPlatformTrustStatsResponseCustomerAccountsMin)
+})
+
+
+/**
  * @summary Get salon profile
  */
 export const GetSalonParams = zod.object({

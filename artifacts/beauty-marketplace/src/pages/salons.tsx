@@ -1,16 +1,24 @@
 import { Layout } from "@/components/layout";
 import { useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
-import { Link } from "wouter";
-import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3 } from "lucide-react";
+import { Link, useSearch } from "wouter";
+import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight, List as ListIcon, Map as MapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { SimpleMap } from "@/components/simple-map";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+
+const PAGE_SIZE = 6;
 
 export default function Salons() {
-  const [category, setCategory] = useState("");
-  const [city, setCity] = useState("");
+  const searchString = useSearch();
+  const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  const [category, setCategory] = useState(searchParams.get("category") || "");
+  const [city, setCity] = useState(searchParams.get("city") || "");
   const [municipality, setMunicipality] = useState("");
   const [brand, setBrand] = useState("");
   const [priceMax, setPriceMax] = useState<number | undefined>();
@@ -23,6 +31,13 @@ export default function Salons() {
   const [topSalon, setTopSalon] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNote, setLocationNote] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedSalonId, setSelectedSalonId] = useState<string | null>(null);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState("lista");
+
+  const listRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (sort !== "nearest") return;
     if (!navigator.geolocation) { setLocationNote("Pregledač ne podržava lokaciju — prikazano preporučeno."); return; }
@@ -32,6 +47,12 @@ export default function Salons() {
       { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
     );
   }, [sort]);
+
+  useEffect(() => {
+    setCategory(searchParams.get("category") || "");
+    setCity(searchParams.get("city") || "");
+  }, [searchParams]);
+
   const params = useMemo<ListSalonsParams>(() => ({
     category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax,
     sort, discountsOnly: discountsOnly || undefined, gender: menOnly ? "men" : undefined,
@@ -39,141 +60,380 @@ export default function Salons() {
     instantBooking: instantBooking || undefined, topSalon: topSalon || undefined,
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
   }), [category, city, municipality, brand, priceMax, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, topSalon, location]);
-  const { data: salons, isLoading } = useListSalons(params);
-  const categories = ["Frizerski saloni", "Muški frizeri", "Kozmetički saloni", "Depilacija", "Lice", "Nokti", "Masaža", "Telo", "Wellness", "Lux tretmani", "Paketi usluga", "Ordinacije i poliklinike"];
-  const toggle = (label: string, checked: boolean, setChecked: (value: boolean) => void) => <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer"><input type="checkbox" className="accent-primary" checked={checked} onChange={(event) => setChecked(event.target.checked)} />{label}</label>;
 
-  return (
-    <Layout>
-      <div className="bg-secondary/30 py-8 md:py-12 border-b">
-        <div className="container mx-auto px-4">
-          <h1 className="text-3xl md:text-5xl font-serif font-bold text-foreground mb-4">Istražite salone</h1>
-          <p className="text-muted-foreground text-lg max-w-2xl">
-            Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini. Filtrirajte po uslugama, lokaciji i ocenama.
-          </p>
+  const { data: allSalons, isLoading, isFetching } = useListSalons(params);
+  const isResultsLoading = isLoading || isFetching;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+    setSelectedSalonId(null);
+  }, [params]);
+
+  const categories = ["Frizerski saloni", "Muški frizeri", "Kozmetički saloni", "Depilacija", "Lice", "Nokti", "Masaža", "Telo", "Wellness", "Lux tretmani", "Paketi usluga", "Ordinacije i poliklinike"];
+
+  const toggle = (label: string, checked: boolean, setChecked: (value: boolean) => void) => (
+    <label className="flex items-center gap-2 text-sm text-foreground/80 cursor-pointer hover:text-foreground">
+      <input type="checkbox" className="accent-primary w-4 h-4 rounded border-border" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
+      {label}
+    </label>
+  );
+
+  const paginatedSalons = useMemo(() => {
+    if (!allSalons) return [];
+    return allSalons.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  }, [allSalons, page]);
+
+  const totalPages = allSalons ? Math.max(1, Math.ceil(allSalons.length / PAGE_SIZE)) : 1;
+  const mapMarkers = useMemo(
+    () => (allSalons ?? []).flatMap((salon) => (
+      salon.latitude === null || salon.longitude === null
+        ? []
+        : [{ id: salon.id, label: salon.name, latitude: salon.latitude, longitude: salon.longitude, active: selectedSalonId === salon.id }]
+    )),
+    [allSalons, selectedSalonId],
+  );
+
+  const relativeLastBooked = (value: Date | string) => {
+    const hours = Math.round((new Date(value).getTime() - Date.now()) / 3_600_000);
+    if (Math.abs(hours) < 24) return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(hours, "hour");
+    return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(Math.round(hours / 24), "day");
+  };
+
+  const handleMarkerClick = (id: string) => {
+    setSelectedSalonId(id);
+    if (window.innerWidth < 1024) {
+      setMobileTab("lista");
+    }
+  };
+
+  const goToPage = (nextPage: number) => {
+    if (nextPage !== page) setSelectedSalonId(null);
+    setPage(nextPage);
+  };
+
+  useEffect(() => {
+    if (!selectedSalonId || !allSalons) return;
+    const selectedIndex = allSalons.findIndex((salon) => salon.id === selectedSalonId);
+    if (selectedIndex < 0) return;
+    const selectedPage = Math.floor(selectedIndex / PAGE_SIZE) + 1;
+    if (page !== selectedPage) setPage(selectedPage);
+  }, [allSalons, page, selectedSalonId]);
+
+  useEffect(() => {
+    if (!selectedSalonId) return;
+    const timeout = window.setTimeout(() => {
+      const prefix = window.innerWidth < 1024 ? "mobile" : "desktop";
+      const element = document.getElementById(`${prefix}-salon-${selectedSalonId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [mobileTab, page, selectedSalonId]);
+
+  const FiltersContent = () => (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 font-medium border-b pb-4 text-lg">
+        <SlidersHorizontal className="w-5 h-5" /> Filteri
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Kategorija</h3>
+        <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+          {["Sve", ...categories].map(cat => (
+            <label key={cat} className="flex items-center gap-2 text-sm text-foreground/80 hover:text-foreground cursor-pointer">
+              <input type="radio" name="category" className="accent-primary w-4 h-4" checked={(cat === "Sve" ? "" : cat) === category} onChange={() => setCategory(cat === "Sve" ? "" : cat)} />
+              {cat}
+            </label>
+          ))}
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8 flex flex-col md:flex-row gap-8">
-        {/* Filters Sidebar */}
-        <aside className="w-full md:w-64 shrink-0 space-y-6">
-          <div className="bg-card border rounded-xl p-5 shadow-sm space-y-6 sticky top-24">
-            <div className="flex items-center gap-2 font-medium border-b pb-4">
-              <SlidersHorizontal className="w-4 h-4" /> Filteri
-            </div>
-            
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold">Kategorija</h3>
-              <div className="space-y-2">
-                {["Sve", ...categories].map(cat => (
-                  <label key={cat} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground cursor-pointer">
-                    <input type="radio" name="category" className="accent-primary" checked={(cat === "Sve" ? "" : cat) === category} onChange={() => setCategory(cat === "Sve" ? "" : cat)} />
-                    {cat}
-                  </label>
-                ))}
-              </div>
-            </div>
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Lokacija</h3>
+        <Input value={city} onChange={(event) => setCity(event.target.value)} placeholder="Grad (npr. Beograd)" className="h-10 bg-background" />
+        <Input value={municipality} onChange={(event) => setMunicipality(event.target.value)} placeholder="Opština / deo grada" className="h-10 bg-background" />
+        <Input value={brand} onChange={(event) => setBrand(event.target.value)} placeholder="Brend proizvoda" className="h-10 bg-background" />
+      </div>
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold">Lokacija</h3>
-              <Input value={city} onChange={(event) => setCity(event.target.value)} placeholder="Grad (npr. Beograd)" className="h-9" />
-              <Input value={municipality} onChange={(event) => setMunicipality(event.target.value)} placeholder="Opština / deo grada" className="h-9" />
-              <Input value={brand} onChange={(event) => setBrand(event.target.value)} placeholder="Brend proizvoda" className="h-9" />
-            </div>
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Cenovni rang</h3>
+        <select value={priceMax ?? ""} onChange={(event) => setPriceMax(event.target.value ? Number(event.target.value) : undefined)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
+          <option value="">Bez ograničenja</option>
+          <option value="1000">Do 1.000 RSD</option>
+          <option value="2500">Do 2.500 RSD</option>
+          <option value="5000">Do 5.000 RSD</option>
+          <option value="10000">Do 10.000 RSD</option>
+        </select>
+      </div>
 
-            <div className="space-y-3"><h3 className="text-sm font-semibold">Cenovni rang</h3><select value={priceMax ?? ""} onChange={(event) => setPriceMax(event.target.value ? Number(event.target.value) : undefined)} className="w-full h-9 rounded border bg-background px-2 text-sm"><option value="">Bez ograničenja</option><option value="1000">Do 1.000 RSD</option><option value="2500">Do 2.500 RSD</option><option value="5000">Do 5.000 RSD</option><option value="10000">Do 10.000 RSD</option></select></div>
-            <div className="space-y-2">
-              {toggle("Samo popusti", discountsOnly, setDiscountsOnly)}
-              {toggle("Saloni za muškarce", menOnly, setMenOnly)}
-              {toggle("Prima platne kartice", acceptsCards, setAcceptsCards)}
-              {toggle("Otvoren nedeljom", openSunday, setOpenSunday)}
-              {toggle("Instant zakazivanje", instantBooking, setInstantBooking)}
-              {toggle("Top Salon", topSalon, setTopSalon)}
-            </div>
-            <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setTopSalon(false); }}>Resetuj filtere</Button>
+      <div className="space-y-3">
+        <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Dodatno</h3>
+        <div className="space-y-2.5">
+          {toggle("Samo popusti", discountsOnly, setDiscountsOnly)}
+          {toggle("Saloni za muškarce", menOnly, setMenOnly)}
+          {toggle("Prima platne kartice", acceptsCards, setAcceptsCards)}
+          {toggle("Otvoren nedeljom", openSunday, setOpenSunday)}
+          {toggle("Instant zakazivanje", instantBooking, setInstantBooking)}
+          {toggle("Top Salon", topSalon, setTopSalon)}
+        </div>
+      </div>
+
+      <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setTopSalon(false); }}>
+        Resetuj filtere
+      </Button>
+    </div>
+  );
+
+  return (
+    <Layout>
+      <div className="bg-secondary/30 py-8 border-b">
+        <div className="container mx-auto px-4 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-serif font-bold text-foreground mb-2">Istražite salone</h1>
+            <p className="text-muted-foreground text-base max-w-2xl">
+              Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini.
+            </p>
           </div>
+          <div className="lg:hidden">
+            <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <SlidersHorizontal className="w-4 h-4" /> Filteri
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[300px] sm:w-[400px] overflow-y-auto">
+                <FiltersContent />
+              </SheetContent>
+            </Sheet>
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-200px)] min-h-[800px]">
+        {/* Filters Sidebar - Desktop */}
+        <aside className="hidden lg:block w-64 shrink-0 space-y-6 sticky top-24 h-[calc(100vh-120px)] overflow-y-auto custom-scrollbar pr-4">
+          <FiltersContent />
         </aside>
 
-        {/* Results */}
-        <div className="flex-1">
-          <div className="flex justify-between items-center mb-6">
-            <p className="text-muted-foreground text-sm font-medium">
-              {isLoading ? "Učitavanje..." : `Pronađeno ${salons?.length || 0} salona`}
-            </p>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Sortiraj po:</span>
-              <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border rounded-md px-2 py-1 outline-none text-sm font-medium">
-                <option value="recommended">Preporučeno</option>
-                <option value="nearest">U mojoj blizini</option>
-                <option value="newest">Nedavno dodato</option>
-                <option value="top-rated">Najbolje ocenjeno</option>
-                <option value="cheapest">Najniža cena</option>
-                <option value="most-popular">Najpopularnije</option>
-                <option value="first-available">Prvi slobodan termin</option>
-              </select>
-            </div>
-          </div>
-          {sort === "nearest" && <p className="mb-4 text-xs text-muted-foreground">{locationNote || "Tražimo vašu lokaciju…"}</p>}
+        {/* Results & Map Container */}
+        <div className="flex-1 w-full h-full flex flex-col lg:flex-row gap-6 min-h-0">
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {isLoading ? (
-              Array(6).fill(0).map((_, i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
-                  <Skeleton className="h-6 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
+          <Tabs value={mobileTab} onValueChange={setMobileTab} className="w-full h-full flex flex-col lg:hidden">
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="lista" className="gap-2"><ListIcon className="w-4 h-4" /> Lista</TabsTrigger>
+              <TabsTrigger value="mapa" className="gap-2"><MapIcon className="w-4 h-4" /> Mapa</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="lista" className="flex-1 overflow-y-auto mt-0 min-h-0">
+              <div className="flex justify-between items-center mb-6">
+                <p className="text-muted-foreground text-sm font-medium">
+                  {isResultsLoading ? "Učitavanje..." : `Pronađeno ${allSalons?.length || 0} salona`}
+                </p>
+                <div className="flex items-center gap-2 text-sm">
+                  <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
+                    <option value="recommended">Preporučeno</option>
+                    <option value="nearest">U mojoj blizini</option>
+                    <option value="newest">Nedavno dodato</option>
+                    <option value="top-rated">Najbolje ocenjeno</option>
+                    <option value="cheapest">Najniža cena</option>
+                  <option value="most-popular">Najpopularnije</option>
+                  <option value="first-available">Prvi slobodan termin</option>
+                  </select>
                 </div>
-              ))
-            ) : salons?.length === 0 ? (
-              <div className="col-span-full py-12 text-center text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
-                Nije pronađen nijedan salon koji odgovara kriterijumima.
               </div>
-            ) : salons?.map((salon) => (
-              <Link key={salon.id} href={`/saloni/${salon.slug}`} className="group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
-                <div className="relative w-full aspect-[4/3] overflow-hidden">
-                  <img 
-                    src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"} 
-                    alt={salon.name}
-                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute top-3 left-3 flex flex-wrap gap-1">
-                    {salon.featured && <Badge className="bg-white/90 text-primary hover:bg-white backdrop-blur-sm font-semibold">Istaknuto</Badge>}
-                    {salon.topSalon && <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100"><BadgeCheck className="mr-1 h-3 w-3" />Top Salon</Badge>}
-                    {salon.instantBooking && <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100"><Zap className="mr-1 h-3 w-3" />Instant</Badge>}
-                  </div>
-                </div>
-                <div className="p-4 pt-1">
-                  <div className="flex justify-between items-start mt-2">
-                    <h3 className="font-serif font-bold text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1">{salon.name}</h3>
-                    <div className="bg-muted px-1.5 py-0.5 rounded text-xs font-bold flex items-center gap-1">
-                      <Star className="w-3 h-3 fill-accent text-accent" />
-                      {salon.rating.toFixed(1)}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {isResultsLoading ? (
+                  Array(6).fill(0).map((_, i) => (
+                    <div key={i} className="flex flex-col gap-3">
+                      <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
                     </div>
+                  ))
+                ) : allSalons?.length === 0 ? (
+                  <div className="col-span-full py-12 text-center text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
+                    Nije pronađen nijedan salon koji odgovara kriterijumima.
                   </div>
-                  <p className="text-muted-foreground text-sm flex items-center gap-1 mt-1.5">
-                    <MapPin className="w-3.5 h-3.5" />
-                    {salon.city}, {salon.municipality}
-                  </p>
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {salon.popularServices?.slice(0, 2).map((srv, i) => (
-                      <span key={i} className="text-xs bg-secondary/50 text-secondary-foreground px-2 py-1 rounded-md">
-                        {srv}
-                      </span>
-                    ))}
-                    {salon.popularServices?.length > 2 && (
-                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded-md">
-                        +{salon.popularServices.length - 2}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    {salon.hasDiscount && <span className="text-primary font-medium">Aktivni popusti</span>}
-                    {salon.acceptsCards && <span className="flex items-center gap-1"><CreditCard className="h-3 w-3" />Kartice</span>}
-                    {salon.lastBookedAt && <span className="flex items-center gap-1"><Clock3 className="h-3 w-3" />Poslednje zakazivanje: {new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(Math.round((new Date(salon.lastBookedAt).getTime() - Date.now()) / 86400000), "day")}</span>}
-                  </div>
+                ) : paginatedSalons?.map((salon) => (
+                  <Link key={salon.id} href={`/saloni/${salon.slug}`} id={`mobile-salon-${salon.id}`} onFocus={() => setSelectedSalonId(salon.id)} className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300 ${selectedSalonId === salon.id ? "ring-2 ring-primary" : ""}`}>
+                    <div className="relative w-full aspect-[4/3] overflow-hidden">
+                        <img
+                          src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
+                        alt={salon.name}
+                        className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors" />
+                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                        {salon.featured && <Badge className="bg-white/95 text-primary hover:bg-white backdrop-blur-md font-semibold border-none shadow-sm">Istaknuto</Badge>}
+                        {salon.topSalon && <Badge className="bg-amber-100/95 text-amber-900 hover:bg-amber-100 border-none shadow-sm backdrop-blur-md"><BadgeCheck className="mr-1 h-3.5 w-3.5" />Top Salon</Badge>}
+                        {salon.instantBooking && <Badge className="bg-emerald-100/95 text-emerald-900 hover:bg-emerald-100 border-none shadow-sm backdrop-blur-md"><Zap className="mr-1 h-3.5 w-3.5" />Instant</Badge>}
+                      </div>
+                    </div>
+                    <div className="p-5 pt-2">
+                      <div className="flex justify-between items-start mt-2">
+                        <h3 className="font-serif font-bold text-xl text-foreground group-hover:text-primary transition-colors line-clamp-1">{salon.name}</h3>
+                        <div className="bg-muted px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm">
+                          <Star className="w-3.5 h-3.5 fill-accent text-accent" />
+                          {salon.rating.toFixed(1)}
+                        </div>
+                      </div>
+                      <p className="text-muted-foreground text-sm flex items-center gap-1.5 mt-1.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {salon.city}, {salon.municipality}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-4">
+                        {salon.popularServices?.slice(0, 2).map((srv, i) => (
+                          <span key={i} className="text-xs font-medium bg-secondary/50 text-secondary-foreground px-2.5 py-1 rounded-md">
+                            {srv}
+                          </span>
+                        ))}
+                        {salon.popularServices?.length > 2 && (
+                          <span className="text-xs font-medium bg-muted text-muted-foreground px-2.5 py-1 rounded-md">
+                            +{salon.popularServices.length - 2}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-4 pt-4 border-t flex flex-wrap gap-3 text-xs text-muted-foreground font-medium">
+                        {salon.hasDiscount && <span className="text-primary flex items-center gap-1">Aktivni popusti</span>}
+                        {salon.acceptsCards && <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" />Kartice</span>}
+                        {salon.lastBookedAt && <span className="flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" />Poslednji put zakazano {relativeLastBooked(salon.lastBookedAt)}</span>}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-8 pb-8">
+                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
+                  </Button>
+                  <span className="text-sm font-medium text-muted-foreground px-2">Strana {page} od {totalPages}</span>
+                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}>
+                    Sledeća <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
                 </div>
-              </Link>
-            ))}
+              )}
+            </TabsContent>
+
+            <TabsContent value="mapa" className="flex-1 mt-0 h-full rounded-2xl overflow-hidden border">
+              <SimpleMap
+                markers={mapMarkers}
+                onMarkerClick={handleMarkerClick}
+                className="w-full h-full"
+              />
+            </TabsContent>
+          </Tabs>
+
+          {/* Desktop Split View */}
+          <div className="hidden lg:flex w-full h-full gap-6 min-h-0">
+            {/* List side */}
+            <div className="flex-1 flex flex-col min-w-[50%] h-full">
+              <div className="flex justify-between items-center mb-4 shrink-0">
+                <p className="text-muted-foreground text-sm font-medium">
+                  {isResultsLoading ? "Učitavanje..." : `Pronađeno ${allSalons?.length || 0} salona`}
+                </p>
+                <div className="flex items-center gap-2 text-sm">
+                  <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
+                    <option value="recommended">Preporučeno</option>
+                    <option value="nearest">U mojoj blizini</option>
+                    <option value="newest">Nedavno dodato</option>
+                    <option value="top-rated">Najbolje ocenjeno</option>
+                    <option value="cheapest">Najniža cena</option>
+                  <option value="most-popular">Najpopularnije</option>
+                  <option value="first-available">Prvi slobodan termin</option>
+                  </select>
+                </div>
+              </div>
+
+              <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar pr-2 grid grid-cols-1 xl:grid-cols-2 gap-4 content-start">
+                {isResultsLoading ? (
+                  Array(6).fill(0).map((_, i) => (
+                    <div key={i} className="flex flex-col gap-3">
+                      <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                  ))
+                ) : allSalons?.length === 0 ? (
+                  <div className="col-span-full py-12 text-center text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
+                    Nije pronađen nijedan salon koji odgovara kriterijumima.
+                  </div>
+                ) : paginatedSalons?.map((salon) => (
+                  <Link
+                    key={salon.id}
+                    href={`/saloni/${salon.slug}`}
+                    id={`desktop-salon-${salon.id}`}
+                    onMouseEnter={() => setSelectedSalonId(salon.id)}
+                    onFocus={() => setSelectedSalonId(salon.id)}
+                    className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${selectedSalonId === salon.id ? "ring-2 ring-primary shadow-xl" : ""}`}
+                  >
+                    <div className="relative w-full h-48 overflow-hidden bg-muted">
+                      <img
+                        src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
+                        alt={salon.name}
+                        className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-700 ease-out"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                        {salon.featured && <Badge className="bg-white/95 text-primary hover:bg-white backdrop-blur-md font-semibold border-none shadow-sm">Istaknuto</Badge>}
+                        {salon.topSalon && <Badge className="bg-amber-100/95 text-amber-900 hover:bg-amber-100 border-none shadow-sm backdrop-blur-md"><BadgeCheck className="mr-1 h-3.5 w-3.5" />Top Salon</Badge>}
+                        {salon.instantBooking && <Badge className="bg-emerald-100/95 text-emerald-900 hover:bg-emerald-100 border-none shadow-sm backdrop-blur-md"><Zap className="mr-1 h-3.5 w-3.5" />Instant</Badge>}
+                      </div>
+                    </div>
+                    <div className="p-5 pt-1">
+                      <div className="flex justify-between items-start mt-2">
+                        <h3 className="font-serif font-bold text-xl text-foreground group-hover:text-primary transition-colors line-clamp-1">{salon.name}</h3>
+                        <div className="bg-muted px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm shrink-0">
+                          <Star className="w-3.5 h-3.5 fill-accent text-accent" />
+                          {salon.rating.toFixed(1)}
+                        </div>
+                      </div>
+                      <p className="text-muted-foreground text-sm flex items-center gap-1.5 mt-1.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {salon.city}, {salon.municipality}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mt-3">
+                        {salon.popularServices?.slice(0, 2).map((srv, i) => (
+                          <span key={i} className="text-xs font-medium bg-secondary/50 text-secondary-foreground px-2 py-1 rounded-md truncate max-w-[120px]">
+                            {srv}
+                          </span>
+                        ))}
+                        {salon.popularServices?.length > 2 && (
+                          <span className="text-xs font-medium bg-muted text-muted-foreground px-2 py-1 rounded-md shrink-0">
+                            +{salon.popularServices.length - 2}
+                          </span>
+                        )}
+                      </div>
+                      {salon.lastBookedAt && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />Poslednji put zakazano {relativeLastBooked(salon.lastBookedAt)}</p>}
+                    </div>
+                  </Link>
+                ))}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="col-span-full flex items-center justify-center gap-2 mt-6 pb-6">
+                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={page === 1} className="h-9">
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
+                    </Button>
+                    <span className="text-sm font-medium text-muted-foreground px-3">Strana {page} od {totalPages}</span>
+                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="h-9">
+                      Sledeća <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Map side */}
+            <div className="flex-1 h-full rounded-2xl overflow-hidden border shadow-sm shrink-0 sticky top-24">
+              <SimpleMap
+                markers={mapMarkers}
+                onMarkerClick={handleMarkerClick}
+                className="w-full h-full"
+              />
+            </div>
           </div>
         </div>
       </div>

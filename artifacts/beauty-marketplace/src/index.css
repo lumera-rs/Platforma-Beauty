@@ -78,7 +78,7 @@
   --background: 35 30% 98%;
   /* Deep espresso brown/grey */
   --foreground: 30 15% 15%;
-  
+
   --border: 35 15% 85%;
   --input: 35 15% 85%;
   --ring: 345 45% 35%;
@@ -225,5 +225,19 @@
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
   }
 }

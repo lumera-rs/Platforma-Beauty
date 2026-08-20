@@ -232,6 +232,15 @@ export interface SalonCard {
   longitude: number | null;
 }
 
+export interface PlatformTrustStats {
+  /** @minimum 0 */
+  activeSalons: number;
+  /** @minimum 0 */
+  bookingsThisMonth: number;
+  /** @minimum 0 */
+  customerAccounts: number;
+}
+
 export interface OpeningHour {
   day: string;
   open: string;
