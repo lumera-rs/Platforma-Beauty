@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
@@ -235,6 +236,11 @@ async function run(): Promise<void> {
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
+    const availability = await fetch(
+      `${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${employeeBookingDate}&employeeId=${employee!.id}`,
+    );
+    assert.equal(availability.status, 200, "parallel availability reads must use pool clients safely");
+
     const bookingPayload = {
       serviceId: service!.id,
       salonCustomerId: contact!.id,
@@ -311,7 +317,7 @@ async function run(): Promise<void> {
 }
 
 try {
-  await run();
+  await assertNoPgBusyClientWarnings(run);
 } finally {
   await pool.end();
 }

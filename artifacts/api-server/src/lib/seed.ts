@@ -379,14 +379,13 @@ async function setDemoLotosActiveSalon() {
  * Salon hours are recurring, while appointments intentionally move with today's date.
  */
 async function seedFutureBookingAvailability(): Promise<void> {
-  const [salons, employees, services, customers, existingHours, existingAppointments] = await Promise.all([
-    db.select().from(salonsTable),
-    db.select().from(employeesTable),
-    db.select().from(servicesTable),
-    db.select().from(usersTable),
-    db.select().from(salonHoursTable),
-    db.select().from(appointmentsTable),
-  ]);
+  // Seeding is not latency-sensitive; keep its database reads single-client safe.
+  const salons = await db.select().from(salonsTable);
+  const employees = await db.select().from(employeesTable);
+  const services = await db.select().from(servicesTable);
+  const customers = await db.select().from(usersTable);
+  const existingHours = await db.select().from(salonHoursTable);
+  const existingAppointments = await db.select().from(appointmentsTable);
   const customerRows = customers.filter((user) => user.role === "CUSTOMER");
   if (!salons.length || !employees.length || !services.length || !customerRows.length) return;
 

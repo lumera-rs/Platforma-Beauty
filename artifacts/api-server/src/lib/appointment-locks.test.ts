@@ -12,6 +12,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { lockAppointmentResources } from "./appointment-locks";
+import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
@@ -130,7 +131,7 @@ async function run(): Promise<void> {
 }
 
 try {
-  await run();
+  await assertNoPgBusyClientWarnings(run);
 } finally {
   await pool.end();
 }
