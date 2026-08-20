@@ -4,6 +4,7 @@ import { OwnerSidebar } from "./dashboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,14 +24,33 @@ import {
   useUpdateSalonAppointment,
   useUpdateSalonCustomer,
 } from "@workspace/api-client-react";
-import { CalendarDays, Loader2, MessageSquareOff, Pencil, Plus, UserRoundPlus } from "lucide-react";
+import { CalendarDays, Clock3, Loader2, MessageSquareOff, Pencil, Plus, UserRoundPlus } from "lucide-react";
 
-const today = new Date().toISOString().slice(0, 10);
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateAtUtcNoon(value: string) {
+  return new Date(`${value}T12:00:00.000Z`);
+}
+
+function dateLabel(value: string) {
+  return dateAtUtcNoon(value).toLocaleDateString("sr-RS", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+const today = dateKey(new Date());
 const initialForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "" };
 
 export default function OwnerCalendar() {
   const { data: userResp } = useGetCurrentUser();
-  const { data: appointments, isLoading, refetch: refetchAppointments } = useListSalonAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListSalonAppointmentsQueryKey(undefined) }});
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const appointmentParams = useMemo(() => selectedDate ? { from: selectedDate, to: selectedDate } : undefined, [selectedDate]);
+  const { data: appointments, isLoading, isFetching, refetch: refetchAppointments } = useListSalonAppointments(appointmentParams, {
+    query: {
+      enabled: !!userResp?.user && !!selectedDate,
+      queryKey: getListSalonAppointmentsQueryKey(appointmentParams),
+    },
+  });
   const { data: services } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() } });
   const { data: employees } = useListSalonEmployees({ query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
   const { data: customers, refetch: refetchCustomers } = useListSalonCustomers({ query: { enabled: !!userResp?.user, queryKey: getListSalonCustomersQueryKey() } });
@@ -41,7 +61,25 @@ export default function OwnerCalendar() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [editing, setEditing] = useState<{ id: string; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
-  const sorted = useMemo(() => [...(appointments ?? [])].sort((a, b) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`)), [appointments]);
+  const sorted = useMemo(() => [...(appointments ?? [])].sort((a, b) => a.startTime.localeCompare(b.startTime)), [appointments]);
+  const quickDates = useMemo(() => {
+    const base = new Date();
+    return [
+      { label: "Danas", value: dateKey(base) },
+      { label: "Sutra", value: dateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1)) },
+      { label: "Prekosutra", value: dateKey(new Date(base.getFullYear(), base.getMonth(), base.getDate() + 2)) },
+    ];
+  }, []);
+
+  const selectDate = (value: string) => {
+    setSelectedDate(value);
+    setForm((current) => ({ ...current, date: value }));
+  };
+
+  const openNewAppointment = () => {
+    setForm({ ...initialForm, date: selectedDate ?? today });
+    setOpen(true);
+  };
 
   const createAppointment = (event: React.FormEvent) => {
     event.preventDefault();
@@ -63,7 +101,11 @@ export default function OwnerCalendar() {
     }, {
       onSuccess: () => {
         toast.success("Termin je sačuvan", { description: "Potvrda je evidentirana za SMS slanje ako klijent prima obaveštenja." });
-        setOpen(false); setForm(initialForm); refetchAppointments(); refetchCustomers();
+        setOpen(false);
+        selectDate(form.date);
+        setForm(initialForm);
+        refetchAppointments();
+        refetchCustomers();
       },
       onError: (error) => toast.error("Termin nije sačuvan", { description: error instanceof Error ? error.message : "Proverite dostupnost termina." }),
     });
@@ -85,7 +127,7 @@ export default function OwnerCalendar() {
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div><h1 className="font-serif text-3xl font-bold">Kalendar termina</h1><p className="text-muted-foreground">Zakazivanja, walk-in klijenti i SMS obaveštenja na jednom mestu.</p></div>
             <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild><Button data-testid="calendar-new-appointment"><Plus className="mr-2 h-4 w-4" /> Novi termin</Button></DialogTrigger>
+              <DialogTrigger asChild><Button data-testid="calendar-new-appointment" onClick={openNewAppointment}><Plus className="mr-2 h-4 w-4" /> Novi termin</Button></DialogTrigger>
               <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
                 <DialogHeader><DialogTitle>Ručno zakazivanje termina</DialogTitle></DialogHeader>
                 <form className="space-y-5 pt-2" onSubmit={createAppointment}>
@@ -113,10 +155,42 @@ export default function OwnerCalendar() {
               </div>}
             </DialogContent>
           </Dialog>
-          <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
-            <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" /> Predstojeći termini</CardTitle></CardHeader><CardContent className="p-0">{isLoading ? <div className="flex justify-center p-12"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div> : sorted.length ? <div className="divide-y">{sorted.map((appointment) => <div className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between" key={appointment.id}><div><p className="font-semibold">{appointment.customerName}</p><p className="text-sm text-muted-foreground">{appointment.serviceName} · {appointment.employeeName}</p></div><div className="flex items-center gap-3"><span className="text-sm font-medium">{new Date(appointment.date).toLocaleDateString("sr-RS")} · {appointment.startTime}</span><Badge variant={appointment.status === "cancelled" ? "secondary" : "default"}>{appointment.status}</Badge><Button size="icon" variant="ghost" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, status: appointment.status, employeeId: "", notes: appointment.notes ?? "" })}><Pencil className="h-4 w-4" /></Button></div></div>)}</div> : <div className="p-12 text-center text-muted-foreground">Nema zakazanih termina za prikaz.</div>}</CardContent></Card>
-            <Card><CardHeader><CardTitle className="text-lg">CRM kontakti</CardTitle><p className="text-sm text-muted-foreground">Za svakog gosta možete isključiti SMS potvrde i podsetnike.</p></CardHeader><CardContent className="space-y-3">{customers?.length ? customers.map((customer) => <div className="rounded-lg border p-3" key={customer.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{customer.firstName} {customer.lastName}</p><p className="text-xs text-muted-foreground">{customer.phone ?? "Nema telefona"} · {customer.visitCount} termina</p></div><Button size="sm" variant={customer.smsOptOut ? "outline" : "ghost"} disabled={updateCustomer.isPending} onClick={() => updateCustomer.mutate({ customerId: customer.id, data: { smsOptOut: !customer.smsOptOut } }, { onSuccess: () => { toast.success(customer.smsOptOut ? "SMS obaveštenja su uključena" : "SMS obaveštenja su isključena"); refetchCustomers(); } })}>{customer.smsOptOut ? "Uključi SMS" : <><MessageSquareOff className="mr-1 h-3.5 w-3.5" /> Isključi SMS</>}</Button></div></div>) : <p className="py-8 text-center text-sm text-muted-foreground">CRM se puni pri ručnom zakazivanju ili online rezervaciji.</p>}</CardContent></Card>
+          <div className="grid gap-6 xl:grid-cols-[.72fr_1.28fr]">
+            <Card className="h-fit">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg"><CalendarDays className="h-5 w-5 text-primary" /> Izaberite datum</CardTitle>
+                <p className="text-sm text-muted-foreground">Termini se prikazuju tek nakon izbora dana.</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border bg-muted/20 p-2">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate ? dateAtUtcNoon(selectedDate) : undefined}
+                    onSelect={(date) => date && selectDate(dateKey(date))}
+                    className="mx-auto"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {quickDates.map((quickDate) => <Button key={quickDate.label} type="button" size="sm" variant={selectedDate === quickDate.value ? "default" : "outline"} aria-pressed={selectedDate === quickDate.value} onClick={() => selectDate(quickDate.value)}>{quickDate.label}</Button>)}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xl">
+                  <Clock3 className="h-5 w-5 text-primary" />
+                  {selectedDate ? `Termini · ${dateLabel(selectedDate)}` : "Termini za izabrani datum"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {!selectedDate ? <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center"><CalendarDays className="mb-3 h-10 w-10 text-muted-foreground/60" /><p className="font-medium">Izaberite datum da vidite zakazane termine</p><p className="mt-1 max-w-sm text-sm text-muted-foreground">Kliknite na dan u kalendaru ili izaberite Danas, Sutra ili Prekosutra.</p></div>
+                  : isLoading || isFetching ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-12"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Učitavamo termine za izabrani datum…</p></div>
+                    : sorted.length ? <div className="divide-y">{sorted.map((appointment) => <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between" key={appointment.id}><div className="flex items-start gap-3"><div className="flex h-10 w-14 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">{appointment.startTime}</div><div><p className="font-semibold">{appointment.customerName}</p><p className="text-sm text-muted-foreground">{appointment.serviceName} · {appointment.employeeName}</p>{appointment.notes && <p className="mt-1 text-xs text-muted-foreground">{appointment.notes}</p>}</div></div><div className="flex items-center gap-2 self-end sm:self-auto"><Badge variant={appointment.status === "cancelled" ? "secondary" : appointment.status === "no-show" ? "destructive" : "default"}>{appointment.status}</Badge><Button size="icon" variant="ghost" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, status: appointment.status, employeeId: "", notes: appointment.notes ?? "" })}><Pencil className="h-4 w-4" /></Button></div></div>)}</div>
+                      : <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center"><CalendarDays className="mb-3 h-10 w-10 text-muted-foreground/60" /><p className="font-medium">Nema zakazanih termina za {dateLabel(selectedDate)}</p><p className="mt-1 text-sm text-muted-foreground">Možete dodati novi termin kada vam zatreba.</p></div>}
+              </CardContent>
+            </Card>
           </div>
+          <Card><CardHeader><CardTitle className="text-lg">CRM kontakti</CardTitle><p className="text-sm text-muted-foreground">Za svakog gosta možete isključiti SMS potvrde i podsetnike.</p></CardHeader><CardContent className="space-y-3">{customers?.length ? customers.map((customer) => <div className="rounded-lg border p-3" key={customer.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{customer.firstName} {customer.lastName}</p><p className="text-xs text-muted-foreground">{customer.phone ?? "Nema telefona"} · {customer.visitCount} termina</p></div><Button size="sm" variant={customer.smsOptOut ? "outline" : "ghost"} disabled={updateCustomer.isPending} onClick={() => updateCustomer.mutate({ customerId: customer.id, data: { smsOptOut: !customer.smsOptOut } }, { onSuccess: () => { toast.success(customer.smsOptOut ? "SMS obaveštenja su uključena" : "SMS obaveštenja su isključena"); refetchCustomers(); } })}>{customer.smsOptOut ? "Uključi SMS" : <><MessageSquareOff className="mr-1 h-3.5 w-3.5" /> Isključi SMS</>}</Button></div></div>) : <p className="py-8 text-center text-sm text-muted-foreground">CRM se puni pri ručnom zakazivanju ili online rezervaciji.</p>}</CardContent></Card>
         </main>
       </div>
     </BusinessLayout>

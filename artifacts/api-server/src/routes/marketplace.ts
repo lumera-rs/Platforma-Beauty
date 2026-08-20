@@ -1751,7 +1751,8 @@ router.put("/salon/active-salon", async (req, res): Promise<void> => {
 router.get("/salon/appointments", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const parsed = ListSalonAppointmentsQueryParams.safeParse(req.query);
+  const parseQueryDate = (value: unknown) => typeof value === "string" ? new Date(`${value}T12:00:00.000Z`) : value;
+  const parsed = ListSalonAppointmentsQueryParams.safeParse({ ...req.query, from: parseQueryDate(req.query.from), to: parseQueryDate(req.query.to) });
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   let items = await appointmentList(eq(appointmentsTable.salonId, salon.id));
   if (parsed.data.status) items = items.filter((item) => item.status === parsed.data.status);
