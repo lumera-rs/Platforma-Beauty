@@ -185,6 +185,7 @@ function Router() {
         <Route path="/admin/kategorije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCategories /></RoleGuard></Route>
         <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>
         <Route path="/admin/dostava"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShipping /></RoleGuard></Route>
+        <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
