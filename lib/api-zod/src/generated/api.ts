@@ -1370,8 +1370,10 @@ export const CheckoutShopCartResponse = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(checkoutShopCartResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(checkoutShopCartResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(checkoutShopCartResponseShippingCostMultipleOf),
@@ -1439,8 +1441,10 @@ export const ListOrdersResponseItem = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(listOrdersResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(listOrdersResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(listOrdersResponseShippingCostMultipleOf),
@@ -1520,8 +1524,10 @@ export const GetOrderResponse = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(getOrderResponseTotalMultipleOf),
   "subtotal": zod.number().multipleOf(getOrderResponseSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(getOrderResponseShippingCostMultipleOf),
@@ -1637,8 +1643,10 @@ export const AdminListOrdersResponseItem = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(adminListOrdersResponseOneTotalMultipleOf),
   "subtotal": zod.number().multipleOf(adminListOrdersResponseOneSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(adminListOrdersResponseOneShippingCostMultipleOf),
@@ -1722,8 +1730,10 @@ export const AdminGetOrderResponse = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(adminGetOrderResponseOneTotalMultipleOf),
   "subtotal": zod.number().multipleOf(adminGetOrderResponseOneSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(adminGetOrderResponseOneShippingCostMultipleOf),
@@ -1787,8 +1797,6 @@ export const AdminUpdateOrderStatusParams = zod.object({
   "orderId": zod.coerce.string()
 })
 
-export const adminUpdateOrderStatusBodyCourierServiceMax = 120;
-
 export const adminUpdateOrderStatusBodyTrackingNumberMax = 120;
 
 export const adminUpdateOrderStatusBodyAdminNoteMax = 2000;
@@ -1798,7 +1806,7 @@ export const adminUpdateOrderStatusBodyAdminNoteMax = 2000;
 export const AdminUpdateOrderStatusBody = zod.object({
   "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled']).optional(),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
-  "courierService": zod.string().max(adminUpdateOrderStatusBodyCourierServiceMax).nullish(),
+  "courierServiceId": zod.string().nullish(),
   "trackingNumber": zod.string().max(adminUpdateOrderStatusBodyTrackingNumberMax).nullish(),
   "adminNote": zod.string().max(adminUpdateOrderStatusBodyAdminNoteMax).nullish()
 })
@@ -1822,8 +1830,10 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(adminUpdateOrderStatusResponseOneTotalMultipleOf),
   "subtotal": zod.number().multipleOf(adminUpdateOrderStatusResponseOneSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(adminUpdateOrderStatusResponseOneShippingCostMultipleOf),
@@ -1911,8 +1921,10 @@ export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']),
   "deliveryMethod": zod.enum(['courier', 'personal_belgrade']),
+  "courierServiceId": zod.string().nullable(),
   "courierService": zod.string().nullable(),
   "trackingNumber": zod.string().nullable(),
+  "trackingUrl": zod.string().nullable(),
   "total": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneTotalMultipleOf),
   "subtotal": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneSubtotalMultipleOf),
   "shippingCost": zod.number().multipleOf(adminBulkUpdateOrdersResponseOneShippingCostMultipleOf),
@@ -3897,5 +3909,86 @@ export const AdminUpdateShippingConfigResponse = zod.object({
   "personalDeliveryDescription": zod.string(),
   "updatedAt": zod.coerce.date()
 })
+
+
+/**
+ * @summary List editable courier services
+ */
+export const AdminListCourierServicesResponseItem = zod.object({
+  "id": zod.string(),
+  "code": zod.string(),
+  "name": zod.string(),
+  "trackingUrlTemplate": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const AdminListCourierServicesResponse = zod.array(AdminListCourierServicesResponseItem)
+
+
+/**
+ * @summary Create a courier service
+ */
+export const adminCreateCourierServiceBodyNameMax = 120;
+
+export const adminCreateCourierServiceBodyTrackingUrlTemplateMax = 1000;
+
+
+
+export const AdminCreateCourierServiceBody = zod.object({
+  "name": zod.string().min(1).max(adminCreateCourierServiceBodyNameMax),
+  "trackingUrlTemplate": zod.string().max(adminCreateCourierServiceBodyTrackingUrlTemplateMax).nullish(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminCreateCourierServiceResponse = zod.object({
+  "id": zod.string(),
+  "code": zod.string(),
+  "name": zod.string(),
+  "trackingUrlTemplate": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a courier service
+ */
+export const AdminUpdateCourierServiceParams = zod.object({
+  "courierServiceId": zod.coerce.string()
+})
+
+export const adminUpdateCourierServiceBodyNameMax = 120;
+
+export const adminUpdateCourierServiceBodyTrackingUrlTemplateMax = 1000;
+
+
+
+export const AdminUpdateCourierServiceBody = zod.object({
+  "name": zod.string().min(1).max(adminUpdateCourierServiceBodyNameMax).optional(),
+  "trackingUrlTemplate": zod.string().max(adminUpdateCourierServiceBodyTrackingUrlTemplateMax).nullish(),
+  "active": zod.boolean().optional()
+})
+
+export const AdminUpdateCourierServiceResponse = zod.object({
+  "id": zod.string(),
+  "code": zod.string(),
+  "name": zod.string(),
+  "trackingUrlTemplate": zod.string().nullable(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a courier service
+ */
+export const AdminDeleteCourierServiceParams = zod.object({
+  "courierServiceId": zod.coerce.string()
+})
+
+export const AdminDeleteCourierServiceResponse = zod.void()
 
 

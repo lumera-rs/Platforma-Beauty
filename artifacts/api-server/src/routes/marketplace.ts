@@ -7,6 +7,7 @@ import {
   courseLessonsTable,
   courseModulesTable,
   courseSessionsTable,
+  courierServicesTable,
   coursesTable,
   db,
   educationCentersTable,
@@ -39,12 +40,15 @@ import {
 } from "@workspace/db";
 import {
   AdminBulkUpdateProductsBody,
+  AdminCreateCourierServiceBody,
+  AdminCreateCourierServiceResponse,
   AdminCreateBrandBody,
   AdminCreateLoyaltyTierBody,
   AdminCreateProductBody,
   AdminCreateProductCategoryBody,
   AdminCreateSubscriptionPlanBody,
   AdminDeleteBrandParams,
+  AdminDeleteCourierServiceParams,
   AdminDeleteProductCategoryParams,
   AdminDeleteProductParams,
   AdminListProductsQueryParams,
@@ -61,9 +65,13 @@ import {
   AdminGetSalonResponse,
   AdminListOrdersQueryParams,
   AdminListOrdersResponse,
+  AdminListCourierServicesResponse,
   AdminUpdateOrderStatusBody,
   AdminUpdateOrderStatusParams,
   AdminUpdateOrderStatusResponse,
+  AdminUpdateCourierServiceBody,
+  AdminUpdateCourierServiceParams,
+  AdminUpdateCourierServiceResponse,
   AdminBulkUpdateOrdersBody,
   GetShippingQuoteQueryParams,
   GetOrderParams,
@@ -1214,6 +1222,55 @@ function calculateShipping(
   };
 }
 
+function courierServiceDto(service: typeof courierServicesTable.$inferSelect) {
+  return {
+    id: service.id,
+    code: service.code,
+    name: service.name,
+    trackingUrlTemplate: service.trackingUrlTemplate ?? null,
+    active: service.active,
+    createdAt: service.createdAt.toISOString(),
+    updatedAt: service.updatedAt.toISOString(),
+  };
+}
+
+function trackingUrlFor(template: string | null | undefined, trackingNumber: string | null, deliveryMethod: string) {
+  if (deliveryMethod === "personal_belgrade" || !template || !trackingNumber?.trim()) return null;
+  try {
+    const url = new URL(template.replaceAll("{trackingNumber}", encodeURIComponent(trackingNumber.trim())));
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function validTrackingTemplate(template: string | null | undefined) {
+  if (template == null || template.trim() === "") return true;
+  if (!template.includes("{trackingNumber}")) return false;
+  try {
+    const url = new URL(template.replaceAll("{trackingNumber}", "tracking-number"));
+    return ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function cleanTrackingTemplate(template: string | null | undefined) {
+  const value = template?.trim();
+  return value ? value : null;
+}
+
+function courierCode(name: string) {
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "kurirska-sluzba";
+}
+
+async function couriersForOrders(orders: Array<typeof ordersTable.$inferSelect>) {
+  const ids = [...new Set(orders.flatMap((order) => order.courierServiceId ? [order.courierServiceId] : []))];
+  const services = ids.length ? await db.select().from(courierServicesTable).where(inArray(courierServicesTable.id, ids)) : [];
+  return new Map(services.map((service) => [service.id, service]));
+}
+
 router.get("/shop/shipping-quote", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = GetShippingQuoteQueryParams.safeParse({
@@ -1580,6 +1637,7 @@ function orderDto(
     price: number;
   }>,
   salon: typeof salonsTable.$inferSelect,
+  courier?: typeof courierServicesTable.$inferSelect,
 ) {
   const billing = order.billingCompanyName
     ? {
@@ -1596,8 +1654,10 @@ function orderDto(
     status: order.status,
     paymentStatus: order.paymentStatus,
     deliveryMethod: order.deliveryMethod,
-    courierService: order.courierService ?? null,
+    courierServiceId: order.courierServiceId ?? null,
+    courierService: courier?.name ?? order.courierService ?? (order.deliveryMethod === "personal_belgrade" ? "Lična dostava" : null),
     trackingNumber: order.trackingNumber ?? null,
+    trackingUrl: trackingUrlFor(courier?.trackingUrlTemplate, order.trackingNumber, order.deliveryMethod),
     total: order.total,
     subtotal: order.subtotal,
     shippingCost: order.shippingCost,
@@ -1641,9 +1701,10 @@ function adminOrderDto(
   items: Array<typeof orderItemsTable.$inferSelect>,
   salon: typeof salonsTable.$inferSelect,
   history: Array<typeof orderStatusHistoryTable.$inferSelect>,
+  courier?: typeof courierServicesTable.$inferSelect,
 ) {
   return {
-    ...orderDto(order, items, salon),
+    ...orderDto(order, items, salon, courier),
     adminNote: order.adminNote ?? null,
     history: history.map((event) => ({
       id: event.id,
@@ -1662,7 +1723,8 @@ router.get("/shop/orders", async (req, res): Promise<void> => {
   const { salon } = access;
   const orders = await db.select().from(ordersTable).where(eq(ordersTable.salonId, salon.id)).orderBy(desc(ordersTable.createdAt));
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((item) => item.id))) : [];
-  res.json(ListOrdersResponse.parse(orders.map((order) => orderDto(order, items.filter((item) => item.orderId === order.id), salon))));
+  const couriers = await couriersForOrders(orders);
+  res.json(ListOrdersResponse.parse(orders.map((order) => orderDto(order, items.filter((item) => item.orderId === order.id), salon, order.courierServiceId ? couriers.get(order.courierServiceId) : undefined))));
 });
 
 router.get("/shop/orders/:orderId", async (req, res): Promise<void> => {
@@ -1673,7 +1735,8 @@ router.get("/shop/orders/:orderId", async (req, res): Promise<void> => {
     .where(and(eq(ordersTable.id, parsed.data.orderId), eq(ordersTable.salonId, access.salon.id))).limit(1);
   if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
-  res.json(GetOrderResponse.parse(orderDto(order, items, access.salon)));
+  const [courier] = order.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, order.courierServiceId)).limit(1) : [];
+  res.json(GetOrderResponse.parse(orderDto(order, items, access.salon, courier)));
 });
 
 router.post("/shop/orders", async (req, res): Promise<void> => {
@@ -1904,9 +1967,10 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   if (q.to) orders = orders.filter((order) => order.createdAt <= new Date(`${q.to}T23:59:59.999Z`));
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((order) => order.id))) : [];
   const histories = orders.length ? await db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orders.map((order) => order.id))).orderBy(desc(orderStatusHistoryTable.createdAt)) : [];
+  const couriers = await couriersForOrders(orders);
   res.json(AdminListOrdersResponse.parse(orders.flatMap((order) => {
     const salon = salons.find((item) => item.id === order.salonId);
-    return salon ? [adminOrderDto(order, items.filter((item) => item.orderId === order.id), salon, histories.filter((event) => event.orderId === order.id))] : [];
+    return salon ? [adminOrderDto(order, items.filter((item) => item.orderId === order.id), salon, histories.filter((event) => event.orderId === order.id), order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
   })));
 });
 
@@ -1957,9 +2021,10 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
   });
   const itemRows = changed.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, changed.map((order) => order.id))) : [];
   const salonRows = await db.select().from(salonsTable);
+  const couriers = await couriersForOrders(changed);
   res.json(changed.flatMap((order) => {
     const salon = salonRows.find((candidate) => candidate.id === order.salonId);
-    return salon ? [adminOrderDto(order, itemRows.filter((item) => item.orderId === order.id), salon, [])] : [];
+    return salon ? [adminOrderDto(order, itemRows.filter((item) => item.orderId === order.id), salon, [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
   }));
 });
 
@@ -1973,7 +2038,8 @@ router.get("/admin/orders/:orderId", async (req, res): Promise<void> => {
   if (!salon) { res.status(404).json({ error: "Salon porudžbine nije pronađen." }); return; }
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
   const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, order.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
-  res.json(AdminGetOrderResponse.parse(adminOrderDto(order, items, salon, history)));
+  const [courier] = order.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, order.courierServiceId)).limit(1) : [];
+  res.json(AdminGetOrderResponse.parse(adminOrderDto(order, items, salon, history, courier)));
 });
 
 router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
@@ -1986,10 +2052,18 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
   if (body.data.status && !allowedOrderTransitions[order.status]?.includes(body.data.status)) {
     res.status(400).json({ error: "Ova promena statusa nije dozvoljena." }); return;
   }
+  let selectedCourier: typeof courierServicesTable.$inferSelect | null | undefined;
+  if (body.data.courierServiceId !== undefined && body.data.courierServiceId !== null) {
+    [selectedCourier] = await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, body.data.courierServiceId)).limit(1);
+    if (!selectedCourier) { res.status(400).json({ error: "Izabrana kurirska služba ne postoji." }); return; }
+  }
   const update = {
     ...(body.data.status ? { status: body.data.status } : {}),
     ...(body.data.paymentStatus ? { paymentStatus: body.data.paymentStatus } : {}),
-    ...(body.data.courierService !== undefined ? { courierService: body.data.courierService } : {}),
+    ...(body.data.courierServiceId !== undefined ? {
+      courierServiceId: selectedCourier?.id ?? null,
+      courierService: selectedCourier?.name ?? null,
+    } : {}),
     ...(body.data.trackingNumber !== undefined ? { trackingNumber: body.data.trackingNumber } : {}),
     ...(body.data.adminNote !== undefined ? { adminNote: body.data.adminNote } : {}),
     updatedAt: new Date(),
@@ -1999,7 +2073,7 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     const changes = [
       ["status", order.status, body.data.status],
       ["paymentStatus", order.paymentStatus, body.data.paymentStatus],
-      ["courierService", order.courierService, body.data.courierService],
+        ["courierService", order.courierService, body.data.courierServiceId === undefined ? undefined : selectedCourier?.name ?? null],
       ["trackingNumber", order.trackingNumber, body.data.trackingNumber],
       ["adminNote", order.adminNote, body.data.adminNote],
     ] as const;
@@ -2011,12 +2085,25 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
         });
       }
     }
+    const deliveryChanged = (body.data.courierServiceId !== undefined && order.courierServiceId !== (selectedCourier?.id ?? null))
+      || (body.data.trackingNumber !== undefined && order.trackingNumber !== body.data.trackingNumber);
+    if (deliveryChanged) {
+      const courierName = selectedCourier?.name ?? order.courierService ?? "dostava";
+      const tracking = body.data.trackingNumber ?? order.trackingNumber;
+      await tx.insert(salonNotificationsTable).values({
+        salonId: order.salonId,
+        title: "Podaci o isporuci su ažurirani",
+        message: tracking ? `Kurirska služba: ${courierName}. Broj za praćenje: ${tracking}.` : `Kurirska služba: ${courierName}.`,
+        href: `/vlasnik/porudzbine/${order.id}`,
+      });
+    }
     return [saved!];
   });
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1);
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated!.id));
   const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, updated!.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
-  res.json(AdminUpdateOrderStatusResponse.parse(adminOrderDto(updated!, items, salon!, history)));
+  const [courier] = updated!.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, updated!.courierServiceId)).limit(1) : [];
+  res.json(AdminUpdateOrderStatusResponse.parse(adminOrderDto(updated!, items, salon!, history, courier)));
 });
 
 router.get("/education/courses", async (req, res): Promise<void> => {
@@ -3463,6 +3550,67 @@ router.put("/admin/shipping", async (req, res): Promise<void> => {
     personalDeliveryPrice: config!.personalDeliveryPrice, personalDeliveryDescription: config!.personalDeliveryDescription,
     updatedAt: config!.updatedAt.toISOString(),
   });
+});
+
+// ── Admin Courier Service Catalog ─────────────────────────────────────────────
+
+router.get("/admin/courier-services", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const services = await db.select().from(courierServicesTable).orderBy(asc(courierServicesTable.name));
+  res.json(AdminListCourierServicesResponse.parse(services.map(courierServiceDto)));
+});
+
+router.post("/admin/courier-services", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateCourierServiceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const name = parsed.data.name.trim();
+  const trackingUrlTemplate = cleanTrackingTemplate(parsed.data.trackingUrlTemplate);
+  if (!validTrackingTemplate(trackingUrlTemplate)) {
+    res.status(400).json({ error: "URL šablon mora koristiti http/https i sadržati {trackingNumber}." }); return;
+  }
+  const code = courierCode(name);
+  const [existing] = await db.select({ id: courierServicesTable.id }).from(courierServicesTable)
+    .where(or(eq(courierServicesTable.name, name), eq(courierServicesTable.code, code))).limit(1);
+  if (existing) { res.status(409).json({ error: "Kurirska služba sa tim nazivom već postoji." }); return; }
+  const [service] = await db.insert(courierServicesTable).values({
+    code, name, trackingUrlTemplate, active: parsed.data.active ?? true,
+  }).returning();
+  res.status(201).json(AdminCreateCourierServiceResponse.parse(courierServiceDto(service!)));
+});
+
+router.patch("/admin/courier-services/:courierServiceId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminUpdateCourierServiceParams.safeParse(req.params);
+  const parsed = AdminUpdateCourierServiceBody.safeParse(req.body);
+  if (!params.success || !parsed.success) { res.status(400).json({ error: !params.success ? params.error.message : parsed.error?.message ?? "Neispravan zahtev." }); return; }
+  const [existing] = await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, params.data.courierServiceId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Kurirska služba nije pronađena." }); return; }
+  const name = parsed.data.name?.trim();
+  const trackingUrlTemplate = parsed.data.trackingUrlTemplate === undefined ? undefined : cleanTrackingTemplate(parsed.data.trackingUrlTemplate);
+  if (!validTrackingTemplate(trackingUrlTemplate)) {
+    res.status(400).json({ error: "URL šablon mora koristiti http/https i sadržati {trackingNumber}." }); return;
+  }
+  if (name && name !== existing.name) {
+    const [sameName] = await db.select({ id: courierServicesTable.id }).from(courierServicesTable).where(eq(courierServicesTable.name, name)).limit(1);
+    if (sameName) { res.status(409).json({ error: "Kurirska služba sa tim nazivom već postoji." }); return; }
+  }
+  const [service] = await db.update(courierServicesTable).set({
+    ...(name ? { name } : {}),
+    ...(trackingUrlTemplate !== undefined ? { trackingUrlTemplate } : {}),
+    ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
+    updatedAt: new Date(),
+  }).where(eq(courierServicesTable.id, existing.id)).returning();
+  res.json(AdminUpdateCourierServiceResponse.parse(courierServiceDto(service!)));
+});
+
+router.delete("/admin/courier-services/:courierServiceId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminDeleteCourierServiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [deleted] = await db.delete(courierServicesTable).where(eq(courierServicesTable.id, params.data.courierServiceId)).returning();
+  if (!deleted) { res.status(404).json({ error: "Kurirska služba nije pronađena." }); return; }
+  res.sendStatus(204);
 });
 
 export default router;

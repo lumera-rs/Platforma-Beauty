@@ -11,11 +11,8 @@ import type { AdminOrderUpdateStatus } from './adminOrderUpdateStatus';
 export interface AdminOrderUpdate {
   status?: AdminOrderUpdateStatus;
   paymentStatus?: AdminOrderUpdatePaymentStatus;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
-  courierService?: string | null;
+  /** @nullable */
+  courierServiceId?: string | null;
   /**
      * @maxLength 120
      * @nullable

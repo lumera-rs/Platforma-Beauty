@@ -1761,6 +1761,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShippingConfig"
+  /admin/courier-services:
+    get:
+      operationId: adminListCourierServices
+      tags: [admin]
+      summary: List editable courier services
+      responses:
+        "200":
+          description: Courier services
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CourierService" }
+    post:
+      operationId: adminCreateCourierService
+      tags: [admin]
+      summary: Create a courier service
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourierServiceInput" }
+      responses:
+        "201":
+          description: Created courier service
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourierService" }
+  /admin/courier-services/{courierServiceId}:
+    patch:
+      operationId: adminUpdateCourierService
+      tags: [admin]
+      summary: Update a courier service
+      parameters:
+        - name: courierServiceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CourierServiceUpdate" }
+      responses:
+        "200":
+          description: Updated courier service
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourierService" }
+    delete:
+      operationId: adminDeleteCourierService
+      tags: [admin]
+      summary: Delete a courier service
+      parameters:
+        - name: courierServiceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Courier service deleted
 components:
   parameters:
     CityQuery:
@@ -2284,8 +2345,10 @@ components:
         status: { type: string, enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled] }
         paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
         deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+        courierServiceId: { type: ["string", "null"] }
         courierService: { type: ["string", "null"] }
         trackingNumber: { type: ["string", "null"] }
+        trackingUrl: { type: ["string", "null"] }
         total: { type: number, multipleOf: 1 }
         subtotal: { type: number, multipleOf: 1 }
         shippingCost: { type: number, multipleOf: 1 }
@@ -2326,7 +2389,7 @@ components:
             postalCode: { type: string }
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
-      required: [id, status, paymentStatus, deliveryMethod, courierService, trackingNumber, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+      required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
     AdminOrder:
       allOf:
         - $ref: "#/components/schemas/Order"
@@ -2389,7 +2452,7 @@ components:
       properties:
         status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
         paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
-        courierService: { type: ["string", "null"], maxLength: 120 }
+        courierServiceId: { type: ["string", "null"] }
         trackingNumber: { type: ["string", "null"], maxLength: 120 }
         adminNote: { type: ["string", "null"], maxLength: 2000 }
     AdminOrderBulkUpdate:
@@ -2399,6 +2462,30 @@ components:
         status: { type: string, enum: [confirmed, shipped, delivered, cancelled] }
         paymentStatus: { type: string, enum: [unpaid, pending, paid, refunded, failed] }
       required: [orderIds]
+    CourierService:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string }
+        name: { type: string }
+        trackingUrlTemplate: { type: ["string", "null"] }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, code, name, trackingUrlTemplate, active, createdAt, updatedAt]
+    CourierServiceInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        trackingUrlTemplate: { type: ["string", "null"], maxLength: 1000 }
+        active: { type: boolean }
+      required: [name]
+    CourierServiceUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        trackingUrlTemplate: { type: ["string", "null"], maxLength: 1000 }
+        active: { type: boolean }
     OrderHistoryEvent:
       type: object
       properties:

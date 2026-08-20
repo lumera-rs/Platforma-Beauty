@@ -44,6 +44,8 @@ ROOT_CATEGORY_ID=""
 ROOT_CATEGORY_NAME=""
 THRESHOLD_ORDER_ID=""
 WEIGHTED_ORDER_ID=""
+TEST_COURIER_ID=""
+BEX_COURIER_ID=""
 TEST_SHIPPING_NAME="B2B Regression ${RUN_ID}"
 ORIGINAL_CART_JSON="[]"
 CLEANUP_COMPLETED=false
@@ -169,6 +171,9 @@ cleanup() {
   if [[ -n "$SUPER_CATEGORY_ID" ]]; then
     curl -sS -o /dev/null -b "$SUPER_COOKIE" -X DELETE "$BASE_URL/admin/product-categories/$SUPER_CATEGORY_ID" || true
   fi
+  if [[ -n "$TEST_COURIER_ID" ]]; then
+    curl -sS -o /dev/null -b "$SUPER_COOKIE" -X DELETE "$BASE_URL/admin/courier-services/$TEST_COURIER_ID" || true
+  fi
 
   restore_shared_state || cleanup_failed=true
   verify_test_data_removed || cleanup_failed=true
@@ -256,6 +261,28 @@ expect_status 200 "$status" "SUPER_ADMIN grants temporary ADMIN fixture"
 login "$ADMIN_COOKIE" "edukacija@lumera.local"
 login "$CUSTOMER_COOKIE" "kupac@lumera.local"
 login "$SALON_COOKIE" "salon@lumera.local"
+status="$(request -b "$ADMIN_COOKIE" "$BASE_URL/admin/courier-services")"
+expect_status 200 "$status" "ADMIN lists seeded courier services"
+BEX_COURIER_ID="$(jq -r '.[] | select(.code == "bex-express") | .id' "$BODY")"
+if [[ -z "$BEX_COURIER_ID" || "$BEX_COURIER_ID" == "null" ]]; then
+  echo "FAIL: Bex Express courier service was not seeded." >&2
+  exit 1
+fi
+expect_json '.[] | select(.code == "personal-delivery" and .trackingUrlTemplate == null)' "personal delivery is seeded without tracking URL"
+TEST_COURIER_NAME="B2B Test Courier ${RUN_ID}"
+status="$(request -b "$ADMIN_COOKIE" -X POST -H "Content-Type: application/json" \
+  --data "$(jq -cn --arg name "$TEST_COURIER_NAME" '{name: $name, trackingUrlTemplate: "https://example.test/track/{trackingNumber}"}')" \
+  "$BASE_URL/admin/courier-services")"
+expect_status 201 "$status" "ADMIN creates courier service"
+TEST_COURIER_ID="$(json_field '.id')"
+expect_json '.trackingUrlTemplate == "https://example.test/track/{trackingNumber}"' "created courier keeps tracking template"
+status="$(request -b "$ADMIN_COOKIE" -X PATCH -H "Content-Type: application/json" \
+  --data '{"active":false}' "$BASE_URL/admin/courier-services/$TEST_COURIER_ID")"
+expect_status 200 "$status" "ADMIN updates courier service"
+expect_json '.active == false' "courier active state is updated"
+status="$(request -b "$ADMIN_COOKIE" -X DELETE "$BASE_URL/admin/courier-services/$TEST_COURIER_ID")"
+expect_status 204 "$status" "ADMIN deletes unused courier service"
+TEST_COURIER_ID=""
 status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/checkout-profile")"
 expect_status 200 "$status" "SALON_OWNER reads checkout profile"
 expect_json '.salonAddress.postalCode == "11000"' "seeded salon default delivery address includes postal code"
@@ -611,6 +638,7 @@ status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
 expect_status 201 "$status" "SALON_OWNER creates threshold order with seeded salon address"
 THRESHOLD_ORDER_ID="$(json_field '.id')"
 expect_json ".shippingCost == 0 and .total == 15000 and .deliveryMethod == \"personal_belgrade\" and .itemCount == 5 and .items[0].price == 3000 and .delivery.postalCode == \"11000\"" "threshold order gets server-side free personal delivery and saved salon delivery data"
+expect_json '.courierService == "Lična dostava" and .trackingUrl == null' "personal delivery clearly has no external tracking"
 
 status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items \
   "{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Premium\",\"quantity\":2}")"
@@ -620,6 +648,14 @@ status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
 expect_status 201 "$status" "SALON_OWNER creates weighted order from persistent cart"
 WEIGHTED_ORDER_ID="$(json_field '.id')"
 expect_json ".shippingCost == 222 and .total == 7222 and .itemCount == 2 and .items[0].price == 3500" "weighted order total uses server-side variant price and shipping"
+status="$(request -b "$ADMIN_COOKIE" -X PATCH -H "Content-Type: application/json" \
+  --data "$(jq -cn --arg courierServiceId "$BEX_COURIER_ID" '{courierServiceId: $courierServiceId, trackingNumber: "TEST/ 42"}')" \
+  "$BASE_URL/admin/orders/$WEIGHTED_ORDER_ID")"
+expect_status 200 "$status" "ADMIN assigns courier and tracking number to order"
+expect_json '.courierService == "Bex Express" and .trackingNumber == "TEST/ 42" and (.trackingUrl | contains("TEST%2F%2042"))' "tracking URL is generated with URL-encoded tracking number"
+status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/orders/$WEIGHTED_ORDER_ID")"
+expect_status 200 "$status" "SALON_OWNER reads assigned shipment tracking"
+expect_json '.courierService == "Bex Express" and .courierServiceId != null and (.trackingUrl | contains("TEST%2F%2042"))' "salon sees only its encoded tracking link"
 
 # Verify the root-category move fixes denormalized category fields, then ensure
 # that the in-order product is deactivated rather than physically deleted.

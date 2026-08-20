@@ -19,9 +19,13 @@ export interface Order {
   paymentStatus: OrderPaymentStatus;
   deliveryMethod: OrderDeliveryMethod;
   /** @nullable */
+  courierServiceId: string | null;
+  /** @nullable */
   courierService: string | null;
   /** @nullable */
   trackingNumber: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
   total: number;
   subtotal: number;
   shippingCost: number;

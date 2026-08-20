@@ -1,21 +1,95 @@
 import { useEffect, useState } from "react";
 import { AdminLayout } from "./layout";
 import {
+  getAdminListCourierServicesQueryKey,
   useAdminGetShippingConfig,
+  useAdminListCourierServices,
+  useAdminCreateCourierService,
+  useAdminUpdateCourierService,
+  useAdminDeleteCourierService,
   useAdminUpdateShippingConfig,
   getAdminGetShippingConfigQueryKey,
 } from "@workspace/api-client-react";
-import type { ShippingTier } from "@workspace/api-client-react";
+import type { CourierService, ShippingTier } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Trash2, Truck, Info, PackageCheck, MapPin } from "lucide-react";
+import { Loader2, Plus, Trash2, Truck, Info, PackageCheck, MapPin, Pencil, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function formatWeight(grams: number) {
   return grams >= 1000 ? `${(grams / 1000).toLocaleString("sr-RS")} kg` : `${grams} g`;
+}
+
+function CourierServices() {
+  const { data: services = [], isLoading } = useAdminListCourierServices();
+  const create = useAdminCreateCourierService();
+  const update = useAdminUpdateCourierService();
+  const remove = useAdminDeleteCourierService();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [template, setTemplate] = useState("");
+  const [editing, setEditing] = useState<CourierService | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTemplate, setEditTemplate] = useState("");
+  const [editActive, setEditActive] = useState(true);
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getAdminListCourierServicesQueryKey() });
+  const errorMessage = (error: unknown) => (error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Promena nije sačuvana.";
+  const beginEdit = (service: CourierService) => {
+    setEditing(service);
+    setEditName(service.name);
+    setEditTemplate(service.trackingUrlTemplate ?? "");
+    setEditActive(service.active);
+  };
+  const createService = () => {
+    if (!name.trim()) { toast.error("Greška", { description: "Unesite naziv kurirske službe." }); return; }
+    create.mutate({ data: { name: name.trim(), trackingUrlTemplate: template.trim() || null, active: true } }, {
+      onSuccess: () => { setName(""); setTemplate(""); invalidate(); toast.success("Kurirska služba je dodata."); },
+      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+    });
+  };
+  const saveEdit = () => {
+    if (!editing || !editName.trim()) return;
+    update.mutate({ courierServiceId: editing.id, data: { name: editName.trim(), trackingUrlTemplate: editTemplate.trim() || null, active: editActive } }, {
+      onSuccess: () => { setEditing(null); invalidate(); toast.success("Kurirska služba je ažurirana."); },
+      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+    });
+  };
+  const deleteService = (service: CourierService) => {
+    if (!window.confirm(`Obrisati kurirsku službu „${service.name}“? Stare porudžbine će zadržati naziv, ali više neće imati eksterni tracking link.`)) return;
+    remove.mutate({ courierServiceId: service.id }, {
+      onSuccess: () => { if (editing?.id === service.id) setEditing(null); invalidate(); toast.success("Kurirska služba je obrisana."); },
+      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+    });
+  };
+
+  return <div className="bg-card rounded-xl border shadow-sm p-6 space-y-4">
+    <div className="flex items-center gap-2"><Truck className="w-5 h-5 text-primary" /><h2 className="font-semibold">Kurirske službe i praćenje</h2></div>
+    <p className="text-sm text-muted-foreground">Administrator bira kurira na porudžbini. URL šablon mora sadržati <code>{"{trackingNumber}"}</code>; ostavite ga praznim za ličnu dostavu bez eksternog praćenja.</p>
+    {isLoading ? <div className="py-4 text-center"><Loader2 className="inline h-5 w-5 animate-spin" /></div> : <div className="divide-y rounded-lg border">
+      {services.map((service) => editing?.id === service.id ? <div key={service.id} className="space-y-3 bg-muted/30 p-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1"><Label>Naziv</Label><Input value={editName} onChange={(event) => setEditName(event.target.value)} /></div>
+          <div className="space-y-1"><Label>URL šablon za praćenje</Label><Input value={editTemplate} onChange={(event) => setEditTemplate(event.target.value)} placeholder="https://.../{trackingNumber}" /></div>
+        </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editActive} onChange={(event) => setEditActive(event.target.checked)} /> Dostupna za nove porudžbine</label>
+        <div className="flex gap-2"><Button size="sm" onClick={saveEdit} disabled={update.isPending}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button><Button size="sm" variant="outline" onClick={() => setEditing(null)}><X className="mr-2 h-4 w-4" />Otkaži</Button></div>
+      </div> : <div key={service.id} className="flex flex-wrap items-center gap-3 p-4">
+        <div className="min-w-52 flex-1"><p className="font-medium">{service.name}</p><p className="break-all text-xs text-muted-foreground">{service.trackingUrlTemplate ?? "Nema eksternog praćenja (lična dostava)"}</p></div>
+        {!service.active && <Badge variant="secondary">Neaktivna</Badge>}
+        <Button size="sm" variant="outline" onClick={() => beginEdit(service)}><Pencil className="mr-2 h-4 w-4" />Izmeni</Button>
+        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => deleteService(service)} disabled={remove.isPending}><Trash2 className="mr-2 h-4 w-4" />Obriši</Button>
+      </div>)}
+    </div>}
+    <div className="grid gap-3 rounded-lg border border-dashed p-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
+      <div className="space-y-1"><Label>Naziv nove službe</Label><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="npr. X kurir" data-testid="input-courier-name" /></div>
+      <div className="space-y-1"><Label>URL šablon za praćenje</Label><Input value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="https://.../{trackingNumber}" data-testid="input-courier-template" /></div>
+      <Button onClick={createService} disabled={create.isPending} data-testid="btn-add-courier"><Plus className="mr-2 h-4 w-4" />Dodaj kurira</Button>
+    </div>
+  </div>;
 }
 
 export default function AdminShipping() {
@@ -160,6 +234,8 @@ export default function AdminShipping() {
                 <div className="space-y-1 sm:col-span-2"><Label>Opis za kupca</Label><Input value={personalDescription} onChange={e => { setPersonalDescription(e.target.value); setDirty(true); }} /></div>
               </div>
             </div>
+
+            <CourierServices />
 
             {/* Free shipping threshold */}
             <div className="bg-card rounded-xl border shadow-sm p-6 space-y-4">

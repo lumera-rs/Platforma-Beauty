@@ -101,6 +101,16 @@ export const shippingRulesTable = pgTable("shipping_rules", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const courierServicesTable = pgTable("courier_services", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull().unique(),
+  trackingUrlTemplate: text("tracking_url_template"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const loyaltyTiersTable = pgTable("loyalty_tiers", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull().unique(),
@@ -169,6 +179,7 @@ export const ordersTable = pgTable("orders", {
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
   paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
   deliveryMethod: deliveryMethodEnum("delivery_method").notNull().default("courier"),
+  courierServiceId: uuid("courier_service_id").references(() => courierServicesTable.id, { onDelete: "set null" }),
   courierService: text("courier_service"),
   trackingNumber: text("tracking_number"),
   adminNote: text("admin_note"),

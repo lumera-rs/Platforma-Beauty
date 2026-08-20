@@ -1,5 +1,5 @@
 import { asc, eq, sql } from "drizzle-orm";
-import { shippingRulesTable } from "@workspace/db";
+import { courierServicesTable, shippingRulesTable } from "@workspace/db";
 import {
   appointmentsTable,
   beautyGlossaryTable,
@@ -97,6 +97,7 @@ async function seed(): Promise<void> {
     }
     await seedEducationContent();
     await seedMarketplaceTaxonomy();
+    await seedCourierServices();
     return;
   }
 
@@ -363,7 +364,20 @@ async function seed(): Promise<void> {
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, role: "ADMIN" });
   await seedMarketplaceTaxonomy();
+  await seedCourierServices();
   void customer;
+}
+
+async function seedCourierServices(): Promise<void> {
+  await db.insert(courierServicesTable).values([
+    { code: "bex-express", name: "Bex Express", trackingUrlTemplate: "https://www.bex.rs/pracenje-posiljke?broj={trackingNumber}" },
+    { code: "post-express", name: "Post Express (Pošta Srbije)", trackingUrlTemplate: "https://www.posta.rs/OtpremaPracenje/pracenje-posiljaka?category=posiljka&tracking={trackingNumber}" },
+    { code: "city-express", name: "City Express", trackingUrlTemplate: "https://www.cityexpress.rs/pracenje-posiljke/{trackingNumber}" },
+    { code: "d-express", name: "D Express", trackingUrlTemplate: "https://www.dexpress.rs/rs/pratite-posiljku?bpn={trackingNumber}" },
+    { code: "aks", name: "AKS", trackingUrlTemplate: "https://www.aks.rs/aksneo/pracenje-posiljke?broj={trackingNumber}" },
+    { code: "posta-paket", name: "Pošta Srbije - obično pismo/paket", trackingUrlTemplate: "https://www.posta.rs/OtpremaPracenje/pracenje-posiljaka?category=posiljka&tracking={trackingNumber}" },
+    { code: "personal-delivery", name: "Lična dostava", trackingUrlTemplate: null },
+  ]).onConflictDoNothing();
 }
 
 async function seedB2BShopTaxonomy(): Promise<void> {

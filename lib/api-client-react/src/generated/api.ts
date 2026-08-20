@@ -55,6 +55,9 @@ import type {
   AuthSession,
   BusinessRegistrationInput,
   CancelAppointmentInput,
+  CourierService,
+  CourierServiceInput,
+  CourierServiceUpdate,
   Course,
   CurrentUserResponse,
   CustomerDashboard,
@@ -7398,5 +7401,296 @@ export const useAdminUpdateShippingConfig = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdminUpdateShippingConfigMutationOptions(options));
+    }
+
+export const getAdminListCourierServicesUrl = () => {
+
+
+
+
+  return `/api/admin/courier-services`
+}
+
+/**
+ * @summary List editable courier services
+ */
+export const adminListCourierServices = async ( options?: Parameters<typeof customFetch>[1]): Promise<CourierService[]> => {
+
+  return customFetch<CourierService[]>(getAdminListCourierServicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListCourierServicesQueryKey = () => {
+    return [
+    `/api/admin/courier-services`
+    ] as const;
+    }
+
+
+export const getAdminListCourierServicesQueryOptions = <TData = Awaited<ReturnType<typeof adminListCourierServices>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListCourierServices>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListCourierServicesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListCourierServices>>> = ({ signal }) => adminListCourierServices({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListCourierServices>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListCourierServicesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListCourierServices>>>
+export type AdminListCourierServicesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List editable courier services
+ */
+
+export function useAdminListCourierServices<TData = Awaited<ReturnType<typeof adminListCourierServices>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListCourierServices>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListCourierServicesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateCourierServiceUrl = () => {
+
+
+
+
+  return `/api/admin/courier-services`
+}
+
+/**
+ * @summary Create a courier service
+ */
+export const adminCreateCourierService = async (courierServiceInput: CourierServiceInput, options?: Parameters<typeof customFetch>[1]): Promise<CourierService> => {
+
+  return customFetch<CourierService>(getAdminCreateCourierServiceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(courierServiceInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateCourierServiceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateCourierService>>, TError,{data: BodyType<CourierServiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateCourierService>>, TError,{data: BodyType<CourierServiceInput>}, TContext> => {
+
+const mutationKey = ['adminCreateCourierService'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateCourierService>>, {data: BodyType<CourierServiceInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateCourierService(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateCourierServiceMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateCourierService>>>
+    export type AdminCreateCourierServiceMutationBody = BodyType<CourierServiceInput>
+    export type AdminCreateCourierServiceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a courier service
+ */
+export const useAdminCreateCourierService = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateCourierService>>, TError,{data: BodyType<CourierServiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateCourierService>>,
+        TError,
+        {data: BodyType<CourierServiceInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateCourierServiceMutationOptions(options));
+    }
+
+export const getAdminUpdateCourierServiceUrl = (courierServiceId: string,) => {
+
+
+
+
+  return `/api/admin/courier-services/${courierServiceId}`
+}
+
+/**
+ * @summary Update a courier service
+ */
+export const adminUpdateCourierService = async (courierServiceId: string,
+    courierServiceUpdate: CourierServiceUpdate, options?: Parameters<typeof customFetch>[1]): Promise<CourierService> => {
+
+  return customFetch<CourierService>(getAdminUpdateCourierServiceUrl(courierServiceId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(courierServiceUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateCourierServiceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateCourierService>>, TError,{courierServiceId: string;data: BodyType<CourierServiceUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateCourierService>>, TError,{courierServiceId: string;data: BodyType<CourierServiceUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdateCourierService'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateCourierService>>, {courierServiceId: string;data: BodyType<CourierServiceUpdate>}> = (props) => {
+          const {courierServiceId,data} = props ?? {};
+
+          return  adminUpdateCourierService(courierServiceId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateCourierServiceMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateCourierService>>>
+    export type AdminUpdateCourierServiceMutationBody = BodyType<CourierServiceUpdate>
+    export type AdminUpdateCourierServiceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a courier service
+ */
+export const useAdminUpdateCourierService = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateCourierService>>, TError,{courierServiceId: string;data: BodyType<CourierServiceUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateCourierService>>,
+        TError,
+        {courierServiceId: string;data: BodyType<CourierServiceUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateCourierServiceMutationOptions(options));
+    }
+
+export const getAdminDeleteCourierServiceUrl = (courierServiceId: string,) => {
+
+
+
+
+  return `/api/admin/courier-services/${courierServiceId}`
+}
+
+/**
+ * @summary Delete a courier service
+ */
+export const adminDeleteCourierService = async (courierServiceId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getAdminDeleteCourierServiceUrl(courierServiceId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminDeleteCourierServiceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeleteCourierService>>, TError,{courierServiceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminDeleteCourierService>>, TError,{courierServiceId: string}, TContext> => {
+
+const mutationKey = ['adminDeleteCourierService'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDeleteCourierService>>, {courierServiceId: string}> = (props) => {
+          const {courierServiceId} = props ?? {};
+
+          return  adminDeleteCourierService(courierServiceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminDeleteCourierServiceMutationResult = NonNullable<Awaited<ReturnType<typeof adminDeleteCourierService>>>
+
+    export type AdminDeleteCourierServiceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a courier service
+ */
+export const useAdminDeleteCourierService = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeleteCourierService>>, TError,{courierServiceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminDeleteCourierService>>,
+        TError,
+        {courierServiceId: string},
+        TContext
+      > => {
+      return useMutation(getAdminDeleteCourierServiceMutationOptions(options));
     }
 

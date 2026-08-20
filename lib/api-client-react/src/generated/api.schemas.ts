@@ -673,9 +673,13 @@ export interface Order {
   paymentStatus: OrderPaymentStatus;
   deliveryMethod: OrderDeliveryMethod;
   /** @nullable */
+  courierServiceId: string | null;
+  /** @nullable */
   courierService: string | null;
   /** @nullable */
   trackingNumber: string | null;
+  /** @nullable */
+  trackingUrl: string | null;
   total: number;
   subtotal: number;
   shippingCost: number;
@@ -794,11 +798,8 @@ export const AdminOrderUpdatePaymentStatus = {
 export interface AdminOrderUpdate {
   status?: AdminOrderUpdateStatus;
   paymentStatus?: AdminOrderUpdatePaymentStatus;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
-  courierService?: string | null;
+  /** @nullable */
+  courierServiceId?: string | null;
   /**
      * @maxLength 120
      * @nullable
@@ -837,6 +838,45 @@ export interface AdminOrderBulkUpdate {
   orderIds: string[];
   status?: AdminOrderBulkUpdateStatus;
   paymentStatus?: AdminOrderBulkUpdatePaymentStatus;
+}
+
+export interface CourierService {
+  id: string;
+  code: string;
+  name: string;
+  /** @nullable */
+  trackingUrlTemplate: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourierServiceInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  trackingUrlTemplate?: string | null;
+  active?: boolean;
+}
+
+export interface CourierServiceUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  trackingUrlTemplate?: string | null;
+  active?: boolean;
 }
 
 export type CoursePublisherType = typeof CoursePublisherType[keyof typeof CoursePublisherType];
