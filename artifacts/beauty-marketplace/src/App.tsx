@@ -32,6 +32,7 @@ import OwnerOrders from './pages/owner/orders';
 import OwnerProductDetail from './pages/owner/product-detail';
 import AdminDashboard from './pages/admin/dashboard';
 import AdminSalons from './pages/admin/salons';
+import AdminSalonDetail from './pages/admin/salon-detail';
 import AdminUsers from './pages/admin/users';
 import AdminLoyalty from './pages/admin/loyalty';
 import AdminSubscriptions from './pages/admin/subscriptions';
@@ -183,6 +184,7 @@ function Router() {
         <Route path="/edukacije"><LegacyEducationRedirect /></Route>
 
         <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
+        <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>

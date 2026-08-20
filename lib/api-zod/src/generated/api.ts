@@ -1383,7 +1383,10 @@ export const CheckoutShopCartResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1449,7 +1452,10 @@ export const ListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1527,7 +1533,10 @@ export const GetOrderResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1641,7 +1650,10 @@ export const AdminListOrdersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1723,7 +1735,10 @@ export const AdminGetOrderResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1820,7 +1835,10 @@ export const AdminUpdateOrderStatusResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -1906,7 +1924,10 @@ export const AdminBulkUpdateOrdersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "phone": zod.string(),
-  "email": zod.string()
+  "email": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable()
 }),
   "delivery": zod.object({
   "recipientName": zod.string(),
@@ -2736,6 +2757,57 @@ export const AdminListSalonsResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const AdminListSalonsResponse = zod.array(AdminListSalonsResponseItem)
+
+
+/**
+ * @summary Admin salon profile with B2B order aggregates
+ */
+export const adminGetSalonPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminGetSalonParams = zod.object({
+  "salonId": zod.coerce.string().regex(adminGetSalonPathSalonIdRegExp)
+})
+
+export const adminGetSalonResponseTwoOrderCountMultipleOf = 1;
+
+
+
+export const AdminGetSalonResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "active": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean().optional(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "subscriptionStatus": zod.string().nullable(),
+  "subscriptionPlan": zod.string().nullable(),
+  "loyaltyTier": zod.string().nullable(),
+  "loyaltySpend": zod.number(),
+  "createdAt": zod.coerce.date()
+}).and(zod.object({
+  "address": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "phone": zod.string(),
+  "email": zod.string(),
+  "subscriptionStatus": zod.string().nullable(),
+  "subscriptionPlan": zod.string().nullable(),
+  "loyaltyTier": zod.string().nullable(),
+  "orderCount": zod.number().multipleOf(adminGetSalonResponseTwoOrderCountMultipleOf),
+  "orderTotal": zod.number(),
+  "orders": zod.array(zod.object({
+  "id": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "status": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "total": zod.number(),
+  "itemCount": zod.number()
+}))
+}))
 
 
 /**

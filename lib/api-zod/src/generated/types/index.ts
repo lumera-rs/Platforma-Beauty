@@ -41,6 +41,8 @@ export * from './adminProductUpdate';
 export * from './adminReview';
 export * from './adminReviewUpdate';
 export * from './adminSalon';
+export * from './adminSalonDetail';
+export * from './adminSalonOrderSummary';
 export * from './adminSalonUpdate';
 export * from './adminSummary';
 export * from './adminSummaryTopCategoriesItem';

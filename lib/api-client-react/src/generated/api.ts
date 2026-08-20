@@ -43,6 +43,7 @@ import type {
   AdminReview,
   AdminReviewUpdate,
   AdminSalon,
+  AdminSalonDetail,
   AdminSalonUpdate,
   AdminSummary,
   AdminUser,
@@ -5174,6 +5175,83 @@ export function useAdminListSalons<TData = Awaited<ReturnType<typeof adminListSa
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListSalonsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetSalonUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/admin/salons/${salonId}`
+}
+
+/**
+ * @summary Admin salon profile with B2B order aggregates
+ */
+export const adminGetSalon = async (salonId: string, options?: Parameters<typeof customFetch>[1]): Promise<AdminSalonDetail> => {
+
+  return customFetch<AdminSalonDetail>(getAdminGetSalonUrl(salonId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetSalonQueryKey = (salonId: string,) => {
+    return [
+    `/api/admin/salons/${salonId}`
+    ] as const;
+    }
+
+
+export const getAdminGetSalonQueryOptions = <TData = Awaited<ReturnType<typeof adminGetSalon>>, TError = ErrorType<void>>(salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSalon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetSalonQueryKey(salonId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetSalon>>> = ({ signal }) => adminGetSalon(salonId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: salonId !== null && salonId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetSalon>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetSalonQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetSalon>>>
+export type AdminGetSalonQueryError = ErrorType<void>
+
+
+/**
+ * @summary Admin salon profile with B2B order aggregates
+ */
+
+export function useAdminGetSalon<TData = Awaited<ReturnType<typeof adminGetSalon>>, TError = ErrorType<void>>(
+ salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSalon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetSalonQueryOptions(salonId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

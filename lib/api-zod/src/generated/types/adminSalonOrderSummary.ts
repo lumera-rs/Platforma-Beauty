@@ -6,13 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type OrderSalon = {
+export interface AdminSalonOrderSummary {
   id: string;
-  name: string;
-  phone: string;
-  email: string;
-  address: string;
-  city: string;
-  /** @nullable */
-  postalCode: string | null;
-};
+  createdAt: Date;
+  status: string;
+  paymentStatus: string;
+  deliveryMethod: string;
+  total: number;
+  itemCount: number;
+}

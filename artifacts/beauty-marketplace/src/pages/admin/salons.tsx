@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { useAdminListSalons, useAdminUpdateSalon, getAdminListSalonsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -166,7 +167,7 @@ export default function AdminSalons() {
                     <tr key={salon.id} className="hover:bg-muted/20 transition-colors" data-testid={`row-salon-${salon.id}`}>
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className="font-semibold text-foreground text-base">{salon.name}</span>
+                          <Link href={`/admin/saloni/${salon.id}`} className="font-semibold text-foreground text-base hover:text-primary hover:underline">{salon.name}</Link>
                           <span className="text-xs text-muted-foreground">Priključeno: {new Date(salon.createdAt).toLocaleDateString('sr-RS')}</span>
                         </div>
                       </td>

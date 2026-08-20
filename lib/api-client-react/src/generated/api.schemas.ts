@@ -622,6 +622,10 @@ export type OrderSalon = {
   name: string;
   phone: string;
   email: string;
+  address: string;
+  city: string;
+  /** @nullable */
+  postalCode: string | null;
 };
 
 export type OrderDelivery = {
@@ -1103,6 +1107,33 @@ export interface AdminSalonUpdate {
   featured?: boolean;
   topSalon?: boolean;
 }
+
+export interface AdminSalonOrderSummary {
+  id: string;
+  createdAt: string;
+  status: string;
+  paymentStatus: string;
+  deliveryMethod: string;
+  total: number;
+  itemCount: number;
+}
+
+export type AdminSalonDetail = AdminSalon & ({
+  address: string;
+  /** @nullable */
+  postalCode: string | null;
+  phone: string;
+  email: string;
+  /** @nullable */
+  subscriptionStatus: string | null;
+  /** @nullable */
+  subscriptionPlan: string | null;
+  /** @nullable */
+  loyaltyTier: string | null;
+  orderCount: number;
+  orderTotal: number;
+  orders: AdminSalonOrderSummary[];
+});
 
 export type AdminUserRole = typeof AdminUserRole[keyof typeof AdminUserRole];
 

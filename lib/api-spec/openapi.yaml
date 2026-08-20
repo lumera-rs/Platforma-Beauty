@@ -1196,6 +1196,19 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/AdminSalon" }
   /admin/salons/{salonId}:
+    get:
+      operationId: adminGetSalon
+      tags: [admin]
+      summary: Admin salon profile with B2B order aggregates
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      responses:
+        "200":
+          description: Detailed salon profile and all B2B orders
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminSalonDetail" }
+        "404": { description: Salon not found }
     patch:
       operationId: adminUpdateSalon
       tags: [admin]
@@ -2287,7 +2300,10 @@ components:
             name: { type: string }
             phone: { type: string }
             email: { type: string }
-          required: [id, name, phone, email]
+            address: { type: string }
+            city: { type: string }
+            postalCode: { type: ["string", "null"] }
+          required: [id, name, phone, email, address, city, postalCode]
         delivery:
           type: object
           properties:
@@ -2601,6 +2617,35 @@ components:
         active: { type: boolean }
         featured: { type: boolean }
         topSalon: { type: boolean }
+    AdminSalonOrderSummary:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        status: { type: string }
+        paymentStatus: { type: string }
+        deliveryMethod: { type: string }
+        total: { type: number }
+        itemCount: { type: number }
+      required: [id, createdAt, status, paymentStatus, deliveryMethod, total, itemCount]
+    AdminSalonDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminSalon"
+        - type: object
+          properties:
+            address: { type: string }
+            postalCode: { type: ["string", "null"] }
+            phone: { type: string }
+            email: { type: string }
+            subscriptionStatus: { type: ["string", "null"] }
+            subscriptionPlan: { type: ["string", "null"] }
+            loyaltyTier: { type: ["string", "null"] }
+            orderCount: { type: number, multipleOf: 1 }
+            orderTotal: { type: number }
+            orders:
+              type: array
+              items: { $ref: "#/components/schemas/AdminSalonOrderSummary" }
+          required: [address, postalCode, phone, email, subscriptionStatus, subscriptionPlan, loyaltyTier, orderCount, orderTotal, orders]
     AdminUser:
       type: object
       properties:

@@ -57,6 +57,8 @@ import {
   AdminUpdateShippingConfigBody,
   AdminGetOrderParams,
   AdminGetOrderResponse,
+  AdminGetSalonParams,
+  AdminGetSalonResponse,
   AdminListOrdersQueryParams,
   AdminListOrdersResponse,
   AdminUpdateOrderStatusBody,
@@ -1603,7 +1605,15 @@ function orderDto(
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
-    salon: { id: salon.id, name: salon.name, phone: salon.phone, email: salon.email },
+    salon: {
+      id: salon.id,
+      name: salon.name,
+      phone: salon.phone,
+      email: salon.email,
+      address: salon.address,
+      city: salon.city,
+      postalCode: salon.postalCode ?? null,
+    },
     delivery: {
       recipientName: order.shippingName,
       address: order.shippingAddress,
@@ -2457,6 +2467,69 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
   if (subscriptionStatus) result = result.filter((s) => s.subscriptionStatus === subscriptionStatus);
 
   res.json(result);
+});
+
+router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsedParams = AdminGetSalonParams.safeParse(req.params);
+  if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
+  const { salonId } = parsedParams.data;
+
+  const [salon, subscriptions, loyaltyStatuses, tiers, orders] = await Promise.all([
+    db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1),
+    db.select().from(subscriptionsTable)
+      .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+      .where(eq(subscriptionsTable.salonId, salonId)),
+    db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salonId)).limit(1),
+    db.select().from(loyaltyTiersTable),
+    db.select().from(ordersTable).where(eq(ordersTable.salonId, salonId)).orderBy(desc(ordersTable.createdAt)),
+  ]);
+  const profile = salon[0];
+  if (!profile) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+
+  const subscription = subscriptions[0];
+  const loyalty = loyaltyStatuses[0];
+  const tier = tiers.find((candidate) => candidate.id === loyalty?.tierId);
+  const itemCounts = orders.length
+    ? await db.select({
+        orderId: orderItemsTable.orderId,
+        itemCount: sql<number>`sum(${orderItemsTable.quantity})`,
+      }).from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((order) => order.id))).groupBy(orderItemsTable.orderId)
+    : [];
+  const itemCountByOrder = new Map(itemCounts.map((item) => [item.orderId, Number(item.itemCount)]));
+  const orderSummaries = orders.map((order) => ({
+    id: order.id,
+    createdAt: order.createdAt.toISOString(),
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    deliveryMethod: order.deliveryMethod,
+    total: order.total,
+    itemCount: itemCountByOrder.get(order.id) ?? 0,
+  }));
+
+  res.json(AdminGetSalonResponse.parse({
+    id: profile.id,
+    name: profile.name,
+    slug: profile.slug,
+    city: profile.city,
+    address: profile.address,
+    postalCode: profile.postalCode ?? null,
+    phone: profile.phone,
+    email: profile.email,
+    active: profile.active,
+    featured: profile.featured,
+    topSalon: profile.topSalon,
+    rating: profile.rating / 10,
+    reviewCount: profile.reviewCount,
+    subscriptionStatus: subscription?.subscriptions.status ?? null,
+    subscriptionPlan: subscription?.subscription_plans.name ?? null,
+    loyaltyTier: tier?.name ?? null,
+    loyaltySpend: loyalty?.currentPeriodSpend ?? 0,
+    createdAt: profile.createdAt.toISOString(),
+    orderCount: orders.length,
+    orderTotal: orders.reduce((sum, order) => sum + order.total, 0),
+    orders: orderSummaries,
+  }));
 });
 
 router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
