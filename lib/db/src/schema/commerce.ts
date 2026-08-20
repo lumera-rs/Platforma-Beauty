@@ -136,6 +136,7 @@ export const ordersTable = pgTable("orders", {
   shippingName: text("shipping_name").notNull(),
   shippingAddress: text("shipping_address").notNull(),
   shippingPhone: text("shipping_phone"),
+  shippingEmail: text("shipping_email"),
   shippingCity: text("shipping_city"),
   shippingPostalCode: text("shipping_postal_code"),
   shippingNote: text("shipping_note"),
@@ -149,6 +150,28 @@ export const ordersTable = pgTable("orders", {
   subtotal: integer("subtotal").notNull().default(0),
   totalWeightGrams: integer("total_weight_grams").notNull().default(0),
   paymentMethod: paymentMethodEnum("payment_method").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shoppingCartsTable = pgTable("shopping_carts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().unique().references(() => salonsTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cartId: uuid("cart_id").notNull().references(() => shoppingCartsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  variantValue: text("variant_value"),
+  productName: text("product_name").notNull(),
+  productImageUrl: text("product_image_url").notNull(),
+  variantLabel: text("variant_label"),
+  productSku: text("product_sku"),
+  unitPrice: integer("unit_price").notNull(),
+  quantity: integer("quantity").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -176,3 +199,13 @@ export const productReviewsTable = pgTable("product_reviews", {
 }, (table) => [
   uniqueIndex("product_reviews_product_salon_unique").on(table.productId, table.salonId),
 ]);
+
+export const salonNotificationsTable = pgTable("salon_notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  href: text("href"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

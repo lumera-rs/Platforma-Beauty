@@ -30,6 +30,7 @@ const registrationSchema = z.object({
   city: z.string().min(2, "Grad je obavezan."),
   municipality: z.string().min(2, "Opština je obavezna."),
   address: z.string().min(3, "Adresa je obavezna."),
+  postalCode: z.string().min(4, "Poštanski broj je obavezan."),
 });
 
 type BusinessAuthProps = {
@@ -60,6 +61,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
       city: "",
       municipality: "",
       address: "",
+      postalCode: "",
     },
   });
 
@@ -270,17 +272,30 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                           )}
                         />
                       </div>
-                      <FormField
-                        control={registrationForm.control}
-                        name="address"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Adresa</FormLabel>
-                            <FormControl><Input autoComplete="street-address" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      <div className="grid gap-5 sm:grid-cols-[1fr_150px]">
+                        <FormField
+                          control={registrationForm.control}
+                          name="address"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Adresa</FormLabel>
+                              <FormControl><Input autoComplete="street-address" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={registrationForm.control}
+                          name="postalCode"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Poštanski broj</FormLabel>
+                              <FormControl><Input autoComplete="postal-code" inputMode="numeric" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                       <FormField
                         control={registrationForm.control}
                         name="password"

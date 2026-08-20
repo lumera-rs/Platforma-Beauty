@@ -71,6 +71,8 @@ export interface BusinessRegistrationInput {
   municipality: string;
   /** @minLength 3 */
   address: string;
+  /** @minLength 4 */
+  postalCode: string;
 }
 
 export interface LoginInput {
@@ -411,6 +413,149 @@ export interface ShopSummary {
   subscriptionDiscount: number;
   benefits: string[];
   cartCount: number;
+}
+
+export interface ShopCartItem {
+  id: string;
+  productId: string;
+  productName: string;
+  productImageUrl: string;
+  /** @nullable */
+  variantValue: string | null;
+  /** @nullable */
+  variantLabel: string | null;
+  /** @nullable */
+  productSku: string | null;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  lineTotal: number;
+  /** @minimum 0 */
+  availableStock: number;
+}
+
+export interface ShopCart {
+  /** @nullable */
+  id: string | null;
+  items: ShopCartItem[];
+  /** @minimum 0 */
+  itemCount: number;
+  /** @minimum 0 */
+  subtotal: number;
+  /** @minimum 0 */
+  totalWeightGrams: number;
+}
+
+export interface ShopCartItemInput {
+  /** @minLength 1 */
+  productId: string;
+  /** @minLength 1 */
+  variantValue?: string;
+  /** @minimum 1 */
+  quantity?: number;
+}
+
+export interface ShopCartItemQuantityInput {
+  /** @minimum 1 */
+  quantity: number;
+}
+
+export interface DeliveryAddressInput {
+  /** @minLength 1 */
+  recipientName: string;
+  /** @minLength 1 */
+  street: string;
+  /** @minLength 1 */
+  city: string;
+  postalCode: string;
+  /** @minLength 1 */
+  phone: string;
+  /** @minLength 3 */
+  email: string;
+}
+
+export interface BillingDetailsInput {
+  /** @minLength 1 */
+  companyName: string;
+  /** @minLength 1 */
+  pib: string;
+  /** @minLength 1 */
+  registrationNumber: string;
+  /** @minLength 1 */
+  street: string;
+  /** @minLength 1 */
+  city: string;
+  /** @minLength 1 */
+  postalCode: string;
+}
+
+export type ShopCheckoutProfilePaymentMethodsItem = typeof ShopCheckoutProfilePaymentMethodsItem[keyof typeof ShopCheckoutProfilePaymentMethodsItem];
+
+
+export const ShopCheckoutProfilePaymentMethodsItem = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export interface ShopCheckoutProfile {
+  salonName: string;
+  salonAddress: DeliveryAddressInput;
+  /** @nullable */
+  billingDefaults: BillingDetailsInput | null;
+  paymentMethods: ShopCheckoutProfilePaymentMethodsItem[];
+}
+
+export type ShopCheckoutPreviewPaymentMethodsItem = typeof ShopCheckoutPreviewPaymentMethodsItem[keyof typeof ShopCheckoutPreviewPaymentMethodsItem];
+
+
+export const ShopCheckoutPreviewPaymentMethodsItem = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export interface ShippingQuote {
+  totalWeightGrams: number;
+  shippingCost: number;
+  freeShipping: boolean;
+  freeShippingThreshold: number;
+  amountToFreeShipping: number;
+  /** @nullable */
+  message?: string | null;
+}
+
+export interface ShopCheckoutPreview {
+  cart: ShopCart;
+  shipping: ShippingQuote;
+  /** @minimum 0 */
+  total: number;
+  paymentMethods: ShopCheckoutPreviewPaymentMethodsItem[];
+}
+
+export type ShopCheckoutInputPaymentMethod = typeof ShopCheckoutInputPaymentMethod[keyof typeof ShopCheckoutInputPaymentMethod];
+
+
+export const ShopCheckoutInputPaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export interface ShopCheckoutInput {
+  useSalonAddress: boolean;
+  deliveryAddress?: DeliveryAddressInput;
+  /** @nullable */
+  billingDetails?: BillingDetailsInput | null;
+  paymentMethod: ShopCheckoutInputPaymentMethod;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  note?: string | null;
+  termsAccepted: boolean;
 }
 
 export type OrderStatus = typeof OrderStatus[keyof typeof OrderStatus];
@@ -1219,16 +1364,6 @@ export interface ShippingConfigInput {
   /** @minimum 0 */
   freeShippingThreshold: number;
   tiers: ShippingTier[];
-}
-
-export interface ShippingQuote {
-  totalWeightGrams: number;
-  shippingCost: number;
-  freeShipping: boolean;
-  freeShippingThreshold: number;
-  amountToFreeShipping: number;
-  /** @nullable */
-  message?: string | null;
 }
 
 export type CityQueryParameter = string;

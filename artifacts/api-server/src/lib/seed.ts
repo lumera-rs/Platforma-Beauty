@@ -47,6 +47,16 @@ const salonNames = [
   ["Vreme za Sebe", "vreme-za-sebe", "Pančevo", "Tesla"],
 ] as const;
 
+const postalCodesByCity: Record<string, string> = {
+  Beograd: "11000",
+  "Novi Sad": "21000",
+  Niš: "18000",
+  Kragujevac: "34000",
+  Subotica: "24000",
+  Čačak: "32000",
+  Pančevo: "26000",
+};
+
 const categories = [
   ["Frizerski saloni", "frizerski-saloni"],
   ["Muški frizeri", "muski-frizeri"],
@@ -82,6 +92,9 @@ export async function ensureDemoData(): Promise<void> {
 async function seed(): Promise<void> {
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existing) {
+    for (const [city, postalCode] of Object.entries(postalCodesByCity)) {
+      await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
+    }
     await seedEducationContent();
     await seedMarketplaceTaxonomy();
     return;
@@ -117,6 +130,7 @@ async function seed(): Promise<void> {
       slug,
       city,
       municipality,
+      postalCode: postalCodesByCity[city]!,
       address: `${["Njegoševa 18", "Bulevar oslobođenja 82", "Generala Milojka Lešjanina 14", "Glavna 31"][index % 4]}, ${city}`,
       phone: `+381 6${index} 245 ${100 + index}`,
       email: `kontakt${index + 1}@lumera.local`,

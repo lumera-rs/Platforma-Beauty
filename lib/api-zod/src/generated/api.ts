@@ -64,6 +64,8 @@ export const registerBusinessBodyMunicipalityMin = 2;
 
 export const registerBusinessBodyAddressMin = 3;
 
+export const registerBusinessBodyPostalCodeMin = 4;
+
 
 
 export const RegisterBusinessBody = zod.object({
@@ -76,7 +78,8 @@ export const RegisterBusinessBody = zod.object({
   "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
   "city": zod.string().min(registerBusinessBodyCityMin),
   "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
-  "address": zod.string().min(registerBusinessBodyAddressMin)
+  "address": zod.string().min(registerBusinessBodyAddressMin),
+  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin)
 })
 
 export const RegisterBusinessResponse = zod.object({
@@ -984,6 +987,419 @@ export const GetShopSummaryResponse = zod.object({
 
 
 /**
+ * @summary Get the persistent cart belonging to the current salon
+ */
+export const getShopCartResponseItemsItemUnitPriceMin = 0;
+export const getShopCartResponseItemsItemUnitPriceMultipleOf = 1;
+
+export const getShopCartResponseItemsItemQuantityMultipleOf = 1;
+
+export const getShopCartResponseItemsItemLineTotalMin = 0;
+export const getShopCartResponseItemsItemLineTotalMultipleOf = 1;
+
+export const getShopCartResponseItemsItemAvailableStockMin = 0;
+export const getShopCartResponseItemsItemAvailableStockMultipleOf = 1;
+
+export const getShopCartResponseItemCountMin = 0;
+export const getShopCartResponseItemCountMultipleOf = 1;
+
+export const getShopCartResponseSubtotalMin = 0;
+export const getShopCartResponseSubtotalMultipleOf = 1;
+
+export const getShopCartResponseTotalWeightGramsMin = 0;
+export const getShopCartResponseTotalWeightGramsMultipleOf = 1;
+
+
+
+export const GetShopCartResponse = zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(getShopCartResponseItemsItemUnitPriceMin).multipleOf(getShopCartResponseItemsItemUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(getShopCartResponseItemsItemQuantityMultipleOf),
+  "lineTotal": zod.number().min(getShopCartResponseItemsItemLineTotalMin).multipleOf(getShopCartResponseItemsItemLineTotalMultipleOf),
+  "availableStock": zod.number().min(getShopCartResponseItemsItemAvailableStockMin).multipleOf(getShopCartResponseItemsItemAvailableStockMultipleOf)
+})),
+  "itemCount": zod.number().min(getShopCartResponseItemCountMin).multipleOf(getShopCartResponseItemCountMultipleOf),
+  "subtotal": zod.number().min(getShopCartResponseSubtotalMin).multipleOf(getShopCartResponseSubtotalMultipleOf),
+  "totalWeightGrams": zod.number().min(getShopCartResponseTotalWeightGramsMin).multipleOf(getShopCartResponseTotalWeightGramsMultipleOf)
+})
+
+
+/**
+ * @summary Add a product or variant to the persistent cart
+ */
+
+
+export const addShopCartItemBodyQuantityMultipleOf = 1;
+
+
+
+export const AddShopCartItemBody = zod.object({
+  "productId": zod.string().min(1),
+  "variantValue": zod.string().min(1).optional(),
+  "quantity": zod.number().min(1).multipleOf(addShopCartItemBodyQuantityMultipleOf).optional()
+})
+
+export const addShopCartItemResponseItemsItemUnitPriceMin = 0;
+export const addShopCartItemResponseItemsItemUnitPriceMultipleOf = 1;
+
+export const addShopCartItemResponseItemsItemQuantityMultipleOf = 1;
+
+export const addShopCartItemResponseItemsItemLineTotalMin = 0;
+export const addShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
+
+export const addShopCartItemResponseItemsItemAvailableStockMin = 0;
+export const addShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
+
+export const addShopCartItemResponseItemCountMin = 0;
+export const addShopCartItemResponseItemCountMultipleOf = 1;
+
+export const addShopCartItemResponseSubtotalMin = 0;
+export const addShopCartItemResponseSubtotalMultipleOf = 1;
+
+export const addShopCartItemResponseTotalWeightGramsMin = 0;
+export const addShopCartItemResponseTotalWeightGramsMultipleOf = 1;
+
+
+
+export const AddShopCartItemResponse = zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(addShopCartItemResponseItemsItemUnitPriceMin).multipleOf(addShopCartItemResponseItemsItemUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(addShopCartItemResponseItemsItemQuantityMultipleOf),
+  "lineTotal": zod.number().min(addShopCartItemResponseItemsItemLineTotalMin).multipleOf(addShopCartItemResponseItemsItemLineTotalMultipleOf),
+  "availableStock": zod.number().min(addShopCartItemResponseItemsItemAvailableStockMin).multipleOf(addShopCartItemResponseItemsItemAvailableStockMultipleOf)
+})),
+  "itemCount": zod.number().min(addShopCartItemResponseItemCountMin).multipleOf(addShopCartItemResponseItemCountMultipleOf),
+  "subtotal": zod.number().min(addShopCartItemResponseSubtotalMin).multipleOf(addShopCartItemResponseSubtotalMultipleOf),
+  "totalWeightGrams": zod.number().min(addShopCartItemResponseTotalWeightGramsMin).multipleOf(addShopCartItemResponseTotalWeightGramsMultipleOf)
+})
+
+
+/**
+ * @summary Change a persistent cart item quantity
+ */
+export const UpdateShopCartItemParams = zod.object({
+  "cartItemId": zod.coerce.string()
+})
+
+export const updateShopCartItemBodyQuantityMultipleOf = 1;
+
+
+
+export const UpdateShopCartItemBody = zod.object({
+  "quantity": zod.number().min(1).multipleOf(updateShopCartItemBodyQuantityMultipleOf)
+})
+
+export const updateShopCartItemResponseItemsItemUnitPriceMin = 0;
+export const updateShopCartItemResponseItemsItemUnitPriceMultipleOf = 1;
+
+export const updateShopCartItemResponseItemsItemQuantityMultipleOf = 1;
+
+export const updateShopCartItemResponseItemsItemLineTotalMin = 0;
+export const updateShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
+
+export const updateShopCartItemResponseItemsItemAvailableStockMin = 0;
+export const updateShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
+
+export const updateShopCartItemResponseItemCountMin = 0;
+export const updateShopCartItemResponseItemCountMultipleOf = 1;
+
+export const updateShopCartItemResponseSubtotalMin = 0;
+export const updateShopCartItemResponseSubtotalMultipleOf = 1;
+
+export const updateShopCartItemResponseTotalWeightGramsMin = 0;
+export const updateShopCartItemResponseTotalWeightGramsMultipleOf = 1;
+
+
+
+export const UpdateShopCartItemResponse = zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(updateShopCartItemResponseItemsItemUnitPriceMin).multipleOf(updateShopCartItemResponseItemsItemUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(updateShopCartItemResponseItemsItemQuantityMultipleOf),
+  "lineTotal": zod.number().min(updateShopCartItemResponseItemsItemLineTotalMin).multipleOf(updateShopCartItemResponseItemsItemLineTotalMultipleOf),
+  "availableStock": zod.number().min(updateShopCartItemResponseItemsItemAvailableStockMin).multipleOf(updateShopCartItemResponseItemsItemAvailableStockMultipleOf)
+})),
+  "itemCount": zod.number().min(updateShopCartItemResponseItemCountMin).multipleOf(updateShopCartItemResponseItemCountMultipleOf),
+  "subtotal": zod.number().min(updateShopCartItemResponseSubtotalMin).multipleOf(updateShopCartItemResponseSubtotalMultipleOf),
+  "totalWeightGrams": zod.number().min(updateShopCartItemResponseTotalWeightGramsMin).multipleOf(updateShopCartItemResponseTotalWeightGramsMultipleOf)
+})
+
+
+/**
+ * @summary Remove an item from the persistent cart
+ */
+export const RemoveShopCartItemParams = zod.object({
+  "cartItemId": zod.coerce.string()
+})
+
+export const removeShopCartItemResponseItemsItemUnitPriceMin = 0;
+export const removeShopCartItemResponseItemsItemUnitPriceMultipleOf = 1;
+
+export const removeShopCartItemResponseItemsItemQuantityMultipleOf = 1;
+
+export const removeShopCartItemResponseItemsItemLineTotalMin = 0;
+export const removeShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
+
+export const removeShopCartItemResponseItemsItemAvailableStockMin = 0;
+export const removeShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
+
+export const removeShopCartItemResponseItemCountMin = 0;
+export const removeShopCartItemResponseItemCountMultipleOf = 1;
+
+export const removeShopCartItemResponseSubtotalMin = 0;
+export const removeShopCartItemResponseSubtotalMultipleOf = 1;
+
+export const removeShopCartItemResponseTotalWeightGramsMin = 0;
+export const removeShopCartItemResponseTotalWeightGramsMultipleOf = 1;
+
+
+
+export const RemoveShopCartItemResponse = zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(removeShopCartItemResponseItemsItemUnitPriceMin).multipleOf(removeShopCartItemResponseItemsItemUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(removeShopCartItemResponseItemsItemQuantityMultipleOf),
+  "lineTotal": zod.number().min(removeShopCartItemResponseItemsItemLineTotalMin).multipleOf(removeShopCartItemResponseItemsItemLineTotalMultipleOf),
+  "availableStock": zod.number().min(removeShopCartItemResponseItemsItemAvailableStockMin).multipleOf(removeShopCartItemResponseItemsItemAvailableStockMultipleOf)
+})),
+  "itemCount": zod.number().min(removeShopCartItemResponseItemCountMin).multipleOf(removeShopCartItemResponseItemCountMultipleOf),
+  "subtotal": zod.number().min(removeShopCartItemResponseSubtotalMin).multipleOf(removeShopCartItemResponseSubtotalMultipleOf),
+  "totalWeightGrams": zod.number().min(removeShopCartItemResponseTotalWeightGramsMin).multipleOf(removeShopCartItemResponseTotalWeightGramsMultipleOf)
+})
+
+
+/**
+ * @summary Get the current salon delivery and billing defaults
+ */
+
+
+
+
+export const getShopCheckoutProfileResponseSalonAddressEmailMin = 3;
+
+
+
+
+
+
+
+
+
+export const GetShopCheckoutProfileResponse = zod.object({
+  "salonName": zod.string(),
+  "salonAddress": zod.object({
+  "recipientName": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string(),
+  "phone": zod.string().min(1),
+  "email": zod.string().min(getShopCheckoutProfileResponseSalonAddressEmailMin)
+}),
+  "billingDefaults": zod.object({
+  "companyName": zod.string().min(1),
+  "pib": zod.string().min(1),
+  "registrationNumber": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string().min(1)
+}).nullable(),
+  "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
+})
+
+
+/**
+ * @summary Calculate the server-authoritative totals for the persistent cart
+ */
+export const getShopCheckoutPreviewResponseCartItemsItemUnitPriceMin = 0;
+export const getShopCheckoutPreviewResponseCartItemsItemUnitPriceMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartItemsItemQuantityMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartItemsItemLineTotalMin = 0;
+export const getShopCheckoutPreviewResponseCartItemsItemLineTotalMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartItemsItemAvailableStockMin = 0;
+export const getShopCheckoutPreviewResponseCartItemsItemAvailableStockMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartItemCountMin = 0;
+export const getShopCheckoutPreviewResponseCartItemCountMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartSubtotalMin = 0;
+export const getShopCheckoutPreviewResponseCartSubtotalMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseCartTotalWeightGramsMin = 0;
+export const getShopCheckoutPreviewResponseCartTotalWeightGramsMultipleOf = 1;
+
+export const getShopCheckoutPreviewResponseTotalMin = 0;
+export const getShopCheckoutPreviewResponseTotalMultipleOf = 1;
+
+
+
+export const GetShopCheckoutPreviewResponse = zod.object({
+  "cart": zod.object({
+  "id": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productImageUrl": zod.string(),
+  "variantValue": zod.string().nullable(),
+  "variantLabel": zod.string().nullable(),
+  "productSku": zod.string().nullable(),
+  "unitPrice": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemUnitPriceMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemUnitPriceMultipleOf),
+  "quantity": zod.number().min(1).multipleOf(getShopCheckoutPreviewResponseCartItemsItemQuantityMultipleOf),
+  "lineTotal": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemLineTotalMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemLineTotalMultipleOf),
+  "availableStock": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMultipleOf)
+})),
+  "itemCount": zod.number().min(getShopCheckoutPreviewResponseCartItemCountMin).multipleOf(getShopCheckoutPreviewResponseCartItemCountMultipleOf),
+  "subtotal": zod.number().min(getShopCheckoutPreviewResponseCartSubtotalMin).multipleOf(getShopCheckoutPreviewResponseCartSubtotalMultipleOf),
+  "totalWeightGrams": zod.number().min(getShopCheckoutPreviewResponseCartTotalWeightGramsMin).multipleOf(getShopCheckoutPreviewResponseCartTotalWeightGramsMultipleOf)
+}),
+  "shipping": zod.object({
+  "totalWeightGrams": zod.number(),
+  "shippingCost": zod.number(),
+  "freeShipping": zod.boolean(),
+  "freeShippingThreshold": zod.number(),
+  "amountToFreeShipping": zod.number(),
+  "message": zod.string().nullish()
+}),
+  "total": zod.number().min(getShopCheckoutPreviewResponseTotalMin).multipleOf(getShopCheckoutPreviewResponseTotalMultipleOf),
+  "paymentMethods": zod.array(zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']))
+})
+
+
+/**
+ * @summary Create an order from the persistent cart and clear it atomically
+ */
+
+
+
+
+export const checkoutShopCartBodyDeliveryAddressEmailMin = 3;
+
+
+
+
+
+
+
+export const checkoutShopCartBodyNoteMax = 1000;
+
+
+
+export const CheckoutShopCartBody = zod.object({
+  "useSalonAddress": zod.boolean(),
+  "deliveryAddress": zod.object({
+  "recipientName": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string(),
+  "phone": zod.string().min(1),
+  "email": zod.string().min(checkoutShopCartBodyDeliveryAddressEmailMin)
+}).optional(),
+  "billingDetails": zod.object({
+  "companyName": zod.string().min(1),
+  "pib": zod.string().min(1),
+  "registrationNumber": zod.string().min(1),
+  "street": zod.string().min(1),
+  "city": zod.string().min(1),
+  "postalCode": zod.string().min(1)
+}).nullish(),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "note": zod.string().max(checkoutShopCartBodyNoteMax).nullish(),
+  "termsAccepted": zod.boolean()
+})
+
+export const checkoutShopCartResponseTotalMultipleOf = 1;
+
+export const checkoutShopCartResponseSubtotalMultipleOf = 1;
+
+export const checkoutShopCartResponseShippingCostMultipleOf = 1;
+
+export const checkoutShopCartResponseTotalWeightGramsMultipleOf = 1;
+
+export const checkoutShopCartResponseItemsItemQuantityMultipleOf = 1;
+
+export const checkoutShopCartResponseItemsItemPriceMultipleOf = 1;
+
+
+
+export const CheckoutShopCartResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
+  "total": zod.number().multipleOf(checkoutShopCartResponseTotalMultipleOf),
+  "subtotal": zod.number().multipleOf(checkoutShopCartResponseSubtotalMultipleOf),
+  "shippingCost": zod.number().multipleOf(checkoutShopCartResponseShippingCostMultipleOf),
+  "totalWeightGrams": zod.number().multipleOf(checkoutShopCartResponseTotalWeightGramsMultipleOf),
+  "itemCount": zod.number(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "salon": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string()
+}),
+  "delivery": zod.object({
+  "recipientName": zod.string(),
+  "address": zod.string(),
+  "city": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "usesSalonAddress": zod.boolean()
+}),
+  "billing": zod.object({
+  "companyName": zod.string(),
+  "pib": zod.string(),
+  "registrationNumber": zod.string(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string()
+}).nullable(),
+  "items": zod.array(zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "variantValue": zod.string().nullish(),
+  "variantLabel": zod.string().nullish(),
+  "productSku": zod.string().nullish(),
+  "quantity": zod.number().multipleOf(checkoutShopCartResponseItemsItemQuantityMultipleOf),
+  "price": zod.number().multipleOf(checkoutShopCartResponseItemsItemPriceMultipleOf)
+}))
+})
+
+
+/**
  * @summary List salon orders
  */
 export const listOrdersResponseTotalMultipleOf = 1;
@@ -1047,109 +1463,10 @@ export const ListOrdersResponse = zod.array(ListOrdersResponseItem)
 
 
 /**
- * @summary Create B2B order
+ * @deprecated
+ * @summary Deprecated — use checkoutShopCart to create orders from the saved cart
  */
-export const createOrderBodyItemsItemQuantityMultipleOf = 1;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-export const CreateOrderBody = zod.object({
-  "items": zod.array(zod.object({
-  "productId": zod.string(),
-  "variantValue": zod.string().optional(),
-  "quantity": zod.number().min(1).multipleOf(createOrderBodyItemsItemQuantityMultipleOf)
-})).min(1),
-  "useSalonAddress": zod.boolean().optional(),
-  "deliveryAddress": zod.object({
-  "recipientName": zod.string().min(1),
-  "street": zod.string().min(1),
-  "city": zod.string().min(1),
-  "postalCode": zod.string().min(1),
-  "phone": zod.string().min(1),
-  "note": zod.string().nullish()
-}).optional(),
-  "billingDetails": zod.object({
-  "companyName": zod.string().min(1),
-  "pib": zod.string().min(1),
-  "registrationNumber": zod.string().min(1),
-  "street": zod.string().min(1),
-  "city": zod.string().min(1),
-  "postalCode": zod.string().min(1)
-}).nullish(),
-  "shippingName": zod.string().optional(),
-  "shippingAddress": zod.string().optional(),
-  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY'])
-})
-
-export const createOrderResponseTotalMultipleOf = 1;
-
-export const createOrderResponseSubtotalMultipleOf = 1;
-
-export const createOrderResponseShippingCostMultipleOf = 1;
-
-export const createOrderResponseTotalWeightGramsMultipleOf = 1;
-
-export const createOrderResponseItemsItemQuantityMultipleOf = 1;
-
-export const createOrderResponseItemsItemPriceMultipleOf = 1;
-
-
-
-export const CreateOrderResponse = zod.object({
-  "id": zod.string(),
-  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']),
-  "total": zod.number().multipleOf(createOrderResponseTotalMultipleOf),
-  "subtotal": zod.number().multipleOf(createOrderResponseSubtotalMultipleOf),
-  "shippingCost": zod.number().multipleOf(createOrderResponseShippingCostMultipleOf),
-  "totalWeightGrams": zod.number().multipleOf(createOrderResponseTotalWeightGramsMultipleOf),
-  "itemCount": zod.number(),
-  "createdAt": zod.coerce.date(),
-  "updatedAt": zod.coerce.date(),
-  "salon": zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "phone": zod.string(),
-  "email": zod.string()
-}),
-  "delivery": zod.object({
-  "recipientName": zod.string(),
-  "address": zod.string(),
-  "city": zod.string().nullish(),
-  "postalCode": zod.string().nullish(),
-  "phone": zod.string().nullish(),
-  "note": zod.string().nullish(),
-  "usesSalonAddress": zod.boolean()
-}),
-  "billing": zod.object({
-  "companyName": zod.string(),
-  "pib": zod.string(),
-  "registrationNumber": zod.string(),
-  "address": zod.string(),
-  "city": zod.string(),
-  "postalCode": zod.string()
-}).nullable(),
-  "items": zod.array(zod.object({
-  "productId": zod.string(),
-  "productName": zod.string(),
-  "variantValue": zod.string().nullish(),
-  "variantLabel": zod.string().nullish(),
-  "productSku": zod.string().nullish(),
-  "quantity": zod.number().multipleOf(createOrderResponseItemsItemQuantityMultipleOf),
-  "price": zod.number().multipleOf(createOrderResponseItemsItemPriceMultipleOf)
-}))
-})
+export const CreateOrderResponse = zod.void()
 
 
 /**

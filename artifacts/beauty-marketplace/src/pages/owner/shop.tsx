@@ -5,10 +5,9 @@ import {
   useListProducts,
   useListProductCategories,
   useGetShopSummary,
-  useCreateOrder,
+  useAddShopCartItem,
   useGetCurrentUser,
-  useGetShippingQuote,
-  getGetShippingQuoteQueryKey,
+  getGetShopCartQueryKey,
   getGetShopSummaryQueryKey,
 } from "@workspace/api-client-react";
 import type { Product, ProductCategory, ProductCategorySubcategoriesItem } from "@workspace/api-client-react";
@@ -22,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +38,6 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-type CartItem = { id: string; qty: number; variantValue?: string };
 type FilterState = {
   category: string;
   subcategory: string;
@@ -358,14 +357,10 @@ export default function OwnerShop() {
   });
   const { data: allProducts = [], isLoading: isLoadingProd } = useListProducts();
 
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const { toast } = useToast();
-  const orderMutation = useCreateOrder();
-  const [useSalonAddress, setUseSalonAddress] = useState(true);
-  const [deliveryAddress, setDeliveryAddress] = useState({ recipientName: "", street: "", city: "", postalCode: "", phone: "", note: "" });
-  const [billing, setBilling] = useState(false);
-  const [billingDetails, setBillingDetails] = useState({ companyName: "", pib: "", registrationNumber: "", street: "", city: "", postalCode: "" });
+  const queryClient = useQueryClient();
+  const addCartItem = useAddShopCartItem();
 
   const [filters, setFilters] = useState<FilterState>({
     category: "",
@@ -404,54 +399,16 @@ export default function OwnerShop() {
   }, [allProducts, filters]);
 
   const addToCart = (id: string, variantValue?: string) => {
-    setCart((prev) => {
-      const key = `${id}-${variantValue ?? ""}`;
-      const existing = prev.find((i) => `${i.id}-${i.variantValue ?? ""}` === key);
-      if (existing) return prev.map((i) => (`${i.id}-${i.variantValue ?? ""}` === key ? { ...i, qty: i.qty + 1 } : i));
-      return [...prev, { id, qty: 1, variantValue }];
-    });
-    toast.success("Dodato u korpu");
-  };
-
-  const cartTotal = cart.reduce((sum, item) => {
-    const prod = allProducts.find((p) => p.id === item.id);
-    if (!prod) return sum;
-    const variant = prod.variants?.find((v) => v.value === item.variantValue);
-    const variantAdjust = variant?.priceAdjust ?? 0;
-    const base = prod.discountPrice ?? prod.price;
-    return sum + (variant?.price ?? (base + variantAdjust)) * item.qty;
-  }, 0);
-
-  const cartWeightGrams = cart.reduce((sum, item) => {
-    const prod = allProducts.find((p) => p.id === item.id);
-    return sum + (prod?.weightGrams ?? 0) * item.qty;
-  }, 0);
-
-  const { data: shippingQuote } = useGetShippingQuote(
-    { weightGrams: cartWeightGrams, subtotal: cartTotal },
-    { query: { queryKey: getGetShippingQuoteQueryKey({ weightGrams: cartWeightGrams, subtotal: cartTotal }), enabled: cart.length > 0 } }
-  );
-  const shippingCost = shippingQuote?.shippingCost ?? 0;
-  const orderTotal = cartTotal + shippingCost;
-
-  const placeOrder = () => {
-    if (cart.length === 0) return;
-    orderMutation.mutate(
+    addCartItem.mutate(
+      { data: { productId: id, ...(variantValue ? { variantValue } : {}) } },
       {
-        data: {
-          items: cart.map((c) => ({ productId: c.id, quantity: c.qty, ...(c.variantValue ? { variantValue: c.variantValue } : {}) })),
-          useSalonAddress,
-          ...(!useSalonAddress ? { deliveryAddress } : {}),
-          ...(billing ? { billingDetails } : {}),
-          paymentMethod: "CASH_ON_DELIVERY",
+        onSuccess: (cart) => {
+          queryClient.setQueryData(getGetShopCartQueryKey(), cart);
+          queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() });
+          toast.success("Dodato u korpu");
         },
+        onError: (error) => toast.error(error instanceof Error ? error.message : "Dodavanje u korpu nije uspelo."),
       },
-      {
-        onSuccess: () => {
-          toast.success("Porudžbina uspešno poslata!");
-          setCart([]);
-        },
-      }
     );
   };
 
@@ -617,115 +574,7 @@ export default function OwnerShop() {
                 )}
               </div>
 
-              {/* Cart widget */}
-              <div className="w-64 flex-shrink-0 hidden xl:block">
-                <Card className="sticky top-24">
-                  <CardHeader className="bg-muted/30 border-b pb-4">
-                    <CardTitle className="text-base flex items-center justify-between">
-                      Vaša korpa
-                      <Badge variant="secondary">{cart.reduce((s, i) => s + i.qty, 0)}</Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-3 min-h-[140px] max-h-[350px] overflow-y-auto">
-                    {cart.length === 0 ? (
-                      <div className="text-center text-muted-foreground py-8 flex flex-col items-center">
-                        <Package className="w-8 h-8 opacity-20 mb-2" />
-                        <p className="text-xs">Korpa je prazna</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {cart.map((item) => {
-                          const p = allProducts.find((prod) => prod.id === item.id);
-                          if (!p) return null;
-                           const variant = p.variants?.find((v) => v.value === item.variantValue);
-                           const varAdj = variant?.priceAdjust ?? 0;
-                           const unitPrice = variant?.price ?? ((p.discountPrice ?? p.price) + varAdj);
-                          return (
-                            <div key={`${item.id}-${item.variantValue}`} className="flex justify-between items-start text-xs border-b pb-1.5">
-                              <div className="pr-1 flex-1 min-w-0">
-                                <span className="font-medium line-clamp-1 block">{p.name}</span>
-                                {item.variantValue && (
-                                  <span className="text-muted-foreground text-[10px]">{item.variantValue}</span>
-                                )}
-                                <span className="text-muted-foreground">{item.qty}×</span>
-                              </div>
-                              <span className="font-semibold whitespace-nowrap text-primary">
-                                {(unitPrice * item.qty).toLocaleString("sr-RS")} RSD
-                              </span>
-                            </div>
-                          );
-                        })}
-                        <div className="pt-2 space-y-1.5 text-xs" data-testid="cart-shipping-info">
-                          <div className="flex justify-between text-muted-foreground">
-                            <span>Međuzbir:</span>
-                            <span>{cartTotal.toLocaleString("sr-RS")} RSD</span>
-                          </div>
-                          {shippingQuote && (
-                            <>
-                              <div className="flex justify-between text-muted-foreground">
-                                <span>Težina pošiljke:</span>
-                                <span>
-                                  {shippingQuote.totalWeightGrams >= 1000
-                                    ? `${(shippingQuote.totalWeightGrams / 1000).toLocaleString("sr-RS", { maximumFractionDigits: 2 })} kg`
-                                    : `${shippingQuote.totalWeightGrams} g`}
-                                </span>
-                              </div>
-                              <div className="flex justify-between text-muted-foreground">
-                                <span>Dostava:</span>
-                                {shippingQuote.freeShipping ? (
-                                  <span className="text-green-600 font-semibold">Besplatna</span>
-                                ) : (
-                                  <span>{shippingQuote.shippingCost.toLocaleString("sr-RS")} RSD</span>
-                                )}
-                              </div>
-                              {shippingQuote.message && (
-                                <p className={`text-[10px] rounded-md px-2 py-1.5 ${shippingQuote.freeShipping ? "bg-green-50 text-green-700 border border-green-200" : "bg-primary/5 text-primary border border-primary/20"}`}>
-                                  {shippingQuote.message}
-                                </p>
-                              )}
-                            </>
-                          )}
-                          <div className="pt-1 flex justify-between items-center font-bold text-sm border-t">
-                            <span>Ukupno:</span>
-                            <span className="text-primary" data-testid="cart-order-total">{orderTotal.toLocaleString("sr-RS")} RSD</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                   {cart.length > 0 && <div className="p-3 border-t space-y-2 text-xs">
-                     <div className="flex gap-2"><Button type="button" size="sm" variant={useSalonAddress ? "default" : "outline"} onClick={() => setUseSalonAddress(true)}>Adresa salona</Button><Button type="button" size="sm" variant={!useSalonAddress ? "default" : "outline"} onClick={() => setUseSalonAddress(false)}>Druga adresa</Button></div>
-                     {!useSalonAddress && <div className="grid grid-cols-2 gap-2">{(["recipientName","street","city","postalCode","phone"] as const).map(key => <Input key={key} value={deliveryAddress[key]} onChange={e => setDeliveryAddress({...deliveryAddress,[key]:e.target.value})} placeholder={{recipientName:"Primalac",street:"Ulica i broj",city:"Grad",postalCode:"Poštanski broj",phone:"Telefon"}[key]}/>)}</div>}
-                     <Button type="button" size="sm" variant={billing ? "default" : "outline"} onClick={() => setBilling(!billing)}>Kupovina na firmu / faktura</Button>
-                     {billing && <div className="grid grid-cols-2 gap-2">{(["companyName","pib","registrationNumber","street","city","postalCode"] as const).map(key => <Input key={key} value={billingDetails[key]} onChange={e => setBillingDetails({...billingDetails,[key]:e.target.value})} placeholder={{companyName:"Naziv firme",pib:"PIB",registrationNumber:"Matični broj",street:"Ulica i broj",city:"Grad",postalCode:"Poštanski broj"}[key]}/>)}</div>}
-                   </div>}
-                   <CardFooter className="p-3 border-t bg-muted/10">
-                    <Button
-                      className="w-full text-sm"
-                      disabled={cart.length === 0 || orderMutation.isPending}
-                      onClick={placeOrder}
-                    >
-                      {orderMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <ShoppingCart className="w-4 h-4 mr-2" />
-                      )}
-                      Poruči
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </div>
             </div>
-
-            {/* Mobile Cart Button */}
-            {cart.length > 0 && (
-              <div className="xl:hidden fixed bottom-6 right-6 z-50">
-                <Button size="lg" className="rounded-full shadow-lg gap-2" onClick={placeOrder} disabled={orderMutation.isPending}>
-                  <ShoppingCart className="w-5 h-5" />
-                  {cart.reduce((s, i) => s + i.qty, 0)} stavki — {orderTotal.toLocaleString("sr-RS")} RSD
-                </Button>
-              </div>
-            )}
           </div>
         </div>
       </div>

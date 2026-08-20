@@ -26,4 +26,6 @@ export interface BusinessRegistrationInput {
   municipality: string;
   /** @minLength 3 */
   address: string;
+  /** @minLength 4 */
+  postalCode: string;
 }

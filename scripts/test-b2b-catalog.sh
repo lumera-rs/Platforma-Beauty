@@ -45,6 +45,7 @@ ROOT_CATEGORY_NAME=""
 THRESHOLD_ORDER_ID=""
 WEIGHTED_ORDER_ID=""
 TEST_SHIPPING_NAME="B2B Regression ${RUN_ID}"
+ORIGINAL_CART_JSON="[]"
 CLEANUP_COMPLETED=false
 
 remove_order_fixtures() {
@@ -54,6 +55,7 @@ remove_order_fixtures() {
     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v order_id="$order_id" <<'SQL'
 BEGIN;
 DELETE FROM order_items WHERE order_id = :'order_id'::uuid;
+DELETE FROM salon_notifications WHERE href = '/vlasnik/porudzbine/' || :'order_id';
 DELETE FROM orders WHERE id = :'order_id'::uuid;
 COMMIT;
 SQL
@@ -98,6 +100,30 @@ verify_test_data_removed() {
   [[ "$counts" == $'0\n0\n0\n0' ]]
 }
 
+restore_original_cart() {
+  local product_id variant_value quantity payload status
+  while IFS=$'\t' read -r product_id variant_value quantity; do
+    [[ -n "$product_id" ]] || continue
+    payload="$(jq -cn --arg productId "$product_id" --arg variantValue "$variant_value" --argjson quantity "$quantity" \
+      '{productId: $productId, quantity: $quantity} + (if $variantValue == "" then {} else {variantValue: $variantValue} end)')"
+    status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items "$payload")"
+    [[ "$status" == "200" ]] || return 1
+  done < <(jq -r '.[] | [.productId, (.variantValue // ""), (.quantity | tostring)] | @tsv' <<<"$ORIGINAL_CART_JSON")
+}
+
+clear_cart_for_checkout() {
+  local item_id
+  local status
+  status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/cart")"
+  expect_status 200 "$status" "SALON_OWNER reads persistent cart before isolated checkout"
+  ORIGINAL_CART_JSON="$(jq -c '[.items[] | {productId, variantValue, quantity}]' "$BODY")"
+  while IFS= read -r item_id; do
+    [[ -n "$item_id" ]] || continue
+    status="$(request -b "$SALON_COOKIE" -X DELETE "$BASE_URL/shop/cart/items/$item_id")"
+    expect_status 200 "$status" "clears a saved cart item for isolated checkout"
+  done < <(jq -r '.items[].id' "$BODY")
+}
+
 cleanup() {
   local original_status=$?
   local cleanup_failed=false
@@ -107,6 +133,7 @@ cleanup() {
   # only those rows, allowing all temporary products, categories, and brands to
   # be physically deleted as part of teardown.
   remove_order_fixtures || cleanup_failed=true
+  restore_original_cart || cleanup_failed=true
 
   # Best-effort endpoint cleanup is followed by SQL/API state verification below.
   if [[ -n "$PRODUCT_B_ID" && -n "$ROOT_CATEGORY_ID" ]]; then
@@ -229,6 +256,10 @@ expect_status 200 "$status" "SUPER_ADMIN grants temporary ADMIN fixture"
 login "$ADMIN_COOKIE" "edukacija@lumera.local"
 login "$CUSTOMER_COOKIE" "kupac@lumera.local"
 login "$SALON_COOKIE" "salon@lumera.local"
+status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/checkout-profile")"
+expect_status 200 "$status" "SALON_OWNER reads checkout profile"
+expect_json '.salonAddress.postalCode == "11000"' "seeded salon default delivery address includes postal code"
+clear_cart_for_checkout
 
 # Every B2B admin read surface must require an authenticated administrator.
 for endpoint in /admin/products /admin/product-categories /admin/brands /admin/shipping; do
@@ -561,7 +592,7 @@ expect_json '.total == 0' "deleted product is absent from catalog"
 PRODUCT_A_ID=""
 
 # Shipping tiers, free-shipping threshold, and order totals must be applied on
-# the server; order requests intentionally contain no client total/price.
+# the server. Cart entries intentionally contain no client total or shipping.
 status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/shipping-quote?weightGrams=1000&subtotal=14999")"
 expect_status 200 "$status" "SALON_OWNER reads weighted shipping quote"
 expect_json '.shippingCost == 111 and .freeShipping == false and .amountToFreeShipping == 1' "first weight tier and threshold gap are correct"
@@ -570,19 +601,22 @@ status="$(request -b "$SALON_COOKIE" "$BASE_URL/shop/shipping-quote?weightGrams=
 expect_status 200 "$status" "SALON_OWNER reads free-shipping quote"
 expect_json '.shippingCost == 0 and .freeShipping == true and .amountToFreeShipping == 0' "free-shipping threshold is inclusive"
 
-status="$(request -b "$SALON_COOKIE" -X POST \
-  -H "Content-Type: application/json" \
-  --data "{\"items\":[{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Standard\",\"quantity\":5}],\"shippingName\":\"$TEST_SHIPPING_NAME\",\"shippingAddress\":\"Test 1, Beograd\",\"paymentMethod\":\"BANK_TRANSFER\"}" \
-  "$BASE_URL/shop/orders")"
-expect_status 201 "$status" "SALON_OWNER creates threshold order"
+status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items \
+  "{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Standard\",\"quantity\":5}")"
+expect_status 200 "$status" "SALON_OWNER adds threshold items to persistent cart"
+expect_json ".itemCount == 5 and .subtotal == 15000" "cart total is server-calculated before threshold checkout"
+status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
+  '{"useSalonAddress":true,"paymentMethod":"BANK_TRANSFER","termsAccepted":true}')"
+expect_status 201 "$status" "SALON_OWNER creates threshold order with seeded salon address"
 THRESHOLD_ORDER_ID="$(json_field '.id')"
-expect_json ".shippingCost == 0 and .total == 15000 and .itemCount == 5 and .items[0].price == 3000" "threshold order gets server-side free shipping"
+expect_json ".shippingCost == 0 and .total == 15000 and .itemCount == 5 and .items[0].price == 3000 and .delivery.postalCode == \"11000\"" "threshold order gets server-side free shipping and saved salon delivery data"
 
-status="$(request -b "$SALON_COOKIE" -X POST \
-  -H "Content-Type: application/json" \
-  --data "{\"items\":[{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Premium\",\"quantity\":2}],\"shippingName\":\"$TEST_SHIPPING_NAME\",\"shippingAddress\":\"Test 1, Beograd\",\"paymentMethod\":\"BANK_TRANSFER\"}" \
-  "$BASE_URL/shop/orders")"
-expect_status 201 "$status" "SALON_OWNER creates weighted order"
+status="$(request_json_as "$SALON_COOKIE" POST /shop/cart/items \
+  "{\"productId\":\"$PRODUCT_B_ID\",\"variantValue\":\"Premium\",\"quantity\":2}")"
+expect_status 200 "$status" "SALON_OWNER adds weighted items to persistent cart"
+status="$(request_json_as "$SALON_COOKIE" POST /shop/checkout \
+  "{\"useSalonAddress\":false,\"deliveryAddress\":{\"recipientName\":\"$TEST_SHIPPING_NAME\",\"street\":\"Test 1\",\"city\":\"Beograd\",\"postalCode\":\"11000\",\"phone\":\"+38160111222\",\"email\":\"b2b-regression@example.com\"},\"paymentMethod\":\"BANK_TRANSFER\",\"termsAccepted\":true}")"
+expect_status 201 "$status" "SALON_OWNER creates weighted order from persistent cart"
 WEIGHTED_ORDER_ID="$(json_field '.id')"
 expect_json ".shippingCost == 222 and .total == 7222 and .itemCount == 2 and .items[0].price == 3500" "weighted order total uses server-side variant price and shipping"
 

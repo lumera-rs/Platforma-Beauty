@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
-import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft } from "lucide-react";
+import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useGetCurrentUser, useLogout } from "@workspace/api-client-react";
+import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +16,7 @@ export function BusinessNavbar() {
   const { data: userResp } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
+  const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
@@ -95,6 +96,18 @@ export function BusinessNavbar() {
               Nazad na Market
             </Link>
 
+            {user?.role === "SALON_OWNER" && (
+              <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
+                <Link href="/vlasnik/prodavnica/korpa" aria-label="Otvori korpu">
+                  <ShoppingCart className="h-5 w-5" />
+                  {cart && cart.itemCount > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-accent px-1 text-[10px] font-bold leading-5 text-accent-foreground">
+                      {cart.itemCount > 99 ? "99+" : cart.itemCount}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            )}
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -182,6 +195,16 @@ export function BusinessNavbar() {
                 {link.label}
               </Link>
             ))}
+            {user?.role === "SALON_OWNER" && (
+              <Link
+                href="/vlasnik/prodavnica/korpa"
+                className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-background"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <span className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Korpa</span>
+                <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">{cart?.itemCount ?? 0}</span>
+              </Link>
+            )}
             
             <div className="h-px bg-white/10 my-2" />
             

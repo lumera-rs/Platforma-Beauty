@@ -536,6 +536,107 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShopSummary"
+  /shop/cart:
+    get:
+      operationId: getShopCart
+      tags: [shop]
+      summary: Get the persistent cart belonging to the current salon
+      responses:
+        "200":
+          description: Persistent cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCart" }
+  /shop/cart/items:
+    post:
+      operationId: addShopCartItem
+      tags: [shop]
+      summary: Add a product or variant to the persistent cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopCartItemInput" }
+      responses:
+        "200":
+          description: Updated cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCart" }
+  /shop/cart/items/{cartItemId}:
+    patch:
+      operationId: updateShopCartItem
+      tags: [shop]
+      summary: Change a persistent cart item quantity
+      parameters:
+        - name: cartItemId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopCartItemQuantityInput" }
+      responses:
+        "200":
+          description: Updated cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCart" }
+    delete:
+      operationId: removeShopCartItem
+      tags: [shop]
+      summary: Remove an item from the persistent cart
+      parameters:
+        - name: cartItemId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated cart
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCart" }
+  /shop/checkout-profile:
+    get:
+      operationId: getShopCheckoutProfile
+      tags: [shop]
+      summary: Get the current salon delivery and billing defaults
+      responses:
+        "200":
+          description: Checkout profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCheckoutProfile" }
+  /shop/checkout-preview:
+    get:
+      operationId: getShopCheckoutPreview
+      tags: [shop]
+      summary: Calculate the server-authoritative totals for the persistent cart
+      responses:
+        "200":
+          description: Checkout preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShopCheckoutPreview" }
+  /shop/checkout:
+    post:
+      operationId: checkoutShopCart
+      tags: [shop]
+      summary: Create an order from the persistent cart and clear it atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShopCheckoutInput" }
+      responses:
+        "201":
+          description: Created order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
   /shop/orders:
     get:
       operationId: listOrders
@@ -552,16 +653,11 @@ paths:
     post:
       operationId: createOrder
       tags: [shop]
-      summary: Create B2B order
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/OrderInput"
+      deprecated: true
+      summary: Deprecated — use checkoutShopCart to create orders from the saved cart
       responses:
-        "201":
-          description: Created order
+        "410":
+          description: Direct ordering is retired; checkout must use the saved cart
           content:
             application/json:
               schema:
@@ -1729,7 +1825,8 @@ components:
         city: { type: string, minLength: 2 }
         municipality: { type: string, minLength: 2 }
         address: { type: string, minLength: 3 }
-      required: [firstName, lastName, email, password, phone, businessType, businessName, city, municipality, address]
+        postalCode: { type: string, minLength: 4 }
+      required: [firstName, lastName, email, password, phone, businessType, businessName, city, municipality, address, postalCode]
     LoginInput:
       type: object
       properties:
@@ -2050,6 +2147,98 @@ components:
           items: { type: string }
         cartCount: { type: number }
       required: [monthlySpend, nextTierSpend, amountToNextTier, currentTier, subscriptionDue, subscriptionDiscount, benefits, cartCount]
+    ShopCartItem:
+      type: object
+      properties:
+        id: { type: string }
+        productId: { type: string }
+        productName: { type: string }
+        productImageUrl: { type: string }
+        variantValue: { type: ["string", "null"] }
+        variantLabel: { type: ["string", "null"] }
+        productSku: { type: ["string", "null"] }
+        unitPrice: { type: number, minimum: 0, multipleOf: 1 }
+        quantity: { type: number, minimum: 1, multipleOf: 1 }
+        lineTotal: { type: number, minimum: 0, multipleOf: 1 }
+        availableStock: { type: number, minimum: 0, multipleOf: 1 }
+      required: [id, productId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock]
+    ShopCart:
+      type: object
+      properties:
+        id: { type: ["string", "null"] }
+        items: { type: array, items: { $ref: "#/components/schemas/ShopCartItem" } }
+        itemCount: { type: number, minimum: 0, multipleOf: 1 }
+        subtotal: { type: number, minimum: 0, multipleOf: 1 }
+        totalWeightGrams: { type: number, minimum: 0, multipleOf: 1 }
+      required: [id, items, itemCount, subtotal, totalWeightGrams]
+    ShopCartItemInput:
+      type: object
+      properties:
+        productId: { type: string, minLength: 1 }
+        variantValue: { type: string, minLength: 1 }
+        quantity: { type: number, minimum: 1, multipleOf: 1 }
+      required: [productId]
+    ShopCartItemQuantityInput:
+      type: object
+      properties:
+        quantity: { type: number, minimum: 1, multipleOf: 1 }
+      required: [quantity]
+    DeliveryAddressInput:
+      type: object
+      properties:
+        recipientName: { type: string, minLength: 1 }
+        street: { type: string, minLength: 1 }
+        city: { type: string, minLength: 1 }
+        postalCode: { type: string }
+        phone: { type: string, minLength: 1 }
+        email: { type: string, minLength: 3 }
+      required: [recipientName, street, city, postalCode, phone, email]
+    BillingDetailsInput:
+      type: object
+      properties:
+        companyName: { type: string, minLength: 1 }
+        pib: { type: string, minLength: 1 }
+        registrationNumber: { type: string, minLength: 1 }
+        street: { type: string, minLength: 1 }
+        city: { type: string, minLength: 1 }
+        postalCode: { type: string, minLength: 1 }
+      required: [companyName, pib, registrationNumber, street, city, postalCode]
+    ShopCheckoutProfile:
+      type: object
+      properties:
+        salonName: { type: string }
+        salonAddress: { $ref: "#/components/schemas/DeliveryAddressInput" }
+        billingDefaults:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/BillingDetailsInput"
+        paymentMethods:
+          type: array
+          items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+      required: [salonName, salonAddress, billingDefaults, paymentMethods]
+    ShopCheckoutPreview:
+      type: object
+      properties:
+        cart: { $ref: "#/components/schemas/ShopCart" }
+        shipping: { $ref: "#/components/schemas/ShippingQuote" }
+        total: { type: number, minimum: 0, multipleOf: 1 }
+        paymentMethods:
+          type: array
+          items: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+      required: [cart, shipping, total, paymentMethods]
+    ShopCheckoutInput:
+      type: object
+      properties:
+        useSalonAddress: { type: boolean }
+        deliveryAddress: { $ref: "#/components/schemas/DeliveryAddressInput" }
+        billingDetails:
+          type: ["object", "null"]
+          allOf:
+            - $ref: "#/components/schemas/BillingDetailsInput"
+        paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+        note: { type: ["string", "null"], maxLength: 1000 }
+        termsAccepted: { type: boolean }
+      required: [useSalonAddress, paymentMethod, termsAccepted]
     Order:
       type: object
       properties:

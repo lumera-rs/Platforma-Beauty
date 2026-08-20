@@ -41,6 +41,7 @@ import AdminCategories from './pages/admin/categories';
 import AdminBrands from './pages/admin/brands';
 import AdminShipping from './pages/admin/shipping';
 import AdminOrders from './pages/admin/orders';
+import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, OwnerOrderConfirmationPage } from './pages/owner/checkout';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
 
@@ -170,6 +171,10 @@ function Router() {
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
+        <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
         <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
