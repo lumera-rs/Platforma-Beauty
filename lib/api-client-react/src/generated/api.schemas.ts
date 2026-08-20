@@ -59,7 +59,7 @@ export interface BusinessRegistrationInput {
   lastName: string;
   email: string;
   /** @minLength 8 */
-  password: string;
+  password?: string;
   /** @minLength 6 */
   phone: string;
   businessType: BusinessRegistrationInputBusinessType;
@@ -88,6 +88,91 @@ export interface AuthSession {
 
 export interface CurrentUserResponse {
   user: User | null;
+}
+
+export type EmailMarketingCampaignAudience = typeof EmailMarketingCampaignAudience[keyof typeof EmailMarketingCampaignAudience];
+
+
+export const EmailMarketingCampaignAudience = {
+  customers: 'customers',
+  salons: 'salons',
+  loyalty: 'loyalty',
+} as const;
+
+export type EmailMarketingCampaignStatus = typeof EmailMarketingCampaignStatus[keyof typeof EmailMarketingCampaignStatus];
+
+
+export const EmailMarketingCampaignStatus = {
+  draft: 'draft',
+  scheduled: 'scheduled',
+  sent: 'sent',
+  failed: 'failed',
+} as const;
+
+export interface EmailMarketingCampaign {
+  id: string;
+  audience: EmailMarketingCampaignAudience;
+  /** @nullable */
+  loyaltyTierId: string | null;
+  title: string;
+  subject: string;
+  htmlContent: string;
+  /** @nullable */
+  scheduledAt: string | null;
+  status: EmailMarketingCampaignStatus;
+  recipientCount: number;
+  /** @nullable */
+  brevoCampaignId: number | null;
+  /** @nullable */
+  errorMessage: string | null;
+  createdAt: string;
+  /** @nullable */
+  sentAt: string | null;
+}
+
+export interface AdminListEmailCampaignsResponse {
+  campaigns: EmailMarketingCampaign[];
+}
+
+export type AdminCreateEmailCampaignInputAudience = typeof AdminCreateEmailCampaignInputAudience[keyof typeof AdminCreateEmailCampaignInputAudience];
+
+
+export const AdminCreateEmailCampaignInputAudience = {
+  customers: 'customers',
+  salons: 'salons',
+  loyalty: 'loyalty',
+} as const;
+
+export type AdminCreateEmailCampaignInputSendMode = typeof AdminCreateEmailCampaignInputSendMode[keyof typeof AdminCreateEmailCampaignInputSendMode];
+
+
+export const AdminCreateEmailCampaignInputSendMode = {
+  now: 'now',
+  scheduled: 'scheduled',
+} as const;
+
+export interface AdminCreateEmailCampaignInput {
+  audience: AdminCreateEmailCampaignInputAudience;
+  /** @nullable */
+  loyaltyTierId?: string | null;
+  /**
+     * @minLength 3
+     * @maxLength 120
+     */
+  title: string;
+  /**
+     * @minLength 3
+     * @maxLength 160
+     */
+  subject: string;
+  /**
+     * @minLength 20
+     * @maxLength 100000
+     */
+  htmlContent: string;
+  sendMode: AdminCreateEmailCampaignInputSendMode;
+  /** @nullable */
+  scheduledAt?: string | null;
 }
 
 export interface SalonCard {

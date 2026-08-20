@@ -24,6 +24,8 @@ import type {
   AdminBrandInput,
   AdminBrandUpdate,
   AdminBulkResult,
+  AdminCreateEmailCampaignInput,
+  AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
   AdminListProductsParams,
   AdminListReviewsParams,
@@ -73,6 +75,7 @@ import type {
   EducationModuleInput,
   EducationSession,
   EducationSessionInput,
+  EmailMarketingCampaign,
   Employee,
   FavoriteInput,
   FavoriteResult,
@@ -580,6 +583,154 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
 
 
 
+
+export const getAdminListEmailCampaignsUrl = () => {
+
+
+
+
+  return `/api/admin/email-marketing/campaigns`
+}
+
+/**
+ * @summary List LUMERA email marketing campaigns
+ */
+export const adminListEmailCampaigns = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminListEmailCampaignsResponse> => {
+
+  return customFetch<AdminListEmailCampaignsResponse>(getAdminListEmailCampaignsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListEmailCampaignsQueryKey = () => {
+    return [
+    `/api/admin/email-marketing/campaigns`
+    ] as const;
+    }
+
+
+export const getAdminListEmailCampaignsQueryOptions = <TData = Awaited<ReturnType<typeof adminListEmailCampaigns>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailCampaigns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListEmailCampaignsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListEmailCampaigns>>> = ({ signal }) => adminListEmailCampaigns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListEmailCampaigns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListEmailCampaignsQueryResult = NonNullable<Awaited<ReturnType<typeof adminListEmailCampaigns>>>
+export type AdminListEmailCampaignsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List LUMERA email marketing campaigns
+ */
+
+export function useAdminListEmailCampaigns<TData = Awaited<ReturnType<typeof adminListEmailCampaigns>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailCampaigns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListEmailCampaignsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateEmailCampaignUrl = () => {
+
+
+
+
+  return `/api/admin/email-marketing/campaigns`
+}
+
+/**
+ * @summary Create and send or schedule an email campaign
+ */
+export const adminCreateEmailCampaign = async (adminCreateEmailCampaignInput: AdminCreateEmailCampaignInput, options?: Parameters<typeof customFetch>[1]): Promise<EmailMarketingCampaign> => {
+
+  return customFetch<EmailMarketingCampaign>(getAdminCreateEmailCampaignUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminCreateEmailCampaignInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateEmailCampaignMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateEmailCampaign>>, TError,{data: BodyType<AdminCreateEmailCampaignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateEmailCampaign>>, TError,{data: BodyType<AdminCreateEmailCampaignInput>}, TContext> => {
+
+const mutationKey = ['adminCreateEmailCampaign'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateEmailCampaign>>, {data: BodyType<AdminCreateEmailCampaignInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateEmailCampaign(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateEmailCampaignMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateEmailCampaign>>>
+    export type AdminCreateEmailCampaignMutationBody = BodyType<AdminCreateEmailCampaignInput>
+    export type AdminCreateEmailCampaignMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create and send or schedule an email campaign
+ */
+export const useAdminCreateEmailCampaign = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateEmailCampaign>>, TError,{data: BodyType<AdminCreateEmailCampaignInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateEmailCampaign>>,
+        TError,
+        {data: BodyType<AdminCreateEmailCampaignInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateEmailCampaignMutationOptions(options));
+    }
 
 export const getListSalonsUrl = (params?: ListSalonsParams,) => {
   const normalizedParams = new URLSearchParams();

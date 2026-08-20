@@ -72,7 +72,7 @@ export const RegisterBusinessBody = zod.object({
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
   "email": zod.string(),
-  "password": zod.string().min(registerBusinessBodyPasswordMin),
+  "password": zod.string().min(registerBusinessBodyPasswordMin).optional(),
   "phone": zod.string().min(registerBusinessBodyPhoneMin),
   "businessType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
@@ -140,6 +140,69 @@ export const GetCurrentUserResponse = zod.object({
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
   "active": zod.boolean()
 }),zod.null()])
+})
+
+
+/**
+ * @summary List LUMERA email marketing campaigns
+ */
+export const AdminListEmailCampaignsResponse = zod.object({
+  "campaigns": zod.array(zod.object({
+  "id": zod.string(),
+  "audience": zod.enum(['customers', 'salons', 'loyalty']),
+  "loyaltyTierId": zod.string().nullable(),
+  "title": zod.string(),
+  "subject": zod.string(),
+  "htmlContent": zod.string(),
+  "scheduledAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['draft', 'scheduled', 'sent', 'failed']),
+  "recipientCount": zod.number(),
+  "brevoCampaignId": zod.number().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "sentAt": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Create and send or schedule an email campaign
+ */
+export const adminCreateEmailCampaignBodyTitleMin = 3;
+export const adminCreateEmailCampaignBodyTitleMax = 120;
+
+export const adminCreateEmailCampaignBodySubjectMin = 3;
+export const adminCreateEmailCampaignBodySubjectMax = 160;
+
+export const adminCreateEmailCampaignBodyHtmlContentMin = 20;
+export const adminCreateEmailCampaignBodyHtmlContentMax = 100000;
+
+
+
+export const AdminCreateEmailCampaignBody = zod.object({
+  "audience": zod.enum(['customers', 'salons', 'loyalty']),
+  "loyaltyTierId": zod.string().nullish(),
+  "title": zod.string().min(adminCreateEmailCampaignBodyTitleMin).max(adminCreateEmailCampaignBodyTitleMax),
+  "subject": zod.string().min(adminCreateEmailCampaignBodySubjectMin).max(adminCreateEmailCampaignBodySubjectMax),
+  "htmlContent": zod.string().min(adminCreateEmailCampaignBodyHtmlContentMin).max(adminCreateEmailCampaignBodyHtmlContentMax),
+  "sendMode": zod.enum(['now', 'scheduled']),
+  "scheduledAt": zod.coerce.date().nullish()
+})
+
+export const AdminCreateEmailCampaignResponse = zod.object({
+  "id": zod.string(),
+  "audience": zod.enum(['customers', 'salons', 'loyalty']),
+  "loyaltyTierId": zod.string().nullable(),
+  "title": zod.string(),
+  "subject": zod.string(),
+  "htmlContent": zod.string(),
+  "scheduledAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['draft', 'scheduled', 'sent', 'failed']),
+  "recipientCount": zod.number(),
+  "brevoCampaignId": zod.number().nullable(),
+  "errorMessage": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "sentAt": zod.coerce.date().nullable()
 })
 
 

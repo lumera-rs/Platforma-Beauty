@@ -8,6 +8,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -29,6 +30,10 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
   "no-show",
 ]);
 
+export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]);
+export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "sent", "failed", "skipped"]);
+export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
+
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   firstName: text("first_name").notNull(),
@@ -49,6 +54,61 @@ export const sessionsTable = pgTable("sessions", {
   tokenHash: text("token_hash").notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const oauthIdentitiesTable = pgTable("oauth_identities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  provider: oauthProviderEnum("provider").notNull(),
+  providerAccountId: text("provider_account_id").notNull(),
+  providerEmail: text("provider_email").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("oauth_identities_provider_account_unique").on(table.provider, table.providerAccountId),
+]);
+
+export const oauthLoginStatesTable = pgTable("oauth_login_states", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  state: text("state").notNull().unique(),
+  provider: oauthProviderEnum("provider").notNull(),
+  flow: text("flow").notNull(),
+  codeVerifier: text("code_verifier"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const emailDeliveriesTable = pgTable("email_deliveries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  eventKey: text("event_key").notNull().unique(),
+  emailType: text("email_type").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  recipientName: text("recipient_name"),
+  subject: text("subject").notNull(),
+  status: emailDeliveryStatusEnum("status").notNull().default("queued"),
+  providerMessageId: text("provider_message_id"),
+  errorMessage: text("error_message"),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const emailCampaignsTable = pgTable("email_campaigns", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  createdByUserId: uuid("created_by_user_id").notNull().references(() => usersTable.id),
+  audience: text("audience").notNull(),
+  loyaltyTierId: uuid("loyalty_tier_id"),
+  title: text("title").notNull(),
+  subject: text("subject").notNull(),
+  htmlContent: text("html_content").notNull(),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+  status: emailCampaignStatusEnum("status").notNull().default("draft"),
+  brevoCampaignId: integer("brevo_campaign_id"),
+  recipientCount: integer("recipient_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const serviceCategoriesTable = pgTable("service_categories", {

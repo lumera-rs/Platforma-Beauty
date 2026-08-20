@@ -14,7 +14,7 @@ export interface BusinessRegistrationInput {
   lastName: string;
   email: string;
   /** @minLength 8 */
-  password: string;
+  password?: string;
   /** @minLength 6 */
   phone: string;
   businessType: BusinessRegistrationInputBusinessType;

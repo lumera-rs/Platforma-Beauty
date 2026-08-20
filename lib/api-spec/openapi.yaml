@@ -105,6 +105,35 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+  /admin/email-marketing/campaigns:
+    get:
+      operationId: adminListEmailCampaigns
+      tags: [admin]
+      summary: List LUMERA email marketing campaigns
+      responses:
+        "200":
+          description: Campaign history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminListEmailCampaignsResponse"
+    post:
+      operationId: adminCreateEmailCampaign
+      tags: [admin]
+      summary: Create and send or schedule an email campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateEmailCampaignInput"
+      responses:
+        "201":
+          description: Created campaign
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailMarketingCampaign"
   /salons:
     get:
       operationId: listSalons
@@ -1924,7 +1953,7 @@ components:
         municipality: { type: string, minLength: 2 }
         address: { type: string, minLength: 3 }
         postalCode: { type: string, minLength: 4 }
-      required: [firstName, lastName, email, password, phone, businessType, businessName, city, municipality, address, postalCode]
+      required: [firstName, lastName, email, phone, businessType, businessName, city, municipality, address, postalCode]
     LoginInput:
       type: object
       properties:
@@ -1945,6 +1974,41 @@ components:
             - $ref: "#/components/schemas/User"
             - type: "null"
       required: [user]
+    EmailMarketingCampaign:
+      type: object
+      properties:
+        id: { type: string }
+        audience: { type: string, enum: [customers, salons, loyalty] }
+        loyaltyTierId: { type: ["string", "null"] }
+        title: { type: string }
+        subject: { type: string }
+        htmlContent: { type: string }
+        scheduledAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [draft, scheduled, sent, failed] }
+        recipientCount: { type: number }
+        brevoCampaignId: { type: ["number", "null"] }
+        errorMessage: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: ["string", "null"], format: date-time }
+      required: [id, audience, loyaltyTierId, title, subject, htmlContent, scheduledAt, status, recipientCount, brevoCampaignId, errorMessage, createdAt, sentAt]
+    AdminListEmailCampaignsResponse:
+      type: object
+      properties:
+        campaigns:
+          type: array
+          items: { $ref: "#/components/schemas/EmailMarketingCampaign" }
+      required: [campaigns]
+    AdminCreateEmailCampaignInput:
+      type: object
+      properties:
+        audience: { type: string, enum: [customers, salons, loyalty] }
+        loyaltyTierId: { type: ["string", "null"] }
+        title: { type: string, minLength: 3, maxLength: 120 }
+        subject: { type: string, minLength: 3, maxLength: 160 }
+        htmlContent: { type: string, minLength: 20, maxLength: 100000 }
+        sendMode: { type: string, enum: [now, scheduled] }
+        scheduledAt: { type: ["string", "null"], format: date-time }
+      required: [audience, title, subject, htmlContent, sendMode]
     SalonCard:
       type: object
       properties:

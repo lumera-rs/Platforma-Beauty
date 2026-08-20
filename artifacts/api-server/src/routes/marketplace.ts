@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
 import {
   appointmentsTable,
   beautyGlossaryTable,
@@ -11,11 +12,14 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  emailCampaignsTable,
   employeesTable,
   favoritesTable,
   inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
+  oauthIdentitiesTable,
+  oauthLoginStatesTable,
   orderItemsTable,
   orderStatusHistoryTable,
   ordersTable,
@@ -40,6 +44,8 @@ import {
 } from "@workspace/db";
 import {
   AdminBulkUpdateProductsBody,
+  AdminCreateEmailCampaignBody,
+  AdminCreateEmailCampaignResponse,
   AdminCreateCourierServiceBody,
   AdminCreateCourierServiceResponse,
   AdminCreateBrandBody,
@@ -65,6 +71,7 @@ import {
   AdminGetSalonResponse,
   AdminListOrdersQueryParams,
   AdminListOrdersResponse,
+  AdminListEmailCampaignsResponse,
   AdminListCourierServicesResponse,
   AdminUpdateOrderStatusBody,
   AdminUpdateOrderStatusParams,
@@ -198,12 +205,168 @@ import {
   UpdateShopCartItemResponse,
 } from "@workspace/api-zod";
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
+import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, sendTransactionalEmail } from "../lib/brevo";
 import { ensureDemoData } from "../lib/seed";
 
 const router: IRouter = Router();
+const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 
 function cookieOptions() {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", maxAge: 1000 * 60 * 60 * 24 * 14, path: "/" };
+}
+
+type OAuthProvider = "google" | "facebook";
+type OAuthProfile = { id: string; email: string; firstName: string; lastName: string };
+
+function oauthRedirect(req: Request, provider: OAuthProvider) {
+  const configured = process.env["APP_BASE_URL"]?.replace(/\/$/, "");
+  if (process.env.NODE_ENV === "production" && (!configured || !configured.startsWith("https://"))) return null;
+  const base = configured ?? `${req.protocol}://${req.get("host")}`;
+  return `${base}/api/auth/oauth/${provider}/callback`;
+}
+
+function oauthFailurePath(flow: string, reason: string) {
+  const page = flow === "business" ? "/poslovna-prijava" : "/prijava";
+  return `${page}?oauth_error=${encodeURIComponent(reason)}`;
+}
+
+function emailCampaignView(campaign: typeof emailCampaignsTable.$inferSelect) {
+  return {
+    id: campaign.id,
+    audience: campaign.audience as "customers" | "salons" | "loyalty",
+    loyaltyTierId: campaign.loyaltyTierId,
+    title: campaign.title,
+    subject: campaign.subject,
+    htmlContent: campaign.htmlContent,
+    scheduledAt: campaign.scheduledAt,
+    status: campaign.status,
+    recipientCount: campaign.recipientCount,
+    brevoCampaignId: campaign.brevoCampaignId,
+    errorMessage: campaign.errorMessage,
+    createdAt: campaign.createdAt,
+    sentAt: campaign.sentAt,
+  };
+}
+
+function emailSafe(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
+}
+
+function appointmentLabel(appointment: typeof appointmentsTable.$inferSelect, salon: typeof salonsTable.$inferSelect, service: typeof servicesTable.$inferSelect) {
+  return `${emailSafe(service.name)} u salonu ${emailSafe(salon.name)}, ${emailSafe(calendarDate(appointment.date))} u ${emailSafe(appointment.startTime)}`;
+}
+
+function appointmentReminderTime(appointment: typeof appointmentsTable.$inferSelect) {
+  const start = new Date(`${calendarDate(appointment.date)}T${appointment.startTime}:00`);
+  start.setDate(start.getDate() - 1);
+  return start > new Date() ? start : null;
+}
+
+async function sendAppointmentEmails(input: {
+  event: "created" | "updated" | "cancelled";
+  appointment: typeof appointmentsTable.$inferSelect;
+  customer: typeof usersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+  service: typeof servicesTable.$inferSelect;
+}) {
+  const { appointment, customer, salon, service, event } = input;
+  const [owner] = await db.select().from(usersTable).where(eq(usersTable.id, salon.ownerId)).limit(1);
+  const label = appointmentLabel(appointment, salon, service);
+  const eventCopy = event === "created"
+    ? { customerTitle: "Zahtev za termin je primljen", customerText: `Vaš zahtev za ${label} je uspešno primljen. Salon će potvrditi termin.`, salonTitle: "Novi zahtev za termin", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je rezervisao/la ${label}.` }
+    : event === "updated"
+      ? { customerTitle: "Termin je izmenjen", customerText: `Vaš termin je izmenjen: ${label}.`, salonTitle: "Termin je izmenjen", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je izmenio/la termin: ${label}.` }
+      : { customerTitle: "Termin je otkazan", customerText: `Vaš termin je otkazan: ${label}.`, salonTitle: "Termin je otkazan", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je otkazao/la termin: ${label}.` };
+  await Promise.all([
+    sendTransactionalEmail({
+      eventKey: `appointment:${appointment.id}:customer:${event}`,
+      emailType: `appointment_${event}`,
+      to: { email: customer.email, name: `${customer.firstName} ${customer.lastName}` },
+      subject: `LUMERA — ${eventCopy.customerTitle}`,
+      htmlContent: lumeraEmailHtml(eventCopy.customerTitle, `<p>${eventCopy.customerText}</p>`),
+      metadata: { appointmentId: appointment.id, salonId: salon.id },
+    }),
+    owner ? sendTransactionalEmail({
+      eventKey: `appointment:${appointment.id}:salon:${event}`,
+      emailType: `salon_appointment_${event}`,
+      to: { email: owner.email, name: `${owner.firstName} ${owner.lastName}` },
+      subject: `LUMERA Biznis — ${eventCopy.salonTitle}`,
+      htmlContent: lumeraEmailHtml(eventCopy.salonTitle, `<p>${eventCopy.salonText}</p>`),
+      metadata: { appointmentId: appointment.id, salonId: salon.id },
+    }) : Promise.resolve(),
+  ]);
+  if (event === "created") {
+    const scheduledAt = appointmentReminderTime(appointment);
+    if (scheduledAt) await sendTransactionalEmail({
+      eventKey: `appointment:${appointment.id}:customer:reminder`,
+      emailType: "appointment_reminder",
+      to: { email: customer.email, name: `${customer.firstName} ${customer.lastName}` },
+      subject: "LUMERA — podsetnik za sutrašnji termin",
+      htmlContent: lumeraEmailHtml("Podsetnik za termin", `<p>Podsećamo vas na ${label}.</p>`),
+      scheduledAt,
+      metadata: { appointmentId: appointment.id, salonId: salon.id },
+    });
+  }
+}
+
+async function campaignRecipients(audience: "customers" | "salons" | "loyalty", loyaltyTierId?: string | null) {
+  if (audience === "customers") {
+    const users = await db.select().from(usersTable).where(eq(usersTable.role, "CUSTOMER"));
+    return users.filter((user) => user.active).map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
+  }
+  if (audience === "salons") {
+    const rows = await db.select({ email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName })
+      .from(salonsTable).innerJoin(usersTable, eq(salonsTable.ownerId, usersTable.id));
+    return rows.map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
+  }
+  if (!loyaltyTierId) return [];
+  const rows = await db.select({ email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName })
+    .from(salonLoyaltyStatusesTable)
+    .innerJoin(salonsTable, eq(salonLoyaltyStatusesTable.salonId, salonsTable.id))
+    .innerJoin(usersTable, eq(salonsTable.ownerId, usersTable.id))
+    .where(eq(salonLoyaltyStatusesTable.tierId, loyaltyTierId));
+  return rows.map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
+}
+
+function oauthProviderConfig(provider: OAuthProvider) {
+  if (provider === "google") {
+    const clientId = process.env["GOOGLE_CLIENT_ID"];
+    const clientSecret = process.env["GOOGLE_CLIENT_SECRET"];
+    return clientId && clientSecret ? { clientId, clientSecret } : null;
+  }
+  const clientId = process.env["FACEBOOK_APP_ID"];
+  const clientSecret = process.env["FACEBOOK_APP_SECRET"];
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+async function resolveOAuthProfile(provider: OAuthProvider, code: string, redirectUri: string, codeVerifier?: string | null): Promise<OAuthProfile> {
+  const config = oauthProviderConfig(provider);
+  if (!config) throw new Error("OAuth provajder nije konfigurisan.");
+  const tokenUrl = provider === "google" ? "https://oauth2.googleapis.com/token" : "https://graph.facebook.com/v20.0/oauth/access_token";
+  const tokenBody = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    code,
+    redirect_uri: redirectUri,
+    grant_type: "authorization_code",
+    ...(provider === "google" && codeVerifier ? { code_verifier: codeVerifier } : {}),
+  });
+  const tokenResponse = await fetch(tokenUrl, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: tokenBody });
+  if (!tokenResponse.ok) throw new Error("OAuth provajder je odbio prijavu.");
+  const token = await tokenResponse.json() as { access_token?: string };
+  if (!token.access_token) throw new Error("OAuth provajder nije vratio pristupni token.");
+  if (provider === "google") {
+    const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { authorization: `Bearer ${token.access_token}` } });
+    const profile = await response.json() as { sub?: string; email?: string; email_verified?: boolean; given_name?: string; family_name?: string; name?: string };
+    if (!response.ok || !profile.sub || !profile.email || !profile.email_verified) throw new Error("Google nije potvrdio e-mail adresu.");
+    const names = (profile.name ?? "").trim().split(/\s+/);
+    return { id: profile.sub, email: profile.email.toLowerCase(), firstName: profile.given_name ?? names[0] ?? "LUMERA", lastName: profile.family_name ?? (names.slice(1).join(" ") || "Korisnik") };
+  }
+  const response = await fetch(`https://graph.facebook.com/me?fields=id,email,first_name,last_name,name&access_token=${encodeURIComponent(token.access_token)}`);
+  const profile = await response.json() as { id?: string; email?: string; first_name?: string; last_name?: string; name?: string };
+  if (!response.ok || !profile.id || !profile.email) throw new Error("Facebook nalog nema dostupnu e-mail adresu.");
+  const names = (profile.name ?? "").trim().split(/\s+/);
+  return { id: profile.id, email: profile.email.toLowerCase(), firstName: profile.first_name ?? names[0] ?? "LUMERA", lastName: profile.last_name ?? (names.slice(1).join(" ") || "Korisnik") };
 }
 
 function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<string, unknown> | null {
@@ -618,26 +781,171 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   res.status(201).json(RegisterResponse.parse({ user: publicUser(user!), message: "Dobro došli u Lumeru." }));
 });
 
+router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
+  const provider = req.params.provider;
+  const flow = req.query.flow === "business" ? "business" : "customer";
+  if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
+  if (!oauthProviderConfig(provider)) { res.redirect(oauthFailurePath(flow, "OAuth prijava trenutno nije podešena.")); return; }
+  const redirectUri = oauthRedirect(req, provider);
+  if (!redirectUri) { res.redirect(oauthFailurePath(flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
+  const state = randomBytes(32).toString("base64url");
+  const codeVerifier = provider === "google" ? randomBytes(48).toString("base64url") : null;
+  await db.insert(oauthLoginStatesTable).values({ state, provider, flow, codeVerifier, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
+  res.cookie(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60 * 1000,
+    path: "/api/auth/oauth",
+  });
+  const url = new URL(provider === "google" ? "https://accounts.google.com/o/oauth2/v2/auth" : "https://www.facebook.com/v20.0/dialog/oauth");
+  url.searchParams.set("client_id", oauthProviderConfig(provider)!.clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", state);
+  url.searchParams.set("response_type", "code");
+  if (provider === "google") {
+    url.searchParams.set("scope", "openid email profile");
+    url.searchParams.set("code_challenge", createHash("sha256").update(codeVerifier!).digest("base64url"));
+    url.searchParams.set("code_challenge_method", "S256");
+  } else {
+    url.searchParams.set("scope", "email,public_profile");
+  }
+  res.redirect(url.toString());
+});
+
+router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => {
+  const provider = req.params.provider;
+  if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
+  const state = typeof req.query.state === "string" ? req.query.state : "";
+  const browserState = req.cookies?.[OAUTH_STATE_COOKIE];
+  res.clearCookie(OAUTH_STATE_COOKIE, { path: "/api/auth/oauth" });
+  if (typeof browserState !== "string" || browserState !== state) {
+    res.redirect(oauthFailurePath("customer", "Prijava nije povezana sa ovim browserom. Pokušajte ponovo."));
+    return;
+  }
+  const [loginState] = await db.select().from(oauthLoginStatesTable).where(and(eq(oauthLoginStatesTable.state, state), eq(oauthLoginStatesTable.provider, provider))).limit(1);
+  if (!loginState || loginState.expiresAt <= new Date()) { res.redirect(oauthFailurePath(loginState?.flow ?? "customer", "Prijava je istekla. Pokušajte ponovo.")); return; }
+  await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
+  if (typeof req.query.error === "string" || typeof req.query.code !== "string") { res.redirect(oauthFailurePath(loginState.flow, "Prijava je otkazana ili nije odobrena.")); return; }
+  try {
+    const redirectUri = oauthRedirect(req, provider);
+    if (!redirectUri) { res.redirect(oauthFailurePath(loginState.flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
+    const profile = await resolveOAuthProfile(provider, req.query.code, redirectUri, loginState.codeVerifier);
+    const user = await db.transaction(async (tx) => {
+      const [identity] = await tx.select().from(oauthIdentitiesTable).where(and(eq(oauthIdentitiesTable.provider, provider), eq(oauthIdentitiesTable.providerAccountId, profile.id))).limit(1);
+      if (identity) {
+        const [existingByIdentity] = await tx.select().from(usersTable).where(eq(usersTable.id, identity.userId)).limit(1);
+        if (existingByIdentity) return existingByIdentity;
+      }
+      const [existingByEmail] = await tx.select().from(usersTable).where(eq(usersTable.email, profile.email)).limit(1);
+      const user = existingByEmail ?? (await tx.insert(usersTable).values({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        passwordHash: await hashPassword(randomBytes(32).toString("base64url")),
+        role: "CUSTOMER",
+      }).returning())[0]!;
+      await tx.insert(oauthIdentitiesTable).values({
+        userId: user.id, provider, providerAccountId: profile.id, providerEmail: profile.email,
+      }).onConflictDoNothing();
+      return user;
+    });
+    const token = await createSession(user.id);
+    res.cookie(sessionCookieName, token, cookieOptions());
+    res.redirect(loginState.flow === "business" ? "/poslovna-registracija?oauth=1" : "/moj-nalog");
+  } catch {
+    res.redirect(oauthFailurePath(loginState.flow, "Nismo mogli da potvrdimo nalog kod provajdera."));
+  }
+});
+
+router.get("/admin/email-marketing/campaigns", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const campaigns = await db.select().from(emailCampaignsTable).orderBy(desc(emailCampaignsTable.createdAt));
+  res.json(AdminListEmailCampaignsResponse.parse({ campaigns: campaigns.map(emailCampaignView) }));
+});
+
+router.post("/admin/email-marketing/campaigns", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateEmailCampaignBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const input = parsed.data;
+  if (input.audience === "loyalty" && !input.loyaltyTierId) { res.status(400).json({ error: "Izaberite loyalty nivo za ovu kampanju." }); return; }
+  const scheduledAt = input.sendMode === "scheduled" ? input.scheduledAt ?? null : null;
+  if (input.sendMode === "scheduled" && (!scheduledAt || scheduledAt <= new Date())) {
+    res.status(400).json({ error: "Izaberite buduće vreme za zakazanu kampanju." }); return;
+  }
+  const recipients = await campaignRecipients(input.audience, input.loyaltyTierId);
+  if (!recipients.length) { res.status(400).json({ error: "Izabrana publika nema nijednog primaoca." }); return; }
+  const [campaign] = await db.insert(emailCampaignsTable).values({
+    createdByUserId: user.id,
+    audience: input.audience,
+    loyaltyTierId: input.loyaltyTierId ?? null,
+    title: input.title,
+    subject: input.subject,
+    htmlContent: input.htmlContent,
+    scheduledAt,
+    status: input.sendMode === "scheduled" ? "scheduled" : "draft",
+    recipientCount: recipients.length,
+  }).returning();
+  try {
+    const brevo = await createBrevoMarketingCampaign({
+      name: input.title,
+      subject: input.subject,
+      htmlContent: input.htmlContent,
+      recipients,
+      scheduledAt,
+    });
+    if (input.sendMode === "now") await sendBrevoCampaignNow(brevo.id);
+    const [updated] = await db.update(emailCampaignsTable).set({
+      brevoCampaignId: brevo.id,
+      status: input.sendMode === "scheduled" ? "scheduled" : "sent",
+      sentAt: input.sendMode === "now" ? new Date() : null,
+      updatedAt: new Date(),
+    }).where(eq(emailCampaignsTable.id, campaign!.id)).returning();
+    res.status(201).json(AdminCreateEmailCampaignResponse.parse(emailCampaignView(updated!)));
+  } catch (error) {
+    const [failed] = await db.update(emailCampaignsTable).set({
+      status: "failed",
+      errorMessage: error instanceof Error ? error.message.slice(0, 1000) : "Nepoznata Brevo greška",
+      updatedAt: new Date(),
+    }).where(eq(emailCampaignsTable.id, campaign!.id)).returning();
+    res.status(502).json({ error: failed?.errorMessage ?? "Brevo kampanja nije kreirana." });
+  }
+});
+
 router.post("/auth/business-register", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = RegisterBusinessBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const input = parsed.data;
   const email = input.email.toLowerCase();
-  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
-  if (existing) { res.status(409).json({ error: "Nalog sa ovom e-mail adresom već postoji." }); return; }
+  const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  const signedIn = await getCurrentUser(req);
+  const [linkedIdentity, existingSalon, existingCenter] = existing && signedIn?.id === existing.id ? await Promise.all([
+    db.select({ id: oauthIdentitiesTable.id }).from(oauthIdentitiesTable).where(eq(oauthIdentitiesTable.userId, existing.id)).limit(1),
+    db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.ownerId, existing.id)).limit(1),
+    db.select({ id: educationCentersTable.id }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, existing.id)).limit(1),
+  ]) : [[], [], []];
+  const socialBusinessCompletion = Boolean(
+    existing && signedIn?.id === existing.id && existing.role === "CUSTOMER"
+    && linkedIdentity.length && !existingSalon.length && !existingCenter.length,
+  );
+  if (existing && !socialBusinessCompletion) { res.status(409).json({ error: "Nalog sa ovom e-mail adresom već postoji." }); return; }
+  if (!existing && !input.password) { res.status(400).json({ error: "Lozinka je obavezna za registraciju e-mailom." }); return; }
 
   try {
     const user = await db.transaction(async (tx) => {
       const role = input.businessType === "SALON" ? "SALON_OWNER" : "EDUCATION_CENTER_OWNER";
-      const [created] = await tx.insert(usersTable).values({
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email,
-        phone: input.phone,
-        passwordHash: await hashPassword(input.password),
-        role,
-      }).returning();
+      const created = existing
+        ? (await tx.update(usersTable).set({ role, phone: input.phone }).where(eq(usersTable.id, existing.id)).returning())[0]!
+        : (await tx.insert(usersTable).values({
+          firstName: input.firstName,
+          lastName: input.lastName,
+          email,
+          phone: input.phone,
+          passwordHash: await hashPassword(input.password!),
+          role,
+        }).returning())[0]!;
 
       if (input.businessType === "SALON") {
         await tx.insert(salonsTable).values({
@@ -872,6 +1180,7 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const [appointment] = await db.insert(appointmentsTable).values({
     salonId: salon.id, customerId: user.id, employeeId: employee.id, serviceId: service.id, date: calendarDate(parsed.data.date), startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
   }).returning();
+  await sendAppointmentEmails({ event: "created", appointment: appointment!, customer: user, salon, service });
   res.status(201).json(CreateAppointmentResponse.parse(appointmentView(appointment!, salon, service, user, employee)));
 });
 
@@ -888,6 +1197,7 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const [updated] = await db.update(appointmentsTable).set({ date: body.data.date ? calendarDate(body.data.date) : appointment.date, startTime: body.data.startTime ?? appointment.startTime, employeeId: body.data.employeeId ?? appointment.employeeId, notes: body.data.notes ?? appointment.notes }).where(eq(appointmentsTable.id, appointment.id)).returning();
   const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
   const [employee] = updated!.employeeId ? await db.select().from(employeesTable).where(eq(employeesTable.id, updated!.employeeId)).limit(1) : [];
+  await sendAppointmentEmails({ event: "updated", appointment: updated!, customer: user, salon: salon[0]!, service: service[0]! });
   res.json(UpdateAppointmentResponse.parse(appointmentView(updated!, salon[0]!, service[0]!, user, employee)));
 });
 
@@ -898,6 +1208,7 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
   const [appointment] = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: body.data.reason ?? null }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.customerId, user.id))).returning();
   if (!appointment) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
   const [salon, service, employee] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1), appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([])]);
+  await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
   res.json(CancelAppointmentResponse.parse(appointmentView(appointment, salon[0]!, service[0]!, user, employee[0])));
 });
 
@@ -1621,6 +1932,14 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna." });
     return;
   }
+  await sendTransactionalEmail({
+    eventKey: `b2b-order:${created.order.id}:created`,
+    emailType: "b2b_order_created",
+    to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
+    subject: "LUMERA Biznis — porudžbina je primljena",
+    htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala vam. Primili smo B2B porudžbinu za salon <strong>${emailSafe(salon.name)}</strong>.</p>`),
+    metadata: { orderId: created.order.id, salonId: salon.id },
+  });
   res.status(201).json(CheckoutShopCartResponse.parse(orderDto(created.order, created.items, salon)));
 });
 
@@ -2100,6 +2419,17 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     return [saved!];
   });
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1);
+  if (body.data.status && body.data.status !== order.status) {
+    const [owner] = await db.select().from(usersTable).where(eq(usersTable.id, salon!.ownerId)).limit(1);
+    if (owner) await sendTransactionalEmail({
+      eventKey: `b2b-order:${updated!.id}:status:${body.data.status}`,
+      emailType: "b2b_order_status",
+      to: { email: owner.email, name: `${owner.firstName} ${owner.lastName}` },
+      subject: `LUMERA Biznis — status porudžbine: ${body.data.status}`,
+      htmlContent: lumeraEmailHtml("Status porudžbine je ažuriran", `<p>Porudžbina za ${emailSafe(salon!.name)} sada ima status <strong>${emailSafe(body.data.status)}</strong>${updated!.trackingNumber ? `. Broj za praćenje: <strong>${emailSafe(updated!.trackingNumber)}</strong>.` : ""}</p>`),
+      metadata: { orderId: updated!.id, salonId: salon!.id, status: body.data.status },
+    });
+  }
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated!.id));
   const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, updated!.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
   const [courier] = updated!.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, updated!.courierServiceId)).limit(1) : [];
@@ -2328,6 +2658,14 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     nextLesson: firstLesson?.id ?? null,
     auditData: { source: "business-workspace", sessionId: session?.id ?? null },
   }).returning();
+  await sendTransactionalEmail({
+    eventKey: `course-enrollment:${enrollment!.id}:confirmed`,
+    emailType: "course_enrollment_confirmed",
+    to: { email: access.user.email, name: `${access.user.firstName} ${access.user.lastName}` },
+    subject: "LUMERA Edukacije — prijava je potvrđena",
+    htmlContent: lumeraEmailHtml("Prijava na edukaciju je potvrđena", `<p>Uspešno ste prijavljeni na kurs <strong>${emailSafe(course.title)}</strong>.</p>`),
+    metadata: { enrollmentId: enrollment!.id, courseId: course.id },
+  });
   res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment!)));
 });
 

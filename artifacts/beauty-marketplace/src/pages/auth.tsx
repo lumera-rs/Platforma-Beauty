@@ -11,7 +11,7 @@ import { useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-
 import { Link, useLocation } from "wouter";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Facebook, Loader2, Mail } from "lucide-react";
 import { homeForRole } from "@/lib/role-routing";
 
 const loginSchema = z.object({
@@ -78,6 +78,10 @@ export default function Login() {
     });
   };
 
+  const continueWith = (provider: "google" | "facebook") => {
+    window.location.assign(`/api/auth/oauth/${provider}/start?flow=customer`);
+  };
+
   if (isLoadingUser) return null; // or a spinner
 
   return (
@@ -127,6 +131,7 @@ export default function Login() {
                     <Button type="submit" className="w-full h-11 text-base mt-2" disabled={loginMutation.isPending}>
                       {loginMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Prijavi se"}
                     </Button>
+                    <SocialButtons onContinue={continueWith} />
                   </form>
                 </Form>
               </TabsContent>
@@ -191,6 +196,7 @@ export default function Login() {
                     <Button type="submit" className="w-full h-11 text-base mt-4" disabled={registerMutation.isPending}>
                       {registerMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Registruj se"}
                     </Button>
+                    <SocialButtons onContinue={continueWith} />
                   </form>
                 </Form>
               </TabsContent>
@@ -205,5 +211,23 @@ export default function Login() {
         </Card>
       </div>
     </Layout>
+  );
+}
+
+function SocialButtons({ onContinue }: { onContinue: (provider: "google" | "facebook") => void }) {
+  return (
+    <div className="space-y-3 pt-2">
+      <div className="relative text-center text-xs text-muted-foreground before:absolute before:left-0 before:right-0 before:top-1/2 before:border-t">
+        <span className="relative bg-card px-2">ili nastavite preko</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Button type="button" variant="outline" onClick={() => onContinue("google")} aria-label="Nastavite preko Google naloga">
+          <Mail className="mr-2 h-4 w-4 text-red-500" /> Google
+        </Button>
+        <Button type="button" variant="outline" onClick={() => onContinue("facebook")} aria-label="Nastavite preko Facebook naloga">
+          <Facebook className="mr-2 h-4 w-4 text-blue-600" /> Facebook
+        </Button>
+      </div>
+    </div>
   );
 }
