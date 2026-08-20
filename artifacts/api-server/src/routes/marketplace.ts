@@ -814,7 +814,7 @@ async function previewSeriesMove(
   return { slots: result, allAvailable: result.every((slot) => slot.available) };
 }
 
-async function moveAppointmentSeries(input: {
+export async function moveAppointmentSeries(input: {
   salonId: string;
   seriesId: string;
   move: { dayOffset?: number; startTime?: string };

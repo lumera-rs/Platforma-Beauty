@@ -7,6 +7,15 @@ import { integrationSettings, integrationValue } from "./integrations";
 
 type Recipient = { email: string; name?: string | null };
 type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
+export type TransactionalEmailTransport = {
+  send(input: {
+    idempotencyKey: string;
+    to: Recipient;
+    subject: string;
+    htmlContent: string;
+    scheduledAt?: Date | null;
+  }): Promise<{ messageId?: string } | { skipped: true; errorMessage: string }>;
+};
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
 const RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000] as const;
@@ -47,6 +56,21 @@ async function brevoJson<T>(path: string, body: unknown): Promise<T> {
   return response.status === 204 ? {} as T : response.json() as Promise<T>;
 }
 
+const brevoTransactionalEmailTransport: TransactionalEmailTransport = {
+  async send(input) {
+    const from = await sender();
+    if (!from) return { skipped: true, errorMessage: "BREVO_SENDER_EMAIL nije podešen." };
+    return brevoJson<{ messageId?: string }>("/smtp/email", {
+      sender: from,
+      to: [{ email: input.to.email, name: input.to.name ?? undefined }],
+      subject: input.subject,
+      htmlContent: input.htmlContent,
+      headers: { idempotencyKey: input.idempotencyKey },
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt.toISOString() } : {}),
+    });
+  },
+};
+
 export function lumeraEmailHtml(title: string, content: string) {
   return `<!doctype html><html lang="sr"><body style="margin:0;background:#f7f4ef;font-family:Arial,sans-serif;color:#28221b">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px">
@@ -67,7 +91,7 @@ export async function sendTransactionalEmail(input: {
   appointmentId?: string;
   metadata?: Record<string, unknown>;
   scheduledAt?: Date;
-}) {
+}, transport: TransactionalEmailTransport = brevoTransactionalEmailTransport) {
   const [delivery] = await db.insert(emailDeliveriesTable).values({
     eventKey: input.eventKey,
     emailType: input.emailType,
@@ -94,9 +118,9 @@ export async function sendTransactionalEmail(input: {
       lte(emailDeliveriesTable.nextRetryAt, new Date()),
     )).returning();
     if (!claimed) return { queued: true };
-    return deliverEmail(claimed, input.htmlContent, processingToken);
+    return deliverEmail(claimed, input.htmlContent, processingToken, transport);
   }
-  return deliverEmail(delivery, input.htmlContent);
+  return deliverEmail(delivery, input.htmlContent, undefined, transport);
 }
 
 function nextRetryAt(retryCount: number, now = new Date()) {
@@ -134,26 +158,29 @@ function duplicateBrevoRequest(error: unknown) {
   return error instanceof Error && error.message.includes("duplicate_parameter");
 }
 
-async function deliverEmail(delivery: EmailDelivery, htmlContent: string, processingToken?: string) {
+async function deliverEmail(
+  delivery: EmailDelivery,
+  htmlContent: string,
+  processingToken?: string,
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
   try {
-    const from = await sender();
-    if (!from) {
+    const result = await transport.send({
+      idempotencyKey: delivery.id,
+      to: { email: delivery.recipientEmail, name: delivery.recipientName },
+      subject: delivery.subject,
+      htmlContent,
+      scheduledAt: delivery.scheduledAt,
+    });
+    if ("skipped" in result) {
       await db.update(emailDeliveriesTable).set({
         status: "skipped",
-        errorMessage: "BREVO_SENDER_EMAIL nije podešen.",
+        errorMessage: result.errorMessage,
         nextRetryAt: null,
         processingToken: null,
       }).where(claimedDeliveryWhere(delivery.id, processingToken));
       return { skipped: true };
     }
-    const result = await brevoJson<{ messageId?: string }>("/smtp/email", {
-      sender: from,
-      to: [{ email: delivery.recipientEmail, name: delivery.recipientName ?? undefined }],
-      subject: delivery.subject,
-      htmlContent,
-      headers: { idempotencyKey: delivery.id },
-      ...(delivery.scheduledAt ? { scheduledAt: delivery.scheduledAt.toISOString() } : {}),
-    });
     await db.update(emailDeliveriesTable).set({
       status: "sent",
       providerMessageId: result.messageId ?? null,
@@ -186,7 +213,10 @@ async function deliverEmail(delivery: EmailDelivery, htmlContent: string, proces
   }
 }
 
-export async function retryFailedRescheduledEmailConfirmations(now = new Date()) {
+export async function retryFailedRescheduledEmailConfirmations(
+  now = new Date(),
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
   await db.update(emailDeliveriesTable).set({
     status: "queued",
     processingToken: null,
@@ -221,7 +251,7 @@ export async function retryFailedRescheduledEmailConfirmations(now = new Date())
     )).returning();
     if (!claimed) continue;
     retried += 1;
-    await deliverEmail(claimed, claimed.htmlContent!, processingToken);
+    await deliverEmail(claimed, claimed.htmlContent!, processingToken, transport);
   }
   return { considered: due.length, retried };
 }
