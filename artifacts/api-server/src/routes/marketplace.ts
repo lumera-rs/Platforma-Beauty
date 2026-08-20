@@ -552,12 +552,21 @@ async function availableEmployeeWithDb(
   const candidates = employees.filter((employee: typeof employeesTable.$inferSelect) => candidateIds.has(employee.id) && (!preferredEmployeeId || employee.id === preferredEmployeeId));
   if (!candidates.length) return null;
   const weekStart = mondayOf(date);
-  const [sameDay, sameWeek, schedules, timeOff] = await Promise.all([
-    store.select().from(appointmentsTable).where(and(eq(appointmentsTable.salonId, salonId), eq(appointmentsTable.date, date))),
-    store.select().from(appointmentsTable).where(and(eq(appointmentsTable.salonId, salonId), sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`)),
-    store.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
-    store.select().from(employeeTimeOffTable).where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
-  ]);
+  // `store` is often a transaction session. A pg client can execute only one
+  // query at a time, so keep these reads sequential instead of queueing them
+  // with Promise.all on the transaction's single connection.
+  const sameDay = await store.select().from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, salonId),
+    eq(appointmentsTable.date, date),
+  ));
+  const sameWeek = await store.select().from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, salonId),
+    sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`,
+  ));
+  const schedules = await store.select().from(employeeSchedulesTable)
+    .where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
+  const timeOff = await store.select().from(employeeTimeOffTable)
+    .where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
   const reservedSameDay = reservedAppointments.filter((appointment) => appointment.date === date);
   const reservedSameWeek = reservedAppointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
   const available = candidates.filter((employee: typeof employeesTable.$inferSelect) => employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
