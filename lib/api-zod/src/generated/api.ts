@@ -450,6 +450,7 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })
@@ -480,6 +481,7 @@ export const CreateAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })
@@ -511,6 +513,7 @@ export const UpdateAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })
@@ -539,6 +542,7 @@ export const CancelAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })
@@ -560,6 +564,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })),
@@ -681,6 +686,7 @@ export const GetSalonDashboardResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })),
@@ -725,6 +731,7 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })
@@ -768,8 +775,106 @@ export const CreateSalonAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
+})
+
+
+/**
+ * @summary Check availability for a salon appointment series
+ */
+export const previewSalonAppointmentSeriesBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonAppointmentSeriesBodySlotsMax = 24;
+
+
+
+export const PreviewSalonAppointmentSeriesBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewSalonAppointmentSeriesBodySlotsItemStartTimeRegExp)
+})).min(1).max(previewSalonAppointmentSeriesBodySlotsMax)
+})
+
+export const previewSalonAppointmentSeriesResponseSlotsItemOneStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const PreviewSalonAppointmentSeriesResponse = zod.object({
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewSalonAppointmentSeriesResponseSlotsItemOneStartTimeRegExp)
+}).and(zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable()
+}))),
+  "allAvailable": zod.boolean()
+})
+
+
+/**
+ * @summary Create an atomic salon appointment series
+ */
+export const createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const createSalonAppointmentSeriesBodyOneSlotsMax = 24;
+
+
+
+export const createSalonAppointmentSeriesBodyTwoGuestPhoneMin = 5;
+
+
+
+export const CreateSalonAppointmentSeriesBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp)
+})).min(1).max(createSalonAppointmentSeriesBodyOneSlotsMax)
+}).and(zod.object({
+  "notes": zod.string().optional(),
+  "salonCustomerId": zod.string().optional(),
+  "guest": zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().min(1),
+  "phone": zod.string().min(createSalonAppointmentSeriesBodyTwoGuestPhoneMin),
+  "email": zod.string().optional()
+}).optional()
+}))
+
+export const CreateSalonAppointmentSeriesResponse = zod.object({
+  "id": zod.string(),
+  "totalAppointments": zod.number(),
+  "appointments": zod.array(zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "employeeName": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "seriesId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "notes": zod.string().nullish()
+}))
+})
+
+
+/**
+ * @summary Cancel incomplete appointments in a salon series from today onward
+ */
+export const CancelSalonAppointmentSeriesParams = zod.object({
+  "seriesId": zod.coerce.string()
+})
+
+export const CancelSalonAppointmentSeriesResponse = zod.object({
+  "id": zod.string(),
+  "cancelledAppointments": zod.number()
 })
 
 
@@ -784,9 +889,99 @@ export const ListSalonCustomersResponseItem = zod.object({
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
   "visitCount": zod.number(),
-  "isRegistered": zod.boolean()
+  "isRegistered": zod.boolean(),
+  "series": zod.array(zod.object({
+  "id": zod.string(),
+  "serviceName": zod.string(),
+  "totalAppointments": zod.number(),
+  "completedAppointments": zod.number(),
+  "upcomingAppointments": zod.number()
+})).optional()
 })
 export const ListSalonCustomersResponse = zod.array(ListSalonCustomersResponseItem)
+
+
+/**
+ * @summary Check availability for an employee appointment series
+ */
+export const previewEmployeeAppointmentSeriesBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewEmployeeAppointmentSeriesBodySlotsMax = 24;
+
+
+
+export const PreviewEmployeeAppointmentSeriesBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewEmployeeAppointmentSeriesBodySlotsItemStartTimeRegExp)
+})).min(1).max(previewEmployeeAppointmentSeriesBodySlotsMax)
+})
+
+export const previewEmployeeAppointmentSeriesResponseSlotsItemOneStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const PreviewEmployeeAppointmentSeriesResponse = zod.object({
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewEmployeeAppointmentSeriesResponseSlotsItemOneStartTimeRegExp)
+}).and(zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable()
+}))),
+  "allAvailable": zod.boolean()
+})
+
+
+/**
+ * @summary Create an atomic employee appointment series
+ */
+export const createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const createEmployeeAppointmentSeriesBodyOneSlotsMax = 24;
+
+
+
+export const createEmployeeAppointmentSeriesBodyTwoGuestPhoneMin = 5;
+
+
+
+export const CreateEmployeeAppointmentSeriesBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "slots": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp)
+})).min(1).max(createEmployeeAppointmentSeriesBodyOneSlotsMax)
+}).and(zod.object({
+  "salonCustomerId": zod.string().optional(),
+  "guest": zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().min(1),
+  "phone": zod.string().min(createEmployeeAppointmentSeriesBodyTwoGuestPhoneMin),
+  "email": zod.string().optional()
+}).optional()
+}))
+
+export const CreateEmployeeAppointmentSeriesResponse = zod.object({
+  "id": zod.string(),
+  "totalAppointments": zod.number(),
+  "appointments": zod.array(zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "employeeName": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "seriesId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "notes": zod.string().nullish()
+}))
+})
 
 
 /**
@@ -808,7 +1003,14 @@ export const UpdateSalonCustomerResponse = zod.object({
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
   "visitCount": zod.number(),
-  "isRegistered": zod.boolean()
+  "isRegistered": zod.boolean(),
+  "series": zod.array(zod.object({
+  "id": zod.string(),
+  "serviceName": zod.string(),
+  "totalAppointments": zod.number(),
+  "completedAppointments": zod.number(),
+  "upcomingAppointments": zod.number()
+})).optional()
 })
 
 
@@ -837,6 +1039,7 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish()
 })

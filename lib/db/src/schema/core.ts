@@ -324,6 +324,17 @@ export const salonCustomersTable = pgTable("salon_customers", {
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
 ]);
 
+export const appointmentSeriesTable = pgTable("appointment_series", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  salonCustomerId: uuid("salon_customer_id").references(() => salonCustomersTable.id, { onDelete: "set null" }),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
+  totalAppointments: integer("total_appointments").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const appointmentsTable = pgTable("appointments", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
@@ -331,6 +342,7 @@ export const appointmentsTable = pgTable("appointments", {
   salonCustomerId: uuid("salon_customer_id").references(() => salonCustomersTable.id, { onDelete: "set null" }),
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id),
+  seriesId: uuid("series_id").references(() => appointmentSeriesTable.id, { onDelete: "set null" }),
   date: date("appointment_date", { mode: "string" }).notNull(),
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),

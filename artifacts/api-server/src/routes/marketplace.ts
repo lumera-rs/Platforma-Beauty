@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import {
+  appointmentSeriesTable,
   appointmentsTable,
   beautyGlossaryTable,
   courseEnrollmentsTable,
@@ -115,6 +116,8 @@ import {
   CancelAppointmentBody,
   CancelAppointmentParams,
   CancelAppointmentResponse,
+  CancelSalonAppointmentSeriesParams,
+  CancelSalonAppointmentSeriesResponse,
   CreateAppointmentBody,
   CreateAppointmentResponse,
   AddShopCartItemBody,
@@ -217,6 +220,14 @@ import {
   UpdateSalonAppointmentResponse,
   CreateSalonAppointmentBody,
   CreateSalonAppointmentResponse,
+  CreateSalonAppointmentSeriesBody,
+  CreateSalonAppointmentSeriesResponse,
+  CreateEmployeeAppointmentSeriesBody,
+  CreateEmployeeAppointmentSeriesResponse,
+  PreviewSalonAppointmentSeriesBody,
+  PreviewSalonAppointmentSeriesResponse,
+  PreviewEmployeeAppointmentSeriesBody,
+  PreviewEmployeeAppointmentSeriesResponse,
   UpdateSalonCustomerBody,
   UpdateSalonCustomerParams,
   UpdateSalonCustomerResponse,
@@ -507,7 +518,23 @@ async function eligibleEmployees(salonId: string, serviceId: string, preferredEm
   return employees.filter((employee) => serviceEmployeeIds.has(employee.id) && (!preferredEmployeeId || employee.id === preferredEmployeeId));
 }
 
-async function availableEmployeeWithDb(store: any, salonId: string, serviceId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
+type ReservedAppointment = {
+  employeeId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+async function availableEmployeeWithDb(
+  store: any,
+  salonId: string,
+  serviceId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  preferredEmployeeId?: string | null,
+  reservedAppointments: ReservedAppointment[] = [],
+) {
   const employees = await store.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
   const ids = employees.map((employee: typeof employeesTable.$inferSelect) => employee.id);
   const links = ids.length ? await store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
@@ -521,20 +548,35 @@ async function availableEmployeeWithDb(store: any, salonId: string, serviceId: s
     store.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
     store.select().from(employeeTimeOffTable).where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
   ]);
+  const reservedSameDay = reservedAppointments.filter((appointment) => appointment.date === date);
+  const reservedSameWeek = reservedAppointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
   const available = candidates.filter((employee: typeof employeesTable.$inferSelect) => employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
-    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment)));
+    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
+    && !reservedSameDay.some((appointment) => appointment.employeeId === employee.id && appointment.startTime < endTime && appointment.endTime > startTime));
   if (!available.length) return null;
   return [...available].sort((a, b) => {
-    const dayA = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length;
-    const dayB = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length;
-    const weekA = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length;
-    const weekB = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length;
+    const dayA = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
+      + reservedSameDay.filter((appointment) => appointment.employeeId === a.id).length;
+    const dayB = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
+      + reservedSameDay.filter((appointment) => appointment.employeeId === b.id).length;
+    const weekA = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
+      + reservedSameWeek.filter((appointment) => appointment.employeeId === a.id).length;
+    const weekB = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
+      + reservedSameWeek.filter((appointment) => appointment.employeeId === b.id).length;
     return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name);
   })[0]!;
 }
 
-async function availableEmployee(salonId: string, serviceId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
-  return availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId);
+async function availableEmployee(
+  salonId: string,
+  serviceId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  preferredEmployeeId?: string | null,
+  reservedAppointments: ReservedAppointment[] = [],
+) {
+  return availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId, reservedAppointments);
 }
 
 async function createAllocatedAppointment(input: {
@@ -551,6 +593,145 @@ async function createAllocatedAppointment(input: {
     }).returning();
     return { employee, appointment: appointment! };
   });
+}
+
+type PreparedSeriesSlot = { date: string; startTime: string; endTime: string };
+
+function prepareSeriesSlots(
+  slots: Array<{ date: string | Date; startTime: string }>,
+  durationMinutes: number,
+): PreparedSeriesSlot[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const prepared = slots.map((slot) => {
+    const date = calendarDate(slot.date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot.startTime) || date < today) {
+      throw new AppointmentSeriesError("Svaki termin mora imati važeći današnji ili budući datum i vreme.", 400);
+    }
+    const endTime = appointmentEndTime(slot.startTime, durationMinutes);
+    if (!endTime) throw new AppointmentSeriesError("Trajanje termina izlazi van dana.", 400);
+    return { date, startTime: slot.startTime, endTime };
+  });
+  const unique = new Set(prepared.map((slot) => `${slot.date}:${slot.startTime}`));
+  if (unique.size !== prepared.length) throw new AppointmentSeriesError("Serija ne može sadržati isti termin više puta.", 400);
+  const ordered = prepared.sort((a, b) => `${a.date}:${a.startTime}`.localeCompare(`${b.date}:${b.startTime}`));
+  for (let index = 0; index < ordered.length; index += 1) {
+    const current = ordered[index]!;
+    for (const previous of ordered.slice(0, index)) {
+      if (previous.date !== current.date) continue;
+      if (previous.startTime < current.endTime && previous.endTime > current.startTime) {
+        throw new AppointmentSeriesError("Termini u istoj seriji ne mogu se preklapati.", 400);
+      }
+    }
+  }
+  return ordered;
+}
+
+async function previewSeriesSlots(
+  salonId: string,
+  serviceId: string,
+  slots: PreparedSeriesSlot[],
+  preferredEmployeeId?: string | null,
+) {
+  const result: Array<{ date: string; startTime: string; available: boolean; reason: string | null }> = [];
+  const reservedAppointments: ReservedAppointment[] = [];
+  for (const slot of slots) {
+    const employee = await availableEmployee(salonId, serviceId, slot.date, slot.startTime, slot.endTime, preferredEmployeeId, reservedAppointments);
+    result.push({
+      date: slot.date,
+      startTime: slot.startTime,
+      available: Boolean(employee),
+      reason: employee ? null : "Nema slobodnog zaposlenog ili termin izlazi van radnog vremena.",
+    });
+    if (employee) {
+      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+    }
+  }
+  return { slots: result, allAvailable: result.every((slot) => slot.available) };
+}
+
+async function createAppointmentSeries(input: {
+  salonId: string;
+  customerId: string | null;
+  salonCustomerId: string;
+  service: typeof servicesTable.$inferSelect;
+  slots: PreparedSeriesSlot[];
+  createdByUserId: string;
+  notes?: string | null;
+  preferredEmployeeId?: string | null;
+}) {
+  return db.transaction(async (tx) => {
+    for (const date of [...new Set(input.slots.map((slot) => slot.date))].sort()) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${date}`}))`);
+    }
+    const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect }> = [];
+    const reservedAppointments: ReservedAppointment[] = [];
+    for (const slot of input.slots) {
+      const employee = await availableEmployeeWithDb(
+        tx,
+        input.salonId,
+        input.service.id,
+        slot.date,
+        slot.startTime,
+        slot.endTime,
+        input.preferredEmployeeId,
+        reservedAppointments,
+      );
+      if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
+      allocations.push({ slot, employee });
+      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+    }
+    const [series] = await tx.insert(appointmentSeriesTable).values({
+      salonId: input.salonId,
+      salonCustomerId: input.salonCustomerId,
+      serviceId: input.service.id,
+      employeeId: input.preferredEmployeeId ?? null,
+      totalAppointments: input.slots.length,
+      createdByUserId: input.createdByUserId,
+    }).returning();
+    const appointments: (typeof appointmentsTable.$inferSelect)[] = [];
+    for (const { slot, employee } of allocations) {
+      const [appointment] = await tx.insert(appointmentsTable).values({
+        salonId: input.salonId,
+        customerId: input.customerId,
+        salonCustomerId: input.salonCustomerId,
+        employeeId: employee.id,
+        serviceId: input.service.id,
+        seriesId: series!.id,
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        durationMinutes: input.service.durationMinutes,
+        price: input.service.promoPrice ?? input.service.price,
+        status: "confirmed",
+        notes: input.notes ?? null,
+      }).returning();
+      appointments.push(appointment!);
+    }
+    return { series: series!, appointments };
+  });
+}
+
+async function sendSeriesConfirmations(input: {
+  appointments: (typeof appointmentsTable.$inferSelect)[];
+  contact: typeof salonCustomersTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+}) {
+  for (const appointment of input.appointments) {
+    await sendSms({
+      eventKey: `appointment-confirmation:${appointment.id}`, salonId: input.salon.id, appointmentId: appointment.id,
+      type: "appointment_confirmation", phone: input.contact.phone, smsOptOut: input.contact.smsOptOut,
+      text: `LUMERA: termin u salonu ${input.salon.name} je zakazan za ${appointment.date} u ${appointment.startTime}.`,
+    });
+    if (input.contact.email) {
+      await sendTransactionalEmail({
+        eventKey: `appointment-confirmation:${appointment.id}:email`,
+        emailType: "appointment_confirmation",
+        to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
+        subject: "LUMERA — potvrda termina",
+        htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je zakazan za <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
+      });
+    }
+  }
 }
 
 function normalizedPhone(phone: string) {
@@ -808,6 +989,12 @@ class EmployeeBookingError extends Error {
   }
 }
 
+class AppointmentSeriesError extends Error {
+  constructor(message: string, readonly status = 409) {
+    super(message);
+  }
+}
+
 type SalonEmployeeAccess = {
   user: typeof usersTable.$inferSelect;
   employee: typeof employeesTable.$inferSelect;
@@ -945,6 +1132,7 @@ function appointmentView(
     endTime: appointment.endTime,
     durationMinutes: appointment.durationMinutes,
     price: appointment.price,
+    seriesId: appointment.seriesId,
     status: appointment.status,
     notes: appointment.notes,
   };
@@ -1763,11 +1951,24 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
 
 router.get("/salon/customers", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id)).orderBy(asc(salonCustomersTable.lastName), asc(salonCustomersTable.firstName));
-  const appointments = await db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, access.salon.id));
+  const [contacts, appointments, series, services] = await Promise.all([
+    db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id)).orderBy(asc(salonCustomersTable.lastName), asc(salonCustomersTable.firstName)),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, access.salon.id)),
+    db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, access.salon.id)),
+    db.select().from(servicesTable).where(eq(servicesTable.salonId, access.salon.id)),
+  ]);
   res.json(ListSalonCustomersResponse.parse(contacts.map((contact) => ({
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
     smsOptOut: contact.smsOptOut, visitCount: appointments.filter((item) => item.salonCustomerId === contact.id).length, isRegistered: Boolean(contact.userId),
+    series: series.filter((item) => item.salonCustomerId === contact.id).map((item) => {
+      const members = appointments.filter((appointment) => appointment.seriesId === item.id);
+      return {
+        id: item.id, serviceName: services.find((service) => service.id === item.serviceId)?.name ?? "Usluga",
+        totalAppointments: item.totalAppointments,
+        completedAppointments: members.filter((appointment) => appointment.status === "completed").length,
+        upcomingAppointments: members.filter((appointment) => appointment.date >= new Date().toISOString().slice(0, 10) && ["pending", "confirmed"].includes(appointment.status)).length,
+      };
+    }),
   }))));
 });
 
@@ -1829,6 +2030,82 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
     text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment!.startTime}.`,
   });
   res.status(201).json(CreateSalonAppointmentResponse.parse(appointmentView(appointment!, salon, service, contact!, employee)));
+});
+
+router.post("/salon/appointment-series/preview", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = PreviewSalonAppointmentSeriesBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci za pregled serije nisu ispravni." }); return; }
+  const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1);
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
+  if (parsed.data.employeeId && !(await employeeInSalon(parsed.data.employeeId, access.salon.id))) {
+    res.status(403).json({ error: "Zaposleni pripada drugom salonu." }); return;
+  }
+  try {
+    const slots = prepareSeriesSlots(parsed.data.slots, service.durationMinutes);
+    res.json(PreviewSalonAppointmentSeriesResponse.parse(await previewSeriesSlots(access.salon.id, service.id, slots, parsed.data.employeeId)));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Pregled serije nije uspeo.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
+});
+
+router.post("/salon/appointment-series", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonAppointmentSeriesBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci za seriju termina nisu ispravni." }); return; }
+  if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
+    res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
+  }
+  const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1);
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
+  if (parsed.data.employeeId && !(await employeeInSalon(parsed.data.employeeId, access.salon.id))) {
+    res.status(403).json({ error: "Zaposleni pripada drugom salonu." }); return;
+  }
+  let contact: typeof salonCustomersTable.$inferSelect | undefined;
+  if (parsed.data.salonCustomerId) {
+    contact = (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, parsed.data.salonCustomerId), eq(salonCustomersTable.salonId, access.salon.id))).limit(1))[0];
+    if (!contact) { res.status(404).json({ error: "CRM klijent ne pripada ovom salonu." }); return; }
+  } else {
+    const phone = normalizedPhone(parsed.data.guest!.phone);
+    if (!phone) { res.status(400).json({ error: "Unesite ispravan broj telefona klijenta." }); return; }
+    const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
+    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
+    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    if (!contact) {
+      [contact] = await db.insert(salonCustomersTable).values({
+        salonId: access.salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
+        phone: parsed.data.guest!.phone.trim(), phoneNormalized: phone, userId: registered?.id ?? null, email: parsed.data.guest!.email?.trim().toLowerCase() || null,
+      }).returning();
+    }
+  }
+  try {
+    const slots = prepareSeriesSlots(parsed.data.slots, service.durationMinutes);
+    const created = await createAppointmentSeries({
+      salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service, slots,
+      createdByUserId: access.user.id, notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId,
+    });
+    const employeeIds = [...new Set(created.appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []))];
+    const employees = employeeIds.length ? await db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : [];
+    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId)));
+    await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
+    res.status(201).json(CreateSalonAppointmentSeriesResponse.parse({ id: created.series.id, totalAppointments: created.appointments.length, appointments: views }));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
+});
+
+router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = CancelSalonAppointmentSeriesParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Serija termina nije ispravna." }); return; }
+  const [series] = await db.select().from(appointmentSeriesTable).where(and(eq(appointmentSeriesTable.id, params.data.seriesId), eq(appointmentSeriesTable.salonId, access.salon.id))).limit(1);
+  if (!series) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  const cancelled = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: "Otkazana preostala serija termina." })
+    .where(and(eq(appointmentsTable.seriesId, series.id), sql`${appointmentsTable.date} >= ${today}`, inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning({ id: appointmentsTable.id });
+  res.json(CancelSalonAppointmentSeriesResponse.parse({ id: series.id, cancelledAppointments: cancelled.length }));
 });
 
 router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<void> => {
@@ -2039,6 +2316,7 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     if (contact) ownClients.set(contact.id, { id: contact.id, firstName: contact.firstName, lastName: contact.lastName, phone: contact.phone });
     return {
       id: appointment.id, date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime, status: appointment.status,
+      seriesId: appointment.seriesId,
       notes: appointment.notes, serviceName: serviceById.get(appointment.serviceId)?.name ?? "Usluga nije dostupna",
       customerName: person ? `${person.firstName} ${person.lastName}`.trim() : "Gost",
       customerPhone: person?.phone ?? null,
@@ -2126,6 +2404,79 @@ router.post("/employee/leave-requests", async (req, res): Promise<void> => {
     return [created!];
   });
   res.status(201).json(request);
+});
+
+router.post("/employee/appointment-series/preview", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const parsed = PreviewEmployeeAppointmentSeriesBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci za pregled serije nisu ispravni." }); return; }
+  if (parsed.data.employeeId && parsed.data.employeeId !== access.employee.id) {
+    res.status(403).json({ error: "Možete proveravati dostupnost samo za svoje termine." }); return;
+  }
+  const [assigned, service] = await Promise.all([
+    db.select().from(employeeServicesTable).where(and(eq(employeeServicesTable.employeeId, access.employee.id), eq(employeeServicesTable.serviceId, parsed.data.serviceId))).limit(1),
+    db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1),
+  ]);
+  if (!assigned[0] || !service[0]) { res.status(403).json({ error: "Možete zakazati samo svoje dodeljene usluge." }); return; }
+  try {
+    const slots = prepareSeriesSlots(parsed.data.slots, service[0].durationMinutes);
+    res.json(PreviewEmployeeAppointmentSeriesResponse.parse(await previewSeriesSlots(access.salon.id, service[0].id, slots, access.employee.id)));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Pregled serije nije uspeo.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
+});
+
+router.post("/employee/appointment-series", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const parsed = CreateEmployeeAppointmentSeriesBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci za seriju termina nisu ispravni." }); return; }
+  if (parsed.data.employeeId && parsed.data.employeeId !== access.employee.id) {
+    res.status(403).json({ error: "Možete zakazati samo svoje termine." }); return;
+  }
+  if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
+    res.status(400).json({ error: "Izaberite klijenta kog ste uslužili ili unesite novog klijenta." }); return;
+  }
+  const [assigned, service] = await Promise.all([
+    db.select().from(employeeServicesTable).where(and(eq(employeeServicesTable.employeeId, access.employee.id), eq(employeeServicesTable.serviceId, parsed.data.serviceId))).limit(1),
+    db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1),
+  ]);
+  if (!assigned[0] || !service[0]) { res.status(403).json({ error: "Možete zakazati samo svoje dodeljene usluge." }); return; }
+  let contact: typeof salonCustomersTable.$inferSelect | undefined;
+  let newlyCreatedContact = false;
+  if (parsed.data.salonCustomerId) {
+    contact = (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, parsed.data.salonCustomerId), eq(salonCustomersTable.salonId, access.salon.id))).limit(1))[0];
+    if (!contact) { res.status(403).json({ error: "Klijent ne pripada ovom salonu." }); return; }
+  } else {
+    const phone = normalizedPhone(parsed.data.guest!.phone);
+    if (!phone || !parsed.data.guest!.firstName.trim()) { res.status(400).json({ error: "Unesite ime i ispravan telefon klijenta." }); return; }
+    const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
+    contact = contacts.find((item) => item.phoneNormalized === phone || (item.phone && normalizedPhone(item.phone) === phone));
+    if (!contact) {
+      const [registered] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, phone)).limit(1);
+      [contact] = await db.insert(salonCustomersTable).values({
+        salonId: access.salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
+        phone: parsed.data.guest!.phone.trim(), phoneNormalized: phone, userId: registered?.id ?? null, email: parsed.data.guest!.email?.trim().toLowerCase() || null,
+      }).returning();
+      newlyCreatedContact = true;
+    }
+  }
+  const [previous] = await db.select({ id: appointmentsTable.id }).from(appointmentsTable)
+    .where(and(eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonCustomerId, contact!.id))).limit(1);
+  if (!newlyCreatedContact && !previous) { res.status(403).json({ error: "Možete izabrati samo klijenta kog ste već uslužili." }); return; }
+  try {
+    const slots = prepareSeriesSlots(parsed.data.slots, service[0].durationMinutes);
+    const created = await createAppointmentSeries({
+      salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service: service[0], slots,
+      createdByUserId: access.user.id, preferredEmployeeId: access.employee.id,
+    });
+    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service[0], contact!, access.employee));
+    await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
+    res.status(201).json(CreateEmployeeAppointmentSeriesResponse.parse({ id: created.series.id, totalAppointments: created.appointments.length, appointments: views }));
+  } catch (error) {
+    const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+  }
 });
 
 router.post("/employee/appointments", async (req, res): Promise<void> => {

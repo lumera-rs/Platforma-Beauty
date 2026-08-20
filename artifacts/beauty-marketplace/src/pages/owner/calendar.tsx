@@ -1,4 +1,4 @@
-import { type ComponentProps, useMemo, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,9 @@ import {
   getListSalonEmployeesQueryKey,
   getListSalonServicesQueryKey,
   useCreateSalonAppointment,
+  useCreateSalonAppointmentSeries,
+  usePreviewSalonAppointmentSeries,
+  useCancelSalonAppointmentSeries,
   useGetCurrentUser,
   useListSalonAppointments,
   useListSalonCustomers,
@@ -25,7 +28,7 @@ import {
   useUpdateSalonAppointment,
   useUpdateSalonCustomer,
 } from "@workspace/api-client-react";
-import { CalendarDays, Clock3, Loader2, MessageSquareOff, Pencil, Plus, UserRoundPlus } from "lucide-react";
+import { CalendarDays, Clock3, Loader2, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus } from "lucide-react";
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -90,7 +93,23 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
 }
 
 const today = dateKey(new Date());
-const initialForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "" };
+type SeriesSlot = { date: string; startTime: string };
+type OwnerBookingForm = { serviceId: string; employeeId: string; date: string; startTime: string; notes: string; customerId: string; firstName: string; lastName: string; phone: string; email: string; recurrence: "daily" | "every-2-days" | "every-3-days" | "weekly" | "biweekly" | "monthly" | "custom"; customDays: string; count: string };
+const initialForm: OwnerBookingForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "", recurrence: "weekly", customDays: "7", count: "5" };
+
+function buildSeriesSlots(form: OwnerBookingForm): SeriesSlot[] {
+  const count = Math.max(1, Math.min(24, Number(form.count) || 1));
+  const start = dateAtUtcNoon(form.date);
+  const step = form.recurrence === "every-2-days" ? 2 : form.recurrence === "every-3-days" ? 3 : form.recurrence === "custom" ? Math.max(1, Math.min(90, Number(form.customDays) || 1)) : 1;
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(start);
+    if (form.recurrence === "weekly") date.setUTCDate(date.getUTCDate() + index * 7);
+    else if (form.recurrence === "biweekly") date.setUTCDate(date.getUTCDate() + index * 14);
+    else if (form.recurrence === "monthly") date.setUTCMonth(date.getUTCMonth() + index);
+    else date.setUTCDate(date.getUTCDate() + index * step);
+    return { date: dateKey(date), startTime: form.startTime };
+  });
+}
 
 export default function OwnerCalendar() {
   const { data: userResp } = useGetCurrentUser();
@@ -121,12 +140,17 @@ export default function OwnerCalendar() {
   const { data: employees } = useListSalonEmployees({ query: { enabled: !!userResp?.user, queryKey: getListSalonEmployeesQueryKey() } });
   const { data: customers, refetch: refetchCustomers } = useListSalonCustomers({ query: { enabled: !!userResp?.user, queryKey: getListSalonCustomersQueryKey() } });
   const create = useCreateSalonAppointment();
+  const createSeries = useCreateSalonAppointmentSeries();
+  const previewSeries = usePreviewSalonAppointmentSeries();
+  const cancelSeries = useCancelSalonAppointmentSeries();
   const updateAppointment = useUpdateSalonAppointment();
   const updateCustomer = useUpdateSalonCustomer();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
-  const [editing, setEditing] = useState<{ id: string; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
+  const [isSeries, setIsSeries] = useState(false);
+  const [seriesSlots, setSeriesSlots] = useState<SeriesSlot[]>([]);
+  const [editing, setEditing] = useState<{ id: string; seriesId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
   const sorted = useMemo(() => [...(appointments ?? [])].sort((a, b) => a.startTime.localeCompare(b.startTime)), [appointments]);
   const appointmentDateKeys = useMemo(() => new Set((monthAppointments ?? []).map((appointment) => appointmentDateKey(appointment.date))), [monthAppointments]);
   const quickDates = useMemo(() => {
@@ -147,13 +171,38 @@ export default function OwnerCalendar() {
 
   const openNewAppointment = () => {
     setForm({ ...initialForm, date: selectedDate ?? today });
+    setIsSeries(false);
+    setSeriesSlots([]);
+    previewSeries.reset();
     setOpen(true);
   };
+
+  useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, seriesSlots]);
 
   const createAppointment = (event: React.FormEvent) => {
     event.preventDefault();
     if (form.customerId === "new" && (!form.firstName.trim() || !form.lastName.trim() || !form.phone.trim())) {
       toast.error("Unesite ime, prezime i telefon gosta.");
+      return;
+    }
+    if (isSeries) {
+      if (!seriesSlots.length) { toast.error("Prvo primenite pravilo ponavljanja."); return; }
+      if (!previewSeries.data?.allAvailable) { toast.error("Pregledom potvrdite da su svi termini dostupni."); return; }
+      createSeries.mutate({
+        data: {
+          serviceId: form.serviceId, employeeId: form.employeeId || null, notes: form.notes || undefined,
+          slots: seriesSlots,
+          ...(form.customerId === "new"
+            ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
+            : { salonCustomerId: form.customerId }),
+        },
+      }, {
+        onSuccess: () => {
+          toast.success("Serija termina je sačuvana", { description: "Svaki termin ima zasebnu SMS i e-mail potvrdu kada su podaci dostupni." });
+          setOpen(false); selectDate(seriesSlots[0]!.date); setForm(initialForm); setSeriesSlots([]); refetchAppointments(); refetchCustomers();
+        },
+        onError: (error) => toast.error("Serija nije sačuvana", { description: error instanceof Error ? error.message : "Ponovo proverite dostupnost." }),
+      });
       return;
     }
     create.mutate({
@@ -188,6 +237,11 @@ export default function OwnerCalendar() {
     });
   };
 
+  const runSeriesPreview = () => {
+    if (!form.serviceId || !seriesSlots.length) { toast.error("Izaberite uslugu i primenite pravilo serije."); return; }
+    previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: form.employeeId || null, slots: seriesSlots } });
+  };
+
   return (
     <BusinessLayout>
       <div className="container mx-auto flex w-full max-w-[1600px] flex-col items-start gap-8 px-4 py-8 lg:px-6 xl:flex-row">
@@ -209,7 +263,8 @@ export default function OwnerCalendar() {
                   <div className="space-y-2"><Label>Klijent</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}><option value="new">Novi klijent (brzi unos)</option>{customers?.map((customer) => <option key={customer.id} value={customer.id}>{customer.firstName} {customer.lastName} · {customer.phone ?? "bez telefona"}</option>)}</select></div>
                   {form.customerId === "new" && <div className="rounded-lg border border-dashed bg-muted/30 p-4"><div className="mb-3 flex items-center gap-2 font-medium"><UserRoundPlus className="h-4 w-4 text-primary" /> Walk-in klijent</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Ime</Label><Input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></div><div className="space-y-2"><Label>Prezime</Label><Input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></div><div className="space-y-2"><Label>Telefon</Label><Input required placeholder="+381 6x..." value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="space-y-2"><Label>E-mail <span className="text-muted-foreground">(opciono)</span></Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div></div></div>}
                   <div className="space-y-2"><Label>Napomena <span className="text-muted-foreground">(opciono)</span></Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-                  <Button className="w-full" type="submit" disabled={create.isPending}>{create.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj termin</Button>
+                  <div className="rounded-xl border bg-muted/20 p-4"><label className="flex cursor-pointer items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={isSeries} onChange={(event) => { setIsSeries(event.target.checked); if (event.target.checked) setSeriesSlots(buildSeriesSlots(form)); else { setSeriesSlots([]); previewSeries.reset(); } }} /> <Repeat2 className="h-4 w-4 text-primary" /> Zakaži seriju termina</label>{isSeries && <div className="mt-4 space-y-3"><div className="grid gap-3 sm:grid-cols-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={form.recurrence} onChange={(event) => setForm({ ...form, recurrence: event.target.value as OwnerBookingForm["recurrence"] })}><option value="daily">Svaki dan</option><option value="every-2-days">Svaka 2 dana</option><option value="every-3-days">Svaka 3 dana</option><option value="weekly">Nedeljno</option><option value="biweekly">Na 2 nedelje</option><option value="monthly">Mesečno</option><option value="custom">Prilagođeno (dani)</option></select>{form.recurrence === "custom" && <Input type="number" min="1" max="90" value={form.customDays} onChange={(event) => setForm({ ...form, customDays: event.target.value })} /> }<Input type="number" min="1" max="24" value={form.count} onChange={(event) => setForm({ ...form, count: event.target.value })} /></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setSeriesSlots(buildSeriesSlots(form))}>Primeni pravilo</Button><Button type="button" size="sm" variant="outline" disabled={previewSeries.isPending} onClick={runSeriesPreview}>{previewSeries.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Proveri dostupnost</Button></div>{seriesSlots.length > 0 && <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border bg-background p-2">{seriesSlots.map((slot, index) => { const state = previewSeries.data?.slots.find((item) => appointmentDateKey(item.date) === slot.date && item.startTime === slot.startTime); return <div className="flex items-center gap-2" key={`${slot.date}-${index}`}><Input className="h-8" type="date" value={slot.date} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} /><Input className="h-8" type="time" value={slot.startTime} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, startTime: event.target.value } : item))} /><span className={cn("text-xs", state?.available === false ? "text-destructive" : state?.available ? "text-emerald-700" : "text-muted-foreground")}>{state ? (state.available ? "Slobodno" : "Konflikt") : "Nije provereno"}</span><Button type="button" variant="ghost" size="icon" aria-label="Ukloni termin iz serije" onClick={() => setSeriesSlots(seriesSlots.filter((_, i) => i !== index))}><Trash2 className="h-4 w-4" /></Button></div>; })}</div>}</div>}</div>
+                  <Button className="w-full" type="submit" disabled={create.isPending || createSeries.isPending}>{(create.isPending || createSeries.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {isSeries ? "Sačuvaj seriju termina" : "Sačuvaj termin"}</Button>
                 </form>
               </DialogContent>
             </Dialog>
@@ -221,6 +276,7 @@ export default function OwnerCalendar() {
                 <div className="space-y-2"><Label>Status</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={editing.status} onChange={(event) => setEditing({ ...editing, status: event.target.value as typeof editing.status })}><option value="pending">Na čekanju</option><option value="confirmed">Potvrđen</option><option value="completed">Završen</option><option value="cancelled">Otkazan</option><option value="no-show">Nije došao</option></select></div>
                 <div className="space-y-2"><Label>Napomena</Label><Textarea value={editing.notes} onChange={(event) => setEditing({ ...editing, notes: event.target.value })} /></div>
                 <Button className="w-full" onClick={saveAppointmentUpdate} disabled={updateAppointment.isPending}>{updateAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj izmene</Button>
+                {editing.seriesId && <Button className="w-full" variant="destructive" disabled={cancelSeries.isPending} onClick={() => cancelSeries.mutate({ seriesId: editing.seriesId! }, { onSuccess: (result) => { toast.success(`Otkazano je ${result.cancelledAppointments} budućih termina iz serije.`); setEditing(null); refetchAppointments(); refetchCustomers(); }, onError: (error) => toast.error("Serija nije otkazana", { description: error instanceof Error ? error.message : "Pokušajte ponovo." }) })}>{cancelSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Otkaži sve buduće termine serije</Button>}
               </div>}
             </DialogContent>
           </Dialog>
@@ -267,12 +323,12 @@ export default function OwnerCalendar() {
               <CardContent className="p-0">
                 {!selectedDate ? <div className="flex min-h-72 flex-col items-center justify-center p-8 text-center"><CalendarDays className="mb-3 h-10 w-10 text-muted-foreground/60" /><p className="font-medium">Izaberite datum da vidite zakazane termine</p><p className="mt-1 max-w-sm text-sm text-muted-foreground">Kliknite na dan u kalendaru ili izaberite Danas, Sutra ili Prekosutra.</p></div>
                   : isLoading || isFetching ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-12"><Loader2 className="h-7 w-7 animate-spin text-primary" /><p className="text-sm text-muted-foreground">Učitavamo termine za izabrani datum…</p></div>
-                    : sorted.length ? <div className="space-y-3 bg-muted/[0.18] p-4 sm:p-5">{sorted.map((appointment) => <div className="group flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:flex-row sm:items-center sm:justify-between sm:p-5" key={appointment.id}><div className="flex min-w-0 items-start gap-4"><div className="flex h-[60px] w-[78px] shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary"><span className="text-xl font-bold tracking-tight">{appointment.startTime}</span><span className="text-[10px] font-medium uppercase tracking-wider text-primary/70">početak</span></div><div className="min-w-0 pt-0.5"><p className="truncate text-base font-bold">{appointment.customerName}</p><p className="mt-1 truncate text-sm font-medium text-foreground/80">{appointment.serviceName}</p><p className="mt-1 text-sm text-muted-foreground">Zaposleni: {appointment.employeeName}</p>{appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}</div></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status])}>{statusLabels[appointment.status]}</Badge><Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity group-hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, status: appointment.status, employeeId: "", notes: appointment.notes ?? "" })}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button></div></div>)}</div>
+                    : sorted.length ? <div className="space-y-3 bg-muted/[0.18] p-4 sm:p-5">{sorted.map((appointment) => <div className="group flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md sm:flex-row sm:items-center sm:justify-between sm:p-5" key={appointment.id}><div className="flex min-w-0 items-start gap-4"><div className="flex h-[60px] w-[78px] shrink-0 flex-col items-center justify-center rounded-xl bg-primary/10 text-primary"><span className="text-xl font-bold tracking-tight">{appointment.startTime}</span><span className="text-[10px] font-medium uppercase tracking-wider text-primary/70">početak</span></div><div className="min-w-0 pt-0.5"><p className="truncate text-base font-bold">{appointment.customerName}</p><p className="mt-1 truncate text-sm font-medium text-foreground/80">{appointment.serviceName}</p><p className="mt-1 text-sm text-muted-foreground">Zaposleni: {appointment.employeeName}</p>{appointment.seriesId && <Badge variant="secondary" className="mt-2 gap-1"><Repeat2 className="h-3 w-3" /> Serija</Badge>}{appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}</div></div><div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end"><Badge variant="outline" className={cn("rounded-full px-3 py-1 text-xs font-semibold", statusClasses[appointment.status])}>{statusLabels[appointment.status]}</Badge><Button size="sm" variant="outline" className="gap-1.5 opacity-90 transition-opacity group-hover:opacity-100" aria-label={`Izmeni termin za ${appointment.customerName}`} onClick={() => setEditing({ id: appointment.id, seriesId: appointment.seriesId ?? null, status: appointment.status, employeeId: "", notes: appointment.notes ?? "" })}><Pencil className="h-3.5 w-3.5" /> Izmeni</Button></div></div>)}</div>
                       : <div className="flex min-h-80 flex-col items-center justify-center p-8 text-center"><div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary"><CalendarDays className="h-8 w-8" /></div><p className="text-lg font-semibold">Nema zakazanih termina za {dateLabel(selectedDate)}</p><p className="mt-2 max-w-sm text-sm text-muted-foreground">Kada klijent rezerviše termin za ovaj dan, pojaviće se ovde.</p><Button variant="outline" className="mt-5" onClick={openNewAppointment}><Plus className="mr-2 h-4 w-4" /> Dodaj termin</Button></div>}
               </CardContent>
             </Card>
           </div>
-          <Card><CardHeader><CardTitle className="text-lg">CRM kontakti</CardTitle><p className="text-sm text-muted-foreground">Za svakog gosta možete isključiti SMS potvrde i podsetnike.</p></CardHeader><CardContent className="space-y-3">{customers?.length ? customers.map((customer) => <div className="rounded-lg border p-3" key={customer.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{customer.firstName} {customer.lastName}</p><p className="text-xs text-muted-foreground">{customer.phone ?? "Nema telefona"} · {customer.visitCount} termina</p></div><Button size="sm" variant={customer.smsOptOut ? "outline" : "ghost"} disabled={updateCustomer.isPending} onClick={() => updateCustomer.mutate({ customerId: customer.id, data: { smsOptOut: !customer.smsOptOut } }, { onSuccess: () => { toast.success(customer.smsOptOut ? "SMS obaveštenja su uključena" : "SMS obaveštenja su isključena"); refetchCustomers(); } })}>{customer.smsOptOut ? "Uključi SMS" : <><MessageSquareOff className="mr-1 h-3.5 w-3.5" /> Isključi SMS</>}</Button></div></div>) : <p className="py-8 text-center text-sm text-muted-foreground">CRM se puni pri ručnom zakazivanju ili online rezervaciji.</p>}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-lg">CRM kontakti</CardTitle><p className="text-sm text-muted-foreground">Za svakog gosta možete isključiti SMS potvrde i podsetnike.</p></CardHeader><CardContent className="space-y-3">{customers?.length ? customers.map((customer) => <div className="rounded-lg border p-3" key={customer.id}><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{customer.firstName} {customer.lastName}</p><p className="text-xs text-muted-foreground">{customer.phone ?? "Nema telefona"} · {customer.visitCount} termina</p>{customer.series?.map((series) => <p className="mt-2 flex items-center gap-1 text-xs text-primary" key={series.id}><Repeat2 className="h-3 w-3" /> {series.serviceName}: {series.completedAppointments}/{series.totalAppointments} završeno · {series.upcomingAppointments} predstoji</p>)}</div><Button size="sm" variant={customer.smsOptOut ? "outline" : "ghost"} disabled={updateCustomer.isPending} onClick={() => updateCustomer.mutate({ customerId: customer.id, data: { smsOptOut: !customer.smsOptOut } }, { onSuccess: () => { toast.success(customer.smsOptOut ? "SMS obaveštenja su uključena" : "SMS obaveštenja su isključena"); refetchCustomers(); } })}>{customer.smsOptOut ? "Uključi SMS" : <><MessageSquareOff className="mr-1 h-3.5 w-3.5" /> Isključi SMS</>}</Button></div></div>) : <p className="py-8 text-center text-sm text-muted-foreground">CRM se puni pri ručnom zakazivanju ili online rezervaciji.</p>}</CardContent></Card>
         </main>
       </div>
     </BusinessLayout>

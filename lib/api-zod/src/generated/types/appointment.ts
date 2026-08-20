@@ -19,6 +19,8 @@ export interface Appointment {
   endTime: string;
   durationMinutes: number;
   price: number;
+  /** @nullable */
+  seriesId?: string | null;
   status: AppointmentStatus;
   /** @nullable */
   notes?: string | null;

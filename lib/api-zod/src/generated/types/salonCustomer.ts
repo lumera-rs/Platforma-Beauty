@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { CustomerAppointmentSeries } from './customerAppointmentSeries';
 
 export interface SalonCustomer {
   id: string;
@@ -17,4 +18,5 @@ export interface SalonCustomer {
   smsOptOut: boolean;
   visitCount: number;
   isRegistered: boolean;
+  series?: CustomerAppointmentSeries[];
 }

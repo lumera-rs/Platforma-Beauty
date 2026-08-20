@@ -324,6 +324,8 @@ export interface Appointment {
   endTime: string;
   durationMinutes: number;
   price: number;
+  /** @nullable */
+  seriesId?: string | null;
   status: AppointmentStatus;
   /** @nullable */
   notes?: string | null;
@@ -365,6 +367,14 @@ export interface SalonAppointmentUpdate {
   notes?: string;
 }
 
+export interface CustomerAppointmentSeries {
+  id: string;
+  serviceName: string;
+  totalAppointments: number;
+  completedAppointments: number;
+  upcomingAppointments: number;
+}
+
 export interface SalonCustomer {
   id: string;
   firstName: string;
@@ -376,6 +386,77 @@ export interface SalonCustomer {
   smsOptOut: boolean;
   visitCount: number;
   isRegistered: boolean;
+  series?: CustomerAppointmentSeries[];
+}
+
+export interface AppointmentSlot {
+  date: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime: string;
+}
+
+export interface AppointmentSeriesPreviewInput {
+  serviceId: string;
+  /** @nullable */
+  employeeId?: string | null;
+  /**
+     * @minItems 1
+     * @maxItems 24
+     */
+  slots: AppointmentSlot[];
+}
+
+export type AppointmentSeriesPreviewSlot = AppointmentSlot & ({
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+});
+
+export interface AppointmentSeriesPreview {
+  slots: AppointmentSeriesPreviewSlot[];
+  allAvailable: boolean;
+}
+
+export type SalonAppointmentSeriesInputGuest = {
+  /** @minLength 1 */
+  firstName: string;
+  /** @minLength 1 */
+  lastName: string;
+  /** @minLength 5 */
+  phone: string;
+  email?: string;
+};
+
+export type SalonAppointmentSeriesInput = AppointmentSeriesPreviewInput & {
+  notes?: string;
+  salonCustomerId?: string;
+  guest?: SalonAppointmentSeriesInputGuest;
+};
+
+export type EmployeeAppointmentSeriesInputGuest = {
+  /** @minLength 1 */
+  firstName: string;
+  /** @minLength 1 */
+  lastName: string;
+  /** @minLength 5 */
+  phone: string;
+  email?: string;
+};
+
+export type EmployeeAppointmentSeriesInput = AppointmentSeriesPreviewInput & {
+  salonCustomerId?: string;
+  guest?: EmployeeAppointmentSeriesInputGuest;
+};
+
+export interface AppointmentSeriesResult {
+  id: string;
+  totalAppointments: number;
+  appointments: Appointment[];
+}
+
+export interface AppointmentSeriesCancellation {
+  id: string;
+  cancelledAppointments: number;
 }
 
 export interface SalonCustomerUpdate {
