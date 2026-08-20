@@ -24,6 +24,7 @@ import {
   loyaltyTiersTable,
   oauthIdentitiesTable,
   oauthLoginStatesTable,
+  phoneVerificationCodesTable,
   orderItemsTable,
   orderStatusHistoryTable,
   ordersTable,
@@ -226,7 +227,7 @@ import {
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, sendTransactionalEmail } from "../lib/brevo";
 import { ensureDemoData } from "../lib/seed";
-import { maskPhone, sendSms, sendTestSms } from "../lib/sms";
+import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
 
@@ -549,7 +550,28 @@ async function createAllocatedAppointment(input: {
 }
 
 function normalizedPhone(phone: string) {
-  return phone.replace(/[^\d]/g, "").replace(/^00/, "");
+  const digits = phone.replace(/[^\d]/g, "").replace(/^00/, "");
+  if (!digits) return "";
+  // Serbian local numbers become the same stored form as +381 numbers.
+  return digits.startsWith("0") ? `381${digits.slice(1)}` : digits;
+}
+
+async function linkPhoneContactsToUser(store: any, userId: string, phone: string) {
+  const phoneNormalized = normalizedPhone(phone);
+  if (!phoneNormalized) return;
+  const contacts = (await store.select().from(salonCustomersTable)).filter((contact: typeof salonCustomersTable.$inferSelect) =>
+    contact.phoneNormalized === phoneNormalized || (!!contact.phone && normalizedPhone(contact.phone) === phoneNormalized));
+  for (const salonId of [...new Set(contacts.map((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId))]) {
+    const group = contacts.filter((contact: typeof salonCustomersTable.$inferSelect) => contact.salonId === salonId);
+    const canonical = group[0]!;
+    const duplicateIds = group.slice(1).map((contact: typeof salonCustomersTable.$inferSelect) => contact.id);
+    if (duplicateIds.length) {
+      await store.update(appointmentsTable).set({ salonCustomerId: canonical.id, customerId: userId }).where(inArray(appointmentsTable.salonCustomerId, duplicateIds));
+      await store.delete(salonCustomersTable).where(inArray(salonCustomersTable.id, duplicateIds));
+    }
+    await store.update(salonCustomersTable).set({ userId, phoneNormalized, updatedAt: new Date() }).where(eq(salonCustomersTable.id, canonical.id));
+    await store.update(appointmentsTable).set({ customerId: userId }).where(eq(appointmentsTable.salonCustomerId, canonical.id));
+  }
 }
 
 type EducationAccess = {
@@ -907,21 +929,78 @@ async function appointmentList(where?: ReturnType<typeof eq>) {
   ));
 }
 
+router.post("/auth/phone-verification/request", async (req, res): Promise<void> => {
+  const phone = typeof req.body?.phone === "string" ? req.body.phone : "";
+  const phoneNormalized = normalizedPhone(phone);
+  if (!/^3816\d{7,8}$/.test(phoneNormalized)) { res.status(400).json({ error: "Unesite važeći mobilni broj u Srbiji." }); return; }
+  const requestIp = req.ip || req.socket.remoteAddress || "unknown";
+  const now = new Date();
+  const [existingCode] = await db.select().from(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.phoneNormalized, phoneNormalized)).limit(1);
+  if (existingCode && now.getTime() - existingCode.lastRequestedAt.getTime() < 60_000) { res.status(429).json({ error: "Sačekajte minut pre slanja novog koda." }); return; }
+  const ipRequests = (await db.select().from(phoneVerificationCodesTable)).filter((item) => item.lastRequestIp === requestIp && now.getTime() - item.lastRequestedAt.getTime() < 10 * 60_000).reduce((sum, item) => sum + item.requestCount, 0);
+  if (ipRequests >= 5) { res.status(429).json({ error: "Previše zahteva sa ove mreže. Pokušajte kasnije." }); return; }
+  if (existingCode && existingCode.attempts >= 5 && existingCode.expiresAt > now) { res.status(429).json({ error: "Previše neuspešnih pokušaja. Zatražite novi kod nakon isteka postojećeg." }); return; }
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expired = !existingCode || existingCode.expiresAt <= now;
+  await db.insert(phoneVerificationCodesTable).values({ phoneNormalized, codeHash: createHash("sha256").update(code).digest("hex"), expiresAt: new Date(Date.now() + 10 * 60 * 1000), requestCount: 1, lastRequestedAt: now, lastRequestIp: requestIp })
+    .onConflictDoUpdate({ target: phoneVerificationCodesTable.phoneNormalized, set: { codeHash: createHash("sha256").update(code).digest("hex"), expiresAt: new Date(Date.now() + 10 * 60 * 1000), attempts: expired ? 0 : existingCode!.attempts, requestCount: expired ? 1 : existingCode!.requestCount + 1, lastRequestedAt: now, lastRequestIp: requestIp } });
+  const sent = await sendPhoneVerificationCode(phone, code);
+  res.json({ message: sent ? "Kod je poslat SMS porukom." : "Kod je spreman za lokalnu proveru.", ...(process.env.NODE_ENV === "production" ? {} : { developmentCode: code }) });
+});
+
+router.post("/auth/phone-verification/confirm", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res);
+  if (!user) return;
+  const phone = typeof req.body?.phone === "string" ? req.body.phone : "";
+  const code = typeof req.body?.code === "string" ? req.body.code : "";
+  const phoneNormalized = normalizedPhone(phone);
+  const [verification] = await db.select().from(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.phoneNormalized, phoneNormalized)).limit(1);
+  if (!/^3816\d{7,8}$/.test(phoneNormalized) || !verification || verification.expiresAt < new Date() || verification.attempts >= 5 || verification.codeHash !== createHash("sha256").update(code).digest("hex")) {
+    if (verification) await db.update(phoneVerificationCodesTable).set({ attempts: verification.attempts + 1 }).where(eq(phoneVerificationCodesTable.id, verification.id));
+    res.status(400).json({ error: "Kod za potvrdu broja nije ispravan ili je istekao." }); return;
+  }
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(usersTable).set({ phone, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      await linkPhoneContactsToUser(tx, user.id, phone);
+      await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(409).json({ error: "Ovaj broj je već povezan sa drugim nalogom." });
+  }
+});
+
 router.post("/auth/register", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = RegisterBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
   if (existing) { res.status(409).json({ error: "Nalog sa ovom e-mail adresom već postoji." }); return; }
+  const phoneNormalized = parsed.data.phone ? normalizedPhone(parsed.data.phone) : null;
+  const verificationCode = typeof req.body?.phoneVerificationCode === "string" ? req.body.phoneVerificationCode : "";
+  if (!phoneNormalized || !verificationCode) { res.status(400).json({ error: "Potvrdite broj telefona pre registracije." }); return; }
+  const [verification] = await db.select().from(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.phoneNormalized, phoneNormalized)).limit(1);
+  if (!verification || verification.expiresAt < new Date() || verification.attempts >= 5 || verification.codeHash !== createHash("sha256").update(verificationCode).digest("hex")) {
+    if (verification) await db.update(phoneVerificationCodesTable).set({ attempts: verification.attempts + 1 }).where(eq(phoneVerificationCodesTable.id, verification.id));
+    res.status(400).json({ error: "Kod za potvrdu broja nije ispravan ili je istekao." }); return;
+  }
+  if (phoneNormalized) {
+    const [phoneOwner] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+    if (phoneOwner) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
+  }
   const [user] = await db.insert(usersTable).values({
     firstName: parsed.data.firstName,
     lastName: parsed.data.lastName,
     email: parsed.data.email.toLowerCase(),
-    phone: parsed.data.phone ?? null,
+    phone: parsed.data.phone ?? null, phoneNormalized,
     passwordHash: await hashPassword(parsed.data.password),
     passwordSetAt: new Date(),
     role: "CUSTOMER",
   }).returning();
+  await db.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
+  const verifiedPhone = user!.phone;
+  if (verifiedPhone) await db.transaction((tx) => linkPhoneContactsToUser(tx, user!.id, verifiedPhone));
   const token = await createSession(user!.id);
   res.cookie(sessionCookieName, token, cookieOptions());
   res.status(201).json(RegisterResponse.parse({ user: publicUser(user!), message: "Dobro došli u Lumeru." }));
@@ -1638,12 +1717,16 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
   } else {
     const submittedPhone = normalizedPhone(parsed.data.guest!.phone);
     const contacts = await db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
-    contact = contacts.find((item) => item.phone && normalizedPhone(item.phone) === submittedPhone);
+    const [registeredUser] = await db.select().from(usersTable).where(eq(usersTable.phoneNormalized, submittedPhone)).limit(1);
+    contact = contacts.find((item) => item.phoneNormalized === submittedPhone || (item.phone && normalizedPhone(item.phone) === submittedPhone));
     if (!contact) {
       [contact] = await db.insert(salonCustomersTable).values({
         salonId: salon.id, firstName: parsed.data.guest!.firstName.trim(), lastName: parsed.data.guest!.lastName.trim(),
-        phone: submittedPhone, email: parsed.data.guest!.email?.trim().toLowerCase() || null,
+        phone: parsed.data.guest!.phone.trim(), phoneNormalized: submittedPhone, userId: registeredUser?.id ?? null, email: parsed.data.guest!.email?.trim().toLowerCase() || null,
       }).returning();
+    } else if (registeredUser && contact.userId !== registeredUser.id) {
+      [contact] = await db.update(salonCustomersTable).set({ userId: registeredUser.id, phoneNormalized: submittedPhone, updatedAt: new Date() }).where(eq(salonCustomersTable.id, contact.id)).returning();
+      await db.update(appointmentsTable).set({ customerId: registeredUser.id }).where(eq(appointmentsTable.salonCustomerId, contact!.id));
     }
   }
   const [appointment] = await db.insert(appointmentsTable).values({
@@ -1691,6 +1774,19 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
   const [service] = await db.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null }).returning();
   res.status(201).json(CreateSalonServiceResponse.parse({ id: service!.id, category: service!.categoryName, name: service!.name, description: service!.description, durationMinutes: service!.durationMinutes, price: service!.price, promoPrice: service!.promoPrice, imageUrl: service!.imageUrl, active: service!.active }));
+});
+
+router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonServiceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [service] = await db.update(servicesTable).set({
+    categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
+    durationMinutes: parsed.data.durationMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
+    imageUrl: parsed.data.imageUrl, active: parsed.data.active,
+  }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
+  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active }));
 });
 
 router.get("/salon/employees", async (req, res): Promise<void> => {
@@ -2042,6 +2138,15 @@ router.get("/loyalty/status", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
   res.json(await loyaltyStatus(salon.id));
+});
+
+router.get("/loyalty/tiers", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  res.json((await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.active, true)).orderBy(asc(loyaltyTiersTable.sortOrder))).map((tier) => ({
+    id: tier.id, name: tier.name, sortOrder: tier.sortOrder, spendThreshold: tier.spendThreshold, period: tier.period,
+    subscriptionDiscountPercent: tier.subscriptionDiscountPercent, productDiscountPercent: tier.productDiscountPercent,
+    freeSubscription: tier.freeSubscription, premiumListing: tier.premiumListing, freeShipping: tier.freeShipping, benefits: tier.benefits, active: tier.active,
+  })));
 });
 
 router.get("/shop/summary", async (req, res): Promise<void> => {

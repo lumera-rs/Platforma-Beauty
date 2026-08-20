@@ -29,6 +29,7 @@ import { Calendar, Clock, MapPin, Search, Loader2, KeyRound, Link2Off, ShieldChe
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -38,6 +39,9 @@ export default function CustomerDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [providerToDisconnect, setProviderToDisconnect] = useState<"google" | "facebook" | null>(null);
+  const [phone, setPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneBusy, setPhoneBusy] = useState(false);
   
   useEffect(() => {
     if (!isUserLoading && !userResp?.user) {
@@ -88,6 +92,22 @@ export default function CustomerDashboard() {
         },
       },
     );
+  };
+  const requestPhoneCode = async () => {
+    setPhoneBusy(true);
+    const response = await fetch("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone }) });
+    const body = await response.json(); setPhoneBusy(false);
+    if (!response.ok) { toast.error(body.error ?? "Kod nije poslat"); return; }
+    if (body.developmentCode) setPhoneCode(body.developmentCode);
+    toast.success("Kod je poslat", { description: body.developmentCode ? "Lokalni kod je upisan." : "Proverite SMS poruku." });
+  };
+  const confirmPhone = async () => {
+    setPhoneBusy(true);
+    const response = await fetch("/api/auth/phone-verification/confirm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone, code: phoneCode }) });
+    const body = await response.json(); setPhoneBusy(false);
+    if (!response.ok) { toast.error(body.error ?? "Broj nije potvrđen"); return; }
+    toast.success("Telefon je potvrđen i istorija termina je povezana.");
+    queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey(undefined) });
   };
 
   const getStatusBadge = (status: string) => {
@@ -237,6 +257,15 @@ export default function CustomerDashboard() {
 
           <TabsContent value="settings" className="mt-0">
              <div className="space-y-6">
+             <Card>
+               <CardHeader><CardTitle>Potvrdite telefon i povežite CRM istoriju</CardTitle><CardDescription>Važi i za Google/Facebook prijavu. Istorija gosta se dodaje tek nakon SMS potvrde broja.</CardDescription></CardHeader>
+               <CardContent className="flex flex-wrap gap-2">
+                 <Input className="max-w-[210px]" placeholder="+381 64 123 4567" value={phone} onChange={(event) => setPhone(event.target.value)} />
+                 <Button variant="outline" disabled={phoneBusy} onClick={requestPhoneCode}>Pošalji kod</Button>
+                 <Input className="w-32" placeholder="SMS kod" value={phoneCode} onChange={(event) => setPhoneCode(event.target.value)} />
+                 <Button disabled={phoneBusy} onClick={confirmPhone}>Potvrdi broj</Button>
+               </CardContent>
+             </Card>
              <Card>
                <CardHeader>
                  <CardTitle>Podaci o nalogu</CardTitle>

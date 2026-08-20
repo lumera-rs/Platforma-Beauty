@@ -1,13 +1,14 @@
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Star, TrendingUp, Gift, Award, Check } from "lucide-react";
-import { useGetLoyaltyStatus, useGetCurrentUser, getGetLoyaltyStatusQueryKey } from "@workspace/api-client-react";
+import { TrendingUp, Gift, Award, Check, Crown, Truck, BadgeCheck } from "lucide-react";
+import { useGetLoyaltyStatus, useGetCurrentUser, useListLoyaltyTiers, getGetLoyaltyStatusQueryKey, getListLoyaltyTiersQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 
 export default function OwnerLoyalty() {
   const { data: userResp } = useGetCurrentUser();
   const { data: status, isLoading } = useGetLoyaltyStatus({ query: { enabled: !!userResp?.user, queryKey: getGetLoyaltyStatusQueryKey() }});
+  const { data: tiers = [] } = useListLoyaltyTiers({ query: { enabled: !!userResp?.user, queryKey: getListLoyaltyTiersQueryKey() } });
 
   return (
     <BusinessLayout>
@@ -38,7 +39,7 @@ export default function OwnerLoyalty() {
                  </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <Card>
                     <CardHeader>
                        <CardTitle className="flex items-center gap-2"><Gift className="w-5 h-5 text-primary" /> Vaši Benefiti</CardTitle>
@@ -77,6 +78,19 @@ export default function OwnerLoyalty() {
                     </CardContent>
                  </Card>
               </div>
+               <section className="space-y-4">
+                 <div><h2 className="text-2xl font-serif font-bold">Svi loyalty nivoi</h2><p className="text-muted-foreground">Uporedite tačno šta svaki nivo donosi vašem salonu.</p></div>
+                 <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+                   {tiers.map((tier) => {
+                     const current = tier.name === status.currentTier;
+                     const next = tier.name === status.nextTier;
+                     return <Card key={tier.id} className={current ? "border-primary ring-2 ring-primary/20 shadow-md" : next ? "border-accent" : ""}>
+                       <CardHeader className="pb-3"><div className="flex items-center justify-between gap-2"><CardTitle className="text-lg">{tier.name}</CardTitle>{current ? <BadgeCheck className="h-5 w-5 text-primary" /> : <Crown className="h-5 w-5 text-muted-foreground" />}</div>{current && <p className="text-xs font-semibold text-primary">VI STE OVDE</p>}{next && !current && <p className="text-xs font-semibold text-accent-foreground">SLEDEĆI CILJ</p>}</CardHeader>
+                       <CardContent className="space-y-3 text-sm"><p><strong>{tier.spendThreshold.toLocaleString()} RSD</strong> potrošnje po {tier.period === "quarterly" ? "kvartalu" : "mesecu"}</p><div className="grid grid-cols-2 gap-2 rounded-lg bg-muted p-2"><span>Pretplata<br/><strong>{tier.freeSubscription ? "Besplatna" : `${tier.subscriptionDiscountPercent}% popusta`}</strong></span><span>Proizvodi<br/><strong>{tier.productDiscountPercent}% popusta</strong></span></div><p className="flex items-center gap-2"><Check className="h-4 w-4 text-emerald-600" />Premium listing: <strong>{tier.premiumListing ? "Da" : "Ne"}</strong></p><p className="flex items-center gap-2"><Truck className="h-4 w-4 text-emerald-600" />Besplatna dostava: <strong>{tier.freeShipping ? "Da" : "Ne"}</strong></p><ul className="space-y-1 border-t pt-3">{tier.benefits.map((benefit) => <li key={benefit} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{benefit}</li>)}</ul></CardContent>
+                     </Card>;
+                   })}
+                 </div>
+               </section>
             </>
           )}
         </div>

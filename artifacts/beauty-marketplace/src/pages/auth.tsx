@@ -23,6 +23,8 @@ const registerSchema = z.object({
   firstName: z.string().min(1, { message: "Ime je obavezno" }),
   lastName: z.string().min(1, { message: "Prezime je obavezno" }),
   email: z.string().email({ message: "Unesite validnu email adresu" }),
+  phone: z.string().min(6, { message: "Unesite broj telefona" }),
+  phoneVerificationCode: z.string().length(6, { message: "Unesite šestocifreni kod" }),
   password: z.string().min(8, { message: "Lozinka mora imati najmanje 8 karaktera" }),
 });
 
@@ -51,7 +53,7 @@ export default function Login() {
 
   const registerForm = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { firstName: "", lastName: "", email: "", password: "" },
+    defaultValues: { firstName: "", lastName: "", email: "", phone: "", phoneVerificationCode: "", password: "" },
   });
 
   const onLoginSubmit = (values: z.infer<typeof loginSchema>) => {
@@ -76,6 +78,15 @@ export default function Login() {
         toast.error("Greška", { description: "Došlo je do greške prilikom registracije." });
       }
     });
+  };
+  const requestPhoneCode = async () => {
+    const phone = registerForm.getValues("phone");
+    if (!phone) { registerForm.setError("phone", { message: "Prvo unesite broj telefona." }); return; }
+    const response = await fetch("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone }) });
+    const result = await response.json();
+    if (!response.ok) { toast.error("Kod nije poslat", { description: result.error }); return; }
+    if (result.developmentCode) registerForm.setValue("phoneVerificationCode", result.developmentCode);
+    toast.success("Kod za potvrdu je poslat", { description: result.developmentCode ? "Lokalni test kod je upisan u formu." : "Proverite SMS poruku." });
   };
 
   const continueWith = (provider: "google" | "facebook") => {
@@ -180,6 +191,23 @@ export default function Login() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={registerForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Telefon</FormLabel>
+                          <FormControl>
+                            <Input type="tel" autoComplete="tel" placeholder="+381 64 123 4567" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="flex gap-2">
+                      <FormField control={registerForm.control} name="phoneVerificationCode" render={({ field }) => <FormItem className="flex-1"><FormLabel>SMS kod</FormLabel><FormControl><Input inputMode="numeric" maxLength={6} placeholder="123456" {...field} /></FormControl><FormMessage /></FormItem>} />
+                      <Button type="button" variant="outline" className="mt-8" onClick={requestPhoneCode}>Pošalji kod</Button>
+                    </div>
                     <FormField
                       control={registerForm.control}
                       name="password"

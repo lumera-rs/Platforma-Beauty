@@ -23,6 +23,9 @@ export const HealthCheckResponse = zod.object({
 
 export const registerBodyPasswordMin = 8;
 
+export const registerBodyPhoneVerificationCodeMin = 6;
+export const registerBodyPhoneVerificationCodeMax = 6;
+
 
 
 export const RegisterBody = zod.object({
@@ -30,7 +33,8 @@ export const RegisterBody = zod.object({
   "lastName": zod.string().min(1),
   "email": zod.string(),
   "password": zod.string().min(registerBodyPasswordMin),
-  "phone": zod.string().optional()
+  "phone": zod.string(),
+  "phoneVerificationCode": zod.string().min(registerBodyPhoneVerificationCodeMin).max(registerBodyPhoneVerificationCodeMax)
 })
 
 export const RegisterResponse = zod.object({
@@ -875,6 +879,46 @@ export const CreateSalonServiceBody = zod.object({
 })
 
 export const CreateSalonServiceResponse = zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
+  "imageUrl": zod.string(),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Update a salon service
+ */
+export const UpdateSalonServiceParams = zod.object({
+  "serviceId": zod.coerce.string()
+})
+
+
+export const updateSalonServiceBodyDurationMinutesMin = 5;
+
+export const updateSalonServiceBodyPriceMin = 0;
+
+
+
+export const UpdateSalonServiceBody = zod.object({
+  "category": zod.string(),
+  "name": zod.string().min(1),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(updateSalonServiceBodyDurationMinutesMin),
+  "price": zod.number().min(updateSalonServiceBodyPriceMin),
+  "promoPrice": zod.number().nullish(),
+  "imageUrl": zod.string(),
+  "active": zod.boolean()
+})
+
+export const UpdateSalonServiceResponse = zod.object({
   "id": zod.string(),
   "category": zod.string(),
   "name": zod.string(),
@@ -2223,6 +2267,26 @@ export const GetLoyaltyStatusResponse = zod.object({
   "benefits": zod.array(zod.string()),
   "freeSubscription": zod.boolean()
 })
+
+
+/**
+ * @summary List all active partnership tiers
+ */
+export const ListLoyaltyTiersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "sortOrder": zod.number(),
+  "spendThreshold": zod.number(),
+  "period": zod.string(),
+  "subscriptionDiscountPercent": zod.number(),
+  "productDiscountPercent": zod.number(),
+  "freeSubscription": zod.boolean(),
+  "premiumListing": zod.boolean(),
+  "freeShipping": zod.boolean(),
+  "benefits": zod.array(zod.string()),
+  "active": zod.boolean()
+})
+export const ListLoyaltyTiersResponse = zod.array(ListLoyaltyTiersResponseItem)
 
 
 /**

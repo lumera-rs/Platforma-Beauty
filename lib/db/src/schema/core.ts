@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum("user_role", [
   "SUPER_ADMIN",
@@ -43,6 +44,7 @@ export const usersTable = pgTable("users", {
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
   phone: text("phone"),
+  phoneNormalized: text("phone_normalized"),
   passwordHash: text("password_hash").notNull(),
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
   role: userRoleEnum("role").notNull().default("CUSTOMER"),
@@ -50,7 +52,9 @@ export const usersTable = pgTable("users", {
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("users_phone_normalized_unique").on(table.phoneNormalized).where(sql`${table.phoneNormalized} is not null`),
+]);
 
 export const sessionsTable = pgTable("sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -78,6 +82,18 @@ export const oauthLoginStatesTable = pgTable("oauth_login_states", {
   flow: text("flow").notNull(),
   codeVerifier: text("code_verifier"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const phoneVerificationCodesTable = pgTable("phone_verification_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  phoneNormalized: text("phone_normalized").notNull().unique(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  requestCount: integer("request_count").notNull().default(0),
+  lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }).notNull().defaultNow(),
+  lastRequestIp: text("last_request_ip"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -284,11 +300,13 @@ export const salonCustomersTable = pgTable("salon_customers", {
   lastName: text("last_name").notNull(),
   email: text("email"),
   phone: text("phone"),
+  phoneNormalized: text("phone_normalized"),
   smsOptOut: boolean("sms_opt_out").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
+  uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
 ]);
 
 export const appointmentsTable = pgTable("appointments", {

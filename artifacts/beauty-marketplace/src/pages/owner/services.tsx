@@ -1,6 +1,6 @@
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
-import { useListSalonServices, useCreateSalonService, useGetCurrentUser, getListSalonServicesQueryKey } from "@workspace/api-client-react";
+import { useListSalonServices, useCreateSalonService, useUpdateSalonService, useGetCurrentUser, getListSalonServicesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Edit2, Loader2, Image as ImageIcon } from "lucide-react";
@@ -15,8 +15,10 @@ export default function OwnerServices() {
   const { data: userResp } = useGetCurrentUser();
   const { data: services, isLoading, refetch } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() }});
   const createMutation = useCreateSalonService();
+  const updateMutation = useUpdateSalonService();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -28,15 +30,28 @@ export default function OwnerServices() {
     active: true
   });
 
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true });
+  };
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createMutation.mutate({ data: { ...formData, durationMinutes: Number(formData.durationMinutes), price: Number(formData.price) } }, {
+    const payload = { ...formData, durationMinutes: Number(formData.durationMinutes), price: Number(formData.price) };
+    const callbacks = {
       onSuccess: () => {
-        toast.success("Usluga dodata");
+        toast.success(editingId ? "Usluga izmenjena" : "Usluga dodata");
         setOpen(false);
+        resetForm();
         refetch();
       }
-    });
+    };
+    if (editingId) updateMutation.mutate({ serviceId: editingId, data: payload }, callbacks);
+    else createMutation.mutate({ data: payload }, callbacks);
+  };
+  const editService = (service: NonNullable<typeof services>[number]) => {
+    setEditingId(service.id);
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active });
+    setOpen(true);
   };
 
   return (
@@ -51,13 +66,13 @@ export default function OwnerServices() {
               <p className="text-muted-foreground">Upravljajte tretmanima i cenovnikom</p>
             </div>
             
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) resetForm(); }}>
               <DialogTrigger asChild>
-                <Button><Plus className="w-4 h-4 mr-2" /> Dodaj uslugu</Button>
+                <Button onClick={resetForm}><Plus className="w-4 h-4 mr-2" /> Dodaj uslugu</Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Nova usluga</DialogTitle>
+                  <DialogTitle>{editingId ? "Izmeni uslugu" : "Nova usluga"}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4 pt-4">
                   <div className="space-y-2">
@@ -87,9 +102,9 @@ export default function OwnerServices() {
                     <Label>Kratak opis</Label>
                     <Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
                   </div>
-                  <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                    {createMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Sačuvaj
+                  <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
+                    {(createMutation.isPending || updateMutation.isPending) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    {editingId ? "Sačuvaj izmene" : "Sačuvaj"}
                   </Button>
                 </form>
               </DialogContent>
@@ -117,7 +132,7 @@ export default function OwnerServices() {
                       <p className="font-semibold text-primary">{service.price} RSD</p>
                     </div>
                   </div>
-                  <Button variant="ghost" size="sm" className="shrink-0"><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
+                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
                 </div>
               ))}
             </div>

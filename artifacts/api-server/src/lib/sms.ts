@@ -41,6 +41,13 @@ export function maskPhone(phone: string) {
   return compact.length <= 4 ? "****" : `${compact.slice(0, Math.max(0, compact.length - 4)).replace(/\d/g, "X")}${compact.slice(-4)}`;
 }
 
+export async function sendPhoneVerificationCode(phone: string, code: string) {
+  const settings = await integrationSettings("sms");
+  if (!settings.enabled || !(settings.values.apiKey ?? process.env["SMS_PROVIDER_API_KEY"])) return false;
+  await provider.send({ to: phone, text: `LUMERA kod za potvrdu broja telefona: ${code}. Važi 10 minuta.` });
+  return true;
+}
+
 export async function sendSms(input: {
   eventKey: string;
   salonId: string;

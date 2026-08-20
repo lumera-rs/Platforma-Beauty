@@ -43,6 +43,7 @@ export function BusinessNavbar() {
           { href: "/vlasnik", label: "Dashboard" },
           { href: "/vlasnik/kalendar", label: "Kalendar" },
           { href: "/vlasnik/usluge", label: "Usluge" },
+          { href: "/vlasnik/zaposleni", label: "Zaposleni" },
           { href: "/vlasnik/shop", label: "Shop" },
           { href: "/vlasnik/porudzbine", label: "Porudžbine" },
           { href: "/vlasnik/obavestenja", label: "Obaveštenja" },

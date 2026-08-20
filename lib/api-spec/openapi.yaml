@@ -535,6 +535,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Service"
+  /salon/services/{serviceId}:
+    patch:
+      operationId: updateSalonService
+      tags: [salon-management]
+      summary: Update a salon service
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceInput" }
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Service" }
   /salon/employees:
     get:
       operationId: listSalonEmployees
@@ -955,6 +976,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoyaltyStatus"
+  /loyalty/tiers:
+    get:
+      operationId: listLoyaltyTiers
+      tags: [loyalty]
+      summary: List all active partnership tiers
+      responses:
+        "200":
+          description: Loyalty tiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/LoyaltyTier" }
   /education/courses:
     get:
       operationId: listCourses
@@ -2062,7 +2096,8 @@ components:
         email: { type: string }
         password: { type: string, minLength: 8 }
         phone: { type: string }
-      required: [firstName, lastName, email, password]
+        phoneVerificationCode: { type: string, minLength: 6, maxLength: 6 }
+      required: [firstName, lastName, email, password, phone, phoneVerificationCode]
     BusinessRegistrationInput:
       type: object
       properties:

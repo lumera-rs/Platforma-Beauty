@@ -41,7 +41,12 @@ export interface RegisterInput {
   email: string;
   /** @minLength 8 */
   password: string;
-  phone?: string;
+  phone: string;
+  /**
+     * @minLength 6
+     * @maxLength 6
+     */
+  phoneVerificationCode: string;
 }
 
 export type BusinessRegistrationInputBusinessType = typeof BusinessRegistrationInputBusinessType[keyof typeof BusinessRegistrationInputBusinessType];

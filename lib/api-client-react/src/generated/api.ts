@@ -2338,6 +2338,78 @@ export const useCreateSalonService = <TError = ErrorType<unknown>,
       return useMutation(getCreateSalonServiceMutationOptions(options));
     }
 
+export const getUpdateSalonServiceUrl = (serviceId: string,) => {
+
+
+
+
+  return `/api/salon/services/${serviceId}`
+}
+
+/**
+ * @summary Update a salon service
+ */
+export const updateSalonService = async (serviceId: string,
+    serviceInput: ServiceInput, options?: Parameters<typeof customFetch>[1]): Promise<Service> => {
+
+  return customFetch<Service>(getUpdateSalonServiceUrl(serviceId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(serviceInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateSalonServiceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonService>>, TError,{serviceId: string;data: BodyType<ServiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalonService>>, TError,{serviceId: string;data: BodyType<ServiceInput>}, TContext> => {
+
+const mutationKey = ['updateSalonService'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalonService>>, {serviceId: string;data: BodyType<ServiceInput>}> = (props) => {
+          const {serviceId,data} = props ?? {};
+
+          return  updateSalonService(serviceId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalonServiceMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonService>>>
+    export type UpdateSalonServiceMutationBody = BodyType<ServiceInput>
+    export type UpdateSalonServiceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a salon service
+ */
+export const useUpdateSalonService = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonService>>, TError,{serviceId: string;data: BodyType<ServiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalonService>>,
+        TError,
+        {serviceId: string;data: BodyType<ServiceInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalonServiceMutationOptions(options));
+    }
+
 export const getListSalonEmployeesUrl = () => {
 
 
@@ -4223,6 +4295,83 @@ export function useGetLoyaltyStatus<TData = Awaited<ReturnType<typeof getLoyalty
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetLoyaltyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListLoyaltyTiersUrl = () => {
+
+
+
+
+  return `/api/loyalty/tiers`
+}
+
+/**
+ * @summary List all active partnership tiers
+ */
+export const listLoyaltyTiers = async ( options?: Parameters<typeof customFetch>[1]): Promise<LoyaltyTier[]> => {
+
+  return customFetch<LoyaltyTier[]>(getListLoyaltyTiersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLoyaltyTiersQueryKey = () => {
+    return [
+    `/api/loyalty/tiers`
+    ] as const;
+    }
+
+
+export const getListLoyaltyTiersQueryOptions = <TData = Awaited<ReturnType<typeof listLoyaltyTiers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLoyaltyTiers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLoyaltyTiersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLoyaltyTiers>>> = ({ signal }) => listLoyaltyTiers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLoyaltyTiers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLoyaltyTiersQueryResult = NonNullable<Awaited<ReturnType<typeof listLoyaltyTiers>>>
+export type ListLoyaltyTiersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all active partnership tiers
+ */
+
+export function useListLoyaltyTiers<TData = Awaited<ReturnType<typeof listLoyaltyTiers>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLoyaltyTiers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLoyaltyTiersQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
