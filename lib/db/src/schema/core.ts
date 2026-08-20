@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   doublePrecision,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -33,7 +34,7 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["pending", "approved", "rejected"]);
 
 export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]);
-export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "sent", "failed", "skipped"]);
+export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "processing", "sent", "failed", "skipped"]);
 export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
 export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "sent", "failed", "skipped"]);
 export const smsMessageTypeEnum = pgEnum("sms_message_type", ["appointment_confirmation", "appointment_reminder"]);
@@ -117,17 +118,25 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   id: uuid("id").defaultRandom().primaryKey(),
   eventKey: text("event_key").notNull().unique(),
   emailType: text("email_type").notNull(),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "set null" }),
+  appointmentId: uuid("appointment_id").references(() => appointmentsTable.id, { onDelete: "set null" }),
   recipientEmail: text("recipient_email").notNull(),
   recipientName: text("recipient_name"),
   subject: text("subject").notNull(),
+  htmlContent: text("html_content"),
   status: emailDeliveryStatusEnum("status").notNull().default("queued"),
   providerMessageId: text("provider_message_id"),
   errorMessage: text("error_message"),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  retryCount: integer("retry_count").notNull().default(0),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  processingToken: text("processing_token"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("email_deliveries_retry_index").on(table.status, table.nextRetryAt),
+]);
 
 export const emailCampaignsTable = pgTable("email_campaigns", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -366,8 +375,12 @@ export const smsDeliveriesTable = pgTable("sms_deliveries", {
   providerMessageId: text("provider_message_id"),
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  retryCount: integer("retry_count").notNull().default(0),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("sms_deliveries_retry_index").on(table.status, table.nextRetryAt),
+]);
 
 export const appointmentStatusHistoryTable = pgTable("appointment_status_history", {
   id: uuid("id").defaultRandom().primaryKey(),

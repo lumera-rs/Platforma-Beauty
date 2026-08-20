@@ -452,7 +452,17 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseItem)
 
@@ -483,7 +493,17 @@ export const CreateAppointmentResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 
 
@@ -515,7 +535,17 @@ export const UpdateAppointmentResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 
 
@@ -544,7 +574,17 @@ export const CancelAppointmentResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 
 
@@ -566,7 +606,17 @@ export const GetCustomerDashboardResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })),
   "recentSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -688,7 +738,17 @@ export const GetSalonDashboardResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })),
   "revenueThisMonth": zod.number(),
   "bookingsThisMonth": zod.number(),
@@ -733,7 +793,17 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResponseItem)
 
@@ -777,7 +847,17 @@ export const CreateSalonAppointmentResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 
 
@@ -860,7 +940,17 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 }))
 })
 
@@ -953,7 +1043,17 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 }))
 })
 
@@ -1059,7 +1159,17 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 }))
 })
 
@@ -1121,7 +1231,17 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "price": zod.number(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
-  "notes": zod.string().nullish()
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish()
 })
 
 

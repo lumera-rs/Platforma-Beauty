@@ -1,10 +1,17 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { randomUUID } from "node:crypto";
 import { db, emailDeliveriesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, lt, lte } from "drizzle-orm";
 import { logger } from "./logger";
 import { integrationSettings, integrationValue } from "./integrations";
 
 type Recipient = { email: string; name?: string | null };
+type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
+
+const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
+const RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000] as const;
+const RETRY_LEASE_MS = 2 * 60_000;
+const RETRY_BATCH_SIZE = 50;
 
 async function sender() {
   const email = await integrationValue("brevo", "senderEmail", process.env["BREVO_SENDER_EMAIL"]);
@@ -28,7 +35,11 @@ async function brevoFetch(path: string, init: RequestInit): Promise<Response> {
 }
 
 async function brevoJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await brevoFetch(path, { method: "POST", body: JSON.stringify(body) });
+  const response = await brevoFetch(path, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Brevo ${response.status}: ${error.slice(0, 500)}`);
@@ -52,50 +63,167 @@ export async function sendTransactionalEmail(input: {
   to: Recipient;
   subject: string;
   htmlContent: string;
+  salonId?: string;
+  appointmentId?: string;
   metadata?: Record<string, unknown>;
   scheduledAt?: Date;
 }) {
   const [delivery] = await db.insert(emailDeliveriesTable).values({
     eventKey: input.eventKey,
     emailType: input.emailType,
+    salonId: input.salonId ?? null,
+    appointmentId: input.appointmentId ?? null,
     recipientEmail: input.to.email.toLowerCase(),
     recipientName: input.to.name ?? null,
     subject: input.subject,
+    htmlContent: input.htmlContent,
     scheduledAt: input.scheduledAt ?? null,
+    nextRetryAt: input.emailType === RESCHEDULED_EMAIL_TYPE ? new Date() : null,
     metadata: input.metadata ?? {},
   }).onConflictDoNothing().returning();
   if (!delivery) return { deduplicated: true };
-
-  const from = await sender();
-  if (!from) {
-    await db.update(emailDeliveriesTable).set({
-      status: "skipped",
-      errorMessage: "BREVO_SENDER_EMAIL nije podešen.",
-    }).where(eq(emailDeliveriesTable.id, delivery.id));
-    return { skipped: true };
+  if (retryable(delivery)) {
+    const processingToken = randomUUID();
+    const [claimed] = await db.update(emailDeliveriesTable).set({
+      status: "processing",
+      processingToken,
+      nextRetryAt: new Date(Date.now() + RETRY_LEASE_MS),
+    }).where(and(
+      eq(emailDeliveriesTable.id, delivery.id),
+      eq(emailDeliveriesTable.status, "queued"),
+      lte(emailDeliveriesTable.nextRetryAt, new Date()),
+    )).returning();
+    if (!claimed) return { queued: true };
+    return deliverEmail(claimed, input.htmlContent, processingToken);
   }
+  return deliverEmail(delivery, input.htmlContent);
+}
+
+function nextRetryAt(retryCount: number, now = new Date()) {
+  const delay = RETRY_DELAYS_MS[retryCount];
+  return delay === undefined ? null : new Date(now.getTime() + delay);
+}
+
+function retryable(delivery: EmailDelivery) {
+  return delivery.emailType === RESCHEDULED_EMAIL_TYPE;
+}
+
+function temporaryFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const match = /Brevo (\d{3}):/.exec(message);
+  if (match) {
+    const status = Number(match[1]);
+    return status === 408 || status === 425 || status === 429 || status >= 500;
+  }
+  return error instanceof TypeError
+    || error instanceof DOMException
+    || /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|network|socket hang up|timeout)\b/i.test(message);
+}
+
+function claimedDeliveryWhere(deliveryId: string, processingToken?: string) {
+  return processingToken
+    ? and(
+        eq(emailDeliveriesTable.id, deliveryId),
+        eq(emailDeliveriesTable.status, "processing"),
+        eq(emailDeliveriesTable.processingToken, processingToken),
+      )
+    : eq(emailDeliveriesTable.id, deliveryId);
+}
+
+function duplicateBrevoRequest(error: unknown) {
+  return error instanceof Error && error.message.includes("duplicate_parameter");
+}
+
+async function deliverEmail(delivery: EmailDelivery, htmlContent: string, processingToken?: string) {
   try {
+    const from = await sender();
+    if (!from) {
+      await db.update(emailDeliveriesTable).set({
+        status: "skipped",
+        errorMessage: "BREVO_SENDER_EMAIL nije podešen.",
+        nextRetryAt: null,
+        processingToken: null,
+      }).where(claimedDeliveryWhere(delivery.id, processingToken));
+      return { skipped: true };
+    }
     const result = await brevoJson<{ messageId?: string }>("/smtp/email", {
       sender: from,
-      to: [{ email: input.to.email, name: input.to.name ?? undefined }],
-      subject: input.subject,
-      htmlContent: input.htmlContent,
-      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt.toISOString() } : {}),
+      to: [{ email: delivery.recipientEmail, name: delivery.recipientName ?? undefined }],
+      subject: delivery.subject,
+      htmlContent,
+      headers: { idempotencyKey: delivery.id },
+      ...(delivery.scheduledAt ? { scheduledAt: delivery.scheduledAt.toISOString() } : {}),
     });
     await db.update(emailDeliveriesTable).set({
       status: "sent",
       providerMessageId: result.messageId ?? null,
-      sentAt: input.scheduledAt ? null : new Date(),
-    }).where(eq(emailDeliveriesTable.id, delivery.id));
+      errorMessage: null,
+      nextRetryAt: null,
+      processingToken: null,
+      sentAt: delivery.scheduledAt ? null : new Date(),
+    }).where(claimedDeliveryWhere(delivery.id, processingToken));
     return { messageId: result.messageId };
   } catch (error) {
-    logger.warn({ err: error, eventKey: input.eventKey }, "Brevo transactional email failed");
+    logger.warn({ err: error, eventKey: delivery.eventKey }, "Brevo transactional email failed");
+    if (duplicateBrevoRequest(error)) {
+      await db.update(emailDeliveriesTable).set({
+        status: "sent",
+        errorMessage: null,
+        nextRetryAt: null,
+        processingToken: null,
+        sentAt: new Date(),
+      }).where(claimedDeliveryWhere(delivery.id, processingToken));
+      return { deduplicated: true };
+    }
+    const retryAt = retryable(delivery) && temporaryFailure(error) ? nextRetryAt(delivery.retryCount) : null;
     await db.update(emailDeliveriesTable).set({
-      status: "failed",
+      status: retryAt ? "queued" : "failed",
       errorMessage: error instanceof Error ? error.message.slice(0, 1000) : "Nepoznata Brevo greška",
-    }).where(eq(emailDeliveriesTable.id, delivery.id));
+      nextRetryAt: retryAt,
+      processingToken: null,
+    }).where(claimedDeliveryWhere(delivery.id, processingToken));
     return { failed: true };
   }
+}
+
+export async function retryFailedRescheduledEmailConfirmations(now = new Date()) {
+  await db.update(emailDeliveriesTable).set({
+    status: "queued",
+    processingToken: null,
+    nextRetryAt: now,
+  }).where(and(
+    eq(emailDeliveriesTable.emailType, RESCHEDULED_EMAIL_TYPE),
+    eq(emailDeliveriesTable.status, "processing"),
+    lte(emailDeliveriesTable.nextRetryAt, now),
+  ));
+
+  const due = await db.select().from(emailDeliveriesTable).where(and(
+    eq(emailDeliveriesTable.emailType, RESCHEDULED_EMAIL_TYPE),
+    eq(emailDeliveriesTable.status, "queued"),
+    isNotNull(emailDeliveriesTable.nextRetryAt),
+    lte(emailDeliveriesTable.nextRetryAt, now),
+    lt(emailDeliveriesTable.retryCount, RETRY_DELAYS_MS.length),
+    isNotNull(emailDeliveriesTable.htmlContent),
+  )).orderBy(emailDeliveriesTable.nextRetryAt).limit(RETRY_BATCH_SIZE);
+
+  let retried = 0;
+  for (const delivery of due) {
+    const processingToken = randomUUID();
+    const [claimed] = await db.update(emailDeliveriesTable).set({
+      status: "processing",
+      retryCount: delivery.retryCount + 1,
+      nextRetryAt: new Date(now.getTime() + RETRY_LEASE_MS),
+      processingToken,
+    }).where(and(
+      eq(emailDeliveriesTable.id, delivery.id),
+      eq(emailDeliveriesTable.status, "queued"),
+      lte(emailDeliveriesTable.nextRetryAt, now),
+    )).returning();
+    if (!claimed) continue;
+    retried += 1;
+    await deliverEmail(claimed, claimed.htmlContent!, processingToken);
+  }
+  return { considered: due.length, retried };
 }
 
 export async function createBrevoMarketingCampaign(input: {

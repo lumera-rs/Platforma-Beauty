@@ -2445,6 +2445,22 @@ components:
           type: string
           enum: [pending, confirmed, completed, cancelled, no-show]
         notes: { type: ["string", "null"] }
+        rescheduledConfirmation:
+          type: ["object", "null"]
+          properties:
+            sms:
+              type: ["object", "null"]
+              properties:
+                status: { type: string, enum: [queued, processing, sent, failed, skipped] }
+                nextRetryAt: { type: ["string", "null"], format: date-time }
+              required: [status]
+            email:
+              type: ["object", "null"]
+              properties:
+                status: { type: string, enum: [queued, processing, sent, failed, skipped] }
+                nextRetryAt: { type: ["string", "null"], format: date-time }
+              required: [status]
+          required: [sms, email]
       required: [id, salonId, salonName, customerName, serviceName, employeeName, date, startTime, endTime, durationMinutes, price, status]
     AppointmentInput:
       type: object

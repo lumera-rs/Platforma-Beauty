@@ -312,6 +312,56 @@ export const AppointmentStatus = {
   'no-show': 'no-show',
 } as const;
 
+export type AppointmentRescheduledConfirmationSmsStatus = typeof AppointmentRescheduledConfirmationSmsStatus[keyof typeof AppointmentRescheduledConfirmationSmsStatus];
+
+
+export const AppointmentRescheduledConfirmationSmsStatus = {
+  queued: 'queued',
+  processing: 'processing',
+  sent: 'sent',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AppointmentRescheduledConfirmationSms = {
+  status: AppointmentRescheduledConfirmationSmsStatus;
+  /** @nullable */
+  nextRetryAt?: string | null;
+} | null;
+
+export type AppointmentRescheduledConfirmationEmailStatus = typeof AppointmentRescheduledConfirmationEmailStatus[keyof typeof AppointmentRescheduledConfirmationEmailStatus];
+
+
+export const AppointmentRescheduledConfirmationEmailStatus = {
+  queued: 'queued',
+  processing: 'processing',
+  sent: 'sent',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AppointmentRescheduledConfirmationEmail = {
+  status: AppointmentRescheduledConfirmationEmailStatus;
+  /** @nullable */
+  nextRetryAt?: string | null;
+} | null;
+
+/**
+ * @nullable
+ */
+export type AppointmentRescheduledConfirmation = {
+  /** @nullable */
+  sms: AppointmentRescheduledConfirmationSms;
+  /** @nullable */
+  email: AppointmentRescheduledConfirmationEmail;
+} | null;
+
 export interface Appointment {
   id: string;
   salonId: string;
@@ -329,6 +379,8 @@ export interface Appointment {
   status: AppointmentStatus;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  rescheduledConfirmation?: AppointmentRescheduledConfirmation;
 }
 
 export interface AppointmentInput {

@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, asc, count, desc, eq, inArray, or, sql } from "drizzle-orm";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   appointmentSeriesTable,
   appointmentsTable,
@@ -14,6 +14,7 @@ import {
   db,
   educationCentersTable,
   emailCampaignsTable,
+  emailDeliveriesTable,
   employeesTable,
   employeeLeaveRequestsTable,
   employeeSchedulesTable,
@@ -247,6 +248,7 @@ import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, se
 import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
+import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
 
 const router: IRouter = Router();
@@ -812,6 +814,9 @@ async function moveAppointmentSeries(input: {
   salonId: string;
   seriesId: string;
   move: { dayOffset?: number; startTime?: string };
+  contact: typeof salonCustomersTable.$inferSelect | null;
+  salon: typeof salonsTable.$inferSelect;
+  moveEventId: string;
 }) {
   return db.transaction(async (tx) => {
     const initial = futureUnfinishedSeriesAppointments(await tx.select().from(appointmentsTable).where(and(
@@ -867,6 +872,20 @@ async function moveAppointmentSeries(input: {
       if (!appointment) throw new AppointmentSeriesError("Jedan od termina serije je u međuvremenu promenjen. Ponovo pregledajte konflikte.");
       moved.push(appointment!);
     }
+    if (input.contact?.email) {
+      await tx.insert(emailDeliveriesTable).values(moved.map((appointment) => ({
+        eventKey: `appointment-rescheduled:${input.moveEventId}:${appointment.id}:email`,
+        emailType: "appointment_rescheduled",
+        salonId: input.salonId,
+        appointmentId: appointment.id,
+        recipientEmail: input.contact!.email!.toLowerCase(),
+        recipientName: `${input.contact!.firstName} ${input.contact!.lastName}`.trim() || "LUMERA klijent",
+        subject: "LUMERA — termin je pomeren",
+        htmlContent: lumeraEmailHtml("Termin je pomeren", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je pomeren na <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
+        nextRetryAt: new Date(),
+        metadata: { appointmentId: appointment.id, salonId: input.salonId, moveEventId: input.moveEventId },
+      })));
+    }
     return moved;
   });
 }
@@ -898,10 +917,11 @@ async function sendSeriesUpdates(input: {
   appointments: (typeof appointmentsTable.$inferSelect)[];
   contact: typeof salonCustomersTable.$inferSelect;
   salon: typeof salonsTable.$inferSelect;
+  moveEventId: string;
 }) {
   for (const appointment of input.appointments) {
     await sendSms({
-      eventKey: `appointment-rescheduled:${appointment.id}:${appointment.date}:${appointment.startTime}`,
+      eventKey: `appointment-rescheduled:${input.moveEventId}:${appointment.id}`,
       salonId: input.salon.id,
       appointmentId: appointment.id,
       type: "appointment_confirmation",
@@ -909,16 +929,6 @@ async function sendSeriesUpdates(input: {
       smsOptOut: input.contact.smsOptOut,
       text: `LUMERA: termin u salonu ${input.salon.name} je pomeren na ${appointment.date} u ${appointment.startTime}.`,
     });
-    if (input.contact.email) {
-      await sendTransactionalEmail({
-        eventKey: `appointment-rescheduled:${appointment.id}:${appointment.date}:${appointment.startTime}:email`,
-        emailType: "appointment_rescheduled",
-        to: { email: input.contact.email, name: `${input.contact.firstName} ${input.contact.lastName}`.trim() || "LUMERA klijent" },
-        subject: "LUMERA — termin je pomeren",
-        htmlContent: lumeraEmailHtml("Termin je pomeren", `<p>Vaš termin u salonu <b>${emailSafe(input.salon.name)}</b> je pomeren na <b>${appointment.date} u ${appointment.startTime}</b>.</p>`),
-        metadata: { appointmentId: appointment.id, salonId: input.salon.id },
-      });
-    }
   }
 }
 
@@ -1307,6 +1317,10 @@ function appointmentView(
   service: typeof servicesTable.$inferSelect,
   customer: Pick<typeof usersTable.$inferSelect, "firstName" | "lastName"> | Pick<typeof salonCustomersTable.$inferSelect, "firstName" | "lastName">,
   employee: typeof employeesTable.$inferSelect | undefined,
+  rescheduledConfirmation: {
+    sms: { status: typeof smsDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
+    email: { status: typeof emailDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
+  } | null = null,
 ) {
   return {
     id: appointment.id,
@@ -1323,6 +1337,7 @@ function appointmentView(
     seriesId: appointment.seriesId,
     status: appointment.status,
     notes: appointment.notes,
+    rescheduledConfirmation,
   };
 }
 
@@ -1334,19 +1349,46 @@ async function appointmentList(where?: ReturnType<typeof eq>) {
   const customerIds = [...new Set(appointments.flatMap((item) => item.customerId ? [item.customerId] : []))];
   const salonCustomerIds = [...new Set(appointments.flatMap((item) => item.salonCustomerId ? [item.salonCustomerId] : []))];
   const employeeIds = appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []);
-  const [salons, services, customers, salonCustomers, employees] = await Promise.all([
+  const appointmentIds = appointments.map((item) => item.id);
+  const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries] = await Promise.all([
     db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
     db.select().from(servicesTable).where(inArray(servicesTable.id, serviceIds)),
     customerIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
     salonCustomerIds.length ? db.select().from(salonCustomersTable).where(inArray(salonCustomersTable.id, salonCustomerIds)) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
     employeeIds.length ? db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : Promise.resolve([]),
+    db.select().from(smsDeliveriesTable).where(inArray(smsDeliveriesTable.appointmentId, appointmentIds)),
+    db.select().from(emailDeliveriesTable).where(and(
+      inArray(emailDeliveriesTable.appointmentId, appointmentIds),
+      eq(emailDeliveriesTable.emailType, "appointment_rescheduled"),
+    )),
   ]);
+  const latestByAppointment = <T extends { appointmentId: string | null; createdAt: Date }>(deliveries: T[]) => {
+    const latest = new Map<string, T>();
+    for (const delivery of deliveries) {
+      if (!delivery.appointmentId) continue;
+      const previous = latest.get(delivery.appointmentId);
+      if (!previous || previous.createdAt < delivery.createdAt) latest.set(delivery.appointmentId, delivery);
+    }
+    return latest;
+  };
+  const rescheduledSms = latestByAppointment(smsDeliveries.filter((delivery) => delivery.eventKey.startsWith("appointment-rescheduled:")));
+  const rescheduledEmails = latestByAppointment(emailDeliveries);
   return appointments.map((item) => appointmentView(
     item,
     salons.find((salon) => salon.id === item.salonId)!,
     services.find((service) => service.id === item.serviceId)!,
     customers.find((customer) => customer.id === item.customerId) ?? salonCustomers.find((customer) => customer.id === item.salonCustomerId) ?? { firstName: "Gost", lastName: "" },
     (employees as (typeof employeesTable.$inferSelect)[]).find((employee) => employee.id === item.employeeId),
+    (() => {
+      const sms = rescheduledSms.get(item.id);
+      const email = rescheduledEmails.get(item.id);
+      return sms || email
+        ? {
+            sms: sms ? { status: sms.status, nextRetryAt: sms.nextRetryAt } : null,
+            email: email ? { status: email.status, nextRetryAt: email.nextRetryAt } : null,
+          }
+        : null;
+    })(),
   ));
 }
 
@@ -1666,6 +1708,13 @@ router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
   const date = typeof req.body?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : undefined;
   const result = await sendDailyAppointmentReminders(date);
   req.log.info(result, "SMS reminder batch finished");
+  res.json(result);
+});
+
+router.post("/internal/jobs/rescheduled-confirmation-retries", async (req, res): Promise<void> => {
+  const expected = process.env["CONFIRMATION_RETRY_JOB_SECRET"];
+  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  const result = await runRescheduledConfirmationRetries();
   res.json(result);
 });
 
@@ -2329,11 +2378,15 @@ router.post("/salon/appointment-series/:seriesId/move", async (req, res): Promis
   )).limit(1);
   if (!series) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
   try {
-    const moved = await moveAppointmentSeries({ salonId: access.salon.id, seriesId: series.id, move: body.data });
     const [contact] = series.salonCustomerId
       ? await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, series.salonCustomerId), eq(salonCustomersTable.salonId, access.salon.id))).limit(1)
       : [];
-    if (contact) await sendSeriesUpdates({ appointments: moved, contact, salon: access.salon });
+    const moveEventId = randomUUID();
+    const moved = await moveAppointmentSeries({ salonId: access.salon.id, seriesId: series.id, move: body.data, contact: contact ?? null, salon: access.salon, moveEventId });
+    if (contact) {
+      await sendSeriesUpdates({ appointments: moved, contact, salon: access.salon, moveEventId });
+      await runRescheduledConfirmationRetries();
+    }
     const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, moved.map((appointment) => appointment.id))));
     const viewById = new Map(views.map((appointment) => [appointment.id, appointment]));
     res.json(MoveSalonAppointmentSeriesResponse.parse({
