@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { homeForRole } from "@/lib/role-routing";
@@ -159,7 +160,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Lozinka</FormLabel>
-                            <FormControl><Input type="password" autoComplete="current-password" {...field} /></FormControl>
+                            <FormControl><PasswordInput autoComplete="current-password" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -323,7 +324,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Lozinka</FormLabel>
-                            <FormControl><Input type="password" autoComplete="new-password" value={field.value ?? ""} onChange={field.onChange} /></FormControl>
+                            <FormControl><PasswordInput autoComplete="new-password" value={field.value ?? ""} onChange={field.onChange} /></FormControl>
                             <FormMessage />
                           </FormItem>
                         )}

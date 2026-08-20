@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { runRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
+import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 
 const rawPort = process.env["PORT"];
 
@@ -26,7 +26,7 @@ app.listen(port, (err) => {
 });
 
 const retryInterval = setInterval(() => {
-  void runRescheduledConfirmationRetries();
+  void runScheduledRescheduledConfirmationRetries();
 }, 60_000);
 retryInterval.unref();
-void runRescheduledConfirmationRetries();
+void runScheduledRescheduledConfirmationRetries();

@@ -1,6 +1,7 @@
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
@@ -133,7 +134,7 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Lozinka</FormLabel>
                           <FormControl>
-                            <Input type="password" autoComplete="current-password" {...field} />
+                            <PasswordInput autoComplete="current-password" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -215,7 +216,7 @@ export default function Login() {
                         <FormItem>
                           <FormLabel>Lozinka (min. 8 karaktera)</FormLabel>
                           <FormControl>
-                            <Input type="password" autoComplete="new-password" {...field} />
+                            <PasswordInput autoComplete="new-password" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

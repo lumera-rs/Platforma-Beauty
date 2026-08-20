@@ -17,3 +17,14 @@ export async function runRescheduledConfirmationRetries() {
     throw error;
   }
 }
+
+export async function runScheduledRescheduledConfirmationRetries(
+  runner: () => Promise<unknown> = runRescheduledConfirmationRetries,
+): Promise<void> {
+  try {
+    await runner();
+  } catch {
+    // The worker already logs the batch error. Scheduled runs must not become
+    // unhandled rejections that can terminate the API process.
+  }
+}

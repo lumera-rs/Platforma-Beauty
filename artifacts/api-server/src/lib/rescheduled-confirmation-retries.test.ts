@@ -20,6 +20,7 @@ import {
   sendTransactionalEmail,
   type TransactionalEmailTransport,
 } from "./brevo";
+import { runScheduledRescheduledConfirmationRetries } from "./rescheduled-confirmation-retries";
 import { ensureDemoData } from "./seed";
 
 const suffix = randomUUID();
@@ -126,6 +127,18 @@ async function testParallelWorkersClaimOnlyOnce() {
   const sent = await deliveryByEventKey(eventKey);
   assert.equal(sent?.status, "sent");
   assert.equal(sent?.processingToken, null);
+}
+
+async function testScheduledWorkerFailureDoesNotReject() {
+  let attempts = 0;
+  await assert.doesNotReject(
+    runScheduledRescheduledConfirmationRetries(async () => {
+      attempts += 1;
+      throw new Error("simulated scheduled worker failure");
+    }),
+    "a scheduled retry failure must not become an unhandled rejection",
+  );
+  assert.equal(attempts, 1);
 }
 
 async function createSeriesFixture() {
@@ -273,6 +286,7 @@ async function run() {
   try {
     await testTemporaryFailureRetryScheduleAndSuccess();
     await testParallelWorkersClaimOnlyOnce();
+    await testScheduledWorkerFailureDoesNotReject();
     await testMovePersistsBeforeSendAndKeepsEachMoveConfirmation();
     console.log("Rescheduled confirmation outbox regression passed.");
   } finally {
