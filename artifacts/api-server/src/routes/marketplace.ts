@@ -250,6 +250,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
+import { lockAppointmentResources } from "../lib/appointment-locks";
 
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
@@ -593,9 +594,10 @@ async function createAllocatedAppointment(input: {
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
 }) {
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${input.date}`}))`);
+    await lockAppointmentResources(tx, input.salonId, [{ date: input.date }]);
     const employee = await availableEmployeeWithDb(tx, input.salonId, input.serviceId, input.date, input.startTime, input.endTime, input.preferredEmployeeId);
     if (!employee) return { employee: null, appointment: null };
+    await lockAppointmentResources(tx, input.salonId, [{ date: input.date, employeeId: employee.id }]);
     const [appointment] = await tx.insert(appointmentsTable).values({
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
       date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, status: input.status, notes: input.notes ?? null,
@@ -669,9 +671,7 @@ async function createAppointmentSeries(input: {
   preferredEmployeeId?: string | null;
 }) {
   return db.transaction(async (tx) => {
-    for (const date of [...new Set(input.slots.map((slot) => slot.date))].sort()) {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${date}`}))`);
-    }
+    await lockAppointmentResources(tx, input.salonId, input.slots);
     const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect }> = [];
     const reservedAppointments: ReservedAppointment[] = [];
     for (const slot of input.slots) {
@@ -689,6 +689,10 @@ async function createAppointmentSeries(input: {
       allocations.push({ slot, employee });
       reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
     }
+    await lockAppointmentResources(tx, input.salonId, allocations.map(({ slot, employee }) => ({
+      date: slot.date,
+      employeeId: employee.id,
+    })));
     const [series] = await tx.insert(appointmentSeriesTable).values({
       salonId: input.salonId,
       salonCustomerId: input.salonCustomerId,
@@ -819,6 +823,7 @@ async function moveAppointmentSeries(input: {
   moveEventId: string;
 }) {
   return db.transaction(async (tx) => {
+    await lockAppointmentResources(tx, input.salonId);
     const initial = futureUnfinishedSeriesAppointments(await tx.select().from(appointmentsTable).where(and(
       eq(appointmentsTable.salonId, input.salonId),
       eq(appointmentsTable.seriesId, input.seriesId),
@@ -829,9 +834,7 @@ async function moveAppointmentSeries(input: {
       ...initial.map((appointment) => appointment.date),
       ...initialSlots.map((slot) => slot.date),
     ])].sort();
-    for (const date of lockDates) {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${date}`}))`);
-    }
+    await lockAppointmentResources(tx, input.salonId, lockDates.map((date) => ({ date })));
 
     const appointments = futureUnfinishedSeriesAppointments(await tx.select().from(appointmentsTable).where(and(
       eq(appointmentsTable.salonId, input.salonId),
@@ -858,6 +861,10 @@ async function moveAppointmentSeries(input: {
       allocations.push({ slot, employee });
       reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
     }
+    await lockAppointmentResources(tx, input.salonId, allocations.map(({ slot, employee }) => ({
+      date: slot.date,
+      employeeId: employee.id,
+    })));
     const moved: (typeof appointmentsTable.$inferSelect)[] = [];
     for (const { slot, employee } of allocations) {
       const [appointment] = await tx.update(appointmentsTable).set({
@@ -2059,14 +2066,18 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const appointmentDate = calendarDate(parsed.data.date);
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
-  const allocation = await createAllocatedAppointment({ salonId: salon.id, customerId: user.id, serviceId: service.id, date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId });
-  if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
-  const { employee, appointment } = allocation;
   const [createdContact] = await db.insert(salonCustomersTable).values({
     salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
   }).onConflictDoNothing().returning();
   const crmContact = createdContact ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
-  if (crmContact) await db.update(appointmentsTable).set({ salonCustomerId: crmContact.id }).where(eq(appointmentsTable.id, appointment.id));
+  const allocation = await createAllocatedAppointment({
+    salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
+    date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
+    price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
+    preferredEmployeeId: parsed.data.employeeId,
+  });
+  if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
+  const { employee, appointment } = allocation;
   await sendSms({
     eventKey: `appointment-confirmation:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
     type: "appointment_confirmation", phone: user.phone, smsOptOut: crmContact?.smsOptOut,
@@ -2080,25 +2091,82 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [UpdateAppointmentParams.safeParse(req.params), UpdateAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return; }
-  const [appointment] = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.customerId, user.id))).limit(1);
-  if (!appointment) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
-  if (body.data.employeeId && !(await employeeInSalon(body.data.employeeId, appointment.salonId))) {
-    res.status(400).json({ error: "Izabrani zaposleni ne pripada ovom salonu." });
+  const result = await db.transaction(async (tx) => {
+    const [initial] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, params.data.appointmentId),
+      eq(appointmentsTable.customerId, user.id),
+    )).limit(1);
+    if (!initial) return { error: "not-found" as const };
+
+    const date = body.data.date ? calendarDate(body.data.date) : initial.date;
+    const startTime = body.data.startTime ?? initial.startTime;
+    const employeeId = body.data.employeeId ?? initial.employeeId;
+    await lockAppointmentResources(tx, initial.salonId, [
+      { date: initial.date, employeeId: initial.employeeId },
+      { date, employeeId },
+    ]);
+    const [appointment] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, initial.id),
+      eq(appointmentsTable.customerId, user.id),
+    )).for("update").limit(1);
+    if (!appointment || !["pending", "confirmed"].includes(appointment.status)) return { error: "changed" as const };
+    const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
+    const endTime = service ? appointmentEndTime(startTime, service.durationMinutes) : null;
+    if (!service || !endTime) return { error: "invalid-time" as const };
+    const employee = await availableEmployeeWithDb(
+      tx, appointment.salonId, service.id, date, startTime, endTime, employeeId, [], new Set([appointment.id]),
+    );
+    if (!employee) return { error: "unavailable" as const };
+    await lockAppointmentResources(tx, appointment.salonId, [{ date, employeeId: employee.id }]);
+    const [updated] = await tx.update(appointmentsTable).set({
+      date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
+    }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
+    return updated ? { appointment: updated, service, employee } : { error: "changed" as const };
+  });
+  if ("error" in result) {
+    const error = result.error;
+    res.status(error === "not-found" ? 404 : error === "invalid-time" ? 400 : 409).json({
+      error: error === "not-found" ? "Termin nije pronađen."
+        : error === "invalid-time" ? "Trajanje termina izlazi van radnog dana."
+          : error === "unavailable" ? "Termin više nije slobodan kod izabranog zaposlenog."
+            : "Termin je u međuvremenu promenjen. Osvežite raspored i pokušajte ponovo.",
+    });
     return;
   }
-  const [updated] = await db.update(appointmentsTable).set({ date: body.data.date ? calendarDate(body.data.date) : appointment.date, startTime: body.data.startTime ?? appointment.startTime, employeeId: body.data.employeeId ?? appointment.employeeId, notes: body.data.notes ?? appointment.notes }).where(eq(appointmentsTable.id, appointment.id)).returning();
+  const { appointment: updated, employee } = result;
   const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
-  const [employee] = updated!.employeeId ? await db.select().from(employeesTable).where(eq(employeesTable.id, updated!.employeeId)).limit(1) : [];
-  await sendAppointmentEmails({ event: "updated", appointment: updated!, customer: user, salon: salon[0]!, service: service[0]! });
-  res.json(UpdateAppointmentResponse.parse(appointmentView(updated!, salon[0]!, service[0]!, user, employee)));
+  await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
+  res.json(UpdateAppointmentResponse.parse(appointmentView(updated, salon[0]!, service[0]!, user, employee)));
 });
 
 router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [CancelAppointmentParams.safeParse(req.params), CancelAppointmentBody.safeParse(req.body ?? {})];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za otkazivanje nisu ispravni." }); return; }
-  const [appointment] = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: body.data.reason ?? null }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.customerId, user.id))).returning();
-  if (!appointment) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
+  const result = await db.transaction(async (tx) => {
+    const [initial] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, params.data.appointmentId),
+      eq(appointmentsTable.customerId, user.id),
+    )).limit(1);
+    if (!initial) return { error: "not-found" as const };
+    await lockAppointmentResources(tx, initial.salonId, [{ date: initial.date, employeeId: initial.employeeId }]);
+    const [appointment] = await tx.update(appointmentsTable).set({
+      status: "cancelled",
+      cancellationReason: body.data.reason ?? null,
+    }).where(and(
+      eq(appointmentsTable.id, initial.id),
+      eq(appointmentsTable.customerId, user.id),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    )).returning();
+    return appointment ? { appointment } : { error: "changed" as const };
+  });
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : 409).json({
+      error: result.error === "not-found" ? "Termin nije pronađen." : "Termin je u međuvremenu promenjen ili otkazan.",
+    });
+    return;
+  }
+  const { appointment } = result;
   const [salon, service, employee] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1), appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([])]);
   await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
   res.json(CancelAppointmentResponse.parse(appointmentView(appointment, salon[0]!, service[0]!, user, employee[0])));
@@ -2236,8 +2304,6 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
   const date = calendarDate(parsed.data.date);
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
-  const employee = await availableEmployee(salon.id, service.id, date, parsed.data.startTime, endTime, parsed.data.employeeId);
-  if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
   let contact: typeof salonCustomersTable.$inferSelect | undefined;
   if (parsed.data.salonCustomerId) {
     contact = (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, parsed.data.salonCustomerId), eq(salonCustomersTable.salonId, salon.id))).limit(1))[0];
@@ -2257,16 +2323,31 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
       await db.update(appointmentsTable).set({ customerId: registeredUser.id }).where(eq(appointmentsTable.salonCustomerId, contact!.id));
     }
   }
-  const [appointment] = await db.insert(appointmentsTable).values({
-    salonId: salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, employeeId: employee.id, serviceId: service.id,
-    date, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "confirmed", notes: parsed.data.notes ?? null,
-  }).returning();
-  await sendSms({
-    eventKey: `appointment-confirmation:${appointment!.id}`, salonId: salon.id, appointmentId: appointment!.id,
-    type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
-    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment!.startTime}.`,
+  const allocation = await createAllocatedAppointment({
+    salonId: salon.id,
+    customerId: contact!.userId,
+    salonCustomerId: contact!.id,
+    serviceId: service.id,
+    date,
+    startTime: parsed.data.startTime,
+    endTime,
+    durationMinutes: service.durationMinutes,
+    price: service.promoPrice ?? service.price,
+    status: "confirmed",
+    notes: parsed.data.notes ?? null,
+    preferredEmployeeId: parsed.data.employeeId,
   });
-  res.status(201).json(CreateSalonAppointmentResponse.parse(appointmentView(appointment!, salon, service, contact!, employee)));
+  if (!allocation.appointment || !allocation.employee) {
+    res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." });
+    return;
+  }
+  const { appointment, employee } = allocation;
+  await sendSms({
+    eventKey: `appointment-confirmation:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
+    type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
+    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment.startTime}.`,
+  });
+  res.status(201).json(CreateSalonAppointmentResponse.parse(appointmentView(appointment, salon, service, contact!, employee)));
 });
 
 router.post("/salon/appointment-series/preview", async (req, res): Promise<void> => {
@@ -2337,11 +2418,35 @@ router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<v
   const access = await requireSalonOwner(req, res); if (!access) return;
   const params = CancelSalonAppointmentSeriesParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Serija termina nije ispravna." }); return; }
-  const [series] = await db.select().from(appointmentSeriesTable).where(and(eq(appointmentSeriesTable.id, params.data.seriesId), eq(appointmentSeriesTable.salonId, access.salon.id))).limit(1);
-  if (!series) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
-  const today = new Date().toISOString().slice(0, 10);
-  const cancelled = await db.update(appointmentsTable).set({ status: "cancelled", cancellationReason: "Otkazana preostala serija termina." })
-    .where(and(eq(appointmentsTable.seriesId, series.id), sql`${appointmentsTable.date} >= ${today}`, inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning({ id: appointmentsTable.id });
+  const result = await db.transaction(async (tx) => {
+    await lockAppointmentResources(tx, access.salon.id);
+    const [series] = await tx.select().from(appointmentSeriesTable).where(and(
+      eq(appointmentSeriesTable.id, params.data.seriesId),
+      eq(appointmentSeriesTable.salonId, access.salon.id),
+    )).limit(1);
+    if (!series) return { error: "not-found" as const };
+    const today = new Date().toISOString().slice(0, 10);
+    const upcoming = await tx.select({
+      date: appointmentsTable.date,
+      employeeId: appointmentsTable.employeeId,
+    }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.seriesId, series.id),
+      sql`${appointmentsTable.date} >= ${today}`,
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    ));
+    await lockAppointmentResources(tx, access.salon.id, upcoming);
+    const cancelled = await tx.update(appointmentsTable).set({
+      status: "cancelled",
+      cancellationReason: "Otkazana preostala serija termina.",
+    }).where(and(
+      eq(appointmentsTable.seriesId, series.id),
+      sql`${appointmentsTable.date} >= ${today}`,
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    )).returning({ id: appointmentsTable.id });
+    return { series, cancelled };
+  });
+  if ("error" in result) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
+  const { series, cancelled } = result;
   res.json(CancelSalonAppointmentSeriesResponse.parse({ id: series.id, cancelledAppointments: cancelled.length }));
 });
 
@@ -2405,15 +2510,54 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   const { salon } = access;
   const [params, body] = [UpdateSalonAppointmentParams.safeParse(req.params), UpdateSalonAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu nisu ispravni." }); return; }
-  const [target] = await db.select({ salonId: appointmentsTable.salonId }).from(appointmentsTable).where(eq(appointmentsTable.id, params.data.appointmentId)).limit(1);
-  if (!target) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
-  if (target.salonId !== salon.id) { res.status(403).json({ error: "Termin pripada drugom salonu." }); return; }
-  if (body.data.employeeId && !(await employeeInSalon(body.data.employeeId, salon.id))) {
-    res.status(403).json({ error: "Zaposleni pripada drugom salonu." });
+  const result = await db.transaction(async (tx) => {
+    await lockAppointmentResources(tx, salon.id);
+    if (body.data.employeeId) {
+      const [requestedEmployee] = await tx.select({ id: employeesTable.id }).from(employeesTable).where(and(
+        eq(employeesTable.id, body.data.employeeId),
+        eq(employeesTable.salonId, salon.id),
+      )).limit(1);
+      if (!requestedEmployee) return { error: "foreign-employee" as const };
+    }
+    const [target] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, params.data.appointmentId),
+      eq(appointmentsTable.salonId, salon.id),
+    )).for("update").limit(1);
+    if (!target) return { error: "not-found" as const };
+    const employeeId = body.data.employeeId ?? target.employeeId;
+    const status = body.data.status ?? target.status;
+    await lockAppointmentResources(tx, salon.id, [
+      { date: target.date, employeeId: target.employeeId },
+      { date: target.date, employeeId },
+    ]);
+    if (employeeId && status !== "cancelled") {
+      const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, target.serviceId)).limit(1);
+      const employee = service
+        ? await availableEmployeeWithDb(tx, salon.id, service.id, target.date, target.startTime, target.endTime, employeeId, [], new Set([target.id]))
+        : null;
+      if (!employee) return { error: "unavailable" as const };
+      await lockAppointmentResources(tx, salon.id, [{ date: target.date, employeeId: employee.id }]);
+    }
+    const [updated] = await tx.update(appointmentsTable).set({
+      status: body.data.status,
+      employeeId: body.data.employeeId,
+      notes: body.data.notes === "" ? null : body.data.notes,
+    }).where(and(
+      eq(appointmentsTable.id, target.id),
+      eq(appointmentsTable.salonId, salon.id),
+    )).returning();
+    return updated ? { updated } : { error: "changed" as const };
+  });
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : result.error === "foreign-employee" ? 403 : 409).json({
+      error: result.error === "not-found" ? "Termin nije pronađen."
+        : result.error === "foreign-employee" ? "Zaposleni pripada drugom salonu."
+          : result.error === "unavailable" ? "Izabrani zaposleni nije slobodan za ovaj termin."
+            : "Termin je u međuvremenu promenjen.",
+    });
     return;
   }
-  const [updated] = await db.update(appointmentsTable).set({ status: body.data.status, employeeId: body.data.employeeId, notes: body.data.notes === "" ? null : body.data.notes }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, salon.id))).returning();
-  if (!updated) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
+  const { updated } = result;
   const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id))))[0];
   res.json(UpdateSalonAppointmentResponse.parse(view));
 });
@@ -2653,10 +2797,33 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
   const notes = req.body?.notes;
   if (status !== "completed" && status !== "no-show") { res.status(400).json({ error: "Možete označiti samo završen ili no-show termin." }); return; }
   if (notes !== undefined && typeof notes !== "string") { res.status(400).json({ error: "Napomena mora biti tekst." }); return; }
-  const [appointment] = await db.update(appointmentsTable).set({
-    status, notes: typeof notes === "string" ? notes.trim() || null : undefined,
-  }).where(and(eq(appointmentsTable.id, req.params.appointmentId), eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonId, access.salon.id))).returning();
-  if (!appointment) { res.status(404).json({ error: "Vaš termin nije pronađen." }); return; }
+  const result = await db.transaction(async (tx) => {
+    await lockAppointmentResources(tx, access.salon.id);
+    const [initial] = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.id, req.params.appointmentId),
+      eq(appointmentsTable.employeeId, access.employee.id),
+      eq(appointmentsTable.salonId, access.salon.id),
+    )).limit(1);
+    if (!initial) return { error: "not-found" as const };
+    await lockAppointmentResources(tx, access.salon.id, [{ date: initial.date, employeeId: initial.employeeId }]);
+    const [appointment] = await tx.update(appointmentsTable).set({
+      status,
+      notes: typeof notes === "string" ? notes.trim() || null : undefined,
+    }).where(and(
+      eq(appointmentsTable.id, initial.id),
+      eq(appointmentsTable.employeeId, access.employee.id),
+      eq(appointmentsTable.salonId, access.salon.id),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    )).returning();
+    return appointment ? { appointment } : { error: "changed" as const };
+  });
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : 409).json({
+      error: result.error === "not-found" ? "Vaš termin nije pronađen." : "Termin je u međuvremenu promenjen.",
+    });
+    return;
+  }
+  const { appointment } = result;
   res.json({ id: appointment.id, status: appointment.status, notes: appointment.notes });
 });
 
@@ -2797,9 +2964,10 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
   const guestPhoneNormalized = guestPhone ? normalizedPhone(guestPhone) : null;
   if (!salonCustomerId && (!guestPhoneNormalized || !String(guest!.firstName).trim())) { res.status(400).json({ error: "Unesite ime i telefon klijenta." }); return; }
   const batch = await db.transaction(async (tx) => {
-    for (const date of [...new Set(preparedSlots.map((slot) => slot.date))].sort()) {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${access.salon.id}:${date}`}))`);
-    }
+    await lockAppointmentResources(tx, access.salon.id, preparedSlots.map((slot) => ({
+      date: slot.date,
+      employeeId: access.employee.id,
+    })));
     let contact: typeof salonCustomersTable.$inferSelect;
     let newlyCreatedContact = false;
     if (salonCustomerId) {

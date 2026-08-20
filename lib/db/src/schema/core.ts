@@ -361,7 +361,9 @@ export const appointmentsTable = pgTable("appointments", {
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("appointments_schedule_lookup_index").on(table.salonId, table.date, table.employeeId, table.status),
+]);
 
 export const smsDeliveriesTable = pgTable("sms_deliveries", {
   id: uuid("id").defaultRandom().primaryKey(),
