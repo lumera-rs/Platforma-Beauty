@@ -15,6 +15,7 @@ import {
   inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
+  oauthIdentitiesTable,
   orderItemsTable,
   ordersTable,
   productCategoriesTable,
@@ -92,6 +93,15 @@ export async function ensureDemoData(): Promise<void> {
 async function seed(): Promise<void> {
   const [existing] = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
   if (existing) {
+    await db.execute(sql`
+      update ${usersTable}
+      set password_set_at = now()
+      where ${usersTable.passwordSetAt} is null
+        and not exists (
+          select 1 from ${oauthIdentitiesTable}
+          where ${oauthIdentitiesTable.userId} = ${usersTable.id}
+        )
+    `);
     for (const [city, postalCode] of Object.entries(postalCodesByCity)) {
       await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
     }
@@ -103,17 +113,19 @@ async function seed(): Promise<void> {
   }
 
   const passwordHash = await hashPassword("LumeraDemo2026!");
+  const passwordSetAt = new Date();
   const demoUsers = await db.insert(usersTable).values([
-    { firstName: "Milica", lastName: "Jovanović", email: "admin@lumera.local", passwordHash, role: "SUPER_ADMIN" },
-    { firstName: "Ana", lastName: "Petrović", email: "salon@lumera.local", passwordHash, role: "SALON_OWNER" },
-    { firstName: "Jelena", lastName: "Marković", email: "edukacija@lumera.local", passwordHash, role: "EDUCATION_CENTER_OWNER" },
-    { firstName: "Teodora", lastName: "Nikolić", email: "kupac@lumera.local", passwordHash, role: "CUSTOMER" },
-    { firstName: "Maja", lastName: "Milošević", email: "zaposleni@lumera.local", passwordHash, role: "SALON_EMPLOYEE" },
+    { firstName: "Milica", lastName: "Jovanović", email: "admin@lumera.local", passwordHash, passwordSetAt, role: "SUPER_ADMIN" },
+    { firstName: "Ana", lastName: "Petrović", email: "salon@lumera.local", passwordHash, passwordSetAt, role: "SALON_OWNER" },
+    { firstName: "Jelena", lastName: "Marković", email: "edukacija@lumera.local", passwordHash, passwordSetAt, role: "EDUCATION_CENTER_OWNER" },
+    { firstName: "Teodora", lastName: "Nikolić", email: "kupac@lumera.local", passwordHash, passwordSetAt, role: "CUSTOMER" },
+    { firstName: "Maja", lastName: "Milošević", email: "zaposleni@lumera.local", passwordHash, passwordSetAt, role: "SALON_EMPLOYEE" },
     ...Array.from({ length: 30 }, (_, i) => ({
       firstName: ["Katarina", "Marija", "Sofija", "Lana", "Una"][i % 5]!,
       lastName: ["Ilić", "Kovačević", "Simić", "Pavlović", "Đorđević"][i % 5]!,
       email: `kupac${i + 1}@lumera.local`,
       passwordHash,
+      passwordSetAt,
       role: "CUSTOMER" as const,
     })),
   ]).returning();
@@ -343,7 +355,7 @@ async function seed(): Promise<void> {
     auditData: { source: "demo-seed" },
   }).returning();
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
-  await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, role: "ADMIN" });
+  await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, passwordSetAt, role: "ADMIN" });
   await seedMarketplaceTaxonomy();
   await seedCourierServices();
   void customer;
@@ -742,6 +754,7 @@ async function seedEducationContent(): Promise<void> {
         lastName: employee.name.split(" ").slice(1).join(" ") || "salona",
         email: "zaposleni@lumera.local",
         passwordHash: await hashPassword("LumeraDemo2026!"),
+        passwordSetAt: new Date(),
         role: "SALON_EMPLOYEE",
       }).returning();
     }

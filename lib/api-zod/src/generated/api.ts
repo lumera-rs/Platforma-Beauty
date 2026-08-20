@@ -144,6 +144,38 @@ export const GetCurrentUserResponse = zod.object({
 
 
 /**
+ * @summary List connected sign-in methods for the current user
+ */
+export const GetAuthSignInMethodsResponse = zod.object({
+  "passwordAvailable": zod.boolean(),
+  "providers": zod.array(zod.object({
+  "provider": zod.enum(['google', 'facebook']),
+  "email": zod.string(),
+  "connectedAt": zod.coerce.date(),
+  "canDisconnect": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Disconnect a social sign-in method from the current user
+ */
+export const DisconnectAuthSignInMethodParams = zod.object({
+  "provider": zod.enum(['google', 'facebook'])
+})
+
+export const DisconnectAuthSignInMethodResponse = zod.object({
+  "passwordAvailable": zod.boolean(),
+  "providers": zod.array(zod.object({
+  "provider": zod.enum(['google', 'facebook']),
+  "email": zod.string(),
+  "connectedAt": zod.coerce.date(),
+  "canDisconnect": zod.boolean()
+}))
+})
+
+
+/**
  * @summary List LUMERA email marketing campaigns
  */
 export const AdminListEmailCampaignsResponse = zod.object({
@@ -4180,5 +4212,3 @@ export const AdminDeleteCourierServiceParams = zod.object({
 })
 
 export const AdminDeleteCourierServiceResponse = zod.void()
-
-

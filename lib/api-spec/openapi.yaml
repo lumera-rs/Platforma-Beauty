@@ -105,6 +105,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+  /auth/sign-in-methods:
+    get:
+      operationId: getAuthSignInMethods
+      tags: [auth]
+      summary: List connected sign-in methods for the current user
+      responses:
+        "200":
+          description: Connected sign-in methods
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignInMethods"
+        "401": { description: Authentication required }
+  /auth/sign-in-methods/{provider}:
+    delete:
+      operationId: disconnectAuthSignInMethod
+      tags: [auth]
+      summary: Disconnect a social sign-in method from the current user
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [google, facebook]
+      responses:
+        "200":
+          description: Updated connected sign-in methods
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignInMethods"
+        "400": { description: Disconnecting would leave the account without a sign-in method }
+        "401": { description: Authentication required }
+        "404": { description: Provider is not connected }
   /admin/email-marketing/campaigns:
     get:
       operationId: adminListEmailCampaigns
@@ -2065,6 +2100,24 @@ components:
             - $ref: "#/components/schemas/User"
             - type: "null"
       required: [user]
+    SignInProvider:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [google, facebook]
+        email: { type: string }
+        connectedAt: { type: string, format: date-time }
+        canDisconnect: { type: boolean }
+      required: [provider, email, connectedAt, canDisconnect]
+    SignInMethods:
+      type: object
+      properties:
+        passwordAvailable: { type: boolean }
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/SignInProvider" }
+      required: [passwordAvailable, providers]
     EmailMarketingCampaign:
       type: object
       properties:

@@ -1,20 +1,43 @@
 import { Layout } from "@/components/layout";
-import { useGetCustomerDashboard, useListMyAppointments, useCancelAppointment, useGetCurrentUser, getGetCustomerDashboardQueryKey, getListMyAppointmentsQueryKey } from "@workspace/api-client-react";
+import {
+  getGetAuthSignInMethodsQueryKey,
+  getGetCustomerDashboardQueryKey,
+  getListMyAppointmentsQueryKey,
+  useCancelAppointment,
+  useDisconnectAuthSignInMethod,
+  useGetAuthSignInMethods,
+  useGetCustomerDashboard,
+  useGetCurrentUser,
+  useListMyAppointments,
+} from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Search, Loader2 } from "lucide-react";
+import { Calendar, Clock, MapPin, Search, Loader2, KeyRound, Link2Off, ShieldCheck } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [providerToDisconnect, setProviderToDisconnect] = useState<"google" | "facebook" | null>(null);
   
   useEffect(() => {
     if (!isUserLoading && !userResp?.user) {
@@ -24,8 +47,12 @@ export default function CustomerDashboard() {
 
   const { data: dashboard, isLoading: isDashboardLoading, refetch: refetchDash } = useGetCustomerDashboard({ query: { enabled: !!userResp?.user, queryKey: getGetCustomerDashboardQueryKey() }});
   const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(undefined) }});
+  const { data: signInMethods, isLoading: isSignInMethodsLoading } = useGetAuthSignInMethods({
+    query: { enabled: !!userResp?.user, queryKey: getGetAuthSignInMethodsQueryKey() },
+  });
   
   const cancelMutation = useCancelAppointment();
+  const disconnectMutation = useDisconnectAuthSignInMethod();
   const requestedTab = new URLSearchParams(window.location.search).get("tab");
   const activeTab = requestedTab === "favorites" || requestedTab === "settings" ? requestedTab : "appointments";
 
@@ -42,6 +69,25 @@ export default function CustomerDashboard() {
         }
       );
     }
+  };
+
+  const disconnectProvider = () => {
+    if (!providerToDisconnect) return;
+    disconnectMutation.mutate(
+      { provider: providerToDisconnect },
+      {
+        onSuccess: (updatedMethods) => {
+          queryClient.setQueryData(getGetAuthSignInMethodsQueryKey(), updatedMethods);
+          toast.success(`${providerToDisconnect === "google" ? "Google" : "Facebook"} prijava je odvojena.`);
+          setProviderToDisconnect(null);
+        },
+        onError: (error: unknown) => {
+          const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+            ?? "Način prijave nije odvojen. Pokušajte ponovo.";
+          toast.error("Promena nije sačuvana", { description: message });
+        },
+      },
+    );
   };
 
   const getStatusBadge = (status: string) => {
@@ -190,6 +236,7 @@ export default function CustomerDashboard() {
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">
+             <div className="space-y-6">
              <Card>
                <CardHeader>
                  <CardTitle>Podaci o nalogu</CardTitle>
@@ -208,16 +255,103 @@ export default function CustomerDashboard() {
                        <p className="text-sm text-muted-foreground mb-1">Email adresa</p>
                        <p className="font-medium">{userResp.user.email}</p>
                      </div>
-                     <div className="col-span-2 mt-4 pt-4 border-t">
-                        <Button variant="outline">Izmeni lozinku</Button>
-                     </div>
                   </div>
                </CardContent>
              </Card>
+             <Card>
+               <CardHeader>
+                 <div className="flex items-center gap-3">
+                   <div className="rounded-full bg-primary/10 p-2 text-primary"><ShieldCheck className="h-5 w-5" /></div>
+                   <div>
+                     <CardTitle>Načini prijave</CardTitle>
+                     <CardDescription>Pregledajte i upravljajte prijavama povezanim sa LUMERA nalogom.</CardDescription>
+                   </div>
+                 </div>
+               </CardHeader>
+               <CardContent className="space-y-4">
+                 <div className="rounded-lg border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground">
+                   Sačuvajte najmanje jedan način prijave. Google ili Facebook možete odvojiti samo kada je dostupna prijava e-mailom i lozinkom ili je povezan drugi provajder.
+                 </div>
+                 <div className="rounded-lg border p-4">
+                   <div className="flex items-center justify-between gap-4">
+                     <div className="flex items-center gap-3">
+                       <div className="rounded-full bg-muted p-2"><KeyRound className="h-4 w-4" /></div>
+                       <div>
+                         <p className="font-medium">E-mail i lozinka</p>
+                         <p className="text-sm text-muted-foreground">Prijava sa {userResp.user.email}</p>
+                       </div>
+                     </div>
+                     <Badge variant={signInMethods?.passwordAvailable ? "default" : "secondary"}>
+                       {isSignInMethodsLoading ? "Provera…" : signInMethods?.passwordAvailable ? "Dostupno" : "Nije podešeno"}
+                     </Badge>
+                   </div>
+                 </div>
+
+                 {isSignInMethodsLoading ? (
+                   <div className="space-y-3">
+                     <Skeleton className="h-20 w-full" />
+                     <Skeleton className="h-20 w-full" />
+                   </div>
+                 ) : signInMethods?.providers.length ? (
+                   <div className="space-y-3">
+                     {signInMethods.providers.map((method) => {
+                       const providerName = method.provider === "google" ? "Google" : "Facebook";
+                       return (
+                         <div key={method.provider} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between">
+                           <div>
+                             <p className="font-medium">{providerName}</p>
+                             <p className="text-sm text-muted-foreground">Povezano sa {method.email}</p>
+                           </div>
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                             onClick={() => setProviderToDisconnect(method.provider)}
+                             disabled={!method.canDisconnect || disconnectMutation.isPending}
+                             title={method.canDisconnect ? `Odvoji ${providerName} prijavu` : "Dodajte drugi način prijave pre odvajanja"}
+                           >
+                             <Link2Off className="mr-2 h-4 w-4" />
+                             Odvoji
+                           </Button>
+                         </div>
+                       );
+                     })}
+                   </div>
+                 ) : (
+                   <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                     Google i Facebook još nisu povezani sa ovim nalogom.
+                   </div>
+                 )}
+               </CardContent>
+             </Card>
+             </div>
           </TabsContent>
 
         </Tabs>
       </div>
+      <AlertDialog open={providerToDisconnect !== null} onOpenChange={(open) => !open && setProviderToDisconnect(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Odvojiti {providerToDisconnect === "google" ? "Google" : "Facebook"} prijavu?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Posle odvajanja više nećete moći da se prijavite ovim načinom. Preostali načini prijave ostaju povezani sa vašim LUMERA nalogom.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={disconnectMutation.isPending}>Otkaži</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                disconnectProvider();
+              }}
+              disabled={disconnectMutation.isPending}
+            >
+              {disconnectMutation.isPending ? "Odvajanje…" : "Odvoji prijavu"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

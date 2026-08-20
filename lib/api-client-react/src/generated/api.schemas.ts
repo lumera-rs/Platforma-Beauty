@@ -90,6 +90,26 @@ export interface CurrentUserResponse {
   user: User | null;
 }
 
+export type SignInProviderProvider = typeof SignInProviderProvider[keyof typeof SignInProviderProvider];
+
+
+export const SignInProviderProvider = {
+  google: 'google',
+  facebook: 'facebook',
+} as const;
+
+export interface SignInProvider {
+  provider: SignInProviderProvider;
+  email: string;
+  connectedAt: string;
+  canDisconnect: boolean;
+}
+
+export interface SignInMethods {
+  passwordAvailable: boolean;
+  providers: SignInProvider[];
+}
+
 export type EmailMarketingCampaignAudience = typeof EmailMarketingCampaignAudience[keyof typeof EmailMarketingCampaignAudience];
 
 
@@ -2034,4 +2054,3 @@ export const AdminListProductsSortDir = {
   asc: 'asc',
   desc: 'desc',
 } as const;
-

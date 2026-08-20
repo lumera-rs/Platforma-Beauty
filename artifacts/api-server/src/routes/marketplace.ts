@@ -117,7 +117,10 @@ import {
   CheckoutShopCartResponse,
   CreateSalonServiceBody,
   CreateSalonServiceResponse,
+  DisconnectAuthSignInMethodParams,
+  DisconnectAuthSignInMethodResponse,
   GetAdminSummaryResponse,
+  GetAuthSignInMethodsResponse,
   GetCurrentUserResponse,
   GetCustomerDashboardResponse,
   GetLoyaltyStatusResponse,
@@ -407,6 +410,35 @@ async function current(req: Request, res: Response) {
     return null;
   }
   return user;
+}
+
+function signInMethodsView(
+  user: typeof usersTable.$inferSelect,
+  identities: (typeof oauthIdentitiesTable.$inferSelect)[],
+) {
+  const identitiesByProvider = new Map<OAuthProvider, typeof oauthIdentitiesTable.$inferSelect>();
+  for (const identity of identities) {
+    if (!identitiesByProvider.has(identity.provider)) identitiesByProvider.set(identity.provider, identity);
+  }
+
+  const passwordAvailable = user.passwordSetAt !== null;
+  const connectedProviders = (["google", "facebook"] as const).flatMap((provider) => {
+    const identity = identitiesByProvider.get(provider);
+    return identity ? [{ provider, email: identity.providerEmail, connectedAt: identity.createdAt }] : [];
+  });
+  const canDisconnect = passwordAvailable || connectedProviders.length > 1;
+
+  return {
+    passwordAvailable,
+    providers: connectedProviders.map((identity) => ({ ...identity, canDisconnect })),
+  };
+}
+
+async function signInMethods(user: typeof usersTable.$inferSelect) {
+  const identities = await db.select().from(oauthIdentitiesTable)
+    .where(eq(oauthIdentitiesTable.userId, user.id))
+    .orderBy(asc(oauthIdentitiesTable.createdAt));
+  return signInMethodsView(user, identities);
 }
 
 async function ownedSalon(userId: string) {
@@ -816,6 +848,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     email: parsed.data.email.toLowerCase(),
     phone: parsed.data.phone ?? null,
     passwordHash: await hashPassword(parsed.data.password),
+    passwordSetAt: new Date(),
     role: "CUSTOMER",
   }).returning();
   const token = await createSession(user!.id);
@@ -1007,6 +1040,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           email,
           phone: input.phone,
           passwordHash: await hashPassword(input.password!),
+          passwordSetAt: new Date(),
           role,
         }).returning())[0]!;
 
@@ -1074,6 +1108,56 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   await ensureDemoData();
   const user = await getCurrentUser(req);
   res.json(GetCurrentUserResponse.parse({ user: user ? publicUser(user) : null }));
+});
+
+router.get("/auth/sign-in-methods", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  res.json(GetAuthSignInMethodsResponse.parse(await signInMethods(user)));
+});
+
+router.delete("/auth/sign-in-methods/:provider", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  const params = DisconnectAuthSignInMethodParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Nepoznat način prijave." }); return; }
+
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${usersTable} where ${usersTable.id} = ${user.id} for update`);
+    const [lockedUser] = await tx.select().from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
+    const identities = await tx.select().from(oauthIdentitiesTable)
+      .where(eq(oauthIdentitiesTable.userId, user.id))
+      .orderBy(asc(oauthIdentitiesTable.createdAt));
+    const hasProvider = identities.some((identity) => identity.provider === params.data.provider);
+    if (!lockedUser || !hasProvider) return { error: "not-found" as const };
+
+    const methods = signInMethodsView(lockedUser, identities);
+    const provider = methods.providers.find((item) => item.provider === params.data.provider);
+    if (!provider?.canDisconnect) return { error: "no-alternative" as const };
+
+    await tx.delete(oauthIdentitiesTable).where(and(
+      eq(oauthIdentitiesTable.userId, user.id),
+      eq(oauthIdentitiesTable.provider, params.data.provider),
+    ));
+
+    return {
+      methods: signInMethodsView(
+        lockedUser,
+        identities.filter((identity) => identity.provider !== params.data.provider),
+      ),
+    };
+  });
+
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : 400).json({
+      error: result.error === "not-found"
+        ? "Ovaj način prijave nije povezan sa vašim nalogom."
+        : "Pre odvajanja dodajte drugu prijavu ili postavite lozinku za nalog.",
+    });
+    return;
+  }
+
+  res.json(DisconnectAuthSignInMethodResponse.parse(result.methods));
 });
 
 router.get("/salons", async (req, res): Promise<void> => {

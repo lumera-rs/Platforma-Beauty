@@ -118,6 +118,7 @@ import type {
   ShopCheckoutPreview,
   ShopCheckoutProfile,
   ShopSummary,
+  SignInMethods,
   SmsDelivery,
   SubscriptionPlan,
   SubscriptionPlanInput,
@@ -588,6 +589,154 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
 
 
 
+
+export const getGetAuthSignInMethodsUrl = () => {
+
+
+
+
+  return `/api/auth/sign-in-methods`
+}
+
+/**
+ * @summary List connected sign-in methods for the current user
+ */
+export const getAuthSignInMethods = async ( options?: Parameters<typeof customFetch>[1]): Promise<SignInMethods> => {
+
+  return customFetch<SignInMethods>(getGetAuthSignInMethodsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAuthSignInMethodsQueryKey = () => {
+    return [
+    `/api/auth/sign-in-methods`
+    ] as const;
+    }
+
+
+export const getGetAuthSignInMethodsQueryOptions = <TData = Awaited<ReturnType<typeof getAuthSignInMethods>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthSignInMethods>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAuthSignInMethodsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthSignInMethods>>> = ({ signal }) => getAuthSignInMethods({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAuthSignInMethods>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAuthSignInMethodsQueryResult = NonNullable<Awaited<ReturnType<typeof getAuthSignInMethods>>>
+export type GetAuthSignInMethodsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List connected sign-in methods for the current user
+ */
+
+export function useGetAuthSignInMethods<TData = Awaited<ReturnType<typeof getAuthSignInMethods>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAuthSignInMethods>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAuthSignInMethodsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDisconnectAuthSignInMethodUrl = (provider: 'google' | 'facebook',) => {
+
+
+
+
+  return `/api/auth/sign-in-methods/${provider}`
+}
+
+/**
+ * @summary Disconnect a social sign-in method from the current user
+ */
+export const disconnectAuthSignInMethod = async (provider: 'google' | 'facebook', options?: Parameters<typeof customFetch>[1]): Promise<SignInMethods> => {
+
+  return customFetch<SignInMethods>(getDisconnectAuthSignInMethodUrl(provider),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDisconnectAuthSignInMethodMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectAuthSignInMethod>>, TError,{provider: 'google' | 'facebook'}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disconnectAuthSignInMethod>>, TError,{provider: 'google' | 'facebook'}, TContext> => {
+
+const mutationKey = ['disconnectAuthSignInMethod'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectAuthSignInMethod>>, {provider: 'google' | 'facebook'}> = (props) => {
+          const {provider} = props ?? {};
+
+          return  disconnectAuthSignInMethod(provider,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisconnectAuthSignInMethodMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectAuthSignInMethod>>>
+
+    export type DisconnectAuthSignInMethodMutationError = ErrorType<void>
+
+    /**
+ * @summary Disconnect a social sign-in method from the current user
+ */
+export const useDisconnectAuthSignInMethod = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disconnectAuthSignInMethod>>, TError,{provider: 'google' | 'facebook'}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disconnectAuthSignInMethod>>,
+        TError,
+        {provider: 'google' | 'facebook'},
+        TContext
+      > => {
+      return useMutation(getDisconnectAuthSignInMethodMutationOptions(options));
+    }
 
 export const getAdminListEmailCampaignsUrl = () => {
 
