@@ -31,6 +31,7 @@ export interface User {
   phone?: string | null;
   role: UserRole;
   active: boolean;
+  mustChangePassword: boolean;
 }
 
 export interface RegisterInput {

@@ -50,6 +50,7 @@ import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
 import OwnerNotifications from './pages/owner/notifications';
 import OwnerEmployees from './pages/owner/employees';
+import EmployeePortal, { EmployeePasswordChange } from './pages/employee/portal';
 
 const queryClient = new QueryClient();
 
@@ -106,23 +107,27 @@ function RoleGuard({
   children,
   allowedRoles,
   loginPath,
+  allowEmployeePasswordChange = false,
 }: {
   children: ReactNode;
   allowedRoles: UserRole[];
   loginPath: string;
+  allowEmployeePasswordChange?: boolean;
 }) {
   const [, setLocation] = useLocation();
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
   const allowed = user ? allowedRoles.includes(user.role) : false;
+  const passwordChangeRequired = user?.role === "SALON_EMPLOYEE" && user.mustChangePassword && !allowEmployeePasswordChange;
 
   useEffect(() => {
     if (isLoading) return;
     if (!user) setLocation(loginPath);
+    else if (passwordChangeRequired) setLocation("/zaposleni/promeni-lozinku");
     else if (!allowed) setLocation(homeForRole(user.role));
-  }, [allowed, isLoading, loginPath, setLocation, user]);
+  }, [allowed, isLoading, loginPath, passwordChangeRequired, setLocation, user]);
 
-  if (isLoading || !allowed) {
+  if (isLoading || !allowed || passwordChangeRequired) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" data-testid="protected-route-loading" />
@@ -172,6 +177,8 @@ function Router() {
             <BusinessHub />
           </RoleGuard>
         </Route>
+        <Route path="/zaposleni/promeni-lozinku"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava" allowEmployeePasswordChange><EmployeePasswordChange /></RoleGuard></Route>
+        <Route path="/zaposleni"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><EmployeePortal /></RoleGuard></Route>
         
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>

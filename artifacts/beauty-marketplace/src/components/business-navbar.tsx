@@ -68,6 +68,11 @@ export function BusinessNavbar() {
           { href: "/vlasnik/obavestenja", label: "Obaveštenja" },
           { href: "/biznis/edukacije", label: "Edukacije" },
         ];
+      case 'SALON_EMPLOYEE':
+        return [
+          { href: "/zaposleni", label: "Moj portal" },
+          { href: "/biznis/edukacije", label: "Edukacije" },
+        ];
       case 'EDUCATION_CENTER_OWNER':
         return [
           { href: "/biznis", label: "Dashboard" },

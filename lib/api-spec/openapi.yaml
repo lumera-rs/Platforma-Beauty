@@ -2087,7 +2087,8 @@ components:
           type: string
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER]
         active: { type: boolean }
-      required: [id, firstName, lastName, email, role, active]
+        mustChangePassword: { type: boolean }
+      required: [id, firstName, lastName, email, role, active, mustChangePassword]
     RegisterInput:
       type: object
       properties:

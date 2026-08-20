@@ -67,6 +67,7 @@ export function publicUser(user: typeof usersTable.$inferSelect) {
     phone: user.phone,
     role: user.role,
     active: user.active,
+    mustChangePassword: user.mustChangePassword,
   };
 }
 

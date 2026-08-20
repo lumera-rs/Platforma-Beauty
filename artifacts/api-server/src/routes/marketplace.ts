@@ -14,6 +14,7 @@ import {
   educationCentersTable,
   emailCampaignsTable,
   employeesTable,
+  employeeLeaveRequestsTable,
   employeeSchedulesTable,
   employeeServicesTable,
   employeeTimeOffTable,
@@ -797,6 +798,47 @@ function businessSlug(name: string, userId: string) {
   return `${base}-${userId.slice(0, 8)}`;
 }
 
+function temporaryPassword() {
+  return `Lm!${randomBytes(9).toString("base64url")}7`;
+}
+
+class EmployeeBookingError extends Error {
+  constructor(message: string, readonly status = 409) {
+    super(message);
+  }
+}
+
+type SalonEmployeeAccess = {
+  user: typeof usersTable.$inferSelect;
+  employee: typeof employeesTable.$inferSelect;
+  salon: typeof salonsTable.$inferSelect;
+};
+
+async function requireSalonEmployee(req: Request, res: Response): Promise<SalonEmployeeAccess | null> {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (user.role !== "SALON_EMPLOYEE") {
+    res.status(403).json({ error: "Ova funkcija je dostupna samo zaposlenima salona." });
+    return null;
+  }
+  if (user.mustChangePassword) {
+    res.status(428).json({ error: "Promenite privremenu lozinku pre pristupa portalu.", code: "PASSWORD_CHANGE_REQUIRED" });
+    return null;
+  }
+  const [employee] = await db.select().from(employeesTable)
+    .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
+  if (!employee) {
+    res.status(403).json({ error: "Nalog zaposlenog nije povezan sa aktivnim profilom." });
+    return null;
+  }
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, employee.salonId)).limit(1);
+  if (!salon) {
+    res.status(403).json({ error: "Profil zaposlenog nije povezan sa salonom." });
+    return null;
+  }
+  return { user, employee, salon };
+}
+
 function card(
   salon: typeof salonsTable.$inferSelect,
   services: (typeof servicesTable.$inferSelect)[] = [],
@@ -1352,6 +1394,32 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   res.json(GetCurrentUserResponse.parse({ user: user ? publicUser(user) : null }));
 });
 
+router.post("/auth/change-password", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  if (user.role !== "SALON_EMPLOYEE") {
+    res.status(403).json({ error: "Promena ove lozinke nije dostupna za ovaj tip naloga." });
+    return;
+  }
+  const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+  const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+  if (newPassword.length < 8) {
+    res.status(400).json({ error: "Nova lozinka mora imati najmanje 8 karaktera." });
+    return;
+  }
+  if (!user.mustChangePassword && !(await verifyPassword(currentPassword, user.passwordHash))) {
+    res.status(400).json({ error: "Trenutna lozinka nije ispravna." });
+    return;
+  }
+  const [updated] = await db.update(usersTable).set({
+    passwordHash: await hashPassword(newPassword),
+    passwordSetAt: new Date(),
+    mustChangePassword: false,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id)).returning();
+  res.json({ user: publicUser(updated!) });
+});
+
 router.get("/auth/sign-in-methods", async (req, res): Promise<void> => {
   const user = await current(req, res);
   if (!user) return;
@@ -1813,27 +1881,35 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const [employees, services, links] = await Promise.all([
+  const [employees, services, links, users] = await Promise.all([
     db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)),
     db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
     db.select().from(employeeServicesTable),
+    db.select().from(usersTable).where(eq(usersTable.role, "SALON_EMPLOYEE")),
   ]);
-  res.json(ListSalonEmployeesResponse.parse(employees.map((item) => {
+  res.json(employees.map((item) => {
     const serviceIds = links.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
-    return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
-  })));
+    const account = users.find((user) => user.id === item.userId);
+    return {
+      id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
+      specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name),
+      account: account ? { active: account.active, email: account.email, mustChangePassword: account.mustChangePassword } : null,
+    };
+  }));
 });
 
 router.post("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; specialties?: unknown; serviceIds?: unknown };
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown };
   if (typeof body.name !== "string" || !body.name.trim() || typeof body.role !== "string" || !body.role.trim()) { res.status(400).json({ error: "Ime i uloga zaposlenog su obavezni." }); return; }
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : [];
   const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
   if (services.length !== serviceIds.length) { res.status(400).json({ error: "Sve dodeljene usluge moraju pripadati vašem salonu." }); return; }
   const [employee] = await db.insert(employeesTable).values({
     salonId: access.salon.id, name: body.name.trim(), role: body.role.trim(), bio: typeof body.bio === "string" ? body.bio.trim() : "",
-    avatarUrl: typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : "", specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
+    avatarUrl: typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : "",
+    email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : null,
+    specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
   }).returning();
   if (serviceIds.length) await db.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee!.id, serviceId })));
   res.status(201).json({ id: employee!.id });
@@ -1841,7 +1917,7 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
 
 router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : null;
@@ -1856,10 +1932,292 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
     role: typeof body.role === "string" && body.role.trim() ? body.role.trim() : employee.role,
     bio: typeof body.bio === "string" ? body.bio.trim() : employee.bio,
     avatarUrl: typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : employee.avatarUrl,
+    email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : employee.email,
     specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
     active: typeof body.active === "boolean" ? body.active : employee.active,
   }).where(eq(employeesTable.id, employee.id));
   res.json({ id: employee.id });
+});
+
+router.post("/salon/employees/:employeeId/access", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
+  if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  if (employee.userId) { res.status(409).json({ error: "Zaposleni već ima aktivan nalog. Koristite reset lozinke." }); return; }
+  const fallback = `${employee.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/(^\.|\.$)/g, "") || "zaposleni"}.${employee.id.slice(0, 6)}@lumera.local`;
+  const email = (employee.email || fallback).toLowerCase();
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  if (existing) { res.status(409).json({ error: "Ovaj e-mail je već povezan sa drugim nalogom. Izmenite e-mail zaposlenog." }); return; }
+  const [firstName, ...rest] = employee.name.trim().split(/\s+/);
+  const temporary = temporaryPassword();
+  const [account] = await db.insert(usersTable).values({
+    firstName: firstName || "Zaposleni",
+    lastName: rest.join(" ") || "LUMERA",
+    email,
+    passwordHash: await hashPassword(temporary),
+    passwordSetAt: new Date(),
+    mustChangePassword: true,
+    role: "SALON_EMPLOYEE",
+  }).returning();
+  await db.update(employeesTable).set({ userId: account!.id, email }).where(eq(employeesTable.id, employee.id));
+  res.status(201).json({ email, temporaryPassword: temporary, mustChangePassword: true });
+});
+
+router.post("/salon/employees/:employeeId/access/reset-password", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
+  if (!employee?.userId) { res.status(404).json({ error: "Zaposleni nema povezan nalog." }); return; }
+  const [account] = await db.select().from(usersTable)
+    .where(and(eq(usersTable.id, employee.userId), eq(usersTable.role, "SALON_EMPLOYEE"))).limit(1);
+  if (!account) { res.status(403).json({ error: "Povezani nalog nije nalog zaposlenog." }); return; }
+  const temporary = temporaryPassword();
+  await db.update(usersTable).set({
+    passwordHash: await hashPassword(temporary),
+    passwordSetAt: new Date(),
+    mustChangePassword: true,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, account.id));
+  res.json({ email: account.email, temporaryPassword: temporary, mustChangePassword: true });
+});
+
+router.get("/salon/leave-requests", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const [employees, requests] = await Promise.all([
+    db.select().from(employeesTable).where(eq(employeesTable.salonId, access.salon.id)),
+    db.select().from(employeeLeaveRequestsTable).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
+  ]);
+  const names = new Map(employees.map((employee) => [employee.id, employee.name]));
+  res.json(requests.filter((request) => names.has(request.employeeId)).map((request) => ({
+    ...request, employeeName: names.get(request.employeeId)!,
+  })));
+});
+
+router.patch("/salon/leave-requests/:requestId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const status = req.body?.status;
+  if (status !== "approved" && status !== "rejected") { res.status(400).json({ error: "Status mora biti odobreno ili odbijeno." }); return; }
+  const [request] = await db.select().from(employeeLeaveRequestsTable).where(eq(employeeLeaveRequestsTable.id, req.params.requestId)).limit(1);
+  if (!request) { res.status(404).json({ error: "Zahtev nije pronađen." }); return; }
+  const employee = await employeeInSalon(request.employeeId, access.salon.id);
+  if (!employee) { res.status(403).json({ error: "Zahtev pripada drugom salonu." }); return; }
+  if (request.status !== "pending") { res.status(409).json({ error: "Ovaj zahtev je već obrađen." }); return; }
+  await db.transaction(async (tx) => {
+    await tx.update(employeeLeaveRequestsTable).set({ status, reviewedAt: new Date() }).where(eq(employeeLeaveRequestsTable.id, request.id));
+    if (status === "approved") {
+      await tx.insert(employeeTimeOffTable).values({
+        employeeId: request.employeeId, startDate: request.startDate, endDate: request.endDate, reason: request.reason,
+      });
+    }
+  });
+  res.json({ id: request.id, status });
+});
+
+router.get("/employee/portal", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const { employee, salon, user } = access;
+  const [appointments, schedules, timeOff, leaveRequests, serviceLinks] = await Promise.all([
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.employeeId, employee.id)).orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime)),
+    db.select().from(employeeSchedulesTable).where(eq(employeeSchedulesTable.employeeId, employee.id)).orderBy(asc(employeeSchedulesTable.weekday)),
+    db.select().from(employeeTimeOffTable).where(eq(employeeTimeOffTable.employeeId, employee.id)),
+    db.select().from(employeeLeaveRequestsTable).where(eq(employeeLeaveRequestsTable.employeeId, employee.id)).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
+    db.select().from(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id)),
+  ]);
+  const [services, contacts, customers] = await Promise.all([
+    serviceLinks.length ? db.select().from(servicesTable).where(inArray(servicesTable.id, serviceLinks.map((link) => link.serviceId))) : Promise.resolve([] as (typeof servicesTable.$inferSelect)[]),
+    appointments.some((appointment) => appointment.salonCustomerId) ? db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id)) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
+    appointments.some((appointment) => appointment.customerId) ? db.select().from(usersTable) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
+  ]);
+  const serviceById = new Map(services.map((service) => [service.id, service]));
+  const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
+  const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+  const ownClients = new Map<string, { id: string; firstName: string; lastName: string; phone: string | null }>();
+  const appointmentViews = appointments.map((appointment) => {
+    const contact = appointment.salonCustomerId ? contactById.get(appointment.salonCustomerId) : undefined;
+    const customer = appointment.customerId ? customerById.get(appointment.customerId) : undefined;
+    const person = contact ?? customer;
+    if (contact) ownClients.set(contact.id, { id: contact.id, firstName: contact.firstName, lastName: contact.lastName, phone: contact.phone });
+    return {
+      id: appointment.id, date: appointment.date, startTime: appointment.startTime, endTime: appointment.endTime, status: appointment.status,
+      notes: appointment.notes, serviceName: serviceById.get(appointment.serviceId)?.name ?? "Usluga nije dostupna",
+      customerName: person ? `${person.firstName} ${person.lastName}`.trim() : "Gost",
+      customerPhone: person?.phone ?? null,
+    };
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = mondayOf(today);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const tomorrow = new Date(`${today}T12:00:00Z`); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const tomorrowString = tomorrow.toISOString().slice(0, 10);
+  const visibleStatuses = appointments.filter((item) => item.status !== "cancelled");
+  const notifications = [
+    ...appointments.filter((item) => item.createdAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).slice(-5).reverse().map((item) => ({
+      id: `new-${item.id}`, title: "Dodat vam je novi termin", date: item.date, createdAt: item.createdAt,
+    })),
+    ...appointments.filter((item) => item.date === tomorrowString && !["cancelled", "completed", "no-show"].includes(item.status)).map((item) => ({
+      id: `reminder-${item.id}`, title: `Podsetnik: sutra u ${item.startTime} imate termin`, date: item.date, createdAt: item.createdAt,
+    })),
+  ];
+  res.json({
+    salon: { name: salon.name },
+    employee: { id: employee.id, name: employee.name, role: employee.role, bio: employee.bio, avatarUrl: employee.avatarUrl, email: user.email, phone: user.phone },
+    appointments: appointmentViews,
+    clients: [...ownClients.values()].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)),
+    services: services.filter((service) => service.active).map((service) => ({ id: service.id, name: service.name, durationMinutes: service.durationMinutes })),
+    schedule: schedules,
+    timeOff,
+    leaveRequests,
+    notifications,
+    stats: {
+      week: visibleStatuses.filter((item) => item.date >= weekStart && item.date <= today).length,
+      month: visibleStatuses.filter((item) => item.date >= monthStart && item.date.slice(0, 7) === today.slice(0, 7)).length,
+      completed: appointments.filter((item) => item.status === "completed" && item.date >= monthStart).length,
+      noShow: appointments.filter((item) => item.status === "no-show" && item.date >= monthStart).length,
+    },
+  });
+});
+
+router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const status = req.body?.status;
+  const notes = req.body?.notes;
+  if (status !== "completed" && status !== "no-show") { res.status(400).json({ error: "Možete označiti samo završen ili no-show termin." }); return; }
+  if (notes !== undefined && typeof notes !== "string") { res.status(400).json({ error: "Napomena mora biti tekst." }); return; }
+  const [appointment] = await db.update(appointmentsTable).set({
+    status, notes: typeof notes === "string" ? notes.trim() || null : undefined,
+  }).where(and(eq(appointmentsTable.id, req.params.appointmentId), eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonId, access.salon.id))).returning();
+  if (!appointment) { res.status(404).json({ error: "Vaš termin nije pronađen." }); return; }
+  res.json({ id: appointment.id, status: appointment.status, notes: appointment.notes });
+});
+
+router.put("/employee/profile", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const bio = typeof req.body?.bio === "string" ? req.body.bio.trim() : access.employee.bio;
+  const avatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl.trim() : access.employee.avatarUrl;
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : access.user.phone;
+  const phoneNormalized = phone ? normalizedPhone(phone) : null;
+  if (phone && !phoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
+  if (phoneNormalized) {
+    const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
+    if (taken && taken.id !== access.user.id) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
+  }
+  await db.transaction(async (tx) => {
+    await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
+    await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
+  });
+  res.json({ bio, avatarUrl, phone: phone || null });
+});
+
+router.post("/employee/leave-requests", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const startDate = typeof req.body?.startDate === "string" ? req.body.startDate : "";
+  const endDate = typeof req.body?.endDate === "string" ? req.body.endDate : "";
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || startDate > endDate || !reason) {
+    res.status(400).json({ error: "Unesite važeći period i razlog odsustva." }); return;
+  }
+  const [request] = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(employeeLeaveRequestsTable).values({ employeeId: access.employee.id, startDate, endDate, reason }).returning();
+    await tx.insert(salonNotificationsTable).values({
+      salonId: access.salon.id, title: "Novi zahtev za odsustvo",
+      message: `${access.employee.name} traži odsustvo od ${startDate} do ${endDate}.`,
+      href: "/vlasnik/zaposleni",
+    });
+    return [created!];
+  });
+  res.status(201).json(request);
+});
+
+router.post("/employee/appointments", async (req, res): Promise<void> => {
+  const access = await requireSalonEmployee(req, res); if (!access) return;
+  const serviceId = typeof req.body?.serviceId === "string" ? req.body.serviceId : "";
+  const slots = Array.isArray(req.body?.slots) ? req.body.slots.filter((slot: unknown): slot is { date: string; startTime: string } =>
+    Boolean(slot) && typeof (slot as { date?: unknown }).date === "string" && typeof (slot as { startTime?: unknown }).startTime === "string") : [];
+  const salonCustomerId = typeof req.body?.salonCustomerId === "string" ? req.body.salonCustomerId : null;
+  const guest = req.body?.guest as { firstName?: unknown; lastName?: unknown; phone?: unknown; email?: unknown } | undefined;
+  if (!serviceId || !slots.length || slots.length > 12 || (!salonCustomerId && (!guest || typeof guest.firstName !== "string" || typeof guest.phone !== "string"))) {
+    res.status(400).json({ error: "Izaberite uslugu, klijenta i najmanje jedan termin." }); return;
+  }
+  const [assigned, service] = await Promise.all([
+    db.select().from(employeeServicesTable).where(and(eq(employeeServicesTable.employeeId, access.employee.id), eq(employeeServicesTable.serviceId, serviceId))).limit(1),
+    db.select().from(servicesTable).where(and(eq(servicesTable.id, serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1),
+  ]);
+  if (!assigned[0] || !service[0]) { res.status(403).json({ error: "Možete zakazati samo svoje dodeljene usluge." }); return; }
+  const preparedSlots: Array<{ date: string; startTime: string; endTime: string }> = [];
+  for (const slot of slots) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(slot.date) || !/^\d{2}:\d{2}$/.test(slot.startTime)) { res.status(400).json({ error: "Datum ili vreme nisu ispravni." }); return; }
+    const endTime = appointmentEndTime(slot.startTime, service[0].durationMinutes);
+    if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van dana." }); return; }
+    preparedSlots.push({ date: slot.date, startTime: slot.startTime, endTime });
+  }
+  const guestPhone = salonCustomerId ? null : String(guest!.phone).trim();
+  const guestPhoneNormalized = guestPhone ? normalizedPhone(guestPhone) : null;
+  if (!salonCustomerId && (!guestPhoneNormalized || !String(guest!.firstName).trim())) { res.status(400).json({ error: "Unesite ime i telefon klijenta." }); return; }
+  const batch = await db.transaction(async (tx) => {
+    for (const date of [...new Set(preparedSlots.map((slot) => slot.date))].sort()) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${access.salon.id}:${date}`}))`);
+    }
+    let contact: typeof salonCustomersTable.$inferSelect;
+    let newlyCreatedContact = false;
+    if (salonCustomerId) {
+      const [client] = await tx.select().from(salonCustomersTable)
+        .where(and(eq(salonCustomersTable.id, salonCustomerId), eq(salonCustomersTable.salonId, access.salon.id))).limit(1);
+      if (!client) throw new EmployeeBookingError("Klijent ne pripada ovom salonu.", 403);
+      contact = client;
+    } else {
+      const contacts = await tx.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, access.salon.id));
+      const existing = contacts.find((item) => item.phoneNormalized === guestPhoneNormalized || (item.phone && normalizedPhone(item.phone) === guestPhoneNormalized));
+      if (existing) {
+        contact = existing;
+      } else {
+        const [registered] = await tx.select().from(usersTable).where(eq(usersTable.phoneNormalized, guestPhoneNormalized!)).limit(1);
+        [contact] = await tx.insert(salonCustomersTable).values({
+          salonId: access.salon.id, firstName: String(guest!.firstName).trim(), lastName: typeof guest!.lastName === "string" ? guest!.lastName.trim() : "",
+          phone: guestPhone!, phoneNormalized: guestPhoneNormalized!, email: typeof guest!.email === "string" ? guest!.email.trim().toLowerCase() || null : null,
+          userId: registered?.id ?? null,
+        }).returning();
+        newlyCreatedContact = true;
+      }
+    }
+    const [previous] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable)
+      .where(and(eq(appointmentsTable.employeeId, access.employee.id), eq(appointmentsTable.salonCustomerId, contact.id))).limit(1);
+    if (!newlyCreatedContact && !previous) {
+      throw new EmployeeBookingError("Možete izabrati samo klijenta kog ste već uslužili.", 403);
+    }
+    const created: (typeof appointmentsTable.$inferSelect)[] = [];
+    for (const slot of preparedSlots) {
+      const employee = await availableEmployeeWithDb(tx, access.salon.id, serviceId, slot.date, slot.startTime, slot.endTime, access.employee.id);
+      if (!employee) throw new EmployeeBookingError(`Termin ${slot.date} u ${slot.startTime} nije slobodan ili je van vašeg radnog vremena.`);
+      const [appointment] = await tx.insert(appointmentsTable).values({
+        salonId: access.salon.id, customerId: contact.userId, salonCustomerId: contact.id, employeeId: access.employee.id, serviceId,
+        date: slot.date, startTime: slot.startTime, endTime: slot.endTime, durationMinutes: service[0].durationMinutes,
+        price: service[0].promoPrice ?? service[0].price, status: "confirmed",
+      }).returning();
+      created.push(appointment!);
+    }
+    return { contact, created };
+  }).catch((error: unknown) => {
+    if (error instanceof EmployeeBookingError) return { error: error.message, status: error.status };
+    throw error;
+  });
+  if ("error" in batch) { res.status(batch.status).json({ error: batch.error }); return; }
+  for (const [index, appointment] of batch.created.entries()) {
+    const slot = preparedSlots[index]!;
+    await sendSms({
+      eventKey: `appointment-confirmation:${appointment.id}`, salonId: access.salon.id, appointmentId: appointment.id,
+      type: "appointment_confirmation", phone: batch.contact.phone, smsOptOut: batch.contact.smsOptOut,
+      text: `LUMERA: termin u salonu ${access.salon.name} je zakazan za ${slot.date} u ${slot.startTime}.`,
+    });
+    if (batch.contact.email) {
+      await sendTransactionalEmail({
+        eventKey: `appointment-confirmation:${appointment.id}:email`,
+        emailType: "appointment_confirmation",
+        to: { email: batch.contact.email, name: `${batch.contact.firstName} ${batch.contact.lastName}`.trim() || "LUMERA klijent" },
+        subject: "LUMERA — potvrda termina",
+        htmlContent: lumeraEmailHtml("Termin je zakazan", `<p>Vaš termin u salonu <b>${emailSafe(access.salon.name)}</b> je zakazan za <b>${slot.date} u ${slot.startTime}</b>.</p>`),
+      });
+    }
+  }
+  res.status(201).json({ appointments: batch.created.map((item) => ({ id: item.id, date: item.date, startTime: item.startTime, status: item.status })) });
 });
 
 async function loyaltyStatus(salonId: string) {

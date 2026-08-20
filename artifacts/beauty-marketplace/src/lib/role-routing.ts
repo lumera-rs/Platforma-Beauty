@@ -23,7 +23,7 @@ export function homeForRole(role: UserRole): string {
     case "INSTRUCTOR":
       return "/za-biznise";
     case "SALON_EMPLOYEE":
-      return "/biznis/edukacije";
+      return "/zaposleni";
     default:
       return "/";
   }

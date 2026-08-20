@@ -45,7 +45,8 @@ export const RegisterResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "mustChangePassword": zod.boolean()
 }),
   "message": zod.string()
 })
@@ -94,7 +95,8 @@ export const RegisterBusinessResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "mustChangePassword": zod.boolean()
 }),
   "message": zod.string()
 })
@@ -119,7 +121,8 @@ export const LoginResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "mustChangePassword": zod.boolean()
 }),
   "message": zod.string()
 })
@@ -142,7 +145,8 @@ export const GetCurrentUserResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "mustChangePassword": zod.boolean()
 }),zod.null()])
 })
 

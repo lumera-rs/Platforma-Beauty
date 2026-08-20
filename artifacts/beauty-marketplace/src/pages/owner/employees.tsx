@@ -8,29 +8,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Users } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 type Service = { id: string; name: string; active: boolean };
-type Employee = { id: string; name: string; role: string; bio: string; avatarUrl: string; specialties: string[]; serviceIds: string[]; serviceNames: string[] };
-const empty = { name: "", role: "", bio: "", avatarUrl: "", specialties: "", serviceIds: [] as string[] };
+type Employee = { id: string; name: string; role: string; bio: string; avatarUrl: string; email: string | null; specialties: string[]; serviceIds: string[]; serviceNames: string[]; account: { active: boolean; email: string; mustChangePassword: boolean } | null };
+type LeaveRequest = { id: string; employeeName: string; startDate: string; endDate: string; reason: string; status: "pending" | "approved" | "rejected" };
+const empty = { name: "", role: "", bio: "", avatarUrl: "", email: "", specialties: "", serviceIds: [] as string[] };
 
 export default function OwnerEmployees() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [credentials, setCredentials] = useState<{ employeeId: string; email: string; temporaryPassword: string } | null>(null);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const load = async () => {
-    const [staff, catalog] = await Promise.all([fetch("/api/salon/employees", { credentials: "include" }), fetch("/api/salon/services", { credentials: "include" })]);
-    if (!staff.ok || !catalog.ok) throw new Error("Podaci o timu nisu učitani.");
-    setEmployees(await staff.json()); setServices(await catalog.json()); setLoading(false);
+    const [staff, catalog, requests] = await Promise.all([fetch("/api/salon/employees", { credentials: "include" }), fetch("/api/salon/services", { credentials: "include" }), fetch("/api/salon/leave-requests", { credentials: "include" })]);
+    if (!staff.ok || !catalog.ok || !requests.ok) throw new Error("Podaci o timu nisu učitani.");
+    setEmployees(await staff.json()); setServices(await catalog.json()); setLeaveRequests(await requests.json()); setLoading(false);
   };
   useEffect(() => { load().catch((error) => { toast.error(error.message); setLoading(false); }); }, []);
   const begin = (employee?: Employee) => {
     setEditing(employee ?? null);
-    setForm(employee ? { name: employee.name, role: employee.role, bio: employee.bio, avatarUrl: employee.avatarUrl, specialties: employee.specialties.join(", "), serviceIds: employee.serviceIds } : empty);
+    setForm(employee ? { name: employee.name, role: employee.role, bio: employee.bio, avatarUrl: employee.avatarUrl, email: employee.email ?? "", specialties: employee.specialties.join(", "), serviceIds: employee.serviceIds } : empty);
     setOpen(true);
   };
   const save = async () => {
@@ -45,12 +48,36 @@ export default function OwnerEmployees() {
     setOpen(false); await load();
   };
   const toggleService = (serviceId: string) => setForm({ ...form, serviceIds: form.serviceIds.includes(serviceId) ? form.serviceIds.filter((id) => id !== serviceId) : [...form.serviceIds, serviceId] });
+  const makeAccess = async (employee: Employee, reset = false) => {
+    try {
+      const response = await fetch(`/api/salon/employees/${employee.id}/access${reset ? "/reset-password" : ""}`, { method: "POST", credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Pristupni podaci nisu kreirani.");
+      setCredentials({ employeeId: employee.id, email: result.email, temporaryPassword: result.temporaryPassword });
+      toast.success(reset ? "Nova privremena lozinka je generisana." : "Pristupni podaci su generisani.");
+      await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Radnja nije uspela."); }
+  };
+  const decideLeave = async (request: LeaveRequest, status: "approved" | "rejected") => {
+    try {
+      const response = await fetch(`/api/salon/leave-requests/${request.id}`, { method: "PATCH", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Zahtev nije obrađen.");
+      toast.success(status === "approved" ? "Odsustvo je odobreno." : "Zahtev je odbijen."); await load();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Radnja nije uspela."); }
+  };
+  const copyCredentials = async () => {
+    if (!credentials) return;
+    await navigator.clipboard.writeText(`Email: ${credentials.email}\nPrivremena lozinka: ${credentials.temporaryPassword}`);
+    toast.success("Pristupni podaci su kopirani.");
+  };
   return <BusinessLayout><div className="container mx-auto flex flex-col gap-8 px-4 py-8 md:flex-row">
     <OwnerSidebar current="/vlasnik/zaposleni" />
     <main className="min-w-0 flex-1 space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="font-serif text-3xl font-bold">Zaposleni i usluge</h1><p className="text-muted-foreground">Odredite koje usluge svaki član tima obavlja.</p></div><Button onClick={() => begin()}><Plus className="mr-2 h-4 w-4" />Dodaj zaposlenog</Button></div>
-      {loading ? <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div> : <div className="grid gap-4 lg:grid-cols-2">{employees.map((employee) => <Card key={employee.id}><CardHeader className="flex-row items-center gap-4 space-y-0"><img className="h-14 w-14 rounded-full object-cover" src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt="" /><div className="min-w-0 flex-1"><CardTitle>{employee.name}</CardTitle><p className="text-sm text-muted-foreground">{employee.role}</p></div><Button size="sm" variant="outline" onClick={() => begin(employee)}>Izmeni</Button></CardHeader><CardContent className="space-y-3">{employee.bio && <p className="text-sm text-muted-foreground">{employee.bio}</p>}<div><p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Usluge koje obavlja</p><div className="flex flex-wrap gap-1.5">{employee.serviceNames.length ? employee.serviceNames.map((name) => <Badge key={name} variant="secondary">{name}</Badge>) : <span className="text-sm text-amber-700">Nijedna usluga nije dodeljena</span>}</div></div></CardContent></Card>)}</div>}
+      {loading ? <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div> : <><div className="grid gap-4 lg:grid-cols-2">{employees.map((employee) => <Card key={employee.id}><CardHeader className="flex-row items-center gap-4 space-y-0"><img className="h-14 w-14 rounded-full object-cover" src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt="" /><div className="min-w-0 flex-1"><CardTitle>{employee.name}</CardTitle><p className="text-sm text-muted-foreground">{employee.role}</p></div><Button size="sm" variant="outline" onClick={() => begin(employee)}>Izmeni</Button></CardHeader><CardContent className="space-y-3">{employee.bio && <p className="text-sm text-muted-foreground">{employee.bio}</p>}<div><p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Usluge koje obavlja</p><div className="flex flex-wrap gap-1.5">{employee.serviceNames.length ? employee.serviceNames.map((name) => <Badge key={name} variant="secondary">{name}</Badge>) : <span className="text-sm text-amber-700">Nijedna usluga nije dodeljena</span>}</div></div><div className="rounded-lg border bg-muted/20 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">Pristup zaposlenog</p><p className="text-xs text-muted-foreground">{employee.account ? employee.account.email : employee.email || "Email će biti automatski generisan"}</p></div>{employee.account ? <Badge variant="secondary">{employee.account.active ? "Nalog aktivan" : "Nalog neaktivan"}</Badge> : <Badge variant="outline">Nema nalog</Badge>}</div>{credentials?.employeeId === employee.id && <div className="mt-3 rounded-md bg-background p-3 text-sm"><p className="font-semibold">Pristupni podaci — prosledite zaposlenom</p><p className="mt-1">Email: <b>{credentials.email}</b></p><p>Privremena lozinka: <b>{credentials.temporaryPassword}</b></p><p className="mt-1 text-xs text-amber-700">Lozinka se mora promeniti pri prvom prijavljivanju.</p><Button className="mt-2" size="sm" variant="outline" onClick={copyCredentials}><Copy className="mr-1.5 h-3.5 w-3.5" />Kopiraj</Button></div>}<Button className="mt-3 w-full" size="sm" variant={employee.account ? "outline" : "default"} onClick={() => makeAccess(employee, Boolean(employee.account))}><KeyRound className="mr-2 h-4 w-4" />{employee.account ? "Resetuj lozinku" : "Kreiraj pristupne podatke"}</Button></div></CardContent></Card>)}</div>
+      <Card><CardHeader><CardTitle className="text-lg">Zahtevi za odsustvo</CardTitle></CardHeader><CardContent className="space-y-3">{leaveRequests.filter((request) => request.status === "pending").length ? leaveRequests.filter((request) => request.status === "pending").map((request) => <div className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between" key={request.id}><div><p className="font-medium">{request.employeeName}</p><p className="text-sm text-muted-foreground">{request.startDate} – {request.endDate} · {request.reason}</p></div><div className="flex gap-2"><Button size="sm" onClick={() => decideLeave(request, "approved")}><Check className="mr-1 h-4 w-4" />Odobri</Button><Button size="sm" variant="outline" onClick={() => decideLeave(request, "rejected")}>Odbij</Button></div></div>) : <p className="text-sm text-muted-foreground">Nema zahteva koji čekaju odluku.</p>}</CardContent></Card></>}
     </main>
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Izmeni zaposlenog" : "Novi zaposleni"}</DialogTitle></DialogHeader><div className="space-y-4 py-2"><div className="grid gap-3 sm:grid-cols-2"><div><Label>Ime i prezime</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div><div><Label>Uloga</Label><Input placeholder="npr. Frizer" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></div></div><div><Label>Kratka biografija</Label><Input value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></div><div><Label>URL fotografije</Label><Input value={form.avatarUrl} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} /></div><div><Label>Specijalnosti (odvojite zarezom)</Label><Input value={form.specialties} onChange={(e) => setForm({ ...form, specialties: e.target.value })} /></div><div><Label className="mb-2 block">Usluge koje obavlja</Label><div className="space-y-2 rounded-lg border p-3">{services.filter((service) => service.active).map((service) => <label key={service.id} className="flex cursor-pointer items-center gap-3 text-sm"><Checkbox checked={form.serviceIds.includes(service.id)} onCheckedChange={() => toggleService(service.id)} />{service.name}</label>)}</div></div><Button className="w-full" onClick={save}><Users className="mr-2 h-4 w-4" />Sačuvaj zaposlenog</Button></div></DialogContent></Dialog>
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Izmeni zaposlenog" : "Novi zaposleni"}</DialogTitle></DialogHeader><div className="space-y-4 py-2"><div className="grid gap-3 sm:grid-cols-2"><div><Label>Ime i prezime</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div><div><Label>Uloga</Label><Input placeholder="npr. Frizer" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></div></div><div><Label>Email zaposlenog</Label><Input type="email" placeholder="ime@salon.rs" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div><div><Label>Kratka biografija</Label><Input value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></div><div><Label>URL fotografije</Label><Input value={form.avatarUrl} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} /></div><div><Label>Specijalnosti (odvojite zarezom)</Label><Input value={form.specialties} onChange={(e) => setForm({ ...form, specialties: e.target.value })} /></div><div><Label className="mb-2 block">Usluge koje obavlja</Label><div className="space-y-2 rounded-lg border p-3">{services.filter((service) => service.active).map((service) => <label key={service.id} className="flex cursor-pointer items-center gap-3 text-sm"><Checkbox checked={form.serviceIds.includes(service.id)} onCheckedChange={() => toggleService(service.id)} />{service.name}</label>)}</div></div><Button className="w-full" onClick={save}><Users className="mr-2 h-4 w-4" />Sačuvaj zaposlenog</Button></div></DialogContent></Dialog>
   </div></BusinessLayout>;
 }

@@ -30,6 +30,7 @@ export const appointmentStatusEnum = pgEnum("appointment_status", [
   "cancelled",
   "no-show",
 ]);
+export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["pending", "approved", "rejected"]);
 
 export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]);
 export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "sent", "failed", "skipped"]);
@@ -48,6 +49,7 @@ export const usersTable = pgTable("users", {
   activeSalonId: uuid("active_salon_id"),
   passwordHash: text("password_hash").notNull(),
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   role: userRoleEnum("role").notNull().default("CUSTOMER"),
   avatarUrl: text("avatar_url"),
   active: boolean("active").notNull().default(true),
@@ -195,6 +197,7 @@ export const employeesTable = pgTable("employees", {
   role: text("role").notNull(),
   bio: text("bio").notNull(),
   avatarUrl: text("avatar_url").notNull(),
+  email: text("email"),
   specialties: jsonb("specialties").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
 });
@@ -215,6 +218,17 @@ export const employeeTimeOffTable = pgTable("employee_time_off", {
   startDate: date("start_date", { mode: "string" }).notNull(),
   endDate: date("end_date", { mode: "string" }).notNull(),
   reason: text("reason").notNull(),
+});
+
+export const employeeLeaveRequestsTable = pgTable("employee_leave_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  startDate: date("start_date", { mode: "string" }).notNull(),
+  endDate: date("end_date", { mode: "string" }).notNull(),
+  reason: text("reason").notNull(),
+  status: leaveRequestStatusEnum("status").notNull().default("pending"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const servicesTable = pgTable("services", {
