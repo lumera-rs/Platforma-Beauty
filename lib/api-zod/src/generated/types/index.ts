@@ -146,6 +146,7 @@ export * from './salonAppointmentUpdate';
 export * from './salonAppointmentUpdateStatus';
 export * from './salonCard';
 export * from './salonDashboard';
+export * from './salonNotification';
 export * from './salonProfile';
 export * from './service';
 export * from './serviceInput';

@@ -15,6 +15,7 @@ import {
   useGetOrder,
   getGetShopCartQueryKey,
   getGetShopCheckoutPreviewQueryKey,
+  getListSalonNotificationsQueryKey,
   getGetOrderQueryKey,
   ShopCheckoutInputPaymentMethod,
 } from "@workspace/api-client-react";
@@ -654,6 +655,7 @@ export function OwnerCheckoutReviewPage() {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListSalonNotificationsQueryKey() });
         setLocation(`/vlasnik/prodavnica/porudzbina/${order.id}/potvrda`);
       },
       onError: (error) => {

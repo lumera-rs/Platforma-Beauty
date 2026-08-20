@@ -666,6 +666,35 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Order" }
+  /shop/notifications:
+    get:
+      operationId: listSalonNotifications
+      tags: [shop]
+      summary: List notifications for the current salon owner
+      responses:
+        "200":
+          description: Salon notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonNotification" }
+  /shop/notifications/{notificationId}/read:
+    patch:
+      operationId: markSalonNotificationRead
+      tags: [shop]
+      summary: Mark one salon notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated salon notification
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonNotification" }
   /shop/orders:
     get:
       operationId: listOrders
@@ -2454,6 +2483,16 @@ components:
           required: [companyName, pib, registrationNumber, address, city, postalCode]
         items: { type: array, items: { $ref: "#/components/schemas/OrderItem" } }
       required: [id, status, paymentStatus, deliveryMethod, courierServiceId, courierService, trackingNumber, trackingUrl, total, subtotal, shippingCost, totalWeightGrams, itemCount, createdAt, updatedAt, salon, delivery, billing, items]
+    SalonNotification:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        message: { type: string }
+        href: { type: ["string", "null"] }
+        readAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, title, message, href, readAt, createdAt]
     AdminOrder:
       allOf:
         - $ref: "#/components/schemas/Order"

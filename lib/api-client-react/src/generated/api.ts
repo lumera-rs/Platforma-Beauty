@@ -101,6 +101,7 @@ import type {
   SalonAppointmentUpdate,
   SalonCard,
   SalonDashboard,
+  SalonNotification,
   SalonProfile,
   Service,
   ServiceInput,
@@ -2942,6 +2943,154 @@ export const useCheckoutShopCart = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCheckoutShopCartMutationOptions(options));
+    }
+
+export const getListSalonNotificationsUrl = () => {
+
+
+
+
+  return `/api/shop/notifications`
+}
+
+/**
+ * @summary List notifications for the current salon owner
+ */
+export const listSalonNotifications = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonNotification[]> => {
+
+  return customFetch<SalonNotification[]>(getListSalonNotificationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonNotificationsQueryKey = () => {
+    return [
+    `/api/shop/notifications`
+    ] as const;
+    }
+
+
+export const getListSalonNotificationsQueryOptions = <TData = Awaited<ReturnType<typeof listSalonNotifications>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonNotificationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonNotifications>>> = ({ signal }) => listSalonNotifications({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonNotifications>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonNotificationsQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonNotifications>>>
+export type ListSalonNotificationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List notifications for the current salon owner
+ */
+
+export function useListSalonNotifications<TData = Awaited<ReturnType<typeof listSalonNotifications>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonNotifications>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonNotificationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getMarkSalonNotificationReadUrl = (notificationId: string,) => {
+
+
+
+
+  return `/api/shop/notifications/${notificationId}/read`
+}
+
+/**
+ * @summary Mark one salon notification as read
+ */
+export const markSalonNotificationRead = async (notificationId: string, options?: Parameters<typeof customFetch>[1]): Promise<SalonNotification> => {
+
+  return customFetch<SalonNotification>(getMarkSalonNotificationReadUrl(notificationId),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getMarkSalonNotificationReadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markSalonNotificationRead>>, TError,{notificationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markSalonNotificationRead>>, TError,{notificationId: string}, TContext> => {
+
+const mutationKey = ['markSalonNotificationRead'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markSalonNotificationRead>>, {notificationId: string}> = (props) => {
+          const {notificationId} = props ?? {};
+
+          return  markSalonNotificationRead(notificationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkSalonNotificationReadMutationResult = NonNullable<Awaited<ReturnType<typeof markSalonNotificationRead>>>
+
+    export type MarkSalonNotificationReadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark one salon notification as read
+ */
+export const useMarkSalonNotificationRead = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markSalonNotificationRead>>, TError,{notificationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markSalonNotificationRead>>,
+        TError,
+        {notificationId: string},
+        TContext
+      > => {
+      return useMutation(getMarkSalonNotificationReadMutationOptions(options));
     }
 
 export const getListOrdersUrl = () => {

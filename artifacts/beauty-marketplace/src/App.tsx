@@ -46,6 +46,7 @@ import AdminEmailMarketing from './pages/admin/email-marketing';
 import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, OwnerOrderConfirmationPage } from './pages/owner/checkout';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
+import OwnerNotifications from './pages/owner/notifications';
 
 const queryClient = new QueryClient();
 
@@ -180,6 +181,7 @@ function Router() {
         <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+        <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
         <Route path="/edukacije"><LegacyEducationRedirect /></Route>

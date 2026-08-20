@@ -1483,6 +1483,37 @@ export const CheckoutShopCartResponse = zod.object({
 
 
 /**
+ * @summary List notifications for the current salon owner
+ */
+export const ListSalonNotificationsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "message": zod.string(),
+  "href": zod.string().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListSalonNotificationsResponse = zod.array(ListSalonNotificationsResponseItem)
+
+
+/**
+ * @summary Mark one salon notification as read
+ */
+export const MarkSalonNotificationReadParams = zod.object({
+  "notificationId": zod.coerce.string()
+})
+
+export const MarkSalonNotificationReadResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "message": zod.string(),
+  "href": zod.string().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List salon orders
  */
 export const listOrdersResponseTotalMultipleOf = 1;

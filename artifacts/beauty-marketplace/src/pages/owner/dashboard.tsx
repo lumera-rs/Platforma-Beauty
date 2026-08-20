@@ -14,6 +14,7 @@ export function OwnerSidebar({ current }: { current: string }) {
     { href: "/vlasnik/usluge", label: "Usluge & Radnici", icon: <Settings className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/shop", label: "B2B Oprema", icon: <DollarSign className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/porudzbine", label: "Porudžbine", icon: <Package className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/obavestenja", label: "Obaveštenja", icon: <Bell className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/loyalty", label: "Loyalty Program", icon: <Star className="w-4 h-4 mr-2" /> },
     { href: "/biznis/edukacije", label: "Edukacije", icon: <GraduationCap className="w-4 h-4 mr-2" /> },
   ];

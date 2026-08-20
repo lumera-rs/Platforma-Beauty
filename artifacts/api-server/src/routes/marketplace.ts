@@ -157,6 +157,7 @@ import {
   ListFavoritesResponse,
   ListMyAppointmentsQueryParams,
   ListMyAppointmentsResponse,
+  ListSalonNotificationsResponse,
   ListOrdersResponse,
   ListProductReviewsParams,
   ListProductReviewsResponse,
@@ -174,6 +175,8 @@ import {
   RegisterBusinessBody,
   RegisterBody,
   RegisterResponse,
+  MarkSalonNotificationReadParams,
+  MarkSalonNotificationReadResponse,
   RemoveShopCartItemParams,
   RemoveShopCartItemResponse,
   UpsertProductReviewBody,
@@ -2044,6 +2047,30 @@ router.get("/shop/orders", async (req, res): Promise<void> => {
   const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((item) => item.id))) : [];
   const couriers = await couriersForOrders(orders);
   res.json(ListOrdersResponse.parse(orders.map((order) => orderDto(order, items.filter((item) => item.orderId === order.id), salon, order.courierServiceId ? couriers.get(order.courierServiceId) : undefined))));
+});
+
+router.get("/shop/notifications", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const notifications = await db.select()
+    .from(salonNotificationsTable)
+    .where(eq(salonNotificationsTable.salonId, access.salon.id))
+    .orderBy(desc(salonNotificationsTable.createdAt));
+  res.json(ListSalonNotificationsResponse.parse(notifications));
+});
+
+router.patch("/shop/notifications/:notificationId/read", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = MarkSalonNotificationReadParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [notification] = await db.update(salonNotificationsTable)
+    .set({ readAt: new Date() })
+    .where(and(
+      eq(salonNotificationsTable.id, parsed.data.notificationId),
+      eq(salonNotificationsTable.salonId, access.salon.id),
+    ))
+    .returning();
+  if (!notification) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
+  res.json(MarkSalonNotificationReadResponse.parse(notification));
 });
 
 router.get("/shop/orders/:orderId", async (req, res): Promise<void> => {

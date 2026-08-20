@@ -1,9 +1,10 @@
 import { Link, useLocation } from "wouter";
-import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, ShoppingCart } from "lucide-react";
+import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, Bell, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useLogout } from "@workspace/api-client-react";
+import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,10 @@ export function BusinessNavbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
+  const notificationsQueryKey = salonNotificationsQueryKey(user?.id);
+  const { data: notifications = [] } = useListSalonNotifications({ query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey } });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length;
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -41,6 +45,7 @@ export function BusinessNavbar() {
           { href: "/vlasnik/usluge", label: "Usluge" },
           { href: "/vlasnik/shop", label: "Shop" },
           { href: "/vlasnik/porudzbine", label: "Porudžbine" },
+          { href: "/vlasnik/obavestenja", label: "Obaveštenja" },
           { href: "/biznis/edukacije", label: "Edukacije" },
         ];
       case 'EDUCATION_CENTER_OWNER':
@@ -95,6 +100,15 @@ export function BusinessNavbar() {
               <ArrowLeft className="w-4 h-4" />
               Nazad na Market
             </Link>
+
+            {user?.role === "SALON_OWNER" && (
+              <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
+                <Link href="/vlasnik/obavestenja" aria-label={`Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}`} data-testid="link-notifications">
+                  <Bell className="w-5 h-5" />
+                  {unreadNotificationCount > 0 && <span data-testid="status-unread-notification-count" className="absolute -right-1 -top-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-4 text-accent-foreground">{unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}</span>}
+                </Link>
+              </Button>
+            )}
 
             {user?.role === "SALON_OWNER" && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>

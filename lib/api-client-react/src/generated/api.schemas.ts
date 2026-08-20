@@ -779,6 +779,17 @@ export interface Order {
   items: OrderItem[];
 }
 
+export interface SalonNotification {
+  id: string;
+  title: string;
+  message: string;
+  /** @nullable */
+  href: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface OrderHistoryEvent {
   id: string;
   actorName: string;

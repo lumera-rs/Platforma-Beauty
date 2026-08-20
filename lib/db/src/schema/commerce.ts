@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -253,4 +254,6 @@ export const salonNotificationsTable = pgTable("salon_notifications", {
   href: text("href"),
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("salon_notifications_salon_created_at_idx").on(table.salonId, table.createdAt),
+]);
