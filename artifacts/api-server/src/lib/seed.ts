@@ -442,7 +442,7 @@ async function seedFutureBookingAvailability(): Promise<void> {
  * appointments. The insert is intentionally additive so a salon's existing
  * contact data, especially SMS opt-out, remains authoritative.
  */
-async function backfillSalonCustomers(): Promise<void> {
+export async function backfillSalonCustomers(): Promise<void> {
   await db.execute(sql`
     INSERT INTO ${salonCustomersTable}
       (salon_id, user_id, first_name, last_name, email, phone)
