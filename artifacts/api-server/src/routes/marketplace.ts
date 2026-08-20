@@ -2302,7 +2302,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     name: body.name ?? existing.name,
     categoryId: assignment?.categoryId ?? existing.categoryId,
     categoryName: assignment?.categoryName ?? existing.categoryName,
-    subcategoryName: assignment?.subcategoryName ?? existing.subcategoryName,
+    subcategoryName: assignment ? assignment.subcategoryName : existing.subcategoryName,
     brand: body.brand !== undefined ? body.brand : existing.brand,
     description: body.description ?? existing.description,
     shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
