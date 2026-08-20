@@ -49,6 +49,7 @@ import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, Owne
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
 import OwnerNotifications from './pages/owner/notifications';
+import OwnerEmployees from './pages/owner/employees';
 
 const queryClient = new QueryClient();
 
@@ -175,6 +176,7 @@ function Router() {
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
+        <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>

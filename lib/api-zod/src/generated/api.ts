@@ -367,7 +367,9 @@ export const GetSalonResponse = zod.object({
   "role": zod.string(),
   "bio": zod.string(),
   "avatarUrl": zod.string(),
-  "specialties": zod.array(zod.string())
+  "specialties": zod.array(zod.string()),
+  "serviceIds": zod.array(zod.string()),
+  "serviceNames": zod.array(zod.string())
 })),
   "services": zod.array(zod.object({
   "id": zod.string(),
@@ -896,7 +898,9 @@ export const ListSalonEmployeesResponseItem = zod.object({
   "role": zod.string(),
   "bio": zod.string(),
   "avatarUrl": zod.string(),
-  "specialties": zod.array(zod.string())
+  "specialties": zod.array(zod.string()),
+  "serviceIds": zod.array(zod.string()),
+  "serviceNames": zod.array(zod.string())
 })
 export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseItem)
 
@@ -4212,3 +4216,5 @@ export const AdminDeleteCourierServiceParams = zod.object({
 })
 
 export const AdminDeleteCourierServiceResponse = zod.void()
+
+

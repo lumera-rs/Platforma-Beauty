@@ -2,3 +2,4 @@
 - [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.
 - [Social sign-in safety](social-signin-safety.md) — never infer a usable password from a stored hash on OAuth-created accounts.
 - [Integration configuration security](integration-configuration-security.md) — credentials in database settings require deployment-held encryption and approved provider origins.
+- [Employee booking integrity](employee-booking-integrity.md) — service assignments are owner-managed; booking allocation serializes each salon-day to prevent overlapping load-balanced bookings.

@@ -11,6 +11,7 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  employeeServicesTable,
   employeesTable,
   inspirationItemsTable,
   lessonProgressTable,
@@ -435,6 +436,12 @@ async function seedFutureBookingAvailability(): Promise<void> {
     }
   }
   if (demoAppointments.length) await db.insert(appointmentsTable).values(demoAppointments);
+  const existingAssignments = await db.select().from(employeeServicesTable);
+  const assignmentKeys = new Set(existingAssignments.map((item) => `${item.employeeId}:${item.serviceId}`));
+  const assignments = existingAssignments.length ? [] : employees.flatMap((employee) => services.filter((service) => service.salonId === employee.salonId)
+    .filter((service) => !assignmentKeys.has(`${employee.id}:${service.id}`))
+    .map((service) => ({ employeeId: employee.id, serviceId: service.id })));
+  if (assignments.length) await db.insert(employeeServicesTable).values(assignments).onConflictDoNothing();
 }
 
 /**

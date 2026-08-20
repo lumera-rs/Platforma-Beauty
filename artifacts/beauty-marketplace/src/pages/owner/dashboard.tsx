@@ -11,7 +11,8 @@ export function OwnerSidebar({ current }: { current: string }) {
   const links = [
     { href: "/vlasnik", label: "Dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/kalendar", label: "Kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/usluge", label: "Usluge & Radnici", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/usluge", label: "Usluge", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/zaposleni", label: "Zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/shop", label: "B2B Oprema", icon: <DollarSign className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/porudzbine", label: "Porudžbine", icon: <Package className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/obavestenja", label: "Obaveštenja", icon: <Bell className="w-4 h-4 mr-2" /> },

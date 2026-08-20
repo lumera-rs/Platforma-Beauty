@@ -13,4 +13,6 @@ export interface Employee {
   bio: string;
   avatarUrl: string;
   specialties: string[];
+  serviceIds: string[];
+  serviceNames: string[];
 }

@@ -4,8 +4,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Badge } from "@/components/ui/badge";
 import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, getGetSalonAvailabilityQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
-import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, User as UserIcon, Loader2 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, User as UserIcon, Loader2, Heart } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -22,6 +22,7 @@ export default function SalonProfile() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
+  const [favoriteEmployeeId, setFavoriteEmployeeId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string, employeeId?: string|null} | null>(null);
   
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -33,6 +34,27 @@ export default function SalonProfile() {
   );
 
   const createAppointment = useCreateAppointment();
+  const eligibleStaff = useMemo(() => selectedService ? salon?.staff.filter((employee) => employee.serviceIds.includes(selectedService)) ?? [] : salon?.staff ?? [], [salon?.staff, selectedService]);
+
+  useEffect(() => {
+    if (!salon?.id || user?.role !== "CUSTOMER") return;
+    fetch(`/api/customer/favorite-employees/${salon.id}`, { credentials: "include" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setFavoriteEmployeeId(data?.employeeId ?? null))
+      .catch(() => setFavoriteEmployeeId(null));
+  }, [salon?.id, user?.role]);
+
+  useEffect(() => {
+    if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) setSelectedEmployee(null);
+    if (!selectedEmployee && favoriteEmployeeId && eligibleStaff.some((employee) => employee.id === favoriteEmployeeId)) setSelectedEmployee(favoriteEmployeeId);
+  }, [eligibleStaff, favoriteEmployeeId, selectedEmployee]);
+
+  const setFavorite = async (employeeId: string) => {
+    if (!user) { setLocation("/prijava"); return; }
+    const response = await fetch(`/api/customer/favorite-employees/${salon?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) });
+    if (!response.ok) { toast.error("Omiljeni zaposleni nije sačuvan."); return; }
+    setFavoriteEmployeeId(employeeId); setSelectedEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
+  };
 
   const handleBook = () => {
     if (!user) {
@@ -49,7 +71,7 @@ export default function SalonProfile() {
         serviceId: selectedService,
         date: dateStr,
         startTime: selectedSlot.start,
-        employeeId: selectedSlot.employeeId
+        employeeId: selectedEmployee ?? undefined
       }
     }, {
       onSuccess: () => {
@@ -125,7 +147,7 @@ export default function SalonProfile() {
                 <div 
                   key={service.id} 
                   className={`p-4 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${selectedService === service.id ? 'border-primary ring-1 ring-primary shadow-sm bg-primary/5' : 'hover:border-primary/50 hover:bg-muted/30'}`}
-                  onClick={() => { setSelectedService(service.id); setSelectedSlot(null); }}
+                   onClick={() => { setSelectedService(service.id); setSelectedSlot(null); }}
                 >
                   <div>
                     <h4 className="font-bold text-lg">{service.name}</h4>
@@ -156,17 +178,20 @@ export default function SalonProfile() {
               Naš tim
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {salon.staff?.map(employee => (
+              {eligibleStaff.map(employee => (
                 <div 
                   key={employee.id} 
                   className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center gap-4 ${selectedEmployee === employee.id ? 'border-primary ring-1 ring-primary bg-primary/5' : 'hover:border-primary/50'}`}
                   onClick={() => setSelectedEmployee(selectedEmployee === employee.id ? null : employee.id)}
                 >
                   <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-16 h-16 rounded-full object-cover border" />
-                  <div>
+                   <div className="min-w-0 flex-1">
                     <h4 className="font-bold">{employee.name}</h4>
                     <p className="text-sm text-muted-foreground">{employee.role}</p>
+                     {employee.specialties?.length ? <p className="mt-1 text-xs text-muted-foreground">{employee.specialties.join(" · ")}</p> : null}
+                     {employee.serviceNames?.length ? <p className="mt-1 text-xs text-primary">{employee.serviceNames.join(", ")}</p> : null}
                   </div>
+                   {user?.role === "CUSTOMER" && <button aria-label={`Omiljeni zaposleni ${employee.name}`} onClick={(event) => { event.stopPropagation(); setFavorite(employee.id).catch(() => toast.error("Omiljeni zaposleni nije sačuvan.")); }}><Heart className={`h-4 w-4 ${favoriteEmployeeId === employee.id ? "fill-primary text-primary" : "text-muted-foreground"}`} /></button>}
                 </div>
               ))}
             </div>
@@ -234,7 +259,14 @@ export default function SalonProfile() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
+                     <div className="space-y-3">
+                       <h4 className="text-sm font-semibold">Izaberite zaposlenog</h4>
+                       <button type="button" onClick={() => { setSelectedEmployee(null); setSelectedSlot(null); }} className={`w-full rounded-lg border p-3 text-left text-sm ${selectedEmployee === null ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}><span className="font-semibold">Bilo koji dostupan zaposleni</span><span className="mt-1 block text-muted-foreground">Sistem bira slobodnog člana tima sa najmanje termina tog dana i nedelje.</span></button>
+                       <div className="space-y-2">{[...eligibleStaff].sort((a, b) => Number(b.id === favoriteEmployeeId) - Number(a.id === favoriteEmployeeId)).map((employee) => <button key={employee.id} type="button" onClick={() => { setSelectedEmployee(employee.id); setSelectedSlot(null); }} className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left ${selectedEmployee === employee.id ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}><img src={employee.avatarUrl || "https://i.pravatar.cc/100"} className="h-10 w-10 rounded-full object-cover" alt="" /><span className="min-w-0 flex-1"><span className="flex items-center gap-2 font-medium">{employee.name}{employee.id === favoriteEmployeeId && <Badge className="text-[10px]">Omiljeni</Badge>}</span><span className="block truncate text-xs text-muted-foreground">{employee.bio || employee.specialties?.join(" · ") || employee.role}</span></span></button>)}</div>
+                       {!eligibleStaff.length && <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">Trenutno nema zaposlenog dodeljenog ovoj usluzi.</p>}
+                     </div>
+
+                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold">Izaberite datum</h4>
                       <input 
                         type="date" 

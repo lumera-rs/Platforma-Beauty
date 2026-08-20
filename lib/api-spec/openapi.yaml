@@ -2228,7 +2228,13 @@ components:
         specialties:
           type: array
           items: { type: string }
-      required: [id, name, role, bio, avatarUrl, specialties]
+        serviceIds:
+          type: array
+          items: { type: string }
+        serviceNames:
+          type: array
+          items: { type: string }
+      required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames]
     Service:
       type: object
       properties:

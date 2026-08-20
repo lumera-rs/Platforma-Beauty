@@ -14,7 +14,11 @@ import {
   educationCentersTable,
   emailCampaignsTable,
   employeesTable,
+  employeeSchedulesTable,
+  employeeServicesTable,
+  employeeTimeOffTable,
   favoritesTable,
+  favoriteEmployeesTable,
   inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
@@ -467,15 +471,81 @@ function overlapsAppointment(startTime: string, endTime: string, appointment: ty
   return appointment.status !== "cancelled" && appointment.startTime < endTime && appointment.endTime > startTime;
 }
 
-async function availableEmployee(salonId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
-  const candidates = preferredEmployeeId
-    ? [await employeeInSalon(preferredEmployeeId, salonId)].filter(Boolean)
-    : await db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
-  for (const employee of candidates) {
-    const existing = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.employeeId, employee!.id), eq(appointmentsTable.date, date)));
-    if (!existing.some((appointment) => overlapsAppointment(startTime, endTime, appointment))) return employee!;
-  }
-  return null;
+function mondayOf(date: string) {
+  const value = new Date(`${date}T12:00:00Z`);
+  const offset = (value.getUTCDay() + 6) % 7;
+  value.setUTCDate(value.getUTCDate() - offset);
+  return value.toISOString().slice(0, 10);
+}
+
+function employeeWorksAt(
+  employeeId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  schedules: (typeof employeeSchedulesTable.$inferSelect)[],
+  timeOff: (typeof employeeTimeOffTable.$inferSelect)[],
+) {
+  if (timeOff.some((item) => item.employeeId === employeeId && item.startDate <= date && item.endDate >= date)) return false;
+  const weekday = ((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
+  const daily = schedules.filter((item) => item.employeeId === employeeId && item.weekday === weekday);
+  if (!daily.length) return true;
+  return daily.some((item) => startTime >= item.startTime && endTime <= item.endTime
+    && !(item.breakStart && item.breakEnd && startTime < item.breakEnd && endTime > item.breakStart));
+}
+
+async function eligibleEmployees(salonId: string, serviceId: string, preferredEmployeeId?: string | null) {
+  const employees = await db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
+  const ids = employees.map((employee) => employee.id);
+  const links = ids.length ? await db.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
+  const serviceEmployeeIds = new Set(links.map((item) => item.employeeId));
+  return employees.filter((employee) => serviceEmployeeIds.has(employee.id) && (!preferredEmployeeId || employee.id === preferredEmployeeId));
+}
+
+async function availableEmployeeWithDb(store: any, salonId: string, serviceId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
+  const employees = await store.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
+  const ids = employees.map((employee: typeof employeesTable.$inferSelect) => employee.id);
+  const links = ids.length ? await store.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
+  const candidateIds = new Set(links.map((item: typeof employeeServicesTable.$inferSelect) => item.employeeId));
+  const candidates = employees.filter((employee: typeof employeesTable.$inferSelect) => candidateIds.has(employee.id) && (!preferredEmployeeId || employee.id === preferredEmployeeId));
+  if (!candidates.length) return null;
+  const weekStart = mondayOf(date);
+  const [sameDay, sameWeek, schedules, timeOff] = await Promise.all([
+    store.select().from(appointmentsTable).where(and(eq(appointmentsTable.salonId, salonId), eq(appointmentsTable.date, date))),
+    store.select().from(appointmentsTable).where(and(eq(appointmentsTable.salonId, salonId), sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`)),
+    store.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
+    store.select().from(employeeTimeOffTable).where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id))),
+  ]);
+  const available = candidates.filter((employee: typeof employeesTable.$inferSelect) => employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
+    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment)));
+  if (!available.length) return null;
+  return [...available].sort((a, b) => {
+    const dayA = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length;
+    const dayB = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length;
+    const weekA = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length;
+    const weekB = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length;
+    return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name);
+  })[0]!;
+}
+
+async function availableEmployee(salonId: string, serviceId: string, date: string, startTime: string, endTime: string, preferredEmployeeId?: string | null) {
+  return availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId);
+}
+
+async function createAllocatedAppointment(input: {
+  salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
+  endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
+}) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.salonId}:${input.date}`}))`);
+    const employee = await availableEmployeeWithDb(tx, input.salonId, input.serviceId, input.date, input.startTime, input.endTime, input.preferredEmployeeId);
+    if (!employee) return { employee: null, appointment: null };
+    const [appointment] = await tx.insert(appointmentsTable).values({
+      salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
+      date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, status: input.status, notes: input.notes ?? null,
+    }).returning();
+    return { employee, appointment: appointment! };
+  });
 }
 
 function normalizedPhone(phone: string) {
@@ -1321,6 +1391,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id)),
   ]);
   const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
+  const employeeLinks = staff.length ? await db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, staff.map((item) => item.id))) : [];
   res.json(GetSalonResponse.parse({
     ...card(salon, services, hours, appointments, staff),
     gallery: salon.gallery,
@@ -1330,7 +1401,10 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     latitude: salon.latitude ?? 44.8,
     longitude: salon.longitude ?? 20.46,
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
-    staff: staff.map((item) => ({ id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties })),
+    staff: staff.map((item) => {
+      const serviceIds = employeeLinks.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
+      return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
+    }),
     services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active })),
     reviews: reviews.map((item) => ({ id: item.id, authorName: `${reviewUsers.find((user) => user.id === item.customerId)?.firstName ?? "Gost"} ${reviewUsers.find((user) => user.id === item.customerId)?.lastName ?? ""}`.trim(), rating: item.rating, text: item.text, date: item.createdAt.toISOString().slice(0, 10), serviceName: item.serviceName })),
   }));
@@ -1376,16 +1450,16 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
   if (!params.success || !query.success) { res.status(400).json({ error: "Parametri za dostupnost nisu ispravni." }); return; }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, query.data.serviceId), eq(servicesTable.salonId, params.data.salonId))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
-  const staff = await db.select().from(employeesTable).where(eq(employeesTable.salonId, params.data.salonId));
-  const existing = await db.select().from(appointmentsTable).where(and(eq(appointmentsTable.salonId, params.data.salonId), eq(appointmentsTable.date, calendarDate(query.data.date))));
-  const targets = query.data.employeeId ? staff.filter((item) => item.id === query.data.employeeId) : staff;
-  const slots = targets.flatMap((employee) => Array.from({ length: 9 }, (_, index) => {
+  const date = calendarDate(query.data.date);
+  const eligible = await eligibleEmployees(params.data.salonId, service.id, query.data.employeeId);
+  if (query.data.employeeId && !eligible.length) { res.status(404).json({ error: "Izabrani zaposleni ne obavlja ovu uslugu." }); return; }
+  const slots = (await Promise.all(Array.from({ length: 9 }, async (_, index) => {
     const start = `${String(9 + index).padStart(2, "0")}:00`;
-    const endHour = 9 + index + Math.ceil(service.durationMinutes / 60);
-    const end = `${String(endHour).padStart(2, "0")}:00`;
-    const occupied = existing.some((appointment) => appointment.employeeId === employee.id && appointment.status !== "cancelled" && appointment.startTime < end && appointment.endTime > start);
-    return occupied ? null : { start, end, employeeId: employee.id, employeeName: employee.name };
-  }).filter(Boolean)).slice(0, 14);
+    const end = appointmentEndTime(start, service.durationMinutes);
+    if (!end) return null;
+    const employee = await availableEmployee(params.data.salonId, service.id, date, start, end, query.data.employeeId);
+    return employee ? { start, end, employeeId: employee.id, employeeName: employee.name } : null;
+  }))).filter(Boolean).slice(0, 14);
   res.json(GetSalonAvailabilityResponse.parse(slots));
 });
 
@@ -1410,23 +1484,21 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const appointmentDate = calendarDate(parsed.data.date);
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
-  const employee = await availableEmployee(salon.id, appointmentDate, parsed.data.startTime, endTime, parsed.data.employeeId);
-  if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
-  const [appointment] = await db.insert(appointmentsTable).values({
-    salonId: salon.id, customerId: user.id, employeeId: employee.id, serviceId: service.id, date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
-  }).returning();
+  const allocation = await createAllocatedAppointment({ salonId: salon.id, customerId: user.id, serviceId: service.id, date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes, price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId });
+  if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
+  const { employee, appointment } = allocation;
   const [createdContact] = await db.insert(salonCustomersTable).values({
     salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
   }).onConflictDoNothing().returning();
   const crmContact = createdContact ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
-  if (crmContact) await db.update(appointmentsTable).set({ salonCustomerId: crmContact.id }).where(eq(appointmentsTable.id, appointment!.id));
+  if (crmContact) await db.update(appointmentsTable).set({ salonCustomerId: crmContact.id }).where(eq(appointmentsTable.id, appointment.id));
   await sendSms({
-    eventKey: `appointment-confirmation:${appointment!.id}`, salonId: salon.id, appointmentId: appointment!.id,
+    eventKey: `appointment-confirmation:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
     type: "appointment_confirmation", phone: user.phone, smsOptOut: crmContact?.smsOptOut,
-    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${calendarDate(appointment!.date)} u ${appointment!.startTime}.`,
+    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${calendarDate(appointment.date)} u ${appointment.startTime}.`,
   });
-  await sendAppointmentEmails({ event: "created", appointment: appointment!, customer: user, salon, service });
-  res.status(201).json(CreateAppointmentResponse.parse(appointmentView(appointment!, salon, service, user, employee)));
+  await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
+  res.status(201).json(CreateAppointmentResponse.parse(appointmentView(appointment, salon, service, user, employee)));
 });
 
 router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => {
@@ -1480,6 +1552,23 @@ router.post("/customer/favorites", async (req, res): Promise<void> => {
   if (favorite) await db.delete(favoritesTable).where(eq(favoritesTable.id, favorite.id));
   else await db.insert(favoritesTable).values({ userId: user.id, salonId: parsed.data.salonId });
   res.json(ToggleFavoriteResponse.parse({ salonId: parsed.data.salonId, favorited: !favorite }));
+});
+
+router.get("/customer/favorite-employees/:salonId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const [favorite] = await db.select().from(favoriteEmployeesTable).where(and(eq(favoriteEmployeesTable.userId, user.id), eq(favoriteEmployeesTable.salonId, req.params.salonId))).limit(1);
+  res.json({ employeeId: favorite?.employeeId ?? null });
+});
+
+router.put("/customer/favorite-employees/:salonId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const employeeId = typeof req.body?.employeeId === "string" ? req.body.employeeId : null;
+  if (!employeeId) { res.status(400).json({ error: "employeeId je obavezan." }); return; }
+  const employee = await employeeInSalon(employeeId, req.params.salonId);
+  if (!employee) { res.status(404).json({ error: "Zaposleni ne pripada ovom salonu." }); return; }
+  await db.insert(favoriteEmployeesTable).values({ userId: user.id, salonId: req.params.salonId, employeeId })
+    .onConflictDoUpdate({ target: [favoriteEmployeesTable.userId, favoriteEmployeesTable.salonId], set: { employeeId } });
+  res.json({ employeeId });
 });
 
 router.get("/salon/dashboard", async (req, res): Promise<void> => {
@@ -1540,7 +1629,7 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
   const date = calendarDate(parsed.data.date);
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
-  const employee = await availableEmployee(salon.id, date, parsed.data.startTime, endTime, parsed.data.employeeId);
+  const employee = await availableEmployee(salon.id, service.id, date, parsed.data.startTime, endTime, parsed.data.employeeId);
   if (!employee) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
   let contact: typeof salonCustomersTable.$inferSelect | undefined;
   if (parsed.data.salonCustomerId) {
@@ -1607,8 +1696,53 @@ router.post("/salon/services", async (req, res): Promise<void> => {
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const employees = await db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id));
-  res.json(ListSalonEmployeesResponse.parse(employees.map((item) => ({ id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties }))));
+  const [employees, services, links] = await Promise.all([
+    db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)),
+    db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
+    db.select().from(employeeServicesTable),
+  ]);
+  res.json(ListSalonEmployeesResponse.parse(employees.map((item) => {
+    const serviceIds = links.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
+    return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
+  })));
+});
+
+router.post("/salon/employees", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; specialties?: unknown; serviceIds?: unknown };
+  if (typeof body.name !== "string" || !body.name.trim() || typeof body.role !== "string" || !body.role.trim()) { res.status(400).json({ error: "Ime i uloga zaposlenog su obavezni." }); return; }
+  const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : [];
+  const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
+  if (services.length !== serviceIds.length) { res.status(400).json({ error: "Sve dodeljene usluge moraju pripadati vašem salonu." }); return; }
+  const [employee] = await db.insert(employeesTable).values({
+    salonId: access.salon.id, name: body.name.trim(), role: body.role.trim(), bio: typeof body.bio === "string" ? body.bio.trim() : "",
+    avatarUrl: typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : "", specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
+  }).returning();
+  if (serviceIds.length) await db.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee!.id, serviceId })));
+  res.status(201).json({ id: employee!.id });
+});
+
+router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
+  const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
+  if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : null;
+  if (serviceIds) {
+    const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
+    if (services.length !== serviceIds.length) { res.status(400).json({ error: "Sve dodeljene usluge moraju pripadati vašem salonu." }); return; }
+    await db.delete(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id));
+    if (serviceIds.length) await db.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee.id, serviceId })));
+  }
+  await db.update(employeesTable).set({
+    name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : employee.name,
+    role: typeof body.role === "string" && body.role.trim() ? body.role.trim() : employee.role,
+    bio: typeof body.bio === "string" ? body.bio.trim() : employee.bio,
+    avatarUrl: typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : employee.avatarUrl,
+    specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
+    active: typeof body.active === "boolean" ? body.active : employee.active,
+  }).where(eq(employeesTable.id, employee.id));
+  res.json({ id: employee.id });
 });
 
 async function loyaltyStatus(salonId: string) {

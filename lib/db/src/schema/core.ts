@@ -253,7 +253,19 @@ export const employeeServicesTable = pgTable("employee_services", {
   id: uuid("id").defaultRandom().primaryKey(),
   employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  uniqueIndex("employee_services_employee_service_unique").on(table.employeeId, table.serviceId),
+]);
+
+export const favoriteEmployeesTable = pgTable("favorite_employees", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("favorite_employees_user_salon_unique").on(table.userId, table.salonId),
+]);
 
 export const salonHoursTable = pgTable("salon_hours", {
   id: uuid("id").defaultRandom().primaryKey(),
