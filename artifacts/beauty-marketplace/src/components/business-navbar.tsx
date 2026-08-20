@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, Bell, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import {
@@ -21,12 +21,31 @@ export function BusinessNavbar() {
   const notificationsQueryKey = salonNotificationsQueryKey(user?.id);
   const { data: notifications = [] } = useListSalonNotifications({ query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey } });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [managedSalons, setManagedSalons] = useState<Array<{ id: string; name: string; slug: string }>>([]);
+  const [activeSalonId, setActiveSalonId] = useState<string>("");
   const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length;
 
   const handleLogout = () => {
     logout.mutate(undefined, {
       onSuccess: () => setLocation("/")
     });
+  };
+
+  useEffect(() => {
+    if (user?.role !== "SALON_OWNER") return;
+    fetch("/api/salon/managed-salons").then(async (response) => {
+      if (!response.ok) return;
+      const payload = await response.json() as { activeSalonId: string | null; salons: Array<{ id: string; name: string; slug: string }> };
+      setManagedSalons(payload.salons);
+      setActiveSalonId(payload.activeSalonId ?? "");
+    }).catch(() => undefined);
+  }, [user?.role]);
+
+  const switchSalon = async (salonId: string) => {
+    const response = await fetch("/api/salon/active-salon", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ salonId }) });
+    if (!response.ok) return;
+    setActiveSalonId(salonId);
+    window.location.assign("/vlasnik");
   };
 
   const getNavLinks = () => {
@@ -102,6 +121,11 @@ export function BusinessNavbar() {
               Nazad na Market
             </Link>
 
+            {user?.role === "SALON_OWNER" && (
+              <select aria-label="Aktivni salon" className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white" value={activeSalonId} onChange={(event) => switchSalon(event.target.value)}>
+                {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
+              </select>
+            )}
             {user?.role === "SALON_OWNER" && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/obavestenja" aria-label={`Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}`} data-testid="link-notifications">

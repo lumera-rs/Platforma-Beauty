@@ -112,6 +112,7 @@ async function seed(): Promise<void> {
     await seedCourierServices();
     await seedFutureBookingAvailability();
     await backfillSalonCustomers();
+    await setDemoLotosActiveSalon();
     return;
   }
 
@@ -166,6 +167,8 @@ async function seed(): Promise<void> {
       longitude: [20.4489, 19.8335, 21.8958, 20.4124, 20.9114, 19.8227, 19.6676, 20.4012, 20.3496, 20.6417][index]!,
     })),
   ).returning();
+  const lotos = salons.find((salon) => salon.slug === "lotos-rituals");
+  if (lotos) await db.update(usersTable).set({ activeSalonId: lotos.id }).where(eq(usersTable.id, owner.id));
 
   const employeeRows = await db.insert(employeesTable).values(
     salons.flatMap((salon, salonIndex) =>
@@ -363,6 +366,12 @@ async function seed(): Promise<void> {
   await seedMarketplaceTaxonomy();
   await seedCourierServices();
   void customer;
+}
+
+async function setDemoLotosActiveSalon() {
+  const [owner] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, "salon@lumera.local")).limit(1);
+  const [lotos] = await db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.slug, "lotos-rituals")).limit(1);
+  if (owner && lotos) await db.update(usersTable).set({ activeSalonId: lotos.id }).where(eq(usersTable.id, owner.id));
 }
 
 /**

@@ -448,7 +448,10 @@ async function signInMethods(user: typeof usersTable.$inferSelect) {
 }
 
 async function ownedSalon(userId: string) {
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).limit(1);
+  const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [salon] = owner?.activeSalonId
+    ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
+    : await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).orderBy(asc(salonsTable.createdAt)).limit(1);
   return salon ?? null;
 }
 
@@ -1659,6 +1662,24 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
   res.json(GetSalonDashboardResponse.parse({ salon: card(salon, services), todayAppointments: appointments.slice(0, 5), revenueThisMonth: completed.reduce((sum, item) => sum + item.price, 0), bookingsThisMonth: appointments.length, newCustomers: new Set(appointments.map((item) => item.customerName)).size, rating: salon.rating / 10, revenueChange: 12, loyalty: loyaltyData }));
 });
 
+router.get("/salon/managed-salons", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  if (user.role !== "SALON_OWNER") { res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." }); return; }
+  const salons = await db.select({ id: salonsTable.id, name: salonsTable.name, slug: salonsTable.slug }).from(salonsTable).where(eq(salonsTable.ownerId, user.id)).orderBy(asc(salonsTable.name));
+  res.json({ activeSalonId: (await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1))[0]?.activeSalonId ?? salons[0]?.id ?? null, salons });
+});
+
+router.put("/salon/active-salon", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  if (user.role !== "SALON_OWNER" || typeof req.body?.salonId !== "string") { res.status(400).json({ error: "Izaberite salon." }); return; }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable).where(and(eq(salonsTable.id, req.body.salonId), eq(salonsTable.ownerId, user.id))).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije dostupan ovom nalogu." }); return; }
+  await db.update(usersTable).set({ activeSalonId: salon.id, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+  res.json({ activeSalonId: salon.id });
+});
+
 router.get("/salon/appointments", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
@@ -1753,7 +1774,7 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     res.status(403).json({ error: "Zaposleni pripada drugom salonu." });
     return;
   }
-  const [updated] = await db.update(appointmentsTable).set({ status: body.data.status, employeeId: body.data.employeeId, notes: body.data.notes }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, salon.id))).returning();
+  const [updated] = await db.update(appointmentsTable).set({ status: body.data.status, employeeId: body.data.employeeId, notes: body.data.notes === "" ? null : body.data.notes }).where(and(eq(appointmentsTable.id, params.data.appointmentId), eq(appointmentsTable.salonId, salon.id))).returning();
   if (!updated) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
   const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id))))[0];
   res.json(UpdateSalonAppointmentResponse.parse(view));
