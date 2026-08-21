@@ -366,6 +366,31 @@ test("customer sees a sent request for a home visit even when the salon instantl
   }
 });
 
+test("customer sees a sent request for a home visit from the mobile booking drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createPendingBookingFixture({ instantBooking: true, homeServiceAvailable: true });
+  let appointmentId: string | undefined;
+
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const stickyTrigger = page.getByRole("button", { name: "Zakaži", exact: true });
+    await expect(stickyTrigger).toBeVisible();
+    await stickyTrigger.click();
+
+    const drawer = page.getByRole("dialog", { name: "Zakažite termin" });
+    await expect(drawer).toBeVisible();
+    appointmentId = await completeHomeVisitBooking(page, drawer);
+  } finally {
+    try {
+      if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    } finally {
+      await cleanUpPendingBookingFixture(fixture);
+    }
+  }
+});
+
 test("a non-customer is guided to use a client account before an appointment request", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await signInAsSalonOwner(page);
