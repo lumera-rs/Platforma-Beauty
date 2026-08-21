@@ -363,6 +363,108 @@ async function run(): Promise<void> {
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
 
+    const mobileServiceCreate = await request(baseUrl, ownerSession, "/salon/services", "POST", {
+      category: "Test",
+      name: "Aktivna usluga na adresi",
+      description: "Usluga za proveru salonskog indikatora dolaska.",
+      durationMinutes: 30,
+      price: 1200,
+      promoPrice: null,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: true,
+      homeServiceFee: 200,
+      homeServiceMinimumOrder: null,
+    });
+    assert.equal(mobileServiceCreate.status, 201, "an owner must be able to add an active home-service offering");
+    const mobileService = mobileServiceCreate.body as { id: string };
+
+    const inSalonServiceCreate = await request(baseUrl, ownerSession, "/salon/services", "POST", {
+      category: "Test",
+      name: "Aktivna usluga u salonu",
+      description: "Usluga bez dolaska za proveru salonskog indikatora.",
+      durationMinutes: 30,
+      price: 900,
+      promoPrice: null,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+      homeServiceMinimumOrder: null,
+    });
+    assert.equal(inSalonServiceCreate.status, 201, "an owner must be able to add an in-salon offering");
+    const inSalonService = inSalonServiceCreate.body as { id: string };
+
+    const profileAfterInSalonService = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(
+      (profileAfterInSalonService.body as { homeService: boolean }).homeService,
+      true,
+      "adding an in-salon service must preserve the salon home-service indicator when another active service offers visits",
+    );
+
+    const deactivateMobileService = await request(baseUrl, ownerSession, `/salon/services/${mobileService.id}`, "PATCH", {
+      category: "Test",
+      name: "Neaktivna usluga na adresi",
+      description: "Deaktivirana usluga za proveru salonskog indikatora.",
+      durationMinutes: 30,
+      price: 1200,
+      promoPrice: null,
+      imageUrl: "/test.jpg",
+      active: false,
+      homeServiceAvailable: true,
+      homeServiceFee: 200,
+      homeServiceMinimumOrder: null,
+    });
+    assert.equal(deactivateMobileService.status, 200, "an owner must be able to deactivate a home-service offering");
+    const profileAfterDeactivation = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(
+      (profileAfterDeactivation.body as { homeService: boolean }).homeService,
+      false,
+      "deactivating the last active home-service offering must clear the salon home-service indicator",
+    );
+
+    const enableInSalonServiceForHome = await request(baseUrl, ownerSession, `/salon/services/${inSalonService.id}`, "PATCH", {
+      category: "Test",
+      name: "Usluga sada na adresi",
+      description: "Izmenjena usluga za proveru salonskog indikatora.",
+      durationMinutes: 30,
+      price: 900,
+      promoPrice: null,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: true,
+      homeServiceFee: 150,
+      homeServiceMinimumOrder: null,
+    });
+    assert.equal(enableInSalonServiceForHome.status, 200, "an owner must be able to enable home visits for an active service");
+    const profileAfterServiceUpdate = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(
+      (profileAfterServiceUpdate.body as { homeService: boolean }).homeService,
+      true,
+      "editing an active service to offer home visits must restore the salon home-service indicator",
+    );
+
+    const disableInSalonServiceHomeVisits = await request(baseUrl, ownerSession, `/salon/services/${inSalonService.id}`, "PATCH", {
+      category: "Test",
+      name: "Usluga sada samo u salonu",
+      description: "Vraćena usluga za proveru salonskog indikatora.",
+      durationMinutes: 30,
+      price: 900,
+      promoPrice: null,
+      imageUrl: "/test.jpg",
+      active: true,
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+      homeServiceMinimumOrder: null,
+    });
+    assert.equal(disableInSalonServiceHomeVisits.status, 200, "an owner must be able to remove home visits from a service");
+    const profileAfterRemovingHomeVisits = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(
+      (profileAfterRemovingHomeVisits.body as { homeService: boolean }).homeService,
+      false,
+      "removing home visits from the last active offering must clear the salon home-service indicator",
+    );
+
     const unavailableHomeBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
       salonId: salon!.id,
       serviceId: service!.id,

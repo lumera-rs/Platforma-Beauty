@@ -3255,7 +3255,12 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
   const [service] = await db.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
-  await db.update(salonsTable).set({ homeService: service!.homeServiceAvailable }).where(eq(salonsTable.id, salon.id));
+  const activeHomeServices = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(
+    eq(servicesTable.salonId, salon.id),
+    eq(servicesTable.active, true),
+    eq(servicesTable.homeServiceAvailable, true),
+  )).limit(1);
+  await db.update(salonsTable).set({ homeService: activeHomeServices.length > 0 }).where(eq(salonsTable.id, salon.id));
   res.status(201).json(CreateSalonServiceResponse.parse({ id: service!.id, category: service!.categoryName, name: service!.name, description: service!.description, durationMinutes: service!.durationMinutes, price: service!.price, promoPrice: service!.promoPrice, imageUrl: service!.imageUrl, active: service!.active, homeServiceAvailable: service!.homeServiceAvailable, homeServiceFee: service!.homeServiceFee, homeServiceMinimumOrder: service!.homeServiceMinimumOrder }));
 });
 

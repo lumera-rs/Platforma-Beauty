@@ -20,6 +20,7 @@ export default function OwnerServices() {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const activeHomeServiceCount = services?.filter((service) => service.active && service.homeServiceAvailable).length ?? 0;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -131,6 +132,13 @@ export default function OwnerServices() {
             </Dialog>
           </div>
 
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+            <House className="h-4 w-4 shrink-0 text-primary" />
+            {activeHomeServiceCount > 0
+              ? <span>Dolazak na adresu je dostupan za {activeHomeServiceCount} {activeHomeServiceCount === 1 ? "aktivnu uslugu" : "aktivne usluge"}.</span>
+              : <span>Dolazak na adresu nije dostupan ni za jednu aktivnu uslugu.</span>}
+          </div>
+
           <Card>
             <div className="divide-y">
               {isLoading ? (
@@ -147,11 +155,11 @@ export default function OwnerServices() {
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-bold text-lg">{service.name}</h4>
                         {!service.active && <Badge variant="secondary" className="text-xs">Neaktivno</Badge>}
-                        {service.homeServiceAvailable && <Badge className="text-xs gap-1"><House className="h-3 w-3" /> Na adresi</Badge>}
+                        {service.active && service.homeServiceAvailable && <Badge className="text-xs gap-1"><House className="h-3 w-3" /> Na adresi</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min</p>
                       <p className="font-semibold text-primary">{service.price} RSD</p>
-                      {service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Naknada za dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • minimum ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
+                      {service.active && service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Naknada za dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • minimum ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" className="shrink-0" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
