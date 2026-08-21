@@ -574,7 +574,7 @@ export default function SalonProfile() {
       </div>
 
       <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[calc(100%-2rem)] max-h-[85dvh] p-4 sm:max-w-lg sm:p-6">
           <DialogHeader>
             <DialogTitle>{reviewContext?.review ? "Izmenite recenziju" : "Podelite svoje iskustvo"}</DialogTitle>
             <DialogDescription>Recenziju mogu ostaviti samo klijenti sa završenim terminom u ovom salonu.</DialogDescription>
@@ -619,7 +619,7 @@ export default function SalonProfile() {
             {reviewContext?.review ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Obriši recenziju</Button>
+                  <Button className="w-full sm:w-auto" variant="destructive" disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Obriši recenziju</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -640,8 +640,8 @@ export default function SalonProfile() {
                 </AlertDialogContent>
               </AlertDialog>
             ) : null}
-            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Otkaži</Button>
-            <Button onClick={saveReview} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending || !reviewServiceName || !reviewText.trim()}>
+            <Button className="w-full sm:w-auto" variant="outline" onClick={() => setIsReviewDialogOpen(false)} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Otkaži</Button>
+            <Button className="w-full sm:w-auto" onClick={saveReview} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending || !reviewServiceName || !reviewText.trim()}>
               {upsertReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Sačuvaj recenziju
             </Button>

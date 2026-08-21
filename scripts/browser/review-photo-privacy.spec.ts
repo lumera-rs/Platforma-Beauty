@@ -45,6 +45,7 @@ async function createReviewFixture(): Promise<ReviewFixture> {
   }).returning();
   if (!customer) throw new Error("Review browser fixture could not create its customer.");
 
+  let salonId: string | undefined;
   try {
     const [salon] = await db.insert(salonsTable).values({
       ownerId: owner.id,
@@ -60,6 +61,7 @@ async function createReviewFixture(): Promise<ReviewFixture> {
       imageUrl: "/test-browser-review.jpg",
     }).returning();
     if (!salon) throw new Error("Review browser fixture could not create its salon.");
+    salonId = salon.id;
 
     const [service] = await db.insert(servicesTable).values({
       salonId: salon.id,
@@ -94,6 +96,7 @@ async function createReviewFixture(): Promise<ReviewFixture> {
       reviewText,
     };
   } catch (error) {
+    if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
     await db.delete(usersTable).where(eq(usersTable.id, customer.id));
     throw error;
   }
@@ -142,7 +145,8 @@ test("salon review falls back to reviewer initials when the public API omits an 
   await expect(privateReview.locator("img")).toHaveCount(0);
 });
 
-test("customer can publish and revise a review for a completed service", async ({ page }) => {
+test("customer can publish and revise a review for a completed service on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createReviewFixture();
   const initialReviewText = `Odličan tretman za browser proveru ${fixture.customerId.slice(0, 8)}`;
   const revisedReviewText = `Izmenjeno iskustvo za browser proveru ${fixture.customerId.slice(0, 8)}`;
