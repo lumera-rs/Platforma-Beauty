@@ -32,6 +32,7 @@ const salonBookingDate = "2099-10-25";
 const salonSeriesDate = "2099-10-26";
 const movedSalonSeriesDate = "2099-10-27";
 const employeeSeriesDate = "2099-10-28";
+const homeServiceBookingDate = "2099-10-29";
 const educationCourseDate = "2099-11-02";
 const updatedEducationCourseDate = "2099-11-03";
 
@@ -230,6 +231,16 @@ async function run(): Promise<void> {
       promoPrice: 800,
       imageUrl: "/test.jpg",
     }).returning();
+    await db.insert(servicesTable).values({
+      salonId: foreignSalon!.id,
+      categoryName: "Test",
+      name: "Mobilna HTTP usluga",
+      description: "Usluga za proveru filtriranja dostupnosti na adresi.",
+      durationMinutes: 60,
+      price: 1000,
+      imageUrl: "/test.jpg",
+      homeServiceAvailable: true,
+    });
     await db.insert(salonHoursTable).values([
       {
         salonId: salon!.id,
@@ -351,6 +362,121 @@ async function run(): Promise<void> {
     await once(server, "listening");
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const unavailableHomeBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: homeServiceBookingDate,
+      startTime: "10:00",
+      treatmentLocation: "home",
+      treatmentAddress: { line1: "Privatna 74", city: "Beograd" },
+    });
+    assert.equal(unavailableHomeBooking.status, 400, "a service without home availability must reject a home appointment");
+    assert.match(
+      (unavailableHomeBooking.body as { error: string }).error,
+      /nije dostupna na vašoj adresi/,
+      "the unavailable-home-service response must explain why the booking was rejected",
+    );
+
+    await db.update(usersTable).set({
+      phone: "+381611234529",
+      phoneNormalized: "+381611234529",
+    }).where(eq(usersTable.id, customer!.id));
+    await db.update(servicesTable).set({
+      homeServiceAvailable: true,
+      homeServiceFee: 250,
+      homeServiceMinimumOrder: 900,
+    }).where(eq(servicesTable.id, service!.id));
+
+    const belowMinimumHomeBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: homeServiceBookingDate,
+      startTime: "10:00",
+      treatmentLocation: "home",
+      treatmentAddress: { line1: "Privatna 74", city: "Beograd" },
+    });
+    assert.equal(belowMinimumHomeBooking.status, 400, "a home appointment below the service minimum must be rejected");
+    assert.match(
+      (belowMinimumHomeBooking.body as { error: string }).error,
+      /Minimalna vrednost usluge za dolazak je 900 RSD/,
+      "the home-service minimum must be enforced against the service price",
+    );
+
+    await db.update(servicesTable).set({ homeServiceMinimumOrder: 750 }).where(eq(servicesTable.id, service!.id));
+    const homeBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: homeServiceBookingDate,
+      startTime: "10:00",
+      treatmentLocation: "home",
+      treatmentAddress: {
+        line1: "Privatna 74",
+        city: "Beograd",
+        postalCode: "11000",
+        details: "Pozvoniti na interfon 12",
+      },
+    });
+    assert.equal(homeBooking.status, 201, "an eligible home appointment must be created");
+    const createdHomeAppointment = homeBooking.body as {
+      id: string;
+      status: string;
+      price: number;
+      treatmentLocation: string;
+      travelFee: number;
+      treatmentAddress: { line1: string; city: string; postalCode: string | null; details: string | null } | null;
+    };
+    assert.equal(createdHomeAppointment.status, "pending", "a home appointment must remain pending even when instant booking is enabled");
+    assert.equal(createdHomeAppointment.treatmentLocation, "home", "the appointment must preserve its home treatment location");
+    assert.equal(createdHomeAppointment.travelFee, 250, "the home-service fee must be stored separately from the service price");
+    assert.equal(createdHomeAppointment.price, 1050, "the appointment total must include the service price and home-service fee");
+    assert.deepEqual(
+      createdHomeAppointment.treatmentAddress,
+      { line1: "Privatna 74", city: "Beograd", postalCode: "11000", details: "Pozvoniti na interfon 12" },
+      "the customer creating a home appointment must receive its full address",
+    );
+
+    const customerHomeAppointments = await getRequest(baseUrl, customerSession, "/appointments");
+    assert.equal(customerHomeAppointments.status, 200, "a customer must be able to retrieve their home appointment");
+    const customerHomeAppointment = (customerHomeAppointments.body as Array<{ id: string; treatmentAddress: unknown }>).find(
+      (appointment) => appointment.id === createdHomeAppointment.id,
+    );
+    assert.deepEqual(
+      customerHomeAppointment?.treatmentAddress,
+      createdHomeAppointment.treatmentAddress,
+      "the customer must retain access to the full treatment address",
+    );
+
+    const ownerHomeAppointments = await getRequest(baseUrl, ownerSession, "/salon/appointments");
+    assert.equal(ownerHomeAppointments.status, 200, "the salon owner must be able to retrieve home appointments");
+    const ownerHomeAppointment = (ownerHomeAppointments.body as Array<{ id: string; treatmentAddress: unknown }>).find(
+      (appointment) => appointment.id === createdHomeAppointment.id,
+    );
+    assert.deepEqual(
+      ownerHomeAppointment?.treatmentAddress,
+      createdHomeAppointment.treatmentAddress,
+      "the salon owner must receive the full treatment address",
+    );
+
+    const employeePortal = await getRequest(baseUrl, employeeSession, "/employee/portal");
+    assert.equal(employeePortal.status, 200, "an employee must be able to retrieve their portal");
+    const employeeHomeAppointment = (employeePortal.body as { appointments: Array<Record<string, unknown>> }).appointments.find(
+      (appointment) => appointment.id === createdHomeAppointment.id,
+    );
+    assert.ok(employeeHomeAppointment, "the assigned employee portal must include the home appointment");
+    assert.ok(
+      !Object.hasOwn(employeeHomeAppointment, "treatmentAddress"),
+      "employees must not receive private treatment-address fields",
+    );
+    assert.ok(
+      !JSON.stringify(employeePortal.body).includes("Privatna 74"),
+      "employees must not receive the private treatment address anywhere in their portal response",
+    );
+    await db.update(servicesTable).set({
+      homeServiceAvailable: false,
+      homeServiceFee: 0,
+      homeServiceMinimumOrder: null,
+    }).where(eq(servicesTable.id, service!.id));
 
     const acceptsCardsSalons = await getPublicSalonCards(baseUrl, "acceptsCards=true");
     assert.ok(acceptsCardsSalons.every((item) => item.acceptsCards), "acceptsCards=true must only return card-accepting salons");

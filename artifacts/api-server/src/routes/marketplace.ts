@@ -1483,6 +1483,7 @@ function appointmentView(
   service: typeof servicesTable.$inferSelect,
   customer: Pick<typeof usersTable.$inferSelect, "firstName" | "lastName"> | Pick<typeof salonCustomersTable.$inferSelect, "firstName" | "lastName">,
   employee: typeof employeesTable.$inferSelect | undefined,
+  includeTreatmentAddress = false,
   rescheduledConfirmation: {
     sms: { status: typeof smsDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
     email: { status: typeof emailDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
@@ -1505,7 +1506,7 @@ function appointmentView(
     price: appointment.price,
     treatmentLocation: appointment.treatmentLocation as "salon" | "home",
     travelFee: appointment.travelFee,
-    treatmentAddress: appointment.treatmentLocation === "home" && appointment.treatmentAddressLine1 && appointment.treatmentAddressCity
+    treatmentAddress: includeTreatmentAddress && appointment.treatmentLocation === "home" && appointment.treatmentAddressLine1 && appointment.treatmentAddressCity
       ? { line1: appointment.treatmentAddressLine1, city: appointment.treatmentAddressCity, postalCode: appointment.treatmentAddressPostalCode, details: appointment.treatmentAddressDetails }
       : null,
     seriesId: appointment.seriesId,
@@ -1515,7 +1516,7 @@ function appointmentView(
   };
 }
 
-async function appointmentList(where?: ReturnType<typeof eq>) {
+async function appointmentList(where?: ReturnType<typeof eq>, includeTreatmentAddress = false) {
   const appointments = await db.select().from(appointmentsTable).where(where).orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime));
   if (!appointments.length) return [];
   const salonIds = [...new Set(appointments.map((item) => item.salonId))];
@@ -1553,6 +1554,7 @@ async function appointmentList(where?: ReturnType<typeof eq>) {
     services.find((service) => service.id === item.serviceId)!,
     customers.find((customer) => customer.id === item.customerId) ?? salonCustomers.find((customer) => customer.id === item.salonCustomerId) ?? { firstName: "Gost", lastName: "" },
     (employees as (typeof employeesTable.$inferSelect)[]).find((employee) => employee.id === item.employeeId),
+    includeTreatmentAddress,
     (() => {
       const sms = rescheduledSms.get(item.id);
       const email = rescheduledEmails.get(item.id);
@@ -2079,7 +2081,6 @@ router.get("/salons", async (req, res): Promise<void> => {
   const query = parsed.data;
   if (query.city) salons = salons.filter((item) => item.city.toLowerCase() === query.city!.toLowerCase());
   if (query.municipality) salons = salons.filter((item) => item.municipality.toLowerCase() === query.municipality!.toLowerCase());
-  if (query.homeService !== undefined) salons = salons.filter((item) => item.homeService === query.homeService);
   const allCards = await salonCards(salons);
   const allServices = salons.length
     ? await db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, salons.map((item) => item.id)), eq(servicesTable.active, true)))
@@ -2109,8 +2110,9 @@ router.get("/salons", async (req, res): Promise<void> => {
       && (query.acceptsCards === undefined || item.acceptsCards === query.acceptsCards)
       && (query.openSunday === undefined || item.openSunday === query.openSunday)
       && (query.instantBooking === undefined || item.instantBooking === query.instantBooking)
-    && (query.topSalon === undefined || item.topSalon === query.topSalon)
-    && (query.featured === undefined || item.featured === query.featured);
+      && (query.homeService === undefined || item.homeService === query.homeService)
+      && (query.topSalon === undefined || item.topSalon === query.topSalon)
+      && (query.featured === undefined || item.featured === query.featured);
   });
   const recentSalonBookingCounts = new Map<string, number>();
   if (query.sort === "most-booked-recently" && salons.length) {
@@ -2462,7 +2464,7 @@ router.get("/appointments", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = ListMyAppointmentsQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let appointments = await appointmentList(eq(appointmentsTable.customerId, user.id));
+  let appointments = await appointmentList(eq(appointmentsTable.customerId, user.id), true);
   if (parsed.data.status) appointments = appointments.filter((item) => item.status === parsed.data.status);
   if (parsed.data.scope === "upcoming") appointments = appointments.filter((item) => item.date >= new Date().toISOString().slice(0, 10));
   if (parsed.data.scope === "past") appointments = appointments.filter((item) => item.date < new Date().toISOString().slice(0, 10));
@@ -2515,7 +2517,7 @@ router.post("/appointments", async (req, res): Promise<void> => {
       : `LUMERA: zahtev za ${appointment.treatmentLocation === "home" ? "dolazak na adresu" : "termin"} u salonu ${salon.name} je primljen za ${calendarDate(appointment.date)} u ${appointment.startTime}. Salon će ga potvrditi.`,
   });
   await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
-  const response = appointmentView(appointment, salon, service, user, employee);
+  const response = appointmentView(appointment, salon, service, user, employee, true);
   CreateAppointmentResponse.parse(response);
   res.status(201).json(response);
 });
@@ -2569,7 +2571,7 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const { appointment: updated, employee } = result;
   const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
   await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
-  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee);
+  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true);
   UpdateAppointmentResponse.parse(response);
   res.json(response);
 });
@@ -2604,7 +2606,7 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
   const { appointment } = result;
   const [salon, service, employee] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1), appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([])]);
   await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
-  const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0]);
+  const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true);
   CancelAppointmentResponse.parse(response);
   res.json(response);
 });
@@ -2612,7 +2614,7 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
 router.get("/customer/dashboard", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const [appointments, bookingRecords, favorites] = await Promise.all([
-    appointmentList(eq(appointmentsTable.customerId, user.id)),
+    appointmentList(eq(appointmentsTable.customerId, user.id), true),
     db.select().from(appointmentsTable).where(eq(appointmentsTable.customerId, user.id)),
     db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id)),
   ]);
@@ -2817,7 +2819,7 @@ router.put("/customer/favorite-employees/:salonId", async (req, res): Promise<vo
 router.get("/salon/dashboard", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const [services, appointments, loyalty] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)), appointmentList(eq(appointmentsTable.salonId, salon.id)), db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1)]);
+  const [services, appointments, loyalty] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)), appointmentList(eq(appointmentsTable.salonId, salon.id), true), db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1)]);
   const loyaltyData = await loyaltyStatus(salon.id);
   const completed = appointments.filter((item) => item.status === "completed");
   res.json(GetSalonDashboardResponse.parse({ salon: card(salon, services), todayAppointments: appointments.slice(0, 5), revenueThisMonth: completed.reduce((sum, item) => sum + item.price, 0), bookingsThisMonth: appointments.length, newCustomers: new Set(appointments.map((item) => item.customerName)).size, rating: salon.rating / 10, revenueChange: 12, loyalty: loyaltyData }));
@@ -2900,7 +2902,7 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
   const parseQueryDate = (value: unknown) => typeof value === "string" ? new Date(`${value}T12:00:00.000Z`) : value;
   const parsed = ListSalonAppointmentsQueryParams.safeParse({ ...req.query, from: parseQueryDate(req.query.from), to: parseQueryDate(req.query.to) });
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let items = await appointmentList(eq(appointmentsTable.salonId, salon.id));
+  let items = await appointmentList(eq(appointmentsTable.salonId, salon.id), true);
   if (parsed.data.status) items = items.filter((item) => item.status === parsed.data.status);
   if (parsed.data.from) items = items.filter((item) => item.date >= calendarDate(parsed.data.from!));
   if (parsed.data.to) items = items.filter((item) => item.date <= calendarDate(parsed.data.to!));
@@ -3001,7 +3003,7 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
     type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
     text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment.startTime}.`,
   });
-  const response = appointmentView(appointment, salon, service, contact!, employee);
+  const response = appointmentView(appointment, salon, service, contact!, employee, true);
   CreateSalonAppointmentResponse.parse(response);
   res.status(201).json(response);
 });
@@ -3067,7 +3069,7 @@ router.post("/salon/appointment-series", async (req, res): Promise<void> => {
     });
     const employeeIds = [...new Set(created.appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []))];
     const employees = employeeIds.length ? await db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : [];
-    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId)));
+    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId), true));
     await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
     const response = { id: created.series.id, totalAppointments: created.appointments.length, appointments: views };
     CreateSalonAppointmentSeriesResponse.parse(response);
@@ -3166,7 +3168,7 @@ router.post("/salon/appointment-series/:seriesId/move", async (req, res): Promis
       await sendSeriesUpdates({ appointments: moved, contact, salon: access.salon, moveEventId });
       await runRescheduledConfirmationRetries();
     }
-    const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, moved.map((appointment) => appointment.id))));
+    const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, moved.map((appointment) => appointment.id))), true);
     const viewById = new Map(views.map((appointment) => [appointment.id, appointment]));
     const response = {
       id: series.id,
@@ -3234,7 +3236,7 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     return;
   }
   const { updated } = result;
-  const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id))))[0];
+  const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id)), true))[0];
   UpdateSalonAppointmentResponse.parse(view);
   res.json(view);
 });
