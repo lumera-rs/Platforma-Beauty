@@ -171,11 +171,11 @@ export default function Home() {
       </section>
 
       {/* Popular Categories / Services */}
-      <section className="py-20 bg-background border-b border-border/50">
+      <section className="py-8 md:py-12 bg-background border-b border-border/50">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-3 text-primary">Popularne usluge</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Popularne usluge</h2>
               <p className="text-muted-foreground text-lg">Ono što se najviše traži {sessionCity ? `u ${sessionCity}` : "ove nedelje"}</p>
             </div>
           </div>
@@ -226,50 +226,51 @@ export default function Home() {
       </section>
 
       {/* How it Works - Trust Section */}
-      <section className="py-24 bg-card">
+      <section className="py-8 md:py-12 bg-card">
         <div className="container mx-auto px-4">
-          <div className="text-center max-w-2xl mx-auto mb-16">
-            <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Kako LUMERA funkcioniše?</h2>
+          <div className="text-center max-w-2xl mx-auto mb-6">
+            <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Kako LUMERA funkcioniše?</h2>
             <p className="text-muted-foreground text-lg">Vaš put do savršenog tretmana u tri jednostavna koraka, bez stresa i pozivanja.</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8 md:gap-12 relative">
-            {/* Connecting line on desktop */}
-            <div className="hidden md:block absolute top-12 left-[15%] right-[15%] h-px bg-border/80" />
-
-            <div className="relative flex flex-col items-center text-center group">
-              <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500">
-                <Search className="w-8 h-8 text-primary" strokeWidth={1.5} />
+          <DiscoveryCarousel
+            ariaLabel="Kako LUMERA funkcioniše"
+            itemClassName="basis-[86%] sm:basis-[48%] md:basis-1/3"
+          >
+            <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105">
+                <Search className="h-7 w-7" strokeWidth={1.5} />
               </div>
-              <h3 className="text-xl font-serif font-bold mb-3">1. Pronađite</h3>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 01</p>
+              <h3 className="mb-3 text-xl font-serif font-bold">Pronađite</h3>
               <p className="text-muted-foreground">Istražite stotine proverenih salona. Filtrirajte po lokaciji, ocenama i uslugama koje vas zanimaju.</p>
-            </div>
-
-            <div className="relative flex flex-col items-center text-center group">
-              <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500 delay-75">
-                <CalendarDays className="w-8 h-8 text-primary" strokeWidth={1.5} />
+            </article>
+            <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105">
+                <CalendarDays className="h-7 w-7" strokeWidth={1.5} />
               </div>
-              <h3 className="text-xl font-serif font-bold mb-3">2. Rezervišite</h3>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 02</p>
+              <h3 className="mb-3 text-xl font-serif font-bold">Rezervišite</h3>
               <p className="text-muted-foreground">Izaberite slobodan termin koji vam odgovara i rezervišite online u samo nekoliko klikova, 24/7.</p>
-            </div>
-
-            <div className="relative flex flex-col items-center text-center group">
-              <div className="w-24 h-24 rounded-full bg-accent/10 flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500 delay-150">
-                <Sparkles className="w-8 h-8 text-accent" strokeWidth={1.5} />
+            </article>
+            <article className="group h-full rounded-2xl border border-accent/20 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-transform duration-300 group-hover:scale-105">
+                <Sparkles className="h-7 w-7" strokeWidth={1.5} />
               </div>
-              <h3 className="text-xl font-serif font-bold mb-3">3. Uživajte</h3>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent/70">Korak 03</p>
+              <h3 className="mb-3 text-xl font-serif font-bold">Uživajte</h3>
               <p className="text-muted-foreground">Pojavite se u salonu i uživajte u tretmanu. Podelite utiske i pomozite drugima u izboru.</p>
-            </div>
-          </div>
+            </article>
+          </DiscoveryCarousel>
         </div>
       </section>
 
       {/* Featured Salons (Top Salons) */}
-      <section className="py-24 bg-muted/40">
+      <section className="py-8 md:py-12 bg-muted/40">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Istaknuti saloni</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Istaknuti saloni</h2>
               <p className="text-muted-foreground text-lg">Najbolji i najpouzdaniji partneri platforme.</p>
             </div>
             <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
@@ -312,11 +313,11 @@ export default function Home() {
       </section>
 
       {/* Discounted Salons */}
-      <section className="py-24 bg-card border-y border-border/50">
+      <section className="py-8 md:py-12 bg-card border-y border-border/50">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-destructive">Specijalne ponude</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-destructive">Specijalne ponude</h2>
               <p className="text-muted-foreground text-lg">Uštedite uz akcije i popuste u odličnim salonima.</p>
             </div>
             <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-destructive/10 text-destructive" asChild>
@@ -353,11 +354,11 @@ export default function Home() {
       </section>
 
       {/* New Salons */}
-      <section className="py-24 bg-muted/40">
+      <section className="py-8 md:py-12 bg-muted/40">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Novi na platformi</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Novi na platformi</h2>
               <p className="text-muted-foreground text-lg">Budite među prvima koji će isprobati ove sjajne nove salone.</p>
             </div>
             <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
@@ -394,11 +395,11 @@ export default function Home() {
       </section>
 
       {/* Popular Salons */}
-      <section className="py-24 bg-card border-b border-border/50">
+      <section className="py-8 md:py-12 bg-card border-b border-border/50">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Najtraženiji saloni</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Najtraženiji saloni</h2>
               <p className="text-muted-foreground text-lg">Mesta gde se traži termin više.</p>
             </div>
             <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
@@ -456,11 +457,11 @@ export default function Home() {
       )}
 
       {/* Top Rated Salons */}
-      <section className="py-24 bg-card">
+      <section className="py-8 md:py-12 bg-card">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
+          <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Najbolje ocenjeni</h2>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-2 text-primary">Najbolje ocenjeni</h2>
               <p className="text-muted-foreground text-lg">Saloni kojima korisnici neprestano daju 5 zvezdica.</p>
             </div>
             <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
