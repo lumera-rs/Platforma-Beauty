@@ -4,11 +4,20 @@ const customer = {
   email: process.env.LUMERA_BOOKING_TEST_EMAIL ?? "kupac@lumera.local",
   password: process.env.LUMERA_BOOKING_TEST_PASSWORD ?? "LumeraDemo2026!",
 };
+const salonOwner = {
+  email: process.env.LUMERA_OWNER_TEST_EMAIL ?? "salon@lumera.local",
+  password: process.env.LUMERA_OWNER_TEST_PASSWORD ?? "LumeraDemo2026!",
+};
 const salonPath = process.env.LUMERA_BOOKING_TEST_SALON_PATH ?? "/saloni/lotos-rituals";
 
 async function signInAsCustomer(page: Page) {
   const response = await page.request.post("/api/auth/login", { data: customer });
   expect(response, "The browser test account must be able to sign in.").toBeOK();
+}
+
+async function signInAsSalonOwner(page: Page) {
+  const response = await page.request.post("/api/auth/login", { data: salonOwner });
+  expect(response, "The non-customer browser test account must be able to sign in.").toBeOK();
 }
 
 async function cleanUpAppointment(page: Page, appointmentId: string) {
@@ -21,7 +30,7 @@ async function cleanUpAppointment(page: Page, appointmentId: string) {
   expect(data.upcoming.some((appointment) => appointment.id === appointmentId)).toBeFalsy();
 }
 
-async function completeBooking(page: Page, widget: Locator) {
+async function reachBookingConfirmation(page: Page, widget: Locator) {
   const service = widget.locator('[role="button"]:has(h5)').first();
   await expect(service).toBeVisible();
   const serviceName = (await service.locator("h5").innerText()).trim();
@@ -47,6 +56,11 @@ async function completeBooking(page: Page, widget: Locator) {
   await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
   await expect(widget.getByText("Sistem bira slobodnog člana tima.")).toBeVisible();
 
+  return serviceName;
+}
+
+async function completeBooking(page: Page, widget: Locator) {
+  const serviceName = await reachBookingConfirmation(page, widget);
   const bookingRequestPromise = page.waitForRequest((request) =>
     request.method() === "POST"
     && new URL(request.url()).pathname === "/api/appointments",
@@ -68,6 +82,23 @@ async function completeBooking(page: Page, widget: Locator) {
   await expect(widget.getByText(serviceName, { exact: true })).toBeVisible();
 
   return appointment.id;
+}
+
+async function reachBookingConfirmationAsNonCustomer(page: Page, widget: Locator) {
+  const service = widget.locator('[role="button"]:has(h5)').first();
+  await expect(service).toBeVisible();
+  await service.click();
+
+  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
+  await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
+
+  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+  const firstSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
+  await expect(firstSlot).toBeVisible();
+  await firstSlot.click();
+
+  await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
+  await expect(widget.getByText("Pregled rezervacije")).toBeVisible();
 }
 
 test("customer can book from the mobile sticky trigger and the drawer remains accessible", async ({ page }) => {
@@ -111,6 +142,28 @@ test("customer can complete the desktop salon booking journey", async ({ page })
   }
 });
 
+test("a non-customer is guided to use a client account before an appointment request", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signInAsSalonOwner(page);
+  await page.goto(salonPath);
+
+  const widget = page.locator("#booking-widget");
+  await expect(widget).toBeVisible();
+  await reachBookingConfirmationAsNonCustomer(page, widget);
+
+  let appointmentPostCount = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/appointments") {
+      appointmentPostCount += 1;
+    }
+  });
+
+  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+  await expect(page.getByText("Za zakazivanje termina prijavite se klijentskim nalogom.")).toBeVisible();
+  await page.waitForTimeout(250);
+  expect(appointmentPostCount, "A non-customer must be stopped before the appointment API is called.").toBe(0);
+});
+
 test("returning to a booking draft preserves the any-employee choice", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await signInAsCustomer(page);
@@ -120,7 +173,6 @@ test("returning to a booking draft preserves the any-employee choice", async ({ 
   const service = widget.locator('[role="button"]:has(h5)').first();
   await service.click();
   await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
-
   const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());
     return request.method() === "GET"
