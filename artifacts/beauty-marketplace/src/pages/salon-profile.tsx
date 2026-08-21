@@ -29,7 +29,12 @@ export default function SalonProfile() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const { data: salon, isLoading } = useGetSalon(slug || "");
+  const { data: salon, isLoading, refetch: refetchSalon } = useGetSalon(slug || "", {
+    query: {
+      queryKey: getGetSalonQueryKey(slug || ""),
+      refetchOnMount: "always",
+    },
+  });
   const { data: userResp } = useGetCurrentUser();
   const user = userResp?.user;
   const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
@@ -63,9 +68,15 @@ export default function SalonProfile() {
   const createAppointment = useCreateAppointment();
   const upsertReview = useUpsertCustomerSalonReview();
   const deleteCustomerSalonReview = useDeleteCustomerSalonReview();
-  const { data: reviewContext, isLoading: isLoadingReviewContext } = useGetCustomerSalonReview(
+  const { data: reviewContext, isLoading: isLoadingReviewContext, refetch: refetchReviewContext } = useGetCustomerSalonReview(
     salonData?.id || "",
-    { query: { enabled: user?.role === "CUSTOMER" && !!salonData?.id, queryKey: getGetCustomerSalonReviewQueryKey(salonData?.id || "") } },
+    {
+      query: {
+        enabled: user?.role === "CUSTOMER" && !!salonData?.id,
+        queryKey: getGetCustomerSalonReviewQueryKey(salonData?.id || ""),
+        refetchOnMount: "always",
+      },
+    },
   );
   const reviewServiceOptions = useMemo(() => [...new Set([
     ...(reviewContext?.eligibleServices ?? []),
@@ -80,6 +91,17 @@ export default function SalonProfile() {
       .then((data) => setFavoriteEmployeeId(data?.employeeId ?? null))
       .catch(() => setFavoriteEmployeeId(null));
   }, [salonData?.id, user?.role]);
+
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      void refetchSalon();
+      if (user?.role === "CUSTOMER" && salonData?.id) void refetchReviewContext();
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [refetchReviewContext, refetchSalon, salonData?.id, user?.role]);
 
   useEffect(() => {
     if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) setSelectedEmployee(null);
