@@ -368,6 +368,23 @@ async function run(): Promise<void> {
 
     const afterRestore = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
     assert.equal(afterRestore.reviews.some((review) => review.id === moderatedReview.id), true, "The concurrently restored review must return to the public response.");
+
+    const [customerWithdrawal, moderatorDeletion] = await Promise.all([
+      request(baseUrl, `/customer/reviews/${salon.id}`, {
+        method: "DELETE",
+        cookie: session,
+      }),
+      request(baseUrl, `/admin/reviews/${moderatedReview.id}`, {
+        method: "DELETE",
+        cookie: moderatorSession,
+      }),
+    ]);
+    assert.equal(customerWithdrawal.status, 204, "A customer must be able to withdraw their review while a moderator removes another review.");
+    assert.equal(moderatorDeletion.status, 204, "A moderator must be able to permanently remove a review during a customer withdrawal.");
+
+    const afterConcurrentDeletes = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
+    assert.equal(afterConcurrentDeletes.reviewCount, 0, "Concurrent permanent review deletions must leave no public reviews.");
+    assert.equal(afterConcurrentDeletes.rating, 0, "Concurrent permanent review deletions must clear the public rating.");
     console.log("Review photo privacy and concurrent aggregate regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));

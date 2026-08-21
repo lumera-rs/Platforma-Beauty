@@ -5452,24 +5452,29 @@ router.delete("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
   const parsedParams = AdminDeleteReviewParams.safeParse(req.params);
   if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
   const { reviewId } = parsedParams.data;
-  const [existing] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
-  if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
-  await db.transaction(async (tx) => {
-    // Keep the cached public aggregate in step with moderation removals too.
+  const deleted = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
+    if (!existing) return false;
+
+    // Serialize moderator removals with customer review changes for the same
+    // salon, then derive the aggregate from the final visible review set.
     await tx.select({ id: salonsTable.id }).from(salonsTable)
       .where(eq(salonsTable.id, existing.salonId))
       .for("update");
-    await tx.delete(reviewsTable).where(eq(reviewsTable.id, reviewId));
+    const [review] = await tx.delete(reviewsTable).where(eq(reviewsTable.id, reviewId)).returning();
+    if (!review) return false;
     const visibleReviews = await tx.select().from(reviewsTable).where(and(
-      eq(reviewsTable.salonId, existing.salonId),
+      eq(reviewsTable.salonId, review.salonId),
       eq(reviewsTable.visible, true),
     ));
     const reviewCount = visibleReviews.length;
     const rating = reviewCount
       ? Math.round(visibleReviews.reduce((total, item) => total + item.rating, 0) / reviewCount * 10)
       : 0;
-    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, existing.salonId));
+    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, review.salonId));
+    return true;
   });
+  if (!deleted) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
   res.sendStatus(204);
 });
 
