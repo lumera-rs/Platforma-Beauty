@@ -205,7 +205,8 @@ test("customer can publish and revise a review for a completed service on mobile
   }
 });
 
-test("customer can cancel or confirm withdrawing a public review", async ({ page }) => {
+test("customer can cancel or confirm withdrawing a public review on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createReviewFixture();
 
   try {
@@ -223,6 +224,8 @@ test("customer can cancel or confirm withdrawing a public review", async ({ page
     await page.goto(fixture.salonPath);
     const reviews = page.locator("#reviews");
     await expect(reviews.getByText(fixture.reviewText)).toBeVisible();
+    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Izmeni recenziju" }).click();
     const editor = page.getByRole("dialog", { name: "Izmenite recenziju" });
@@ -247,6 +250,8 @@ test("customer can cancel or confirm withdrawing a public review", async ({ page
     expect((await deleteResponse).status(), "Confirming review deletion must remove the review.").toBe(204);
 
     await expect(reviews.getByText(fixture.reviewText)).toHaveCount(0);
+    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
     const leaveReview = page.getByRole("button", { name: "Ostavite recenziju" });
     await expect(leaveReview).toBeVisible();
     await leaveReview.click();
