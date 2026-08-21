@@ -385,6 +385,47 @@ async function run(): Promise<void> {
     const afterConcurrentDeletes = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
     assert.equal(afterConcurrentDeletes.reviewCount, 0, "Concurrent permanent review deletions must leave no public reviews.");
     assert.equal(afterConcurrentDeletes.rating, 0, "Concurrent permanent review deletions must clear the public rating.");
+
+    const [remainingReview] = await db.insert(reviewsTable).values({
+      salonId: salon.id,
+      customerId: otherCustomer.id,
+      serviceName: service.name,
+      rating: 3,
+      text: "Ova recenzija mora ostati nakon istovremenog brisanja iste recenzije.",
+      showProfilePhoto: false,
+    }).returning();
+    assert.ok(remainingReview, "The same-review deletion regression needs a separate visible review to retain.");
+
+    const targetReviewResponse = await request(baseUrl, `/customer/reviews/${salon.id}`, {
+      method: "PUT",
+      cookie: session,
+      body: {
+        serviceName: service.name,
+        rating: 5,
+        text: "Recenzija koju kupac povlači pre moderatorskog brisanja.",
+        showProfilePhoto: false,
+      },
+    });
+    assert.equal(targetReviewResponse.status, 200, "The customer must be able to recreate a review for the same-review deletion race.");
+    const targetReview = await targetReviewResponse.json() as { id: string };
+
+    const sameReviewCustomerDeletion = await request(baseUrl, `/customer/reviews/${salon.id}`, {
+      method: "DELETE",
+      cookie: session,
+    });
+    assert.equal(sameReviewCustomerDeletion.status, 204, "The customer withdrawal must remove the review before the moderator can remove the same review.");
+
+    const sameReviewModeratorDeletion = await request(baseUrl, `/admin/reviews/${targetReview.id}`, {
+      method: "DELETE",
+      cookie: moderatorSession,
+    });
+    assert.equal(sameReviewModeratorDeletion.status, 404, "The moderator must be told when the customer has already withdrawn the review.");
+    const moderationFailure = await sameReviewModeratorDeletion.json() as { error?: string };
+    assert.match(moderationFailure.error ?? "", /recenzija nije pronađena/i, "The moderator's not-found response must clearly explain that the review is no longer available.");
+
+    const afterSameReviewDelete = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
+    assert.equal(afterSameReviewDelete.reviewCount, 1, "Deleting the same review concurrently must keep the remaining visible review count.");
+    assert.equal(afterSameReviewDelete.rating, 3, "Deleting the same review concurrently must keep the remaining visible review rating.");
     console.log("Review photo privacy and concurrent aggregate regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
