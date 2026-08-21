@@ -7,9 +7,11 @@
     "hello": "tsx ./src/hello.ts",
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:booking-journey": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "catalog:",
     "tsx": "catalog:"
   }

@@ -3,4 +3,5 @@
 - [Social sign-in safety](social-signin-safety.md) — never infer a usable password from a stored hash on OAuth-created accounts.
 - [Integration configuration security](integration-configuration-security.md) — credentials in database settings require deployment-held encryption and approved provider origins.
 - [Employee booking integrity](employee-booking-integrity.md) — service assignments are owner-managed; booking allocation serializes each salon-day to prevent overlapping load-balanced bookings.
+- [Browser test runtime](browser-test-runtime.md) — Playwright Chromium needs the project’s Nix runtime libraries, not only a downloaded browser binary.
 - [Production API binding](production-api-binding.md) — artifact API servers must bind 0.0.0.0 so deployment health checks can detect their configured port.
