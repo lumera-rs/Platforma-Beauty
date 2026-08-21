@@ -407,6 +407,22 @@ export interface SalonProfileMediaUpdate {
   servesMen?: boolean;
 }
 
+export interface EmployeeDeactivationPreview {
+  employeeId: string;
+  employeeName: string;
+  /** @minimum 0 */
+  futureAppointmentCount: number;
+  hasLoginAccount: boolean;
+}
+
+export interface EmployeeDeactivationResult {
+  employeeId: string;
+  deactivated: boolean;
+  /** @minimum 0 */
+  futureAppointmentCount: number;
+  loginAccountDeactivated: boolean;
+}
+
 export interface ServiceTemplate {
   /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
   id: string;

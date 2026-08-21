@@ -131,6 +131,8 @@ export * from './emailMarketingCampaignStatus';
 export * from './employee';
 export * from './employeeAppointmentSeriesInput';
 export * from './employeeAppointmentSeriesInputGuest';
+export * from './employeeDeactivationPreview';
+export * from './employeeDeactivationResult';
 export * from './favoriteInput';
 export * from './favoriteResult';
 export * from './firstAvailableServiceSlot';

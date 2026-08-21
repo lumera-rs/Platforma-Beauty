@@ -2123,6 +2123,44 @@ export const ListSalonEmployeesResponse = zod.array(ListSalonEmployeesResponseIt
 
 
 /**
+ * @summary Get the impact of deactivating a salon employee
+ */
+export const GetSalonEmployeeDeactivationPreviewParams = zod.object({
+  "employeeId": zod.coerce.string()
+})
+
+export const getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMin = 0;
+
+
+
+export const GetSalonEmployeeDeactivationPreviewResponse = zod.object({
+  "employeeId": zod.string(),
+  "employeeName": zod.string(),
+  "futureAppointmentCount": zod.number().min(getSalonEmployeeDeactivationPreviewResponseFutureAppointmentCountMin),
+  "hasLoginAccount": zod.boolean()
+})
+
+
+/**
+ * @summary Soft-deactivate an employee and their login account
+ */
+export const DeactivateSalonEmployeeParams = zod.object({
+  "employeeId": zod.coerce.string()
+})
+
+export const deactivateSalonEmployeeResponseFutureAppointmentCountMin = 0;
+
+
+
+export const DeactivateSalonEmployeeResponse = zod.object({
+  "employeeId": zod.string(),
+  "deactivated": zod.boolean(),
+  "futureAppointmentCount": zod.number().min(deactivateSalonEmployeeResponseFutureAppointmentCountMin),
+  "loginAccountDeactivated": zod.boolean()
+})
+
+
+/**
  * @summary List B2B product category tree
  */
 export const ListProductCategoriesResponseItem = zod.object({

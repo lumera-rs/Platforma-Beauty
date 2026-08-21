@@ -93,6 +93,8 @@ import type {
   EmailMarketingCampaign,
   Employee,
   EmployeeAppointmentSeriesInput,
+  EmployeeDeactivationPreview,
+  EmployeeDeactivationResult,
   FavoriteInput,
   FavoriteResult,
   GetMarketplaceHomeDiscoveryParams,
@@ -3775,6 +3777,154 @@ export function useListSalonEmployees<TData = Awaited<ReturnType<typeof listSalo
 
 
 
+
+export const getGetSalonEmployeeDeactivationPreviewUrl = (employeeId: string,) => {
+
+
+
+
+  return `/api/salon/employees/${employeeId}/deactivation-preview`
+}
+
+/**
+ * @summary Get the impact of deactivating a salon employee
+ */
+export const getSalonEmployeeDeactivationPreview = async (employeeId: string, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeDeactivationPreview> => {
+
+  return customFetch<EmployeeDeactivationPreview>(getGetSalonEmployeeDeactivationPreviewUrl(employeeId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSalonEmployeeDeactivationPreviewQueryKey = (employeeId: string,) => {
+    return [
+    `/api/salon/employees/${employeeId}/deactivation-preview`
+    ] as const;
+    }
+
+
+export const getGetSalonEmployeeDeactivationPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>, TError = ErrorType<unknown>>(employeeId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSalonEmployeeDeactivationPreviewQueryKey(employeeId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>> = ({ signal }) => getSalonEmployeeDeactivationPreview(employeeId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: employeeId !== null && employeeId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSalonEmployeeDeactivationPreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>>
+export type GetSalonEmployeeDeactivationPreviewQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the impact of deactivating a salon employee
+ */
+
+export function useGetSalonEmployeeDeactivationPreview<TData = Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>, TError = ErrorType<unknown>>(
+ employeeId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonEmployeeDeactivationPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSalonEmployeeDeactivationPreviewQueryOptions(employeeId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeactivateSalonEmployeeUrl = (employeeId: string,) => {
+
+
+
+
+  return `/api/salon/employees/${employeeId}/deactivate`
+}
+
+/**
+ * @summary Soft-deactivate an employee and their login account
+ */
+export const deactivateSalonEmployee = async (employeeId: string, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeDeactivationResult> => {
+
+  return customFetch<EmployeeDeactivationResult>(getDeactivateSalonEmployeeUrl(employeeId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeactivateSalonEmployeeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateSalonEmployee>>, TError,{employeeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deactivateSalonEmployee>>, TError,{employeeId: string}, TContext> => {
+
+const mutationKey = ['deactivateSalonEmployee'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deactivateSalonEmployee>>, {employeeId: string}> = (props) => {
+          const {employeeId} = props ?? {};
+
+          return  deactivateSalonEmployee(employeeId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeactivateSalonEmployeeMutationResult = NonNullable<Awaited<ReturnType<typeof deactivateSalonEmployee>>>
+
+    export type DeactivateSalonEmployeeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Soft-deactivate an employee and their login account
+ */
+export const useDeactivateSalonEmployee = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deactivateSalonEmployee>>, TError,{employeeId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deactivateSalonEmployee>>,
+        TError,
+        {employeeId: string},
+        TContext
+      > => {
+      return useMutation(getDeactivateSalonEmployeeMutationOptions(options));
+    }
 
 export const getListProductCategoriesUrl = () => {
 

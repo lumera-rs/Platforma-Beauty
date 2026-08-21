@@ -63,8 +63,11 @@ export default function Login() {
         toast.success("Uspešna prijava", { description: "Dobrodošli nazad!" });
         setLocation(homeForRole(res.user.role));
       },
-      onError: (err) => {
-        toast.error("Greška", { description: "Neispravni podaci. Pokušajte ponovo." });
+      onError: (err: unknown) => {
+        const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
+          ?? (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+          ?? "Neispravni podaci. Pokušajte ponovo.";
+        toast.error("Greška", { description: message });
       }
     });
   };

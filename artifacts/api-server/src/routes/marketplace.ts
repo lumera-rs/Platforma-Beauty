@@ -39,6 +39,7 @@ import {
   reviewsTable,
   salonHoursTable,
   salonBrandsTable,
+  sessionsTable,
   shippingRulesTable,
   shoppingCartItemsTable,
   shoppingCartsTable,
@@ -2055,6 +2056,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, parsed.data.email.toLowerCase())).limit(1);
+  if (user?.role === "SALON_EMPLOYEE" && !user.active) {
+    res.status(403).json({ error: "Nalog zaposlenog je deaktiviran. Obratite se vlasniku salona." }); return;
+  }
   if (!user || !user.active || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
     res.status(401).json({ error: "E-mail ili lozinka nisu ispravni." }); return;
   }
@@ -3470,7 +3474,7 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
   const [employees, services, links, users] = await Promise.all([
-    db.select().from(employeesTable).where(eq(employeesTable.salonId, salon.id)),
+    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
     db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
     db.select().from(employeeServicesTable),
     db.select().from(usersTable).where(eq(usersTable.role, "SALON_EMPLOYEE")),
@@ -3484,6 +3488,46 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
       account: account ? { active: account.active, email: account.email, mustChangePassword: account.mustChangePassword } : null,
     };
   }));
+});
+
+async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect) {
+  const [future] = await db.select({ count: count() }).from(appointmentsTable).where(and(
+    eq(appointmentsTable.employeeId, employee.id),
+    gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
+    ne(appointmentsTable.status, "cancelled"),
+  ));
+  return {
+    employeeId: employee.id,
+    employeeName: employee.name,
+    futureAppointmentCount: Number(future?.count ?? 0),
+    hasLoginAccount: Boolean(employee.userId),
+  };
+}
+
+router.get("/salon/employees/:employeeId/deactivation-preview", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
+  if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  res.json(await employeeDeactivationPreview(employee));
+});
+
+router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
+  if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  if (!employee.active) { res.status(409).json({ error: "Zaposleni je već deaktiviran." }); return; }
+  const preview = await employeeDeactivationPreview(employee);
+  await db.transaction(async (tx) => {
+    await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
+    if (employee.userId) {
+      await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
+        eq(usersTable.id, employee.userId),
+        eq(usersTable.role, "SALON_EMPLOYEE"),
+      ));
+      await tx.delete(sessionsTable).where(eq(sessionsTable.userId, employee.userId));
+    }
+  });
+  res.json({ employeeId: employee.id, deactivated: true, futureAppointmentCount: preview.futureAppointmentCount, loginAccountDeactivated: Boolean(employee.userId) });
 });
 
 router.post("/salon/employees", async (req, res): Promise<void> => {
@@ -3508,6 +3552,7 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  if (!employee.active) { res.status(409).json({ error: "Deaktivirani zaposleni ne može dobiti pristupni nalog." }); return; }
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : null;
   if (serviceIds) {
     const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];

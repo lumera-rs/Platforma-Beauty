@@ -848,6 +848,38 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Employee" }
+  /salon/employees/{employeeId}/deactivation-preview:
+    get:
+      operationId: getSalonEmployeeDeactivationPreview
+      tags: [salon-management]
+      summary: Get the impact of deactivating a salon employee
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Employee deactivation impact
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeDeactivationPreview" }
+  /salon/employees/{employeeId}/deactivate:
+    post:
+      operationId: deactivateSalonEmployee
+      tags: [salon-management]
+      summary: Soft-deactivate an employee and their login account
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Employee deactivated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeDeactivationResult" }
   /shop/categories:
     get:
       operationId: listProductCategories
@@ -2765,6 +2797,22 @@ components:
           type: array
           items: { type: string }
       required: [id, name, role, bio, avatarUrl, specialties, serviceIds, serviceNames]
+    EmployeeDeactivationPreview:
+      type: object
+      properties:
+        employeeId: { type: string }
+        employeeName: { type: string }
+        futureAppointmentCount: { type: number, minimum: 0 }
+        hasLoginAccount: { type: boolean }
+      required: [employeeId, employeeName, futureAppointmentCount, hasLoginAccount]
+    EmployeeDeactivationResult:
+      type: object
+      properties:
+        employeeId: { type: string }
+        deactivated: { type: boolean }
+        futureAppointmentCount: { type: number, minimum: 0 }
+        loginAccountDeactivated: { type: boolean }
+      required: [employeeId, deactivated, futureAppointmentCount, loginAccountDeactivated]
     Service:
       type: object
       properties:
