@@ -11,6 +11,7 @@ import {
   employeesTable,
   pool,
   salonCustomersTable,
+  salonHoursTable,
   salonsTable,
   servicesTable,
   usersTable,
@@ -45,6 +46,10 @@ type PublicSalonCard = {
   instantBooking: boolean;
   homeService: boolean;
   servesMen: boolean;
+  hasDiscount: boolean;
+  openSunday: boolean;
+  featured: boolean;
+  topSalon: boolean;
 };
 
 function fixtureEmail(role: string) {
@@ -93,6 +98,32 @@ async function getPublicSalonCards(baseUrl: string, query: string): Promise<Publ
   const response = await fetch(`${baseUrl}/api/salons?${query}`);
   assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
   return await response.json() as PublicSalonCard[];
+}
+
+async function assertPublicSalonBooleanFilter(
+  baseUrl: string,
+  queryKey: "discountsOnly" | "openSunday" | "featured" | "topSalon",
+  responseKey: "hasDiscount" | "openSunday" | "featured" | "topSalon",
+  positiveFixtureId: string,
+  negativeFixtureId: string,
+): Promise<void> {
+  for (const expectedValue of [true, false]) {
+    const salons = await getPublicSalonCards(baseUrl, `${queryKey}=${expectedValue}`);
+    assert.ok(
+      salons.every((item) => item[responseKey] === expectedValue),
+      `${queryKey}=${expectedValue} must only return salons with the requested saved value`,
+    );
+    const matchingFixtureId = expectedValue ? positiveFixtureId : negativeFixtureId;
+    const excludedFixtureId = expectedValue ? negativeFixtureId : positiveFixtureId;
+    assert.ok(
+      salons.some((item) => item.id === matchingFixtureId),
+      `${queryKey}=${expectedValue} must include its matching isolated fixture salon`,
+    );
+    assert.ok(
+      !salons.some((item) => item.id === excludedFixtureId),
+      `${queryKey}=${expectedValue} must exclude its opposite isolated fixture salon`,
+    );
+  }
 }
 
 async function run(): Promise<void> {
@@ -164,6 +195,8 @@ async function run(): Promise<void> {
         instantBooking: true,
         homeService: false,
         servesMen: true,
+        featured: true,
+        topSalon: true,
       },
       {
         ownerId: owner!.id,
@@ -181,6 +214,8 @@ async function run(): Promise<void> {
         instantBooking: false,
         homeService: true,
         servesMen: false,
+        featured: false,
+        topSalon: false,
       },
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
@@ -192,8 +227,25 @@ async function run(): Promise<void> {
       description: "Usluga za proveru HTTP tokova termina.",
       durationMinutes: 60,
       price: 1000,
+      promoPrice: 800,
       imageUrl: "/test.jpg",
     }).returning();
+    await db.insert(salonHoursTable).values([
+      {
+        salonId: salon!.id,
+        weekday: 7,
+        openTime: "10:00",
+        closeTime: "18:00",
+        closed: false,
+      },
+      {
+        salonId: foreignSalon!.id,
+        weekday: 7,
+        openTime: "10:00",
+        closeTime: "18:00",
+        closed: true,
+      },
+    ]);
     const [employee, foreignEmployee] = await db.insert(employeesTable).values([
       {
         salonId: salon!.id,
@@ -335,6 +387,11 @@ async function run(): Promise<void> {
     assert.ok(menSalons.some((item) => item.id === seededMenSalon!.id), "gender=men must include a salon with seeded men's services");
     assert.ok(menSalons.some((item) => item.id === salon!.id), "gender=men must include the men-serving fixture salon");
     assert.ok(!menSalons.some((item) => item.id === foreignSalon!.id), "gender=men must exclude the salon not marked as serving men");
+
+    await assertPublicSalonBooleanFilter(baseUrl, "discountsOnly", "hasDiscount", salon!.id, foreignSalon!.id);
+    await assertPublicSalonBooleanFilter(baseUrl, "openSunday", "openSunday", salon!.id, foreignSalon!.id);
+    await assertPublicSalonBooleanFilter(baseUrl, "featured", "featured", salon!.id, foreignSalon!.id);
+    await assertPublicSalonBooleanFilter(baseUrl, "topSalon", "topSalon", salon!.id, foreignSalon!.id);
 
     const availability = await fetch(
       `${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${employeeBookingDate}&employeeId=${employee!.id}`,
