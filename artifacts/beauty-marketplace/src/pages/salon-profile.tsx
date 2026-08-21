@@ -23,7 +23,7 @@ import {
   type FirstAvailableServiceSlot
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
-import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, Loader2, Heart, ShieldCheck, Flame } from "lucide-react";
+import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
@@ -91,6 +91,7 @@ export default function SalonProfile() {
   const [showProfilePhoto, setShowProfilePhoto] = useState(false);
   const restoredSelection = useRef<string | null>(null);
   const [activeSection, setActiveSection] = useState("services");
+  const [expandedServiceId, setExpandedServiceId] = useState<string | null>(null);
   
   const [quickBookTarget, setQuickBookTarget] = useState<{
     serviceId: string;
@@ -170,6 +171,11 @@ export default function SalonProfile() {
       return acc;
     }, {} as Record<string, typeof salonData.services[0][]>);
   }, [salonData?.services]);
+
+  const popularServiceIds = useMemo(
+    () => new Set(salonData?.topServices.map((service) => service.id) ?? []),
+    [salonData?.topServices],
+  );
 
   const nearbySalons = useMemo(() => {
     const list = Array.isArray(nearbySalonsResponse) 
@@ -561,18 +567,6 @@ export default function SalonProfile() {
                     </div>
                     <span>{salonData.address}, {salonData.city}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-foreground font-medium text-lg">
-                    <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center shrink-0 border border-primary/10">
-                      <Phone className="w-5 h-5 text-primary" />
-                    </div>
-                    <span>{salonData.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-foreground font-medium text-lg">
-                    <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center shrink-0 border border-primary/10">
-                      <Mail className="w-5 h-5 text-primary" />
-                    </div>
-                    <span>{salonData.email}</span>
-                  </div>
                 </div>
              </div>
           </div>
@@ -673,7 +667,7 @@ export default function SalonProfile() {
                 </button>
               ))}
             </div>
-            <div className="grid gap-8 lg:grid-cols-[190px_minmax(0,1fr)]">
+            <div className="grid items-start gap-8 lg:grid-cols-[190px_minmax(0,680px)]">
               <aside className="hidden lg:block">
                 <div className="sticky top-28 rounded-2xl border border-border/60 bg-card p-3 shadow-sm">
                   <p className="px-3 pb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Kategorije</p>
@@ -686,68 +680,82 @@ export default function SalonProfile() {
                   </div>
                 </div>
               </aside>
-              <div className="space-y-12">
+              <div className="w-full max-w-[680px] space-y-10">
               {Object.entries(servicesByCategory).map(([category, services]) => (
-                <div id={serviceCategoryAnchor(category)} key={category} className="scroll-mt-36 bg-card p-6 md:p-8 rounded-3xl border border-border/50 shadow-sm">
-                  <h3 className="text-2xl font-serif font-bold mb-6 text-foreground">{category}</h3>
-                  <div className="space-y-4">
+                <div id={serviceCategoryAnchor(category)} key={category} className="scroll-mt-36">
+                  <div className="mb-1 flex items-baseline justify-between border-b border-border/70 pb-4">
+                    <h3 className="text-2xl font-serif font-bold text-foreground">{category}</h3>
+                    <span className="text-sm text-muted-foreground">{services.length} {services.length === 1 ? "usluga" : "usluge"}</span>
+                  </div>
+                  <div className="divide-y divide-border/70">
                     {services.map(service => {
                       const quickBookSlot = firstAvailableResponse?.services?.find(s => s.serviceId === service.id);
+                      const isExpanded = expandedServiceId === service.id;
+                      const promotionalPrice = service.promoPrice ?? null;
+                      const hasPromotion = promotionalPrice !== null && promotionalPrice < service.price;
                       return (
-                        <div 
+                        <div
                           key={service.id} 
-                          className={`p-5 md:p-6 rounded-2xl border transition-all cursor-pointer flex flex-col ${selectedService === service.id ? 'border-primary ring-2 ring-primary/20 shadow-md bg-primary/5' : 'border-border/60 hover:border-primary/40 hover:bg-muted/30 bg-background'}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={selectedService === service.id}
+                          className={`w-full px-1 py-5 text-left transition-colors sm:px-2 ${selectedService === service.id ? 'bg-primary/5' : 'hover:bg-muted/45'}`}
                           onClick={() => handleSelectService(service.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleSelectService(service.id);
+                            }
+                          }}
                         >
-                          <div className="flex justify-between items-start gap-4">
-                            <div className="flex-1">
-                              <h4 className="font-bold text-xl leading-tight text-foreground">{service.name}</h4>
-                              {service.description && <p className="text-muted-foreground mt-2 leading-relaxed max-w-3xl">{service.description}</p>}
-                              <div className="flex flex-wrap items-center gap-4 mt-4 text-sm font-medium">
-                                <span className="flex items-center gap-1.5 text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-lg"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
-                                <span className="text-foreground text-lg">
-                                  {service.promoPrice ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="line-through text-muted-foreground text-sm font-normal">{service.price} RSD</span>
-                                      <span className="text-primary font-bold">{service.promoPrice} RSD</span>
-                                    </div>
-                                  ) : (
-                                    <span className="font-bold">{service.price} RSD</span>
-                                  )}
-                                </span>
+                          <div className="flex items-start justify-between gap-5">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <h4 className="font-semibold leading-snug text-foreground">{service.name}</h4>
+                                {popularServiceIds.has(service.id) && <Badge variant="secondary" className="h-5 rounded-full bg-primary/10 px-2 text-[10px] font-bold text-primary">Popularno</Badge>}
+                                {service.description && (
+                                  <button
+                                    type="button"
+                                    className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                                    onClick={(event) => { event.stopPropagation(); setExpandedServiceId(isExpanded ? null : service.id); }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setExpandedServiceId(isExpanded ? null : service.id);
+                                      }
+                                    }}
+                                  >
+                                    {isExpanded ? "Sakrij" : "Detaljnije"}
+                                  </button>
+                                )}
                               </div>
-                              {service.tags?.length ? (
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                  {service.tags.map((tag) => (
-                                    <Badge key={tag} variant="secondary" className="text-[10px] uppercase font-bold tracking-wider bg-background border-border">{tag}</Badge>
-                                  ))}
-                                </div>
-                              ) : null}
-                              {service.packageTreatments ? (
-                                <p className="mt-3 text-xs font-bold text-primary bg-primary/10 inline-flex items-center px-3 py-1.5 rounded-lg">Paket od {service.packageTreatments} tretmana</p>
-                              ) : null}
+                              <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground"><Clock className="h-3.5 w-3.5" />{service.durationMinutes} min</p>
+                              {isExpanded && service.description && <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">{service.description}</p>}
+                              {service.packageTreatments ? <p className="mt-2 text-xs font-semibold text-primary">Paket od {service.packageTreatments} tretmana</p> : null}
                             </div>
-                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors mt-1 ${selectedService === service.id ? 'border-primary bg-primary' : 'border-muted-foreground/30 bg-background'}`}>
-                              {selectedService === service.id && <Check className="w-5 h-5 text-primary-foreground" />}
+                            <div className="shrink-0 pt-0.5 text-right">
+                              {hasPromotion && <p className="text-xs text-muted-foreground line-through">{service.price} RSD</p>}
+                              <p className={`text-lg font-bold leading-tight ${hasPromotion ? "text-primary" : "text-foreground"}`}>{hasPromotion && promotionalPrice !== null ? promotionalPrice : service.price} RSD</p>
                             </div>
                           </div>
-                          
                           {quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
-                            <div className="mt-6 pt-5 border-t border-border/60 flex flex-wrap items-center justify-between gap-4">
-                              <div>
-                                <span className="text-muted-foreground text-xs uppercase tracking-wider font-bold block mb-1">Prvi slobodan termin</span>
-                                <p className="font-bold text-foreground text-base">
-                                  {format(parseISO(quickBookSlot.date), 'dd.MM.')} u <span className="text-primary">{quickBookSlot.startTime}</span>
-                                  {quickBookSlot.employeeName ? <span className="text-muted-foreground font-medium"> kod {quickBookSlot.employeeName.split(' ')[0]}</span> : ''}
-                                </p>
-                              </div>
-                              <Button 
-                                size="sm" 
-                                onClick={(e) => { e.stopPropagation(); handleQuickBook(service.id, quickBookSlot); }}
-                                className="rounded-xl shadow-md font-bold whitespace-nowrap h-10 px-6"
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs">
+                              <span className="text-muted-foreground">Prvi slobodan: <span className="font-semibold text-foreground">{format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}</span></span>
+                              <button
+                                type="button"
+                                className="font-semibold text-primary underline-offset-4 hover:underline"
+                                onClick={(event) => { event.stopPropagation(); handleQuickBook(service.id, quickBookSlot); }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleQuickBook(service.id, quickBookSlot);
+                                  }
+                                }}
                               >
-                                Brzo zakazivanje
-                              </Button>
+                                Brzo zakaži
+                              </button>
                             </div>
                           )}
                         </div>
