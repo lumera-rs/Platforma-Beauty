@@ -584,13 +584,13 @@ export function MobileBookingTrigger({ salon, selectedService, selectedSlot, onO
 export function MobileBookingDrawer({ isOpen, onClose, children }: { isOpen: boolean, onClose: () => void, children: React.ReactNode }) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="bottom" className="h-[90dvh] rounded-t-3xl border-0 p-0 flex flex-col overflow-hidden [&>button]:right-4 [&>button]:top-4 [&>button]:z-20">
+      <SheetContent side="bottom" className="flex h-[90dvh] min-h-0 flex-col overflow-hidden rounded-t-3xl border-0 p-0 [&>button]:right-4 [&>button]:top-4 [&>button]:z-20">
         <SheetTitle className="sr-only">Zakažite termin</SheetTitle>
         <SheetDescription className="sr-only">Izaberite uslugu, zaposlenog i slobodan termin.</SheetDescription>
         <div className="w-full flex justify-center py-3 bg-background shrink-0" aria-hidden="true">
           <div className="w-12 h-1.5 bg-muted rounded-full" />
         </div>
-        <div className="flex-1 overflow-hidden relative">
+        <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {children}
         </div>
       </SheetContent>

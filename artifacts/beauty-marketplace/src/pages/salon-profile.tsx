@@ -1099,7 +1099,7 @@ export default function SalonProfile() {
               hasInteractedWithEmployee={hasInteractedWithEmployee}
               setHasInteractedWithEmployee={setHasInteractedWithEmployee}
               onCloseMobile={() => setIsMobileDrawerOpen(false)}
-              className="h-full border-0 rounded-none shadow-none"
+              className="h-auto min-h-full border-0 rounded-none shadow-none"
             />
       </MobileBookingDrawer>
       <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
