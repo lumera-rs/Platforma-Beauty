@@ -133,6 +133,8 @@ import {
   GetAuthSignInMethodsResponse,
   GetCurrentUserResponse,
   GetCustomerDashboardResponse,
+  GetCustomerSalonReviewParams,
+  GetCustomerSalonReviewResponse,
   GetLoyaltyStatusResponse,
   GetPlatformTrustStatsResponse,
   GetSalonAvailabilityParams,
@@ -203,6 +205,9 @@ import {
   PublishEducationCourseParams,
   ToggleFavoriteBody,
   ToggleFavoriteResponse,
+  UpsertCustomerSalonReviewBody,
+  UpsertCustomerSalonReviewParams,
+  UpsertCustomerSalonReviewResponse,
   UpdateEducationCourseBody,
   UpdateEducationCourseParams,
   UpdateEducationCourseResponse,
@@ -2081,8 +2086,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       return {
         id: item.id,
         authorName: `${reviewer?.firstName ?? "Gost"} ${reviewer?.lastName ?? ""}`.trim(),
-        // Public reviews deliberately use initials until reviewers can opt in to photo visibility.
-        avatarUrl: null,
+        avatarUrl: item.showProfilePhoto ? reviewer?.avatarUrl ?? null : null,
         verifiedBooking: !!reviewedService && completedAppointmentKeys.has(`${item.customerId}:${reviewedService.id}`),
         rating: item.rating,
         text: item.text,
@@ -2332,6 +2336,97 @@ router.post("/customer/favorites", async (req, res): Promise<void> => {
   if (favorite) await db.delete(favoritesTable).where(eq(favoritesTable.id, favorite.id));
   else await db.insert(favoritesTable).values({ userId: user.id, salonId: parsed.data.salonId });
   res.json(ToggleFavoriteResponse.parse({ salonId: parsed.data.salonId, favorited: !favorite }));
+});
+
+async function customerReviewContext(customerId: string, salonId: string) {
+  const [completedAppointments, existingReview] = await Promise.all([
+    db.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.customerId, customerId),
+      eq(appointmentsTable.salonId, salonId),
+      eq(appointmentsTable.status, "completed"),
+    )),
+    db.select().from(reviewsTable).where(and(
+      eq(reviewsTable.customerId, customerId),
+      eq(reviewsTable.salonId, salonId),
+    )).orderBy(desc(reviewsTable.createdAt)).limit(1),
+  ]);
+  const completedServiceIds = [...new Set(completedAppointments.map((appointment) => appointment.serviceId))];
+  const completedServices = completedServiceIds.length
+    ? await db.select().from(servicesTable).where(inArray(servicesTable.id, completedServiceIds))
+    : [];
+  return {
+    review: existingReview[0] ?? null,
+    eligibleServices: [...new Set(completedServices.map((service) => service.name))],
+  };
+}
+
+function customerReviewView(review: typeof reviewsTable.$inferSelect) {
+  return {
+    id: review.id,
+    salonId: review.salonId,
+    serviceName: review.serviceName,
+    rating: review.rating,
+    text: review.text,
+    showProfilePhoto: review.showProfilePhoto,
+  };
+}
+
+router.get("/customer/reviews/:salonId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const parsed = GetCustomerSalonReviewParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.id, parsed.data.salonId)).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+  const context = await customerReviewContext(user.id, salon.id);
+  res.json(GetCustomerSalonReviewResponse.parse({
+    review: context.review ? customerReviewView(context.review) : null,
+    eligibleServices: context.eligibleServices,
+  }));
+});
+
+router.put("/customer/reviews/:salonId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const [params, body] = [UpsertCustomerSalonReviewParams.safeParse(req.params), UpsertCustomerSalonReviewBody.safeParse(req.body)];
+  if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za recenziju nisu ispravni." }); return; }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.id, params.data.salonId)).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+  const context = await customerReviewContext(user.id, salon.id);
+  const keepsExistingService = context.review?.serviceName === body.data.serviceName;
+  if (!keepsExistingService && !context.eligibleServices.includes(body.data.serviceName)) {
+    res.status(400).json({ error: "Recenziju možete ostaviti samo za završenu uslugu u ovom salonu." });
+    return;
+  }
+  const reviewInput = {
+    serviceName: body.data.serviceName,
+    rating: body.data.rating,
+    text: body.data.text.trim(),
+    showProfilePhoto: body.data.showProfilePhoto,
+  };
+  const saved = await db.transaction(async (tx) => {
+    // Serializing writes per salon keeps the stored public aggregate in sync
+    // when several customers submit reviews at the same time.
+    await tx.select({ id: salonsTable.id }).from(salonsTable)
+      .where(eq(salonsTable.id, salon.id))
+      .for("update");
+    const [review] = await tx.insert(reviewsTable)
+      .values({ salonId: salon.id, customerId: user.id, ...reviewInput })
+      .onConflictDoUpdate({
+        target: [reviewsTable.customerId, reviewsTable.salonId],
+        set: reviewInput,
+      })
+      .returning();
+    const visibleReviews = await tx.select().from(reviewsTable).where(and(
+      eq(reviewsTable.salonId, salon.id),
+      eq(reviewsTable.visible, true),
+    ));
+    const reviewCount = visibleReviews.length;
+    const rating = reviewCount
+      ? Math.round(visibleReviews.reduce((total, item) => total + item.rating, 0) / reviewCount * 10)
+      : 0;
+    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, salon.id));
+    return review!;
+  });
+  res.json(UpsertCustomerSalonReviewResponse.parse(customerReviewView(saved!)));
 });
 
 router.get("/customer/favorite-employees/:salonId", async (req, res): Promise<void> => {

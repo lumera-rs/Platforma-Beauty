@@ -5,3 +5,4 @@
 - [Employee booking integrity](employee-booking-integrity.md) — service assignments are owner-managed; booking allocation serializes each salon-day to prevent overlapping load-balanced bookings.
 - [Browser test runtime](browser-test-runtime.md) — Playwright Chromium needs the project’s Nix runtime libraries, not only a downloaded browser binary.
 - [Production API binding](production-api-binding.md) — artifact API servers must bind 0.0.0.0 so deployment health checks can detect their configured port.
+- [Review photo privacy](review-photo-privacy.md) — review avatars stay private by default and reviewers must retain a way to revoke public-photo consent.

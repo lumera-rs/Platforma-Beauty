@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, getGetSalonAvailabilityQueryKey } from "@workspace/api-client-react";
+import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, useGetCustomerSalonReview, useUpsertCustomerSalonReview, getGetSalonAvailabilityQueryKey, getGetSalonQueryKey, getGetCustomerSalonReviewQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, Loader2, Heart, ShieldCheck, Flame, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -14,12 +14,19 @@ import { SimpleMap } from "@/components/simple-map";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
+import { useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SalonProfile() {
   const { slug } = useParams();
   const [location, setLocation] = useLocation();
   const search = useSearch();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const { data: salon, isLoading } = useGetSalon(slug || "");
   const { data: userResp } = useGetCurrentUser();
@@ -37,6 +44,11 @@ export default function SalonProfile() {
   const [hasInteractedWithEmployee, setHasInteractedWithEmployee] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewServiceName, setReviewServiceName] = useState("");
+  const [showProfilePhoto, setShowProfilePhoto] = useState(false);
   const restoredSelection = useRef<string | null>(null);
   
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -48,6 +60,15 @@ export default function SalonProfile() {
   );
 
   const createAppointment = useCreateAppointment();
+  const upsertReview = useUpsertCustomerSalonReview();
+  const { data: reviewContext, isLoading: isLoadingReviewContext } = useGetCustomerSalonReview(
+    salonData?.id || "",
+    { query: { enabled: user?.role === "CUSTOMER" && !!salonData?.id, queryKey: getGetCustomerSalonReviewQueryKey(salonData?.id || "") } },
+  );
+  const reviewServiceOptions = useMemo(() => [...new Set([
+    ...(reviewContext?.eligibleServices ?? []),
+    ...(reviewContext?.review ? [reviewContext.review.serviceName] : []),
+  ])], [reviewContext]);
   const eligibleStaff = useMemo(() => selectedService ? salonData?.staff.filter((employee) => employee.serviceIds.includes(selectedService)) ?? [] : salonData?.staff ?? [], [salonData?.staff, selectedService]);
 
   useEffect(() => {
@@ -152,6 +173,36 @@ export default function SalonProfile() {
         document.getElementById('booking-widget')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     }
+  };
+
+  const openReviewDialog = () => {
+    const review = reviewContext?.review;
+    const selectedService = review?.serviceName ?? reviewContext?.eligibleServices[0] ?? "";
+    setReviewRating(review?.rating ?? 5);
+    setReviewText(review?.text ?? "");
+    setReviewServiceName(selectedService);
+    setShowProfilePhoto(review?.showProfilePhoto ?? false);
+    setIsReviewDialogOpen(true);
+  };
+
+  const saveReview = () => {
+    if (!salonData || !reviewServiceName || !reviewText.trim()) return;
+    upsertReview.mutate({
+      salonId: salonData.id,
+      data: { serviceName: reviewServiceName, rating: reviewRating, text: reviewText.trim(), showProfilePhoto },
+    }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetSalonQueryKey(salonData.slug) });
+        queryClient.invalidateQueries({ queryKey: getGetCustomerSalonReviewQueryKey(salonData.id) });
+        setIsReviewDialogOpen(false);
+        toast.success(reviewContext?.review ? "Recenzija je izmenjena." : "Hvala na recenziji!");
+      },
+      onError: (error: unknown) => {
+        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+          ?? "Recenzija nije sačuvana. Pokušajte ponovo.";
+        toast.error("Promena nije sačuvana", { description: message });
+      },
+    });
   };
 
   const mediaItems: MediaItem[] = useMemo(() => {
@@ -391,10 +442,18 @@ export default function SalonProfile() {
           </section>
 
           <section id="reviews">
-            <h2 className="text-2xl font-serif font-bold mb-6 flex items-center gap-2">
-              <span className="w-8 h-px bg-primary inline-block"></span>
-              Recenzije
-            </h2>
+             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+               <h2 className="text-2xl font-serif font-bold flex items-center gap-2">
+                 <span className="w-8 h-px bg-primary inline-block"></span>
+                 Recenzije
+               </h2>
+               {user?.role === "CUSTOMER" && !isLoadingReviewContext && (reviewContext?.review || reviewContext?.eligibleServices.length) ? (
+                 <Button variant={reviewContext.review ? "outline" : "default"} size="sm" onClick={openReviewDialog}>
+                   <Star className="mr-2 h-4 w-4" />
+                   {reviewContext.review ? "Izmeni recenziju" : "Ostavite recenziju"}
+                 </Button>
+               ) : null}
+             </div>
              <div className="space-y-4">
               {salonData.reviews?.map(review => (
                 <div key={review.id} className="p-6 rounded-xl border bg-card shadow-sm">
@@ -490,6 +549,58 @@ export default function SalonProfile() {
         </aside>
 
       </div>
+
+      <Dialog open={isReviewDialogOpen} onOpenChange={setIsReviewDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{reviewContext?.review ? "Izmenite recenziju" : "Podelite svoje iskustvo"}</DialogTitle>
+            <DialogDescription>Recenziju mogu ostaviti samo klijenti sa završenim terminom u ovom salonu.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="review-service">Usluga</Label>
+              <Select value={reviewServiceName} onValueChange={setReviewServiceName}>
+                <SelectTrigger id="review-service"><SelectValue placeholder="Izaberite uslugu" /></SelectTrigger>
+                <SelectContent>
+                  {reviewServiceOptions.map((service) => <SelectItem key={service} value={service}>{service}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Ocena</Label>
+              <div className="flex gap-1" aria-label={`Ocena: ${reviewRating} od 5`}>
+                {Array.from({ length: 5 }, (_, index) => {
+                  const rating = index + 1;
+                  return (
+                    <button key={rating} type="button" onClick={() => setReviewRating(rating)} className="rounded p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${rating} od 5 zvezdica`}>
+                      <Star className={`h-7 w-7 ${rating <= reviewRating ? "fill-accent text-accent" : "text-muted"}`} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="review-text">Vaša recenzija</Label>
+              <Textarea id="review-text" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={1000} rows={5} placeholder="Kako je protekla vaša poseta?" />
+              <p className="text-right text-xs text-muted-foreground">{reviewText.length}/1000</p>
+            </div>
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4">
+              <Checkbox id="review-photo-consent" checked={showProfilePhoto} onCheckedChange={(checked) => setShowProfilePhoto(checked === true)} />
+              <div className="space-y-1">
+                <Label htmlFor="review-photo-consent" className="cursor-pointer">Prikaži moju profilnu fotografiju uz recenziju</Label>
+                <p className="text-sm text-muted-foreground">Podrazumevano je skrivena. Ako ne označite ovu opciju, javno će se prikazivati samo vaši inicijali.</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} disabled={upsertReview.isPending}>Otkaži</Button>
+            <Button onClick={saveReview} disabled={upsertReview.isPending || !reviewServiceName || !reviewText.trim()}>
+              {upsertReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Sačuvaj recenziju
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Mobile Sticky Bar & Drawer */}
       <div className="lg:hidden">

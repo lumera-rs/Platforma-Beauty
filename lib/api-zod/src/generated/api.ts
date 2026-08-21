@@ -353,6 +353,7 @@ export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
 
 
 export const getSalonResponseTwoReviewsItemRatingMax = 5;
+export const getSalonResponseTwoReviewsItemRatingMultipleOf = 1;
 
 export const getSalonResponseTwoReturnClientRateMin = 0;
 export const getSalonResponseTwoReturnClientRateMax = 100;
@@ -436,7 +437,7 @@ export const GetSalonResponse = zod.object({
   "authorName": zod.string(),
   "avatarUrl": zod.string().nullable(),
   "verifiedBooking": zod.boolean(),
-  "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax),
+  "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax).multipleOf(getSalonResponseTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
   "date": zod.coerce.date(),
   "serviceName": zod.string()
@@ -777,6 +778,75 @@ export const ToggleFavoriteBody = zod.object({
 export const ToggleFavoriteResponse = zod.object({
   "salonId": zod.string(),
   "favorited": zod.boolean()
+})
+
+
+/**
+ * @summary Get the current customer's review and completed services for a salon
+ */
+export const getCustomerSalonReviewPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetCustomerSalonReviewParams = zod.object({
+  "salonId": zod.coerce.string().regex(getCustomerSalonReviewPathSalonIdRegExp)
+})
+
+export const getCustomerSalonReviewResponseReviewOneRatingMax = 5;
+export const getCustomerSalonReviewResponseReviewOneRatingMultipleOf = 1;
+
+
+
+export const GetCustomerSalonReviewResponse = zod.object({
+  "review": zod.union([zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "serviceName": zod.string(),
+  "rating": zod.number().min(1).max(getCustomerSalonReviewResponseReviewOneRatingMax).multipleOf(getCustomerSalonReviewResponseReviewOneRatingMultipleOf),
+  "text": zod.string(),
+  "showProfilePhoto": zod.boolean()
+}),zod.null()]),
+  "eligibleServices": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Create or update the current customer's review for a completed salon visit
+ */
+export const upsertCustomerSalonReviewPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const UpsertCustomerSalonReviewParams = zod.object({
+  "salonId": zod.coerce.string().regex(upsertCustomerSalonReviewPathSalonIdRegExp)
+})
+
+export const upsertCustomerSalonReviewBodyServiceNameMax = 160;
+
+export const upsertCustomerSalonReviewBodyRatingMax = 5;
+export const upsertCustomerSalonReviewBodyRatingMultipleOf = 1;
+
+export const upsertCustomerSalonReviewBodyTextMax = 1000;
+
+
+
+export const UpsertCustomerSalonReviewBody = zod.object({
+  "serviceName": zod.string().min(1).max(upsertCustomerSalonReviewBodyServiceNameMax),
+  "rating": zod.number().min(1).max(upsertCustomerSalonReviewBodyRatingMax).multipleOf(upsertCustomerSalonReviewBodyRatingMultipleOf),
+  "text": zod.string().min(1).max(upsertCustomerSalonReviewBodyTextMax),
+  "showProfilePhoto": zod.boolean()
+})
+
+export const upsertCustomerSalonReviewResponseRatingMax = 5;
+export const upsertCustomerSalonReviewResponseRatingMultipleOf = 1;
+
+
+
+export const UpsertCustomerSalonReviewResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "serviceName": zod.string(),
+  "rating": zod.number().min(1).max(upsertCustomerSalonReviewResponseRatingMax).multipleOf(upsertCustomerSalonReviewResponseRatingMultipleOf),
+  "text": zod.string(),
+  "showProfilePhoto": zod.boolean()
 })
 
 

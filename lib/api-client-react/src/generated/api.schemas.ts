@@ -346,6 +346,43 @@ export interface SalonProfileMediaUpdate {
   videoUrl: string | null;
 }
 
+export interface CustomerReview {
+  id: string;
+  salonId: string;
+  serviceName: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  text: string;
+  showProfilePhoto: boolean;
+}
+
+export interface CustomerReviewInput {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  serviceName: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  text: string;
+  showProfilePhoto: boolean;
+}
+
+export interface CustomerSalonReviewContext {
+  review: CustomerReview | null;
+  eligibleServices: string[];
+}
+
 export interface TimeSlot {
   start: string;
   end: string;

@@ -412,6 +412,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FavoriteResult"
+  /customer/reviews/{salonId}:
+    get:
+      operationId: getCustomerSalonReview
+      tags: [customer]
+      summary: Get the current customer's review and completed services for a salon
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      responses:
+        "200":
+          description: Customer review context
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerSalonReviewContext" }
+        "403": { description: Customer access required }
+        "404": { description: Salon not found }
+    put:
+      operationId: upsertCustomerSalonReview
+      tags: [customer]
+      summary: Create or update the current customer's review for a completed salon visit
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomerReviewInput" }
+      responses:
+        "200":
+          description: Saved customer review
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerReview" }
+        "400": { description: Invalid review }
+        "403": { description: Customer access required }
+        "404": { description: Salon not found }
   /salon/dashboard:
     get:
       operationId: getSalonDashboard
@@ -2492,11 +2527,40 @@ components:
         authorName: { type: string }
         avatarUrl: { type: ["string", "null"] }
         verifiedBooking: { type: boolean }
-        rating: { type: number, minimum: 1, maximum: 5 }
+        rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
         text: { type: string }
         date: { type: string, format: date }
         serviceName: { type: string }
       required: [id, authorName, avatarUrl, verifiedBooking, rating, text, date, serviceName]
+    CustomerReview:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        serviceName: { type: string }
+        rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
+        text: { type: string }
+        showProfilePhoto: { type: boolean }
+      required: [id, salonId, serviceName, rating, text, showProfilePhoto]
+    CustomerReviewInput:
+      type: object
+      properties:
+        serviceName: { type: string, minLength: 1, maxLength: 160 }
+        rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        showProfilePhoto: { type: boolean }
+      required: [serviceName, rating, text, showProfilePhoto]
+    CustomerSalonReviewContext:
+      type: object
+      properties:
+        review:
+          anyOf:
+            - $ref: "#/components/schemas/CustomerReview"
+            - type: "null"
+        eligibleServices:
+          type: array
+          items: { type: string }
+      required: [review, eligibleServices]
     TimeSlot:
       type: object
       properties:

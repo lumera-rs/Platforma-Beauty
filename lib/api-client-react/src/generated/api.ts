@@ -70,6 +70,9 @@ import type {
   Course,
   CurrentUserResponse,
   CustomerDashboard,
+  CustomerReview,
+  CustomerReviewInput,
+  CustomerSalonReviewContext,
   EducationCourseDetail,
   EducationCourseInput,
   EducationCourseUpdate,
@@ -1824,6 +1827,155 @@ export const useToggleFavorite = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getToggleFavoriteMutationOptions(options));
+    }
+
+export const getGetCustomerSalonReviewUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/customer/reviews/${salonId}`
+}
+
+/**
+ * @summary Get the current customer's review and completed services for a salon
+ */
+export const getCustomerSalonReview = async (salonId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomerSalonReviewContext> => {
+
+  return customFetch<CustomerSalonReviewContext>(getGetCustomerSalonReviewUrl(salonId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCustomerSalonReviewQueryKey = (salonId: string,) => {
+    return [
+    `/api/customer/reviews/${salonId}`
+    ] as const;
+    }
+
+
+export const getGetCustomerSalonReviewQueryOptions = <TData = Awaited<ReturnType<typeof getCustomerSalonReview>>, TError = ErrorType<void>>(salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomerSalonReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomerSalonReviewQueryKey(salonId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomerSalonReview>>> = ({ signal }) => getCustomerSalonReview(salonId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: salonId !== null && salonId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomerSalonReview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCustomerSalonReviewQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomerSalonReview>>>
+export type GetCustomerSalonReviewQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the current customer's review and completed services for a salon
+ */
+
+export function useGetCustomerSalonReview<TData = Awaited<ReturnType<typeof getCustomerSalonReview>>, TError = ErrorType<void>>(
+ salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomerSalonReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCustomerSalonReviewQueryOptions(salonId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertCustomerSalonReviewUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/customer/reviews/${salonId}`
+}
+
+/**
+ * @summary Create or update the current customer's review for a completed salon visit
+ */
+export const upsertCustomerSalonReview = async (salonId: string,
+    customerReviewInput: CustomerReviewInput, options?: Parameters<typeof customFetch>[1]): Promise<CustomerReview> => {
+
+  return customFetch<CustomerReview>(getUpsertCustomerSalonReviewUrl(salonId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customerReviewInput)
+  }
+);}
+
+
+
+
+
+export const getUpsertCustomerSalonReviewMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerSalonReview>>, TError,{salonId: string;data: BodyType<CustomerReviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerSalonReview>>, TError,{salonId: string;data: BodyType<CustomerReviewInput>}, TContext> => {
+
+const mutationKey = ['upsertCustomerSalonReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertCustomerSalonReview>>, {salonId: string;data: BodyType<CustomerReviewInput>}> = (props) => {
+          const {salonId,data} = props ?? {};
+
+          return  upsertCustomerSalonReview(salonId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertCustomerSalonReviewMutationResult = NonNullable<Awaited<ReturnType<typeof upsertCustomerSalonReview>>>
+    export type UpsertCustomerSalonReviewMutationBody = BodyType<CustomerReviewInput>
+    export type UpsertCustomerSalonReviewMutationError = ErrorType<void>
+
+    /**
+ * @summary Create or update the current customer's review for a completed salon visit
+ */
+export const useUpsertCustomerSalonReview = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerSalonReview>>, TError,{salonId: string;data: BodyType<CustomerReviewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertCustomerSalonReview>>,
+        TError,
+        {salonId: string;data: BodyType<CustomerReviewInput>},
+        TContext
+      > => {
+      return useMutation(getUpsertCustomerSalonReviewMutationOptions(options));
     }
 
 export const getGetSalonDashboardUrl = () => {

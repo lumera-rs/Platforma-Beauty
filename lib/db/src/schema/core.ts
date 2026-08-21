@@ -402,8 +402,11 @@ export const reviewsTable = pgTable("reviews", {
   rating: integer("rating").notNull(),
   text: text("text").notNull(),
   visible: boolean("visible").notNull().default(true),
+  showProfilePhoto: boolean("show_profile_photo").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("reviews_customer_salon_unique").on(table.customerId, table.salonId),
+]);
 
 export const favoritesTable = pgTable("favorites", {
   id: uuid("id").defaultRandom().primaryKey(),
