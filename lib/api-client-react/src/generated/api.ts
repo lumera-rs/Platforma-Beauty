@@ -1978,6 +1978,77 @@ export const useUpsertCustomerSalonReview = <TError = ErrorType<void>,
       return useMutation(getUpsertCustomerSalonReviewMutationOptions(options));
     }
 
+export const getDeleteCustomerSalonReviewUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/customer/reviews/${salonId}`
+}
+
+/**
+ * @summary Permanently delete the current customer's review for a salon
+ */
+export const deleteCustomerSalonReview = async (salonId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteCustomerSalonReviewUrl(salonId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteCustomerSalonReviewMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCustomerSalonReview>>, TError,{salonId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCustomerSalonReview>>, TError,{salonId: string}, TContext> => {
+
+const mutationKey = ['deleteCustomerSalonReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCustomerSalonReview>>, {salonId: string}> = (props) => {
+          const {salonId} = props ?? {};
+
+          return  deleteCustomerSalonReview(salonId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCustomerSalonReviewMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCustomerSalonReview>>>
+
+    export type DeleteCustomerSalonReviewMutationError = ErrorType<void>
+
+    /**
+ * @summary Permanently delete the current customer's review for a salon
+ */
+export const useDeleteCustomerSalonReview = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCustomerSalonReview>>, TError,{salonId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCustomerSalonReview>>,
+        TError,
+        {salonId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteCustomerSalonReviewMutationOptions(options));
+    }
+
 export const getGetSalonDashboardUrl = () => {
 
 

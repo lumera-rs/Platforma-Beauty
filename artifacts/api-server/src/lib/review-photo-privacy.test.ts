@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   db,
@@ -23,7 +23,7 @@ const avatarUrl = `https://example.test/private-avatar-${suffix}.jpg`;
 async function request(
   baseUrl: string,
   path: string,
-  options: { method?: "GET" | "POST" | "PUT"; body?: Record<string, unknown>; cookie?: string } = {},
+  options: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: Record<string, unknown>; cookie?: string } = {},
 ) {
   return fetch(`${baseUrl}/api${path}`, {
     method: options.method ?? "GET",
@@ -61,6 +61,17 @@ async function run(): Promise<void> {
     }).returning();
     assert.ok(customer, "Review privacy regression test must create its customer.");
     createdUserIds.push(customer.id);
+
+    const [otherCustomer] = await db.insert(usersTable).values({
+      firstName: "Mila",
+      lastName: "Druga",
+      email: `other-${customerEmail}`,
+      passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(),
+      role: "CUSTOMER",
+    }).returning();
+    assert.ok(otherCustomer, "Review deletion regression test must create another customer.");
+    createdUserIds.push(otherCustomer.id);
 
     const [salon] = await db.insert(salonsTable).values({
       ownerId: owner.id,
@@ -206,6 +217,60 @@ async function run(): Promise<void> {
       eq(reviewsTable.salonId, salon.id),
     ));
     assert.equal(storedReviews.length, 1, "A customer must have at most one review for the same salon.");
+
+    const [eligibleAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id,
+      customerId: customer.id,
+      serviceId: service.id,
+      date: "2024-01-11",
+      startTime: "12:00",
+      endTime: "13:00",
+      durationMinutes: 60,
+      price: 1000,
+      status: "completed",
+    }).returning();
+    assert.ok(eligibleAppointment, "The customer needs a completed visit after deleting their review.");
+    appointmentId = eligibleAppointment.id;
+
+    await db.insert(reviewsTable).values({
+      salonId: salon.id,
+      customerId: otherCustomer.id,
+      serviceName: service.name,
+      rating: 2,
+      text: "Tuđa recenzija mora ostati sačuvana.",
+      showProfilePhoto: false,
+    });
+
+    const deleteOwnReview = await request(baseUrl, `/customer/reviews/${salon.id}`, {
+      method: "DELETE",
+      cookie: session,
+    });
+    assert.equal(deleteOwnReview.status, 204, "A signed-in customer must be able to delete their own review.");
+
+    const afterDeleteSalonResponse = await request(baseUrl, `/salons/${salon.slug}`);
+    assert.equal(afterDeleteSalonResponse.status, 200);
+    const afterDeleteSalon = await afterDeleteSalonResponse.json() as {
+      rating: number;
+      reviewCount: number;
+      reviews: Array<{ text: string; avatarUrl: string | null }>;
+    };
+    assert.equal(afterDeleteSalon.reviews.some((review) => review.text === "Fotografija je ponovo privatna."), false, "The deleted review must disappear from the public response.");
+    assert.equal(afterDeleteSalon.reviews.length, 1, "Deleting a review must not remove another customer's review.");
+    assert.equal(afterDeleteSalon.reviews[0]?.text, "Tuđa recenzija mora ostati sačuvana.");
+    assert.equal(afterDeleteSalon.reviewCount, 1, "Deleting a review must recalculate the public review count.");
+    assert.equal(afterDeleteSalon.rating, 2, "Deleting a review must recalculate the public rating.");
+
+    const afterDeleteContextResponse = await request(baseUrl, `/customer/reviews/${salon.id}`, { cookie: session });
+    assert.equal(afterDeleteContextResponse.status, 200);
+    const afterDeleteContext = await afterDeleteContextResponse.json() as {
+      review: { serviceName: string } | null;
+      eligibleServices: string[];
+    };
+    assert.equal(afterDeleteContext.review, null, "The review editor must no longer load the deleted review.");
+    assert.ok(afterDeleteContext.eligibleServices.includes(service.name), "The review editor must return to the completed-service eligibility state.");
+
+    const reviewsAfterDelete = await db.select({ customerId: reviewsTable.customerId }).from(reviewsTable).where(eq(reviewsTable.salonId, salon.id));
+    assert.deepEqual(reviewsAfterDelete.map((review) => review.customerId), [otherCustomer.id], "The delete endpoint must only remove the signed-in customer's review.");
     console.log("Review photo privacy regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
@@ -213,7 +278,7 @@ async function run(): Promise<void> {
     if (appointmentId) await db.delete(appointmentsTable).where(eq(appointmentsTable.id, appointmentId));
     if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
-    if (createdUserIds.length) await db.delete(usersTable).where(eq(usersTable.id, createdUserIds[0]!));
+    if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   }
 }
 

@@ -447,6 +447,16 @@ paths:
         "400": { description: Invalid review }
         "403": { description: Customer access required }
         "404": { description: Salon not found }
+    delete:
+      operationId: deleteCustomerSalonReview
+      tags: [customer]
+      summary: Permanently delete the current customer's review for a salon
+      parameters:
+        - $ref: "#/components/parameters/SalonId"
+      responses:
+        "204": { description: Review deleted }
+        "403": { description: Customer access required }
+        "404": { description: Salon or customer review not found }
   /salon/dashboard:
     get:
       operationId: getSalonDashboard

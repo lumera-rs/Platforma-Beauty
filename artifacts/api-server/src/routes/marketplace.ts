@@ -129,6 +129,8 @@ import {
   CreateSalonServiceResponse,
   DisconnectAuthSignInMethodParams,
   DisconnectAuthSignInMethodResponse,
+  DeleteCustomerSalonReviewParams,
+  DeleteCustomerSalonReviewResponse,
   GetAdminSummaryResponse,
   GetAuthSignInMethodsResponse,
   GetCurrentUserResponse,
@@ -2427,6 +2429,42 @@ router.put("/customer/reviews/:salonId", async (req, res): Promise<void> => {
     return review!;
   });
   res.json(UpsertCustomerSalonReviewResponse.parse(customerReviewView(saved!)));
+});
+
+router.delete("/customer/reviews/:salonId", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const params = DeleteCustomerSalonReviewParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.id, params.data.salonId)).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+
+  const deleted = await db.transaction(async (tx) => {
+    // Serialize review writes per salon so the stored public aggregate stays
+    // correct when a review is deleted while another is created or updated.
+    await tx.select({ id: salonsTable.id }).from(salonsTable)
+      .where(eq(salonsTable.id, salon.id))
+      .for("update");
+    const [review] = await tx.delete(reviewsTable).where(and(
+      eq(reviewsTable.salonId, salon.id),
+      eq(reviewsTable.customerId, user.id),
+    )).returning();
+    if (!review) return false;
+
+    const visibleReviews = await tx.select().from(reviewsTable).where(and(
+      eq(reviewsTable.salonId, salon.id),
+      eq(reviewsTable.visible, true),
+    ));
+    const reviewCount = visibleReviews.length;
+    const rating = reviewCount
+      ? Math.round(visibleReviews.reduce((total, item) => total + item.rating, 0) / reviewCount * 10)
+      : 0;
+    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, salon.id));
+    return true;
+  });
+  if (!deleted) { res.status(404).json({ error: "Vaša recenzija nije pronađena." }); return; }
+
+  DeleteCustomerSalonReviewResponse.parse(undefined);
+  res.sendStatus(204);
 });
 
 router.get("/customer/favorite-employees/:salonId", async (req, res): Promise<void> => {

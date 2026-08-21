@@ -3,7 +3,7 @@ import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, useGetCustomerSalonReview, useUpsertCustomerSalonReview, getGetSalonAvailabilityQueryKey, getGetSalonQueryKey, getGetCustomerSalonReviewQueryKey } from "@workspace/api-client-react";
+import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, useGetCustomerSalonReview, useUpsertCustomerSalonReview, useDeleteCustomerSalonReview, getGetSalonAvailabilityQueryKey, getGetSalonQueryKey, getGetCustomerSalonReviewQueryKey } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, Loader2, Heart, ShieldCheck, Flame, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function SalonProfile() {
   const { slug } = useParams();
@@ -61,6 +62,7 @@ export default function SalonProfile() {
 
   const createAppointment = useCreateAppointment();
   const upsertReview = useUpsertCustomerSalonReview();
+  const deleteCustomerSalonReview = useDeleteCustomerSalonReview();
   const { data: reviewContext, isLoading: isLoadingReviewContext } = useGetCustomerSalonReview(
     salonData?.id || "",
     { query: { enabled: user?.role === "CUSTOMER" && !!salonData?.id, queryKey: getGetCustomerSalonReviewQueryKey(salonData?.id || "") } },
@@ -201,6 +203,27 @@ export default function SalonProfile() {
         const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
           ?? "Recenzija nije sačuvana. Pokušajte ponovo.";
         toast.error("Promena nije sačuvana", { description: message });
+      },
+    });
+  };
+
+  const deleteReview = () => {
+    if (!salonData) return;
+    deleteCustomerSalonReview.mutate({ salonId: salonData.id }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetSalonQueryKey(salonData.slug) });
+        queryClient.invalidateQueries({ queryKey: getGetCustomerSalonReviewQueryKey(salonData.id) });
+        setReviewRating(5);
+        setReviewText("");
+        setReviewServiceName("");
+        setShowProfilePhoto(false);
+        setIsReviewDialogOpen(false);
+        toast.success("Recenzija je obrisana.");
+      },
+      onError: (error: unknown) => {
+        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+          ?? "Recenzija nije obrisana. Pokušajte ponovo.";
+        toast.error("Brisanje nije uspelo", { description: message });
       },
     });
   };
@@ -593,8 +616,32 @@ export default function SalonProfile() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} disabled={upsertReview.isPending}>Otkaži</Button>
-            <Button onClick={saveReview} disabled={upsertReview.isPending || !reviewServiceName || !reviewText.trim()}>
+            {reviewContext?.review ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Obriši recenziju</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Obrisati recenziju?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Ova radnja trajno uklanja vašu recenziju i javno prikazanu profilnu fotografiju uz nju.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deleteCustomerSalonReview.isPending}>Zadrži recenziju</AlertDialogCancel>
+                    <AlertDialogAction asChild>
+                      <Button variant="destructive" onClick={deleteReview} disabled={deleteCustomerSalonReview.isPending}>
+                        {deleteCustomerSalonReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Obriši recenziju
+                      </Button>
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : null}
+            <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending}>Otkaži</Button>
+            <Button onClick={saveReview} disabled={upsertReview.isPending || deleteCustomerSalonReview.isPending || !reviewServiceName || !reviewText.trim()}>
               {upsertReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Sačuvaj recenziju
             </Button>

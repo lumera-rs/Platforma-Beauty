@@ -851,6 +851,19 @@ export const UpsertCustomerSalonReviewResponse = zod.object({
 
 
 /**
+ * @summary Permanently delete the current customer's review for a salon
+ */
+export const deleteCustomerSalonReviewPathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const DeleteCustomerSalonReviewParams = zod.object({
+  "salonId": zod.coerce.string().regex(deleteCustomerSalonReviewPathSalonIdRegExp)
+})
+
+export const DeleteCustomerSalonReviewResponse = zod.void()
+
+
+/**
  * @summary Salon dashboard summary
  */
 export const GetSalonDashboardResponse = zod.object({
