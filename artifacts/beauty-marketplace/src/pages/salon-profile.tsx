@@ -357,6 +357,10 @@ export default function SalonProfile() {
       setLocation("/prijava");
       return;
     }
+    if (user.role !== "CUSTOMER") {
+      toast.error("Zakazivanje nije dostupno", { description: "Za zakazivanje termina prijavite se klijentskim nalogom." });
+      return;
+    }
     
     if (!salonData || !selectedService || !selectedSlot) return;
 
@@ -381,8 +385,11 @@ export default function SalonProfile() {
         setLocationDialogOpen(false);
         setIsSuccess(true);
       },
-      onError: () => {
-        toast.error("Greška", { description: "Došlo je do greške prilikom zakazivanja." });
+      onError: (error: unknown) => {
+        const description = (error as { data?: { error?: string }; message?: string })?.data?.error
+          ?? (error as { message?: string })?.message
+          ?? "Došlo je do greške prilikom zakazivanja.";
+        toast.error("Zakazivanje nije uspelo", { description });
       }
     });
   };
