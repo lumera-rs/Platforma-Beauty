@@ -259,6 +259,16 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
     const eligibleEditor = page.getByRole("dialog", { name: "Podelite svoje iskustvo" });
     await expect(eligibleEditor).toBeVisible();
     await expect(eligibleEditor.locator("#review-service")).toContainText(fixture.serviceName);
+
+    await page.goto("/");
+    await page.goto(fixture.salonPath);
+    await page.reload();
+
+    const reloadedReviews = page.locator("#reviews");
+    await expect(reloadedReviews.getByText(fixture.reviewText)).toHaveCount(0);
+    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ostavite recenziju" })).toBeVisible();
   } finally {
     await cleanUpReviewFixture(fixture);
   }
