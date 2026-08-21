@@ -5,6 +5,7 @@ export type BookingDraft = {
   salonName: string;
   serviceId: string;
   employeeId: string | null;
+  employeeSelection?: "any" | "specific";
   date: string;
 };
 

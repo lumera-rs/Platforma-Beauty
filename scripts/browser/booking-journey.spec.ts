@@ -28,7 +28,14 @@ async function completeBooking(page: Page, widget: Locator) {
   await service.click();
 
   await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
+  const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "GET"
+      && url.pathname.includes("/availability")
+      && !url.searchParams.has("employeeId");
+  });
   await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
+  await anyEmployeeAvailabilityRequest;
 
   await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
   const firstSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
@@ -37,12 +44,20 @@ async function completeBooking(page: Page, widget: Locator) {
 
   await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
   await expect(widget.getByText("Pregled rezervacije")).toBeVisible();
+  await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
+  await expect(widget.getByText("Sistem bira slobodnog člana tima.")).toBeVisible();
 
+  const bookingRequestPromise = page.waitForRequest((request) =>
+    request.method() === "POST"
+    && new URL(request.url()).pathname === "/api/appointments",
+  );
   const responsePromise = page.waitForResponse((response) =>
     response.request().method() === "POST"
     && new URL(response.url()).pathname === "/api/appointments",
   );
   await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+  const bookingRequest = await bookingRequestPromise;
+  expect(bookingRequest.postDataJSON()).not.toHaveProperty("employeeId");
   const response = await responsePromise;
   expect(response.status(), "Booking confirmation must create an appointment.").toBe(201);
   const appointment = await response.json() as { id: string };
@@ -94,4 +109,36 @@ test("customer can complete the desktop salon booking journey", async ({ page })
   } finally {
     if (appointmentId) await cleanUpAppointment(page, appointmentId);
   }
+});
+
+test("returning to a booking draft preserves the any-employee choice", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signInAsCustomer(page);
+  await page.goto(salonPath);
+
+  const widget = page.locator("#booking-widget");
+  const service = widget.locator('[role="button"]:has(h5)').first();
+  await service.click();
+  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
+
+  const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "GET"
+      && url.pathname.includes("/availability")
+      && !url.searchParams.has("employeeId");
+  });
+  await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
+  await anyEmployeeAvailabilityRequest;
+
+  const reentryAvailabilityRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "GET"
+      && url.pathname.includes("/availability")
+      && !url.searchParams.has("employeeId");
+  });
+  await page.reload();
+  await reentryAvailabilityRequest;
+
+  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+  await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
 });

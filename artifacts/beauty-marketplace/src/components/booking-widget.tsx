@@ -22,6 +22,7 @@ export interface BookingWidgetProps {
   setSelectedService: (id: string | null) => void;
   selectedEmployee: string | null;
   setSelectedEmployee: (id: string | null) => void;
+  isAnyEmployeeSelected: boolean;
   favoriteEmployeeId: string | null;
   setFavorite: (id: string) => Promise<void>;
   selectedDate: Date;
@@ -140,7 +141,7 @@ export function BookingWidget(props: BookingWidgetProps) {
         
         <div className="flex flex-wrap gap-1.5 min-h-[24px]">
           {service && <Badge variant="secondary" className="bg-background shadow-sm text-foreground border-primary/20 text-xs px-2 py-0.5">{service.name}</Badge>}
-          {props.hasInteractedWithEmployee && <Badge variant="secondary" className="bg-background shadow-sm text-foreground border-primary/20 text-xs px-2 py-0.5">{employee ? employee.name : 'Bilo koji zaposleni'}</Badge>}
+          {props.hasInteractedWithEmployee && <Badge variant="secondary" className="bg-background shadow-sm text-foreground border-primary/20 text-xs px-2 py-0.5">{props.isAnyEmployeeSelected ? 'Bilo koji zaposleni' : employee ? employee.name : 'Bilo koji zaposleni'}</Badge>}
           {props.selectedSlot && <Badge variant="secondary" className="bg-primary shadow-sm text-primary-foreground border-transparent text-xs px-2 py-0.5">{format(props.selectedDate, 'dd.MM.')} u {props.selectedSlot.start}</Badge>}
         </div>
         {service && (
@@ -264,7 +265,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                       props.setStep(3);
                     }}
                     className={`p-4 rounded-xl border transition-all cursor-pointer flex items-center gap-4 shadow-sm ${
-                      props.selectedEmployee === null && props.hasInteractedWithEmployee ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card hover:border-primary/40'
+                      props.isAnyEmployeeSelected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card hover:border-primary/40'
                     }`}
                   >
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
@@ -479,10 +480,13 @@ export function BookingWidget(props: BookingWidgetProps) {
                      </div>
                      <div className="flex justify-between items-start gap-4 pb-4 border-b">
                        <div className="text-sm text-muted-foreground font-medium">Zaposleni</div>
-                       <div className="font-bold text-right text-foreground flex items-center gap-2">
-                         {employee && <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-5 h-5 rounded-full object-cover border" />}
-                         {employee ? employee.name : 'Bilo koji dostupan'}
-                       </div>
+                        <div className="text-right text-foreground">
+                          <div className="flex items-center justify-end gap-2 font-bold">
+                            {!props.isAnyEmployeeSelected && employee && <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-5 h-5 rounded-full object-cover border" />}
+                            {props.isAnyEmployeeSelected ? 'Bilo koji zaposleni' : employee ? employee.name : 'Bilo koji dostupan'}
+                          </div>
+                          {props.isAnyEmployeeSelected && <p className="mt-1 text-xs font-medium text-muted-foreground">Sistem bira slobodnog člana tima.</p>}
+                        </div>
                      </div>
                      <div className="flex justify-between items-start gap-4 pb-4 border-b">
                        <div className="text-sm text-muted-foreground font-medium">Vreme</div>

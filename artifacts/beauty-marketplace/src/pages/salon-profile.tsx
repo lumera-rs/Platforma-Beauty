@@ -76,6 +76,7 @@ export default function SalonProfile() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
+  const [employeeSelection, setEmployeeSelection] = useState<"any" | "specific" | null>(null);
   const [favoriteEmployeeId, setFavoriteEmployeeId] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<{start: string, end: string, employeeId?: string|null} | null>(null);
   const [bookingStep, setBookingStep] = useState(1);
@@ -98,11 +99,12 @@ export default function SalonProfile() {
   } | null>(null);
   
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
+  const availabilityEmployeeId = employeeSelection === "any" ? undefined : selectedEmployee || undefined;
   
   const { data: availability, isLoading: isLoadingAvailability } = useGetSalonAvailability(
     salonData?.id || "",
-    { serviceId: selectedService || "", date: dateStr, employeeId: selectedEmployee || undefined },
-    { query: { enabled: !!salonData?.id && !!selectedService, queryKey: getGetSalonAvailabilityQueryKey(salonData?.id || "", { serviceId: selectedService || "", date: dateStr, employeeId: selectedEmployee || undefined }) } }
+    { serviceId: selectedService || "", date: dateStr, employeeId: availabilityEmployeeId },
+    { query: { enabled: !!salonData?.id && !!selectedService, queryKey: getGetSalonAvailabilityQueryKey(salonData?.id || "", { serviceId: selectedService || "", date: dateStr, employeeId: availabilityEmployeeId }) } }
   );
 
   const { data: firstAvailableResponse } = useGetSalonFirstAvailable(salonData?.id || "", {
@@ -218,9 +220,14 @@ export default function SalonProfile() {
   }, [salonData?.id]);
 
   useEffect(() => {
-    if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) setSelectedEmployee(null);
-    if (!selectedEmployee && favoriteEmployeeId && eligibleStaff.some((employee) => employee.id === favoriteEmployeeId)) setSelectedEmployee(favoriteEmployeeId);
-  }, [eligibleStaff, favoriteEmployeeId, selectedEmployee]);
+    if (selectedEmployee && !eligibleStaff.some((employee) => employee.id === selectedEmployee)) {
+      setSelectedEmployee(null);
+      if (employeeSelection === "specific") setEmployeeSelection("any");
+    }
+    if (employeeSelection === null && !selectedEmployee && favoriteEmployeeId && eligibleStaff.some((employee) => employee.id === favoriteEmployeeId)) {
+      setSelectedEmployee(favoriteEmployeeId);
+    }
+  }, [eligibleStaff, employeeSelection, favoriteEmployeeId, selectedEmployee]);
 
   useEffect(() => {
     if (selectedService && bookingStep === 1) setBookingStep(2);
@@ -238,6 +245,7 @@ export default function SalonProfile() {
     const employeeId = requestedEmployeeId ?? matchingDraft?.employeeId ?? null;
     const key = `${salonData.id}:${search}:${matchingDraft?.serviceId ?? ""}:${matchingDraft?.date ?? ""}`;
     if (restoredSelection.current === key || !serviceId || !salonData.services.some((service) => service.id === serviceId)) return;
+    if (matchingDraft && selectedService === matchingDraft.serviceId) return;
 
     const requestedDateValue = requestedDate ? parseISO(requestedDate) : null;
     const hasValidRequestedSlot = !!requestedDate
@@ -256,12 +264,18 @@ export default function SalonProfile() {
     const validEmployeeId = employeeId && selectedServiceEmployees.some((employee) => employee.id === employeeId)
       ? employeeId
       : null;
+    const restoredEmployeeSelection = validEmployeeId
+      ? "specific"
+      : matchingDraft?.employeeSelection === "any"
+        ? "any"
+        : null;
     setSelectedService(serviceId);
     setSelectedEmployee(validEmployeeId);
+    setEmployeeSelection(restoredEmployeeSelection);
     setSelectedDate(isValid(dateValue) ? dateValue : new Date());
     setSelectedSlot(null);
     setBookingStep(3);
-    setHasInteractedWithEmployee(!!validEmployeeId);
+    setHasInteractedWithEmployee(restoredEmployeeSelection === "any" || !!validEmployeeId);
     if (hasValidRequestedSlot && requestedStartTime && validEmployeeId) {
       setQuickBookTarget({ serviceId, date: requestedDate!, startTime: requestedStartTime, employeeId: validEmployeeId });
     }
@@ -269,7 +283,7 @@ export default function SalonProfile() {
     if (requestedServiceId) {
       window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     }
-  }, [draft, salonData, search, user?.role]);
+  }, [draft, salonData, search, selectedService, user?.role]);
 
   useEffect(() => {
     if (!salonData || user?.role !== "CUSTOMER" || !selectedService || isSuccess) return;
@@ -278,9 +292,10 @@ export default function SalonProfile() {
       salonName: salonData.name,
       serviceId: selectedService,
       employeeId: selectedEmployee,
+      employeeSelection: employeeSelection ?? undefined,
       date: format(selectedDate, "yyyy-MM-dd"),
     });
-  }, [isSuccess, salonData, saveDraft, selectedDate, selectedEmployee, selectedService, user?.role]);
+  }, [employeeSelection, hasInteractedWithEmployee, isSuccess, salonData, saveDraft, selectedDate, selectedEmployee, selectedService, user?.role]);
 
   useEffect(() => {
     if (selectedEmployee) setHasInteractedWithEmployee(true);
@@ -307,11 +322,17 @@ export default function SalonProfile() {
     }
   }, [availability, isLoadingAvailability, quickBookTarget, selectedService, dateStr, toast, salonData]);
 
+  const selectEmployee = (employeeId: string | null) => {
+    setSelectedEmployee(employeeId);
+    setEmployeeSelection(employeeId ? "specific" : "any");
+    setHasInteractedWithEmployee(true);
+  };
+
   const setFavorite = async (employeeId: string) => {
     if (!user) { setLocation("/prijava"); return; }
     const response = await fetch(`/api/customer/favorite-employees/${salonData?.id}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ employeeId }) });
     if (!response.ok) { toast.error("Omiljeni zaposleni nije sačuvan."); return; }
-    setFavoriteEmployeeId(employeeId); setSelectedEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
+    setFavoriteEmployeeId(employeeId); selectEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
   };
 
   const handleBook = () => {
@@ -329,7 +350,7 @@ export default function SalonProfile() {
         serviceId: selectedService,
         date: dateStr,
         startTime: selectedSlot.start,
-        employeeId: selectedEmployee ?? undefined
+        employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined
       }
     }, {
       onSuccess: () => {
@@ -361,7 +382,7 @@ export default function SalonProfile() {
     if (!slot.date || !slot.startTime) return;
     const targetDate = parseISO(slot.date);
     setSelectedService(serviceId);
-    setSelectedEmployee(slot.employeeId);
+    selectEmployee(slot.employeeId);
     setSelectedDate(isValid(targetDate) ? targetDate : new Date());
     setQuickBookTarget({
       serviceId,
@@ -370,8 +391,6 @@ export default function SalonProfile() {
       employeeId: slot.employeeId
     });
     setBookingStep(3); // Wait for availability before moving to 4
-    setHasInteractedWithEmployee(true);
-    
     if (window.innerWidth < 1024) {
       setIsMobileDrawerOpen(true);
     } else {
@@ -749,7 +768,7 @@ export default function SalonProfile() {
                 <div 
                   key={employee.id} 
                   className={`p-6 rounded-2xl border transition-all cursor-pointer flex items-start gap-5 bg-card shadow-sm ${selectedEmployee === employee.id ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border/60 hover:border-primary/40 hover:shadow-md'}`}
-                  onClick={() => setSelectedEmployee(selectedEmployee === employee.id ? null : employee.id)}
+                  onClick={() => selectEmployee(selectedEmployee === employee.id ? null : employee.id)}
                 >
                   <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-20 h-20 rounded-full object-cover border-4 border-background shadow-md shrink-0" />
                    <div className="min-w-0 flex-1 pt-1">
@@ -949,7 +968,8 @@ export default function SalonProfile() {
               selectedService={selectedService}
               setSelectedService={setSelectedService}
               selectedEmployee={selectedEmployee}
-              setSelectedEmployee={setSelectedEmployee}
+              setSelectedEmployee={selectEmployee}
+              isAnyEmployeeSelected={employeeSelection === "any"}
               favoriteEmployeeId={favoriteEmployeeId}
               setFavorite={setFavorite}
               selectedDate={selectedDate}
@@ -988,7 +1008,8 @@ export default function SalonProfile() {
               selectedService={selectedService}
               setSelectedService={setSelectedService}
               selectedEmployee={selectedEmployee}
-              setSelectedEmployee={setSelectedEmployee}
+              setSelectedEmployee={selectEmployee}
+              isAnyEmployeeSelected={employeeSelection === "any"}
               favoriteEmployeeId={favoriteEmployeeId}
               setFavorite={setFavorite}
               selectedDate={selectedDate}
