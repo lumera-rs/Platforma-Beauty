@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format, isBefore, startOfDay } from "date-fns";
+import { srLatn } from "date-fns/locale";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -104,12 +105,13 @@ export function BookingWidget(props: BookingWidgetProps) {
     return (
       <button
         type="button"
+        data-testid={`time-slot-${slot.start}`}
         aria-label={`Izaberi termin u ${slot.start}`}
         onClick={() => { props.setSelectedSlot(slot); props.setStep(4); }}
-        className={`py-2.5 px-1 rounded-xl text-sm font-bold transition-all border shadow-sm ${
-          isSelected 
-            ? 'bg-primary text-primary-foreground border-primary scale-[1.02] shadow-md ring-2 ring-primary/20' 
-            : 'bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground'
+        className={`py-3 px-1 rounded-xl text-sm font-bold transition-all border outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 ${
+          isSelected
+            ? 'bg-primary text-primary-foreground border-primary shadow-md scale-[1.02] ring-2 ring-primary/20'
+            : 'bg-background hover:border-primary/40 hover:bg-primary/5 text-foreground shadow-sm'
         }`}
       >
         {slot.start}
@@ -176,7 +178,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 
       {/* Content Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar relative bg-card/50">
-        <div className="p-5">
+        <div className={props.step === 3 ? "p-3 sm:p-5" : "p-5"}>
           <AnimatePresence mode="wait">
             <motion.div
               key={props.step}
@@ -330,15 +332,20 @@ export function BookingWidget(props: BookingWidgetProps) {
               )}
 
               {props.step === 3 && (
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-primary mb-4 flex items-center gap-2">
-                      <span className="w-4 h-px bg-primary inline-block"></span>
+                <div className="flex flex-col gap-0 bg-card rounded-2xl border shadow-sm overflow-hidden">
+                  {/* Calendar Section */}
+                  <div className="p-3 sm:p-6 border-b bg-muted/5 flex flex-col relative z-0">
+                    <h4 className="text-sm font-bold tracking-tight text-foreground mb-4 flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-primary/20 flex items-center justify-center">
+                         <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                      </span>
                       Izaberite datum
                     </h4>
-                    <div className="flex justify-center p-2 bg-card rounded-xl border shadow-sm">
+                    <div className="flex-1 flex justify-center">
                       <Calendar 
                         mode="single"
+                        data-testid="booking-calendar"
+                        locale={srLatn}
                         selected={props.selectedDate}
                         onSelect={(date) => {
                           if (date) {
@@ -352,48 +359,99 @@ export function BookingWidget(props: BookingWidgetProps) {
                           unavailable: (date) => dateAvailability[dayKey(date)] === false,
                         }}
                         modifiersClassNames={{
-                          available: "[&>button]:bg-emerald-50 [&>button]:text-emerald-900 [&>button]:ring-1 [&>button]:ring-emerald-200",
-                          unavailable: "opacity-40",
+                          available: "relative after:absolute after:bottom-1.5 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:bg-emerald-500 after:rounded-full font-bold",
+                          unavailable: "opacity-45 cursor-not-allowed bg-muted/50",
+                        }}
+                        className="p-1.5 min-[390px]:p-3"
+                        classNames={{
+                          root: "w-full max-w-[340px] [--cell-size:2.25rem] min-[360px]:[--cell-size:2.5rem] min-[390px]:[--cell-size:2.75rem]",
+                          month_caption: "h-[--cell-size] text-sm font-bold tracking-tight",
+                          button_previous: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
+                          button_next: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
+                          weekday: "flex-1 select-none rounded-md text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
+                          day: "group/day relative aspect-square h-full w-full select-none p-0 text-center",
+                          day_button: "h-[--cell-size] min-h-[--cell-size] rounded-xl text-sm font-semibold transition-all hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+                          today: "border-2 border-primary text-primary font-bold bg-primary/5",
+                          outside: "text-muted-foreground/30 opacity-40 pointer-events-none",
+                          disabled: "cursor-not-allowed text-muted-foreground/45 opacity-55",
                         }}
                         disabled={(date) => isBefore(startOfDay(date), today) || dateAvailability[dayKey(date)] === false}
-                        className="pointer-events-auto"
                       />
+                    </div>
+
+                    <div className="flex items-center justify-center gap-4 mt-6 text-[10px] sm:text-[11px] text-muted-foreground font-medium flex-wrap">
+                      <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Dostupno</div>
+                      <div className="flex items-center gap-1.5"><div className="w-4 h-4 border-2 border-primary bg-primary/5 rounded-md"></div>Danas</div>
+                      <div className="flex items-center gap-1.5"><div className="w-4 h-px bg-muted-foreground/40"></div>Nema termina</div>
                     </div>
                   </div>
 
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-primary mb-4 flex items-center justify-between">
-                      <span className="flex items-center gap-2"><span className="w-4 h-px bg-primary inline-block"></span>Slobodni termini</span>
-                      {props.isLoadingAvailability && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-                    </h4>
-                    
+                  {/* Slots Section */}
+                  <div className="p-3 sm:p-6 flex-1 relative flex flex-col z-0">
+                    <AnimatePresence>
+                      {props.isLoadingAvailability && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="absolute inset-0 z-10 bg-card/50 backdrop-blur-[2px] flex items-center justify-center"
+                        >
+                          <div className="bg-background border shadow-lg rounded-xl px-5 py-3 flex items-center gap-3">
+                            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                            <span className="text-sm font-bold">Učitavanje termina...</span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className="flex items-center justify-between mb-6">
+                      <h4 className="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-primary/20 flex items-center justify-center">
+                           <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                        </span>
+                        Slobodni termini
+                      </h4>
+                      <span className="text-xs font-semibold text-primary capitalize bg-primary/10 px-2.5 py-1 rounded-md">
+                        {format(props.selectedDate, 'EEEE, dd. MMMM', { locale: srLatn })}
+                      </span>
+                    </div>
+
                     {!props.isLoadingAvailability && (!props.availability || props.availability.length === 0) ? (
-                      <div className="p-6 text-center border border-dashed border-muted-foreground/30 rounded-xl bg-muted/10 flex flex-col items-center gap-3">
-                         <CalendarDays className="w-8 h-8 text-muted-foreground opacity-50" />
-                         <p className="text-sm text-muted-foreground font-medium">Nema slobodnih termina za izabrani datum.</p>
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-10">
+                        <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4 border border-border shadow-sm">
+                          <CalendarDays className="w-8 h-8 text-muted-foreground/50" />
+                        </div>
+                        <p className="text-base font-bold text-foreground mb-1">Nema slobodnih termina</p>
+                        <p className="text-sm text-muted-foreground">Izaberite drugi datum za pregled dostupnosti.</p>
                       </div>
                     ) : (
-                      <div className="space-y-5">
+                      <div className="space-y-6 flex-1">
                         {slotsJutro.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-200"></span>Jutro (pre 12:00)</p>
-                            <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-amber-300 shadow-sm"></span>Jutro (pre 12:00)
+                            </p>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                               {slotsJutro.map(slot => <SlotBtn key={`${slot.start}-${slot.employeeId}`} slot={slot} />)}
                             </div>
                           </div>
                         )}
                         {slotsPopodne.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-orange-300"></span>Popodne (12:00 - 17:00)</p>
-                            <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-orange-400 shadow-sm"></span>Popodne (12:00 - 17:00)
+                            </p>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                               {slotsPopodne.map(slot => <SlotBtn key={`${slot.start}-${slot.employeeId}`} slot={slot} />)}
                             </div>
                           </div>
                         )}
                         {slotsVece.length > 0 && (
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-indigo-300"></span>Veče (nakon 17:00)</p>
-                            <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-indigo-400 shadow-sm"></span>Veče (nakon 17:00)
+                            </p>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                               {slotsVece.map(slot => <SlotBtn key={`${slot.start}-${slot.employeeId}`} slot={slot} />)}
                             </div>
                           </div>
