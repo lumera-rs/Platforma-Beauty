@@ -207,6 +207,7 @@ import {
   UpsertProductReviewParams,
   UpsertProductReviewResponse,
   PublishEducationCourseParams,
+  PublishEducationCourseResponse,
   ToggleFavoriteBody,
   ToggleFavoriteResponse,
   UpsertCustomerSalonReviewBody,
@@ -439,6 +440,13 @@ function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<
 
 function calendarDate(value: string | Date): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
+}
+
+function calendarDateCourseResponse<T extends { startDate?: Date | null }>(course: T) {
+  return {
+    ...course,
+    startDate: course.startDate ? calendarDate(course.startDate) : null,
+  };
 }
 
 function isHttpVideoUrl(value: string | null): boolean {
@@ -4694,7 +4702,7 @@ router.get("/education/courses", async (req, res): Promise<void> => {
     courses = courses.filter((_, index) => publishers[index]!.toLowerCase().includes(query.center!.toLowerCase()));
   }
   const views = await Promise.all(courses.map((course) => educationCourseView(course, access)));
-  res.json(ListCoursesResponse.parse(views));
+  res.json(ListCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
 router.post("/education/courses", async (req, res): Promise<void> => {
@@ -4721,7 +4729,7 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     archived: false,
   }).returning();
   const view = await educationCourseView(course!, access);
-  res.status(201).json(CreateEducationCourseResponse.parse(view));
+  res.status(201).json(calendarDateCourseResponse(CreateEducationCourseResponse.parse(view)));
 });
 
 router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
@@ -4733,7 +4741,7 @@ router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
   if ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin) {
     res.status(403).json({ error: "Ovaj kurs nije dostupan u katalogu." }); return;
   }
-  res.json(GetEducationCourseResponse.parse(await educationCourseView(course, access)));
+  res.json(calendarDateCourseResponse(GetEducationCourseResponse.parse(await educationCourseView(course, access))));
 });
 
 router.patch("/education/courses/:courseId", async (req, res): Promise<void> => {
@@ -4747,7 +4755,7 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
     startDate: data.startDate === undefined ? course.startDate : data.startDate ? calendarDate(data.startDate) : null,
     updatedAt: new Date(),
   }).where(eq(coursesTable.id, course.id)).returning();
-  res.json(UpdateEducationCourseResponse.parse(await educationCourseView(updated!, access)));
+  res.json(calendarDateCourseResponse(UpdateEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
 
 router.post("/education/courses/:courseId/publish", async (req, res): Promise<void> => {
@@ -4756,7 +4764,7 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
-  res.json(GetEducationCourseResponse.parse(await educationCourseView(updated!, access)));
+  res.json(calendarDateCourseResponse(PublishEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
 
 router.delete("/education/courses/:courseId", async (req, res): Promise<void> => {
@@ -4959,10 +4967,11 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
     return;
   }
   const progress = await db.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, enrollment.id));
-  res.json(GetEducationLmsResponse.parse({
+  const response = GetEducationLmsResponse.parse({
     enrollment: await educationEnrollmentView(enrollment),
     course: await educationCourseView(course, lmsAccess.access, new Set(progress.map((item) => item.lessonId)), true),
-  }));
+  });
+  res.json({ ...response, course: calendarDateCourseResponse(response.course) });
 });
 
 router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", async (req, res): Promise<void> => {

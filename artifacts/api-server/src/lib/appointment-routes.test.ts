@@ -31,6 +31,8 @@ const salonBookingDate = "2099-10-25";
 const salonSeriesDate = "2099-10-26";
 const movedSalonSeriesDate = "2099-10-27";
 const employeeSeriesDate = "2099-10-28";
+const educationCourseDate = "2099-11-02";
+const updatedEducationCourseDate = "2099-11-03";
 
 type HttpResult = {
   status: number;
@@ -285,6 +287,83 @@ async function run(): Promise<void> {
         && appointment.startTime === "12:00",
       ),
       "the customer appointment list must immediately include the newly created appointment",
+    );
+
+    const courseCreate = await request(baseUrl, ownerSession, "/education/courses", "POST", {
+      title: "HTTP kalendarski datum kursa",
+      description: "Kurs za proveru formata kalendarskog datuma u API odgovorima.",
+      category: "Test",
+      format: "online",
+      price: 1000,
+      duration: "1 dan",
+      certification: false,
+      imageUrl: "/test-course.jpg",
+      startDate: educationCourseDate,
+    });
+    assert.equal(courseCreate.status, 201, "a salon owner must be able to create a course");
+    const createdCourse = courseCreate.body as { id: string; startDate: string };
+    assertCalendarDate(
+      createdCourse.startDate,
+      educationCourseDate,
+      "the education course creation response start date",
+    );
+
+    const courseList = await getRequest(baseUrl, ownerSession, "/education/courses?mine=true");
+    assert.equal(courseList.status, 200, "a salon owner must be able to list their courses");
+    const listedCourse = (courseList.body as Array<{ id: string; startDate: string }>).find(
+      (course) => course.id === createdCourse.id,
+    );
+    assert.ok(listedCourse, "the created course must appear in the owner course list");
+    assertCalendarDate(
+      listedCourse.startDate,
+      educationCourseDate,
+      "the education course list response start date",
+    );
+
+    const courseDetail = await getRequest(baseUrl, ownerSession, `/education/courses/${createdCourse.id}`);
+    assert.equal(courseDetail.status, 200, "a salon owner must be able to view their course");
+    assertCalendarDate(
+      (courseDetail.body as { startDate: string }).startDate,
+      educationCourseDate,
+      "the education course detail response start date",
+    );
+
+    const courseUpdate = await request(baseUrl, ownerSession, `/education/courses/${createdCourse.id}`, "PATCH", {
+      startDate: updatedEducationCourseDate,
+    });
+    assert.equal(courseUpdate.status, 200, "a salon owner must be able to update their course");
+    assertCalendarDate(
+      (courseUpdate.body as { startDate: string }).startDate,
+      updatedEducationCourseDate,
+      "the education course update response start date",
+    );
+
+    const coursePublish = await request(baseUrl, ownerSession, `/education/courses/${createdCourse.id}/publish`, "POST", {});
+    assert.equal(coursePublish.status, 200, "a salon owner must be able to publish their course");
+    assertCalendarDate(
+      (coursePublish.body as { startDate: string }).startDate,
+      updatedEducationCourseDate,
+      "the education course publish response start date",
+    );
+
+    const courseEnrollment = await request(
+      baseUrl,
+      ownerSession,
+      `/education/courses/${createdCourse.id}/enrollments`,
+      "POST",
+      {},
+    );
+    assert.equal(courseEnrollment.status, 201, "a salon owner must be able to enroll in a published online course");
+    const courseLms = await getRequest(
+      baseUrl,
+      ownerSession,
+      `/education/enrollments/${(courseEnrollment.body as { id: string }).id}/lms`,
+    );
+    assert.equal(courseLms.status, 200, "an enrolled salon owner must be able to open the course LMS");
+    assertCalendarDate(
+      (courseLms.body as { course: { startDate: string } }).course.startDate,
+      updatedEducationCourseDate,
+      "the education LMS course start date",
     );
 
     const customerUpdate = await request(baseUrl, customerSession, `/appointments/${createdCustomerAppointment.id}`, "PATCH", {
