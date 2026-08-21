@@ -25,16 +25,25 @@ type PendingBookingFixture = {
   salonPath: string;
 };
 
+type PendingBookingFixtureOptions = {
+  instantBooking?: boolean;
+  homeServiceAvailable?: boolean;
+};
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const derived = await scrypt(password, salt, 64) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
 }
 
-async function createPendingBookingFixture(): Promise<PendingBookingFixture> {
+async function createPendingBookingFixture({
+  instantBooking = false,
+  homeServiceAvailable = false,
+}: PendingBookingFixtureOptions = {}): Promise<PendingBookingFixture> {
   const suffix = randomUUID();
   const customerEmail = `browser-pending-booking-customer-${suffix}@example.test`;
   const customerPassword = "browser-pending-booking-customer-password";
+  const customerPhone = `+38161${suffix.replaceAll("-", "").slice(0, 8)}`;
   let customerId: string | undefined;
   let ownerId: string | undefined;
   let salonId: string | undefined;
@@ -55,6 +64,8 @@ async function createPendingBookingFixture(): Promise<PendingBookingFixture> {
       firstName: "Browser",
       lastName: "Kupac",
       email: customerEmail,
+      phone: customerPhone,
+      phoneNormalized: customerPhone,
       passwordHash: await hashPassword(customerPassword),
       passwordSetAt: new Date(),
       role: "CUSTOMER",
@@ -74,7 +85,8 @@ async function createPendingBookingFixture(): Promise<PendingBookingFixture> {
       shortDescription: "Izolovan salon za proveru zahteva za termin.",
       description: "Salon je napravljen samo za browser regresioni test zahteva za termin.",
       imageUrl: "/test-browser-pending-booking.jpg",
-      instantBooking: false,
+      instantBooking,
+      homeService: homeServiceAvailable,
     }).returning();
     if (!salon) throw new Error("Pending-booking browser fixture could not create its salon.");
     salonId = salon.id;
@@ -96,6 +108,8 @@ async function createPendingBookingFixture(): Promise<PendingBookingFixture> {
       durationMinutes: 60,
       price: 1000,
       imageUrl: "/test-browser-pending-booking.jpg",
+      homeServiceAvailable,
+      homeServiceFee: homeServiceAvailable ? 300 : 0,
     }).returning();
     if (!service) throw new Error("Pending-booking browser fixture could not create its service.");
 
@@ -211,6 +225,47 @@ async function completeBooking(page: Page, widget: Locator, expectedStatus: "con
   return appointment.id;
 }
 
+async function completeHomeVisitBooking(page: Page, widget: Locator) {
+  const serviceName = await reachBookingConfirmation(page, widget);
+  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+
+  const locationDialog = page.getByRole("dialog", { name: "Gde želite tretman?" });
+  await expect(locationDialog).toBeVisible();
+  await locationDialog.getByRole("button", { name: "Na mojoj adresi" }).click();
+  await locationDialog.locator("#home-address").fill("Test adresa 84");
+  await locationDialog.locator("#home-city").fill("Beograd");
+
+  const bookingRequestPromise = page.waitForRequest((request) =>
+    request.method() === "POST"
+    && new URL(request.url()).pathname === "/api/appointments",
+  );
+  const responsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/appointments",
+  );
+  await locationDialog.getByRole("button", { name: "Pošalji zahtev za dolazak" }).click();
+
+  const bookingRequest = await bookingRequestPromise;
+  expect(bookingRequest.postDataJSON()).toMatchObject({
+    treatmentLocation: "home",
+    treatmentAddress: { line1: "Test adresa 84", city: "Beograd" },
+  });
+  expect(bookingRequest.postDataJSON()).not.toHaveProperty("employeeId");
+
+  const response = await responsePromise;
+  expect(response.status(), "A home-visit request must create an appointment.").toBe(201);
+  const appointment = await response.json() as { id: string; status: "confirmed" | "pending" };
+  expect(appointment.id).toBeTruthy();
+  expect(appointment.status, "Home-visit bookings must remain pending even for instant-booking salons.").toBe("pending");
+
+  await expect(widget.getByRole("heading", { name: "Zahtev za termin je poslat" })).toBeVisible();
+  await expect(widget.getByText("Salon će uskoro potvrditi vaš termin.")).toBeVisible();
+  await expect(widget.getByText("Termin potvrđen", { exact: true })).toHaveCount(0);
+  await expect(widget.getByText(serviceName, { exact: true })).toBeVisible();
+
+  return appointment.id;
+}
+
 async function reachBookingConfirmationAsNonCustomer(page: Page, widget: Locator) {
   const service = widget.locator('[role="button"]:has(h5)').first();
   await expect(service).toBeVisible();
@@ -281,6 +336,27 @@ test("customer sees a sent request when the salon must approve an in-salon booki
     const widget = page.locator("#booking-widget");
     await expect(widget).toBeVisible();
     appointmentId = await completeBooking(page, widget, "pending");
+  } finally {
+    try {
+      if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    } finally {
+      await cleanUpPendingBookingFixture(fixture);
+    }
+  }
+});
+
+test("customer sees a sent request for a home visit even when the salon instantly books in-salon appointments", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createPendingBookingFixture({ instantBooking: true, homeServiceAvailable: true });
+  let appointmentId: string | undefined;
+
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const widget = page.locator("#booking-widget");
+    await expect(widget).toBeVisible();
+    appointmentId = await completeHomeVisitBooking(page, widget);
   } finally {
     try {
       if (appointmentId) await cleanUpAppointment(page, appointmentId);
