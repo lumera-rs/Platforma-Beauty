@@ -407,6 +407,129 @@ export interface SalonProfileMediaUpdate {
   servesMen?: boolean;
 }
 
+export interface ServiceTemplate {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  id: string;
+  name: string;
+  mainCategory: string;
+  subcategory: string;
+  /** @minimum 5 */
+  typicalDurationMinutes: number;
+  /** @minimum 0 */
+  priceMin: number;
+  /** @minimum 0 */
+  priceMax: number;
+  /** @nullable */
+  description: string | null;
+  active: boolean;
+}
+
+export interface ServiceTemplateBatchItem {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  templateId: string;
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  price: number;
+  /**
+     * @minimum 5
+     * @maximum 720
+     */
+  durationMinutes?: number;
+}
+
+export interface ServiceTemplateBatchInput {
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  items: ServiceTemplateBatchItem[];
+}
+
+export interface ServiceTemplateBatchResult {
+  created: Service[];
+  skipped: string[];
+}
+
+export interface AdminServiceTemplateInput {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  name: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  mainCategory: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  subcategory: string;
+  /**
+     * @minimum 5
+     * @maximum 720
+     */
+  typicalDurationMinutes: number;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  priceMin: number;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  priceMax: number;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  description?: string | null;
+  active: boolean;
+}
+
+export interface AdminServiceTemplateUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  mainCategory?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  subcategory?: string;
+  /**
+     * @minimum 5
+     * @maximum 720
+     */
+  typicalDurationMinutes?: number;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  priceMin?: number;
+  /**
+     * @minimum 0
+     * @maximum 1000000
+     */
+  priceMax?: number;
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
+  description?: string | null;
+  active?: boolean;
+}
+
 export interface CustomerReview {
   id: string;
   salonId: string;
@@ -2341,6 +2464,21 @@ to?: string;
 status?: string;
 };
 
+export type ListServiceTemplatesParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * @maxLength 120
+ */
+mainCategory?: string;
+/**
+ * @maxLength 120
+ */
+subcategory?: string;
+};
+
 export type ListProductsParams = {
 category?: string;
 subcategory?: string;
@@ -2532,4 +2670,19 @@ export const AdminListProductsSortDir = {
   asc: 'asc',
   desc: 'desc',
 } as const;
+
+export type AdminListServiceTemplatesParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
+/**
+ * @maxLength 120
+ */
+mainCategory?: string;
+/**
+ * @maxLength 120
+ */
+subcategory?: string;
+};
 

@@ -28,6 +28,7 @@ import {
   salonLoyaltyStatusesTable,
   salonsTable,
   serviceCategoriesTable,
+  serviceTemplatesTable,
   servicesTable,
   subscriptionPlansTable,
   subscriptionsTable,
@@ -101,6 +102,117 @@ const massageTags = [
   "Tajlandska masaža", "Reiki masaža", "Masaža vulkanskim kamenjem", "Klasična masaža",
   "Masaža u sedećem položaju", "Havajska masaža",
 ] as const;
+
+type ServiceTemplateSeed = {
+  name: string;
+  mainCategory: string;
+  subcategory: string;
+  typicalDurationMinutes: number;
+  priceMin: number;
+  priceMax: number;
+  description?: string;
+};
+
+const template = (
+  name: string,
+  mainCategory: string,
+  subcategory: string,
+  typicalDurationMinutes: number,
+  priceMin: number,
+  priceMax: number,
+  description?: string,
+): ServiceTemplateSeed => ({ name, mainCategory, subcategory, typicalDurationMinutes, priceMin, priceMax, description });
+
+const serviceTemplateSeeds: ServiceTemplateSeed[] = [
+  ...[
+    ["Žensko šišanje — kratka kosa", 45, 1500, 2600], ["Žensko šišanje — srednja kosa", 50, 1800, 3200],
+    ["Žensko šišanje — duga kosa", 60, 2200, 4000], ["Žensko šišanje — ekstra duga kosa", 75, 2600, 5000],
+    ["Dečije šišanje — dečaci", 30, 800, 1600], ["Dečije šišanje — devojčice", 40, 1000, 2200],
+    ["Feniranjem na ravno — kratka kosa", 30, 900, 1600], ["Feniranjem na ravno — srednja kosa", 40, 1000, 2000],
+    ["Feniranjem na ravno — duga kosa", 50, 1200, 2500], ["Feniranjem na ravno — ekstra duga kosa", 60, 1500, 3200],
+    ["Feniranjem na talase/lokne — kratka kosa", 45, 1200, 2200], ["Feniranjem na talase/lokne — srednja kosa", 55, 1500, 2800],
+    ["Feniranjem na talase/lokne — duga kosa", 70, 1900, 3500], ["Feniranjem na talase/lokne — ekstra duga kosa", 85, 2400, 4500],
+    ["Pranje kose", 15, 400, 900], ["Šišanje svećom (vele terapija)", 60, 2500, 5000],
+    ["Svečana frizura", 75, 2500, 6000], ["Holivudski talasi", 75, 2800, 6500], ["Afro lokne", 120, 4000, 9000],
+    ["Riblja kost pletenica", 35, 1200, 3000], ["Uslužno farbanje", 30, 1000, 2500],
+    ["Farbanje izrastka", 90, 2800, 5500], ["Izbeljivanje/blajhanje korena", 120, 3500, 7000],
+    ["Izbeljivanje cele dužine", 180, 6000, 15000], ["Preliv/toniranje", 45, 1800, 4000],
+    ["Skidanje boje", 120, 4500, 12000], ["Keratinsko ispravljanje kose", 180, 7000, 18000],
+    ["Botox kose", 120, 5000, 12000], ["Olaplex tretman", 60, 2000, 5000],
+    ["Regeneracija oštećene kose", 45, 1600, 3500], ["Argan tretman", 45, 1600, 3500],
+    ["Hidratantni tretman kose", 45, 1500, 3200], ["Nadogradnja kose — konsultacija", 30, 0, 1500],
+  ].map(([name, duration, min, max]) => template(name as string, "Frizerski saloni", "Kosa i stilizovanje", duration as number, min as number, max as number)),
+  ...[
+    ["Feniranjem sa Kerastase negom", 60, 1800, 4000], ["Feniranjem sa Olaplex negom", 60, 2000, 4500],
+    ["Farbanje cele dužine — kratka kosa", 120, 3500, 6500], ["Farbanje cele dužine — srednja kosa", 135, 4500, 8000],
+    ["Farbanje cele dužine — duga kosa", 150, 5500, 10500], ["Farbanje cele dužine — ekstra duga kosa", 180, 7000, 14000],
+    ["Pramenovi na foliju — srednja kosa", 150, 5500, 10000], ["Pramenovi na foliju — duga kosa", 180, 7500, 14000],
+    ["Pramenovi na foliju — ekstra duga kosa", 210, 9000, 18000], ["Balayage / Ombre / Sombre", 210, 8500, 22000],
+  ].map(([name, duration, min, max]) => template(name as string, "Frizerski saloni", "Boja i tehnike", duration as number, min as number, max as number)),
+  template("Muško šišanje", "Muški frizeri", "Šišanje", 35, 1000, 2500),
+  template("Berberin / muško brijanje", "Muški frizeri", "Brada i brijanje", 35, 1000, 2800),
+
+  ...[
+    ["Manikir", 45, 900, 1800], ["Lakiranje noktiju", 30, 600, 1200], ["Gel lak — ruke", 60, 1500, 2800],
+    ["Gel lak — noge", 60, 1600, 3000], ["Nadogradnja noktiju", 120, 2800, 5500],
+    ["Ojačavanje noktiju gelom", 75, 1800, 3200], ["Ojačavanje noktiju rubber bazom", 60, 1600, 2800],
+    ["Ukrašavanje / dizajn noktiju", 20, 200, 1500], ["French / ombre dodatak", 20, 300, 1000],
+    ["Ruski manikir", 60, 1500, 2500], ["Skidanje gela / trajnog laka", 30, 600, 1400],
+    ["Estetski pedikir", 60, 1800, 3500], ["Medicinski pedikir", 75, 2500, 5000],
+    ["Parafinski tretman ruku", 30, 900, 1800], ["Parafinski tretman nogu", 40, 1200, 2200],
+    ["Muški manikir", 40, 1000, 2000], ["Muški pedikir", 60, 1800, 3500],
+    ["Gljivice na noktima — tretman", 45, 1500, 4000],
+  ].map(([name, duration, min, max]) => template(name as string, "Nokti", "Nega noktiju", duration as number, min as number, max as number)),
+  ...["S", "M", "L", "XL"].flatMap((length, index) => [
+    template(`Izlivanje noktiju gelom — ${length}`, "Nokti", "Gel tehnike", 90 + index * 15, 2200 + index * 500, 4000 + index * 900),
+    template(`Korekcija noktiju — ${length}`, "Nokti", "Gel tehnike", 75 + index * 15, 1800 + index * 450, 3500 + index * 800),
+  ]),
+
+  ...[
+    ["Higijenski / klasični tretman lica", 75, 2500, 5000], ["Hydrafacial", 60, 4500, 9000],
+    ["Mikrodermoabrazija", 45, 2500, 5000], ["Ultrazvučno čišćenje lica", 60, 3000, 6000],
+    ["Hemijski piling", 45, 3000, 7000], ["Mezoterapija lica bez igle", 60, 4000, 8500],
+    ["Mezoterapija lica sa iglom", 60, 7000, 16000], ["Biorevitalizacija lica", 60, 9000, 20000],
+    ["Hijaluronski tretman lica", 60, 8000, 18000], ["Dermapen", 60, 5000, 12000],
+    ["Radiotalasni / RF lifting lica", 45, 2500, 6000], ["Tretman vitaminom C", 45, 2500, 5500],
+    ["Masaža lica", 30, 1200, 3000], ["Oxi tretman kiseonikom", 60, 4000, 9000],
+    ["Anti-age tretman protiv bora", 60, 3500, 8500], ["Profesionalno šminkanje — dnevno", 45, 2500, 5000],
+    ["Profesionalno šminkanje — večernje", 60, 3500, 7000], ["Profesionalno šminkanje — svečano", 75, 4500, 9000],
+    ["Korekcija obrva", 20, 500, 1200], ["Brow lift", 45, 1800, 3500], ["Farbanje obrva", 25, 600, 1500],
+    ["Laminacija obrva", 45, 2000, 4000], ["Lash lift", 60, 2500, 5000], ["Veštačke trepavice", 120, 3500, 9000],
+    ["Farbanje trepavica", 25, 700, 1800], ["Trajna šminka — konsultacija", 30, 0, 2000],
+  ].map(([name, duration, min, max]) => template(name as string, "Lice", name.toString().includes("šminkanje") ? "Šminkanje" : name.toString().includes("obrva") || name.toString().includes("trepav") || name.toString().includes("Lash") ? "Obrve i trepavice" : "Nega lica", duration as number, min as number, max as number)),
+
+  ...[
+    ["Kavitacija", 45, 1800, 4000], ["Presoterapija", 45, 1800, 3500], ["RTL / radiotalasno zatezanje", 45, 2200, 5000],
+    ["Anticelulit masaža", 45, 1800, 4000], ["Maderoterapija", 60, 2500, 5500], ["Rolosfera", 45, 2500, 5000],
+    ["Shockwave tretman", 45, 3000, 6000], ["Termo ćebe", 45, 1600, 3000], ["Vacuslim / vakum tretman", 45, 2500, 5500],
+    ["Velashape tretman", 45, 3500, 7500], ["EMS / Tesla body former", 45, 3000, 7000], ["Limfna drenaža", 60, 2500, 6000],
+    ["Piling tela", 45, 1800, 4000], ["Mezoterapija tela", 60, 5000, 12000], ["Parafinsko pakovanje tela", 60, 2500, 5500],
+  ].map(([name, duration, min, max]) => template(name as string, "Telo", "Oblikovanje i nega tela", duration as number, min as number, max as number)),
+
+  ...[
+    ["Brazilska depilacija", 45, 1800, 3500], ["Depilacija toplim voskom — dame: cele noge", 45, 1200, 2500],
+    ["Depilacija toplim voskom — dame: prepone", 25, 700, 1600], ["Depilacija toplim voskom — dame: ruke", 25, 700, 1500],
+    ["Depilacija toplim voskom — dame: pazuh", 15, 400, 900], ["Depilacija toplim voskom — dame: lice", 20, 500, 1200],
+    ["Depilacija toplim voskom — muškarci: grudi i stomak", 45, 1800, 4000], ["Depilacija toplim voskom — muškarci: leđa", 45, 1800, 4000],
+    ["Depilacija hladnim voskom — cele noge", 50, 1200, 2600], ["Depilacija hladnim voskom — ruke", 30, 700, 1500],
+    ["Depilacija šećernom pastom — cele noge", 60, 1800, 3500], ["Depilacija šećernom pastom — prepone", 30, 1000, 2200],
+    ["Depilacija šećernom pastom — pazuh", 20, 600, 1300], ["Depilacija šećernom pastom — lice", 25, 700, 1500],
+  ].map(([name, duration, min, max]) => template(name as string, "Depilacija", "Vosak i šećerna pasta", duration as number, min as number, max as number)),
+  ...[
+    ["Laserska / IPL epilacija — dame: pazuh", 20, 1500, 3500], ["Laserska / IPL epilacija — dame: prepone", 30, 2500, 5500],
+    ["Laserska / IPL epilacija — dame: cele noge", 75, 6000, 14000], ["Laserska / IPL epilacija — dame: lice", 25, 1800, 4000],
+    ["Laserska / IPL epilacija — muškarci: leđa", 60, 6000, 14000], ["Laserska / IPL epilacija — muškarci: grudi i stomak", 60, 5000, 12000],
+    ["Laserska / IPL epilacija — muškarci: ramena", 30, 2500, 5500],
+  ].map(([name, duration, min, max]) => template(name as string, "Depilacija", "Laserska i IPL epilacija", duration as number, min as number, max as number)),
+
+  ...massageTags.map((name) => {
+    const isShort = /glave|lica|šaka|stopala|leđa|ramena|vrata|sedećem/i.test(name);
+    const isLong = /parove|tajlandska|joga|celog tela|havajska|ajurvedska/i.test(name);
+    return template(name, "Masaža", "Masažne tehnike", isLong ? 90 : isShort ? 30 : 60, isLong ? 3500 : isShort ? 1200 : 2200, isLong ? 8000 : isShort ? 3000 : 5500);
+  }),
+];
 
 export async function ensureDemoData(): Promise<void> {
   if (!seedPromise) seedPromise = seed();
@@ -739,6 +851,7 @@ async function seedShippingConfig(): Promise<void> {
 }
 
 async function seedMarketplaceTaxonomy(): Promise<void> {
+  await seedServiceTemplateLibrary();
   const salons = await db.select().from(salonsTable);
   if (!salons.length) return;
   await seedB2BShopTaxonomy();
@@ -793,6 +906,14 @@ async function seedMarketplaceTaxonomy(): Promise<void> {
   const services = await db.select().from(servicesTable);
   const inspiration = salons.filter((salon) => !existingInspiration.some((item) => item.salonId === salon.id)).slice(0, 8).map((salon, index) => ({ salonId: salon.id, serviceId: services.find((service) => service.salonId === salon.id)?.id ?? null, title: ["Nude gel manikir", "Balayage inspiracija", "Glow tretman lica", "Relax ritual", "Svečana šminka"][index % 5]!, tags: [["nokti"], ["frizure"], ["lice"], ["masaža"], ["šminkanje"]][index % 5]!, imageUrl: salon.imageUrl }));
   if (inspiration.length) await db.insert(inspirationItemsTable).values(inspiration);
+}
+
+async function seedServiceTemplateLibrary(): Promise<void> {
+  for (const item of serviceTemplateSeeds) {
+    await db.insert(serviceTemplatesTable).values(item).onConflictDoNothing({
+      target: [serviceTemplatesTable.mainCategory, serviceTemplatesTable.name],
+    });
+  }
 }
 
 function serviceTargetsMen(service: Pick<typeof servicesTable.$inferSelect, "categoryName" | "tags">): boolean {

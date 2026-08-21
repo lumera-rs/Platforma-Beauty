@@ -1963,6 +1963,94 @@ export const CreateSalonServiceResponse = zod.object({
 
 
 /**
+ * @summary List active service templates for a salon owner
+ */
+export const listServiceTemplatesQuerySearchMax = 120;
+
+export const listServiceTemplatesQueryMainCategoryMax = 120;
+
+export const listServiceTemplatesQuerySubcategoryMax = 120;
+
+
+
+export const ListServiceTemplatesQueryParams = zod.object({
+  "search": zod.coerce.string().max(listServiceTemplatesQuerySearchMax).optional(),
+  "mainCategory": zod.coerce.string().max(listServiceTemplatesQueryMainCategoryMax).optional(),
+  "subcategory": zod.coerce.string().max(listServiceTemplatesQuerySubcategoryMax).optional()
+})
+
+export const listServiceTemplatesResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const listServiceTemplatesResponseTypicalDurationMinutesMin = 5;
+
+export const listServiceTemplatesResponsePriceMinMin = 0;
+
+export const listServiceTemplatesResponsePriceMaxMin = 0;
+
+
+
+export const ListServiceTemplatesResponseItem = zod.object({
+  "id": zod.string().regex(listServiceTemplatesResponseIdRegExp),
+  "name": zod.string(),
+  "mainCategory": zod.string(),
+  "subcategory": zod.string(),
+  "typicalDurationMinutes": zod.number().min(listServiceTemplatesResponseTypicalDurationMinutesMin),
+  "priceMin": zod.number().min(listServiceTemplatesResponsePriceMinMin),
+  "priceMax": zod.number().min(listServiceTemplatesResponsePriceMaxMin),
+  "description": zod.string().nullable(),
+  "active": zod.boolean()
+})
+export const ListServiceTemplatesResponse = zod.array(ListServiceTemplatesResponseItem)
+
+
+/**
+ * @summary Create services from curated templates with salon pricing
+ */
+export const createSalonServicesBatchBodyItemsItemTemplateIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const createSalonServicesBatchBodyItemsItemPriceMax = 1000000;
+
+export const createSalonServicesBatchBodyItemsItemDurationMinutesMin = 5;
+export const createSalonServicesBatchBodyItemsItemDurationMinutesMax = 720;
+
+export const createSalonServicesBatchBodyItemsMax = 50;
+
+
+
+export const CreateSalonServicesBatchBody = zod.object({
+  "items": zod.array(zod.object({
+  "templateId": zod.string().regex(createSalonServicesBatchBodyItemsItemTemplateIdRegExp),
+  "price": zod.number().min(1).max(createSalonServicesBatchBodyItemsItemPriceMax),
+  "durationMinutes": zod.number().min(createSalonServicesBatchBodyItemsItemDurationMinutesMin).max(createSalonServicesBatchBodyItemsItemDurationMinutesMax).optional()
+})).min(1).max(createSalonServicesBatchBodyItemsMax)
+})
+
+export const createSalonServicesBatchResponseCreatedItemHomeServiceFeeMin = 0;
+
+export const createSalonServicesBatchResponseCreatedItemHomeServiceMinimumOrderMin = 0;
+
+
+
+export const CreateSalonServicesBatchResponse = zod.object({
+  "created": zod.array(zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "promoPrice": zod.number().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "packageTreatments": zod.number().nullish(),
+  "imageUrl": zod.string(),
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(createSalonServicesBatchResponseCreatedItemHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(createSalonServicesBatchResponseCreatedItemHomeServiceMinimumOrderMin).nullable()
+})),
+  "skipped": zod.array(zod.string())
+})
+
+
+/**
  * @summary Update a salon service
  */
 export const UpdateSalonServiceParams = zod.object({
@@ -5189,6 +5277,195 @@ export const AdminUpdateServiceCategoryResponse = zod.object({
   "active": zod.boolean(),
   "fallbackImageUrl": zod.string().nullable(),
   "serviceCount": zod.number().min(adminUpdateServiceCategoryResponseServiceCountMin)
+})
+
+
+/**
+ * @summary List service templates for administration
+ */
+export const adminListServiceTemplatesQuerySearchMax = 120;
+
+export const adminListServiceTemplatesQueryMainCategoryMax = 120;
+
+export const adminListServiceTemplatesQuerySubcategoryMax = 120;
+
+
+
+export const AdminListServiceTemplatesQueryParams = zod.object({
+  "search": zod.coerce.string().max(adminListServiceTemplatesQuerySearchMax).optional(),
+  "mainCategory": zod.coerce.string().max(adminListServiceTemplatesQueryMainCategoryMax).optional(),
+  "subcategory": zod.coerce.string().max(adminListServiceTemplatesQuerySubcategoryMax).optional()
+})
+
+export const adminListServiceTemplatesResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminListServiceTemplatesResponseTypicalDurationMinutesMin = 5;
+
+export const adminListServiceTemplatesResponsePriceMinMin = 0;
+
+export const adminListServiceTemplatesResponsePriceMaxMin = 0;
+
+
+
+export const AdminListServiceTemplatesResponseItem = zod.object({
+  "id": zod.string().regex(adminListServiceTemplatesResponseIdRegExp),
+  "name": zod.string(),
+  "mainCategory": zod.string(),
+  "subcategory": zod.string(),
+  "typicalDurationMinutes": zod.number().min(adminListServiceTemplatesResponseTypicalDurationMinutesMin),
+  "priceMin": zod.number().min(adminListServiceTemplatesResponsePriceMinMin),
+  "priceMax": zod.number().min(adminListServiceTemplatesResponsePriceMaxMin),
+  "description": zod.string().nullable(),
+  "active": zod.boolean()
+})
+export const AdminListServiceTemplatesResponse = zod.array(AdminListServiceTemplatesResponseItem)
+
+
+/**
+ * @summary Create a service template
+ */
+export const adminCreateServiceTemplateBodyNameMax = 160;
+
+export const adminCreateServiceTemplateBodyMainCategoryMax = 120;
+
+export const adminCreateServiceTemplateBodySubcategoryMax = 120;
+
+export const adminCreateServiceTemplateBodyTypicalDurationMinutesMin = 5;
+export const adminCreateServiceTemplateBodyTypicalDurationMinutesMax = 720;
+
+export const adminCreateServiceTemplateBodyPriceMinMin = 0;
+export const adminCreateServiceTemplateBodyPriceMinMax = 1000000;
+
+export const adminCreateServiceTemplateBodyPriceMaxMin = 0;
+export const adminCreateServiceTemplateBodyPriceMaxMax = 1000000;
+
+export const adminCreateServiceTemplateBodyDescriptionMax = 1000;
+
+
+
+export const AdminCreateServiceTemplateBody = zod.object({
+  "name": zod.string().min(1).max(adminCreateServiceTemplateBodyNameMax),
+  "mainCategory": zod.string().min(1).max(adminCreateServiceTemplateBodyMainCategoryMax),
+  "subcategory": zod.string().min(1).max(adminCreateServiceTemplateBodySubcategoryMax),
+  "typicalDurationMinutes": zod.number().min(adminCreateServiceTemplateBodyTypicalDurationMinutesMin).max(adminCreateServiceTemplateBodyTypicalDurationMinutesMax),
+  "priceMin": zod.number().min(adminCreateServiceTemplateBodyPriceMinMin).max(adminCreateServiceTemplateBodyPriceMinMax),
+  "priceMax": zod.number().min(adminCreateServiceTemplateBodyPriceMaxMin).max(adminCreateServiceTemplateBodyPriceMaxMax),
+  "description": zod.string().max(adminCreateServiceTemplateBodyDescriptionMax).nullish(),
+  "active": zod.boolean()
+})
+
+export const adminCreateServiceTemplateResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminCreateServiceTemplateResponseTypicalDurationMinutesMin = 5;
+
+export const adminCreateServiceTemplateResponsePriceMinMin = 0;
+
+export const adminCreateServiceTemplateResponsePriceMaxMin = 0;
+
+
+
+export const AdminCreateServiceTemplateResponse = zod.object({
+  "id": zod.string().regex(adminCreateServiceTemplateResponseIdRegExp),
+  "name": zod.string(),
+  "mainCategory": zod.string(),
+  "subcategory": zod.string(),
+  "typicalDurationMinutes": zod.number().min(adminCreateServiceTemplateResponseTypicalDurationMinutesMin),
+  "priceMin": zod.number().min(adminCreateServiceTemplateResponsePriceMinMin),
+  "priceMax": zod.number().min(adminCreateServiceTemplateResponsePriceMaxMin),
+  "description": zod.string().nullable(),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Update a service template
+ */
+export const adminUpdateServiceTemplatePathTemplateIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateServiceTemplateParams = zod.object({
+  "templateId": zod.coerce.string().regex(adminUpdateServiceTemplatePathTemplateIdRegExp)
+})
+
+export const adminUpdateServiceTemplateBodyNameMax = 160;
+
+export const adminUpdateServiceTemplateBodyMainCategoryMax = 120;
+
+export const adminUpdateServiceTemplateBodySubcategoryMax = 120;
+
+export const adminUpdateServiceTemplateBodyTypicalDurationMinutesMin = 5;
+export const adminUpdateServiceTemplateBodyTypicalDurationMinutesMax = 720;
+
+export const adminUpdateServiceTemplateBodyPriceMinMin = 0;
+export const adminUpdateServiceTemplateBodyPriceMinMax = 1000000;
+
+export const adminUpdateServiceTemplateBodyPriceMaxMin = 0;
+export const adminUpdateServiceTemplateBodyPriceMaxMax = 1000000;
+
+export const adminUpdateServiceTemplateBodyDescriptionMax = 1000;
+
+
+
+export const AdminUpdateServiceTemplateBody = zod.object({
+  "name": zod.string().min(1).max(adminUpdateServiceTemplateBodyNameMax).optional(),
+  "mainCategory": zod.string().min(1).max(adminUpdateServiceTemplateBodyMainCategoryMax).optional(),
+  "subcategory": zod.string().min(1).max(adminUpdateServiceTemplateBodySubcategoryMax).optional(),
+  "typicalDurationMinutes": zod.number().min(adminUpdateServiceTemplateBodyTypicalDurationMinutesMin).max(adminUpdateServiceTemplateBodyTypicalDurationMinutesMax).optional(),
+  "priceMin": zod.number().min(adminUpdateServiceTemplateBodyPriceMinMin).max(adminUpdateServiceTemplateBodyPriceMinMax).optional(),
+  "priceMax": zod.number().min(adminUpdateServiceTemplateBodyPriceMaxMin).max(adminUpdateServiceTemplateBodyPriceMaxMax).optional(),
+  "description": zod.string().max(adminUpdateServiceTemplateBodyDescriptionMax).nullish(),
+  "active": zod.boolean().optional()
+})
+
+export const adminUpdateServiceTemplateResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminUpdateServiceTemplateResponseTypicalDurationMinutesMin = 5;
+
+export const adminUpdateServiceTemplateResponsePriceMinMin = 0;
+
+export const adminUpdateServiceTemplateResponsePriceMaxMin = 0;
+
+
+
+export const AdminUpdateServiceTemplateResponse = zod.object({
+  "id": zod.string().regex(adminUpdateServiceTemplateResponseIdRegExp),
+  "name": zod.string(),
+  "mainCategory": zod.string(),
+  "subcategory": zod.string(),
+  "typicalDurationMinutes": zod.number().min(adminUpdateServiceTemplateResponseTypicalDurationMinutesMin),
+  "priceMin": zod.number().min(adminUpdateServiceTemplateResponsePriceMinMin),
+  "priceMax": zod.number().min(adminUpdateServiceTemplateResponsePriceMaxMin),
+  "description": zod.string().nullable(),
+  "active": zod.boolean()
+})
+
+
+/**
+ * @summary Delete a service template
+ */
+export const adminDeleteServiceTemplatePathTemplateIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminDeleteServiceTemplateParams = zod.object({
+  "templateId": zod.coerce.string().regex(adminDeleteServiceTemplatePathTemplateIdRegExp)
+})
+
+export const adminDeleteServiceTemplateResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const adminDeleteServiceTemplateResponseTypicalDurationMinutesMin = 5;
+
+export const adminDeleteServiceTemplateResponsePriceMinMin = 0;
+
+export const adminDeleteServiceTemplateResponsePriceMaxMin = 0;
+
+
+
+export const AdminDeleteServiceTemplateResponse = zod.object({
+  "id": zod.string().regex(adminDeleteServiceTemplateResponseIdRegExp),
+  "name": zod.string(),
+  "mainCategory": zod.string(),
+  "subcategory": zod.string(),
+  "typicalDurationMinutes": zod.number().min(adminDeleteServiceTemplateResponseTypicalDurationMinutesMin),
+  "priceMin": zod.number().min(adminDeleteServiceTemplateResponsePriceMinMin),
+  "priceMax": zod.number().min(adminDeleteServiceTemplateResponsePriceMaxMin),
+  "description": zod.string().nullable(),
+  "active": zod.boolean()
 })
 
 

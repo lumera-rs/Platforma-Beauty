@@ -775,6 +775,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Service"
+  /service-templates:
+    get:
+      operationId: listServiceTemplates
+      tags: [salon-management]
+      summary: List active service templates for a salon owner
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: mainCategory
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: subcategory
+          in: query
+          schema: { type: string, maxLength: 120 }
+      responses:
+        "200":
+          description: Active service templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceTemplate" }
+  /salon/services/from-templates:
+    post:
+      operationId: createSalonServicesBatch
+      tags: [salon-management]
+      summary: Create services from curated templates with salon pricing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceTemplateBatchInput" }
+      responses:
+        "201":
+          description: Created services and duplicate skips
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceTemplateBatchResult" }
   /salon/services/{serviceId}:
     patch:
       operationId: updateSalonService
@@ -2142,6 +2181,80 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminServiceCategory" }
+  /admin/service-templates:
+    get:
+      operationId: adminListServiceTemplates
+      tags: [admin]
+      summary: List service templates for administration
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: mainCategory
+          in: query
+          schema: { type: string, maxLength: 120 }
+        - name: subcategory
+          in: query
+          schema: { type: string, maxLength: 120 }
+      responses:
+        "200":
+          description: Service templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceTemplate" }
+    post:
+      operationId: adminCreateServiceTemplate
+      tags: [admin]
+      summary: Create a service template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminServiceTemplateInput" }
+      responses:
+        "201":
+          description: Created service template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceTemplate" }
+  /admin/service-templates/{templateId}:
+    patch:
+      operationId: adminUpdateServiceTemplate
+      tags: [admin]
+      summary: Update a service template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminServiceTemplateUpdate" }
+      responses:
+        "200":
+          description: Updated service template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceTemplate" }
+    delete:
+      operationId: adminDeleteServiceTemplate
+      tags: [admin]
+      summary: Delete a service template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Deleted service template
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceTemplate" }
   /admin/brands:
     get:
       operationId: adminListBrands
@@ -2670,6 +2783,69 @@ components:
         homeServiceFee: { type: number, minimum: 0 }
         homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
       required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder]
+    ServiceTemplate:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        name: { type: string }
+        mainCategory: { type: string }
+        subcategory: { type: string }
+        typicalDurationMinutes: { type: number, minimum: 5 }
+        priceMin: { type: number, minimum: 0 }
+        priceMax: { type: number, minimum: 0 }
+        description: { type: ["string", "null"] }
+        active: { type: boolean }
+      required: [id, name, mainCategory, subcategory, typicalDurationMinutes, priceMin, priceMax, description, active]
+    ServiceTemplateBatchItem:
+      type: object
+      properties:
+        templateId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        price: { type: number, minimum: 1, maximum: 1000000 }
+        durationMinutes: { type: number, minimum: 5, maximum: 720 }
+      required: [templateId, price]
+    ServiceTemplateBatchInput:
+      type: object
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ServiceTemplateBatchItem" }
+      required: [items]
+    ServiceTemplateBatchResult:
+      type: object
+      properties:
+        created:
+          type: array
+          items: { $ref: "#/components/schemas/Service" }
+        skipped:
+          type: array
+          items: { type: string }
+      required: [created, skipped]
+    AdminServiceTemplateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        mainCategory: { type: string, minLength: 1, maxLength: 120 }
+        subcategory: { type: string, minLength: 1, maxLength: 120 }
+        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720 }
+        priceMin: { type: number, minimum: 0, maximum: 1000000 }
+        priceMax: { type: number, minimum: 0, maximum: 1000000 }
+        description: { type: ["string", "null"], maxLength: 1000 }
+        active: { type: boolean }
+      required: [name, mainCategory, subcategory, typicalDurationMinutes, priceMin, priceMax, active]
+    AdminServiceTemplateUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        mainCategory: { type: string, minLength: 1, maxLength: 120 }
+        subcategory: { type: string, minLength: 1, maxLength: 120 }
+        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720 }
+        priceMin: { type: number, minimum: 0, maximum: 1000000 }
+        priceMax: { type: number, minimum: 0, maximum: 1000000 }
+        description: { type: ["string", "null"], maxLength: 1000 }
+        active: { type: boolean }
+      minProperties: 1
     Review:
       type: object
       properties:

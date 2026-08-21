@@ -165,6 +165,23 @@ export const serviceCategoriesTable = pgTable("service_categories", {
   active: boolean("active").notNull().default(true),
 });
 
+export const serviceTemplatesTable = pgTable("service_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  mainCategory: text("main_category").notNull(),
+  subcategory: text("subcategory").notNull(),
+  typicalDurationMinutes: integer("typical_duration_minutes").notNull(),
+  priceMin: integer("price_min").notNull(),
+  priceMax: integer("price_max").notNull(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("service_templates_category_name_unique").on(table.mainCategory, table.name),
+  index("service_templates_category_subcategory_index").on(table.mainCategory, table.subcategory),
+]);
+
 export const salonsTable = pgTable("salons", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerId: uuid("owner_id").notNull().references(() => usersTable.id),

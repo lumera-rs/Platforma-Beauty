@@ -30,6 +30,7 @@ import type {
   AdminListProductsParams,
   AdminListReviewsParams,
   AdminListSalonsParams,
+  AdminListServiceTemplatesParams,
   AdminListUsersParams,
   AdminOrder,
   AdminOrderBulkUpdate,
@@ -49,6 +50,8 @@ import type {
   AdminSalonUpdate,
   AdminServiceCategory,
   AdminServiceCategoryImageUpdate,
+  AdminServiceTemplateInput,
+  AdminServiceTemplateUpdate,
   AdminSummary,
   AdminUser,
   AdminUserUpdate,
@@ -101,6 +104,7 @@ import type {
   ListProductsParams,
   ListSalonAppointmentsParams,
   ListSalonsParams,
+  ListServiceTemplatesParams,
   LoginInput,
   LoyaltyStatus,
   LoyaltyTier,
@@ -130,6 +134,9 @@ import type {
   ServiceCategoryImageUpload,
   ServiceCategoryImageUploadInput,
   ServiceInput,
+  ServiceTemplate,
+  ServiceTemplateBatchInput,
+  ServiceTemplateBatchResult,
   ShippingConfig,
   ShippingConfigInput,
   ShippingQuote,
@@ -3463,6 +3470,161 @@ export const useCreateSalonService = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateSalonServiceMutationOptions(options));
+    }
+
+export const getListServiceTemplatesUrl = (params?: ListServiceTemplatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/service-templates?${stringifiedParams}` : `/api/service-templates`
+}
+
+/**
+ * @summary List active service templates for a salon owner
+ */
+export const listServiceTemplates = async (params?: ListServiceTemplatesParams, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplate[]> => {
+
+  return customFetch<ServiceTemplate[]>(getListServiceTemplatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListServiceTemplatesQueryKey = (params?: ListServiceTemplatesParams,) => {
+    return [
+    `/api/service-templates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListServiceTemplatesQueryOptions = <TData = Awaited<ReturnType<typeof listServiceTemplates>>, TError = ErrorType<unknown>>(params?: ListServiceTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listServiceTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListServiceTemplatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listServiceTemplates>>> = ({ signal }) => listServiceTemplates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listServiceTemplates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListServiceTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof listServiceTemplates>>>
+export type ListServiceTemplatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active service templates for a salon owner
+ */
+
+export function useListServiceTemplates<TData = Awaited<ReturnType<typeof listServiceTemplates>>, TError = ErrorType<unknown>>(
+ params?: ListServiceTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listServiceTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListServiceTemplatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSalonServicesBatchUrl = () => {
+
+
+
+
+  return `/api/salon/services/from-templates`
+}
+
+/**
+ * @summary Create services from curated templates with salon pricing
+ */
+export const createSalonServicesBatch = async (serviceTemplateBatchInput: ServiceTemplateBatchInput, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplateBatchResult> => {
+
+  return customFetch<ServiceTemplateBatchResult>(getCreateSalonServicesBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(serviceTemplateBatchInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonServicesBatchMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonServicesBatch>>, TError,{data: BodyType<ServiceTemplateBatchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonServicesBatch>>, TError,{data: BodyType<ServiceTemplateBatchInput>}, TContext> => {
+
+const mutationKey = ['createSalonServicesBatch'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonServicesBatch>>, {data: BodyType<ServiceTemplateBatchInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonServicesBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonServicesBatchMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonServicesBatch>>>
+    export type CreateSalonServicesBatchMutationBody = BodyType<ServiceTemplateBatchInput>
+    export type CreateSalonServicesBatchMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create services from curated templates with salon pricing
+ */
+export const useCreateSalonServicesBatch = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonServicesBatch>>, TError,{data: BodyType<ServiceTemplateBatchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonServicesBatch>>,
+        TError,
+        {data: BodyType<ServiceTemplateBatchInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonServicesBatchMutationOptions(options));
     }
 
 export const getUpdateSalonServiceUrl = (serviceId: string,) => {
@@ -9208,6 +9370,304 @@ export const useAdminUpdateServiceCategory = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAdminUpdateServiceCategoryMutationOptions(options));
+    }
+
+export const getAdminListServiceTemplatesUrl = (params?: AdminListServiceTemplatesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/service-templates?${stringifiedParams}` : `/api/admin/service-templates`
+}
+
+/**
+ * @summary List service templates for administration
+ */
+export const adminListServiceTemplates = async (params?: AdminListServiceTemplatesParams, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplate[]> => {
+
+  return customFetch<ServiceTemplate[]>(getAdminListServiceTemplatesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListServiceTemplatesQueryKey = (params?: AdminListServiceTemplatesParams,) => {
+    return [
+    `/api/admin/service-templates`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAdminListServiceTemplatesQueryOptions = <TData = Awaited<ReturnType<typeof adminListServiceTemplates>>, TError = ErrorType<unknown>>(params?: AdminListServiceTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListServiceTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListServiceTemplatesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListServiceTemplates>>> = ({ signal }) => adminListServiceTemplates(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListServiceTemplates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListServiceTemplatesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListServiceTemplates>>>
+export type AdminListServiceTemplatesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List service templates for administration
+ */
+
+export function useAdminListServiceTemplates<TData = Awaited<ReturnType<typeof adminListServiceTemplates>>, TError = ErrorType<unknown>>(
+ params?: AdminListServiceTemplatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListServiceTemplates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListServiceTemplatesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminCreateServiceTemplateUrl = () => {
+
+
+
+
+  return `/api/admin/service-templates`
+}
+
+/**
+ * @summary Create a service template
+ */
+export const adminCreateServiceTemplate = async (adminServiceTemplateInput: AdminServiceTemplateInput, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplate> => {
+
+  return customFetch<ServiceTemplate>(getAdminCreateServiceTemplateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminServiceTemplateInput)
+  }
+);}
+
+
+
+
+
+export const getAdminCreateServiceTemplateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateServiceTemplate>>, TError,{data: BodyType<AdminServiceTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminCreateServiceTemplate>>, TError,{data: BodyType<AdminServiceTemplateInput>}, TContext> => {
+
+const mutationKey = ['adminCreateServiceTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateServiceTemplate>>, {data: BodyType<AdminServiceTemplateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminCreateServiceTemplate(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminCreateServiceTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof adminCreateServiceTemplate>>>
+    export type AdminCreateServiceTemplateMutationBody = BodyType<AdminServiceTemplateInput>
+    export type AdminCreateServiceTemplateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a service template
+ */
+export const useAdminCreateServiceTemplate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminCreateServiceTemplate>>, TError,{data: BodyType<AdminServiceTemplateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminCreateServiceTemplate>>,
+        TError,
+        {data: BodyType<AdminServiceTemplateInput>},
+        TContext
+      > => {
+      return useMutation(getAdminCreateServiceTemplateMutationOptions(options));
+    }
+
+export const getAdminUpdateServiceTemplateUrl = (templateId: string,) => {
+
+
+
+
+  return `/api/admin/service-templates/${templateId}`
+}
+
+/**
+ * @summary Update a service template
+ */
+export const adminUpdateServiceTemplate = async (templateId: string,
+    adminServiceTemplateUpdate: AdminServiceTemplateUpdate, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplate> => {
+
+  return customFetch<ServiceTemplate>(getAdminUpdateServiceTemplateUrl(templateId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminServiceTemplateUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateServiceTemplateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceTemplate>>, TError,{templateId: string;data: BodyType<AdminServiceTemplateUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceTemplate>>, TError,{templateId: string;data: BodyType<AdminServiceTemplateUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdateServiceTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateServiceTemplate>>, {templateId: string;data: BodyType<AdminServiceTemplateUpdate>}> = (props) => {
+          const {templateId,data} = props ?? {};
+
+          return  adminUpdateServiceTemplate(templateId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateServiceTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateServiceTemplate>>>
+    export type AdminUpdateServiceTemplateMutationBody = BodyType<AdminServiceTemplateUpdate>
+    export type AdminUpdateServiceTemplateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a service template
+ */
+export const useAdminUpdateServiceTemplate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceTemplate>>, TError,{templateId: string;data: BodyType<AdminServiceTemplateUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateServiceTemplate>>,
+        TError,
+        {templateId: string;data: BodyType<AdminServiceTemplateUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateServiceTemplateMutationOptions(options));
+    }
+
+export const getAdminDeleteServiceTemplateUrl = (templateId: string,) => {
+
+
+
+
+  return `/api/admin/service-templates/${templateId}`
+}
+
+/**
+ * @summary Delete a service template
+ */
+export const adminDeleteServiceTemplate = async (templateId: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceTemplate> => {
+
+  return customFetch<ServiceTemplate>(getAdminDeleteServiceTemplateUrl(templateId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminDeleteServiceTemplateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeleteServiceTemplate>>, TError,{templateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminDeleteServiceTemplate>>, TError,{templateId: string}, TContext> => {
+
+const mutationKey = ['adminDeleteServiceTemplate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDeleteServiceTemplate>>, {templateId: string}> = (props) => {
+          const {templateId} = props ?? {};
+
+          return  adminDeleteServiceTemplate(templateId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminDeleteServiceTemplateMutationResult = NonNullable<Awaited<ReturnType<typeof adminDeleteServiceTemplate>>>
+
+    export type AdminDeleteServiceTemplateMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete a service template
+ */
+export const useAdminDeleteServiceTemplate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminDeleteServiceTemplate>>, TError,{templateId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminDeleteServiceTemplate>>,
+        TError,
+        {templateId: string},
+        TContext
+      > => {
+      return useMutation(getAdminDeleteServiceTemplateMutationOptions(options));
     }
 
 export const getAdminListBrandsUrl = () => {

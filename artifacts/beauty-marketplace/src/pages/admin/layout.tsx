@@ -2,12 +2,13 @@ import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navLinks = [
   { href: "/admin", label: "Pregled", icon: LayoutDashboard },
   { href: "/admin/saloni", label: "Saloni", icon: Store },
+  { href: "/admin/predlosci-usluga", label: "Predlošci usluga", icon: FileText },
   { href: "/admin/korisnici", label: "Korisnici", icon: Users },
   { href: "/admin/loyalty", label: "Loyalty Program", icon: Star },
   { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },

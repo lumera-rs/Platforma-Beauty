@@ -46,6 +46,7 @@ import {
   salonsTable,
   salonCustomersTable,
   serviceCategoriesTable,
+  serviceTemplatesTable,
   servicesTable,
   subscriptionPlansTable,
   subscriptionsTable,
@@ -55,6 +56,8 @@ import {
 import {
   AdminBulkUpdateProductsBody,
   AdminListServiceCategoriesResponse,
+  AdminListServiceTemplatesQueryParams,
+  AdminListServiceTemplatesResponse,
   AdminRequestServiceCategoryImageUploadBody,
   AdminRequestServiceCategoryImageUploadResponse,
   AdminUpdateServiceCategoryBody,
@@ -65,17 +68,23 @@ import {
   AdminCreateCourierServiceBody,
   AdminCreateCourierServiceResponse,
   AdminCreateBrandBody,
+  AdminCreateServiceTemplateBody,
+  AdminCreateServiceTemplateResponse,
   AdminCreateLoyaltyTierBody,
   AdminCreateProductBody,
   AdminCreateProductCategoryBody,
   AdminCreateSubscriptionPlanBody,
   AdminDeleteBrandParams,
+  AdminDeleteServiceTemplateParams,
   AdminDeleteCourierServiceParams,
   AdminDeleteProductCategoryParams,
   AdminDeleteProductParams,
   AdminListProductsQueryParams,
   AdminUpdateBrandBody,
   AdminUpdateBrandParams,
+  AdminUpdateServiceTemplateBody,
+  AdminUpdateServiceTemplateParams,
+  AdminUpdateServiceTemplateResponse,
   AdminUpdateProductBody,
   AdminUpdateProductCategoryBody,
   AdminUpdateProductCategoryParams,
@@ -133,6 +142,8 @@ import {
   CheckoutShopCartResponse,
   CreateSalonServiceBody,
   CreateSalonServiceResponse,
+  CreateSalonServicesBatchBody,
+  CreateSalonServicesBatchResponse,
   DisconnectAuthSignInMethodParams,
   DisconnectAuthSignInMethodResponse,
   DeleteCustomerSalonReviewParams,
@@ -200,6 +211,8 @@ import {
   ListSalonCustomersResponse,
   ListSalonEmployeesResponse,
   ListSalonServicesResponse,
+  ListServiceTemplatesQueryParams,
+  ListServiceTemplatesResponse,
   ListSalonsQueryParams,
   ListSalonsResponse,
   LoginBody,
@@ -3363,6 +3376,70 @@ router.get("/salon/services", async (req, res): Promise<void> => {
   res.json(ListSalonServicesResponse.parse(services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder }))));
 });
 
+const serviceTemplateDto = (item: typeof serviceTemplatesTable.$inferSelect) => ({
+  id: item.id, name: item.name, mainCategory: item.mainCategory, subcategory: item.subcategory,
+  typicalDurationMinutes: item.typicalDurationMinutes, priceMin: item.priceMin, priceMax: item.priceMax,
+  description: item.description, active: item.active,
+});
+
+const salonServiceDto = (item: typeof servicesTable.$inferSelect) => ({
+  id: item.id, category: item.categoryName, name: item.name, description: item.description,
+  durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl,
+  active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee,
+  homeServiceMinimumOrder: item.homeServiceMinimumOrder,
+});
+
+router.get("/service-templates", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = ListServiceTemplatesQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const input = parsed.data;
+  const templates = await db.select().from(serviceTemplatesTable)
+    .where(and(
+      eq(serviceTemplatesTable.active, true),
+      input.mainCategory ? eq(serviceTemplatesTable.mainCategory, input.mainCategory) : undefined,
+      input.subcategory ? eq(serviceTemplatesTable.subcategory, input.subcategory) : undefined,
+      input.search ? sql`lower(${serviceTemplatesTable.name} || ' ' || ${serviceTemplatesTable.mainCategory} || ' ' || ${serviceTemplatesTable.subcategory}) like ${`%${input.search.toLowerCase()}%`}` : undefined,
+    )).orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name));
+  res.json(ListServiceTemplatesResponse.parse(templates.map(serviceTemplateDto)));
+});
+
+router.post("/salon/services/from-templates", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonServicesBatchBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const uniqueIds = [...new Set(parsed.data.items.map((item) => item.templateId))];
+  if (uniqueIds.length !== parsed.data.items.length) { res.status(400).json({ error: "Svaki predložak može biti izabran samo jednom." }); return; }
+  const templates = await db.select().from(serviceTemplatesTable).where(and(inArray(serviceTemplatesTable.id, uniqueIds), eq(serviceTemplatesTable.active, true)));
+  if (templates.length !== uniqueIds.length) { res.status(400).json({ error: "Neki izabrani predlošci nisu dostupni." }); return; }
+  const categories = await db.select().from(serviceCategoriesTable);
+  const categoryByName = new Map(categories.map((category) => [category.name, category]));
+  const existing = await db.select({ name: servicesTable.name, categoryName: servicesTable.categoryName }).from(servicesTable)
+    .where(eq(servicesTable.salonId, access.salon.id));
+  const existingKeys = new Set(existing.map((item) => `${item.categoryName}:${item.name}`));
+  const byId = new Map(templates.map((item) => [item.id, item]));
+  const toCreate = parsed.data.items.flatMap((item) => {
+    const template = byId.get(item.templateId)!;
+    if (existingKeys.has(`${template.mainCategory}:${template.name}`)) return [];
+    const category = categoryByName.get(template.mainCategory);
+    return [{
+      salonId: access.salon.id, categoryId: category?.id ?? null, categoryName: template.mainCategory,
+      name: template.name, description: template.description ?? `Stručno izveden tretman: ${template.name}.`,
+      durationMinutes: item.durationMinutes ?? template.typicalDurationMinutes, price: item.price,
+      promoPrice: null, tags: [template.mainCategory, template.subcategory], packageTreatments: null,
+      imageUrl: "/lumera-media/product-1.jpg", active: true,
+    }];
+  });
+  const created = toCreate.length ? await db.insert(servicesTable).values(toCreate).returning() : [];
+  res.status(201).json(CreateSalonServicesBatchResponse.parse({
+    created: created.map(salonServiceDto),
+    skipped: parsed.data.items.filter((item) => {
+      const template = byId.get(item.templateId)!;
+      return existingKeys.has(`${template.mainCategory}:${template.name}`);
+    }).map((item) => byId.get(item.templateId)!.name),
+  }));
+});
+
 router.post("/salon/services", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
@@ -6033,6 +6110,55 @@ router.get("/admin/service-categories", async (req, res): Promise<void> => {
   res.json(AdminListServiceCategoriesResponse.parse(
     categories.map((category) => adminServiceCategoryDto(category, countByCategoryId.get(category.id) ?? 0)),
   ));
+});
+
+router.get("/admin/service-templates", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminListServiceTemplatesQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const input = parsed.data;
+  const templates = await db.select().from(serviceTemplatesTable).where(and(
+    input.mainCategory ? eq(serviceTemplatesTable.mainCategory, input.mainCategory) : undefined,
+    input.subcategory ? eq(serviceTemplatesTable.subcategory, input.subcategory) : undefined,
+    input.search ? sql`lower(${serviceTemplatesTable.name} || ' ' || ${serviceTemplatesTable.mainCategory} || ' ' || ${serviceTemplatesTable.subcategory}) like ${`%${input.search.toLowerCase()}%`}` : undefined,
+  )).orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name));
+  res.json(AdminListServiceTemplatesResponse.parse(templates.map(serviceTemplateDto)));
+});
+
+router.post("/admin/service-templates", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminCreateServiceTemplateBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (parsed.data.priceMax < parsed.data.priceMin) { res.status(400).json({ error: "Maksimalna cena ne može biti manja od minimalne." }); return; }
+  const [existing] = await db.select({ id: serviceTemplatesTable.id }).from(serviceTemplatesTable)
+    .where(and(eq(serviceTemplatesTable.mainCategory, parsed.data.mainCategory), eq(serviceTemplatesTable.name, parsed.data.name))).limit(1);
+  if (existing) { res.status(409).json({ error: "Predložak sa ovim nazivom već postoji u kategoriji." }); return; }
+  const [template] = await db.insert(serviceTemplatesTable).values(parsed.data).returning();
+  res.status(201).json(AdminCreateServiceTemplateResponse.parse(serviceTemplateDto(template!)));
+});
+
+router.patch("/admin/service-templates/:templateId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminUpdateServiceTemplateParams.safeParse(req.params);
+  const parsed = AdminUpdateServiceTemplateBody.safeParse(req.body);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [existing] = await db.select().from(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, params.data.templateId)).limit(1);
+  if (!existing) { res.status(404).json({ error: "Predložak nije pronađen." }); return; }
+  const next = { ...existing, ...parsed.data };
+  if (next.priceMax < next.priceMin) { res.status(400).json({ error: "Maksimalna cena ne može biti manja od minimalne." }); return; }
+  const [template] = await db.update(serviceTemplatesTable).set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(serviceTemplatesTable.id, existing.id)).returning();
+  res.json(AdminUpdateServiceTemplateResponse.parse(serviceTemplateDto(template!)));
+});
+
+router.delete("/admin/service-templates/:templateId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminDeleteServiceTemplateParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [template] = await db.delete(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, params.data.templateId)).returning();
+  if (!template) { res.status(404).json({ error: "Predložak nije pronađen." }); return; }
+  res.json(serviceTemplateDto(template));
 });
 
 router.post("/admin/service-categories/image-upload-url", async (req, res): Promise<void> => {
