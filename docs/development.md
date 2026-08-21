@@ -16,4 +16,5 @@ These accounts are created during the first local API request. They are intentio
 ## Browser checks
 
 - `pnpm run test:booking-journey` — run only the booking journey browser specifications
+- `pnpm run test:service-library` — run the owner and administrator service-library checks
 - `pnpm run test:browser` — run the complete browser specification suite
