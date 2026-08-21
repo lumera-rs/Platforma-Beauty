@@ -123,7 +123,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   };
 
   return (
-    <Card className={`flex flex-col overflow-hidden bg-card ${props.className || ''}`}>
+    <Card className={`flex min-h-0 flex-col overflow-hidden bg-card ${props.className || ''}`}>
       {/* Header */}
       <div className="bg-primary/5 p-4 border-b flex flex-col gap-3 relative shrink-0">
         {props.onCloseMobile && (
@@ -180,8 +180,8 @@ export function BookingWidget(props: BookingWidgetProps) {
       </div>
 
       {/* Content Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar relative bg-card/50">
-        <div className={props.step === 3 ? "p-3 sm:p-5" : "p-5"}>
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar bg-card/50">
+        <div className={props.step === 3 ? "p-3 pb-6 sm:p-5 sm:pb-8" : "p-5"}>
           <AnimatePresence mode="wait">
             <motion.div
               key={props.step}
