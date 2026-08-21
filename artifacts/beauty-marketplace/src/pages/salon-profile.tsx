@@ -13,10 +13,12 @@ import {
   useDeleteCustomerSalonReview, 
   useGetSalonFirstAvailable,
   useListSalons,
+  getGetCustomerDashboardQueryKey,
   getGetSalonAvailabilityQueryKey, 
   getGetSalonQueryKey, 
   getGetCustomerSalonReviewQueryKey,
   getGetSalonFirstAvailableQueryKey,
+  getListMyAppointmentsQueryKey,
   getListSalonsQueryKey,
   type FirstAvailableServiceSlot
 } from "@workspace/api-client-react";
@@ -331,6 +333,8 @@ export default function SalonProfile() {
       }
     }, {
       onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         clearDraft();
         setIsSuccess(true);
       },

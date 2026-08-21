@@ -8,3 +8,9 @@ The workspace uses Zod v3 while the installed Orval release can emit Zod v4-only
 **Why:** Generated Zod output otherwise fails the shared typecheck before the frontend or API can build.
 
 **How to apply:** After every OpenAPI regeneration, run the library typecheck. The generated API Zod barrel must export runtime validation schemas without duplicate parameter-type exports; preserve that arrangement if Orval rewrites the barrel.
+
+OpenAPI `format: date` schemas currently generate `zod.coerce.date()`. Using a parsed response object directly in `res.json()` therefore serializes date-only values as ISO timestamps, despite the contract declaring a `YYYY-MM-DD` date.
+
+**Why:** Date-only appointment payloads are consumed alongside availability and booking draft values. Timestamp serialization can create inconsistent comparisons and client display behavior.
+
+**How to apply:** Keep Zod response parsing as validation, but return the normalized date-only view object rather than the parser's coerced output. Add an HTTP assertion for the wire-format date when touching an affected response.

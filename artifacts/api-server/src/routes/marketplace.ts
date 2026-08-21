@@ -438,7 +438,7 @@ function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<
 }
 
 function calendarDate(value: string | Date): string {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
 function isHttpVideoUrl(value: string | null): boolean {
@@ -1478,7 +1478,7 @@ function appointmentView(
     serviceName: service.name,
     employeeId: employee?.id ?? null,
     employeeName: employee?.name ?? "Bilo koji dostupan",
-    date: appointment.date,
+    date: calendarDate(appointment.date),
     startTime: appointment.startTime,
     endTime: appointment.endTime,
     durationMinutes: appointment.durationMinutes,
@@ -2286,7 +2286,8 @@ router.get("/appointments", async (req, res): Promise<void> => {
   if (parsed.data.status) appointments = appointments.filter((item) => item.status === parsed.data.status);
   if (parsed.data.scope === "upcoming") appointments = appointments.filter((item) => item.date >= new Date().toISOString().slice(0, 10));
   if (parsed.data.scope === "past") appointments = appointments.filter((item) => item.date < new Date().toISOString().slice(0, 10));
-  res.json(ListMyAppointmentsResponse.parse(appointments));
+  ListMyAppointmentsResponse.parse(appointments);
+  res.json(appointments);
 });
 
 router.post("/appointments", async (req, res): Promise<void> => {
@@ -2321,7 +2322,9 @@ router.post("/appointments", async (req, res): Promise<void> => {
     text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${calendarDate(appointment.date)} u ${appointment.startTime}.`,
   });
   await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
-  res.status(201).json(CreateAppointmentResponse.parse(appointmentView(appointment, salon, service, user, employee)));
+  const response = appointmentView(appointment, salon, service, user, employee);
+  CreateAppointmentResponse.parse(response);
+  res.status(201).json(response);
 });
 
 router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => {

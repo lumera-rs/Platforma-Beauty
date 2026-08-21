@@ -25,6 +25,7 @@ const primarySalonDate = "2099-10-18";
 const movedSeriesDate = "2099-10-19";
 const completedOrCancelledDate = "2099-10-20";
 const employeeBookingDate = "2099-10-21";
+const customerBookingDate = "2099-10-23";
 
 type HttpResult = {
   status: number;
@@ -49,6 +50,17 @@ async function request(
       cookie: `${sessionCookieName}=${session}`,
     },
     body: JSON.stringify(body),
+  });
+
+  return {
+    status: response.status,
+    body: await response.json(),
+  };
+}
+
+async function getRequest(baseUrl: string, session: string, path: string): Promise<HttpResult> {
+  const response = await fetch(`${baseUrl}/api${path}`, {
+    headers: { cookie: `${sessionCookieName}=${session}` },
   });
 
   return {
@@ -240,6 +252,30 @@ async function run(): Promise<void> {
       `${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${employeeBookingDate}&employeeId=${employee!.id}`,
     );
     assert.equal(availability.status, 200, "parallel availability reads must use pool clients safely");
+
+    const customerBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: customerBookingDate,
+      startTime: "12:00",
+      employeeId: employee!.id,
+    });
+    assert.equal(customerBooking.status, 201, "a customer must be able to create an available appointment");
+    const createdCustomerAppointment = customerBooking.body as { id: string; date: string; startTime: string };
+    const [persistedCustomerAppointment] = await db.select().from(appointmentsTable)
+      .where(eq(appointmentsTable.id, createdCustomerAppointment.id));
+    assert.equal(persistedCustomerAppointment!.customerId, customer!.id, "customer booking must persist its customer ownership");
+
+    const customerAppointments = await getRequest(baseUrl, customerSession, "/appointments");
+    assert.equal(customerAppointments.status, 200, "a customer must be able to list their appointments");
+    assert.ok(
+      (customerAppointments.body as Array<{ id: string; date: string; startTime: string }>).some((appointment) =>
+        appointment.id === createdCustomerAppointment.id
+        && appointment.date === customerBookingDate
+        && appointment.startTime === "12:00",
+      ),
+      "the customer appointment list must immediately include the newly created appointment",
+    );
 
     const bookingPayload = {
       serviceId: service!.id,
