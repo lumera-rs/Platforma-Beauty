@@ -13,8 +13,10 @@ export const SortQueryParameter = {
   recommended: 'recommended',
   'top-rated': 'top-rated',
   cheapest: 'cheapest',
+  'largest-discount': 'largest-discount',
   nearest: 'nearest',
   'first-available': 'first-available',
   'most-popular': 'most-popular',
+  'most-booked-recently': 'most-booked-recently',
   newest: 'newest',
 } as const;

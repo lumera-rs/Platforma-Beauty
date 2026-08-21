@@ -13,6 +13,11 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 
 const PAGE_SIZE = 6;
+const salonSortValues = ["recommended", "top-rated", "cheapest", "largest-discount", "nearest", "first-available", "most-popular", "most-booked-recently", "newest"] as const;
+
+function isSalonSort(value: string | null): value is NonNullable<ListSalonsParams["sort"]> {
+  return value !== null && (salonSortValues as readonly string[]).includes(value);
+}
 
 export default function Salons() {
   const searchString = useSearch();
@@ -23,6 +28,7 @@ export default function Salons() {
   const [municipality, setMunicipality] = useState("");
   const [brand, setBrand] = useState("");
   const [priceMax, setPriceMax] = useState<number | undefined>();
+  const [minReviewCount, setMinReviewCount] = useState<number | undefined>();
   const [sort, setSort] = useState<ListSalonsParams["sort"]>("recommended");
   const [discountsOnly, setDiscountsOnly] = useState(false);
   const [menOnly, setMenOnly] = useState(false);
@@ -30,6 +36,7 @@ export default function Salons() {
   const [openSunday, setOpenSunday] = useState(false);
   const [instantBooking, setInstantBooking] = useState(false);
   const [topSalon, setTopSalon] = useState(false);
+  const [featured, setFeatured] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNote, setLocationNote] = useState("");
   const [page, setPage] = useState(1);
@@ -52,15 +59,22 @@ export default function Salons() {
   useEffect(() => {
     setCategory(searchParams.get("category") || "");
     setCity(searchParams.get("city") || "");
+    const sortFromQuery = searchParams.get("sort");
+    setSort(isSalonSort(sortFromQuery) ? sortFromQuery : "recommended");
+    setDiscountsOnly(searchParams.get("discountsOnly") === "true");
+    setTopSalon(searchParams.get("topSalon") === "true");
+    setFeatured(searchParams.get("featured") === "true");
+    const minReviewCountFromQuery = Number(searchParams.get("minReviewCount"));
+    setMinReviewCount(Number.isFinite(minReviewCountFromQuery) && minReviewCountFromQuery > 0 ? minReviewCountFromQuery : undefined);
   }, [searchParams]);
 
   const params = useMemo<ListSalonsParams>(() => ({
-    category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax,
+    category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax, minReviewCount,
     sort, discountsOnly: discountsOnly || undefined, gender: menOnly ? "men" : undefined,
     acceptsCards: acceptsCards || undefined, openSunday: openSunday || undefined,
-    instantBooking: instantBooking || undefined, topSalon: topSalon || undefined,
+    instantBooking: instantBooking || undefined, topSalon: topSalon || undefined, featured: featured || undefined,
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
-  }), [category, city, municipality, brand, priceMax, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, topSalon, location]);
+  }), [category, city, municipality, brand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, topSalon, featured, location]);
 
   const { data: allSalons, isLoading, isFetching } = useListSalons(params);
   const isResultsLoading = isLoading || isFetching;
@@ -176,10 +190,11 @@ export default function Salons() {
           {toggle("Otvoren nedeljom", openSunday, setOpenSunday)}
           {toggle("Instant zakazivanje", instantBooking, setInstantBooking)}
           {toggle("Top Salon", topSalon, setTopSalon)}
+          {toggle("Istaknuti saloni", featured, setFeatured)}
         </div>
       </div>
 
-      <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setTopSalon(false); }}>
+      <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setMinReviewCount(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setTopSalon(false); setFeatured(false); }}>
         Resetuj filtere
       </Button>
     </div>
@@ -237,8 +252,10 @@ export default function Salons() {
                     <option value="newest">Nedavno dodato</option>
                     <option value="top-rated">Najbolje ocenjeno</option>
                     <option value="cheapest">Najniža cena</option>
-                  <option value="most-popular">Najpopularnije</option>
-                  <option value="first-available">Prvi slobodan termin</option>
+                    <option value="most-popular">Najpopularnije</option>
+                    <option value="most-booked-recently">Najviše rezervacija u poslednjih 30 dana</option>
+                    <option value="largest-discount">Najveći popust</option>
+                    <option value="first-available">Prvi slobodan termin</option>
                   </select>
                 </div>
               </div>
@@ -345,8 +362,10 @@ export default function Salons() {
                     <option value="newest">Nedavno dodato</option>
                     <option value="top-rated">Najbolje ocenjeno</option>
                     <option value="cheapest">Najniža cena</option>
-                  <option value="most-popular">Najpopularnije</option>
-                  <option value="first-available">Prvi slobodan termin</option>
+                    <option value="most-popular">Najpopularnije</option>
+                    <option value="most-booked-recently">Najviše rezervacija u poslednjih 30 dana</option>
+                    <option value="largest-discount">Najveći popust</option>
+                    <option value="first-available">Prvi slobodan termin</option>
                   </select>
                 </div>
               </div>

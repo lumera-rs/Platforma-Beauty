@@ -90,6 +90,7 @@ import type {
   EmployeeAppointmentSeriesInput,
   FavoriteInput,
   FavoriteResult,
+  GetMarketplaceHomeDiscoveryParams,
   GetSalonAvailabilityParams,
   GetShippingQuoteParams,
   HealthStatus,
@@ -102,6 +103,7 @@ import type {
   LoyaltyStatus,
   LoyaltyTier,
   LoyaltyTierInput,
+  MarketplaceHomeDiscovery,
   Order,
   PlatformTrustStats,
   Product,
@@ -1051,6 +1053,90 @@ export function useListSalons<TData = Awaited<ReturnType<typeof listSalons>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSalonsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetMarketplaceHomeDiscoveryUrl = (params?: GetMarketplaceHomeDiscoveryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/discovery/home?${stringifiedParams}` : `/api/discovery/home`
+}
+
+/**
+ * @summary Get curated public discovery content for the marketplace homepage
+ */
+export const getMarketplaceHomeDiscovery = async (params?: GetMarketplaceHomeDiscoveryParams, options?: Parameters<typeof customFetch>[1]): Promise<MarketplaceHomeDiscovery> => {
+
+  return customFetch<MarketplaceHomeDiscovery>(getGetMarketplaceHomeDiscoveryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMarketplaceHomeDiscoveryQueryKey = (params?: GetMarketplaceHomeDiscoveryParams,) => {
+    return [
+    `/api/discovery/home`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMarketplaceHomeDiscoveryQueryOptions = <TData = Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>, TError = ErrorType<unknown>>(params?: GetMarketplaceHomeDiscoveryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMarketplaceHomeDiscoveryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>> = ({ signal }) => getMarketplaceHomeDiscovery(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMarketplaceHomeDiscoveryQueryResult = NonNullable<Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>>
+export type GetMarketplaceHomeDiscoveryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get curated public discovery content for the marketplace homepage
+ */
+
+export function useGetMarketplaceHomeDiscovery<TData = Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>, TError = ErrorType<unknown>>(
+ params?: GetMarketplaceHomeDiscoveryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMarketplaceHomeDiscovery>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMarketplaceHomeDiscoveryQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -24,6 +24,10 @@ municipality?: string;
  * @maximum 5
  */
 minRating?: number;
+/**
+ * @minimum 0
+ */
+minReviewCount?: number;
 availability?: ListSalonsAvailability;
 homeService?: boolean;
 gender?: ListSalonsGender;
@@ -32,6 +36,7 @@ acceptsCards?: boolean;
 openSunday?: boolean;
 instantBooking?: boolean;
 topSalon?: boolean;
+featured?: boolean;
 brand?: string;
 latitude?: number;
 longitude?: number;

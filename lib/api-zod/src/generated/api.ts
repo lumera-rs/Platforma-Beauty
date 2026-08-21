@@ -268,16 +268,19 @@ export const listSalonsQuerySortDefault = `recommended`;
 export const listSalonsQueryMinRatingMin = 0;
 export const listSalonsQueryMinRatingMax = 5;
 
+export const listSalonsQueryMinReviewCountMin = 0;
+
 
 
 export const ListSalonsQueryParams = zod.object({
   "city": zod.coerce.string().optional(),
   "category": zod.coerce.string().optional(),
   "treatment": zod.coerce.string().optional(),
-  "sort": zod.enum(['recommended', 'top-rated', 'cheapest', 'nearest', 'first-available', 'most-popular', 'newest']).default(listSalonsQuerySortDefault),
+  "sort": zod.enum(['recommended', 'top-rated', 'cheapest', 'largest-discount', 'nearest', 'first-available', 'most-popular', 'most-booked-recently', 'newest']).default(listSalonsQuerySortDefault),
   "priceMax": zod.coerce.number().optional(),
   "municipality": zod.coerce.string().optional(),
   "minRating": zod.coerce.number().min(listSalonsQueryMinRatingMin).max(listSalonsQueryMinRatingMax).optional(),
+  "minReviewCount": zod.coerce.number().min(listSalonsQueryMinReviewCountMin).optional(),
   "availability": zod.enum(['today', 'tomorrow', 'this-week']).optional(),
   "homeService": zod.coerce.boolean().optional(),
   "gender": zod.enum(['all', 'women', 'men', 'everyone']).optional(),
@@ -286,6 +289,7 @@ export const ListSalonsQueryParams = zod.object({
   "openSunday": zod.coerce.boolean().optional(),
   "instantBooking": zod.coerce.boolean().optional(),
   "topSalon": zod.coerce.boolean().optional(),
+  "featured": zod.coerce.boolean().optional(),
   "brand": zod.coerce.string().optional(),
   "latitude": zod.coerce.number().optional(),
   "longitude": zod.coerce.number().optional()
@@ -319,6 +323,171 @@ export const ListSalonsResponseItem = zod.object({
   "longitude": zod.number().nullable()
 })
 export const ListSalonsResponse = zod.array(ListSalonsResponseItem)
+
+
+/**
+ * @summary Get curated public discovery content for the marketplace homepage
+ */
+export const GetMarketplaceHomeDiscoveryQueryParams = zod.object({
+  "city": zod.coerce.string().optional()
+})
+
+export const getMarketplaceHomeDiscoveryResponsePopularServicesItemBookingCountMin = 0;
+
+export const getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPriceMin = 0;
+
+export const getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPromoPriceMin = 0;
+
+
+
+export const GetMarketplaceHomeDiscoveryResponse = zod.object({
+  "popularServices": zod.array(zod.object({
+  "name": zod.string(),
+  "categoryName": zod.string(),
+  "bookingCount": zod.number().min(getMarketplaceHomeDiscoveryResponsePopularServicesItemBookingCountMin)
+})),
+  "featuredSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+})),
+  "newSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+})),
+  "discountedSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+}).and(zod.object({
+  "discount": zod.object({
+  "serviceName": zod.string(),
+  "price": zod.number().min(getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPriceMin),
+  "promoPrice": zod.number().min(getMarketplaceHomeDiscoveryResponseDiscountedSalonsItemTwoDiscountPromoPriceMin)
+})
+}))),
+  "popularSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+})),
+  "topRatedSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+}))
+})
 
 
 /**

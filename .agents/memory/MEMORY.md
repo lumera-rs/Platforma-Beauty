@@ -9,3 +9,4 @@
 - [Review photo privacy](review-photo-privacy.md) — review avatars stay private by default and reviewers must retain a way to revoke public-photo consent.
 - [Review history freshness](review-history-freshness.md) — browser history and BFCache restoration must revalidate public reviews and customer review eligibility.
 - [Moderated review aggregates](moderated-review-aggregates.md) — every moderator removal must refresh the salon’s public rating and review count atomically.
+- [Discovery ranking consistency](discovery-ranking-consistency.md) — homepage shelves and their directory links must share the same filter, window, and ranking semantics.

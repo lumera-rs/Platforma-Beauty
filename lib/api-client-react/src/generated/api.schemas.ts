@@ -233,6 +233,34 @@ export interface SalonCard {
   longitude: number | null;
 }
 
+export interface DiscoveryService {
+  name: string;
+  categoryName: string;
+  /** @minimum 0 */
+  bookingCount: number;
+}
+
+export type DiscountedSalonCardDiscount = {
+  serviceName: string;
+  /** @minimum 0 */
+  price: number;
+  /** @minimum 0 */
+  promoPrice: number;
+};
+
+export type DiscountedSalonCard = SalonCard & {
+  discount: DiscountedSalonCardDiscount;
+};
+
+export interface MarketplaceHomeDiscovery {
+  popularServices: DiscoveryService[];
+  featuredSalons: SalonCard[];
+  newSalons: SalonCard[];
+  discountedSalons: DiscountedSalonCard[];
+  popularSalons: SalonCard[];
+  topRatedSalons: SalonCard[];
+}
+
 export interface PlatformTrustStats {
   /** @minimum 0 */
   activeSalons: number;
@@ -2077,9 +2105,11 @@ export const SortQueryParameter = {
   recommended: 'recommended',
   'top-rated': 'top-rated',
   cheapest: 'cheapest',
+  'largest-discount': 'largest-discount',
   nearest: 'nearest',
   'first-available': 'first-available',
   'most-popular': 'most-popular',
+  'most-booked-recently': 'most-booked-recently',
   newest: 'newest',
 } as const;
 
@@ -2095,6 +2125,10 @@ municipality?: string;
  * @maximum 5
  */
 minRating?: number;
+/**
+ * @minimum 0
+ */
+minReviewCount?: number;
 availability?: ListSalonsAvailability;
 homeService?: boolean;
 gender?: ListSalonsGender;
@@ -2103,6 +2137,7 @@ acceptsCards?: boolean;
 openSunday?: boolean;
 instantBooking?: boolean;
 topSalon?: boolean;
+featured?: boolean;
 brand?: string;
 latitude?: number;
 longitude?: number;
@@ -2126,6 +2161,10 @@ export const ListSalonsGender = {
   men: 'men',
   everyone: 'everyone',
 } as const;
+
+export type GetMarketplaceHomeDiscoveryParams = {
+city?: CityQueryParameter;
+};
 
 export type GetSalonAvailabilityParams = {
 serviceId: string;

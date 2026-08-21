@@ -1,221 +1,564 @@
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { Search, MapPin, Star, CalendarDays, ArrowRight, Scissors, Leaf, Sparkles, Smile, Flower2, Droplets, Users, CheckCircle2 } from "lucide-react";
-import { useListSalons, useGetPlatformTrustStats } from "@workspace/api-client-react";
+import {
+  Search, MapPin, Star, CalendarDays, ArrowRight,
+  Scissors, Leaf, Sparkles, Smile, Flower2, Droplets,
+  Users, CheckCircle2, ChevronRight, Clock, ShieldCheck, Heart
+} from "lucide-react";
+import {
+  useGetMarketplaceHomeDiscovery,
+  useGetPlatformTrustStats,
+  useGetCurrentUser
+} from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { HomeSalonCard, HomeDiscountSalonCard } from "@/components/home-salon-card";
+import { useDebounce } from "@/hooks/use-debounce";
 
 export default function Home() {
   const [, setLocation] = useLocation();
-  const { data: salons, isLoading } = useListSalons({ sort: 'recommended' });
+  const { data: authData } = useGetCurrentUser();
   const { data: trustStats } = useGetPlatformTrustStats();
 
   const [searchCategory, setSearchCategory] = useState("");
-  const [searchCity, setSearchCity] = useState("");
+  const [sessionCity, setSessionCity] = useState("");
+  const [heroCityInput, setHeroCityInput] = useState("");
+  const debouncedHeroCityInput = useDebounce(heroCityInput, 400);
+
+  // Hydrate city from session storage on mount
+  useEffect(() => {
+    const savedCity = sessionStorage.getItem("lumera_home_city");
+    if (savedCity) {
+      setSessionCity(savedCity);
+      setHeroCityInput(savedCity);
+    }
+  }, []);
+
+  // Sync city to session storage and update discovery query when input settles
+  useEffect(() => {
+    if (debouncedHeroCityInput !== sessionCity) {
+      sessionStorage.setItem("lumera_home_city", debouncedHeroCityInput);
+      setSessionCity(debouncedHeroCityInput);
+    }
+  }, [debouncedHeroCityInput, sessionCity]);
+
+  const { data: discovery, isLoading } = useGetMarketplaceHomeDiscovery(
+    sessionCity ? { city: sessionCity } : undefined
+  );
+
   const categories = ["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija", "Wellness"];
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const params = new URLSearchParams();
+    const city = heroCityInput.trim();
+    if (city) {
+      sessionStorage.setItem("lumera_home_city", city);
+      setSessionCity(city);
+    }
     if (searchCategory) params.append("category", searchCategory);
-    if (searchCity) params.append("city", searchCity);
+    if (city) params.append("city", city);
     setLocation(`/saloni?${params.toString()}`);
+  };
+
+  const getSeeAllHref = (context: "featured" | "new" | "discount" | "popular" | "rated") => {
+    const params = new URLSearchParams();
+    if (sessionCity) params.append("city", sessionCity);
+
+    switch (context) {
+      case "featured": params.append("featured", "true"); break;
+      case "new": params.append("sort", "newest"); break;
+      case "discount": params.append("discountsOnly", "true"); params.append("sort", "largest-discount"); break;
+      case "popular": params.append("sort", "most-booked-recently"); break;
+      case "rated": params.append("sort", "top-rated"); params.append("minReviewCount", "5"); break;
+    }
+
+    return `/saloni?${params.toString()}`;
+  };
+
+  const getCategoryHref = (category: string) => {
+    const params = new URLSearchParams();
+    params.append("category", category);
+    if (sessionCity) params.append("city", sessionCity);
+    return `/saloni?${params.toString()}`;
   };
 
   return (
     <Layout>
-      {/* Hero Section */}
-      <section className="relative w-full bg-secondary pt-24 pb-32 md:pt-32 md:pb-48 overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=2574&auto=format&fit=crop')] opacity-10 bg-cover bg-center mix-blend-multiply" />
-        <div className="container mx-auto px-4 relative z-10">
-          <div className="max-w-3xl">
-            <Badge variant="outline" className="mb-6 border-primary/20 text-primary bg-primary/5 px-3 py-1 text-sm font-medium tracking-wide">
-              NOVO U SRBIJI
-            </Badge>
-            <h1 className="text-5xl md:text-7xl font-serif font-bold text-foreground leading-[1.1] mb-6">
-              Pronađite <span className="text-primary italic">savršen</span> trenutak za sebe.
-            </h1>
-            <p className="text-lg md:text-xl text-foreground/80 mb-10 max-w-xl font-light">
-              Otkrijte i rezervišite najbolje salone lepote, wellness centre i spa tretmane u vašem gradu. Vaše vreme je dragoceno.
-            </p>
-            
-            <form onSubmit={handleSearch} className="bg-background rounded-2xl shadow-xl p-2 md:p-3 flex flex-col md:flex-row gap-3 items-center w-full max-w-2xl mb-8">
-              <div className="flex-1 flex items-center gap-3 w-full bg-muted/50 rounded-xl px-4 py-3 border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-colors">
-                <Search className="text-muted-foreground w-5 h-5 shrink-0" />
-                <select
-                  value={searchCategory}
-                  onChange={(e) => setSearchCategory(e.target.value)}
-                  className="bg-transparent border-none outline-none w-full text-foreground placeholder:text-muted-foreground text-base"
-                  aria-label="Izaberite kategoriju"
-                >
-                  <option value="">Koju uslugu tražite?</option>
-                  {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-                </select>
-              </div>
-              <div className="flex-1 flex items-center gap-3 w-full bg-muted/50 rounded-xl px-4 py-3 border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-colors">
-                <MapPin className="text-muted-foreground w-5 h-5 shrink-0" />
-                <input 
-                  type="text"
-                  list="hero-city-options"
-                  value={searchCity}
-                  onChange={(e) => setSearchCity(e.target.value)}
-                  placeholder="Lokacija (npr. Beograd)" 
-                  className="bg-transparent border-none outline-none w-full text-foreground placeholder:text-muted-foreground text-base"
-                />
-                <datalist id="hero-city-options">
-                  <option value="Beograd" />
-                  <option value="Novi Sad" />
-                  <option value="Niš" />
-                  <option value="Kragujevac" />
-                </datalist>
-              </div>
-              <Button type="submit" size="lg" className="w-full md:w-auto h-12 rounded-xl px-8 font-medium">
-                Pronađi
-              </Button>
-            </form>
+      {/* Hero Section - Quiet Luxury aesthetic */}
+      <section className="relative w-full bg-secondary pt-24 pb-32 md:pt-36 md:pb-48 overflow-hidden">
+        {/* We use a generated elegant background to set the tone */}
+        <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] opacity-20 bg-cover bg-center mix-blend-multiply" />
+        <div className="absolute inset-0 bg-gradient-to-b from-secondary/80 to-secondary/30 pointer-events-none" />
 
-            {trustStats ? (
-              <div className="flex flex-wrap items-center gap-6 text-sm font-medium text-foreground/80 mt-12 animate-in fade-in slide-in-from-bottom-4 duration-1000 fill-mode-forwards">
-                <div className="flex items-center gap-2 bg-background/50 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm border border-border/50">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span><strong className="text-foreground">{trustStats.activeSalons.toLocaleString("sr")}</strong> aktivnih salona</span>
-                </div>
-                <div className="flex items-center gap-2 bg-background/50 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm border border-border/50">
-                  <CalendarDays className="w-4 h-4 text-blue-600" />
-                  <span><strong className="text-foreground">{trustStats.bookingsThisMonth.toLocaleString("sr")}</strong> zakazivanja ovog meseca</span>
-                </div>
-                <div className="flex items-center gap-2 bg-background/50 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm border border-border/50">
-                  <Users className="w-4 h-4 text-primary" />
-                  <span><strong className="text-foreground">{trustStats.customerAccounts.toLocaleString("sr")}</strong> zadovoljnih korisnika</span>
-                </div>
+        <div className="container mx-auto px-4 relative z-10 flex flex-col items-center text-center">
+          <Badge variant="outline" className="mb-6 border-primary/20 text-primary bg-primary/5 px-4 py-1.5 text-sm font-medium tracking-widest uppercase">
+            Dobrodošli na Lumeru
+          </Badge>
+          <h1 className="text-5xl md:text-7xl font-serif font-bold text-foreground leading-[1.1] mb-6 max-w-4xl">
+            Vreme za vas je <span className="text-primary italic">neprocenjivo.</span>
+          </h1>
+          <p className="text-lg md:text-xl text-foreground/80 mb-12 max-w-2xl font-light">
+            Otkrijte i rezervišite najbolje salone lepote, wellness centre i spa tretmane, provereno od strane hiljada korisnika.
+          </p>
+
+          <form onSubmit={handleSearch} className="bg-background rounded-2xl shadow-xl p-3 flex flex-col md:flex-row gap-3 items-center w-full max-w-3xl mb-12 mx-auto">
+            <div className="flex-1 flex items-center gap-3 w-full bg-secondary/50 rounded-xl px-4 py-3.5 border border-transparent focus-within:border-primary/30 focus-within:bg-background transition-colors">
+              <Search className="text-muted-foreground w-5 h-5 shrink-0" />
+              <select
+                value={searchCategory}
+                onChange={(e) => setSearchCategory(e.target.value)}
+                className="bg-transparent border-none outline-none w-full text-foreground placeholder:text-muted-foreground text-base cursor-pointer"
+                aria-label="Izaberite kategoriju"
+              >
+                <option value="">Koju uslugu tražite?</option>
+                {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </div>
+
+            <div className="hidden md:block w-px h-8 bg-border" />
+
+            <div className="flex-1 flex items-center gap-3 w-full bg-secondary/50 rounded-xl px-4 py-3.5 border border-transparent focus-within:border-primary/30 focus-within:bg-background transition-colors">
+              <MapPin className="text-muted-foreground w-5 h-5 shrink-0" />
+              <input
+                type="text"
+                list="hero-city-options"
+                value={heroCityInput}
+                onChange={(e) => setHeroCityInput(e.target.value)}
+                placeholder="Vaš grad (npr. Beograd)"
+                className="bg-transparent border-none outline-none w-full text-foreground placeholder:text-muted-foreground text-base"
+                aria-label="Izaberite grad"
+              />
+              <datalist id="hero-city-options">
+                <option value="Beograd" />
+                <option value="Novi Sad" />
+                <option value="Niš" />
+                <option value="Kragujevac" />
+              </datalist>
+            </div>
+            <Button type="submit" size="lg" className="w-full md:w-auto h-14 rounded-xl px-10 font-semibold text-lg hover:scale-[1.02] transition-transform">
+              Pronađi
+            </Button>
+          </form>
+
+          {trustStats ? (
+            <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 text-sm md:text-base font-medium text-foreground/90 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-1000 fill-mode-forwards">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span><strong className="text-foreground">{trustStats.activeSalons.toLocaleString("sr")}</strong> salona</span>
               </div>
-            ) : (
-              <div className="mt-12 flex flex-wrap gap-3" aria-label="Učitavanje statistika platforme">
-                <Skeleton className="h-10 w-44 rounded-full" />
-                <Skeleton className="h-10 w-52 rounded-full" />
-                <Skeleton className="h-10 w-48 rounded-full" />
+              <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-primary/20" />
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-blue-600" />
+                <span><strong className="text-foreground">{trustStats.bookingsThisMonth.toLocaleString("sr")}</strong> rezervacija</span>
               </div>
-            )}
+              <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-primary/20" />
+              <div className="flex items-center gap-2">
+                <Heart className="w-5 h-5 text-accent" />
+                <span><strong className="text-foreground">{trustStats.customerAccounts.toLocaleString("sr")}</strong> korisnika</span>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap justify-center gap-4" aria-label="Učitavanje statistika platforme">
+              <Skeleton className="h-6 w-32 rounded-full" />
+              <Skeleton className="h-6 w-32 rounded-full" />
+              <Skeleton className="h-6 w-32 rounded-full" />
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Popular Categories / Services */}
+      <section className="py-20 bg-background border-b border-border/50">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-3 text-primary">Popularne usluge</h2>
+              <p className="text-muted-foreground text-lg">Ono što se najviše traži {sessionCity ? `u ${sessionCity}` : "ove nedelje"}</p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje usluga">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="min-h-40 w-full rounded-2xl" />
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.popularServices && discovery.popularServices.length > 0 ? (
+            <DiscoveryCarousel
+              ariaLabel="Popularne usluge"
+              itemClassName="basis-[70%] sm:basis-[38%] md:basis-1/4 lg:basis-1/6"
+            >
+              {discovery.popularServices.map((cat, idx) => {
+                // Determine a complementary aesthetic icon based on category name roughly
+                const iconMap: Record<string, any> = {
+                  "Frizerski saloni": Scissors,
+                  "Masaža": Leaf,
+                  "Nokti": Sparkles,
+                  "Kozmetički saloni": Smile,
+                  "Depilacija": Flower2,
+                  "Wellness": Droplets
+                };
+
+                // Fallback icons if not in map
+                const fallbackIcons = [Heart, Star, Clock, ShieldCheck];
+                const IconComp = iconMap[cat.categoryName] || fallbackIcons[idx % fallbackIcons.length];
+
+                // Elegant colors matching the brand
+                const colors = [
+                  "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-100 dark:border-orange-900/50",
+                  "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50",
+                  "bg-pink-50 text-pink-700 dark:bg-pink-950/30 dark:text-pink-400 border-pink-100 dark:border-pink-900/50",
+                  "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-100 dark:border-blue-900/50",
+                  "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50",
+                  "bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border-purple-100 dark:border-purple-900/50"
+                ];
+
+                const colorClass = colors[idx % colors.length];
+
+                return (
+                  <Link
+                    key={`${cat.name}-${idx}`}
+                    href={getCategoryHref(cat.categoryName)}
+                    className={`group flex min-h-40 h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border ${colorClass} bg-card/50 hover:bg-card p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg`}
+                  >
+                    <div className="rounded-full p-4 bg-background shadow-sm transition-transform duration-300 group-hover:scale-110">
+                      <IconComp className="w-7 h-7" strokeWidth={1.5} />
+                    </div>
+                    <div>
+                      <span className="text-sm font-semibold text-foreground/90 block">{cat.name}</span>
+                      <span className="text-xs text-muted-foreground font-medium mt-1 block">{cat.bookingCount} rezervacija</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-12 px-4 rounded-2xl bg-muted/30 border border-border border-dashed">
+              <Leaf className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" strokeWidth={1} />
+              <h3 className="text-lg font-serif font-medium text-foreground mb-2">Nema popularnih usluga</h3>
+              <p className="text-muted-foreground">Pokušajte da promenite grad ili pretražite ručno.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* How it Works - Trust Section */}
+      <section className="py-24 bg-card">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Kako LUMERA funkcioniše?</h2>
+            <p className="text-muted-foreground text-lg">Vaš put do savršenog tretmana u tri jednostavna koraka, bez stresa i pozivanja.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8 md:gap-12 relative">
+            {/* Connecting line on desktop */}
+            <div className="hidden md:block absolute top-12 left-[15%] right-[15%] h-px bg-border/80" />
+
+            <div className="relative flex flex-col items-center text-center group">
+              <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500">
+                <Search className="w-8 h-8 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-serif font-bold mb-3">1. Pronađite</h3>
+              <p className="text-muted-foreground">Istražite stotine proverenih salona. Filtrirajte po lokaciji, ocenama i uslugama koje vas zanimaju.</p>
+            </div>
+
+            <div className="relative flex flex-col items-center text-center group">
+              <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500 delay-75">
+                <CalendarDays className="w-8 h-8 text-primary" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-serif font-bold mb-3">2. Rezervišite</h3>
+              <p className="text-muted-foreground">Izaberite slobodan termin koji vam odgovara i rezervišite online u samo nekoliko klikova, 24/7.</p>
+            </div>
+
+            <div className="relative flex flex-col items-center text-center group">
+              <div className="w-24 h-24 rounded-full bg-accent/10 flex items-center justify-center mb-6 z-10 border-4 border-card transition-transform group-hover:scale-110 duration-500 delay-150">
+                <Sparkles className="w-8 h-8 text-accent" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-serif font-bold mb-3">3. Uživajte</h3>
+              <p className="text-muted-foreground">Pojavite se u salonu i uživajte u tretmanu. Podelite utiske i pomozite drugima u izboru.</p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Featured Categories */}
-      <section className="py-20 bg-background">
+      {/* Featured Salons (Top Salons) */}
+      <section className="py-24 bg-muted/40">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-end mb-12">
             <div>
-              <h2 className="text-3xl font-serif font-bold mb-3">Popularne usluge</h2>
-              <p className="text-muted-foreground">Ono što naši korisnici najviše traže ove nedelje</p>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Istaknuti saloni</h2>
+              <p className="text-muted-foreground text-lg">Najbolji i najpouzdaniji partneri platforme.</p>
             </div>
-          </div>
-          
-          <DiscoveryCarousel
-            ariaLabel="Popularne usluge"
-            itemClassName="basis-[70%] sm:basis-[38%] md:basis-1/4 lg:basis-1/6"
-          >
-            {[
-              { name: "Frizerski saloni", icon: Scissors, color: "bg-orange-100/50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400" },
-              { name: "Masaža", icon: Leaf, color: "bg-emerald-100/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400" },
-              { name: "Nokti", icon: Sparkles, color: "bg-pink-100/50 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400" },
-              { name: "Kozmetički saloni", icon: Smile, color: "bg-blue-100/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400" },
-              { name: "Depilacija", icon: Flower2, color: "bg-yellow-100/50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-400" },
-              { name: "Wellness", icon: Droplets, color: "bg-purple-100/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400" },
-            ].map((cat) => (
-              <Link key={cat.name} href={`/saloni?category=${encodeURIComponent(cat.name)}`} className="group flex min-h-40 h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border border-transparent bg-card p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-lg">
-                <div className={`rounded-full p-4 ${cat.color} transition-transform duration-300 group-hover:scale-110`}>
-                  <cat.icon className="w-8 h-8" strokeWidth={1.5} />
-                </div>
-                <span className="text-sm font-medium text-foreground/90">{cat.name}</span>
-              </Link>
-            ))}
-          </DiscoveryCarousel>
-        </div>
-      </section>
-
-      {/* Featured Salons */}
-      <section className="py-24 bg-muted/30">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-12">
-            <div>
-              <h2 className="text-4xl font-serif font-bold mb-4">Preporučujemo za vas</h2>
-              <p className="text-muted-foreground text-lg">Najbolje ocenjeni saloni u vašoj blizini sa proverenim recenzijama.</p>
-            </div>
-            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium" asChild>
-              <Link href="/saloni">
-                Svi saloni <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
+              <Link href={getSeeAllHref("featured")}>
+                Prikaži sve <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
             </Button>
           </div>
 
-          <DiscoveryCarousel ariaLabel="Preporučeni saloni">
-            {isLoading ? (
-              Array.from({ length: 4 }, (_, index) => (
-                <div key={index} className="flex flex-col gap-3">
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje salona">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex flex-col gap-3 p-1">
                   <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
                   <Skeleton className="h-6 w-3/4" />
                   <Skeleton className="h-4 w-1/2" />
                 </div>
-              ))
-            ) : salons?.slice(0, 15).map((salon) => (
-              <Link key={salon.id} href={`/saloni/${salon.slug}`} className="group flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-1 transition-all duration-300 hover:-translate-y-1 hover:bg-card hover:shadow-xl">
-                <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
-                  <img
-                    src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
-                    alt={salon.name}
-                    className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/10 transition-colors duration-500 group-hover:bg-transparent" />
-                  {salon.featured && (
-                    <Badge className="absolute left-3 top-3 border-none bg-white/95 font-semibold text-primary shadow-sm backdrop-blur-md hover:bg-white">
-                      Istaknuto
-                    </Badge>
-                  )}
-                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-white/95 px-2.5 py-1.5 text-sm font-bold text-foreground shadow-sm backdrop-blur-md">
-                    <Star className="h-3.5 w-3.5 fill-accent text-accent" />
-                    <span>{salon.rating.toFixed(1)}</span>
-                    <span className="text-xs font-medium text-muted-foreground">({salon.reviewCount})</span>
-                  </div>
-                </div>
-                <div className="px-1 pb-1">
-                  <h3 className="line-clamp-1 font-serif text-xl font-bold text-foreground transition-colors group-hover:text-primary">{salon.name}</h3>
-                  <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {salon.city}, {salon.municipality}
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className="text-sm font-semibold">Od {salon.startingPrice.toLocaleString("sr")} RSD</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </DiscoveryCarousel>
-          
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.featuredSalons && discovery.featuredSalons.length > 0 ? (
+            <DiscoveryCarousel ariaLabel="Istaknuti saloni">
+              {discovery.featuredSalons.map((salon) => (
+                <HomeSalonCard key={salon.id} salon={salon} />
+              ))}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-16 px-4 rounded-2xl bg-card border border-border shadow-sm">
+              <ShieldCheck className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" strokeWidth={1} />
+              <h3 className="text-xl font-serif font-medium text-foreground mb-2">Trenutno nema istaknutih salona</h3>
+              <p className="text-muted-foreground">Pokušajte da proširite pretragu na drugi grad.</p>
+            </div>
+          )}
+
           <div className="mt-10 flex justify-center md:hidden">
-            <Button variant="outline" className="w-full h-12 rounded-xl" asChild>
-              <Link href="/saloni">Prikaži sve salone</Link>
+            <Button variant="outline" className="w-full h-12 rounded-xl border-primary/20 text-primary" asChild>
+              <Link href={getSeeAllHref("featured")}>Prikaži sve istaknute salone</Link>
             </Button>
           </div>
         </div>
       </section>
-      
-      <section className="py-20 bg-primary text-primary-foreground relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10 bg-[url('https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay" />
-        <div className="container mx-auto px-4 text-center relative z-10">
-          <CalendarDays className="mx-auto h-12 w-12 mb-6 text-primary-foreground/90" strokeWidth={1.5} />
-          <h2 className="text-4xl md:text-5xl font-serif font-bold mb-6 tracking-tight">Vaš sledeći termin je bliže nego što mislite.</h2>
-          <p className="text-lg text-primary-foreground/90 mb-10 max-w-2xl mx-auto font-light">
-            Uporedite usluge, proverite slobodne termine i rezervišite vreme za sebe na jednom mestu.
-          </p>
-          <Button size="lg" variant="secondary" className="h-14 px-10 text-primary font-semibold text-lg rounded-xl shadow-lg hover:shadow-xl transition-shadow" asChild>
-            <Link href="/saloni">Pronađi salon</Link>
-          </Button>
+
+      {/* Discounted Salons */}
+      <section className="py-24 bg-card border-y border-border/50">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-destructive">Specijalne ponude</h2>
+              <p className="text-muted-foreground text-lg">Uštedite uz akcije i popuste u odličnim salonima.</p>
+            </div>
+            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-destructive/10 text-destructive" asChild>
+              <Link href={getSeeAllHref("discount")}>
+                Sve akcije <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje popusta">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex flex-col gap-3 p-1">
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.discountedSalons && discovery.discountedSalons.length > 0 ? (
+            <DiscoveryCarousel ariaLabel="Saloni sa popustom">
+              {discovery.discountedSalons.map((salon) => (
+                <HomeDiscountSalonCard key={salon.id} salon={salon} />
+              ))}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-16 px-4 rounded-2xl bg-muted/20 border border-border border-dashed">
+              <span className="text-4xl mb-4 block opacity-40">%</span>
+              <h3 className="text-xl font-serif font-medium text-foreground mb-2">Trenutno nema aktivnih akcija</h3>
+              <p className="text-muted-foreground">Saloni redovno objavljuju nove popuste, proverite ponovo uskoro.</p>
+            </div>
+          )}
         </div>
       </section>
+
+      {/* New Salons */}
+      <section className="py-24 bg-muted/40">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Novi na platformi</h2>
+              <p className="text-muted-foreground text-lg">Budite među prvima koji će isprobati ove sjajne nove salone.</p>
+            </div>
+            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
+              <Link href={getSeeAllHref("new")}>
+                Svi novi <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje novih salona">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex flex-col gap-3 p-1">
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.newSalons && discovery.newSalons.length > 0 ? (
+            <DiscoveryCarousel ariaLabel="Novi saloni">
+              {discovery.newSalons.map((salon) => (
+                <HomeSalonCard key={salon.id} salon={salon} />
+              ))}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-16 px-4 rounded-2xl bg-card border border-border shadow-sm">
+              <Sparkles className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" strokeWidth={1} />
+              <h3 className="text-xl font-serif font-medium text-foreground mb-2">Nema novih salona</h3>
+              <p className="text-muted-foreground">Redovno dodajemo nove salone.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Popular Salons */}
+      <section className="py-24 bg-card border-b border-border/50">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Najtraženiji saloni</h2>
+              <p className="text-muted-foreground text-lg">Mesta gde se traži termin više.</p>
+            </div>
+            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
+              <Link href={getSeeAllHref("popular")}>
+                Svi popularni <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje popularnih salona">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex flex-col gap-3 p-1">
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.popularSalons && discovery.popularSalons.length > 0 ? (
+            <DiscoveryCarousel ariaLabel="Najtraženiji saloni">
+              {discovery.popularSalons.map((salon) => (
+                <HomeSalonCard key={salon.id} salon={salon} />
+              ))}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-16 px-4 rounded-2xl bg-muted/20 border border-border shadow-sm">
+              <Users className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" strokeWidth={1} />
+              <h3 className="text-xl font-serif font-medium text-foreground mb-2">Nedovoljno podataka</h3>
+              <p className="text-muted-foreground">Nemamo dovoljno podataka o popularnosti za ovu lokaciju.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Auth CTA - Only for non-logged in users */}
+      {(!authData || !authData.user) && (
+        <section className="py-24 bg-primary text-primary-foreground relative overflow-hidden">
+          <div className="absolute inset-0 opacity-10 bg-[url('/cta-bg.jpg')] bg-cover bg-center mix-blend-overlay" />
+          <div className="container mx-auto px-4 relative z-10 text-center max-w-3xl">
+            <h2 className="text-4xl md:text-5xl font-serif font-bold mb-6">Pristupite ekskluzivnim prednostima</h2>
+            <p className="text-lg text-primary-foreground/80 mb-10 max-w-xl mx-auto font-light">
+              Kreirajte nalog besplatno. Pratite svoje rezervacije, ostvarite loyalty poene, sačuvajte omiljene salone i ostavite recenzije.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button size="lg" variant="secondary" className="h-14 px-10 font-bold text-primary rounded-xl shadow-lg hover:shadow-xl transition-shadow w-full sm:w-auto" asChild>
+                <Link href="/prijava">Prijavite se</Link>
+              </Button>
+              <Button size="lg" variant="outline" className="h-14 px-10 font-medium text-primary-foreground border-primary-foreground/30 hover:bg-primary-foreground/10 rounded-xl w-full sm:w-auto" asChild>
+                <Link href="/za-biznise">Imate salon?</Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Top Rated Salons */}
+      <section className="py-24 bg-card">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-end mb-12">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold mb-4 text-primary">Najbolje ocenjeni</h2>
+              <p className="text-muted-foreground text-lg">Saloni kojima korisnici neprestano daju 5 zvezdica.</p>
+            </div>
+            <Button variant="ghost" className="hidden md:flex gap-2 group font-medium hover:bg-secondary/50 text-primary" asChild>
+              <Link href={getSeeAllHref("rated")}>
+                Prikaži sve <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <DiscoveryCarousel ariaLabel="Učitavanje najbolje ocenjenih salona">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="flex flex-col gap-3 p-1">
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ))}
+            </DiscoveryCarousel>
+          ) : discovery?.topRatedSalons && discovery.topRatedSalons.length > 0 ? (
+            <DiscoveryCarousel ariaLabel="Najbolje ocenjeni saloni">
+              {discovery.topRatedSalons.map((salon) => (
+                <HomeSalonCard key={salon.id} salon={salon} />
+              ))}
+            </DiscoveryCarousel>
+          ) : (
+            <div className="text-center py-16 px-4 rounded-2xl bg-muted/20 border border-border shadow-sm">
+              <Star className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" strokeWidth={1} />
+              <h3 className="text-xl font-serif font-medium text-foreground mb-2">Nedovoljno ocena</h3>
+              <p className="text-muted-foreground">Korisnici još nisu ocenili dovoljno salona u ovom gradu.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* SEO Linking Block */}
+      <section className="py-16 bg-muted/60 border-t border-border">
+        <div className="container mx-auto px-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
+            <div>
+              <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Popularni gradovi</h4>
+              <ul className="space-y-3">
+                {["Beograd", "Novi Sad", "Niš", "Kragujevac", "Subotica"].map((city) => (
+                  <li key={city}>
+                    <Link href={`/saloni?city=${city}`} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
+                      <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {city}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Top usluge</h4>
+              <ul className="space-y-3">
+                {["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija"].map((cat) => (
+                  <li key={cat}>
+                    <Link href={getCategoryHref(cat)} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
+                      <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {cat}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="col-span-2 md:col-span-2">
+              <h4 className="font-serif font-bold text-lg mb-6 text-foreground">O platformi LUMERA</h4>
+              <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+                LUMERA je vodeća platforma za zakazivanje termina u salonima lepote i wellness centrima u Srbiji.
+                Naša misija je da olakšamo proces pronalaženja i rezervacije pravih usluga, štedeći vaše dragoceno vreme.
+              </p>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Ponosimo se transparentnim recenzijama, pouzdanim partnerima i jednostavnim sistemom koji stavlja korisnika na prvo mesto.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </Layout>
   );
 }

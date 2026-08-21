@@ -201,6 +201,9 @@ paths:
         - name: minRating
           in: query
           schema: { type: number, minimum: 0, maximum: 5 }
+        - name: minReviewCount
+          in: query
+          schema: { type: number, minimum: 0 }
         - name: availability
           in: query
           schema: { type: string, enum: [today, tomorrow, this-week] }
@@ -225,6 +228,9 @@ paths:
         - name: topSalon
           in: query
           schema: { type: boolean }
+        - name: featured
+          in: query
+          schema: { type: boolean }
         - name: brand
           in: query
           schema: { type: string }
@@ -242,6 +248,19 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/SalonCard" }
+  /discovery/home:
+    get:
+      operationId: getMarketplaceHomeDiscovery
+      tags: [salons]
+      summary: Get curated public discovery content for the marketplace homepage
+      parameters:
+        - $ref: "#/components/parameters/CityQuery"
+      responses:
+        "200":
+          description: City-aware discovery shelves and popular services
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MarketplaceHomeDiscovery" }
   /platform/trust-stats:
     get:
       operationId: getPlatformTrustStats
@@ -2249,7 +2268,7 @@ components:
     SortQuery:
       name: sort
       in: query
-      schema: { type: string, enum: [recommended, top-rated, cheapest, nearest, first-available, most-popular, newest], default: recommended }
+      schema: { type: string, enum: [recommended, top-rated, cheapest, largest-discount, nearest, first-available, most-popular, most-booked-recently, newest], default: recommended }
     SalonSlug:
       name: slug
       in: path
@@ -2441,6 +2460,48 @@ components:
         latitude: { type: ["number", "null"], format: double }
         longitude: { type: ["number", "null"], format: double }
       required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, isVerified, hasDiscount, openSunday, createdAt, latitude, longitude]
+    DiscoveryService:
+      type: object
+      properties:
+        name: { type: string }
+        categoryName: { type: string }
+        bookingCount: { type: number, minimum: 0 }
+      required: [name, categoryName, bookingCount]
+    DiscountedSalonCard:
+      allOf:
+        - $ref: "#/components/schemas/SalonCard"
+        - type: object
+          properties:
+            discount:
+              type: object
+              properties:
+                serviceName: { type: string }
+                price: { type: number, minimum: 0 }
+                promoPrice: { type: number, minimum: 0 }
+              required: [serviceName, price, promoPrice]
+          required: [discount]
+    MarketplaceHomeDiscovery:
+      type: object
+      properties:
+        popularServices:
+          type: array
+          items: { $ref: "#/components/schemas/DiscoveryService" }
+        featuredSalons:
+          type: array
+          items: { $ref: "#/components/schemas/SalonCard" }
+        newSalons:
+          type: array
+          items: { $ref: "#/components/schemas/SalonCard" }
+        discountedSalons:
+          type: array
+          items: { $ref: "#/components/schemas/DiscountedSalonCard" }
+        popularSalons:
+          type: array
+          items: { $ref: "#/components/schemas/SalonCard" }
+        topRatedSalons:
+          type: array
+          items: { $ref: "#/components/schemas/SalonCard" }
+      required: [popularServices, featuredSalons, newSalons, discountedSalons, popularSalons, topRatedSalons]
     PlatformTrustStats:
       type: object
       properties:

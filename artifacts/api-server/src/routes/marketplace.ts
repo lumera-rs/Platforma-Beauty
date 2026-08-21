@@ -138,6 +138,8 @@ import {
   GetCustomerSalonReviewParams,
   GetCustomerSalonReviewResponse,
   GetLoyaltyStatusResponse,
+  GetMarketplaceHomeDiscoveryQueryParams,
+  GetMarketplaceHomeDiscoveryResponse,
   GetPlatformTrustStatsResponse,
   GetSalonAvailabilityParams,
   GetSalonAvailabilityQueryParams,
@@ -1451,7 +1453,7 @@ async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
   if (!salons.length) return [];
   const ids = salons.map((salon) => salon.id);
   const [allServices, allHours, allAppointments, allEmployees] = await Promise.all([
-    db.select().from(servicesTable).where(inArray(servicesTable.salonId, ids)),
+    db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, ids), eq(servicesTable.active, true))),
     db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, ids)),
     db.select().from(appointmentsTable).where(inArray(appointmentsTable.salonId, ids)),
     db.select().from(employeesTable).where(and(inArray(employeesTable.salonId, ids), eq(employeesTable.active, true))),
@@ -1464,6 +1466,9 @@ async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
     allEmployees.filter((employee) => employee.salonId === salon.id),
   ));
 }
+
+type MarketplaceHomeDiscoveryPayload = ReturnType<typeof GetMarketplaceHomeDiscoveryResponse.parse>;
+const marketplaceHomeDiscoveryCache = new Map<string, { expiresAt: number; payload: MarketplaceHomeDiscoveryPayload }>();
 
 function appointmentView(
   appointment: typeof appointmentsTable.$inferSelect,
@@ -2054,7 +2059,7 @@ router.delete("/auth/sign-in-methods/:provider", async (req, res): Promise<void>
 
 router.get("/salons", async (req, res): Promise<void> => {
   await ensureDemoData();
-  const normalized = normalizeBooleanQuery(req.query, ["homeService", "discountsOnly", "acceptsCards", "openSunday", "instantBooking", "topSalon"]);
+  const normalized = normalizeBooleanQuery(req.query, ["homeService", "discountsOnly", "acceptsCards", "openSunday", "instantBooking", "topSalon", "featured"]);
   if (!normalized) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
   const parsed = ListSalonsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -2064,28 +2069,66 @@ router.get("/salons", async (req, res): Promise<void> => {
   if (query.municipality) salons = salons.filter((item) => item.municipality.toLowerCase() === query.municipality!.toLowerCase());
   if (query.homeService !== undefined) salons = salons.filter((item) => item.homeService === query.homeService);
   const allCards = await salonCards(salons);
-  const allServices = salons.length ? await db.select().from(servicesTable).where(inArray(servicesTable.salonId, salons.map((item) => item.id))) : [];
+  const allServices = salons.length
+    ? await db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, salons.map((item) => item.id)), eq(servicesTable.active, true)))
+    : [];
+  const activeServiceIds = new Set(allServices.map((service) => service.id));
   const linkedBrands = salons.length ? await db.select().from(salonBrandsTable).where(inArray(salonBrandsTable.salonId, salons.map((item) => item.id))) : [];
   const brands = linkedBrands.length ? await db.select().from(productBrandsTable).where(inArray(productBrandsTable.id, linkedBrands.map((item) => item.brandId))) : [];
+  const bestDiscountBySalon = new Map<string, number>();
+  for (const service of allServices) {
+    if (service.promoPrice === null || service.promoPrice >= service.price) continue;
+    bestDiscountBySalon.set(
+      service.salonId,
+      Math.max(bestDiscountBySalon.get(service.salonId) ?? 0, service.price - service.promoPrice),
+    );
+  }
   const treatment = (query.treatment ?? query.category ?? "").toLowerCase();
   const filtered = allCards.filter((item) => {
     const services = allServices.filter((service) => service.salonId === item.id);
     const matchesTreatment = !treatment || services.some((service) => `${service.categoryName} ${service.name} ${service.tags.join(" ")}`.toLowerCase().includes(treatment));
     const matchesPrice = query.priceMax === undefined || item.startingPrice <= query.priceMax;
     const matchesRating = query.minRating === undefined || item.rating >= query.minRating;
+    const matchesReviewCount = query.minReviewCount === undefined || item.reviewCount >= query.minReviewCount;
     const matchesMen = query.gender !== "men" || services.some((service) => service.categoryName === "Muški frizeri" || service.tags.some((tag) => tag.toLowerCase().includes("muškar")));
     const matchesBrand = !query.brand || linkedBrands.filter((link) => link.salonId === item.id).some((link) => brands.find((brand) => brand.id === link.brandId)?.name.toLowerCase() === query.brand!.toLowerCase());
-    return matchesTreatment && matchesPrice && matchesRating && matchesMen && matchesBrand
+    return matchesTreatment && matchesPrice && matchesRating && matchesReviewCount && matchesMen && matchesBrand
       && (query.discountsOnly === undefined || item.hasDiscount === query.discountsOnly)
       && (query.acceptsCards === undefined || item.acceptsCards === query.acceptsCards)
       && (query.openSunday === undefined || item.openSunday === query.openSunday)
       && (query.instantBooking === undefined || item.instantBooking === query.instantBooking)
-      && (query.topSalon === undefined || item.topSalon === query.topSalon);
+    && (query.topSalon === undefined || item.topSalon === query.topSalon)
+    && (query.featured === undefined || item.featured === query.featured);
   });
+  const recentSalonBookingCounts = new Map<string, number>();
+  if (query.sort === "most-booked-recently" && salons.length) {
+    const recentAppointments = await db.select({
+      salonId: appointmentsTable.salonId,
+      serviceId: appointmentsTable.serviceId,
+    }).from(appointmentsTable).where(and(
+      inArray(appointmentsTable.salonId, salons.map((salon) => salon.id)),
+      gte(appointmentsTable.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+      ne(appointmentsTable.status, "cancelled"),
+    ));
+    for (const appointment of recentAppointments) {
+      if (!activeServiceIds.has(appointment.serviceId)) continue;
+      recentSalonBookingCounts.set(appointment.salonId, (recentSalonBookingCounts.get(appointment.salonId) ?? 0) + 1);
+    }
+  }
   const sorted = [...filtered].sort((a, b) => {
     if (query.sort === "top-rated") return b.rating - a.rating;
     if (query.sort === "cheapest") return a.startingPrice - b.startingPrice;
+    if (query.sort === "largest-discount") {
+      return (bestDiscountBySalon.get(b.id) ?? 0) - (bestDiscountBySalon.get(a.id) ?? 0)
+        || b.rating - a.rating
+        || b.reviewCount - a.reviewCount;
+    }
     if (query.sort === "most-popular") return b.reviewCount - a.reviewCount;
+    if (query.sort === "most-booked-recently") {
+      return (recentSalonBookingCounts.get(b.id) ?? 0) - (recentSalonBookingCounts.get(a.id) ?? 0)
+        || b.rating - a.rating
+        || b.reviewCount - a.reviewCount;
+    }
     if (query.sort === "newest") return b.createdAt.localeCompare(a.createdAt);
     if (query.sort === "first-available") {
       if (!a.earliestSlot) return 1;
@@ -2107,6 +2150,122 @@ router.get("/salons", async (req, res): Promise<void> => {
     return Number(b.topSalon) - Number(a.topSalon) || Number(b.featured) - Number(a.featured) || b.rating - a.rating;
   });
   res.json(ListSalonsResponse.parse(sorted));
+});
+
+router.get("/discovery/home", async (req, res): Promise<void> => {
+  await ensureDemoData();
+  const parsed = GetMarketplaceHomeDiscoveryQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const city = parsed.data.city?.trim().toLowerCase();
+  const cacheKey = city || "all";
+  const cached = marketplaceHomeDiscoveryCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    res.set("Cache-Control", "public, max-age=60, s-maxage=60");
+    res.json(cached.payload);
+    return;
+  }
+
+  const salons = (await db.select().from(salonsTable).where(eq(salonsTable.active, true)))
+    .filter((salon) => !city || salon.city.toLowerCase() === city);
+  let payload: MarketplaceHomeDiscoveryPayload;
+  if (!salons.length) {
+    payload = GetMarketplaceHomeDiscoveryResponse.parse({
+      popularServices: [],
+      featuredSalons: [],
+      newSalons: [],
+      discountedSalons: [],
+      popularSalons: [],
+      topRatedSalons: [],
+    });
+  } else {
+    const salonIds = salons.map((salon) => salon.id);
+    const [services, hours, recentAppointments] = await Promise.all([
+      db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, salonIds), eq(servicesTable.active, true))),
+      db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, salonIds)),
+      db.select().from(appointmentsTable).where(and(
+        inArray(appointmentsTable.salonId, salonIds),
+        gte(appointmentsTable.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+        ne(appointmentsTable.status, "cancelled"),
+      )),
+    ]);
+    const servicesBySalon = new Map<string, (typeof servicesTable.$inferSelect)[]>();
+    const hoursBySalon = new Map<string, (typeof salonHoursTable.$inferSelect)[]>();
+    for (const service of services) servicesBySalon.set(service.salonId, [...(servicesBySalon.get(service.salonId) ?? []), service]);
+    for (const hour of hours) hoursBySalon.set(hour.salonId, [...(hoursBySalon.get(hour.salonId) ?? []), hour]);
+    const cards = salons.map((salon) => card(salon, servicesBySalon.get(salon.id), hoursBySalon.get(salon.id)));
+    const bookingCounts = new Map<string, number>();
+    const activeServiceIds = new Set(services.map((service) => service.id));
+    for (const appointment of recentAppointments) {
+      if (!activeServiceIds.has(appointment.serviceId)) continue;
+      bookingCounts.set(appointment.serviceId, (bookingCounts.get(appointment.serviceId) ?? 0) + 1);
+    }
+    const salonBookingCounts = new Map<string, number>();
+    const discountsBySalon = new Map<string, typeof servicesTable.$inferSelect>();
+    for (const service of services) {
+      salonBookingCounts.set(service.salonId, (salonBookingCounts.get(service.salonId) ?? 0) + (bookingCounts.get(service.id) ?? 0));
+      if (service.promoPrice !== null && service.promoPrice < service.price) {
+        const current = discountsBySalon.get(service.salonId);
+        const currentSaving = current ? current.price - (current.promoPrice ?? current.price) : 0;
+        if (!current || service.price - service.promoPrice > currentSaving) discountsBySalon.set(service.salonId, service);
+      }
+    }
+    const rankCards = (items: typeof cards, compare: (a: typeof cards[number], b: typeof cards[number]) => number, limit = 12) =>
+      [...items].sort(compare).slice(0, limit);
+    const serviceGroups = new Map<string, { name: string; categoryName: string; bookingCount: number }>();
+    for (const service of services) {
+      const key = `${service.categoryName}\u0000${service.name}`;
+      const current = serviceGroups.get(key) ?? { name: service.name, categoryName: service.categoryName, bookingCount: 0 };
+      current.bookingCount += bookingCounts.get(service.id) ?? 0;
+      serviceGroups.set(key, current);
+    }
+    const bookedServices = [...serviceGroups.values()]
+      .filter((service) => service.bookingCount > 0)
+      .sort((a, b) => b.bookingCount - a.bookingCount || a.name.localeCompare(b.name, "sr"))
+      .slice(0, 8);
+    const popularServices = bookedServices.length
+      ? bookedServices
+      : ["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija", "Wellness"]
+        .map((categoryName) => ({ name: categoryName, categoryName, bookingCount: 0 }));
+    const featuredSalons = rankCards(
+      cards.filter((item) => item.featured),
+      (a, b) => Number(b.topSalon) - Number(a.topSalon) || b.rating - a.rating || b.reviewCount - a.reviewCount,
+    );
+    const discountedSalons = rankCards(
+      cards.filter((item) => discountsBySalon.has(item.id)),
+      (a, b) => {
+        const saving = (salonId: string) => {
+          const service = discountsBySalon.get(salonId)!;
+          return service.price - (service.promoPrice ?? service.price);
+        };
+        return saving(b.id) - saving(a.id) || b.rating - a.rating;
+      },
+    ).flatMap((item) => {
+      const discount = discountsBySalon.get(item.id)!;
+      return discount.promoPrice === null
+        ? []
+        : [{ ...item, discount: { serviceName: discount.name, price: discount.price, promoPrice: discount.promoPrice } }];
+    });
+    payload = GetMarketplaceHomeDiscoveryResponse.parse({
+      popularServices,
+      featuredSalons,
+      newSalons: rankCards(cards, (a, b) => b.createdAt.localeCompare(a.createdAt)),
+      discountedSalons,
+      popularSalons: rankCards(
+        cards.filter((item) => (salonBookingCounts.get(item.id) ?? 0) > 0),
+        (a, b) => (salonBookingCounts.get(b.id) ?? 0) - (salonBookingCounts.get(a.id) ?? 0) || b.rating - a.rating,
+      ),
+      topRatedSalons: rankCards(
+        cards.filter((item) => item.reviewCount >= 5),
+        (a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount,
+      ),
+    });
+  }
+
+  if (marketplaceHomeDiscoveryCache.size >= 100) marketplaceHomeDiscoveryCache.clear();
+  marketplaceHomeDiscoveryCache.set(cacheKey, { expiresAt: Date.now() + 60_000, payload });
+  res.set("Cache-Control", "public, max-age=60, s-maxage=60");
+  res.json(payload);
 });
 
 router.get("/platform/trust-stats", async (_req, res): Promise<void> => {
