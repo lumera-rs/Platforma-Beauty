@@ -5432,7 +5432,22 @@ router.delete("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
   const { reviewId } = parsedParams.data;
   const [existing] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
-  await db.delete(reviewsTable).where(eq(reviewsTable.id, reviewId));
+  await db.transaction(async (tx) => {
+    // Keep the cached public aggregate in step with moderation removals too.
+    await tx.select({ id: salonsTable.id }).from(salonsTable)
+      .where(eq(salonsTable.id, existing.salonId))
+      .for("update");
+    await tx.delete(reviewsTable).where(eq(reviewsTable.id, reviewId));
+    const visibleReviews = await tx.select().from(reviewsTable).where(and(
+      eq(reviewsTable.salonId, existing.salonId),
+      eq(reviewsTable.visible, true),
+    ));
+    const reviewCount = visibleReviews.length;
+    const rating = reviewCount
+      ? Math.round(visibleReviews.reduce((total, item) => total + item.rating, 0) / reviewCount * 10)
+      : 0;
+    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, existing.salonId));
+  });
   res.sendStatus(204);
 });
 

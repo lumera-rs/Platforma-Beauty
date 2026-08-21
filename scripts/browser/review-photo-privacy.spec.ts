@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { appointmentsTable, db, salonsTable, servicesTable, usersTable } from "@workspace/db";
 
@@ -11,6 +11,9 @@ type ReviewFixture = {
   customerEmail: string;
   customerPassword: string;
   customerId: string;
+  moderatorEmail: string;
+  moderatorPassword: string;
+  moderatorId: string;
   salonId: string;
   salonPath: string;
   serviceName: string;
@@ -27,28 +30,38 @@ async function createReviewFixture(): Promise<ReviewFixture> {
   const suffix = randomUUID();
   const customerEmail = `browser-review-${suffix}@example.test`;
   const customerPassword = "browser-review-test-password";
+  const moderatorEmail = `browser-review-moderator-${suffix}@example.test`;
+  const moderatorPassword = "browser-review-moderator-password";
   const serviceName = "Browser test tretman";
   const reviewText = "Recenzija koja mora nestati nakon potvrde.";
-  const [owner] = await db.select({ id: usersTable.id })
-    .from(usersTable)
-    .where(eq(usersTable.role, "SUPER_ADMIN"))
-    .limit(1);
-  if (!owner) throw new Error("Review browser fixture requires a seeded administrator.");
-
-  const [customer] = await db.insert(usersTable).values({
-    firstName: "Browser",
-    lastName: "Kupac",
-    email: customerEmail,
-    passwordHash: await hashPassword(customerPassword),
-    passwordSetAt: new Date(),
-    role: "CUSTOMER",
-  }).returning();
-  if (!customer) throw new Error("Review browser fixture could not create its customer.");
-
+  let moderatorId: string | undefined;
+  let customerId: string | undefined;
   let salonId: string | undefined;
   try {
+    const [moderator] = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Moderator",
+      email: moderatorEmail,
+      passwordHash: await hashPassword(moderatorPassword),
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    }).returning();
+    if (!moderator) throw new Error("Review browser fixture could not create its moderator.");
+    moderatorId = moderator.id;
+
+    const [customer] = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Kupac",
+      email: customerEmail,
+      passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(),
+      role: "CUSTOMER",
+    }).returning();
+    if (!customer) throw new Error("Review browser fixture could not create its customer.");
+    customerId = customer.id;
+
     const [salon] = await db.insert(salonsTable).values({
-      ownerId: owner.id,
+      ownerId: moderator.id,
       name: `Browser review salon ${suffix}`,
       slug: `browser-review-${suffix}`,
       city: "Beograd",
@@ -90,6 +103,9 @@ async function createReviewFixture(): Promise<ReviewFixture> {
       customerEmail,
       customerPassword,
       customerId: customer.id,
+      moderatorEmail,
+      moderatorPassword,
+      moderatorId: moderator.id,
       salonId: salon.id,
       salonPath: `/saloni/${salon.slug}`,
       serviceName,
@@ -97,7 +113,8 @@ async function createReviewFixture(): Promise<ReviewFixture> {
     };
   } catch (error) {
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
-    await db.delete(usersTable).where(eq(usersTable.id, customer.id));
+    if (customerId) await db.delete(usersTable).where(eq(usersTable.id, customerId));
+    if (moderatorId) await db.delete(usersTable).where(eq(usersTable.id, moderatorId));
     throw error;
   }
 }
@@ -105,14 +122,95 @@ async function createReviewFixture(): Promise<ReviewFixture> {
 async function cleanUpReviewFixture(fixture: ReviewFixture): Promise<void> {
   await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.customerId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.moderatorId));
 }
 
-async function signInAsFixtureCustomer(page: Page, fixture: ReviewFixture) {
-  const response = await page.request.post("/api/auth/login", {
-    data: { email: fixture.customerEmail, password: fixture.customerPassword },
+async function signIn(request: APIRequestContext, email: string, password: string, accountName: string) {
+  const response = await request.post("/api/auth/login", {
+    data: { email, password },
   });
-  expect(response, "The review fixture customer must be able to sign in.").toBeOK();
+  expect(response, `The review fixture ${accountName} must be able to sign in.`).toBeOK();
 }
+
+async function signInAsFixtureCustomer(request: APIRequestContext, fixture: ReviewFixture) {
+  await signIn(request, fixture.customerEmail, fixture.customerPassword, "customer");
+}
+
+async function signInAsFixtureModerator(request: APIRequestContext, fixture: ReviewFixture) {
+  await signIn(request, fixture.moderatorEmail, fixture.moderatorPassword, "moderator");
+}
+
+type PublicSalonResponse = {
+  rating: number;
+  reviewCount: number;
+  reviews: Array<{ id: string; text: string }>;
+};
+
+async function expectRestoredSalonMatchesServer(
+  request: APIRequestContext,
+  page: Page,
+  fixture: ReviewFixture,
+) {
+  const response = await request.get(`/api/salons/${fixture.salonPath.split("/").pop()}`);
+  expect(response, "The restored salon must have a readable public server response.").toBeOK();
+  const salon = await response.json() as PublicSalonResponse;
+
+  expect(salon.reviews.some((review) => review.text === fixture.reviewText), "A moderator-deleted review must stay out of the public API.").toBe(false);
+  await expect(page.locator("#reviews").getByText(fixture.reviewText)).toHaveCount(0);
+  await expect(page.getByText(salon.rating.toFixed(1), { exact: true })).toBeVisible();
+  await expect(page.getByText(`(${salon.reviewCount} recenzija)`, { exact: true })).toBeVisible();
+}
+
+test("a moderator-deleted public review stays gone after browser history restoration", async ({ page, request }) => {
+  const fixture = await createReviewFixture();
+
+  try {
+    await signInAsFixtureCustomer(page.request, fixture);
+    const created = await page.request.put(`/api/customer/reviews/${fixture.salonId}`, {
+      data: {
+        serviceName: fixture.serviceName,
+        rating: 5,
+        text: fixture.reviewText,
+        showProfilePhoto: false,
+      },
+  });
+    expect(created, "The fixture customer must be able to publish a public review.").toBeOK();
+    const review = await created.json() as { id: string };
+
+    await page.goto(fixture.salonPath);
+    await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
+    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+
+    await signInAsFixtureModerator(request, fixture);
+    const deleted = await request.delete(`/api/admin/reviews/${review.id}`);
+    expect(deleted.status(), "The moderator must be able to permanently remove the fixture review.").toBe(204);
+
+    const beforeRestore = await request.get(`/api/salons/${fixture.salonPath.split("/").pop()}`);
+    expect(beforeRestore).toBeOK();
+    const serverSalon = await beforeRestore.json() as PublicSalonResponse;
+    expect(serverSalon.reviews.some((item) => item.id === review.id)).toBe(false);
+    expect(serverSalon.rating).toBe(0);
+    expect(serverSalon.reviewCount).toBe(0);
+
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${fixture.salonPath}$`));
+    await expectRestoredSalonMatchesServer(request, page, fixture);
+    await expect(page.getByRole("button", { name: "Ostavite recenziju" })).toBeVisible();
+
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${fixture.salonPath}$`));
+    await expectRestoredSalonMatchesServer(request, page, fixture);
+    await expect(page.getByRole("button", { name: "Ostavite recenziju" })).toBeVisible();
+  } finally {
+    await cleanUpReviewFixture(fixture);
+  }
+});
 
 test("salon review falls back to reviewer initials when the public API omits an avatar", async ({ page }) => {
   await page.route(`**/api/salons/${salonPath.split("/").pop()}`, async (route) => {
@@ -152,7 +250,7 @@ test("customer can publish and revise a review for a completed service on mobile
   const revisedReviewText = `Izmenjeno iskustvo za browser proveru ${fixture.customerId.slice(0, 8)}`;
 
   try {
-    await signInAsFixtureCustomer(page, fixture);
+    await signInAsFixtureCustomer(page.request, fixture);
     await page.goto(fixture.salonPath);
 
     const reviews = page.locator("#reviews");
@@ -210,7 +308,7 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
   const fixture = await createReviewFixture();
 
   try {
-    await signInAsFixtureCustomer(page, fixture);
+    await signInAsFixtureCustomer(page.request, fixture);
     const createReview = await page.request.put(`/api/customer/reviews/${fixture.salonId}`, {
       data: {
         serviceName: fixture.serviceName,
