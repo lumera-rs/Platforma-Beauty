@@ -89,8 +89,10 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
       day={day}
       modifiers={modifiers}
       className={cn(
-        "min-h-[--cell-size] rounded-xl border border-transparent py-1.5 transition-all hover:border-primary/30 hover:bg-primary/5",
-        modifiers.today && "border-primary/40 bg-primary/5",
+        "!h-11 !min-h-11 !min-w-0 rounded-xl border border-transparent py-1.5 text-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/5 hover:shadow-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-primary/45 sm:!h-14 sm:!min-h-14",
+        modifiers.today && !modifiers.selected && "border-primary/60 bg-primary/[0.035]",
+        modifiers.disabled && "cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/45 opacity-70 hover:translate-y-0 hover:bg-muted/30 hover:shadow-none",
+        modifiers.outside && "opacity-25",
         className,
       )}
     >
@@ -98,7 +100,7 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
       <span
         aria-hidden="true"
         className={cn(
-          "mt-1 h-1.5 w-1.5 rounded-full bg-transparent",
+          "mt-1 h-1.5 w-1.5 rounded-full bg-transparent transition-colors",
           hasAppointments && "bg-primary",
           modifiers.selected && hasAppointments && "bg-primary-foreground",
         )}
@@ -380,22 +382,24 @@ export default function OwnerCalendar() {
             </DialogContent>
           </Dialog>
           <div className="grid min-w-0 gap-7 xl:grid-cols-[minmax(0,.82fr)_minmax(0,1.7fr)]">
-            <Card className="h-fit min-w-0 overflow-hidden border-primary/10 shadow-md">
+            <Card className="h-fit min-w-0 overflow-hidden border-primary/10 shadow-md max-sm:-mx-2 max-sm:w-[calc(100%+1rem)]">
               <CardHeader className="border-b bg-primary/[0.035] px-5 py-5 sm:px-7">
                 <CardTitle className="flex items-center gap-3 text-xl"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarDays className="h-5 w-5" /></span> Izaberite datum</CardTitle>
                 <p className="pl-[52px] text-sm text-muted-foreground">Termini se prikazuju tek nakon izbora dana.</p>
               </CardHeader>
-              <CardContent className="space-y-6 px-4 py-5 sm:px-6 sm:py-7">
-                <div className="min-w-0 overflow-hidden rounded-2xl border bg-background p-1 shadow-sm sm:p-4">
+              <CardContent className="space-y-6 px-0 py-4 sm:px-6 sm:py-7">
+                <div className="min-w-0 overflow-hidden rounded-2xl border bg-background p-0 shadow-sm sm:p-3">
                   <Calendar
                     mode="single"
+                    showOutsideDays={false}
                     selected={selectedDate ? dateAtUtcNoon(selectedDate) : undefined}
                     onSelect={(date) => date && selectDate(dateKey(date))}
                     month={visibleMonth}
                     onMonthChange={setVisibleMonth}
+                    disabled={{ before: new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()) }}
                     modifiers={{ hasAppointments: [...appointmentDateKeys].map(dateAtUtcNoon) }}
                     components={{ DayButton: AppointmentDayButton }}
-                    className="mx-auto max-w-full [--cell-size:2.15rem] min-[390px]:[--cell-size:2.45rem] sm:[--cell-size:3.4rem]"
+                    className="mx-auto w-full max-w-full !p-0 sm:!p-2 [--cell-size:2.75rem] sm:[--cell-size:3.45rem]"
                   />
                 </div>
                 <div className="space-y-3">
