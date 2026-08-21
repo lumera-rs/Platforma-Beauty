@@ -2107,6 +2107,16 @@ export const UpdateSalonServiceResponse = zod.object({
 
 
 /**
+ * @summary Permanently remove a salon service without appointments
+ */
+export const DeleteSalonServiceParams = zod.object({
+  "serviceId": zod.coerce.string()
+})
+
+export const DeleteSalonServiceResponse = zod.void()
+
+
+/**
  * @summary List salon employees
  */
 export const ListSalonEmployeesResponseItem = zod.object({

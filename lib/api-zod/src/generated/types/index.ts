@@ -103,6 +103,7 @@ export * from './customerDashboard';
 export * from './customerReview';
 export * from './customerReviewInput';
 export * from './customerSalonReviewContext';
+export * from './deleteSalonService409';
 export * from './deliveryAddressInput';
 export * from './deliveryMethodOption';
 export * from './deliveryMethodOptionId';

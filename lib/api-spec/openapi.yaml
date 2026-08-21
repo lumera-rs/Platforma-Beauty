@@ -835,6 +835,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Service" }
+    delete:
+      operationId: deleteSalonService
+      tags: [salon-management]
+      summary: Permanently remove a salon service without appointments
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Service removed
+        "404":
+          description: Service not found
+        "409":
+          description: Service is linked to existing appointments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                required: [error]
   /salon/employees:
     get:
       operationId: listSalonEmployees

@@ -145,6 +145,7 @@ import {
   CreateSalonServiceResponse,
   CreateSalonServicesBatchBody,
   CreateSalonServicesBatchResponse,
+  DeleteSalonServiceParams,
   DisconnectAuthSignInMethodParams,
   DisconnectAuthSignInMethodResponse,
   DeleteCustomerSalonReviewParams,
@@ -3468,6 +3469,45 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
   res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
+});
+
+router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = DeleteSalonServiceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Usluga nije ispravno izabrana." }); return; }
+
+  const result = await db.transaction(async (tx) => {
+    const [service] = await tx.select({ id: servicesTable.id }).from(servicesTable).where(and(
+      eq(servicesTable.id, params.data.serviceId),
+      eq(servicesTable.salonId, access.salon.id),
+    )).for("update").limit(1);
+    if (!service) return { error: "not-found" as const };
+
+    const [appointment] = await tx.select({ id: appointmentsTable.id }).from(appointmentsTable)
+      .where(and(eq(appointmentsTable.serviceId, service.id), eq(appointmentsTable.salonId, access.salon.id))).limit(1);
+    const [appointmentSeries] = await tx.select({ id: appointmentSeriesTable.id }).from(appointmentSeriesTable)
+      .where(and(eq(appointmentSeriesTable.serviceId, service.id), eq(appointmentSeriesTable.salonId, access.salon.id))).limit(1);
+    if (appointment || appointmentSeries) return { error: "has-appointments" as const };
+
+    await tx.delete(servicesTable).where(and(
+      eq(servicesTable.id, service.id),
+      eq(servicesTable.salonId, access.salon.id),
+    ));
+    return { deleted: true as const };
+  });
+
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : 409).json({
+      error: result.error === "not-found"
+        ? "Usluga nije pronađena."
+        : "Usluga ne može da se obriše jer je povezana sa postojećim terminima.",
+    });
+    return;
+  }
+
+  await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) })
+    .where(eq(salonsTable.id, access.salon.id));
+  res.status(204).end();
 });
 
 router.get("/salon/employees", async (req, res): Promise<void> => {

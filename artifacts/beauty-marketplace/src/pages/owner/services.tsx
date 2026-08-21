@@ -5,6 +5,7 @@ import {
   useListSalonServices, 
   useCreateSalonService, 
   useUpdateSalonService, 
+  useDeleteSalonService,
   useGetCurrentUser, 
   getListSalonServicesQueryKey,
   useListServiceTemplates,
@@ -12,7 +13,7 @@ import {
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Edit2, Loader2, Image as ImageIcon, House, Library, Search, FileText, Check, AlertCircle } from "lucide-react";
+import { Plus, Edit2, Trash2, Loader2, Image as ImageIcon, House, Library, Search, FileText, Check, AlertCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,16 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ServiceTemplate {
   id: string;
@@ -243,10 +254,12 @@ export default function OwnerServices() {
   const { data: services, isLoading, refetch } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() }});
   const createMutation = useCreateSalonService();
   const updateMutation = useUpdateSalonService();
+  const deleteMutation = useDeleteSalonService();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("my-services");
+  const [deleteTarget, setDeleteTarget] = useState<NonNullable<typeof services>[number] | null>(null);
   
   const activeHomeServiceCount = services?.filter((service) => service.active && service.homeServiceAvailable).length ?? 0;
 
@@ -295,6 +308,24 @@ export default function OwnerServices() {
   const handleBatchCreated = () => {
     refetch();
     setActiveTab("my-services");
+  };
+
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    deleteMutation.mutate({ serviceId: deleteTarget.id }, {
+      onSuccess: () => {
+        toast.success("Usluga obrisana", { description: "Usluga je trajno uklonjena sa cenovnika i javnog profila." });
+        setDeleteTarget(null);
+        refetch();
+      },
+      onError: (error) => {
+        const message = error instanceof Error
+          ? error.message.replace(/^HTTP \d+[^:]*:\s*/, "")
+          : "Brisanje usluge nije uspelo. Pokušajte ponovo.";
+        toast.error("Brisanje nije uspelo", { description: message });
+        setDeleteTarget(null);
+      },
+    });
   };
 
   return (
@@ -421,7 +452,18 @@ export default function OwnerServices() {
                           {service.active && service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • min. ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
                         </div>
                       </div>
-                      <Button variant="outline" size="sm" className="shrink-0 w-full sm:w-auto" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
+                      <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-destructive hover:bg-destructive/10 hover:text-destructive sm:flex-none"
+                          aria-label={`Obriši uslugu ${service.name}`}
+                          onClick={() => setDeleteTarget(service)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Obriši
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -432,6 +474,32 @@ export default function OwnerServices() {
               <TemplateLibrary onBatchCreated={handleBatchCreated} />
             </TabsContent>
           </Tabs>
+
+          <AlertDialog
+            open={Boolean(deleteTarget)}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen && !deleteMutation.isPending) setDeleteTarget(null);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Trajno obrišite uslugu?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Usluga „{deleteTarget?.name}“ biće trajno uklonjena sa cenovnika i javnog profila. Ovu radnju nije moguće poništiti.
+                  Ako je usluga povezana sa postojećim terminima, brisanje neće biti moguće.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deleteMutation.isPending}>Otkaži</AlertDialogCancel>
+                <AlertDialogAction asChild>
+                  <Button variant="destructive" disabled={deleteMutation.isPending} onClick={handleDelete}>
+                    {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Obriši uslugu
+                  </Button>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </BusinessLayout>

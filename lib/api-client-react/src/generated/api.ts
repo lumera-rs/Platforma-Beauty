@@ -78,6 +78,7 @@ import type {
   CustomerReview,
   CustomerReviewInput,
   CustomerSalonReviewContext,
+  DeleteSalonService409,
   EducationCourseDetail,
   EducationCourseInput,
   EducationCourseUpdate,
@@ -3699,6 +3700,77 @@ export const useUpdateSalonService = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateSalonServiceMutationOptions(options));
+    }
+
+export const getDeleteSalonServiceUrl = (serviceId: string,) => {
+
+
+
+
+  return `/api/salon/services/${serviceId}`
+}
+
+/**
+ * @summary Permanently remove a salon service without appointments
+ */
+export const deleteSalonService = async (serviceId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSalonServiceUrl(serviceId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSalonServiceMutationOptions = <TError = ErrorType<void | DeleteSalonService409>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonService>>, TError,{serviceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSalonService>>, TError,{serviceId: string}, TContext> => {
+
+const mutationKey = ['deleteSalonService'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSalonService>>, {serviceId: string}> = (props) => {
+          const {serviceId} = props ?? {};
+
+          return  deleteSalonService(serviceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSalonServiceMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSalonService>>>
+
+    export type DeleteSalonServiceMutationError = ErrorType<void | DeleteSalonService409>
+
+    /**
+ * @summary Permanently remove a salon service without appointments
+ */
+export const useDeleteSalonService = <TError = ErrorType<void | DeleteSalonService409>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonService>>, TError,{serviceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSalonService>>,
+        TError,
+        {serviceId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSalonServiceMutationOptions(options));
     }
 
 export const getListSalonEmployeesUrl = () => {

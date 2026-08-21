@@ -2495,6 +2495,10 @@ mainCategory?: string;
 subcategory?: string;
 };
 
+export type DeleteSalonService409 = {
+  error: string;
+};
+
 export type ListProductsParams = {
 category?: string;
 subcategory?: string;

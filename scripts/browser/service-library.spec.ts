@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, serviceTemplatesTable, servicesTable } from "@workspace/db";
+import { appointmentsTable, db, serviceTemplatesTable, servicesTable } from "@workspace/db";
 
 const credentials = {
   admin: {
@@ -24,6 +24,18 @@ type ServiceTemplate = {
   priceMax: number;
   description: string | null;
   active: boolean;
+};
+
+type SalonService = {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  price: number;
+};
+
+type ManagedSalonProfile = {
+  id: string;
+  slug: string;
 };
 
 async function signIn(page: Page, role: keyof typeof credentials) {
@@ -50,6 +62,34 @@ async function createTemplateFixture(page: Page, fixture: Omit<ServiceTemplate, 
   const response = await page.request.post("/api/admin/service-templates", { data: fixture });
   expect(response.status(), "The owner test fixture must be created by an administrator.").toBe(201);
   return await response.json() as ServiceTemplate;
+}
+
+function salonServiceFixture(prefix: string) {
+  const suffix = randomUUID().slice(0, 8);
+  return {
+    category: "E2E kategorija",
+    name: `${prefix} ${suffix}`,
+    description: "Privremena usluga za proveru brisanja iz vlasničkog cenovnika.",
+    durationMinutes: 45,
+    price: 2460,
+    imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200",
+    active: true,
+    homeServiceAvailable: false,
+    homeServiceFee: 0,
+    homeServiceMinimumOrder: null,
+  };
+}
+
+async function createSalonServiceFixture(page: Page, fixture: ReturnType<typeof salonServiceFixture>) {
+  const response = await page.request.post("/api/salon/services", { data: fixture });
+  expect(response.status(), "The owner must be able to create a service fixture.").toBe(201);
+  return await response.json() as SalonService;
+}
+
+async function managedSalonProfile(page: Page) {
+  const response = await page.request.get("/api/salon/profile");
+  expect(response.status(), "The owner test account must have a managed salon.").toBe(200);
+  return await response.json() as ManagedSalonProfile;
 }
 
 test("owner can filter templates, price one, and find the saved service after reload", async ({ page }) => {
@@ -100,6 +140,89 @@ test("owner can filter templates, price one, and find the saved service after re
   } finally {
     if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
     if (templateId) await db.delete(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, templateId));
+  }
+});
+
+test("owner confirms removal of an unused service and it disappears from the public profile", async ({ page }) => {
+  const fixture = salonServiceFixture("E2E brisanje usluge");
+  let serviceId: string | undefined;
+
+  try {
+    await signIn(page, "owner");
+    const [service, salon] = await Promise.all([
+      createSalonServiceFixture(page, fixture),
+      managedSalonProfile(page),
+    ]);
+    serviceId = service.id;
+
+    await page.goto("/vlasnik/usluge");
+    const serviceRow = page.locator(".divide-y > div").filter({ hasText: fixture.name });
+    await expect(serviceRow).toHaveCount(1);
+
+    await serviceRow.getByRole("button", { name: `Obriši uslugu ${fixture.name}` }).click();
+    const confirmation = page.getByRole("alertdialog");
+    await expect(confirmation).toContainText("Trajno obrišite uslugu?");
+    await expect(confirmation).toContainText(fixture.name);
+    await expect(confirmation).toContainText("javnog profila");
+
+    const deleteResponse = page.waitForResponse((response) =>
+      response.request().method() === "DELETE"
+      && new URL(response.url()).pathname === `/api/salon/services/${service.id}`,
+    );
+    await confirmation.getByRole("button", { name: "Obriši uslugu" }).click();
+    expect((await deleteResponse).status(), "An unused service must be deleted.").toBe(204);
+    await expect(serviceRow).toHaveCount(0);
+
+    const publicProfile = await page.request.get(`/api/salons/${salon.slug}`);
+    expect(publicProfile.status(), "The public salon profile must load after service removal.").toBe(200);
+    const publicServices = (await publicProfile.json() as { services: Array<{ id: string }> }).services;
+    expect(publicServices.some((item) => item.id === service.id), "A deleted service must not remain on the public salon profile.").toBe(false);
+    serviceId = undefined;
+  } finally {
+    if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
+  }
+});
+
+test("owner sees why a service with appointments cannot be removed", async ({ page }) => {
+  const fixture = salonServiceFixture("E2E zaštićena usluga");
+  let serviceId: string | undefined;
+  let appointmentId: string | undefined;
+
+  try {
+    await signIn(page, "owner");
+    const [service, salon] = await Promise.all([
+      createSalonServiceFixture(page, fixture),
+      managedSalonProfile(page),
+    ]);
+    serviceId = service.id;
+    const [appointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id,
+      serviceId: service.id,
+      date: "2099-12-20",
+      startTime: "10:00",
+      endTime: "10:45",
+      durationMinutes: service.durationMinutes,
+      price: service.price,
+      status: "confirmed",
+    }).returning({ id: appointmentsTable.id });
+    appointmentId = appointment!.id;
+
+    await page.goto("/vlasnik/usluge");
+    const serviceRow = page.locator(".divide-y > div").filter({ hasText: fixture.name });
+    await expect(serviceRow).toHaveCount(1);
+    await serviceRow.getByRole("button", { name: `Obriši uslugu ${fixture.name}` }).click();
+
+    const deleteResponse = page.waitForResponse((response) =>
+      response.request().method() === "DELETE"
+      && new URL(response.url()).pathname === `/api/salon/services/${service.id}`,
+    );
+    await page.getByRole("alertdialog").getByRole("button", { name: "Obriši uslugu" }).click();
+    expect((await deleteResponse).status(), "A booked service must be protected from deletion.").toBe(409);
+    await expect(page.getByText("Usluga ne može da se obriše jer je povezana sa postojećim terminima.", { exact: true })).toBeVisible();
+    await expect(serviceRow).toHaveCount(1);
+  } finally {
+    if (appointmentId) await db.delete(appointmentsTable).where(eq(appointmentsTable.id, appointmentId));
+    if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
   }
 });
 
