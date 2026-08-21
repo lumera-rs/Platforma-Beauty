@@ -392,6 +392,27 @@ export interface TimeSlot {
   employeeName?: string | null;
 }
 
+export interface FirstAvailableServiceSlot {
+  serviceId: string;
+  /** @nullable */
+  date: string | null;
+  /** @nullable */
+  startTime: string | null;
+  /** @nullable */
+  endTime: string | null;
+  /** @nullable */
+  employeeId: string | null;
+  /** @nullable */
+  employeeName: string | null;
+}
+
+export interface SalonFirstAvailable {
+  generatedAt: string;
+  /** @minimum 1 */
+  horizonDays: number;
+  services: FirstAvailableServiceSlot[];
+}
+
 export type AppointmentStatus = typeof AppointmentStatus[keyof typeof AppointmentStatus];
 
 
@@ -484,6 +505,7 @@ export interface AppointmentInput {
   /** @nullable */
   employeeId?: string | null;
   date: string;
+  /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
 }

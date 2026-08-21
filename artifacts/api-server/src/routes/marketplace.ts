@@ -142,6 +142,8 @@ import {
   GetSalonAvailabilityParams,
   GetSalonAvailabilityQueryParams,
   GetSalonAvailabilityResponse,
+  GetSalonFirstAvailableParams,
+  GetSalonFirstAvailableResponse,
   GetSalonDashboardResponse,
   GetManagedSalonProfileResponse,
   GetSalonParams,
@@ -616,6 +618,113 @@ async function availableEmployee(
   reservedAppointments: ReservedAppointment[] = [],
 ) {
   return availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId, reservedAppointments);
+}
+
+type FirstAvailableServiceSlot = {
+  serviceId: string;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+};
+
+type FirstAvailableResponse = {
+  generatedAt: string;
+  horizonDays: number;
+  services: FirstAvailableServiceSlot[];
+};
+
+const firstAvailableCache = new Map<string, { expiresAt: number; response: FirstAvailableResponse }>();
+const firstAvailablePending = new Map<string, Promise<FirstAvailableResponse>>();
+
+function dateAtOffset(startDate: Date, offset: number) {
+  const date = new Date(startDate);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
+async function firstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
+  const cached = firstAvailableCache.get(salonId);
+  if (cached && cached.expiresAt > Date.now()) return cached.response;
+  const pending = firstAvailablePending.get(salonId);
+  if (pending) return pending;
+
+  const request = computeFirstAvailableByService(salonId);
+  firstAvailablePending.set(salonId, request);
+  try {
+    const response = await request;
+    firstAvailableCache.set(salonId, { response, expiresAt: Date.now() + 30_000 });
+    return response;
+  } finally {
+    firstAvailablePending.delete(salonId);
+  }
+}
+
+async function computeFirstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
+  const [services, employees, appointments] = await Promise.all([
+    db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true))),
+    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true))),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salonId)),
+  ]);
+  const employeeIds = employees.map((employee) => employee.id);
+  const [relevantLinks, relevantSchedules, relevantTimeOff] = employeeIds.length
+    ? await Promise.all([
+      db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)),
+      db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)),
+      db.select().from(employeeTimeOffTable).where(inArray(employeeTimeOffTable.employeeId, employeeIds)),
+    ])
+    : [[], [], []];
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
+  const horizonDays = 30;
+
+  const servicesWithFirstSlot = services.map((service): FirstAvailableServiceSlot => {
+    const candidateIds = new Set(
+      relevantLinks.filter((link) => link.serviceId === service.id).map((link) => link.employeeId),
+    );
+    const candidates = employees.filter((employee) => candidateIds.has(employee.id));
+
+    for (let dayOffset = 0; dayOffset < horizonDays; dayOffset += 1) {
+      const date = dateAtOffset(now, dayOffset);
+      const weekStart = mondayOf(date);
+      const sameDay = appointments.filter((appointment) => appointment.date === date && appointment.status !== "cancelled");
+      const sameWeek = appointments.filter((appointment) =>
+        appointment.status !== "cancelled" && appointment.date >= weekStart && appointment.date <= date,
+      );
+
+      for (let hour = 9; hour < 18; hour += 1) {
+        const startTime = `${String(hour).padStart(2, "0")}:00`;
+        if (date === today && startTime <= currentTime) continue;
+        const endTime = appointmentEndTime(startTime, service.durationMinutes);
+        if (!endTime) continue;
+        const available = candidates.filter((employee) =>
+          employeeWorksAt(employee.id, date, startTime, endTime, relevantSchedules, relevantTimeOff)
+          && !sameDay.some((appointment) => appointment.employeeId === employee.id
+            && overlapsAppointment(startTime, endTime, appointment)),
+        );
+        if (!available.length) continue;
+        const employee = [...available].sort((a, b) => {
+          const dayA = sameDay.filter((appointment) => appointment.employeeId === a.id).length;
+          const dayB = sameDay.filter((appointment) => appointment.employeeId === b.id).length;
+          const weekA = sameWeek.filter((appointment) => appointment.employeeId === a.id).length;
+          const weekB = sameWeek.filter((appointment) => appointment.employeeId === b.id).length;
+          return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name, "sr");
+        })[0]!;
+        return { serviceId: service.id, date, startTime, endTime, employeeId: employee.id, employeeName: employee.name };
+      }
+    }
+
+    return { serviceId: service.id, date: null, startTime: null, endTime: null, employeeId: null, employeeName: null };
+  });
+
+  const response = {
+    generatedAt: now.toISOString(),
+    horizonDays,
+    services: servicesWithFirstSlot,
+  };
+  return response;
 }
 
 async function createAllocatedAppointment(input: {
@@ -2152,6 +2261,23 @@ router.get("/salons/:salonId/availability", async (req, res): Promise<void> => {
   res.json(GetSalonAvailabilityResponse.parse(slots));
 });
 
+router.get("/salons/:salonId/first-available", async (req, res): Promise<void> => {
+  await ensureDemoData();
+  const params = GetSalonFirstAvailableParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Salon nije ispravno izabran." });
+    return;
+  }
+  const [salon] = await db.select({ id: salonsTable.id }).from(salonsTable)
+    .where(and(eq(salonsTable.id, params.data.salonId), eq(salonsTable.active, true))).limit(1);
+  if (!salon) {
+    res.status(404).json({ error: "Salon nije pronađen." });
+    return;
+  }
+  res.set("Cache-Control", "public, max-age=30");
+  res.json(GetSalonFirstAvailableResponse.parse(await firstAvailableByService(salon.id)));
+});
+
 router.get("/appointments", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = ListMyAppointmentsQueryParams.safeParse(req.query);
@@ -2171,6 +2297,10 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, parsed.data.salonId)).limit(1);
   if (!service || !salon) { res.status(404).json({ error: "Salon ili usluga nisu pronađeni." }); return; }
   const appointmentDate = calendarDate(parsed.data.date);
+  if (appointmentDate < new Date().toISOString().slice(0, 10)) {
+    res.status(400).json({ error: "Termin mora biti zakazan za današnji ili budući datum." });
+    return;
+  }
   const endTime = appointmentEndTime(parsed.data.startTime, service.durationMinutes);
   if (!endTime) { res.status(400).json({ error: "Trajanje termina izlazi van radnog dana." }); return; }
   const [createdContact] = await db.insert(salonCustomersTable).values({

@@ -117,6 +117,7 @@ import type {
   SalonCustomer,
   SalonCustomerUpdate,
   SalonDashboard,
+  SalonFirstAvailable,
   SalonNotification,
   SalonProfile,
   SalonProfileMedia,
@@ -1293,6 +1294,83 @@ export function useGetSalonAvailability<TData = Awaited<ReturnType<typeof getSal
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSalonAvailabilityQueryOptions(salonId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSalonFirstAvailableUrl = (salonId: string,) => {
+
+
+
+
+  return `/api/salons/${salonId}/first-available`
+}
+
+/**
+ * @summary Get the first available slot for every active salon service
+ */
+export const getSalonFirstAvailable = async (salonId: string, options?: Parameters<typeof customFetch>[1]): Promise<SalonFirstAvailable> => {
+
+  return customFetch<SalonFirstAvailable>(getGetSalonFirstAvailableUrl(salonId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSalonFirstAvailableQueryKey = (salonId: string,) => {
+    return [
+    `/api/salons/${salonId}/first-available`
+    ] as const;
+    }
+
+
+export const getGetSalonFirstAvailableQueryOptions = <TData = Awaited<ReturnType<typeof getSalonFirstAvailable>>, TError = ErrorType<void>>(salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonFirstAvailable>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSalonFirstAvailableQueryKey(salonId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonFirstAvailable>>> = ({ signal }) => getSalonFirstAvailable(salonId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: salonId !== null && salonId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSalonFirstAvailable>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSalonFirstAvailableQueryResult = NonNullable<Awaited<ReturnType<typeof getSalonFirstAvailable>>>
+export type GetSalonFirstAvailableQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the first available slot for every active salon service
+ */
+
+export function useGetSalonFirstAvailable<TData = Awaited<ReturnType<typeof getSalonFirstAvailable>>, TError = ErrorType<void>>(
+ salonId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonFirstAvailable>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSalonFirstAvailableQueryOptions(salonId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

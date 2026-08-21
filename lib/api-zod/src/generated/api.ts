@@ -472,6 +472,33 @@ export const GetSalonAvailabilityResponse = zod.array(GetSalonAvailabilityRespon
 
 
 /**
+ * @summary Get the first available slot for every active salon service
+ */
+export const getSalonFirstAvailablePathSalonIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetSalonFirstAvailableParams = zod.object({
+  "salonId": zod.coerce.string().regex(getSalonFirstAvailablePathSalonIdRegExp)
+})
+
+
+
+
+export const GetSalonFirstAvailableResponse = zod.object({
+  "generatedAt": zod.coerce.date(),
+  "horizonDays": zod.number().min(1),
+  "services": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "date": zod.string().nullable(),
+  "startTime": zod.string().nullable(),
+  "endTime": zod.string().nullable(),
+  "employeeId": zod.string().nullable(),
+  "employeeName": zod.string().nullable()
+}))
+})
+
+
+/**
  * @summary List appointments for the signed-in user
  */
 export const listMyAppointmentsQueryScopeDefault = `all`;
@@ -516,12 +543,15 @@ export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseIt
 /**
  * @summary Create a booking
  */
+export const createAppointmentBodyStartTimeRegExp = new RegExp('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$');
+
+
 export const CreateAppointmentBody = zod.object({
   "salonId": zod.string(),
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
   "date": zod.coerce.date(),
-  "startTime": zod.string(),
+  "startTime": zod.string().regex(createAppointmentBodyStartTimeRegExp),
   "notes": zod.string().optional()
 })
 

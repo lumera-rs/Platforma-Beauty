@@ -12,6 +12,7 @@ export interface AppointmentInput {
   /** @nullable */
   employeeId?: string | null;
   date: Date;
+  /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
 }
