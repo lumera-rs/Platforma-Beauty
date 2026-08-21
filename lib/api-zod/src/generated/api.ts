@@ -1905,7 +1905,8 @@ export const ListSalonServicesResponseItem = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(listSalonServicesResponseHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(listSalonServicesResponseHomeServiceMinimumOrderMin).nullable()
+  "homeServiceMinimumOrder": zod.number().min(listSalonServicesResponseHomeServiceMinimumOrderMin).nullable(),
+  "canBePermanentlyDeleted": zod.boolean()
 })
 export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem)
 

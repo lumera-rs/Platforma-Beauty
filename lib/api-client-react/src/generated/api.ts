@@ -129,6 +129,7 @@ import type {
   SalonCustomerUpdate,
   SalonDashboard,
   SalonFirstAvailable,
+  SalonManagedService,
   SalonNotification,
   SalonProfile,
   SalonProfileMedia,
@@ -3338,9 +3339,9 @@ export const getListSalonServicesUrl = () => {
 /**
  * @summary List salon services
  */
-export const listSalonServices = async ( options?: Parameters<typeof customFetch>[1]): Promise<Service[]> => {
+export const listSalonServices = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonManagedService[]> => {
 
-  return customFetch<Service[]>(getListSalonServicesUrl(),
+  return customFetch<SalonManagedService[]>(getListSalonServicesUrl(),
   {
     ...options,
     method: 'GET'

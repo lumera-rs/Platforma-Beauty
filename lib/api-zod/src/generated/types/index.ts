@@ -195,6 +195,7 @@ export * from './salonCustomer';
 export * from './salonCustomerUpdate';
 export * from './salonDashboard';
 export * from './salonFirstAvailable';
+export * from './salonManagedService';
 export * from './salonNotification';
 export * from './salonProfile';
 export * from './salonProfileMedia';

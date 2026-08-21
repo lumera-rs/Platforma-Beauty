@@ -423,6 +423,31 @@ export interface EmployeeDeactivationResult {
   loginAccountDeactivated: boolean;
 }
 
+export interface SalonManagedService {
+  id: string;
+  category: string;
+  name: string;
+  description: string;
+  durationMinutes: number;
+  price: number;
+  /** @nullable */
+  promoPrice?: number | null;
+  tags?: string[];
+  /** @nullable */
+  packageTreatments?: number | null;
+  imageUrl: string;
+  active: boolean;
+  homeServiceAvailable: boolean;
+  /** @minimum 0 */
+  homeServiceFee: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  homeServiceMinimumOrder: number | null;
+  canBePermanentlyDeleted: boolean;
+}
+
 export interface ServiceTemplate {
   /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
   id: string;

@@ -3377,8 +3377,24 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
 router.get("/salon/services", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const services = await db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id));
-  res.json(ListSalonServicesResponse.parse(services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder }))));
+  const [services, appointmentServices, appointmentSeriesServices] = await Promise.all([
+    db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
+    db.select({ serviceId: appointmentsTable.serviceId }).from(appointmentsTable)
+      .where(eq(appointmentsTable.salonId, salon.id)),
+    db.select({ serviceId: appointmentSeriesTable.serviceId }).from(appointmentSeriesTable)
+      .where(eq(appointmentSeriesTable.salonId, salon.id)),
+  ]);
+  const protectedServiceIds = new Set([
+    ...appointmentServices.map((appointment) => appointment.serviceId),
+    ...appointmentSeriesServices.map((series) => series.serviceId),
+  ]);
+  res.json(ListSalonServicesResponse.parse(services.map((item) => ({
+    id: item.id, category: item.categoryName, name: item.name, description: item.description,
+    durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice,
+    imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable,
+    homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder,
+    canBePermanentlyDeleted: !protectedServiceIds.has(item.id),
+  }))));
 });
 
 const serviceTemplateDto = (item: typeof serviceTemplatesTable.$inferSelect) => ({

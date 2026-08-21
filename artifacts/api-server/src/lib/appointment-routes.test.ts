@@ -66,7 +66,7 @@ async function request(
   baseUrl: string,
   session: string,
   path: string,
-  method: "PATCH" | "POST",
+  method: "DELETE" | "PATCH" | "POST",
   body: Record<string, unknown>,
 ): Promise<HttpResult> {
   const response = await fetch(`${baseUrl}/api${path}`, {
@@ -394,6 +394,22 @@ async function run(): Promise<void> {
     });
     assert.equal(inSalonServiceCreate.status, 201, "an owner must be able to add an in-salon offering");
     const inSalonService = inSalonServiceCreate.body as { id: string };
+
+    const listedServices = await getRequest(baseUrl, ownerSession, "/salon/services");
+    assert.equal(listedServices.status, 200, "an owner must be able to see service removal eligibility");
+    const serviceEligibility = listedServices.body as Array<{ id: string; canBePermanentlyDeleted: boolean }>;
+    assert.equal(
+      serviceEligibility.find((item) => item.id === service!.id)?.canBePermanentlyDeleted,
+      false,
+      "a service with appointment history must be marked as protected before deletion is attempted",
+    );
+    assert.equal(
+      serviceEligibility.find((item) => item.id === inSalonService.id)?.canBePermanentlyDeleted,
+      true,
+      "an unused service must remain eligible for permanent deletion",
+    );
+    const protectedServiceDeletion = await request(baseUrl, ownerSession, `/salon/services/${service!.id}`, "DELETE", {});
+    assert.equal(protectedServiceDeletion.status, 409, "the deletion guard must still protect a service with appointment history");
 
     const profileAfterInSalonService = await getRequest(baseUrl, ownerSession, "/salon/profile");
     assert.equal(

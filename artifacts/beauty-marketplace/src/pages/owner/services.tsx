@@ -311,7 +311,7 @@ export default function OwnerServices() {
   };
 
   const handleDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !deleteTarget.canBePermanentlyDeleted) return;
     deleteMutation.mutate({ serviceId: deleteTarget.id }, {
       onSuccess: () => {
         toast.success("Usluga obrisana", { description: "Usluga je trajno uklonjena sa cenovnika i javnog profila." });
@@ -443,6 +443,7 @@ export default function OwnerServices() {
                             <h4 className="font-bold text-lg text-foreground truncate">{service.name}</h4>
                             {!service.active && <Badge variant="secondary" className="text-xs">Neaktivno</Badge>}
                             {service.active && service.homeServiceAvailable && <Badge className="text-[10px] gap-1 bg-primary/10 text-primary border-primary/20"><House className="h-3 w-3" /> Na adresi</Badge>}
+                             {!service.canBePermanentlyDeleted && <Badge variant="secondary" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" /> Istorija termina</Badge>}
                           </div>
                           <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min</p>
                           <div className="flex items-baseline gap-2">
@@ -450,6 +451,7 @@ export default function OwnerServices() {
                             {service.promoPrice && <p className="text-sm line-through text-muted-foreground">{service.promoPrice} RSD</p>}
                           </div>
                           {service.active && service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • min. ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
+                           {!service.canBePermanentlyDeleted && <p className="mt-1 text-xs text-muted-foreground">Ova usluga ostaje na cenovniku jer je povezana sa prethodnim terminima.</p>}
                         </div>
                       </div>
                       <div className="flex w-full shrink-0 gap-2 sm:w-auto">
@@ -483,20 +485,29 @@ export default function OwnerServices() {
           >
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Trajno obrišite uslugu?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {deleteTarget?.canBePermanentlyDeleted ? "Trajno obrišite uslugu?" : "Uslugu nije moguće trajno obrisati"}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Usluga „{deleteTarget?.name}“ biće trajno uklonjena sa cenovnika i javnog profila. Ovu radnju nije moguće poništiti.
-                  Ako je usluga povezana sa postojećim terminima, brisanje neće biti moguće.
+                  {deleteTarget?.canBePermanentlyDeleted
+                    ? <>Usluga „{deleteTarget?.name}“ biće trajno uklonjena sa cenovnika i javnog profila. Ovu radnju nije moguće poništiti.</>
+                    : <>Usluga „{deleteTarget?.name}“ ima istoriju termina i mora ostati na cenovniku radi evidencije. Po potrebi je možete označiti kao neaktivnu, ali je nije moguće trajno obrisati.</>}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel disabled={deleteMutation.isPending}>Otkaži</AlertDialogCancel>
-                <AlertDialogAction asChild>
-                  <Button variant="destructive" disabled={deleteMutation.isPending} onClick={handleDelete}>
-                    {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Obriši uslugu
-                  </Button>
-                </AlertDialogAction>
+                {deleteTarget?.canBePermanentlyDeleted ? (
+                  <>
+                    <AlertDialogCancel disabled={deleteMutation.isPending}>Otkaži</AlertDialogCancel>
+                    <AlertDialogAction asChild>
+                      <Button variant="destructive" disabled={deleteMutation.isPending} onClick={handleDelete}>
+                        {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Obriši uslugu
+                      </Button>
+                    </AlertDialogAction>
+                  </>
+                ) : (
+                  <AlertDialogAction onClick={() => setDeleteTarget(null)}>Razumem</AlertDialogAction>
+                )}
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>

@@ -757,7 +757,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/Service" }
+                items: { $ref: "#/components/schemas/SalonManagedService" }
     post:
       operationId: createSalonService
       tags: [salon-management]
@@ -2854,6 +2854,25 @@ components:
         homeServiceFee: { type: number, minimum: 0 }
         homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
       required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder]
+    SalonManagedService:
+      type: object
+      properties:
+        id: { type: string }
+        category: { type: string }
+        name: { type: string }
+        description: { type: string }
+        durationMinutes: { type: number }
+        price: { type: number }
+        promoPrice: { type: ["number", "null"] }
+        tags: { type: array, items: { type: string } }
+        packageTreatments: { type: ["number", "null"] }
+        imageUrl: { type: string }
+        active: { type: boolean }
+        homeServiceAvailable: { type: boolean }
+        homeServiceFee: { type: number, minimum: 0 }
+        homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
+        canBePermanentlyDeleted: { type: boolean }
+      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted]
     ServiceTemplate:
       type: object
       properties:
