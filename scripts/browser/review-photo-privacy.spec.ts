@@ -142,6 +142,65 @@ test("salon review falls back to reviewer initials when the public API omits an 
   await expect(privateReview.locator("img")).toHaveCount(0);
 });
 
+test("customer can publish and revise a review for a completed service", async ({ page }) => {
+  const fixture = await createReviewFixture();
+  const initialReviewText = `Odličan tretman za browser proveru ${fixture.customerId.slice(0, 8)}`;
+  const revisedReviewText = `Izmenjeno iskustvo za browser proveru ${fixture.customerId.slice(0, 8)}`;
+
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const reviews = page.locator("#reviews");
+    const leaveReview = page.getByRole("button", { name: "Ostavite recenziju" });
+    await expect(leaveReview).toBeVisible();
+    await leaveReview.click();
+
+    const editor = page.getByRole("dialog", { name: "Podelite svoje iskustvo" });
+    await expect(editor).toBeVisible();
+    await expect(editor.locator("#review-service")).toContainText(fixture.serviceName);
+    await editor.getByRole("button", { name: "4 od 5 zvezdica" }).click();
+    await editor.locator("#review-text").fill(initialReviewText);
+
+    const createResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/customer/reviews/${fixture.salonId}`,
+    );
+    await editor.getByRole("button", { name: "Sačuvaj recenziju" }).click();
+    expect((await createResponse).status(), "An eligible customer must be able to publish a review.").toBe(200);
+
+    await expect(editor).toBeHidden();
+    await expect(reviews.getByText(initialReviewText)).toBeVisible();
+    await expect(page.getByText("4.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+
+    const editReview = page.getByRole("button", { name: "Izmeni recenziju" });
+    await expect(editReview).toBeVisible();
+    await editReview.click();
+
+    const revisionEditor = page.getByRole("dialog", { name: "Izmenite recenziju" });
+    await expect(revisionEditor).toBeVisible();
+    await expect(revisionEditor.locator("#review-text")).toHaveValue(initialReviewText);
+    await revisionEditor.getByRole("button", { name: "2 od 5 zvezdica" }).click();
+    await revisionEditor.locator("#review-text").fill(revisedReviewText);
+
+    const updateResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === `/api/customer/reviews/${fixture.salonId}`,
+    );
+    await revisionEditor.getByRole("button", { name: "Sačuvaj recenziju" }).click();
+    expect((await updateResponse).status(), "A customer must be able to revise an existing review.").toBe(200);
+
+    await expect(revisionEditor).toBeHidden();
+    await expect(reviews.getByText(revisedReviewText)).toBeVisible();
+    await expect(reviews.getByText(initialReviewText)).toHaveCount(0);
+    await expect(page.getByText("2.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+  } finally {
+    await cleanUpReviewFixture(fixture);
+  }
+});
+
 test("customer can cancel or confirm withdrawing a public review", async ({ page }) => {
   const fixture = await createReviewFixture();
 
