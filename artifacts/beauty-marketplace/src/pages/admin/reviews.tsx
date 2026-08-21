@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { AdminLayout } from "./layout";
-import { useAdminListReviews, useAdminUpdateReview, useAdminDeleteReview, getAdminListReviewsQueryKey } from "@workspace/api-client-react";
+import { NetworkError, useAdminListReviews, useAdminUpdateReview, useAdminDeleteReview, getAdminListReviewsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,13 @@ export default function AdminReviews() {
         if ((error as { status?: number }).status === 404) {
           toast.info("Recenzija više nije dostupna", {
             description: "Klijent je u međuvremenu povukao ovu recenziju. Lista je osvežena.",
+          });
+          queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+          return;
+        }
+        if (error instanceof NetworkError) {
+          toast.warning("Brisanje nije potvrđeno", {
+            description: "Veza sa serverom je prekinuta. Lista je osvežena; proverite da li je recenzija obrisana.",
           });
           queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
           return;

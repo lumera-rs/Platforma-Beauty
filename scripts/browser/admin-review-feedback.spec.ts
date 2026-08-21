@@ -26,7 +26,8 @@ const moderator = {
 
 type DeleteOutcome = {
   name: string;
-  status: 204 | 404 | 500;
+  status?: 204 | 404 | 500;
+  failure?: "failed";
   title: string;
   description: string;
   refreshesList: boolean;
@@ -51,6 +52,11 @@ async function mockAdminReviewScreen(page: Page, outcome: DeleteOutcome) {
 
     if (request.method() === "DELETE") {
       if (outcome.status !== 500) reviewIsListed = false;
+
+      if (outcome.failure) {
+        await route.abort(outcome.failure);
+        return;
+      }
 
       if (outcome.status === 204) {
         await route.fulfill({ status: 204 });
@@ -96,20 +102,36 @@ const outcomes: DeleteOutcome[] = [
     description: "Nije moguće obrisati recenziju.",
     refreshesList: false,
   },
+  {
+    name: "an uncertain network failure",
+    failure: "failed",
+    title: "Brisanje nije potvrđeno",
+    description: "Veza sa serverom je prekinuta. Lista je osvežena; proverite da li je recenzija obrisana.",
+    refreshesList: true,
+  },
 ];
 
 for (const outcome of outcomes) {
   test(`moderator receives reliable review feedback for ${outcome.name}`, async ({ page }) => {
     const screen = await mockAdminReviewScreen(page, outcome);
     const initialListRequestCount = screen.getListRequestCount();
-    const deleteResponse = page.waitForResponse((response) =>
-      response.request().method() === "DELETE"
-      && new URL(response.url()).pathname === `/api/admin/reviews/${reviewId}`,
-    );
+    const deleteResponse = outcome.failure
+      ? page.waitForEvent("requestfailed", (request) =>
+          request.method() === "DELETE"
+          && new URL(request.url()).pathname === `/api/admin/reviews/${reviewId}`,
+        )
+      : page.waitForResponse((response) =>
+          response.request().method() === "DELETE"
+          && new URL(response.url()).pathname === `/api/admin/reviews/${reviewId}`,
+        );
 
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByTestId(`btn-delete-${reviewId}`).click();
-    expect((await deleteResponse).status()).toBe(outcome.status);
+    if (outcome.failure) {
+      expect((await deleteResponse).failure()).toBeTruthy();
+    } else {
+      expect((await deleteResponse).status()).toBe(outcome.status);
+    }
 
     await expect(page.getByText(outcome.title, { exact: true })).toBeVisible();
     await expect(page.getByText(outcome.description, { exact: true })).toBeVisible();

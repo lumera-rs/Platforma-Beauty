@@ -199,6 +199,30 @@ export class ApiError<T = unknown> extends Error {
   }
 }
 
+/**
+ * Indicates that the request did not receive an HTTP response.
+ *
+ * The server may still have processed a mutation before the connection was
+ * lost, so callers should treat this as an uncertain outcome rather than a
+ * confirmed failure.
+ */
+export class NetworkError extends Error {
+  readonly name = "NetworkError";
+  readonly cause: unknown;
+  readonly method: string;
+  readonly url: string;
+
+  constructor(cause: unknown, requestInfo: { method: string; url: string }) {
+    const reason = cause instanceof Error ? `: ${cause.message}` : "";
+    super(`Network request failed for ${requestInfo.method} ${requestInfo.url}${reason}`);
+    Object.setPrototypeOf(this, new.target.prototype);
+
+    this.cause = cause;
+    this.method = requestInfo.method;
+    this.url = requestInfo.url;
+  }
+}
+
 export class ResponseParseError extends Error {
   readonly name = "ResponseParseError";
   readonly status: number;
@@ -360,7 +384,12 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers });
+  } catch (cause) {
+    throw new NetworkError(cause, requestInfo);
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
