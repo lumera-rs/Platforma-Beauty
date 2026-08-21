@@ -212,6 +212,62 @@ test("a moderator-deleted public review stays gone after browser history restora
   }
 });
 
+test("a moderator hiding or restoring a review keeps public salon metrics accurate", async ({ page, request }) => {
+  const fixture = await createReviewFixture();
+
+  try {
+    await signInAsFixtureCustomer(page.request, fixture);
+    const created = await page.request.put(`/api/customer/reviews/${fixture.salonId}`, {
+      data: {
+        serviceName: fixture.serviceName,
+        rating: 5,
+        text: fixture.reviewText,
+        showProfilePhoto: false,
+      },
+    });
+    expect(created, "The fixture customer must be able to publish a public review.").toBeOK();
+    const review = await created.json() as { id: string };
+
+    await page.goto(fixture.salonPath);
+    await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
+    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+
+    await signInAsFixtureModerator(request, fixture);
+    const hidden = await request.patch(`/api/admin/reviews/${review.id}`, { data: { visible: false } });
+    expect(hidden, "A moderator must be able to hide the fixture review.").toBeOK();
+
+    const afterHide = await request.get(`/api/salons/${fixture.salonPath.split("/").pop()}`);
+    expect(afterHide, "The public salon must remain readable after moderation.").toBeOK();
+    const hiddenSalon = await afterHide.json() as PublicSalonResponse;
+    expect(hiddenSalon.reviews.some((item) => item.id === review.id)).toBe(false);
+    expect(hiddenSalon.rating).toBe(0);
+    expect(hiddenSalon.reviewCount).toBe(0);
+
+    await page.reload();
+    await expect(page.locator("#reviews").getByText(fixture.reviewText)).toHaveCount(0);
+    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+
+    const restored = await request.patch(`/api/admin/reviews/${review.id}`, { data: { visible: true } });
+    expect(restored, "A moderator must be able to restore the fixture review.").toBeOK();
+
+    const afterRestore = await request.get(`/api/salons/${fixture.salonPath.split("/").pop()}`);
+    expect(afterRestore, "The public salon must remain readable after restoration.").toBeOK();
+    const restoredSalon = await afterRestore.json() as PublicSalonResponse;
+    expect(restoredSalon.reviews.some((item) => item.id === review.id)).toBe(true);
+    expect(restoredSalon.rating).toBe(5);
+    expect(restoredSalon.reviewCount).toBe(1);
+
+    await page.reload();
+    await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
+    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
+    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+  } finally {
+    await cleanUpReviewFixture(fixture);
+  }
+});
+
 test("salon review falls back to reviewer initials when the public API omits an avatar", async ({ page }) => {
   await page.route(`**/api/salons/${salonPath.split("/").pop()}`, async (route) => {
     const response = await route.fetch();

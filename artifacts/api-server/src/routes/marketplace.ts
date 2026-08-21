@@ -5400,28 +5400,50 @@ router.patch("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { visible } = parsed.data;
 
-  const [existing] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
-  if (!existing) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+  const updated = await db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
+    if (!existing) return null;
+    if (visible === undefined) return existing;
 
-  const updates: Partial<typeof reviewsTable.$inferInsert> = {};
-  if (visible !== undefined) updates.visible = visible;
+    // Keep a moderation visibility change and the stored public aggregate
+    // together so the public salon response always describes visible reviews.
+    await tx.select({ id: salonsTable.id }).from(salonsTable)
+      .where(eq(salonsTable.id, existing.salonId))
+      .for("update");
+    const [review] = await tx.update(reviewsTable)
+      .set({ visible })
+      .where(eq(reviewsTable.id, reviewId))
+      .returning();
+    if (!review) return null;
 
-  const [updated] = await db.update(reviewsTable).set(updates).where(eq(reviewsTable.id, reviewId)).returning();
+    const visibleReviews = await tx.select().from(reviewsTable).where(and(
+      eq(reviewsTable.salonId, review.salonId),
+      eq(reviewsTable.visible, true),
+    ));
+    const reviewCount = visibleReviews.length;
+    const rating = reviewCount
+      ? Math.round(visibleReviews.reduce((total, item) => total + item.rating, 0) / reviewCount * 10)
+      : 0;
+    await tx.update(salonsTable).set({ reviewCount, rating }).where(eq(salonsTable.id, review.salonId));
+    return review;
+  });
+  if (!updated) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
+
   const [salon, customer] = await Promise.all([
-    db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1),
-    db.select().from(usersTable).where(eq(usersTable.id, updated!.customerId)).limit(1),
+    db.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1),
+    db.select().from(usersTable).where(eq(usersTable.id, updated.customerId)).limit(1),
   ]);
   res.json({
-    id: updated!.id,
-    salonId: updated!.salonId,
+    id: updated.id,
+    salonId: updated.salonId,
     salonName: salon[0]?.name ?? "Nepoznat salon",
-    customerId: updated!.customerId,
+    customerId: updated.customerId,
     customerName: customer[0] ? `${customer[0].firstName} ${customer[0].lastName}` : "Nepoznat korisnik",
-    serviceName: updated!.serviceName,
-    rating: updated!.rating,
-    text: updated!.text,
-    visible: updated!.visible,
-    date: updated!.createdAt.toISOString(),
+    serviceName: updated.serviceName,
+    rating: updated.rating,
+    text: updated.text,
+    visible: updated.visible,
+    date: updated.createdAt.toISOString(),
   });
 });
 
