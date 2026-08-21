@@ -444,7 +444,7 @@ export default function Home() {
               <Button size="lg" variant="secondary" className="h-14 px-10 font-bold text-primary rounded-xl shadow-lg hover:shadow-xl transition-shadow w-full sm:w-auto" asChild>
                 <Link href="/prijava">Prijavite se</Link>
               </Button>
-              <Button size="lg" variant="outline" className="h-14 px-10 font-medium text-primary-foreground border-primary-foreground/30 hover:bg-primary-foreground/10 rounded-xl w-full sm:w-auto" asChild>
+               <Button size="lg" variant="outline" className="h-14 w-full rounded-xl border-primary-foreground/60 bg-transparent px-10 font-medium text-primary-foreground hover:border-primary-foreground hover:bg-primary-foreground hover:text-primary sm:w-auto" asChild>
                 <Link href="/za-biznise">Imate salon?</Link>
               </Button>
             </div>

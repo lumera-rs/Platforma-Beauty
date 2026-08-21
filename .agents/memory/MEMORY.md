@@ -15,3 +15,4 @@
 - [Artifact workflow restart recovery](artifact-workflow-restart-recovery.md) — failed managed restarts can leave the prior service process bound to its artifact port.
 - [Category image delivery](category-image-delivery.md) — client-facing category image references must stay stable while storage access remains short-lived and private.
 - [Carousel breakpoint overrides](carousel-breakpoint-overrides.md) — caller widths must override every shared rail breakpoint to preserve intentional desktop overflow.
+- [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.

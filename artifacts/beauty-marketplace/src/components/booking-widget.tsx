@@ -335,16 +335,16 @@ export function BookingWidget(props: BookingWidgetProps) {
               )}
 
               {props.step === 3 && (
-                <div className="flex flex-col gap-0 bg-card rounded-2xl border shadow-sm overflow-hidden">
+                <div className="flex min-w-0 flex-col gap-0 bg-card rounded-2xl border shadow-sm overflow-hidden">
                   {/* Calendar Section */}
-                  <div className="p-3 sm:p-6 border-b bg-muted/5 flex flex-col relative z-0">
-                    <h4 className="text-sm font-bold tracking-tight text-foreground mb-4 flex items-center gap-2">
+                  <div className="relative z-0 flex min-w-0 flex-col border-b bg-muted/5 p-3 sm:p-6">
+                    <h4 className="mb-4 flex min-w-0 items-center gap-2 text-sm font-bold tracking-tight text-foreground">
                       <span className="w-3 h-3 rounded-full bg-primary/20 flex items-center justify-center">
                          <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                       </span>
                       Izaberite datum
                     </h4>
-                    <div className="flex-1 flex justify-center">
+                    <div className="flex w-full min-w-0 flex-1 justify-center">
                       <Calendar 
                         mode="single"
                         data-testid="booking-calendar"
@@ -365,14 +365,19 @@ export function BookingWidget(props: BookingWidgetProps) {
                           available: "relative after:absolute after:bottom-1.5 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:bg-emerald-500 after:rounded-full font-bold",
                           unavailable: "opacity-45 cursor-not-allowed bg-muted/50",
                         }}
-                        className="p-1.5 min-[390px]:p-3"
+                        className="w-full max-w-full min-w-0 p-1.5 min-[390px]:p-3"
                         classNames={{
-                          root: "w-full max-w-[340px] [--cell-size:2.25rem] min-[360px]:[--cell-size:2.5rem] min-[390px]:[--cell-size:2.75rem]",
-                          month_caption: "h-[--cell-size] text-sm font-bold tracking-tight",
+                          root: "w-full max-w-full min-w-0 [--cell-size:2rem] min-[376px]:[--cell-size:2.25rem] min-[390px]:[--cell-size:2.75rem]",
+                          months: "relative flex w-full min-w-0 flex-col gap-2",
+                          month: "flex w-full min-w-0 flex-col gap-2",
+                          nav: "absolute inset-x-0 top-0 flex w-full min-w-0 items-center justify-between gap-1",
+                          month_caption: "flex h-[--cell-size] w-full min-w-0 items-center justify-center px-[--cell-size] text-sm font-bold tracking-tight",
                           button_previous: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
                           button_next: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
-                          weekday: "flex-1 select-none rounded-md text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
-                          day: "group/day relative aspect-square h-full w-full select-none p-0 text-center",
+                          weekdays: "flex min-w-0 w-full",
+                          weekday: "flex min-w-0 flex-1 items-center justify-center select-none rounded-md text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
+                          week: "mt-1 flex min-w-0 w-full gap-1",
+                          day: "group/day relative flex min-w-0 flex-1 basis-0 select-none p-0 text-center",
                           day_button: "h-[--cell-size] min-h-[--cell-size] rounded-xl text-sm font-semibold transition-all hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
                           today: "border-2 border-primary text-primary font-bold bg-primary/5",
                           outside: "text-muted-foreground/30 opacity-40 pointer-events-none",
@@ -382,15 +387,15 @@ export function BookingWidget(props: BookingWidgetProps) {
                       />
                     </div>
 
-                    <div className="flex items-center justify-center gap-4 mt-6 text-[10px] sm:text-[11px] text-muted-foreground font-medium flex-wrap">
-                      <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Dostupno</div>
-                      <div className="flex items-center gap-1.5"><div className="w-4 h-4 border-2 border-primary bg-primary/5 rounded-md"></div>Danas</div>
-                      <div className="flex items-center gap-1.5"><div className="w-4 h-px bg-muted-foreground/40"></div>Nema termina</div>
+                    <div className="mt-6 flex min-w-0 flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[10px] font-medium text-muted-foreground sm:text-[11px]">
+                      <div className="flex min-w-0 items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Dostupno</div>
+                      <div className="flex min-w-0 items-center gap-1.5"><div className="w-4 h-4 border-2 border-primary bg-primary/5 rounded-md"></div>Danas</div>
+                      <div className="flex min-w-0 items-center gap-1.5"><div className="w-4 h-px bg-muted-foreground/40"></div>Nema termina</div>
                     </div>
                   </div>
 
                   {/* Slots Section */}
-                  <div className="p-3 sm:p-6 flex-1 relative flex flex-col z-0">
+                  <div className="relative z-0 flex min-w-0 flex-1 flex-col p-3 sm:p-6">
                     <AnimatePresence>
                       {props.isLoadingAvailability && (
                         <motion.div
@@ -407,14 +412,14 @@ export function BookingWidget(props: BookingWidgetProps) {
                       )}
                     </AnimatePresence>
 
-                    <div className="flex items-center justify-between mb-6">
-                      <h4 className="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <div className="mb-6 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                      <h4 className="flex min-w-0 items-center gap-2 text-sm font-bold tracking-tight text-foreground">
                         <span className="w-3 h-3 rounded-full bg-primary/20 flex items-center justify-center">
                            <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
                         </span>
                         Slobodni termini
                       </h4>
-                      <span className="text-xs font-semibold text-primary capitalize bg-primary/10 px-2.5 py-1 rounded-md">
+                      <span className="max-w-full text-right text-xs font-semibold capitalize text-primary bg-primary/10 px-2.5 py-1 rounded-md">
                         {format(props.selectedDate, 'EEEE, dd. MMMM', { locale: srLatn })}
                       </span>
                     </div>
