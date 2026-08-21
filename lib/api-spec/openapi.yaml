@@ -2092,6 +2092,56 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /admin/service-categories:
+    get:
+      operationId: adminListServiceCategories
+      tags: [admin]
+      summary: List marketplace service categories and their category-card fallback images
+      responses:
+        "200":
+          description: Service categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AdminServiceCategory" }
+  /admin/service-categories/image-upload-url:
+    post:
+      operationId: adminRequestServiceCategoryImageUpload
+      tags: [admin]
+      summary: Request a direct upload URL for a service category fallback image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceCategoryImageUploadInput" }
+      responses:
+        "200":
+          description: Direct upload information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceCategoryImageUpload" }
+  /admin/service-categories/{categoryId}:
+    patch:
+      operationId: adminUpdateServiceCategory
+      tags: [admin]
+      summary: Update a marketplace service category fallback image
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminServiceCategoryImageUpdate" }
+      responses:
+        "200":
+          description: Updated service category
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminServiceCategory" }
   /admin/brands:
     get:
       operationId: adminListBrands
@@ -2467,7 +2517,8 @@ components:
         name: { type: string }
         categoryName: { type: string }
         bookingCount: { type: number, minimum: 0 }
-      required: [name, categoryName, bookingCount]
+        imageUrl: { type: string }
+      required: [name, categoryName, bookingCount, imageUrl]
     DiscountedSalonCard:
       allOf:
         - $ref: "#/components/schemas/SalonCard"
@@ -3857,6 +3908,35 @@ components:
         icon: { type: ["string", "null"] }
         imageUrl: { type: ["string", "null"] }
         active: { type: boolean }
+    AdminServiceCategory:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        active: { type: boolean }
+        fallbackImageUrl: { type: ["string", "null"] }
+        serviceCount: { type: number, minimum: 0 }
+      required: [id, name, slug, description, active, fallbackImageUrl, serviceCount]
+    AdminServiceCategoryImageUpdate:
+      type: object
+      properties:
+        fallbackImageUrl: { type: ["string", "null"], maxLength: 2000 }
+      required: [fallbackImageUrl]
+    ServiceCategoryImageUploadInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 240 }
+        size: { type: number, minimum: 1, maximum: 8388608 }
+        contentType: { type: string, minLength: 1, maxLength: 120 }
+      required: [name, size, contentType]
+    ServiceCategoryImageUpload:
+      type: object
+      properties:
+        uploadUrl: { type: string }
+        imageUrl: { type: string }
+      required: [uploadUrl, imageUrl]
     AdminBrand:
       type: object
       properties:

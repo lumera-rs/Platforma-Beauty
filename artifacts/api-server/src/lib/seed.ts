@@ -75,6 +75,21 @@ const categories = [
   ["Ordinacije i poliklinike", "ordinacije-poliklinike"],
 ] as const;
 
+const categoryFallbackImages: Record<(typeof categories)[number][0], string> = {
+  "Frizerski saloni": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=1200&q=85",
+  "Muški frizeri": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1200&q=85",
+  "Kozmetički saloni": "https://images.unsplash.com/photo-1487412912498-0447578fcca8?auto=format&fit=crop&w=1200&q=85",
+  "Depilacija": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1200&q=85",
+  "Lice": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=1200&q=85",
+  "Nokti": "https://images.unsplash.com/photo-1519014816548-bf5fe059798b?auto=format&fit=crop&w=1200&q=85",
+  "Masaža": "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=85",
+  "Telo": "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?auto=format&fit=crop&w=1200&q=85",
+  "Wellness": "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=85",
+  "Lux tretmani": "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=1200&q=85",
+  "Paketi usluga": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1200&q=85",
+  "Ordinacije i poliklinike": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=1200&q=85",
+};
+
 const massageTags = [
   "Opšta masaža", "Relax / antistres masaža", "Anticelulit masaža", "Dubinska masaža",
   "Masaža glave", "Terapeutska masaža", "Masaža biljnim jastučićima", "Refleksologija stopala",
@@ -139,7 +154,12 @@ async function seed(): Promise<void> {
   const customer = demoUsers[3]!;
   const employeeLearner = demoUsers[4]!;
   const categoryRows = await db.insert(serviceCategoriesTable).values(
-    categories.map(([name, slug]) => ({ name, slug, description: `Pažljivo izabrane ${name.toLowerCase()} usluge za svakodnevnu negu.` })),
+    categories.map(([name, slug]) => ({
+      name,
+      slug,
+      description: `Pažljivo izabrane ${name.toLowerCase()} usluge za svakodnevnu negu.`,
+      fallbackImageUrl: categoryFallbackImages[name],
+    })),
   ).returning();
 
   const salons = await db.insert(salonsTable).values(
@@ -726,6 +746,12 @@ async function seedMarketplaceTaxonomy(): Promise<void> {
     await db.insert(serviceCategoriesTable).values({
       name, slug, description: `Profesionalne ${name.toLowerCase()} usluge dostupne na LUMERA marketplace-u.`,
     }).onConflictDoNothing();
+    await db.execute(sql`
+      update ${serviceCategoriesTable}
+      set fallback_image_url = ${categoryFallbackImages[name]}
+      where ${serviceCategoriesTable.name} = ${name}
+        and ${serviceCategoriesTable.fallbackImageUrl} is null
+    `);
   }
   const categoryRows = await db.select().from(serviceCategoriesTable);
   const categoryByName = new Map(categoryRows.map((item) => [item.name, item]));

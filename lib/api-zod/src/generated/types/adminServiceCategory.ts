@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface DiscoveryService {
+export interface AdminServiceCategory {
+  id: string;
   name: string;
-  categoryName: string;
+  slug: string;
+  description: string;
+  active: boolean;
+  /** @nullable */
+  fallbackImageUrl: string | null;
   /** @minimum 0 */
-  bookingCount: number;
-  imageUrl: string;
+  serviceCount: number;
 }

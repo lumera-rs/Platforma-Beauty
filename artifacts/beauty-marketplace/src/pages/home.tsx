@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import {
   Search, MapPin, Star, CalendarDays, ArrowRight,
-  Scissors, Leaf, Sparkles, Smile, Flower2, Droplets,
-  Users, CheckCircle2, ChevronRight, Clock, ShieldCheck, Heart
+  Leaf, Sparkles, Users, CheckCircle2, ChevronRight, Clock, ShieldCheck, Heart
 } from "lucide-react";
 import {
   useGetMarketplaceHomeDiscovery,
@@ -192,45 +191,25 @@ export default function Home() {
               ariaLabel="Popularne usluge"
               itemClassName="basis-[70%] sm:basis-[38%] md:basis-1/4 lg:basis-1/6"
             >
-              {discovery.popularServices.map((cat, idx) => {
-                // Determine a complementary aesthetic icon based on category name roughly
-                const iconMap: Record<string, any> = {
-                  "Frizerski saloni": Scissors,
-                  "Masaža": Leaf,
-                  "Nokti": Sparkles,
-                  "Kozmetički saloni": Smile,
-                  "Depilacija": Flower2,
-                  "Wellness": Droplets
-                };
-
-                // Fallback icons if not in map
-                const fallbackIcons = [Heart, Star, Clock, ShieldCheck];
-                const IconComp = iconMap[cat.categoryName] || fallbackIcons[idx % fallbackIcons.length];
-
-                // Elegant colors matching the brand
-                const colors = [
-                  "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-100 dark:border-orange-900/50",
-                  "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50",
-                  "bg-pink-50 text-pink-700 dark:bg-pink-950/30 dark:text-pink-400 border-pink-100 dark:border-pink-900/50",
-                  "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border-blue-100 dark:border-blue-900/50",
-                  "bg-yellow-50 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50",
-                  "bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border-purple-100 dark:border-purple-900/50"
-                ];
-
-                const colorClass = colors[idx % colors.length];
-
+              {discovery.popularServices.map((cat) => {
                 return (
                   <Link
-                    key={`${cat.name}-${idx}`}
+                    key={cat.categoryName}
                     href={getCategoryHref(cat.categoryName)}
-                    className={`group flex min-h-40 h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border ${colorClass} bg-card/50 hover:bg-card p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg`}
+                    className="group relative flex min-h-48 h-full cursor-pointer flex-col justify-end overflow-hidden rounded-2xl border border-border bg-muted shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   >
-                    <div className="rounded-full p-4 bg-background shadow-sm transition-transform duration-300 group-hover:scale-110">
-                      <IconComp className="w-7 h-7" strokeWidth={1.5} />
-                    </div>
-                    <div>
-                      <span className="text-sm font-semibold text-foreground/90 block">{cat.name}</span>
-                      <span className="text-xs text-muted-foreground font-medium mt-1 block">{cat.bookingCount} rezervacija</span>
+                    <img
+                      src={cat.imageUrl}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/5" />
+                    <div className="relative z-10 w-full p-5 text-left text-white">
+                      <span className="block text-base font-bold leading-tight drop-shadow-sm">{cat.categoryName}</span>
+                      <span className="mt-1 block text-xs font-semibold text-white/85">
+                        {cat.bookingCount > 0 ? `${cat.bookingCount} rezervacija` : "Istražite ponudu"}
+                      </span>
                     </div>
                   </Link>
                 );

@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { ChangeEvent, useState } from "react";
 import { AdminLayout } from "./layout";
 import {
   useAdminListProductCategories,
   useAdminCreateProductCategory,
   useAdminUpdateProductCategory,
   useAdminDeleteProductCategory,
+  useAdminListServiceCategories,
+  useAdminRequestServiceCategoryImageUpload,
+  useAdminUpdateServiceCategory,
   getAdminListProductCategoriesQueryKey,
+  getAdminListServiceCategoriesQueryKey,
+  getGetMarketplaceHomeDiscoveryQueryKey,
 } from "@workspace/api-client-react";
-import type { AdminProductCategory, AdminProductCategoryInput } from "@workspace/api-client-react";
+import type { AdminProductCategory, AdminProductCategoryInput, AdminServiceCategory } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +35,9 @@ export default function AdminCategories() {
   const createCategory = useAdminCreateProductCategory();
   const updateCategory = useAdminUpdateProductCategory();
   const deleteCategory = useAdminDeleteProductCategory();
+  const { data: serviceCategories = [], isLoading: serviceCategoriesLoading } = useAdminListServiceCategories();
+  const updateServiceCategory = useAdminUpdateServiceCategory();
+  const requestServiceCategoryUpload = useAdminRequestServiceCategoryImageUpload();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -37,11 +45,69 @@ export default function AdminCategories() {
   const [editing, setEditing] = useState<AdminProductCategory | null>(null);
   const [form, setForm] = useState<AdminProductCategoryInput>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<AdminProductCategory | null>(null);
+  const [serviceImageDrafts, setServiceImageDrafts] = useState<Record<string, string>>({});
+  const [uploadingServiceCategoryId, setUploadingServiceCategoryId] = useState<string | null>(null);
+  const [savingServiceCategoryId, setSavingServiceCategoryId] = useState<string | null>(null);
 
   const parents = categories.filter((c) => !c.parentId).sort((a, b) => a.sortOrder - b.sortOrder);
   const childrenOf = (id: string) => categories.filter((c) => c.parentId === id).sort((a, b) => a.sortOrder - b.sortOrder);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getAdminListProductCategoriesQueryKey() });
+  const invalidateServiceCategories = () => {
+    queryClient.invalidateQueries({ queryKey: getAdminListServiceCategoriesQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetMarketplaceHomeDiscoveryQueryKey() });
+  };
+  const serviceImageValue = (category: AdminServiceCategory) => serviceImageDrafts[category.id] ?? category.fallbackImageUrl ?? "";
+
+  const saveServiceImage = async (category: AdminServiceCategory) => {
+    setSavingServiceCategoryId(category.id);
+    try {
+      await updateServiceCategory.mutateAsync({
+        categoryId: category.id,
+        data: { fallbackImageUrl: serviceImageValue(category).trim() || null },
+      });
+      setServiceImageDrafts((drafts) => {
+        const next = { ...drafts };
+        delete next[category.id];
+        return next;
+      });
+      invalidateServiceCategories();
+      toast.success("Sačuvano", { description: `Rezervna fotografija za „${category.name}“ je ažurirana.` });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error("Slika nije sačuvana", { description: msg ?? "Pokušajte ponovo." });
+    } finally {
+      setSavingServiceCategoryId(null);
+    }
+  };
+
+  const uploadServiceImage = async (category: AdminServiceCategory, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
+      toast.error("Neispravna slika", { description: "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB." });
+      return;
+    }
+    setUploadingServiceCategoryId(category.id);
+    try {
+      const upload = await requestServiceCategoryUpload.mutateAsync({
+        data: { name: file.name, size: file.size, contentType: file.type },
+      });
+      const response = await fetch(upload.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!response.ok) throw new Error("Upload nije uspeo.");
+      setServiceImageDrafts((drafts) => ({ ...drafts, [category.id]: upload.imageUrl }));
+      toast.success("Slika je otpremljena", { description: "Kliknite „Sačuvaj sliku“ da je postavite za kategoriju." });
+    } catch {
+      toast.error("Upload nije uspeo", { description: "Pokušajte ponovo sa drugom slikom." });
+    } finally {
+      setUploadingServiceCategoryId(null);
+    }
+  };
 
   const openNew = (parentId: string | null = null) => {
     setEditing(null);
@@ -180,6 +246,65 @@ export default function AdminCategories() {
             </div>
           )}
         </div>
+
+        <section className="rounded-xl border bg-card shadow-sm overflow-hidden" aria-labelledby="service-category-images-title">
+          <div className="border-b border-border/70 px-5 py-4">
+            <h2 id="service-category-images-title" className="font-serif text-xl font-bold text-foreground">Kategorije usluga — fotografije za klijente</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Ove rezervne fotografije se prikazuju kada salon iz iste kategorije nema stvarnu fotografiju u galeriji.</p>
+          </div>
+          {serviceCategoriesLoading ? (
+            <div className="flex justify-center p-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {serviceCategories.map((category) => (
+                <div key={category.id} className="grid gap-4 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
+                  <img
+                    src={serviceImageValue(category) || "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=480&q=80"}
+                    alt={`Rezervna fotografija: ${category.name}`}
+                    className="h-24 w-full rounded-lg border bg-muted object-cover sm:w-28"
+                  />
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold">{category.name}</p>
+                      <Badge variant="secondary" className="text-[10px]">{category.serviceCount} usluga</Badge>
+                    </div>
+                    <Input
+                      value={serviceImageValue(category)}
+                      onChange={(event) => setServiceImageDrafts((drafts) => ({ ...drafts, [category.id]: event.target.value }))}
+                      placeholder="https://… ili otpremite sliku"
+                      aria-label={`Rezervna fotografija za ${category.name}`}
+                      data-testid={`service-category-fallback-url-${category.id}`}
+                    />
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 font-medium text-foreground transition-colors hover:bg-muted">
+                        {uploadingServiceCategoryId === category.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                        Otpremi fotografiju
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="sr-only"
+                          disabled={uploadingServiceCategoryId === category.id}
+                          onChange={(event) => void uploadServiceImage(category, event)}
+                          data-testid={`service-category-fallback-file-${category.id}`}
+                        />
+                      </label>
+                      <span>JPG, PNG, WEBP ili GIF · do 8 MB</span>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full sm:w-auto"
+                    onClick={() => void saveServiceImage(category)}
+                    disabled={savingServiceCategoryId === category.id || uploadingServiceCategoryId === category.id}
+                    data-testid={`service-category-fallback-save-${category.id}`}
+                  >
+                    {savingServiceCategoryId === category.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sačuvaj sliku
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       {/* Create / edit */}

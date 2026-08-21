@@ -47,6 +47,8 @@ import type {
   AdminSalon,
   AdminSalonDetail,
   AdminSalonUpdate,
+  AdminServiceCategory,
+  AdminServiceCategoryImageUpdate,
   AdminSummary,
   AdminUser,
   AdminUserUpdate,
@@ -125,6 +127,8 @@ import type {
   SalonProfileMedia,
   SalonProfileMediaUpdate,
   Service,
+  ServiceCategoryImageUpload,
+  ServiceCategoryImageUploadInput,
   ServiceInput,
   ShippingConfig,
   ShippingConfigInput,
@@ -8984,6 +8988,226 @@ export const useAdminDeleteProductCategory = <TError = ErrorType<ApiError>,
         TContext
       > => {
       return useMutation(getAdminDeleteProductCategoryMutationOptions(options));
+    }
+
+export const getAdminListServiceCategoriesUrl = () => {
+
+
+
+
+  return `/api/admin/service-categories`
+}
+
+/**
+ * @summary List marketplace service categories and their category-card fallback images
+ */
+export const adminListServiceCategories = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminServiceCategory[]> => {
+
+  return customFetch<AdminServiceCategory[]>(getAdminListServiceCategoriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListServiceCategoriesQueryKey = () => {
+    return [
+    `/api/admin/service-categories`
+    ] as const;
+    }
+
+
+export const getAdminListServiceCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof adminListServiceCategories>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListServiceCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListServiceCategoriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListServiceCategories>>> = ({ signal }) => adminListServiceCategories({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListServiceCategories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListServiceCategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof adminListServiceCategories>>>
+export type AdminListServiceCategoriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List marketplace service categories and their category-card fallback images
+ */
+
+export function useAdminListServiceCategories<TData = Awaited<ReturnType<typeof adminListServiceCategories>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListServiceCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListServiceCategoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminRequestServiceCategoryImageUploadUrl = () => {
+
+
+
+
+  return `/api/admin/service-categories/image-upload-url`
+}
+
+/**
+ * @summary Request a direct upload URL for a service category fallback image
+ */
+export const adminRequestServiceCategoryImageUpload = async (serviceCategoryImageUploadInput: ServiceCategoryImageUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<ServiceCategoryImageUpload> => {
+
+  return customFetch<ServiceCategoryImageUpload>(getAdminRequestServiceCategoryImageUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(serviceCategoryImageUploadInput)
+  }
+);}
+
+
+
+
+
+export const getAdminRequestServiceCategoryImageUploadMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext> => {
+
+const mutationKey = ['adminRequestServiceCategoryImageUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, {data: BodyType<ServiceCategoryImageUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminRequestServiceCategoryImageUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminRequestServiceCategoryImageUploadMutationResult = NonNullable<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>>
+    export type AdminRequestServiceCategoryImageUploadMutationBody = BodyType<ServiceCategoryImageUploadInput>
+    export type AdminRequestServiceCategoryImageUploadMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a direct upload URL for a service category fallback image
+ */
+export const useAdminRequestServiceCategoryImageUpload = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>,
+        TError,
+        {data: BodyType<ServiceCategoryImageUploadInput>},
+        TContext
+      > => {
+      return useMutation(getAdminRequestServiceCategoryImageUploadMutationOptions(options));
+    }
+
+export const getAdminUpdateServiceCategoryUrl = (categoryId: string,) => {
+
+
+
+
+  return `/api/admin/service-categories/${categoryId}`
+}
+
+/**
+ * @summary Update a marketplace service category fallback image
+ */
+export const adminUpdateServiceCategory = async (categoryId: string,
+    adminServiceCategoryImageUpdate: AdminServiceCategoryImageUpdate, options?: Parameters<typeof customFetch>[1]): Promise<AdminServiceCategory> => {
+
+  return customFetch<AdminServiceCategory>(getAdminUpdateServiceCategoryUrl(categoryId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminServiceCategoryImageUpdate)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateServiceCategoryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceCategory>>, TError,{categoryId: string;data: BodyType<AdminServiceCategoryImageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceCategory>>, TError,{categoryId: string;data: BodyType<AdminServiceCategoryImageUpdate>}, TContext> => {
+
+const mutationKey = ['adminUpdateServiceCategory'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateServiceCategory>>, {categoryId: string;data: BodyType<AdminServiceCategoryImageUpdate>}> = (props) => {
+          const {categoryId,data} = props ?? {};
+
+          return  adminUpdateServiceCategory(categoryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateServiceCategoryMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateServiceCategory>>>
+    export type AdminUpdateServiceCategoryMutationBody = BodyType<AdminServiceCategoryImageUpdate>
+    export type AdminUpdateServiceCategoryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a marketplace service category fallback image
+ */
+export const useAdminUpdateServiceCategory = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateServiceCategory>>, TError,{categoryId: string;data: BodyType<AdminServiceCategoryImageUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateServiceCategory>>,
+        TError,
+        {categoryId: string;data: BodyType<AdminServiceCategoryImageUpdate>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateServiceCategoryMutationOptions(options));
     }
 
 export const getAdminListBrandsUrl = () => {

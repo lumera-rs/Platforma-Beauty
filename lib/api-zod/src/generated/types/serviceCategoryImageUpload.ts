@@ -6,10 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface DiscoveryService {
-  name: string;
-  categoryName: string;
-  /** @minimum 0 */
-  bookingCount: number;
+export interface ServiceCategoryImageUpload {
+  uploadUrl: string;
   imageUrl: string;
 }

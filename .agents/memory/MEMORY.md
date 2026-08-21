@@ -13,3 +13,4 @@
 - [Salon audience inference](salon-audience-inference.md) — men’s-service discovery is inferred until the owner sets an explicit audience choice.
 - [Home-service discovery](home-service-discovery.md) — public home-service cards and filters must derive from active service availability, not a redundant salon flag.
 - [Artifact workflow restart recovery](artifact-workflow-restart-recovery.md) — failed managed restarts can leave the prior service process bound to its artifact port.
+- [Category image delivery](category-image-delivery.md) — client-facing category image references must stay stable while storage access remains short-lived and private.

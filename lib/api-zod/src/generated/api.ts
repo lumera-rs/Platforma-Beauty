@@ -345,7 +345,8 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "popularServices": zod.array(zod.object({
   "name": zod.string(),
   "categoryName": zod.string(),
-  "bookingCount": zod.number().min(getMarketplaceHomeDiscoveryResponsePopularServicesItemBookingCountMin)
+  "bookingCount": zod.number().min(getMarketplaceHomeDiscoveryResponsePopularServicesItemBookingCountMin),
+  "imageUrl": zod.string()
 })),
   "featuredSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -5115,6 +5116,81 @@ export const AdminDeleteProductCategoryParams = zod.object({
 })
 
 export const AdminDeleteProductCategoryResponse = zod.void()
+
+
+/**
+ * @summary List marketplace service categories and their category-card fallback images
+ */
+export const adminListServiceCategoriesResponseServiceCountMin = 0;
+
+
+
+export const AdminListServiceCategoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string(),
+  "active": zod.boolean(),
+  "fallbackImageUrl": zod.string().nullable(),
+  "serviceCount": zod.number().min(adminListServiceCategoriesResponseServiceCountMin)
+})
+export const AdminListServiceCategoriesResponse = zod.array(AdminListServiceCategoriesResponseItem)
+
+
+/**
+ * @summary Request a direct upload URL for a service category fallback image
+ */
+export const adminRequestServiceCategoryImageUploadBodyNameMax = 240;
+
+export const adminRequestServiceCategoryImageUploadBodySizeMax = 8388608;
+
+export const adminRequestServiceCategoryImageUploadBodyContentTypeMax = 120;
+
+
+
+export const AdminRequestServiceCategoryImageUploadBody = zod.object({
+  "name": zod.string().min(1).max(adminRequestServiceCategoryImageUploadBodyNameMax),
+  "size": zod.number().min(1).max(adminRequestServiceCategoryImageUploadBodySizeMax),
+  "contentType": zod.string().min(1).max(adminRequestServiceCategoryImageUploadBodyContentTypeMax)
+})
+
+export const AdminRequestServiceCategoryImageUploadResponse = zod.object({
+  "uploadUrl": zod.string(),
+  "imageUrl": zod.string()
+})
+
+
+/**
+ * @summary Update a marketplace service category fallback image
+ */
+export const adminUpdateServiceCategoryPathCategoryIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const AdminUpdateServiceCategoryParams = zod.object({
+  "categoryId": zod.coerce.string().regex(adminUpdateServiceCategoryPathCategoryIdRegExp)
+})
+
+export const adminUpdateServiceCategoryBodyFallbackImageUrlMax = 2000;
+
+
+
+export const AdminUpdateServiceCategoryBody = zod.object({
+  "fallbackImageUrl": zod.string().max(adminUpdateServiceCategoryBodyFallbackImageUrlMax).nullable()
+})
+
+export const adminUpdateServiceCategoryResponseServiceCountMin = 0;
+
+
+
+export const AdminUpdateServiceCategoryResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string(),
+  "active": zod.boolean(),
+  "fallbackImageUrl": zod.string().nullable(),
+  "serviceCount": zod.number().min(adminUpdateServiceCategoryResponseServiceCountMin)
+})
 
 
 /**

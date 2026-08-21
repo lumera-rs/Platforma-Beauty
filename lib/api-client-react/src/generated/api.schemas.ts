@@ -239,6 +239,7 @@ export interface DiscoveryService {
   categoryName: string;
   /** @minimum 0 */
   bookingCount: number;
+  imageUrl: string;
 }
 
 export type DiscountedSalonCardDiscount = {
@@ -2121,6 +2122,49 @@ export interface AdminProductCategoryUpdate {
   /** @nullable */
   imageUrl?: string | null;
   active?: boolean;
+}
+
+export interface AdminServiceCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  active: boolean;
+  /** @nullable */
+  fallbackImageUrl: string | null;
+  /** @minimum 0 */
+  serviceCount: number;
+}
+
+export interface AdminServiceCategoryImageUpdate {
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  fallbackImageUrl: string | null;
+}
+
+export interface ServiceCategoryImageUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 8388608
+     */
+  size: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  contentType: string;
+}
+
+export interface ServiceCategoryImageUpload {
+  uploadUrl: string;
+  imageUrl: string;
 }
 
 export interface AdminBrand {

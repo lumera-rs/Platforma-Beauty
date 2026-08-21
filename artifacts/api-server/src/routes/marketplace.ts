@@ -54,6 +54,12 @@ import {
 } from "@workspace/db";
 import {
   AdminBulkUpdateProductsBody,
+  AdminListServiceCategoriesResponse,
+  AdminRequestServiceCategoryImageUploadBody,
+  AdminRequestServiceCategoryImageUploadResponse,
+  AdminUpdateServiceCategoryBody,
+  AdminUpdateServiceCategoryParams,
+  AdminUpdateServiceCategoryResponse,
   AdminCreateEmailCampaignBody,
   AdminCreateEmailCampaignResponse,
   AdminCreateCourierServiceBody,
@@ -1476,6 +1482,58 @@ async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
 
 type MarketplaceHomeDiscoveryPayload = ReturnType<typeof GetMarketplaceHomeDiscoveryResponse.parse>;
 const marketplaceHomeDiscoveryCache = new Map<string, { expiresAt: number; payload: MarketplaceHomeDiscoveryPayload }>();
+const DEFAULT_CATEGORY_CARD_IMAGE = "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=85";
+const DEFAULT_POPULAR_CATEGORY_ORDER = [
+  "Frizerski saloni",
+  "Muški frizeri",
+  "Kozmetički saloni",
+  "Depilacija",
+  "Lice",
+  "Masaža",
+  "Nokti",
+  "Telo",
+  "Wellness",
+  "Lux tretmani",
+  "Paketi usluga",
+  "Ordinacije i poliklinike",
+];
+const CATEGORY_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+function isRealSalonGalleryImage(url: string): boolean {
+  const normalized = url.trim().toLowerCase();
+  if (!normalized || normalized.includes("placeholder") || normalized.startsWith("/lumera-media/")) return false;
+  return /^https?:\/\//.test(normalized) || normalized.startsWith("/api/storage/objects/");
+}
+
+function categoryImageProxyUrl(imageId: string): string {
+  return `/api/category-images/${imageId}`;
+}
+
+function categoryImageObjectPath(imageId: string): string {
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return `${root.replace(/\/+$/, "")}/category-images/${imageId}`;
+}
+
+async function signCategoryImageObject(imageId: string, method: "GET" | "PUT", ttlSeconds: number): Promise<string> {
+  const path = categoryImageObjectPath(imageId);
+  const [, bucketName, ...objectParts] = path.startsWith("/") ? path.split("/") : `/${path}`.split("/");
+  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bucket_name: bucketName,
+      object_name: objectParts.join("/"),
+      method,
+      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
+  const data = await response.json() as { signed_url?: string };
+  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
+  return data.signed_url;
+}
 
 function appointmentView(
   appointment: typeof appointmentsTable.$inferSelect,
@@ -2182,10 +2240,26 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
 
   const salons = (await db.select().from(salonsTable).where(eq(salonsTable.active, true)))
     .filter((salon) => !city || salon.city.toLowerCase() === city);
+  const serviceCategories = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.active, true));
+  const mainServiceCategories = serviceCategories.filter((category) => DEFAULT_POPULAR_CATEGORY_ORDER.includes(category.name));
+  const fallbackCategoryCards = mainServiceCategories
+    .sort((a, b) => {
+      const aIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(a.name);
+      const bIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(b.name);
+      return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex)
+        || a.name.localeCompare(b.name, "sr");
+    })
+    .slice(0, 8)
+    .map((category) => ({
+      name: category.name,
+      categoryName: category.name,
+      bookingCount: 0,
+      imageUrl: category.fallbackImageUrl ?? DEFAULT_CATEGORY_CARD_IMAGE,
+    }));
   let payload: MarketplaceHomeDiscoveryPayload;
   if (!salons.length) {
     payload = GetMarketplaceHomeDiscoveryResponse.parse({
-      popularServices: [],
+      popularServices: fallbackCategoryCards,
       featuredSalons: [],
       newSalons: [],
       discountedSalons: [],
@@ -2208,6 +2282,8 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
     for (const service of services) servicesBySalon.set(service.salonId, [...(servicesBySalon.get(service.salonId) ?? []), service]);
     for (const hour of hours) hoursBySalon.set(hour.salonId, [...(hoursBySalon.get(hour.salonId) ?? []), hour]);
     const cards = salons.map((salon) => card(salon, servicesBySalon.get(salon.id), hoursBySalon.get(salon.id)));
+    const knownCategoryNames = new Set(mainServiceCategories.map((category) => category.name));
+    const categoryServices = services.filter((service) => knownCategoryNames.has(service.categoryName));
     const bookingCounts = new Map<string, number>();
     const activeServiceIds = new Set(services.map((service) => service.id));
     for (const appointment of recentAppointments) {
@@ -2226,21 +2302,42 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
     }
     const rankCards = (items: typeof cards, compare: (a: typeof cards[number], b: typeof cards[number]) => number, limit = 12) =>
       [...items].sort(compare).slice(0, limit);
-    const serviceGroups = new Map<string, { name: string; categoryName: string; bookingCount: number }>();
-    for (const service of services) {
-      const key = `${service.categoryName}\u0000${service.name}`;
-      const current = serviceGroups.get(key) ?? { name: service.name, categoryName: service.categoryName, bookingCount: 0 };
-      current.bookingCount += bookingCounts.get(service.id) ?? 0;
-      serviceGroups.set(key, current);
+    const servicesById = new Map(categoryServices.map((service) => [service.id, service]));
+    const categoryBookingCounts = new Map<string, number>();
+    const categorySalonBookingCounts = new Map<string, number>();
+    for (const appointment of recentAppointments) {
+      const service = servicesById.get(appointment.serviceId);
+      if (!service) continue;
+      categoryBookingCounts.set(service.categoryName, (categoryBookingCounts.get(service.categoryName) ?? 0) + 1);
+      const key = `${service.categoryName}\u0000${service.salonId}`;
+      categorySalonBookingCounts.set(key, (categorySalonBookingCounts.get(key) ?? 0) + 1);
     }
-    const bookedServices = [...serviceGroups.values()]
-      .filter((service) => service.bookingCount > 0)
-      .sort((a, b) => b.bookingCount - a.bookingCount || a.name.localeCompare(b.name, "sr"))
+    const salonById = new Map(salons.map((salon) => [salon.id, salon]));
+    const categoryPhotos = new Map<string, { imageUrl: string; bookingCount: number; createdAt: Date }>();
+    for (const service of categoryServices) {
+      const salon = salonById.get(service.salonId);
+      const galleryImage = salon?.gallery.find(isRealSalonGalleryImage);
+      if (!salon || !galleryImage) continue;
+      const bookingCount = categorySalonBookingCounts.get(`${service.categoryName}\u0000${service.salonId}`) ?? 0;
+      const current = categoryPhotos.get(service.categoryName);
+      if (!current || bookingCount > current.bookingCount || (bookingCount === current.bookingCount && salon.createdAt > current.createdAt)) {
+        categoryPhotos.set(service.categoryName, { imageUrl: galleryImage, bookingCount, createdAt: salon.createdAt });
+      }
+    }
+    const categoriesByName = new Map(mainServiceCategories.map((category) => [category.name, category]));
+    const bookedCategories = [...categoryBookingCounts.entries()]
+      .map(([categoryName, bookingCount]) => ({
+        name: categoryName,
+        categoryName,
+        bookingCount,
+        imageUrl: categoryPhotos.get(categoryName)?.imageUrl
+          ?? categoriesByName.get(categoryName)?.fallbackImageUrl
+          ?? DEFAULT_CATEGORY_CARD_IMAGE,
+      }))
+      .filter((category) => category.bookingCount > 0)
+      .sort((a, b) => b.bookingCount - a.bookingCount || a.categoryName.localeCompare(b.categoryName, "sr"))
       .slice(0, 8);
-    const popularServices = bookedServices.length
-      ? bookedServices
-      : ["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija", "Wellness"]
-        .map((categoryName) => ({ name: categoryName, categoryName, bookingCount: 0 }));
+    const popularServices = bookedCategories.length ? bookedCategories : fallbackCategoryCards;
     const featuredSalons = rankCards(
       cards.filter((item) => item.featured),
       (a, b) => Number(b.topSalon) - Number(a.topSalon) || b.rating - a.rating || b.reviewCount - a.reviewCount,
@@ -5886,6 +5983,81 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+function adminServiceCategoryDto(
+  category: typeof serviceCategoriesTable.$inferSelect,
+  serviceCount: number,
+) {
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    active: category.active,
+    fallbackImageUrl: category.fallbackImageUrl ?? null,
+    serviceCount,
+  };
+}
+
+router.get("/category-images/:imageId", async (req, res): Promise<void> => {
+  const { imageId } = req.params;
+  if (!/^[0-9a-f-]{36}$/i.test(imageId)) { res.status(404).json({ error: "Slika nije pronađena." }); return; }
+  try {
+    res.set("Cache-Control", "public, max-age=3600");
+    res.redirect(302, await signCategoryImageObject(imageId, "GET", 3600));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not serve category image");
+    res.status(404).json({ error: "Slika nije pronađena." });
+  }
+});
+
+router.get("/admin/service-categories", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [categories, counts] = await Promise.all([
+    db.select().from(serviceCategoriesTable).orderBy(asc(serviceCategoriesTable.name)),
+    db.select({ categoryId: servicesTable.categoryId, count: count() }).from(servicesTable).groupBy(servicesTable.categoryId),
+  ]);
+  const countByCategoryId = new Map(counts.map((item) => [item.categoryId, Number(item.count)]));
+  res.json(AdminListServiceCategoriesResponse.parse(
+    categories.map((category) => adminServiceCategoryDto(category, countByCategoryId.get(category.id) ?? 0)),
+  ));
+});
+
+router.post("/admin/service-categories/image-upload-url", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const parsed = AdminRequestServiceCategoryImageUploadBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (!CATEGORY_IMAGE_CONTENT_TYPES.has(parsed.data.contentType.toLowerCase())) {
+    res.status(400).json({ error: "Dozvoljene su JPG, PNG, WEBP i GIF slike." }); return;
+  }
+  try {
+    const imageId = randomUUID();
+    const uploadUrl = await signCategoryImageObject(imageId, "PUT", 900);
+    res.json(AdminRequestServiceCategoryImageUploadResponse.parse({
+      uploadUrl,
+      imageUrl: categoryImageProxyUrl(imageId),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not create category image upload URL");
+    res.status(500).json({ error: "Nije moguće pripremiti upload slike." });
+  }
+});
+
+router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const params = AdminUpdateServiceCategoryParams.safeParse(req.params);
+  const parsed = AdminUpdateServiceCategoryBody.safeParse(req.body);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const [category] = await db.update(serviceCategoriesTable)
+    .set({ fallbackImageUrl: parsed.data.fallbackImageUrl?.trim() || null })
+    .where(eq(serviceCategoriesTable.id, params.data.categoryId))
+    .returning();
+  if (!category) { res.status(404).json({ error: "Kategorija usluge nije pronađena." }); return; }
+  const [serviceCount] = await db.select({ count: count() }).from(servicesTable).where(eq(servicesTable.categoryId, category.id));
+  marketplaceHomeDiscoveryCache.clear();
+  res.json(AdminUpdateServiceCategoryResponse.parse(adminServiceCategoryDto(category, Number(serviceCount?.count ?? 0))));
+});
 
 function adminProductDto(item: typeof productsTable.$inferSelect) {
   const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
