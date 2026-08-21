@@ -9,6 +9,9 @@
 export interface Review {
   id: string;
   authorName: string;
+  /** @nullable */
+  avatarUrl: string | null;
+  verifiedBooking: boolean;
   /**
      * @minimum 1
      * @maximum 5

@@ -11,6 +11,7 @@ import type { SalonCard } from './salonCard';
 export interface CustomerDashboard {
   upcoming: Appointment[];
   recentSalons: SalonCard[];
+  recommendations: SalonCard[];
   favoriteCount: number;
   visitCount: number;
 }

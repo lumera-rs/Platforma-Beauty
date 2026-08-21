@@ -296,6 +296,9 @@ export interface Service {
 export interface Review {
   id: string;
   authorName: string;
+  /** @nullable */
+  avatarUrl: string | null;
+  verifiedBooking: boolean;
   /**
      * @minimum 1
      * @maximum 5
@@ -322,6 +325,12 @@ export type SalonProfile = SalonCard & ({
   staff: Employee[];
   services: Service[];
   reviews: Review[];
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  returnClientRate: number | null;
 });
 
 export interface SalonProfileMedia {
@@ -410,9 +419,13 @@ export type AppointmentRescheduledConfirmation = {
 export interface Appointment {
   id: string;
   salonId: string;
+  salonSlug: string;
   salonName: string;
+  serviceId: string;
   customerName: string;
   serviceName: string;
+  /** @nullable */
+  employeeId: string | null;
   employeeName: string;
   date: string;
   startTime: string;
@@ -655,6 +668,7 @@ export interface CancelAppointmentInput {
 export interface CustomerDashboard {
   upcoming: Appointment[];
   recentSalons: SalonCard[];
+  recommendations: SalonCard[];
   favoriteCount: number;
   visitCount: number;
 }

@@ -354,6 +354,9 @@ export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
 
 export const getSalonResponseTwoReviewsItemRatingMax = 5;
 
+export const getSalonResponseTwoReturnClientRateMin = 0;
+export const getSalonResponseTwoReturnClientRateMax = 100;
+
 
 
 export const GetSalonResponse = zod.object({
@@ -431,11 +434,14 @@ export const GetSalonResponse = zod.object({
   "reviews": zod.array(zod.object({
   "id": zod.string(),
   "authorName": zod.string(),
+  "avatarUrl": zod.string().nullable(),
+  "verifiedBooking": zod.boolean(),
   "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax),
   "text": zod.string(),
   "date": zod.coerce.date(),
   "serviceName": zod.string()
-}))
+})),
+  "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable()
 }))
 
 
@@ -477,9 +483,12 @@ export const ListMyAppointmentsQueryParams = zod.object({
 export const ListMyAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -518,9 +527,12 @@ export const CreateAppointmentBody = zod.object({
 export const CreateAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -560,9 +572,12 @@ export const UpdateAppointmentBody = zod.object({
 export const UpdateAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -599,9 +614,12 @@ export const CancelAppointmentBody = zod.object({
 export const CancelAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -631,9 +649,12 @@ export const GetCustomerDashboardResponse = zod.object({
   "upcoming": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -655,6 +676,33 @@ export const GetCustomerDashboardResponse = zod.object({
 }).nullish()
 })),
   "recentSalons": zod.array(zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "municipality": zod.string(),
+  "address": zod.string(),
+  "imageUrl": zod.string(),
+  "rating": zod.number(),
+  "reviewCount": zod.number(),
+  "shortDescription": zod.string(),
+  "popularServices": zod.array(zod.string()),
+  "startingPrice": zod.number(),
+  "earliestSlot": zod.string().nullish(),
+  "homeService": zod.boolean(),
+  "featured": zod.boolean(),
+  "topSalon": zod.boolean(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "isVerified": zod.boolean(),
+  "hasDiscount": zod.boolean(),
+  "openSunday": zod.boolean(),
+  "lastBookedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+})),
+  "recommendations": zod.array(zod.object({
   "id": zod.string(),
   "slug": zod.string(),
   "name": zod.string(),
@@ -766,9 +814,12 @@ export const GetSalonDashboardResponse = zod.object({
   "todayAppointments": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -847,9 +898,12 @@ export const ListSalonAppointmentsQueryParams = zod.object({
 export const ListSalonAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -901,9 +955,12 @@ export const CreateSalonAppointmentBody = zod.object({
 export const CreateSalonAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -994,9 +1051,12 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "appointments": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -1097,9 +1157,12 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "appointments": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -1213,9 +1276,12 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "appointments": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),
@@ -1285,9 +1351,12 @@ export const UpdateSalonAppointmentBody = zod.object({
 export const UpdateSalonAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
+  "salonSlug": zod.string(),
   "salonName": zod.string(),
+  "serviceId": zod.string(),
   "customerName": zod.string(),
   "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
   "date": zod.coerce.date(),
   "startTime": zod.string(),

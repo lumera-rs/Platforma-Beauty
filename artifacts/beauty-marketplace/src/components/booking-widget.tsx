@@ -492,7 +492,7 @@ export function BookingWidget(props: BookingWidgetProps) {
 export function MobileBookingTrigger({ salon, selectedService, selectedSlot, onOpen }: { salon: SalonProfile, selectedService: string | null, selectedSlot: TimeSlot | null, onOpen: () => void }) {
   const service = salon.services.find(s => s.id === selectedService);
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-40 bg-card/95 backdrop-blur-xl rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-primary/20 p-4 flex items-center justify-between">
+    <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom)+1rem)] left-4 right-4 z-40 bg-card/95 backdrop-blur-xl rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-primary/20 p-4 flex items-center justify-between md:bottom-4">
        <div className="flex-1 min-w-0 pr-4">
          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-0.5">Vaša rezervacija</p>
          <p className="font-bold text-sm truncate text-foreground">

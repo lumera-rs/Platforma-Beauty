@@ -28,4 +28,10 @@ export type SalonProfile = SalonCard & ({
   staff: Employee[];
   services: Service[];
   reviews: Review[];
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  returnClientRate: number | null;
 });

@@ -4,22 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useGetSalon, useGetSalonAvailability, useCreateAppointment, useGetCurrentUser, getGetSalonAvailabilityQueryKey } from "@workspace/api-client-react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import { MapPin, Star, Clock, Phone, Mail, Check, CalendarDays, Loader2, Heart, ShieldCheck, Flame, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { SalonGallery, MediaItem } from "@/components/salon-gallery";
 import { SimpleMap } from "@/components/simple-map";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SalonFavoriteButton } from "@/components/salon-favorite-button";
+import { useBookingDraft } from "@/hooks/use-booking-draft";
 
 export default function SalonProfile() {
   const { slug } = useParams();
   const [location, setLocation] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   
   const { data: salon, isLoading } = useGetSalon(slug || "");
   const { data: userResp } = useGetCurrentUser();
   const user = userResp?.user;
+  const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
 
   const salonData = salon;
   
@@ -32,6 +37,7 @@ export default function SalonProfile() {
   const [hasInteractedWithEmployee, setHasInteractedWithEmployee] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const restoredSelection = useRef<string | null>(null);
   
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
   
@@ -60,6 +66,41 @@ export default function SalonProfile() {
   useEffect(() => {
     if (selectedService && bookingStep === 1) setBookingStep(2);
   }, [selectedService]);
+
+  useEffect(() => {
+    if (!salonData || user?.role !== "CUSTOMER") return;
+    const params = new URLSearchParams(search);
+    const requestedServiceId = params.get("serviceId");
+    const requestedEmployeeId = params.get("employeeId");
+    const matchingDraft = !requestedServiceId && draft?.salonSlug === salonData.slug ? draft : null;
+    const serviceId = requestedServiceId ?? matchingDraft?.serviceId;
+    const employeeId = requestedEmployeeId ?? matchingDraft?.employeeId ?? null;
+    const key = `${salonData.id}:${search}:${matchingDraft?.serviceId ?? ""}:${matchingDraft?.date ?? ""}`;
+    if (restoredSelection.current === key || !serviceId || !salonData.services.some((service) => service.id === serviceId)) return;
+
+    const dateValue = matchingDraft ? parseISO(matchingDraft.date) : new Date();
+    setSelectedService(serviceId);
+    setSelectedEmployee(employeeId && salonData.staff.some((employee) => employee.id === employeeId) ? employeeId : null);
+    setSelectedDate(isValid(dateValue) ? dateValue : new Date());
+    setSelectedSlot(null);
+    setBookingStep(3);
+    setHasInteractedWithEmployee(!!employeeId);
+    restoredSelection.current = key;
+    if (requestedServiceId) {
+      window.setTimeout(() => document.getElementById("booking-widget")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    }
+  }, [draft, salonData, search, user?.role]);
+
+  useEffect(() => {
+    if (!salonData || user?.role !== "CUSTOMER" || !selectedService || isSuccess) return;
+    saveDraft({
+      salonSlug: salonData.slug,
+      salonName: salonData.name,
+      serviceId: selectedService,
+      employeeId: selectedEmployee,
+      date: format(selectedDate, "yyyy-MM-dd"),
+    });
+  }, [isSuccess, salonData, saveDraft, selectedDate, selectedEmployee, selectedService, user?.role]);
 
   useEffect(() => {
     if (selectedEmployee) setHasInteractedWithEmployee(true);
@@ -91,6 +132,7 @@ export default function SalonProfile() {
       }
     }, {
       onSuccess: () => {
+        clearDraft();
         setIsSuccess(true);
       },
       onError: () => {
@@ -138,8 +180,16 @@ export default function SalonProfile() {
   if (isLoading) {
     return (
       <Layout>
-        <div className="container mx-auto px-4 py-12 flex items-center justify-center min-h-[50vh]">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="container mx-auto px-4 py-12 space-y-8">
+          <Skeleton className="h-[360px] w-full rounded-3xl" />
+          <div className="grid gap-5 lg:grid-cols-[1fr_400px]">
+            <div className="space-y-4">
+              <Skeleton className="h-9 w-1/2" />
+              <Skeleton className="h-28 w-full" />
+              <Skeleton className="h-28 w-full" />
+            </div>
+            <Skeleton className="hidden h-[520px] rounded-2xl lg:block" />
+          </div>
         </div>
       </Layout>
     );
@@ -157,7 +207,7 @@ export default function SalonProfile() {
                 <SalonGallery media={mediaItems} salonName={salonData.name} />
              </div>
 
-             <div className="w-full lg:w-1/2 xl:w-[45%] flex flex-col justify-center space-y-6 pt-2 lg:pt-4">
+              <div className="relative w-full lg:w-1/2 xl:w-[45%] flex flex-col justify-center space-y-6 pt-2 lg:pt-4">
                 <div className="flex items-center gap-3 flex-wrap">
                   <Badge className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-3 py-1">Salon</Badge>
                   {salonData.featured && <Badge className="bg-amber-100 text-amber-800 border-none px-3 py-1">Istaknuto</Badge>}
@@ -165,13 +215,16 @@ export default function SalonProfile() {
                   {salonData.instantBooking && <Badge className="bg-emerald-100 text-emerald-800 border-none px-3 py-1">Instant zakazivanje</Badge>}
                 </div>
 
-                <div>
+                 <div>
                   <div className="flex flex-wrap items-baseline gap-4 mb-4">
                     <h1 className="text-4xl md:text-5xl lg:text-6xl font-serif font-bold flex items-center gap-2">
                       {salonData.name}
                        {salonData.isVerified && <Badge className="gap-1.5 bg-primary/10 px-2.5 py-1 text-sm text-primary hover:bg-primary/15"><ShieldCheck className="h-4 w-4" />Verifikovan</Badge>}
                     </h1>
                   </div>
+                   {user?.role === "CUSTOMER" && (
+                     <SalonFavoriteButton salonId={salonData.id} className="absolute right-4 top-4 md:static md:ml-auto" />
+                   )}
 
                   <button
                     type="button"
@@ -190,6 +243,12 @@ export default function SalonProfile() {
                       ({salonData.reviewCount} recenzija)
                     </span>
                   </button>
+                   {salonData.returnClientRate !== null && (
+                     <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800">
+                       <Heart className="h-4 w-4 fill-emerald-600 text-emerald-600" />
+                       {salonData.returnClientRate}% klijenata se vraća
+                     </div>
+                   )}
                 </div>
 
                 <p className="text-muted-foreground text-lg leading-relaxed max-w-xl">
@@ -336,17 +395,24 @@ export default function SalonProfile() {
               <span className="w-8 h-px bg-primary inline-block"></span>
               Recenzije
             </h2>
-            <div className="space-y-4">
+             <div className="space-y-4">
               {salonData.reviews?.map(review => (
                 <div key={review.id} className="p-6 rounded-xl border bg-card shadow-sm">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
-                        {review.authorName[0]}
-                      </div>
+                      {review.avatarUrl ? (
+                        <img src={review.avatarUrl} alt="" className="h-10 w-10 rounded-full object-cover shadow-sm" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-sm">
+                          {review.authorName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <span className="font-bold text-sm block">{review.authorName}</span>
-                        <span className="text-xs text-muted-foreground">{format(parseISO(review.date), 'dd.MM.yyyy')}</span>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>{format(parseISO(review.date), 'dd.MM.yyyy')}</span>
+                          {review.verifiedBooking && <span className="inline-flex items-center gap-1 font-medium text-emerald-700"><ShieldCheck className="h-3.5 w-3.5" />Proverena poseta</span>}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 bg-muted/50 px-2 py-1 rounded-md">

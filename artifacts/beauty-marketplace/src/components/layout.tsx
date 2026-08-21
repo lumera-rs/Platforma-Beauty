@@ -1,5 +1,6 @@
 import { Navbar } from "./navbar";
 import { Footer } from "./footer";
+import { CustomerMobileNav } from "./customer-mobile-nav";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,6 +10,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <Footer />
+      <CustomerMobileNav />
     </div>
   );
 }

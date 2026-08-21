@@ -2,12 +2,14 @@ import { Layout } from "@/components/layout";
 import {
   getGetAuthSignInMethodsQueryKey,
   getGetCustomerDashboardQueryKey,
+  getListFavoritesQueryKey,
   getListMyAppointmentsQueryKey,
   useCancelAppointment,
   useDisconnectAuthSignInMethod,
   useGetAuthSignInMethods,
   useGetCustomerDashboard,
   useGetCurrentUser,
+  useListFavorites,
   useListMyAppointments,
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,13 +27,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Search, Loader2, KeyRound, Link2Off, ShieldCheck } from "lucide-react";
+import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { SalonFavoriteButton } from "@/components/salon-favorite-button";
+import { useBookingDraft } from "@/hooks/use-booking-draft";
 
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
@@ -39,6 +44,7 @@ export default function CustomerDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [providerToDisconnect, setProviderToDisconnect] = useState<"google" | "facebook" | null>(null);
+  const [appointmentToCancel, setAppointmentToCancel] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneBusy, setPhoneBusy] = useState(false);
@@ -54,6 +60,10 @@ export default function CustomerDashboard() {
   const { data: signInMethods, isLoading: isSignInMethodsLoading } = useGetAuthSignInMethods({
     query: { enabled: !!userResp?.user, queryKey: getGetAuthSignInMethodsQueryKey() },
   });
+  const { data: favorites, isLoading: isFavoritesLoading } = useListFavorites({
+    query: { enabled: userResp?.user?.role === "CUSTOMER", queryKey: getListFavoritesQueryKey() },
+  });
+  const { draft } = useBookingDraft(userResp?.user?.role === "CUSTOMER" ? userResp.user.id : undefined);
   
   const cancelMutation = useCancelAppointment();
   const disconnectMutation = useDisconnectAuthSignInMethod();
@@ -61,18 +71,18 @@ export default function CustomerDashboard() {
   const activeTab = requestedTab === "favorites" || requestedTab === "settings" ? requestedTab : "appointments";
 
   const handleCancel = (id: string) => {
-    if(confirm("Da li ste sigurni da želite da otkažete termin?")) {
-      cancelMutation.mutate(
-        { appointmentId: id, data: { reason: "Korisnik otkazao" } },
-        {
-          onSuccess: () => {
-            toast.success("Termin otkazan", { description: "Vaš termin je uspešno otkazan." });
-            refetchDash();
-            refetchAppts();
-          }
-        }
-      );
-    }
+    cancelMutation.mutate(
+      { appointmentId: id, data: { reason: "Korisnik otkazao" } },
+      {
+        onSuccess: () => {
+          toast.success("Termin otkazan", { description: "Vaš termin je uspešno otkazan." });
+          setAppointmentToCancel(null);
+          refetchDash();
+          refetchAppts();
+        },
+        onError: () => toast.error("Termin nije otkazan", { description: "Osvežite listu i pokušajte ponovo." }),
+      },
+    );
   };
 
   const disconnectProvider = () => {
@@ -120,8 +130,23 @@ export default function CustomerDashboard() {
     }
   };
 
-  if (isUserLoading || isDashboardLoading) return <Layout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin" /></div></Layout>;
+  if (isUserLoading || isDashboardLoading) {
+    return (
+      <Layout>
+        <div className="container mx-auto space-y-8 px-4 py-10">
+          <div className="flex items-center justify-between"><Skeleton className="h-10 w-56" /><Skeleton className="h-10 w-32" /></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </Layout>
+    );
+  }
   if (!userResp?.user) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const rebookUrl = (appointment: NonNullable<typeof appointments>[number]) =>
+    `/saloni/${appointment.salonSlug}?serviceId=${encodeURIComponent(appointment.serviceId)}${appointment.employeeId ? `&employeeId=${encodeURIComponent(appointment.employeeId)}` : ""}`;
 
   return (
     <Layout>
@@ -138,6 +163,20 @@ export default function CustomerDashboard() {
       </div>
 
       <div className="container mx-auto px-4 py-8">
+          {draft && (
+            <Card className="mb-8 border-primary/20 bg-primary/[0.03]">
+              <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-primary/10 p-2 text-primary"><Clock className="h-5 w-5" /></div>
+                  <div>
+                    <p className="font-semibold">Nastavite zakazivanje</p>
+                    <p className="text-sm text-muted-foreground">Sačuvali smo izbor za salon {draft.salonName}.</p>
+                  </div>
+                </div>
+                <Button asChild><Link href={`/saloni/${draft.salonSlug}?serviceId=${encodeURIComponent(draft.serviceId)}${draft.employeeId ? `&employeeId=${encodeURIComponent(draft.employeeId)}` : ""}`}>Nastavi</Link></Button>
+              </CardContent>
+            </Card>
+          )}
         
         {/* Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
@@ -146,6 +185,7 @@ export default function CustomerDashboard() {
               <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center">
                 <Calendar className="w-6 h-6" />
               </div>
+
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Predstojeći termini</p>
                 <h3 className="text-2xl font-bold">{dashboard?.upcoming?.length || 0}</h3>
@@ -164,6 +204,29 @@ export default function CustomerDashboard() {
             </CardContent>
           </Card>
         </div>
+        {dashboard?.recommendations?.length ? (
+          <section className="mb-8">
+            <div className="mb-4 flex items-end justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-primary"><Sparkles className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-[0.16em]">Za vas</span></div>
+                <h2 className="mt-1 font-serif text-2xl font-bold">Preporučeno za vas</h2>
+                <p className="text-sm text-muted-foreground">Na osnovu prethodnih zakazivanja.</p>
+              </div>
+              <Button variant="ghost" asChild><Link href="/saloni">Pogledajte sve</Link></Button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {dashboard.recommendations.map((salon) => (
+                <div key={salon.id} className="group relative overflow-hidden rounded-xl border bg-card">
+                  <Link href={`/saloni/${salon.slug}`} className="block">
+                    <img src={salon.imageUrl} alt={salon.name} className="h-32 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <div className="p-4"><p className="font-semibold">{salon.name}</p><p className="mt-1 text-sm text-muted-foreground">{salon.city} · {salon.popularServices[0] ?? "Beauty usluge"}</p></div>
+                  </Link>
+                  <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <Tabs value={activeTab} onValueChange={(tab) => setLocation(`/moj-nalog?tab=${tab}`)} className="w-full">
           <TabsList className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto">
@@ -182,14 +245,10 @@ export default function CustomerDashboard() {
             {isApptsLoading ? (
                Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)
             ) : appointments?.length === 0 ? (
-              <div className="text-center py-16 border rounded-xl bg-card border-dashed">
-                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Calendar className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-bold mb-2">Nemate zakazane termine</h3>
-                <p className="text-muted-foreground mb-6">Pronađite salon i zakažite svoj prvi tretman.</p>
-                <Button asChild><Link href="/saloni">Istraži salone</Link></Button>
-              </div>
+              <Empty className="border bg-card py-14">
+                <EmptyHeader><EmptyMedia variant="icon"><Calendar /></EmptyMedia><EmptyTitle>Nemate zakazane termine</EmptyTitle><EmptyDescription>Pronađite salon i zakažite svoj prvi tretman.</EmptyDescription></EmptyHeader>
+                <EmptyContent><Button asChild><Link href="/saloni">Istraži salone</Link></Button></EmptyContent>
+              </Empty>
             ) : (
               <div className="space-y-4">
                 {appointments?.map(appt => (
@@ -212,7 +271,7 @@ export default function CustomerDashboard() {
                             <h4 className="font-bold text-lg">{appt.serviceName}</h4>
                             {getStatusBadge(appt.status)}
                           </div>
-                          <Link href={`/saloni/${appt.salonId}`} className="text-primary font-medium text-sm hover:underline flex items-center gap-1 mb-2">
+                          <Link href={`/saloni/${appt.salonSlug}`} className="text-primary font-medium text-sm hover:underline flex items-center gap-1 mb-2">
                             <MapPin className="w-3.5 h-3.5" /> {appt.salonName}
                           </Link>
                           <div className="text-sm text-muted-foreground flex gap-4">
@@ -221,11 +280,18 @@ export default function CustomerDashboard() {
                             <span className="font-semibold text-foreground">{appt.price} RSD</span>
                           </div>
                         </div>
-                        {(appt.status === 'pending' || appt.status === 'confirmed') && (
-                          <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => handleCancel(appt.id)} disabled={cancelMutation.isPending}>
-                            Otkaži termin
-                          </Button>
-                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {appt.date < today && (
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={rebookUrl(appt)}><RotateCcw className="mr-2 h-3.5 w-3.5" />Zakaži ponovo</Link>
+                            </Button>
+                          )}
+                          {(appt.status === 'pending' || appt.status === 'confirmed') && (
+                            <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 border-destructive/20" onClick={() => setAppointmentToCancel(appt.id)} disabled={cancelMutation.isPending}>
+                              Otkaži termin
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </Card>
@@ -235,24 +301,22 @@ export default function CustomerDashboard() {
           </TabsContent>
 
           <TabsContent value="favorites" className="mt-0">
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {dashboard?.recentSalons?.map(salon => (
-                  <Link key={salon.id} href={`/saloni/${salon.slug}`} className="group block border rounded-xl overflow-hidden bg-card hover:shadow-md transition-all">
-                    <div className="h-40 w-full overflow-hidden">
-                       <img src={salon.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              {isFavoritesLoading ? <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"><Skeleton className="h-56" /><Skeleton className="h-56" /><Skeleton className="h-56" /></div> : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {favorites?.map(salon => (
+                    <div key={salon.id} className="group relative overflow-hidden rounded-xl border bg-card transition-all hover:shadow-md">
+                      <Link href={`/saloni/${salon.slug}`} className="block">
+                        <div className="h-40 w-full overflow-hidden"><img src={salon.imageUrl} alt={salon.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" /></div>
+                        <div className="p-4"><h4 className="font-bold text-lg">{salon.name}</h4><p className="text-sm text-muted-foreground">{salon.city}</p></div>
+                      </Link>
+                      <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
                     </div>
-                    <div className="p-4">
-                      <h4 className="font-bold text-lg">{salon.name}</h4>
-                      <p className="text-sm text-muted-foreground">{salon.city}</p>
-                    </div>
-                  </Link>
-                ))}
-                {(!dashboard?.recentSalons || dashboard.recentSalons.length === 0) && (
-                   <div className="col-span-full text-center py-12 text-muted-foreground border border-dashed rounded-xl">
-                      Nema sačuvanim salona.
-                   </div>
-                )}
-             </div>
+                  ))}
+                  {(!favorites || favorites.length === 0) && (
+                    <Empty className="col-span-full border bg-card py-14"><EmptyHeader><EmptyMedia variant="icon"><Heart /></EmptyMedia><EmptyTitle>Još nemate omiljene salone</EmptyTitle><EmptyDescription>Sačuvajte salon da biste mu se brzo vratili kada poželite novi termin.</EmptyDescription></EmptyHeader><EmptyContent><Button asChild><Link href="/saloni">Istraži salone</Link></Button></EmptyContent></Empty>
+                  )}
+                </div>
+              )}
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">
@@ -358,6 +422,17 @@ export default function CustomerDashboard() {
 
         </Tabs>
       </div>
+      <AlertDialog open={appointmentToCancel !== null} onOpenChange={(open) => !open && setAppointmentToCancel(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Otkazati termin?</AlertDialogTitle><AlertDialogDescription>Termin će biti otkazan, a salon će dobiti obaveštenje. Ovu radnju ne možete vratiti.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancelMutation.isPending}>Zadrži termin</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={cancelMutation.isPending} onClick={(event) => { event.preventDefault(); if (appointmentToCancel) handleCancel(appointmentToCancel); }}>
+              {cancelMutation.isPending ? "Otkazivanje…" : "Otkaži termin"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={providerToDisconnect !== null} onOpenChange={(open) => !open && setProviderToDisconnect(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

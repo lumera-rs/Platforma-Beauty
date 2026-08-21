@@ -1355,9 +1355,12 @@ function appointmentView(
   return {
     id: appointment.id,
     salonId: salon.id,
+    salonSlug: salon.slug,
     salonName: salon.name,
+    serviceId: service.id,
     customerName: `${customer.firstName} ${customer.lastName}`,
     serviceName: service.name,
+    employeeId: employee?.id ?? null,
     employeeName: employee?.name ?? "Bilo koji dostupan",
     date: appointment.date,
     startTime: appointment.startTime,
@@ -2013,7 +2016,29 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id)),
   ]);
   const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
+  const reviewUsersById = new Map(reviewUsers.map((user) => [user.id, user]));
   const employeeLinks = staff.length ? await db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, staff.map((item) => item.id))) : [];
+  const serviceByName = new Map(services.map((service) => [service.name, service]));
+  const completedAppointmentKeys = new Set(
+    appointments
+      .filter((appointment) => appointment.status === "completed" && appointment.customerId)
+      .map((appointment) => `${appointment.customerId}:${appointment.serviceId}`),
+  );
+  const completedVisitsByCustomer = new Map<string, number>();
+  for (const appointment of appointments) {
+    if (appointment.status !== "completed" || !appointment.customerId) continue;
+    completedVisitsByCustomer.set(
+      appointment.customerId,
+      (completedVisitsByCustomer.get(appointment.customerId) ?? 0) + 1,
+    );
+  }
+  const returnClientRate = appointments.filter((appointment) => appointment.status === "completed").length >= 5
+    && completedVisitsByCustomer.size >= 3
+    ? Math.round(
+      [...completedVisitsByCustomer.values()].filter((visits) => visits > 1).length
+      / completedVisitsByCustomer.size * 100,
+    )
+    : null;
   const bookingsByServiceId = new Map<string, number>();
   for (const appointment of appointments) {
     if (appointment.status === "cancelled") continue;
@@ -2049,7 +2074,22 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
     }),
     services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active })),
-    reviews: reviews.map((item) => ({ id: item.id, authorName: `${reviewUsers.find((user) => user.id === item.customerId)?.firstName ?? "Gost"} ${reviewUsers.find((user) => user.id === item.customerId)?.lastName ?? ""}`.trim(), rating: item.rating, text: item.text, date: item.createdAt.toISOString().slice(0, 10), serviceName: item.serviceName })),
+    returnClientRate,
+    reviews: reviews.map((item) => {
+      const reviewer = reviewUsersById.get(item.customerId);
+      const reviewedService = serviceByName.get(item.serviceName);
+      return {
+        id: item.id,
+        authorName: `${reviewer?.firstName ?? "Gost"} ${reviewer?.lastName ?? ""}`.trim(),
+        // Public reviews deliberately use initials until reviewers can opt in to photo visibility.
+        avatarUrl: null,
+        verifiedBooking: !!reviewedService && completedAppointmentKeys.has(`${item.customerId}:${reviewedService.id}`),
+        rating: item.rating,
+        text: item.text,
+        date: item.createdAt.toISOString().slice(0, 10),
+        serviceName: item.serviceName,
+      };
+    }),
   }));
 });
 
@@ -2235,10 +2275,46 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
 
 router.get("/customer/dashboard", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
-  const appointments = await appointmentList(eq(appointmentsTable.customerId, user.id));
-  const salons = await db.select().from(salonsTable).limit(3);
-  const favorites = await db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id));
-  res.json(GetCustomerDashboardResponse.parse({ upcoming: appointments.filter((item) => item.status !== "cancelled").slice(0, 3), recentSalons: await salonCards(salons), favoriteCount: favorites.length, visitCount: appointments.filter((item) => item.status === "completed").length }));
+  const [appointments, bookingRecords, favorites] = await Promise.all([
+    appointmentList(eq(appointmentsTable.customerId, user.id)),
+    db.select().from(appointmentsTable).where(eq(appointmentsTable.customerId, user.id)),
+    db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id)),
+  ]);
+  const bookedSalonIds = [...new Set(bookingRecords
+    .filter((appointment) => appointment.status !== "cancelled")
+    .map((appointment) => appointment.salonId))];
+  const bookedServiceIds = [...new Set(bookingRecords
+    .filter((appointment) => appointment.status !== "cancelled")
+    .map((appointment) => appointment.serviceId))];
+  const bookedServices = bookedServiceIds.length
+    ? await db.select().from(servicesTable).where(inArray(servicesTable.id, bookedServiceIds))
+    : [];
+  const preferredCategories = new Set(bookedServices.map((service) => service.categoryName));
+  const activeSalons = preferredCategories.size
+    ? await db.select().from(salonsTable).where(eq(salonsTable.active, true))
+    : [];
+  const candidateSalonIds = activeSalons
+    .filter((salon) => !bookedSalonIds.includes(salon.id))
+    .map((salon) => salon.id);
+  const candidateServices = candidateSalonIds.length
+    ? await db.select().from(servicesTable).where(inArray(servicesTable.salonId, candidateSalonIds))
+    : [];
+  const recommendedSalons = activeSalons
+    .filter((salon) => candidateServices.some((service) =>
+      service.salonId === salon.id && service.active && preferredCategories.has(service.categoryName),
+    ))
+    .sort((left, right) => Number(right.topSalon) - Number(left.topSalon)
+      || Number(right.featured) - Number(left.featured)
+      || right.rating - left.rating)
+    .slice(0, 3);
+  const recentSalons = await db.select().from(salonsTable).where(eq(salonsTable.active, true)).limit(3);
+  res.json(GetCustomerDashboardResponse.parse({
+    upcoming: appointments.filter((item) => item.status !== "cancelled").slice(0, 3),
+    recentSalons: await salonCards(recentSalons),
+    recommendations: await salonCards(recommendedSalons),
+    favoriteCount: favorites.length,
+    visitCount: appointments.filter((item) => item.status === "completed").length,
+  }));
 });
 
 router.get("/customer/favorites", async (req, res): Promise<void> => {

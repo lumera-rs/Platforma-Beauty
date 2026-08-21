@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { SimpleMap } from "@/components/simple-map";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 
 const PAGE_SIZE = 6;
 
@@ -256,7 +257,8 @@ export default function Salons() {
                     Nije pronađen nijedan salon koji odgovara kriterijumima.
                   </div>
                 ) : paginatedSalons?.map((salon) => (
-                  <Link key={salon.id} href={`/saloni/${salon.slug}`} id={`mobile-salon-${salon.id}`} onFocus={() => setSelectedSalonId(salon.id)} className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300 ${selectedSalonId === salon.id ? "ring-2 ring-primary" : ""}`}>
+                   <div key={salon.id} className="relative">
+                   <Link href={`/saloni/${salon.slug}`} id={`mobile-salon-${salon.id}`} onFocus={() => setSelectedSalonId(salon.id)} className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300 ${selectedSalonId === salon.id ? "ring-2 ring-primary" : ""}`}>
                     <div className="relative w-full aspect-[4/3] overflow-hidden">
                         <img
                           src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
@@ -301,6 +303,8 @@ export default function Salons() {
                       </div>
                     </div>
                   </Link>
+                   <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                   </div>
                 ))}
               </div>
 
@@ -361,8 +365,8 @@ export default function Salons() {
                     Nije pronađen nijedan salon koji odgovara kriterijumima.
                   </div>
                 ) : paginatedSalons?.map((salon) => (
-                  <Link
-                    key={salon.id}
+                  <div key={salon.id} className="relative">
+                   <Link
                     href={`/saloni/${salon.slug}`}
                     id={`desktop-salon-${salon.id}`}
                     onMouseEnter={() => setSelectedSalonId(salon.id)}
@@ -409,6 +413,8 @@ export default function Salons() {
                       {salon.lastBookedAt && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />Poslednji put zakazano {relativeLastBooked(salon.lastBookedAt)}</p>}
                     </div>
                   </Link>
+                   <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                  </div>
                 ))}
 
                 {/* Pagination */}

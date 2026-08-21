@@ -11,9 +11,13 @@ import type { AppointmentStatus } from './appointmentStatus';
 export interface Appointment {
   id: string;
   salonId: string;
+  salonSlug: string;
   salonName: string;
+  serviceId: string;
   customerName: string;
   serviceName: string;
+  /** @nullable */
+  employeeId: string | null;
   employeeName: string;
   date: Date;
   startTime: string;

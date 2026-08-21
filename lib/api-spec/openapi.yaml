@@ -2418,7 +2418,8 @@ components:
             reviews:
               type: array
               items: { $ref: "#/components/schemas/Review" }
-          required: [gallery, videoUrl, description, phone, email, latitude, longitude, topServices, hours, staff, services, reviews]
+            returnClientRate: { type: ["number", "null"], minimum: 0, maximum: 100 }
+          required: [gallery, videoUrl, description, phone, email, latitude, longitude, topServices, hours, staff, services, reviews, returnClientRate]
     PopularSalonService:
       type: object
       properties:
@@ -2489,11 +2490,13 @@ components:
       properties:
         id: { type: string }
         authorName: { type: string }
+        avatarUrl: { type: ["string", "null"] }
+        verifiedBooking: { type: boolean }
         rating: { type: number, minimum: 1, maximum: 5 }
         text: { type: string }
         date: { type: string, format: date }
         serviceName: { type: string }
-      required: [id, authorName, rating, text, date, serviceName]
+      required: [id, authorName, avatarUrl, verifiedBooking, rating, text, date, serviceName]
     TimeSlot:
       type: object
       properties:
@@ -2507,9 +2510,12 @@ components:
       properties:
         id: { type: string }
         salonId: { type: string }
+        salonSlug: { type: string }
         salonName: { type: string }
+        serviceId: { type: string }
         customerName: { type: string }
         serviceName: { type: string }
+        employeeId: { type: ["string", "null"] }
         employeeName: { type: string }
         date: { type: string, format: date }
         startTime: { type: string }
@@ -2537,7 +2543,7 @@ components:
                 nextRetryAt: { type: ["string", "null"], format: date-time }
               required: [status]
           required: [sms, email]
-      required: [id, salonId, salonName, customerName, serviceName, employeeName, date, startTime, endTime, durationMinutes, price, status]
+      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, status]
     AppointmentInput:
       type: object
       properties:
@@ -2741,9 +2747,10 @@ components:
       properties:
         upcoming: { type: array, items: { $ref: "#/components/schemas/Appointment" } }
         recentSalons: { type: array, items: { $ref: "#/components/schemas/SalonCard" } }
+        recommendations: { type: array, items: { $ref: "#/components/schemas/SalonCard" } }
         favoriteCount: { type: number }
         visitCount: { type: number }
-      required: [upcoming, recentSalons, favoriteCount, visitCount]
+      required: [upcoming, recentSalons, recommendations, favoriteCount, visitCount]
     FavoriteInput:
       type: object
       properties:
