@@ -1038,7 +1038,7 @@ export default function SalonProfile() {
       <Dialog open={isReviewDialogOpen} onOpenChange={(open) => !open && setIsReviewDialogOpen(false)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{reviewContext?.review ? "Izmeni recenziju" : "Ostavite recenziju"}</DialogTitle>
+            <DialogTitle>{reviewContext?.review ? "Izmenite recenziju" : "Podelite svoje iskustvo"}</DialogTitle>
             <DialogDescription>
               Podelite svoje iskustvo iz salona {salonData.name}. Vaše mišljenje pomaže drugima da donesu pravu odluku.
             </DialogDescription>
@@ -1047,7 +1047,7 @@ export default function SalonProfile() {
              <div className="space-y-3">
                 <Label>Usluga koju ste koristili</Label>
                 <Select value={reviewServiceName} onValueChange={setReviewServiceName}>
-                  <SelectTrigger>
+                  <SelectTrigger id="review-service">
                     <SelectValue placeholder="Izaberite uslugu" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1067,7 +1067,7 @@ export default function SalonProfile() {
                      type="button" 
                      className="p-2 -m-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full transition-transform hover:scale-110"
                      onClick={() => setReviewRating(star)}
-                     aria-label={`Oceni sa ${star} zvezdica`}
+                      aria-label={`${star} od 5 zvezdica`}
                    >
                      <Star className={`w-8 h-8 ${star <= reviewRating ? "fill-accent text-accent" : "text-muted-foreground/30"}`} />
                    </button>
@@ -1078,6 +1078,7 @@ export default function SalonProfile() {
              <div className="space-y-3">
                <Label>Vaš utisak</Label>
                <Textarea 
+                  id="review-text"
                  placeholder="Sve je bilo odlično, veoma sam zadovoljan/na uslugom..." 
                  value={reviewText} 
                  onChange={(e) => setReviewText(e.target.value)}
@@ -1102,24 +1103,24 @@ export default function SalonProfile() {
              {reviewContext?.review && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" type="button" className="w-full sm:w-auto sm:mr-auto">Obriši</Button>
+                    <Button variant="destructive" type="button" className="w-full sm:w-auto sm:mr-auto">Obriši recenziju</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Da li ste sigurni?</AlertDialogTitle>
-                      <AlertDialogDescription>Ova akcija je nepovratna. Vaša recenzija će biti trajno obrisana.</AlertDialogDescription>
+                      <AlertDialogTitle>Obrisati recenziju?</AlertDialogTitle>
+                      <AlertDialogDescription>Ova akcija trajno uklanja vašu recenziju i ne može da se opozove.</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Odustani</AlertDialogCancel>
+                      <AlertDialogCancel>Zadrži recenziju</AlertDialogCancel>
                       <AlertDialogAction onClick={deleteReview} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Obriši recenziju</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
              )}
-             <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} className="w-full sm:w-auto">Odustani</Button>
+              <Button variant="outline" onClick={() => setIsReviewDialogOpen(false)} className="w-full sm:w-auto">Otkaži</Button>
              <Button onClick={saveReview} disabled={!reviewServiceName || !reviewText.trim() || upsertReview.isPending} className="w-full sm:w-auto font-bold">
                {upsertReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-               Sačuvaj
+                Sačuvaj recenziju
              </Button>
           </DialogFooter>
         </DialogContent>
