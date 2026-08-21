@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Loader2, Save, Video } from "lucide-react";
+import { CreditCard, ExternalLink, House, Loader2, Save, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   getGetManagedSalonProfileQueryKey,
@@ -19,10 +20,18 @@ export default function OwnerSalonProfile() {
   const { data: salon, isLoading } = useGetManagedSalonProfile();
   const updateProfile = useUpdateManagedSalonProfile();
   const [videoUrl, setVideoUrl] = useState("");
+  const [acceptsCards, setAcceptsCards] = useState(false);
+  const [instantBooking, setInstantBooking] = useState(false);
+  const [homeService, setHomeService] = useState(false);
+  const [servesMen, setServesMen] = useState(false);
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
-  }, [salon?.videoUrl]);
+    setAcceptsCards(salon?.acceptsCards ?? false);
+    setInstantBooking(salon?.instantBooking ?? false);
+    setHomeService(salon?.homeService ?? false);
+    setServesMen(salon?.servesMen ?? false);
+  }, [salon]);
 
   const save = (event: React.FormEvent) => {
     event.preventDefault();
@@ -32,16 +41,44 @@ export default function OwnerSalonProfile() {
       return;
     }
     updateProfile.mutate(
-      { data: { videoUrl: nextVideoUrl || null } },
+      {
+        data: {
+          videoUrl: nextVideoUrl || null,
+          acceptsCards,
+          instantBooking,
+          homeService,
+          servesMen,
+        },
+      },
       {
         onSuccess: (updated) => {
           queryClient.setQueryData(getGetManagedSalonProfileQueryKey(), updated);
-          toast.success("Video predstavljanje je sačuvano.");
+          toast.success("Javni profil i podešavanja pretrage su sačuvani.");
         },
-        onError: () => toast.error("Video predstavljanje nije sačuvano."),
+        onError: () => toast.error("Podešavanja javnog profila nisu sačuvana."),
       },
     );
   };
+
+  const setting = (
+    id: string,
+    icon: ReactNode,
+    title: string,
+    description: string,
+    checked: boolean,
+    onCheckedChange: (value: boolean) => void,
+  ) => (
+    <div className="flex items-center justify-between gap-5 rounded-xl border bg-muted/20 p-4">
+      <div className="flex min-w-0 gap-3">
+        <div className="mt-0.5 text-primary">{icon}</div>
+        <div>
+          <label htmlFor={id} className="cursor-pointer font-medium">{title}</label>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
 
   return (
     <BusinessLayout>
@@ -50,8 +87,8 @@ export default function OwnerSalonProfile() {
         <main className="w-full max-w-2xl space-y-6">
           <div>
             <p className="text-sm font-medium text-primary">Javni profil</p>
-            <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje salona</h1>
-            <p className="mt-2 text-muted-foreground">Dodajte video koji će klijenti videti prvi u galeriji vašeg salona.</p>
+            <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
+            <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
           </div>
 
           {isLoading ? (
@@ -59,13 +96,30 @@ export default function OwnerSalonProfile() {
           ) : !salon ? (
             <Card><CardContent className="p-6 text-muted-foreground">Profil salona trenutno nije dostupan.</CardContent></Card>
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Video className="h-5 w-5 text-primary" />Video predstavljanje</CardTitle>
-                <CardDescription>Podržan je javno dostupan video link (npr. MP4). Ostavite polje prazno da uklonite video.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form className="space-y-5" onSubmit={save}>
+            <form className="space-y-6" onSubmit={save}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Prikaz u pretrazi</CardTitle>
+                  <CardDescription>Ove vrednosti koriste se direktno kada klijenti filtriraju salone.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {setting("owner-accepts-cards", <CreditCard className="h-5 w-5" />, "Prima platne kartice", "Klijenti mogu filtrirati salone koji prihvataju plaćanje karticom.", acceptsCards, setAcceptsCards)}
+                  {setting("owner-instant-booking", <Zap className="h-5 w-5" />, "Instant zakazivanje", "Termini rezervisani online biće automatski potvrđeni bez čekanja na vašu potvrdu.", instantBooking, setInstantBooking)}
+                  {setting("owner-serves-men", <UserRoundCheck className="h-5 w-5" />, "Nudi usluge za muškarce", "Prikazujte salon kada klijent uključi filter „Saloni za muškarce”.", servesMen, setServesMen)}
+                  {setting("owner-home-service", <House className="h-5 w-5" />, "Dolazak na adresu", "Prikazujte salon klijentima koji traže uslugu kod kuće.", homeService, setHomeService)}
+                  <div className="rounded-xl border border-dashed p-4 text-sm">
+                    <p className="font-medium">Otvoren nedeljom: {salon.openSunday ? "da" : "ne"}</p>
+                    <p className="mt-1 text-muted-foreground">Ova vrednost se automatski preuzima iz vašeg radnog vremena i ne može se ručno uključiti ovde.</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Video className="h-5 w-5 text-primary" />Video predstavljanje</CardTitle>
+                  <CardDescription>Podržan je javno dostupan video link (npr. MP4). Ostavite polje prazno da uklonite video.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
                   <div className="space-y-2">
                     <label className="text-sm font-medium" htmlFor="owner-video-url">Video URL</label>
                     <Input
@@ -84,11 +138,11 @@ export default function OwnerSalonProfile() {
                   ) : null}
                   <Button type="submit" disabled={updateProfile.isPending}>
                     {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Sačuvaj video
+                    Sačuvaj podešavanja
                   </Button>
-                </form>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </form>
           )}
         </main>
       </div>

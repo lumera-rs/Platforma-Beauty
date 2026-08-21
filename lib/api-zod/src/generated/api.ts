@@ -314,6 +314,7 @@ export const ListSalonsResponseItem = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -365,6 +366,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -392,6 +394,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -419,6 +422,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -452,6 +456,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -479,6 +484,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -548,6 +554,7 @@ export const GetSalonResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -894,6 +901,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -921,6 +929,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -956,6 +965,7 @@ export const ListFavoritesResponseItem = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -1085,6 +1095,7 @@ export const GetSalonDashboardResponse = zod.object({
   "topSalon": zod.boolean(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
+  "servesMen": zod.boolean(),
   "isVerified": zod.boolean(),
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
@@ -1143,28 +1154,42 @@ export const GetSalonDashboardResponse = zod.object({
 
 
 /**
- * @summary Get editable public profile media for the active owned salon
+ * @summary Get editable public profile settings for the active owned salon
  */
 export const GetManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
-  "videoUrl": zod.string().nullable()
+  "videoUrl": zod.string().nullable(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "homeService": zod.boolean(),
+  "servesMen": zod.boolean(),
+  "openSunday": zod.boolean()
 })
 
 
 /**
- * @summary Update editable public profile media for the active owned salon
+ * @summary Update editable public profile settings for the active owned salon
  */
 export const UpdateManagedSalonProfileBody = zod.object({
-  "videoUrl": zod.string().nullable()
+  "videoUrl": zod.string().nullish(),
+  "acceptsCards": zod.boolean().optional(),
+  "instantBooking": zod.boolean().optional(),
+  "homeService": zod.boolean().optional(),
+  "servesMen": zod.boolean().optional()
 })
 
 export const UpdateManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
-  "videoUrl": zod.string().nullable()
+  "videoUrl": zod.string().nullable(),
+  "acceptsCards": zod.boolean(),
+  "instantBooking": zod.boolean(),
+  "homeService": zod.boolean(),
+  "servesMen": zod.boolean(),
+  "openSunday": zod.boolean()
 })
 
 

@@ -506,10 +506,10 @@ paths:
     get:
       operationId: getManagedSalonProfile
       tags: [salon-management]
-      summary: Get editable public profile media for the active owned salon
+      summary: Get editable public profile settings for the active owned salon
       responses:
         "200":
-          description: Editable salon profile media
+          description: Editable salon profile settings
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalonProfileMedia" }
@@ -517,7 +517,7 @@ paths:
     patch:
       operationId: updateManagedSalonProfile
       tags: [salon-management]
-      summary: Update editable public profile media for the active owned salon
+      summary: Update editable public profile settings for the active owned salon
       requestBody:
         required: true
         content:
@@ -525,7 +525,7 @@ paths:
             schema: { $ref: "#/components/schemas/SalonProfileMediaUpdate" }
       responses:
         "200":
-          description: Updated salon profile media
+          description: Updated salon profile settings
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalonProfileMedia" }
@@ -2452,6 +2452,7 @@ components:
         topSalon: { type: boolean }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
+        servesMen: { type: boolean }
         isVerified: { type: boolean }
         hasDiscount: { type: boolean }
         openSunday: { type: boolean }
@@ -2459,7 +2460,7 @@ components:
         createdAt: { type: string, format: date-time }
         latitude: { type: ["number", "null"], format: double }
         longitude: { type: ["number", "null"], format: double }
-      required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, isVerified, hasDiscount, openSunday, createdAt, latitude, longitude]
+      required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt, latitude, longitude]
     DiscoveryService:
       type: object
       properties:
@@ -2558,12 +2559,20 @@ components:
         name: { type: string }
         slug: { type: string }
         videoUrl: { type: ["string", "null"] }
-      required: [id, name, slug, videoUrl]
+        acceptsCards: { type: boolean }
+        instantBooking: { type: boolean }
+        homeService: { type: boolean }
+        servesMen: { type: boolean }
+        openSunday: { type: boolean }
+      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, servesMen, openSunday]
     SalonProfileMediaUpdate:
       type: object
       properties:
         videoUrl: { type: ["string", "null"] }
-      required: [videoUrl]
+        acceptsCards: { type: boolean }
+        instantBooking: { type: boolean }
+        homeService: { type: boolean }
+        servesMen: { type: boolean }
     OpeningHour:
       type: object
       properties:

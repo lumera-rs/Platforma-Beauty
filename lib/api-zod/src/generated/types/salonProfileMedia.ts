@@ -12,4 +12,9 @@ export interface SalonProfileMedia {
   slug: string;
   /** @nullable */
   videoUrl: string | null;
+  acceptsCards: boolean;
+  instantBooking: boolean;
+  homeService: boolean;
+  servesMen: boolean;
+  openSunday: boolean;
 }

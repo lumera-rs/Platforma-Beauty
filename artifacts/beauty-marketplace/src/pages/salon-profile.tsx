@@ -83,6 +83,7 @@ export default function SalonProfile() {
   const [hasInteractedWithEmployee, setHasInteractedWithEmployee] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [bookingStatus, setBookingStatus] = useState<"pending" | "confirmed" | undefined>();
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
@@ -353,10 +354,11 @@ export default function SalonProfile() {
         employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined
       }
     }, {
-      onSuccess: () => {
+      onSuccess: (response) => {
         queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         clearDraft();
+        setBookingStatus(response.status === "confirmed" ? "confirmed" : "pending");
         setIsSuccess(true);
       },
       onError: () => {
@@ -981,6 +983,7 @@ export default function SalonProfile() {
               onBook={handleBook}
               isBooking={createAppointment.isPending}
               isSuccess={isSuccess}
+              bookingStatus={bookingStatus}
               onViewAppointments={() => setLocation("/moj-nalog")}
               step={bookingStep}
               setStep={setBookingStep}
@@ -1021,6 +1024,7 @@ export default function SalonProfile() {
               onBook={handleBook}
               isBooking={createAppointment.isPending}
               isSuccess={isSuccess}
+              bookingStatus={bookingStatus}
               onViewAppointments={() => {
                 setIsMobileDrawerOpen(false);
                 setLocation("/moj-nalog");

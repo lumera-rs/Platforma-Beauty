@@ -34,6 +34,7 @@ export interface BookingWidgetProps {
   onBook: () => void;
   isBooking: boolean;
   isSuccess: boolean;
+  bookingStatus?: "pending" | "confirmed";
   onViewAppointments: () => void;
   
   step: number;
@@ -70,6 +71,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   }, [props.availability, props.isLoadingAvailability, props.selectedDate, props.selectedService]);
 
   if (props.isSuccess) {
+    const isConfirmed = props.bookingStatus === "confirmed";
     return (
       <Card className={`flex flex-col overflow-hidden bg-card items-center justify-center p-8 text-center space-y-6 ${props.className || ''}`}>
         <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", bounce: 0.5 }}>
@@ -79,10 +81,10 @@ export function BookingWidget(props: BookingWidgetProps) {
         </motion.div>
         <div>
           <motion.h3 initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="text-3xl font-serif font-bold text-foreground mb-2">
-            Termin potvrđen
+            {isConfirmed ? "Termin potvrđen" : "Zahtev za termin je poslat"}
           </motion.h3>
           <motion.p initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }} className="text-muted-foreground text-lg">
-            Vidimo se u salonu!
+            {isConfirmed ? "Vidimo se u salonu!" : "Salon će uskoro potvrditi vaš termin."}
           </motion.p>
         </div>
         <div className="w-full rounded-2xl border border-primary/15 bg-primary/5 p-4 text-left text-sm">

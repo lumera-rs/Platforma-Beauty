@@ -221,6 +221,7 @@ export interface SalonCard {
   topSalon: boolean;
   acceptsCards: boolean;
   instantBooking: boolean;
+  servesMen: boolean;
   isVerified: boolean;
   hasDiscount: boolean;
   openSunday: boolean;
@@ -367,11 +368,20 @@ export interface SalonProfileMedia {
   slug: string;
   /** @nullable */
   videoUrl: string | null;
+  acceptsCards: boolean;
+  instantBooking: boolean;
+  homeService: boolean;
+  servesMen: boolean;
+  openSunday: boolean;
 }
 
 export interface SalonProfileMediaUpdate {
   /** @nullable */
-  videoUrl: string | null;
+  videoUrl?: string | null;
+  acceptsCards?: boolean;
+  instantBooking?: boolean;
+  homeService?: boolean;
+  servesMen?: boolean;
 }
 
 export interface CustomerReview {

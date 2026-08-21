@@ -8,5 +8,9 @@
 
 export interface SalonProfileMediaUpdate {
   /** @nullable */
-  videoUrl: string | null;
+  videoUrl?: string | null;
+  acceptsCards?: boolean;
+  instantBooking?: boolean;
+  homeService?: boolean;
+  servesMen?: boolean;
 }

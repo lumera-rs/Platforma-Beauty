@@ -196,6 +196,7 @@ export const salonsTable = pgTable("salons", {
   topSalon: boolean("top_salon").notNull().default(false),
   acceptsCards: boolean("accepts_cards").notNull().default(false),
   instantBooking: boolean("instant_booking").notNull().default(false),
+  servesMen: boolean("serves_men").notNull().default(false),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -48,7 +48,7 @@ export default function AdminSalons() {
   const mutateFnRef = useRef(updateSalon.mutate);
   mutateFnRef.current = updateSalon.mutate;
 
-  const handleToggle = (id: string, field: 'active' | 'featured' | 'isVerified', currentValue: boolean) => {
+  const handleToggle = (id: string, field: 'active' | 'featured' | 'isVerified' | 'topSalon', currentValue: boolean) => {
     mutateFnRef.current({
       salonId: id,
       data: { [field]: !currentValue }
@@ -160,6 +160,7 @@ export default function AdminSalons() {
                     <th className="px-6 py-4">Pretplata & Loyalty</th>
                     <th className="px-6 py-4 text-center">Aktivno</th>
                     <th className="px-6 py-4 text-center">Izdvojeno</th>
+                    <th className="px-6 py-4 text-center">Top Salon</th>
                     <th className="px-6 py-4 text-center">Verifikovan</th>
                   </tr>
                 </thead>
@@ -210,6 +211,17 @@ export default function AdminSalons() {
                             disabled={updateSalon.isPending}
                             aria-label={`Izdvoji salon ${salon.name}`}
                             data-testid={`toggle-featured-${salon.id}`}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center align-middle">
+                        <div className="flex justify-center">
+                          <Switch
+                            checked={salon.topSalon}
+                            onCheckedChange={() => handleToggle(salon.id, 'topSalon', salon.topSalon)}
+                            disabled={updateSalon.isPending}
+                            aria-label={`Označi ${salon.name} kao Top Salon`}
+                            data-testid={`toggle-top-salon-${salon.id}`}
                           />
                         </div>
                       </td>

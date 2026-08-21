@@ -31,7 +31,7 @@ export default function AdminSalonDetail() {
     setVideoUrl(salon?.videoUrl ?? "");
   }, [salon?.videoUrl]);
 
-  const update = (data: { isVerified?: boolean; videoUrl?: string | null }) => {
+  const update = (data: { isVerified?: boolean; featured?: boolean; topSalon?: boolean; videoUrl?: string | null }) => {
     updateSalon.mutate({ salonId, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getAdminGetSalonQueryKey(salonId) });
@@ -49,7 +49,7 @@ export default function AdminSalonDetail() {
           <Button asChild variant="ghost"><Link href="/admin/saloni"><ArrowLeft className="mr-2 h-4 w-4" />Nazad na salone</Link></Button>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h1 className="text-3xl font-serif font-bold">{salon.name}</h1><p className="text-muted-foreground">Administrativni profil salona i B2B porudžbine.</p></div>
-            <div className="flex gap-2"><Badge variant={salon.active ? "default" : "secondary"}>{salon.active ? "Aktivan" : "Neaktivan"}</Badge>{salon.featured && <Badge variant="outline">Izdvojen</Badge>}{salon.isVerified && <Badge className="gap-1"><BadgeCheck className="h-3.5 w-3.5" />Verifikovan</Badge>}</div>
+            <div className="flex gap-2"><Badge variant={salon.active ? "default" : "secondary"}>{salon.active ? "Aktivan" : "Neaktivan"}</Badge>{salon.featured && <Badge variant="outline">Izdvojen</Badge>}{salon.topSalon && <Badge variant="outline">Top Salon</Badge>}{salon.isVerified && <Badge className="gap-1"><BadgeCheck className="h-3.5 w-3.5" />Verifikovan</Badge>}</div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -74,6 +74,14 @@ export default function AdminSalonDetail() {
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                 <div><p className="font-medium">Verifikovan salon</p><p className="text-sm text-muted-foreground">Bedž je vidljiv klijentima tek kada ga administracija potvrdi.</p></div>
                 <Switch checked={salon.isVerified} onCheckedChange={(checked) => update({ isVerified: checked })} disabled={updateSalon.isPending} />
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div><p className="font-medium">Istaknuti salon</p><p className="text-sm text-muted-foreground">Administracija odlučuje da li je salon prikazan u istaknutoj kolekciji.</p></div>
+                <Switch checked={salon.featured} onCheckedChange={(checked) => update({ featured: checked })} disabled={updateSalon.isPending} />
+              </div>
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                <div><p className="font-medium">Top Salon</p><p className="text-sm text-muted-foreground">Administrativni bedž za preporučene salone na platformi.</p></div>
+                <Switch checked={salon.topSalon} onCheckedChange={(checked) => update({ topSalon: checked })} disabled={updateSalon.isPending} />
               </div>
               <div className="space-y-2">
                 <label htmlFor="admin-video-url" className="text-sm font-medium">Video URL</label>

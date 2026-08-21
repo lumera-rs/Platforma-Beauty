@@ -37,6 +37,7 @@ export default function Salons() {
   const [instantBooking, setInstantBooking] = useState(false);
   const [topSalon, setTopSalon] = useState(false);
   const [featured, setFeatured] = useState(false);
+  const [homeService, setHomeService] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNote, setLocationNote] = useState("");
   const [page, setPage] = useState(1);
@@ -62,6 +63,11 @@ export default function Salons() {
     const sortFromQuery = searchParams.get("sort");
     setSort(isSalonSort(sortFromQuery) ? sortFromQuery : "recommended");
     setDiscountsOnly(searchParams.get("discountsOnly") === "true");
+    setMenOnly(searchParams.get("gender") === "men");
+    setAcceptsCards(searchParams.get("acceptsCards") === "true");
+    setOpenSunday(searchParams.get("openSunday") === "true");
+    setInstantBooking(searchParams.get("instantBooking") === "true");
+    setHomeService(searchParams.get("homeService") === "true");
     setTopSalon(searchParams.get("topSalon") === "true");
     setFeatured(searchParams.get("featured") === "true");
     const minReviewCountFromQuery = Number(searchParams.get("minReviewCount"));
@@ -72,9 +78,9 @@ export default function Salons() {
     category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax, minReviewCount,
     sort, discountsOnly: discountsOnly || undefined, gender: menOnly ? "men" : undefined,
     acceptsCards: acceptsCards || undefined, openSunday: openSunday || undefined,
-    instantBooking: instantBooking || undefined, topSalon: topSalon || undefined, featured: featured || undefined,
+    instantBooking: instantBooking || undefined, homeService: homeService || undefined, topSalon: topSalon || undefined, featured: featured || undefined,
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
-  }), [category, city, municipality, brand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, topSalon, featured, location]);
+  }), [category, city, municipality, brand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, homeService, topSalon, featured, location]);
 
   const { data: allSalons, isLoading, isFetching } = useListSalons(params);
   const isResultsLoading = isLoading || isFetching;
@@ -189,12 +195,13 @@ export default function Salons() {
           {toggle("Prima platne kartice", acceptsCards, setAcceptsCards)}
           {toggle("Otvoren nedeljom", openSunday, setOpenSunday)}
           {toggle("Instant zakazivanje", instantBooking, setInstantBooking)}
+          {toggle("Dolazak na adresu", homeService, setHomeService)}
           {toggle("Top Salon", topSalon, setTopSalon)}
           {toggle("Istaknuti saloni", featured, setFeatured)}
         </div>
       </div>
 
-      <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setMinReviewCount(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setTopSalon(false); setFeatured(false); }}>
+      <Button variant="outline" className="w-full" onClick={() => { setCategory(""); setCity(""); setMunicipality(""); setBrand(""); setPriceMax(undefined); setMinReviewCount(undefined); setDiscountsOnly(false); setMenOnly(false); setAcceptsCards(false); setOpenSunday(false); setInstantBooking(false); setHomeService(false); setTopSalon(false); setFeatured(false); }}>
         Resetuj filtere
       </Button>
     </div>

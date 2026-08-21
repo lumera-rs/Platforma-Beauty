@@ -332,14 +332,16 @@ async function sendAppointmentEmails(input: {
   const [owner] = await db.select().from(usersTable).where(eq(usersTable.id, salon.ownerId)).limit(1);
   const label = appointmentLabel(appointment, salon, service);
   const eventCopy = event === "created"
-    ? { customerTitle: "Zahtev za termin je primljen", customerText: `Vaš zahtev za ${label} je uspešno primljen. Salon će potvrditi termin.`, salonTitle: "Novi zahtev za termin", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je rezervisao/la ${label}.` }
+    ? appointment.status === "confirmed"
+      ? { customerTitle: "Termin je potvrđen", customerText: `Vaš termin za ${label} je potvrđen. Vidimo se u salonu!`, salonTitle: "Novi potvrđen termin", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je automatski potvrdio/la ${label}.` }
+      : { customerTitle: "Zahtev za termin je primljen", customerText: `Vaš zahtev za ${label} je uspešno primljen. Salon će potvrditi termin.`, salonTitle: "Novi zahtev za termin", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je rezervisao/la ${label}.` }
     : event === "updated"
       ? { customerTitle: "Termin je izmenjen", customerText: `Vaš termin je izmenjen: ${label}.`, salonTitle: "Termin je izmenjen", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je izmenio/la termin: ${label}.` }
       : { customerTitle: "Termin je otkazan", customerText: `Vaš termin je otkazan: ${label}.`, salonTitle: "Termin je otkazan", salonText: `${emailSafe(customer.firstName)} ${emailSafe(customer.lastName)} je otkazao/la termin: ${label}.` };
   await Promise.all([
     sendTransactionalEmail({
       eventKey: `appointment:${appointment.id}:customer:${event}`,
-      emailType: `appointment_${event}`,
+      emailType: event === "created" && appointment.status === "confirmed" ? "appointment_confirmed" : `appointment_${event}`,
       to: { email: customer.email, name: `${customer.firstName} ${customer.lastName}` },
       subject: `LUMERA — ${eventCopy.customerTitle}`,
       htmlContent: lumeraEmailHtml(eventCopy.customerTitle, `<p>${eventCopy.customerText}</p>`),
@@ -347,7 +349,7 @@ async function sendAppointmentEmails(input: {
     }),
     owner ? sendTransactionalEmail({
       eventKey: `appointment:${appointment.id}:salon:${event}`,
-      emailType: `salon_appointment_${event}`,
+      emailType: event === "created" && appointment.status === "confirmed" ? "salon_appointment_confirmed" : `salon_appointment_${event}`,
       to: { email: owner.email, name: `${owner.firstName} ${owner.lastName}` },
       subject: `LUMERA Biznis — ${eventCopy.salonTitle}`,
       htmlContent: lumeraEmailHtml(eventCopy.salonTitle, `<p>${eventCopy.salonText}</p>`),
@@ -1408,6 +1410,7 @@ function card(
     topSalon: salon.topSalon,
     acceptsCards: salon.acceptsCards,
     instantBooking: salon.instantBooking,
+    servesMen: salon.servesMen,
     hasDiscount: services.some((item) => item.promoPrice !== null && item.promoPrice < item.price),
     openSunday: hours.some((item) => item.weekday === 7 && !item.closed),
     lastBookedAt: lastBookedAt?.toISOString() ?? null,
@@ -2090,7 +2093,7 @@ router.get("/salons", async (req, res): Promise<void> => {
     const matchesPrice = query.priceMax === undefined || item.startingPrice <= query.priceMax;
     const matchesRating = query.minRating === undefined || item.rating >= query.minRating;
     const matchesReviewCount = query.minReviewCount === undefined || item.reviewCount >= query.minReviewCount;
-    const matchesMen = query.gender !== "men" || services.some((service) => service.categoryName === "Muški frizeri" || service.tags.some((tag) => tag.toLowerCase().includes("muškar")));
+    const matchesMen = query.gender !== "men" || item.servesMen;
     const matchesBrand = !query.brand || linkedBrands.filter((link) => link.salonId === item.id).some((link) => brands.find((brand) => brand.id === link.brandId)?.name.toLowerCase() === query.brand!.toLowerCase());
     return matchesTreatment && matchesPrice && matchesRating && matchesReviewCount && matchesMen && matchesBrand
       && (query.discountsOnly === undefined || item.hasDiscount === query.discountsOnly)
@@ -2478,15 +2481,17 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const allocation = await createAllocatedAppointment({
     salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
     date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
-    price: service.promoPrice ?? service.price, status: "pending", notes: parsed.data.notes ?? null,
+    price: service.promoPrice ?? service.price, status: salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
     preferredEmployeeId: parsed.data.employeeId,
   });
   if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
   const { employee, appointment } = allocation;
   await sendSms({
-    eventKey: `appointment-confirmation:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
+    eventKey: `appointment-created:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
     type: "appointment_confirmation", phone: user.phone, smsOptOut: crmContact?.smsOptOut,
-    text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${calendarDate(appointment.date)} u ${appointment.startTime}.`,
+    text: appointment.status === "confirmed"
+      ? `LUMERA: termin u salonu ${salon.name} je potvrđen za ${calendarDate(appointment.date)} u ${appointment.startTime}.`
+      : `LUMERA: zahtev za termin u salonu ${salon.name} je primljen za ${calendarDate(appointment.date)} u ${appointment.startTime}. Salon će ga potvrditi.`,
   });
   await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
   const response = appointmentView(appointment, salon, service, user, employee);
@@ -2805,6 +2810,12 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     name: salon.name,
     slug: salon.slug,
     videoUrl: salon.videoUrl,
+    acceptsCards: salon.acceptsCards,
+    instantBooking: salon.instantBooking,
+    homeService: salon.homeService,
+    servesMen: salon.servesMen,
+    openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
+      .where(and(eq(salonHoursTable.salonId, salon.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
   }));
 });
 
@@ -2812,9 +2823,16 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (!isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  if (parsed.data.videoUrl !== undefined && !isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
+  const updates: Partial<typeof salonsTable.$inferInsert> = {};
+  if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
+  if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
+  if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
+  if (parsed.data.homeService !== undefined) updates.homeService = parsed.data.homeService;
+  if (parsed.data.servesMen !== undefined) updates.servesMen = parsed.data.servesMen;
+  if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
   const [updated] = await db.update(salonsTable)
-    .set({ videoUrl: parsed.data.videoUrl })
+    .set(updates)
     .where(eq(salonsTable.id, access.salon.id))
     .returning();
   res.json(GetManagedSalonProfileResponse.parse({
@@ -2822,6 +2840,12 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     name: updated!.name,
     slug: updated!.slug,
     videoUrl: updated!.videoUrl,
+    acceptsCards: updated!.acceptsCards,
+    instantBooking: updated!.instantBooking,
+    homeService: updated!.homeService,
+    servesMen: updated!.servesMen,
+    openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
+      .where(and(eq(salonHoursTable.salonId, updated!.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
   }));
 });
 
