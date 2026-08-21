@@ -3,13 +3,14 @@ import { OwnerSidebar } from "./dashboard";
 import { useListSalonServices, useCreateSalonService, useUpdateSalonService, useGetCurrentUser, getListSalonServicesQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Edit2, Loader2, Image as ImageIcon } from "lucide-react";
+import { Plus, Edit2, Loader2, Image as ImageIcon, House } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 
 export default function OwnerServices() {
   const { data: userResp } = useGetCurrentUser();
@@ -27,16 +28,22 @@ export default function OwnerServices() {
     price: 1500,
     description: "",
     imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200",
-    active: true
+    active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: ""
   });
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true });
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "" });
   };
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, durationMinutes: Number(formData.durationMinutes), price: Number(formData.price) };
+    const payload = {
+      ...formData,
+      durationMinutes: Number(formData.durationMinutes),
+      price: Number(formData.price),
+      homeServiceFee: formData.homeServiceAvailable ? Number(formData.homeServiceFee) : 0,
+      homeServiceMinimumOrder: formData.homeServiceAvailable && formData.homeServiceMinimumOrder !== "" ? Number(formData.homeServiceMinimumOrder) : null,
+    };
     const callbacks = {
       onSuccess: () => {
         toast.success(editingId ? "Usluga izmenjena" : "Usluga dodata");
@@ -50,7 +57,7 @@ export default function OwnerServices() {
   };
   const editService = (service: NonNullable<typeof services>[number]) => {
     setEditingId(service.id);
-    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active });
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "" });
     setOpen(true);
   };
 
@@ -102,6 +109,19 @@ export default function OwnerServices() {
                     <Label>Kratak opis</Label>
                     <Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
                   </div>
+                  <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label className="flex items-center gap-2"><House className="h-4 w-4 text-primary" /> Dolazak na adresu</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">Omogućite samo za ovu uslugu.</p>
+                      </div>
+                      <Switch checked={formData.homeServiceAvailable} onCheckedChange={(checked) => setFormData({ ...formData, homeServiceAvailable: checked })} />
+                    </div>
+                    {formData.homeServiceAvailable ? <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs">Naknada za dolazak (RSD)</Label><Input type="number" min="0" value={formData.homeServiceFee} onChange={e => setFormData({ ...formData, homeServiceFee: Number(e.target.value) })} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Minimum usluge (opciono)</Label><Input type="number" min="0" placeholder="Bez minimuma" value={formData.homeServiceMinimumOrder} onChange={e => setFormData({ ...formData, homeServiceMinimumOrder: e.target.value })} /></div>
+                    </div> : null}
+                  </div>
                   <Button type="submit" className="w-full" disabled={createMutation.isPending || updateMutation.isPending}>
                     {(createMutation.isPending || updateMutation.isPending) ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                     {editingId ? "Sačuvaj izmene" : "Sačuvaj"}
@@ -127,9 +147,11 @@ export default function OwnerServices() {
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-bold text-lg">{service.name}</h4>
                         {!service.active && <Badge variant="secondary" className="text-xs">Neaktivno</Badge>}
+                        {service.homeServiceAvailable && <Badge className="text-xs gap-1"><House className="h-3 w-3" /> Na adresi</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground mb-1">{service.category} • {service.durationMinutes} min</p>
                       <p className="font-semibold text-primary">{service.price} RSD</p>
+                      {service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Naknada za dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • minimum ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
                     </div>
                   </div>
                   <Button variant="ghost" size="sm" className="shrink-0" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>

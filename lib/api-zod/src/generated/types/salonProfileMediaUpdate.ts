@@ -12,5 +12,10 @@ export interface SalonProfileMediaUpdate {
   acceptsCards?: boolean;
   instantBooking?: boolean;
   homeService?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  homeServiceRadiusKm?: number;
   servesMen?: boolean;
 }

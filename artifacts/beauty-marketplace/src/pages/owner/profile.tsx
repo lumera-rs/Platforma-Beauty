@@ -22,14 +22,14 @@ export default function OwnerSalonProfile() {
   const [videoUrl, setVideoUrl] = useState("");
   const [acceptsCards, setAcceptsCards] = useState(false);
   const [instantBooking, setInstantBooking] = useState(false);
-  const [homeService, setHomeService] = useState(false);
+  const [homeServiceRadiusKm, setHomeServiceRadiusKm] = useState(10);
   const [servesMen, setServesMen] = useState(false);
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
     setAcceptsCards(salon?.acceptsCards ?? false);
     setInstantBooking(salon?.instantBooking ?? false);
-    setHomeService(salon?.homeService ?? false);
+    setHomeServiceRadiusKm(salon?.homeServiceRadiusKm ?? 10);
     setServesMen(salon?.servesMen ?? false);
   }, [salon]);
 
@@ -46,7 +46,7 @@ export default function OwnerSalonProfile() {
           videoUrl: nextVideoUrl || null,
           acceptsCards,
           instantBooking,
-          homeService,
+          homeServiceRadiusKm: Number(homeServiceRadiusKm),
           servesMen,
         },
       },
@@ -106,7 +106,19 @@ export default function OwnerSalonProfile() {
                   {setting("owner-accepts-cards", <CreditCard className="h-5 w-5" />, "Prima platne kartice", "Klijenti mogu filtrirati salone koji prihvataju plaćanje karticom.", acceptsCards, setAcceptsCards)}
                   {setting("owner-instant-booking", <Zap className="h-5 w-5" />, "Instant zakazivanje", "Termini rezervisani online biće automatski potvrđeni bez čekanja na vašu potvrdu.", instantBooking, setInstantBooking)}
                   {setting("owner-serves-men", <UserRoundCheck className="h-5 w-5" />, "Nudi usluge za muškarce", "Prikazujte salon kada klijent uključi filter „Saloni za muškarce”.", servesMen, setServesMen)}
-                  {setting("owner-home-service", <House className="h-5 w-5" />, "Dolazak na adresu", "Prikazujte salon klijentima koji traže uslugu kod kuće.", homeService, setHomeService)}
+                  <div className="rounded-xl border p-4">
+                    <div className="flex items-start gap-3">
+                      <House className="mt-0.5 h-5 w-5 text-primary" />
+                      <div className="flex-1">
+                        <p className="font-medium">Dolazak na adresu</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Dostupnost i naknadu birate za svaku uslugu posebno na stranici Usluge.</p>
+                        <div className="mt-3 max-w-xs">
+                          <label className="text-xs font-medium" htmlFor="home-service-radius">Radijus pokrivenosti (km)</label>
+                          <Input id="home-service-radius" className="mt-1" type="number" min="1" max="100" value={homeServiceRadiusKm} onChange={(event) => setHomeServiceRadiusKm(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <div className="rounded-xl border border-dashed p-4 text-sm">
                     <p className="font-medium">Otvoren nedeljom: {salon.openSunday ? "da" : "ne"}</p>
                     <p className="mt-1 text-muted-foreground">Ova vrednost se automatski preuzima iz vašeg radnog vremena i ne može se ručno uključiti ovde.</p>

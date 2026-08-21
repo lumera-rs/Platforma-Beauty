@@ -17,6 +17,8 @@ export interface SalonCustomer {
   phone: string | null;
   smsOptOut: boolean;
   visitCount: number;
+  /** @minimum 0 */
+  noShowCount: number;
   isRegistered: boolean;
   series?: CustomerAppointmentSeries[];
 }

@@ -19,4 +19,12 @@ export interface ServiceInput {
   promoPrice?: number | null;
   imageUrl: string;
   active: boolean;
+  homeServiceAvailable: boolean;
+  /** @minimum 0 */
+  homeServiceFee: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  homeServiceMinimumOrder?: number | null;
 }

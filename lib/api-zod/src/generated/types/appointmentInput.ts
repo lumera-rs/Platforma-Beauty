@@ -5,6 +5,8 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AppointmentInputTreatmentAddress } from './appointmentInputTreatmentAddress';
+import type { AppointmentInputTreatmentLocation } from './appointmentInputTreatmentLocation';
 
 export interface AppointmentInput {
   salonId: string;
@@ -15,4 +17,6 @@ export interface AppointmentInput {
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
+  treatmentLocation?: AppointmentInputTreatmentLocation;
+  treatmentAddress?: AppointmentInputTreatmentAddress;
 }

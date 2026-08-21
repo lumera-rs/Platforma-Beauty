@@ -34,4 +34,9 @@ export type SalonProfile = SalonCard & ({
      * @nullable
      */
   returnClientRate: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  homeServiceRadiusKm: number;
 });

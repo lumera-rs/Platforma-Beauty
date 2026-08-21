@@ -191,6 +191,7 @@ export const salonsTable = pgTable("salons", {
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
   homeService: boolean("home_service").notNull().default(false),
+  homeServiceRadiusKm: integer("home_service_radius_km").notNull().default(10),
   featured: boolean("featured").notNull().default(false),
   isVerified: boolean("is_verified").notNull().default(false),
   topSalon: boolean("top_salon").notNull().default(false),
@@ -258,6 +259,9 @@ export const servicesTable = pgTable("services", {
   packageTreatments: integer("package_treatments"),
   imageUrl: text("image_url").notNull(),
   active: boolean("active").notNull().default(true),
+  homeServiceAvailable: boolean("home_service_available").notNull().default(false),
+  homeServiceFee: integer("home_service_fee").notNull().default(0),
+  homeServiceMinimumOrder: integer("home_service_minimum_order"),
 });
 
 export const productBrandsTable = pgTable("product_brands", {
@@ -361,6 +365,12 @@ export const appointmentsTable = pgTable("appointments", {
   endTime: text("end_time").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
   price: integer("price").notNull(),
+  treatmentLocation: text("treatment_location").notNull().default("salon"),
+  travelFee: integer("travel_fee").notNull().default(0),
+  treatmentAddressLine1: text("treatment_address_line_1"),
+  treatmentAddressCity: text("treatment_address_city"),
+  treatmentAddressPostalCode: text("treatment_address_postal_code"),
+  treatmentAddressDetails: text("treatment_address_details"),
   status: appointmentStatusEnum("status").notNull().default("pending"),
   notes: text("notes"),
   cancellationReason: text("cancellation_reason"),

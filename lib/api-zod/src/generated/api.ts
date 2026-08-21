@@ -527,11 +527,17 @@ export const getSalonResponseTwoTopServicesItemPriceMin = 0;
 export const getSalonResponseTwoTopServicesItemPromoPriceMin = 0;
 
 
+export const getSalonResponseTwoServicesItemHomeServiceFeeMin = 0;
+
+export const getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin = 0;
+
 export const getSalonResponseTwoReviewsItemRatingMax = 5;
 export const getSalonResponseTwoReviewsItemRatingMultipleOf = 1;
 
 export const getSalonResponseTwoReturnClientRateMin = 0;
 export const getSalonResponseTwoReturnClientRateMax = 100;
+
+export const getSalonResponseTwoHomeServiceRadiusKmMax = 100;
 
 
 
@@ -606,7 +612,10 @@ export const GetSalonResponse = zod.object({
   "tags": zod.array(zod.string()).optional(),
   "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(getSalonResponseTwoServicesItemHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin).nullable()
 })),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
@@ -618,7 +627,8 @@ export const GetSalonResponse = zod.object({
   "date": zod.coerce.date(),
   "serviceName": zod.string()
 })),
-  "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable()
+  "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable(),
+  "homeServiceRadiusKm": zod.number().min(1).max(getSalonResponseTwoHomeServiceRadiusKmMax)
 }))
 
 
@@ -684,6 +694,10 @@ export const ListMyAppointmentsQueryParams = zod.object({
   "scope": zod.enum(['upcoming', 'past', 'all']).default(listMyAppointmentsQueryScopeDefault)
 })
 
+export const listMyAppointmentsResponseTravelFeeMin = 0;
+
+
+
 export const ListMyAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -699,6 +713,14 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(listMyAppointmentsResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -720,6 +742,16 @@ export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseIt
  * @summary Create a booking
  */
 export const createAppointmentBodyStartTimeRegExp = new RegExp('^(?:[01][0-9]|2[0-3]):[0-5][0-9]$');
+export const createAppointmentBodyTreatmentAddressLine1Min = 3;
+export const createAppointmentBodyTreatmentAddressLine1Max = 200;
+
+export const createAppointmentBodyTreatmentAddressCityMin = 2;
+export const createAppointmentBodyTreatmentAddressCityMax = 100;
+
+export const createAppointmentBodyTreatmentAddressPostalCodeMax = 20;
+
+export const createAppointmentBodyTreatmentAddressDetailsMax = 300;
+
 
 
 export const CreateAppointmentBody = zod.object({
@@ -728,8 +760,19 @@ export const CreateAppointmentBody = zod.object({
   "employeeId": zod.string().nullish(),
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createAppointmentBodyStartTimeRegExp),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "treatmentLocation": zod.enum(['salon', 'home']).optional(),
+  "treatmentAddress": zod.object({
+  "line1": zod.string().min(createAppointmentBodyTreatmentAddressLine1Min).max(createAppointmentBodyTreatmentAddressLine1Max),
+  "city": zod.string().min(createAppointmentBodyTreatmentAddressCityMin).max(createAppointmentBodyTreatmentAddressCityMax),
+  "postalCode": zod.string().max(createAppointmentBodyTreatmentAddressPostalCodeMax).optional(),
+  "details": zod.string().max(createAppointmentBodyTreatmentAddressDetailsMax).optional()
+}).optional()
 })
+
+export const createAppointmentResponseTravelFeeMin = 0;
+
+
 
 export const CreateAppointmentResponse = zod.object({
   "id": zod.string(),
@@ -746,6 +789,14 @@ export const CreateAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(createAppointmentResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -776,6 +827,10 @@ export const UpdateAppointmentBody = zod.object({
   "notes": zod.string().optional()
 })
 
+export const updateAppointmentResponseTravelFeeMin = 0;
+
+
+
 export const UpdateAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -791,6 +846,14 @@ export const UpdateAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(updateAppointmentResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -818,6 +881,10 @@ export const CancelAppointmentBody = zod.object({
   "reason": zod.string().optional()
 })
 
+export const cancelAppointmentResponseTravelFeeMin = 0;
+
+
+
 export const CancelAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -833,6 +900,14 @@ export const CancelAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(cancelAppointmentResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -852,6 +927,10 @@ export const CancelAppointmentResponse = zod.object({
 /**
  * @summary Customer dashboard summary
  */
+export const getCustomerDashboardResponseUpcomingItemTravelFeeMin = 0;
+
+
+
 export const GetCustomerDashboardResponse = zod.object({
   "upcoming": zod.array(zod.object({
   "id": zod.string(),
@@ -868,6 +947,14 @@ export const GetCustomerDashboardResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(getCustomerDashboardResponseUpcomingItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1075,6 +1162,10 @@ export const DeleteCustomerSalonReviewResponse = zod.void()
 /**
  * @summary Salon dashboard summary
  */
+export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
+
+
+
 export const GetSalonDashboardResponse = zod.object({
   "salon": zod.object({
   "id": zod.string(),
@@ -1119,6 +1210,14 @@ export const GetSalonDashboardResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1156,6 +1255,10 @@ export const GetSalonDashboardResponse = zod.object({
 /**
  * @summary Get editable public profile settings for the active owned salon
  */
+export const getManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
+
+
+
 export const GetManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -1164,6 +1267,7 @@ export const GetManagedSalonProfileResponse = zod.object({
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
   "homeService": zod.boolean(),
+  "homeServiceRadiusKm": zod.number().min(1).max(getManagedSalonProfileResponseHomeServiceRadiusKmMax),
   "servesMen": zod.boolean(),
   "openSunday": zod.boolean()
 })
@@ -1172,13 +1276,22 @@ export const GetManagedSalonProfileResponse = zod.object({
 /**
  * @summary Update editable public profile settings for the active owned salon
  */
+export const updateManagedSalonProfileBodyHomeServiceRadiusKmMax = 100;
+
+
+
 export const UpdateManagedSalonProfileBody = zod.object({
   "videoUrl": zod.string().nullish(),
   "acceptsCards": zod.boolean().optional(),
   "instantBooking": zod.boolean().optional(),
   "homeService": zod.boolean().optional(),
+  "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileBodyHomeServiceRadiusKmMax).optional(),
   "servesMen": zod.boolean().optional()
 })
+
+export const updateManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
+
+
 
 export const UpdateManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
@@ -1188,6 +1301,7 @@ export const UpdateManagedSalonProfileResponse = zod.object({
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
   "homeService": zod.boolean(),
+  "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileResponseHomeServiceRadiusKmMax),
   "servesMen": zod.boolean(),
   "openSunday": zod.boolean()
 })
@@ -1201,6 +1315,10 @@ export const ListSalonAppointmentsQueryParams = zod.object({
   "to": zod.date().optional(),
   "status": zod.coerce.string().optional()
 })
+
+export const listSalonAppointmentsResponseTravelFeeMin = 0;
+
+
 
 export const ListSalonAppointmentsResponseItem = zod.object({
   "id": zod.string(),
@@ -1217,6 +1335,14 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(listSalonAppointmentsResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1259,6 +1385,10 @@ export const CreateSalonAppointmentBody = zod.object({
 }).optional()
 })
 
+export const createSalonAppointmentResponseTravelFeeMin = 0;
+
+
+
 export const CreateSalonAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -1274,6 +1404,14 @@ export const CreateSalonAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(createSalonAppointmentResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1352,6 +1490,10 @@ export const CreateSalonAppointmentSeriesBody = zod.object({
 }).optional()
 }))
 
+export const createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
+
+
+
 export const CreateSalonAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "totalAppointments": zod.number(),
@@ -1370,6 +1512,14 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1458,6 +1608,10 @@ export const MoveSalonAppointmentSeriesBody = zod.object({
   "startTime": zod.string().regex(moveSalonAppointmentSeriesBodyStartTimeRegExp).optional()
 })
 
+export const moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
+
+
+
 export const MoveSalonAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "movedAppointments": zod.number(),
@@ -1476,6 +1630,14 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1496,6 +1658,10 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
 /**
  * @summary List salon CRM customers
  */
+export const listSalonCustomersResponseNoShowCountMin = 0;
+
+
+
 export const ListSalonCustomersResponseItem = zod.object({
   "id": zod.string(),
   "firstName": zod.string(),
@@ -1504,6 +1670,7 @@ export const ListSalonCustomersResponseItem = zod.object({
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
   "visitCount": zod.number(),
+  "noShowCount": zod.number().min(listSalonCustomersResponseNoShowCountMin),
   "isRegistered": zod.boolean(),
   "series": zod.array(zod.object({
   "id": zod.string(),
@@ -1577,6 +1744,10 @@ export const CreateEmployeeAppointmentSeriesBody = zod.object({
 }).optional()
 }))
 
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
+
+
+
 export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "totalAppointments": zod.number(),
@@ -1595,6 +1766,14 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1623,6 +1802,10 @@ export const UpdateSalonCustomerBody = zod.object({
   "smsOptOut": zod.boolean()
 })
 
+export const updateSalonCustomerResponseNoShowCountMin = 0;
+
+
+
 export const UpdateSalonCustomerResponse = zod.object({
   "id": zod.string(),
   "firstName": zod.string(),
@@ -1631,6 +1814,7 @@ export const UpdateSalonCustomerResponse = zod.object({
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
   "visitCount": zod.number(),
+  "noShowCount": zod.number().min(updateSalonCustomerResponseNoShowCountMin),
   "isRegistered": zod.boolean(),
   "series": zod.array(zod.object({
   "id": zod.string(),
@@ -1655,6 +1839,10 @@ export const UpdateSalonAppointmentBody = zod.object({
   "notes": zod.string().optional()
 })
 
+export const updateSalonAppointmentResponseTravelFeeMin = 0;
+
+
+
 export const UpdateSalonAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -1670,6 +1858,14 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
   "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(updateSalonAppointmentResponseTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
   "seriesId": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
   "notes": zod.string().nullish(),
@@ -1689,6 +1885,12 @@ export const UpdateSalonAppointmentResponse = zod.object({
 /**
  * @summary List salon services
  */
+export const listSalonServicesResponseHomeServiceFeeMin = 0;
+
+export const listSalonServicesResponseHomeServiceMinimumOrderMin = 0;
+
+
+
 export const ListSalonServicesResponseItem = zod.object({
   "id": zod.string(),
   "category": zod.string(),
@@ -1700,7 +1902,10 @@ export const ListSalonServicesResponseItem = zod.object({
   "tags": zod.array(zod.string()).optional(),
   "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(listSalonServicesResponseHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(listSalonServicesResponseHomeServiceMinimumOrderMin).nullable()
 })
 export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem)
 
@@ -1713,6 +1918,10 @@ export const createSalonServiceBodyDurationMinutesMin = 5;
 
 export const createSalonServiceBodyPriceMin = 0;
 
+export const createSalonServiceBodyHomeServiceFeeMin = 0;
+
+export const createSalonServiceBodyHomeServiceMinimumOrderMin = 0;
+
 
 
 export const CreateSalonServiceBody = zod.object({
@@ -1723,8 +1932,17 @@ export const CreateSalonServiceBody = zod.object({
   "price": zod.number().min(createSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(createSalonServiceBodyHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(createSalonServiceBodyHomeServiceMinimumOrderMin).nullish()
 })
+
+export const createSalonServiceResponseHomeServiceFeeMin = 0;
+
+export const createSalonServiceResponseHomeServiceMinimumOrderMin = 0;
+
+
 
 export const CreateSalonServiceResponse = zod.object({
   "id": zod.string(),
@@ -1737,7 +1955,10 @@ export const CreateSalonServiceResponse = zod.object({
   "tags": zod.array(zod.string()).optional(),
   "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(createSalonServiceResponseHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(createSalonServiceResponseHomeServiceMinimumOrderMin).nullable()
 })
 
 
@@ -1753,6 +1974,10 @@ export const updateSalonServiceBodyDurationMinutesMin = 5;
 
 export const updateSalonServiceBodyPriceMin = 0;
 
+export const updateSalonServiceBodyHomeServiceFeeMin = 0;
+
+export const updateSalonServiceBodyHomeServiceMinimumOrderMin = 0;
+
 
 
 export const UpdateSalonServiceBody = zod.object({
@@ -1763,8 +1988,17 @@ export const UpdateSalonServiceBody = zod.object({
   "price": zod.number().min(updateSalonServiceBodyPriceMin),
   "promoPrice": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(updateSalonServiceBodyHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceBodyHomeServiceMinimumOrderMin).nullish()
 })
+
+export const updateSalonServiceResponseHomeServiceFeeMin = 0;
+
+export const updateSalonServiceResponseHomeServiceMinimumOrderMin = 0;
+
+
 
 export const UpdateSalonServiceResponse = zod.object({
   "id": zod.string(),
@@ -1777,7 +2011,10 @@ export const UpdateSalonServiceResponse = zod.object({
   "tags": zod.array(zod.string()).optional(),
   "packageTreatments": zod.number().nullish(),
   "imageUrl": zod.string(),
-  "active": zod.boolean()
+  "active": zod.boolean(),
+  "homeServiceAvailable": zod.boolean(),
+  "homeServiceFee": zod.number().min(updateSalonServiceResponseHomeServiceFeeMin),
+  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceResponseHomeServiceMinimumOrderMin).nullable()
 })
 
 

@@ -742,6 +742,7 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
 async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
+  treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
 }) {
   return db.transaction(async (tx) => {
     await lockAppointmentResources(tx, input.salonId, [{ date: input.date }]);
@@ -751,6 +752,9 @@ async function createAllocatedAppointment(input: {
     const [appointment] = await tx.insert(appointmentsTable).values({
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
       date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, status: input.status, notes: input.notes ?? null,
+      treatmentLocation: input.treatmentLocation ?? "salon", travelFee: input.travelFee ?? 0,
+      treatmentAddressLine1: input.treatmentAddress?.line1 ?? null, treatmentAddressCity: input.treatmentAddress?.city ?? null,
+      treatmentAddressPostalCode: input.treatmentAddress?.postalCode ?? null, treatmentAddressDetails: input.treatmentAddress?.details ?? null,
     }).returning();
     return { employee, appointment: appointment! };
   });
@@ -1404,7 +1408,7 @@ function card(
     popularServices: services.slice(0, 3).map((item) => item.name),
     startingPrice: services.length ? Math.min(...services.map((item) => item.promoPrice ?? item.price)) : 0,
     earliestSlot,
-    homeService: salon.homeService,
+    homeService: services.some((service) => service.homeServiceAvailable),
     featured: salon.featured,
     isVerified: salon.isVerified,
     topSalon: salon.topSalon,
@@ -1499,6 +1503,11 @@ function appointmentView(
     endTime: appointment.endTime,
     durationMinutes: appointment.durationMinutes,
     price: appointment.price,
+    treatmentLocation: appointment.treatmentLocation as "salon" | "home",
+    travelFee: appointment.travelFee,
+    treatmentAddress: appointment.treatmentLocation === "home" && appointment.treatmentAddressLine1 && appointment.treatmentAddressCity
+      ? { line1: appointment.treatmentAddressLine1, city: appointment.treatmentAddressCity, postalCode: appointment.treatmentAddressPostalCode, details: appointment.treatmentAddressDetails }
+      : null,
     seriesId: appointment.seriesId,
     status: appointment.status,
     notes: appointment.notes,
@@ -2353,13 +2362,14 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     email: salon.email,
     latitude: salon.latitude,
     longitude: salon.longitude,
+    homeServiceRadiusKm: salon.homeServiceRadiusKm,
     topServices,
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
     staff: staff.map((item) => {
       const serviceIds = employeeLinks.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
       return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
     }),
-    services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active })),
+    services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder })),
     returnClientRate,
     reviews: reviews.map((item) => {
       const reviewer = reviewUsersById.get(item.customerId);
@@ -2467,6 +2477,14 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, parsed.data.salonId))).limit(1);
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, parsed.data.salonId)).limit(1);
   if (!service || !salon) { res.status(404).json({ error: "Salon ili usluga nisu pronađeni." }); return; }
+  const treatmentLocation = parsed.data.treatmentLocation ?? "salon";
+  if (treatmentLocation === "home" && !service.homeServiceAvailable) { res.status(400).json({ error: "Ova usluga trenutno nije dostupna na vašoj adresi." }); return; }
+  if (treatmentLocation === "home" && (!parsed.data.treatmentAddress?.line1 || !parsed.data.treatmentAddress.city)) { res.status(400).json({ error: "Unesite adresu za dolazak." }); return; }
+  if (treatmentLocation === "home" && !user.phoneNormalized) { res.status(400).json({ error: "Potvrdite broj telefona SMS kodom pre zakazivanja dolaska na adresu." }); return; }
+  const basePrice = service.promoPrice ?? service.price;
+  if (treatmentLocation === "home" && service.homeServiceMinimumOrder !== null && basePrice < service.homeServiceMinimumOrder) {
+    res.status(400).json({ error: `Minimalna vrednost usluge za dolazak je ${service.homeServiceMinimumOrder} RSD.` }); return;
+  }
   const appointmentDate = calendarDate(parsed.data.date);
   if (appointmentDate < new Date().toISOString().slice(0, 10)) {
     res.status(400).json({ error: "Termin mora biti zakazan za današnji ili budući datum." });
@@ -2481,8 +2499,11 @@ router.post("/appointments", async (req, res): Promise<void> => {
   const allocation = await createAllocatedAppointment({
     salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
     date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
-    price: service.promoPrice ?? service.price, status: salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
+    price: basePrice + (treatmentLocation === "home" ? service.homeServiceFee : 0),
+    status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
     preferredEmployeeId: parsed.data.employeeId,
+    treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
+    treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
   });
   if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
   const { employee, appointment } = allocation;
@@ -2491,7 +2512,7 @@ router.post("/appointments", async (req, res): Promise<void> => {
     type: "appointment_confirmation", phone: user.phone, smsOptOut: crmContact?.smsOptOut,
     text: appointment.status === "confirmed"
       ? `LUMERA: termin u salonu ${salon.name} je potvrđen za ${calendarDate(appointment.date)} u ${appointment.startTime}.`
-      : `LUMERA: zahtev za termin u salonu ${salon.name} je primljen za ${calendarDate(appointment.date)} u ${appointment.startTime}. Salon će ga potvrditi.`,
+      : `LUMERA: zahtev za ${appointment.treatmentLocation === "home" ? "dolazak na adresu" : "termin"} u salonu ${salon.name} je primljen za ${calendarDate(appointment.date)} u ${appointment.startTime}. Salon će ga potvrditi.`,
   });
   await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
   const response = appointmentView(appointment, salon, service, user, employee);
@@ -2813,6 +2834,7 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     acceptsCards: salon.acceptsCards,
     instantBooking: salon.instantBooking,
     homeService: salon.homeService,
+    homeServiceRadiusKm: salon.homeServiceRadiusKm,
     servesMen: salon.servesMen,
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
       .where(and(eq(salonHoursTable.salonId, salon.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
@@ -2829,6 +2851,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
   if (parsed.data.homeService !== undefined) updates.homeService = parsed.data.homeService;
+  if (parsed.data.homeServiceRadiusKm !== undefined) updates.homeServiceRadiusKm = Math.max(1, Math.min(100, Math.round(parsed.data.homeServiceRadiusKm)));
   if (parsed.data.servesMen !== undefined) {
     updates.servesMen = parsed.data.servesMen;
     updates.servesMenManuallySet = true;
@@ -2846,6 +2869,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     acceptsCards: updated!.acceptsCards,
     instantBooking: updated!.instantBooking,
     homeService: updated!.homeService,
+    homeServiceRadiusKm: updated!.homeServiceRadiusKm,
     servesMen: updated!.servesMen,
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
       .where(and(eq(salonHoursTable.salonId, updated!.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
@@ -2893,7 +2917,8 @@ router.get("/salon/customers", async (req, res): Promise<void> => {
   ]);
   res.json(ListSalonCustomersResponse.parse(contacts.map((contact) => ({
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
-    smsOptOut: contact.smsOptOut, visitCount: appointments.filter((item) => item.salonCustomerId === contact.id).length, isRegistered: Boolean(contact.userId),
+    smsOptOut: contact.smsOptOut, visitCount: appointments.filter((item) => item.salonCustomerId === contact.id).length,
+    noShowCount: appointments.filter((item) => item.salonCustomerId === contact.id && item.status === "no-show").length, isRegistered: Boolean(contact.userId),
     series: series.filter((item) => item.salonCustomerId === contact.id).map((item) => {
       const members = appointments.filter((appointment) => appointment.seriesId === item.id);
       return {
@@ -2916,7 +2941,7 @@ router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => 
   const appointments = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(eq(appointmentsTable.salonCustomerId, contact.id));
   res.json(UpdateSalonCustomerResponse.parse({
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
-    smsOptOut: contact.smsOptOut, visitCount: appointments.length, isRegistered: Boolean(contact.userId),
+    smsOptOut: contact.smsOptOut, visitCount: appointments.length, noShowCount: (await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(eq(appointmentsTable.salonCustomerId, contact.id), eq(appointmentsTable.status, "no-show")))).length, isRegistered: Boolean(contact.userId),
   }));
 });
 
@@ -3218,7 +3243,7 @@ router.get("/salon/services", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
   const services = await db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id));
-  res.json(ListSalonServicesResponse.parse(services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active }))));
+  res.json(ListSalonServicesResponse.parse(services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder }))));
 });
 
 router.post("/salon/services", async (req, res): Promise<void> => {
@@ -3227,8 +3252,9 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
-  const [service] = await db.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null }).returning();
-  res.status(201).json(CreateSalonServiceResponse.parse({ id: service!.id, category: service!.categoryName, name: service!.name, description: service!.description, durationMinutes: service!.durationMinutes, price: service!.price, promoPrice: service!.promoPrice, imageUrl: service!.imageUrl, active: service!.active }));
+  const [service] = await db.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
+  await db.update(salonsTable).set({ homeService: service!.homeServiceAvailable }).where(eq(salonsTable.id, salon.id));
+  res.status(201).json(CreateSalonServiceResponse.parse({ id: service!.id, category: service!.categoryName, name: service!.name, description: service!.description, durationMinutes: service!.durationMinutes, price: service!.price, promoPrice: service!.promoPrice, imageUrl: service!.imageUrl, active: service!.active, homeServiceAvailable: service!.homeServiceAvailable, homeServiceFee: service!.homeServiceFee, homeServiceMinimumOrder: service!.homeServiceMinimumOrder }));
 });
 
 router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
@@ -3239,9 +3265,12 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
     categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
     durationMinutes: parsed.data.durationMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
     imageUrl: parsed.data.imageUrl, active: parsed.data.active,
+    homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
   }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
-  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active }));
+  const remainingMobileServices = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true), eq(servicesTable.homeServiceAvailable, true))).limit(1);
+  await db.update(salonsTable).set({ homeService: remainingMobileServices.length > 0 }).where(eq(salonsTable.id, access.salon.id));
+  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
 });
 
 router.get("/salon/employees", async (req, res): Promise<void> => {

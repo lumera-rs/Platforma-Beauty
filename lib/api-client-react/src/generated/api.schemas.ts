@@ -320,6 +320,14 @@ export interface Service {
   packageTreatments?: number | null;
   imageUrl: string;
   active: boolean;
+  homeServiceAvailable: boolean;
+  /** @minimum 0 */
+  homeServiceFee: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  homeServiceMinimumOrder: number | null;
 }
 
 export interface Review {
@@ -360,6 +368,11 @@ export type SalonProfile = SalonCard & ({
      * @nullable
      */
   returnClientRate: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  homeServiceRadiusKm: number;
 });
 
 export interface SalonProfileMedia {
@@ -371,6 +384,11 @@ export interface SalonProfileMedia {
   acceptsCards: boolean;
   instantBooking: boolean;
   homeService: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  homeServiceRadiusKm: number;
   servesMen: boolean;
   openSunday: boolean;
 }
@@ -381,6 +399,11 @@ export interface SalonProfileMediaUpdate {
   acceptsCards?: boolean;
   instantBooking?: boolean;
   homeService?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  homeServiceRadiusKm?: number;
   servesMen?: boolean;
 }
 
@@ -450,6 +473,26 @@ export interface SalonFirstAvailable {
   horizonDays: number;
   services: FirstAvailableServiceSlot[];
 }
+
+export type AppointmentTreatmentLocation = typeof AppointmentTreatmentLocation[keyof typeof AppointmentTreatmentLocation];
+
+
+export const AppointmentTreatmentLocation = {
+  salon: 'salon',
+  home: 'home',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AppointmentTreatmentAddress = {
+  line1: string;
+  city: string;
+  /** @nullable */
+  postalCode: string | null;
+  /** @nullable */
+  details: string | null;
+} | null;
 
 export type AppointmentStatus = typeof AppointmentStatus[keyof typeof AppointmentStatus];
 
@@ -528,6 +571,11 @@ export interface Appointment {
   endTime: string;
   durationMinutes: number;
   price: number;
+  treatmentLocation: AppointmentTreatmentLocation;
+  /** @minimum 0 */
+  travelFee: number;
+  /** @nullable */
+  treatmentAddress: AppointmentTreatmentAddress;
   /** @nullable */
   seriesId?: string | null;
   status: AppointmentStatus;
@@ -536,6 +584,31 @@ export interface Appointment {
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
 }
+
+export type AppointmentInputTreatmentLocation = typeof AppointmentInputTreatmentLocation[keyof typeof AppointmentInputTreatmentLocation];
+
+
+export const AppointmentInputTreatmentLocation = {
+  salon: 'salon',
+  home: 'home',
+} as const;
+
+export type AppointmentInputTreatmentAddress = {
+  /**
+     * @minLength 3
+     * @maxLength 200
+     */
+  line1: string;
+  /**
+     * @minLength 2
+     * @maxLength 100
+     */
+  city: string;
+  /** @maxLength 20 */
+  postalCode?: string;
+  /** @maxLength 300 */
+  details?: string;
+};
 
 export interface AppointmentInput {
   salonId: string;
@@ -546,6 +619,8 @@ export interface AppointmentInput {
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
+  treatmentLocation?: AppointmentInputTreatmentLocation;
+  treatmentAddress?: AppointmentInputTreatmentAddress;
 }
 
 export interface AppointmentUpdate {
@@ -592,6 +667,8 @@ export interface SalonCustomer {
   phone: string | null;
   smsOptOut: boolean;
   visitCount: number;
+  /** @minimum 0 */
+  noShowCount: number;
   isRegistered: boolean;
   series?: CustomerAppointmentSeries[];
 }
@@ -817,6 +894,14 @@ export interface ServiceInput {
   promoPrice?: number | null;
   imageUrl: string;
   active: boolean;
+  homeServiceAvailable: boolean;
+  /** @minimum 0 */
+  homeServiceFee: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  homeServiceMinimumOrder?: number | null;
 }
 
 export type ProductCategorySubcategoriesItem = {

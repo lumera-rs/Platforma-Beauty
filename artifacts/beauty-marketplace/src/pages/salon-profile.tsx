@@ -23,7 +23,7 @@ import {
   type FirstAvailableServiceSlot
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
-import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame } from "lucide-react";
+import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
@@ -36,6 +36,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -84,6 +85,14 @@ export default function SalonProfile() {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [bookingStatus, setBookingStatus] = useState<"pending" | "confirmed" | undefined>();
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [treatmentLocation, setTreatmentLocation] = useState<"salon" | "home">("salon");
+  const [homeAddress, setHomeAddress] = useState({ line1: "", city: "", postalCode: "", details: "" });
+  const [verificationPhone, setVerificationPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [phoneVerifiedForBooking, setPhoneVerifiedForBooking] = useState(false);
+  const [phoneCodeRequested, setPhoneCodeRequested] = useState(false);
+  const [isVerifyingPhone, setIsVerifyingPhone] = useState(false);
   const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState("");
@@ -342,7 +351,7 @@ export default function SalonProfile() {
     setFavoriteEmployeeId(employeeId); selectEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
   };
 
-  const handleBook = () => {
+  const submitBooking = (locationType: "salon" | "home") => {
     if (!user) {
       toast.error("Prijava obavezna", { description: "Morate biti prijavljeni da biste zakazali termin." });
       setLocation("/prijava");
@@ -357,7 +366,11 @@ export default function SalonProfile() {
         serviceId: selectedService,
         date: dateStr,
         startTime: selectedSlot.start,
-        employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined
+        employeeId: employeeSelection === "any" ? undefined : selectedEmployee ?? undefined,
+        treatmentLocation: locationType,
+        treatmentAddress: locationType === "home"
+          ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
+          : undefined,
       }
     }, {
       onSuccess: (response) => {
@@ -365,12 +378,52 @@ export default function SalonProfile() {
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
         clearDraft();
         setBookingStatus(response.status === "confirmed" ? "confirmed" : "pending");
+        setLocationDialogOpen(false);
         setIsSuccess(true);
       },
       onError: () => {
         toast.error("Greška", { description: "Došlo je do greške prilikom zakazivanja." });
       }
     });
+  };
+
+  const handleBook = () => {
+    if (!user) { setLocation("/prijava"); return; }
+    const service = salonData?.services.find((item) => item.id === selectedService);
+    if (service?.homeServiceAvailable) {
+      setTreatmentLocation("salon");
+      setLocationDialogOpen(true);
+      return;
+    }
+    submitBooking("salon");
+  };
+
+  const requestPhoneCode = async () => {
+    if (!verificationPhone.trim()) { toast.error("Unesite broj mobilnog telefona."); return; }
+    setIsVerifyingPhone(true);
+    try {
+      const response = await fetch("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setPhoneCodeRequested(true);
+      toast.success("SMS kod je poslat.");
+    } catch (error) {
+      toast.error("Kod nije poslat.", { description: error instanceof Error ? error.message : "Pokušajte ponovo." });
+    } finally { setIsVerifyingPhone(false); }
+  };
+
+  const confirmPhoneCode = async () => {
+    if (!verificationCode.trim()) { toast.error("Unesite kod iz SMS poruke."); return; }
+    setIsVerifyingPhone(true);
+    try {
+      const response = await fetch("/api/auth/phone-verification/confirm", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: verificationPhone, code: verificationCode }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error);
+      setPhoneVerifiedForBooking(true);
+      toast.success("Broj telefona je potvrđen.");
+    } catch (error) {
+      toast.error("Broj nije potvrđen.", { description: error instanceof Error ? error.message : "Pokušajte ponovo." });
+    } finally { setIsVerifyingPhone(false); }
   };
 
   const handleSelectService = (serviceId: string) => {
@@ -1005,13 +1058,13 @@ export default function SalonProfile() {
       
       {/* Mobile Booking Elements */}
       <div className="lg:hidden">
-        <MobileBookingTrigger 
+      <MobileBookingTrigger 
           salon={salonData} 
           selectedService={selectedService} 
           selectedSlot={selectedSlot} 
           onOpen={() => setIsMobileDrawerOpen(true)} 
         />
-        <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)}>
+      <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)}>
            <BookingWidget 
               salon={salonData}
               user={user}
@@ -1044,7 +1097,44 @@ export default function SalonProfile() {
               onCloseMobile={() => setIsMobileDrawerOpen(false)}
               className="h-full border-0 rounded-none shadow-none"
             />
-        </MobileBookingDrawer>
+      </MobileBookingDrawer>
+      <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Gde želite tretman?</DialogTitle>
+            <DialogDescription>Izaberite lokaciju pre slanja zahteva za termin.</DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const service = salonData.services.find((item) => item.id === selectedService);
+            const basePrice = service?.promoPrice ?? service?.price ?? 0;
+            const travelFee = service?.homeServiceFee ?? 0;
+            const needsPhoneVerification = !user?.phone && !phoneVerifiedForBooking;
+            return <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setTreatmentLocation("salon")} className={`rounded-xl border p-4 text-left transition-colors ${treatmentLocation === "salon" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"}`}>
+                  <MapPin className="mb-2 h-5 w-5 text-primary" /><p className="font-semibold">U salonu</p><p className="mt-1 text-xs text-muted-foreground">Tretman na adresi salona.</p>
+                </button>
+                <button type="button" onClick={() => setTreatmentLocation("home")} className={`rounded-xl border p-4 text-left transition-colors ${treatmentLocation === "home" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:border-primary/40"}`}>
+                  <House className="mb-2 h-5 w-5 text-primary" /><p className="font-semibold">Na mojoj adresi</p><p className="mt-1 text-xs text-muted-foreground">Salon potvrđuje zahtev.</p>
+                </button>
+              </div>
+              {treatmentLocation === "home" ? <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+                <div className="flex gap-2 text-sm"><MapPin className="mt-0.5 h-4 w-4 text-primary" /><p>Salon pokriva do <strong>{salonData.homeServiceRadiusKm} km</strong>. Adresa se proverava pri potvrdi termina i nije javna.</p></div>
+                <div className="space-y-2"><Label htmlFor="home-address">Ulica i broj</Label><Input id="home-address" value={homeAddress.line1} onChange={(event) => setHomeAddress({ ...homeAddress, line1: event.target.value })} placeholder="npr. Knez Mihailova 10" /></div>
+                <div className="grid grid-cols-2 gap-3"><div className="space-y-2"><Label htmlFor="home-city">Grad</Label><Input id="home-city" value={homeAddress.city} onChange={(event) => setHomeAddress({ ...homeAddress, city: event.target.value })} placeholder={salonData.city} /></div><div className="space-y-2"><Label htmlFor="home-postal">Poštanski broj</Label><Input id="home-postal" value={homeAddress.postalCode} onChange={(event) => setHomeAddress({ ...homeAddress, postalCode: event.target.value })} /></div></div>
+                <div className="space-y-2"><Label htmlFor="home-details">Sprat, interfon ili napomena <span className="text-muted-foreground">(opciono)</span></Label><Textarea id="home-details" value={homeAddress.details} onChange={(event) => setHomeAddress({ ...homeAddress, details: event.target.value })} /></div>
+                {needsPhoneVerification ? <div className="space-y-3 rounded-lg border border-primary/20 bg-background p-3">
+                  <div className="flex gap-2 text-sm"><Smartphone className="mt-0.5 h-4 w-4 text-primary" /><p>Potvrdite broj telefona SMS kodom pre slanja zahteva.</p></div>
+                  <div className="flex gap-2"><Input value={verificationPhone} onChange={(event) => setVerificationPhone(event.target.value)} placeholder="+381 6x..." /><Button type="button" variant="outline" onClick={requestPhoneCode} disabled={isVerifyingPhone}>Pošalji kod</Button></div>
+                  {phoneCodeRequested ? <div className="flex gap-2"><Input value={verificationCode} onChange={(event) => setVerificationCode(event.target.value)} placeholder="Šestocifreni kod" /><Button type="button" onClick={confirmPhoneCode} disabled={isVerifyingPhone}>{isVerifyingPhone ? <Loader2 className="h-4 w-4 animate-spin" /> : "Potvrdi"}</Button></div> : null}
+                </div> : null}
+              </div> : null}
+              <div className="rounded-xl bg-primary/5 p-4 text-sm"><div className="flex justify-between"><span>Usluga</span><strong>{basePrice} RSD</strong></div>{treatmentLocation === "home" ? <div className="mt-2 flex justify-between"><span>Naknada za dolazak</span><strong>{travelFee} RSD</strong></div> : null}<div className="mt-3 flex justify-between border-t pt-3 text-base"><span>Ukupno</span><strong>{basePrice + (treatmentLocation === "home" ? travelFee : 0)} RSD</strong></div>{treatmentLocation === "home" && service?.homeServiceMinimumOrder ? <p className="mt-2 text-xs text-muted-foreground">Minimalna vrednost usluge za dolazak: {service.homeServiceMinimumOrder} RSD.</p> : null}</div>
+              <Button className="w-full" onClick={() => submitBooking(treatmentLocation)} disabled={createAppointment.isPending || (treatmentLocation === "home" && (!homeAddress.line1.trim() || !homeAddress.city.trim() || needsPhoneVerification))}>{createAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{treatmentLocation === "home" ? "Pošalji zahtev za dolazak" : "Potvrdi rezervaciju"}</Button>
+            </div>;
+          })()}
+        </DialogContent>
+      </Dialog>
       </div>
 
       <Dialog open={isReviewDialogOpen} onOpenChange={(open) => !open && setIsReviewDialogOpen(false)}>

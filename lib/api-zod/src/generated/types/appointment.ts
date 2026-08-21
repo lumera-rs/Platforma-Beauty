@@ -7,6 +7,8 @@
  */
 import type { AppointmentRescheduledConfirmation } from './appointmentRescheduledConfirmation';
 import type { AppointmentStatus } from './appointmentStatus';
+import type { AppointmentTreatmentAddress } from './appointmentTreatmentAddress';
+import type { AppointmentTreatmentLocation } from './appointmentTreatmentLocation';
 
 export interface Appointment {
   id: string;
@@ -24,6 +26,11 @@ export interface Appointment {
   endTime: string;
   durationMinutes: number;
   price: number;
+  treatmentLocation: AppointmentTreatmentLocation;
+  /** @minimum 0 */
+  travelFee: number;
+  /** @nullable */
+  treatmentAddress: AppointmentTreatmentAddress;
   /** @nullable */
   seriesId?: string | null;
   status: AppointmentStatus;

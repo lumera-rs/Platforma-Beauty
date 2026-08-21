@@ -2540,7 +2540,8 @@ components:
               type: array
               items: { $ref: "#/components/schemas/Review" }
             returnClientRate: { type: ["number", "null"], minimum: 0, maximum: 100 }
-          required: [gallery, videoUrl, description, phone, email, latitude, longitude, topServices, hours, staff, services, reviews, returnClientRate]
+            homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
+          required: [gallery, videoUrl, description, phone, email, latitude, longitude, topServices, hours, staff, services, reviews, returnClientRate, homeServiceRadiusKm]
     PopularSalonService:
       type: object
       properties:
@@ -2562,9 +2563,10 @@ components:
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
         homeService: { type: boolean }
+        homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
         openSunday: { type: boolean }
-      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, servesMen, openSunday]
+      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday]
     SalonProfileMediaUpdate:
       type: object
       properties:
@@ -2572,6 +2574,7 @@ components:
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
         homeService: { type: boolean }
+        homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
     OpeningHour:
       type: object
@@ -2613,7 +2616,10 @@ components:
         packageTreatments: { type: ["number", "null"] }
         imageUrl: { type: string }
         active: { type: boolean }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active]
+        homeServiceAvailable: { type: boolean }
+        homeServiceFee: { type: number, minimum: 0 }
+        homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
+      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder]
     Review:
       type: object
       properties:
@@ -2699,6 +2705,16 @@ components:
         endTime: { type: string }
         durationMinutes: { type: number }
         price: { type: number }
+        treatmentLocation: { type: string, enum: [salon, home] }
+        travelFee: { type: number, minimum: 0 }
+        treatmentAddress:
+          type: ["object", "null"]
+          properties:
+            line1: { type: string }
+            city: { type: string }
+            postalCode: { type: ["string", "null"] }
+            details: { type: ["string", "null"] }
+          required: [line1, city, postalCode, details]
         seriesId: { type: ["string", "null"] }
         status:
           type: string
@@ -2720,7 +2736,7 @@ components:
                 nextRetryAt: { type: ["string", "null"], format: date-time }
               required: [status]
           required: [sms, email]
-      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, status]
+      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status]
     AppointmentInput:
       type: object
       properties:
@@ -2730,6 +2746,15 @@ components:
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' }
         notes: { type: string }
+        treatmentLocation: { type: string, enum: [salon, home] }
+        treatmentAddress:
+          type: object
+          properties:
+            line1: { type: string, minLength: 3, maxLength: 200 }
+            city: { type: string, minLength: 2, maxLength: 100 }
+            postalCode: { type: string, maxLength: 20 }
+            details: { type: string, maxLength: 300 }
+          required: [line1, city]
       required: [salonId, serviceId, date, startTime]
     AppointmentUpdate:
       type: object
@@ -2756,11 +2781,12 @@ components:
         phone: { type: ["string", "null"] }
         smsOptOut: { type: boolean }
         visitCount: { type: number }
+        noShowCount: { type: number, minimum: 0 }
         isRegistered: { type: boolean }
         series:
           type: array
           items: { $ref: "#/components/schemas/CustomerAppointmentSeries" }
-      required: [id, firstName, lastName, phone, smsOptOut, visitCount, isRegistered]
+      required: [id, firstName, lastName, phone, smsOptOut, visitCount, noShowCount, isRegistered]
     AppointmentSlot:
       type: object
       properties:
@@ -2962,7 +2988,10 @@ components:
         promoPrice: { type: ["number", "null"] }
         imageUrl: { type: string }
         active: { type: boolean }
-      required: [category, name, description, durationMinutes, price, imageUrl, active]
+        homeServiceAvailable: { type: boolean }
+        homeServiceFee: { type: number, minimum: 0 }
+        homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
+      required: [category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee]
     ProductCategory:
       type: object
       properties:
