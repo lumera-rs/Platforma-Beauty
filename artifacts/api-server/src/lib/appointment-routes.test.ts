@@ -333,6 +333,21 @@ async function run(): Promise<void> {
       "the salon appointment update response date",
     );
 
+    const salonSeriesPreview = await request(baseUrl, ownerSession, "/salon/appointment-series/preview", "POST", {
+      serviceId: service!.id,
+      employeeId: employee!.id,
+      slots: [{ date: salonSeriesDate, startTime: "12:00" }],
+    });
+    assert.equal(salonSeriesPreview.status, 200, "a salon owner must be able to preview an appointment series");
+    const salonPreviewSlots = (salonSeriesPreview.body as { slots: Array<{ date: string }> }).slots;
+    for (const slot of salonPreviewSlots) {
+      assertCalendarDate(
+        slot.date,
+        salonSeriesDate,
+        "the salon appointment-series availability preview date",
+      );
+    }
+
     const salonSeriesBooking = await request(baseUrl, ownerSession, "/salon/appointment-series", "POST", {
       serviceId: service!.id,
       salonCustomerId: contact!.id,
@@ -349,6 +364,30 @@ async function run(): Promise<void> {
         appointment.date,
         salonSeriesDate,
         "the salon appointment-series creation response date",
+      );
+    }
+
+    const salonSeriesMovePreview = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/appointment-series/${createdSalonSeries.id}/move/preview`,
+      "POST",
+      { dayOffset: 1 },
+    );
+    assert.equal(salonSeriesMovePreview.status, 200, "a salon owner must be able to preview an appointment-series move");
+    const salonMovePreviewSlots = (salonSeriesMovePreview.body as {
+      slots: Array<{ currentDate: string; date: string }>;
+    }).slots;
+    for (const slot of salonMovePreviewSlots) {
+      assertCalendarDate(
+        slot.currentDate,
+        salonSeriesDate,
+        "the salon appointment-series move preview current date",
+      );
+      assertCalendarDate(
+        slot.date,
+        movedSalonSeriesDate,
+        "the salon appointment-series move preview proposed date",
       );
     }
 
@@ -383,6 +422,20 @@ async function run(): Promise<void> {
         appointment.date,
         employeeSeriesDate,
         "the employee appointment-series creation response date",
+      );
+    }
+
+    const employeeSeriesPreview = await request(baseUrl, employeeSession, "/employee/appointment-series/preview", "POST", {
+      serviceId: service!.id,
+      slots: [{ date: employeeSeriesDate, startTime: "13:00" }],
+    });
+    assert.equal(employeeSeriesPreview.status, 200, "an employee must be able to preview an appointment series");
+    const employeePreviewSlots = (employeeSeriesPreview.body as { slots: Array<{ date: string }> }).slots;
+    for (const slot of employeePreviewSlots) {
+      assertCalendarDate(
+        slot.date,
+        employeeSeriesDate,
+        "the employee appointment-series availability preview date",
       );
     }
 

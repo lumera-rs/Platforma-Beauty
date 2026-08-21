@@ -2798,7 +2798,13 @@ router.post("/salon/appointment-series/preview", async (req, res): Promise<void>
   }
   try {
     const slots = prepareSeriesSlots(parsed.data.slots, service.durationMinutes);
-    res.json(PreviewSalonAppointmentSeriesResponse.parse(await previewSeriesSlots(access.salon.id, service.id, slots, parsed.data.employeeId)));
+    const response = PreviewSalonAppointmentSeriesResponse.parse(
+      await previewSeriesSlots(access.salon.id, service.id, slots, parsed.data.employeeId),
+    );
+    res.json({
+      ...response,
+      slots: response.slots.map((slot) => ({ ...slot, date: calendarDate(slot.date) })),
+    });
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Pregled serije nije uspeo.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
@@ -2905,7 +2911,17 @@ router.post("/salon/appointment-series/:seriesId/move/preview", async (req, res)
   if (!appointments.length) { res.status(409).json({ error: "U ovoj seriji nema budućih nezavršenih termina za pomeranje." }); return; }
   try {
     const slots = prepareSeriesMoveSlots(appointments, body.data);
-    res.json(PreviewSalonAppointmentSeriesMoveResponse.parse(await previewSeriesMove(db, access.salon.id, slots)));
+    const response = PreviewSalonAppointmentSeriesMoveResponse.parse(
+      await previewSeriesMove(db, access.salon.id, slots),
+    );
+    res.json({
+      ...response,
+      slots: response.slots.map((slot) => ({
+        ...slot,
+        currentDate: calendarDate(slot.currentDate),
+        date: calendarDate(slot.date),
+      })),
+    });
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Pregled pomeranja serije nije uspeo.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
@@ -3321,7 +3337,13 @@ router.post("/employee/appointment-series/preview", async (req, res): Promise<vo
   if (!assigned[0] || !service[0]) { res.status(403).json({ error: "Možete zakazati samo svoje dodeljene usluge." }); return; }
   try {
     const slots = prepareSeriesSlots(parsed.data.slots, service[0].durationMinutes);
-    res.json(PreviewEmployeeAppointmentSeriesResponse.parse(await previewSeriesSlots(access.salon.id, service[0].id, slots, access.employee.id)));
+    const response = PreviewEmployeeAppointmentSeriesResponse.parse(
+      await previewSeriesSlots(access.salon.id, service[0].id, slots, access.employee.id),
+    );
+    res.json({
+      ...response,
+      slots: response.slots.map((slot) => ({ ...slot, date: calendarDate(slot.date) })),
+    });
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Pregled serije nije uspeo.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
