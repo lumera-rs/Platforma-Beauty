@@ -13,7 +13,8 @@
     "test:crm-backfill": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/seed.test.ts",
     "test:appointment-concurrency": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts",
     "test:rescheduled-confirmations": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/rescheduled-confirmation-retries.test.ts",
-    "test:booking-journey": "pnpm --filter @workspace/scripts run test:booking-journey"
+    "test:booking-journey": "pnpm --filter @workspace/scripts run test:booking-journey",
+    "test:review-photo-privacy": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/review-photo-privacy.test.ts && pnpm --filter @workspace/scripts run test:review-photo-privacy"
   },
   "private": true,
   "dependencies": {

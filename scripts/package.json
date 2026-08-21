@@ -8,7 +8,8 @@
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:booking-journey": "playwright test"
+    "test:booking-journey": "playwright test",
+    "test:review-photo-privacy": "playwright test browser/review-photo-privacy.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
