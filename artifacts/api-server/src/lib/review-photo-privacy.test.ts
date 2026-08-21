@@ -23,7 +23,7 @@ const avatarUrl = `https://example.test/private-avatar-${suffix}.jpg`;
 async function request(
   baseUrl: string,
   path: string,
-  options: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: Record<string, unknown>; cookie?: string } = {},
+  options: { method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; body?: Record<string, unknown>; cookie?: string } = {},
 ) {
   return fetch(`${baseUrl}/api${path}`, {
     method: options.method ?? "GET",
@@ -33,6 +33,37 @@ async function request(
     },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
+}
+
+async function assertPublicReviewMetricsMatchVisibleReviews(
+  baseUrl: string,
+  salon: { id: string; slug: string },
+) {
+  const [response, visibleReviews] = await Promise.all([
+    request(baseUrl, `/salons/${salon.slug}`),
+    db.select().from(reviewsTable).where(and(
+      eq(reviewsTable.salonId, salon.id),
+      eq(reviewsTable.visible, true),
+    )),
+  ]);
+  assert.equal(response.status, 200, "The public salon response must remain readable after concurrent review changes.");
+  const publicSalon = await response.json() as {
+    rating: number;
+    reviewCount: number;
+    reviews: Array<{ id: string }>;
+  };
+  const expectedRating = visibleReviews.length
+    ? Math.round(visibleReviews.reduce((total, review) => total + review.rating, 0) / visibleReviews.length * 10) / 10
+    : 0;
+
+  assert.equal(publicSalon.reviewCount, visibleReviews.length, "The public review count must equal the number of visible reviews.");
+  assert.equal(publicSalon.rating, expectedRating, "The public rating must equal the average of visible reviews.");
+  assert.deepEqual(
+    publicSalon.reviews.map((review) => review.id).sort(),
+    visibleReviews.map((review) => review.id).sort(),
+    "The public review list must contain exactly the visible reviews.",
+  );
+  return publicSalon;
 }
 
 async function run(): Promise<void> {
@@ -72,6 +103,17 @@ async function run(): Promise<void> {
     }).returning();
     assert.ok(otherCustomer, "Review deletion regression test must create another customer.");
     createdUserIds.push(otherCustomer.id);
+
+    const [moderator] = await db.insert(usersTable).values({
+      firstName: "Mina",
+      lastName: "Moderator",
+      email: `moderator-${customerEmail}`,
+      passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    }).returning();
+    assert.ok(moderator, "Review aggregate regression test must create its moderator.");
+    createdUserIds.push(moderator.id);
 
     const [salon] = await db.insert(salonsTable).values({
       ownerId: owner.id,
@@ -232,14 +274,15 @@ async function run(): Promise<void> {
     assert.ok(eligibleAppointment, "The customer needs a completed visit after deleting their review.");
     appointmentId = eligibleAppointment.id;
 
-    await db.insert(reviewsTable).values({
+    const [moderatedReview] = await db.insert(reviewsTable).values({
       salonId: salon.id,
       customerId: otherCustomer.id,
       serviceName: service.name,
       rating: 2,
       text: "Tuđa recenzija mora ostati sačuvana.",
       showProfilePhoto: false,
-    });
+    }).returning();
+    assert.ok(moderatedReview, "Review aggregate regression test must create a review for moderation.");
 
     const deleteOwnReview = await request(baseUrl, `/customer/reviews/${salon.id}`, {
       method: "DELETE",
@@ -271,7 +314,61 @@ async function run(): Promise<void> {
 
     const reviewsAfterDelete = await db.select({ customerId: reviewsTable.customerId }).from(reviewsTable).where(eq(reviewsTable.salonId, salon.id));
     assert.deepEqual(reviewsAfterDelete.map((review) => review.customerId), [otherCustomer.id], "The delete endpoint must only remove the signed-in customer's review.");
-    console.log("Review photo privacy regression passed.");
+
+    const moderatorLogin = await request(baseUrl, "/auth/login", {
+      method: "POST",
+      body: { email: `moderator-${customerEmail}`, password: customerPassword },
+    });
+    assert.equal(moderatorLogin.status, 200, "The fixture moderator must be able to sign in through the real API.");
+    const moderatorSession = moderatorLogin.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(moderatorSession?.startsWith(`${sessionCookieName}=`), "Moderator login must establish a session.");
+
+    const [customerCreate, moderatorHide] = await Promise.all([
+      request(baseUrl, `/customer/reviews/${salon.id}`, {
+        method: "PUT",
+        cookie: session,
+        body: {
+          serviceName: service.name,
+          rating: 5,
+          text: "Nova recenzija dok moderator skriva drugu.",
+          showProfilePhoto: false,
+        },
+      }),
+      request(baseUrl, `/admin/reviews/${moderatedReview.id}`, {
+        method: "PATCH",
+        cookie: moderatorSession,
+        body: { visible: false },
+      }),
+    ]);
+    assert.equal(customerCreate.status, 200, "A customer review must save while a moderator hides another review.");
+    assert.equal(moderatorHide.status, 200, "A moderator must be able to hide a review while a customer submits another.");
+
+    const afterHide = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
+    assert.equal(afterHide.reviews.some((review) => review.id === moderatedReview.id), false, "The concurrently hidden review must not be public.");
+
+    const [customerUpdate, moderatorRestore] = await Promise.all([
+      request(baseUrl, `/customer/reviews/${salon.id}`, {
+        method: "PUT",
+        cookie: session,
+        body: {
+          serviceName: service.name,
+          rating: 4,
+          text: "Izmenjena recenzija dok moderator vraća drugu.",
+          showProfilePhoto: false,
+        },
+      }),
+      request(baseUrl, `/admin/reviews/${moderatedReview.id}`, {
+        method: "PATCH",
+        cookie: moderatorSession,
+        body: { visible: true },
+      }),
+    ]);
+    assert.equal(customerUpdate.status, 200, "A customer review update must save while a moderator restores another review.");
+    assert.equal(moderatorRestore.status, 200, "A moderator must be able to restore a review while a customer updates another.");
+
+    const afterRestore = await assertPublicReviewMetricsMatchVisibleReviews(baseUrl, salon);
+    assert.equal(afterRestore.reviews.some((review) => review.id === moderatedReview.id), true, "The concurrently restored review must return to the public response.");
+    console.log("Review photo privacy and concurrent aggregate regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     if (salonId) await db.delete(reviewsTable).where(eq(reviewsTable.salonId, salonId));
