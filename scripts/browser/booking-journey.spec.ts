@@ -1,4 +1,10 @@
+import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
+import { promisify } from "node:util";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import { db, employeeServicesTable, employeesTable, salonsTable, servicesTable, usersTable } from "@workspace/db";
+
+const scrypt = promisify(scryptCallback);
 
 const customer = {
   email: process.env.LUMERA_BOOKING_TEST_EMAIL ?? "kupac@lumera.local",
@@ -10,9 +16,123 @@ const salonOwner = {
 };
 const salonPath = process.env.LUMERA_BOOKING_TEST_SALON_PATH ?? "/saloni/lotos-rituals";
 
+type PendingBookingFixture = {
+  customerEmail: string;
+  customerPassword: string;
+  customerId: string;
+  ownerId: string;
+  salonId: string;
+  salonPath: string;
+};
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const derived = await scrypt(password, salt, 64) as Buffer;
+  return `${salt}:${derived.toString("hex")}`;
+}
+
+async function createPendingBookingFixture(): Promise<PendingBookingFixture> {
+  const suffix = randomUUID();
+  const customerEmail = `browser-pending-booking-customer-${suffix}@example.test`;
+  const customerPassword = "browser-pending-booking-customer-password";
+  let customerId: string | undefined;
+  let ownerId: string | undefined;
+  let salonId: string | undefined;
+
+  try {
+    const [owner] = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Vlasnik",
+      email: `browser-pending-booking-owner-${suffix}@example.test`,
+      passwordHash: await hashPassword("browser-pending-booking-owner-password"),
+      passwordSetAt: new Date(),
+      role: "SALON_OWNER",
+    }).returning();
+    if (!owner) throw new Error("Pending-booking browser fixture could not create its salon owner.");
+    ownerId = owner.id;
+
+    const [customerUser] = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Kupac",
+      email: customerEmail,
+      passwordHash: await hashPassword(customerPassword),
+      passwordSetAt: new Date(),
+      role: "CUSTOMER",
+    }).returning();
+    if (!customerUser) throw new Error("Pending-booking browser fixture could not create its customer.");
+    customerId = customerUser.id;
+
+    const [salon] = await db.insert(salonsTable).values({
+      ownerId: owner.id,
+      name: `Browser salon bez instant potvrde ${suffix}`,
+      slug: `browser-pending-booking-${suffix}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Test 83",
+      phone: "+381110000083",
+      email: `browser-pending-booking-salon-${suffix}@example.test`,
+      shortDescription: "Izolovan salon za proveru zahteva za termin.",
+      description: "Salon je napravljen samo za browser regresioni test zahteva za termin.",
+      imageUrl: "/test-browser-pending-booking.jpg",
+      instantBooking: false,
+    }).returning();
+    if (!salon) throw new Error("Pending-booking browser fixture could not create its salon.");
+    salonId = salon.id;
+
+    const [employee] = await db.insert(employeesTable).values({
+      salonId: salon.id,
+      name: "Browser Terapeut",
+      role: "Terapeut",
+      bio: "Zaposleni za browser proveru rezervacije.",
+      avatarUrl: "/test-browser-pending-booking.jpg",
+    }).returning();
+    if (!employee) throw new Error("Pending-booking browser fixture could not create its employee.");
+
+    const [service] = await db.insert(servicesTable).values({
+      salonId: salon.id,
+      categoryName: "Test",
+      name: "Browser tretman sa potvrdom",
+      description: "Usluga za browser proveru zahteva koji salon mora da potvrdi.",
+      durationMinutes: 60,
+      price: 1000,
+      imageUrl: "/test-browser-pending-booking.jpg",
+    }).returning();
+    if (!service) throw new Error("Pending-booking browser fixture could not create its service.");
+
+    await db.insert(employeeServicesTable).values({ employeeId: employee.id, serviceId: service.id });
+
+    return {
+      customerEmail,
+      customerPassword,
+      customerId: customerUser.id,
+      ownerId: owner.id,
+      salonId: salon.id,
+      salonPath: `/saloni/${salon.slug}`,
+    };
+  } catch (error) {
+    if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
+    if (customerId) await db.delete(usersTable).where(eq(usersTable.id, customerId));
+    if (ownerId) await db.delete(usersTable).where(eq(usersTable.id, ownerId));
+    throw error;
+  }
+}
+
+async function cleanUpPendingBookingFixture(fixture: PendingBookingFixture) {
+  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.customerId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
+}
+
 async function signInAsCustomer(page: Page) {
   const response = await page.request.post("/api/auth/login", { data: customer });
   expect(response, "The browser test account must be able to sign in.").toBeOK();
+}
+
+async function signInAsFixtureCustomer(page: Page, fixture: PendingBookingFixture) {
+  const response = await page.request.post("/api/auth/login", {
+    data: { email: fixture.customerEmail, password: fixture.customerPassword },
+  });
+  expect(response, "The pending-booking fixture customer must be able to sign in.").toBeOK();
 }
 
 async function signInAsSalonOwner(page: Page) {
@@ -33,16 +153,16 @@ async function cleanUpAppointment(page: Page, appointmentId: string) {
 async function reachBookingConfirmation(page: Page, widget: Locator) {
   const service = widget.locator('[role="button"]:has(h5)').first();
   await expect(service).toBeVisible();
-  const serviceName = (await service.locator("h5").innerText()).trim();
-  await service.click();
-
-  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
   const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());
     return request.method() === "GET"
       && url.pathname.includes("/availability")
       && !url.searchParams.has("employeeId");
   });
+  const serviceName = (await service.locator("h5").innerText()).trim();
+  await service.click();
+
+  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
   await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
   await anyEmployeeAvailabilityRequest;
 
@@ -59,7 +179,7 @@ async function reachBookingConfirmation(page: Page, widget: Locator) {
   return serviceName;
 }
 
-async function completeBooking(page: Page, widget: Locator) {
+async function completeBooking(page: Page, widget: Locator, expectedStatus: "confirmed" | "pending" = "confirmed") {
   const serviceName = await reachBookingConfirmation(page, widget);
   const bookingRequestPromise = page.waitForRequest((request) =>
     request.method() === "POST"
@@ -74,11 +194,18 @@ async function completeBooking(page: Page, widget: Locator) {
   expect(bookingRequest.postDataJSON()).not.toHaveProperty("employeeId");
   const response = await responsePromise;
   expect(response.status(), "Booking confirmation must create an appointment.").toBe(201);
-  const appointment = await response.json() as { id: string };
+  const appointment = await response.json() as { id: string; status: "confirmed" | "pending" };
   expect(appointment.id).toBeTruthy();
+  expect(appointment.status, "The appointment status must match the salon's confirmation policy.").toBe(expectedStatus);
 
-  await expect(widget.getByRole("heading", { name: "Termin potvrđen" })).toBeVisible();
-  await expect(widget.getByText("Vidimo se u salonu!")).toBeVisible();
+  const successCopy = expectedStatus === "confirmed"
+    ? { heading: "Termin potvrđen", detail: "Vidimo se u salonu!" }
+    : { heading: "Zahtev za termin je poslat", detail: "Salon će uskoro potvrditi vaš termin." };
+  await expect(widget.getByRole("heading", { name: successCopy.heading })).toBeVisible();
+  await expect(widget.getByText(successCopy.detail)).toBeVisible();
+  if (expectedStatus === "pending") {
+    await expect(widget.getByText("Termin potvrđen", { exact: true })).toHaveCount(0);
+  }
   await expect(widget.getByText(serviceName, { exact: true })).toBeVisible();
 
   return appointment.id;
@@ -139,6 +266,27 @@ test("customer can complete the desktop salon booking journey", async ({ page })
     appointmentId = await completeBooking(page, widget);
   } finally {
     if (appointmentId) await cleanUpAppointment(page, appointmentId);
+  }
+});
+
+test("customer sees a sent request when the salon must approve an in-salon booking", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fixture = await createPendingBookingFixture();
+  let appointmentId: string | undefined;
+
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const widget = page.locator("#booking-widget");
+    await expect(widget).toBeVisible();
+    appointmentId = await completeBooking(page, widget, "pending");
+  } finally {
+    try {
+      if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    } finally {
+      await cleanUpPendingBookingFixture(fixture);
+    }
   }
 });
 
