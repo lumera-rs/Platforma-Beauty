@@ -374,6 +374,8 @@ export function BookingWidget(props: BookingWidgetProps) {
                           month_caption: "flex h-[--cell-size] w-full min-w-0 items-center justify-center px-[--cell-size] text-sm font-bold tracking-tight",
                           button_previous: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
                           button_next: "h-[--cell-size] w-[--cell-size] rounded-xl border border-transparent text-primary hover:border-primary/20 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary",
+                          table: "block h-auto w-full",
+                          tbody: "block h-auto w-full",
                           weekdays: "flex min-w-0 w-full",
                           weekday: "flex min-w-0 flex-1 items-center justify-center select-none rounded-md text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
                           week: "mt-1 flex min-w-0 w-full gap-1",
@@ -395,7 +397,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                   </div>
 
                   {/* Slots Section */}
-                  <div className="relative z-0 flex min-w-0 flex-1 flex-col p-3 sm:p-6">
+                  <div className="relative z-0 flex min-w-0 flex-1 flex-col px-3 pb-3 pt-5 sm:p-6">
                     <AnimatePresence>
                       {props.isLoadingAvailability && (
                         <motion.div
