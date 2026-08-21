@@ -13,7 +13,9 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@workspace/db": "workspace:*",
     "@types/node": "catalog:",
+    "drizzle-orm": "catalog:",
     "tsx": "catalog:"
   }
 }
