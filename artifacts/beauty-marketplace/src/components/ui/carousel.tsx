@@ -1,26 +1,23 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import useEmblaCarousel, {
-  type UseEmblaCarouselType,
-} from 'embla-carousel-react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
-type CarouselApi = UseEmblaCarouselType[1];
-type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;
-type CarouselOptions = UseCarouselParameters[0];
-type CarouselPlugin = UseCarouselParameters[1];
+type CarouselApi = {
+  scrollPrev: () => void;
+  scrollNext: () => void;
+  canScrollPrev: () => boolean;
+  canScrollNext: () => boolean;
+};
 
 type CarouselProps = {
-  opts?: CarouselOptions;
-  plugins?: CarouselPlugin;
   orientation?: 'horizontal' | 'vertical';
   setApi?: (api: CarouselApi) => void;
 };
 
 type CarouselContextProps = {
-  carouselRef: ReturnType<typeof useEmblaCarousel>[0];
-  api: ReturnType<typeof useEmblaCarousel>[1];
+  scrollAreaRef: React.RefObject<HTMLDivElement | null>;
+  updateControls: () => void;
   scrollPrev: () => void;
   scrollNext: () => void;
   canScrollPrev: boolean;
@@ -46,41 +43,61 @@ const Carousel = React.forwardRef<
   (
     {
       orientation = 'horizontal',
-      opts,
       setApi,
-      plugins,
       className,
       children,
       ...props
     },
     ref,
   ) => {
-    const [carouselRef, api] = useEmblaCarousel(
-      {
-        ...opts,
-        axis: orientation === 'horizontal' ? 'x' : 'y',
-      },
-      plugins,
-    );
+    const scrollAreaRef = React.useRef<HTMLDivElement>(null);
     const [canScrollPrev, setCanScrollPrev] = React.useState(false);
     const [canScrollNext, setCanScrollNext] = React.useState(false);
 
-    const onSelect = React.useCallback((api: CarouselApi) => {
-      if (!api) {
-        return;
-      }
+    const updateControls = React.useCallback(() => {
+      const scrollArea = scrollAreaRef.current;
+      if (!scrollArea) return;
 
-      setCanScrollPrev(api.canScrollPrev());
-      setCanScrollNext(api.canScrollNext());
-    }, []);
+      const position =
+        orientation === 'horizontal'
+          ? scrollArea.scrollLeft
+          : scrollArea.scrollTop;
+      const maximum =
+        orientation === 'horizontal'
+          ? scrollArea.scrollWidth - scrollArea.clientWidth
+          : scrollArea.scrollHeight - scrollArea.clientHeight;
+
+      setCanScrollPrev(position > 2);
+      setCanScrollNext(position < maximum - 2);
+    }, [orientation]);
+
+    const scrollByViewport = React.useCallback(
+      (direction: 1 | -1) => {
+        const scrollArea = scrollAreaRef.current;
+        if (!scrollArea) return;
+
+        const viewportSize =
+          orientation === 'horizontal'
+            ? scrollArea.clientWidth
+            : scrollArea.clientHeight;
+        const distance = direction * Math.max(viewportSize * 0.88, 260);
+
+        scrollArea.scrollBy(
+          orientation === 'horizontal'
+            ? { left: distance, behavior: 'smooth' }
+            : { top: distance, behavior: 'smooth' },
+        );
+      },
+      [orientation],
+    );
 
     const scrollPrev = React.useCallback(() => {
-      api?.scrollPrev();
-    }, [api]);
+      scrollByViewport(-1);
+    }, [scrollByViewport]);
 
     const scrollNext = React.useCallback(() => {
-      api?.scrollNext();
-    }, [api]);
+      scrollByViewport(1);
+    }, [scrollByViewport]);
 
     const handleKeyDown = React.useCallback(
       (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -95,36 +112,36 @@ const Carousel = React.forwardRef<
       [scrollPrev, scrollNext],
     );
 
-    React.useEffect(() => {
-      if (!api || !setApi) {
-        return;
-      }
+    const api = React.useMemo<CarouselApi>(
+      () => ({
+        scrollPrev,
+        scrollNext,
+        canScrollPrev: () => canScrollPrev,
+        canScrollNext: () => canScrollNext,
+      }),
+      [canScrollNext, canScrollPrev, scrollNext, scrollPrev],
+    );
 
-      setApi(api);
+    React.useEffect(() => {
+      setApi?.(api);
     }, [api, setApi]);
 
     React.useEffect(() => {
-      if (!api) {
-        return;
-      }
+      const scrollArea = scrollAreaRef.current;
+      if (!scrollArea) return;
 
-      onSelect(api);
-      api.on('reInit', onSelect);
-      api.on('select', onSelect);
-
-      return () => {
-        api?.off('select', onSelect);
-      };
-    }, [api, onSelect]);
+      updateControls();
+      const observer = new ResizeObserver(updateControls);
+      observer.observe(scrollArea);
+      return () => observer.disconnect();
+    }, [updateControls]);
 
     return (
       <CarouselContext.Provider
         value={{
-          carouselRef,
-          api: api,
-          opts,
-          orientation:
-            orientation || (opts?.axis === 'y' ? 'vertical' : 'horizontal'),
+          scrollAreaRef,
+          orientation,
+          updateControls,
           scrollPrev,
           scrollNext,
           canScrollPrev,
@@ -151,10 +168,19 @@ const CarouselContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
-  const { carouselRef, orientation } = useCarousel();
+  const { scrollAreaRef, orientation, updateControls } = useCarousel();
 
   return (
-    <div ref={carouselRef} className="overflow-hidden">
+    <div
+      ref={scrollAreaRef}
+      data-carousel-viewport
+      onScroll={updateControls}
+      className={cn(
+        orientation === 'horizontal'
+          ? 'overflow-x-auto overscroll-x-contain scroll-smooth snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+          : 'overflow-y-auto overscroll-y-contain scroll-smooth snap-y snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+      )}
+    >
       <div
         ref={ref}
         className={cn(
@@ -181,7 +207,7 @@ const CarouselItem = React.forwardRef<
       role="group"
       aria-roledescription="slide"
       className={cn(
-        'min-w-0 shrink-0 grow-0 basis-full',
+        'min-w-0 shrink-0 grow-0 basis-full snap-start',
         orientation === 'horizontal' ? 'pl-4' : 'pt-4',
         className,
       )}
@@ -194,7 +220,7 @@ CarouselItem.displayName = 'CarouselItem';
 const CarouselPrevious = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<typeof Button>
->(({ className, variant = 'outline', size = 'icon', ...props }, ref) => {
+>(({ className, variant = 'outline', size = 'icon', onClick, ...props }, ref) => {
   const { orientation, scrollPrev, canScrollPrev } = useCarousel();
 
   return (
@@ -210,7 +236,10 @@ const CarouselPrevious = React.forwardRef<
         className,
       )}
       disabled={!canScrollPrev}
-      onClick={scrollPrev}
+      onClick={(event) => {
+        scrollPrev();
+        onClick?.(event);
+      }}
       {...props}
     >
       <ArrowLeft className="h-4 w-4" />
@@ -223,7 +252,7 @@ CarouselPrevious.displayName = 'CarouselPrevious';
 const CarouselNext = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<typeof Button>
->(({ className, variant = 'outline', size = 'icon', ...props }, ref) => {
+>(({ className, variant = 'outline', size = 'icon', onClick, ...props }, ref) => {
   const { orientation, scrollNext, canScrollNext } = useCarousel();
 
   return (
@@ -239,7 +268,10 @@ const CarouselNext = React.forwardRef<
         className,
       )}
       disabled={!canScrollNext}
-      onClick={scrollNext}
+      onClick={(event) => {
+        scrollNext();
+        onClick?.(event);
+      }}
       {...props}
     >
       <ArrowRight className="h-4 w-4" />
