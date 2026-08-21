@@ -26,6 +26,8 @@ const movedSeriesDate = "2099-10-19";
 const completedOrCancelledDate = "2099-10-20";
 const employeeBookingDate = "2099-10-21";
 const customerBookingDate = "2099-10-23";
+const updatedCustomerBookingDate = "2099-10-24";
+const salonBookingDate = "2099-10-25";
 
 type HttpResult = {
   status: number;
@@ -34,6 +36,11 @@ type HttpResult = {
 
 function fixtureEmail(role: string) {
   return `${role}-${suffix}@example.test`;
+}
+
+function assertCalendarDate(value: string, expected: string, message: string): void {
+  assert.match(value, /^\d{4}-\d{2}-\d{2}$/, `${message} must be a YYYY-MM-DD calendar date`);
+  assert.equal(value, expected, message);
 }
 
 async function request(
@@ -275,6 +282,52 @@ async function run(): Promise<void> {
         && appointment.startTime === "12:00",
       ),
       "the customer appointment list must immediately include the newly created appointment",
+    );
+
+    const customerUpdate = await request(baseUrl, customerSession, `/appointments/${createdCustomerAppointment.id}`, "PATCH", {
+      date: updatedCustomerBookingDate,
+    });
+    assert.equal(customerUpdate.status, 200, "a customer must be able to reschedule their appointment");
+    assertCalendarDate(
+      (customerUpdate.body as { date: string }).date,
+      updatedCustomerBookingDate,
+      "the customer appointment update response date",
+    );
+
+    const customerCancellation = await request(baseUrl, customerSession, `/appointments/${createdCustomerAppointment.id}/cancel`, "POST", {
+      reason: "HTTP provera formata datuma",
+    });
+    assert.equal(customerCancellation.status, 200, "a customer must be able to cancel their rescheduled appointment");
+    assertCalendarDate(
+      (customerCancellation.body as { date: string }).date,
+      updatedCustomerBookingDate,
+      "the customer appointment cancellation response date",
+    );
+
+    const salonBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      employeeId: employee!.id,
+      date: salonBookingDate,
+      startTime: "12:00",
+    });
+    assert.equal(salonBooking.status, 201, "a salon owner must be able to create an appointment");
+    const createdSalonAppointment = salonBooking.body as { id: string; date: string };
+    assertCalendarDate(
+      createdSalonAppointment.date,
+      salonBookingDate,
+      "the salon appointment creation response date",
+    );
+
+    const salonUpdate = await request(baseUrl, ownerSession, `/salon/appointments/${createdSalonAppointment.id}`, "PATCH", {
+      status: "confirmed",
+      notes: "HTTP provera formata datuma",
+    });
+    assert.equal(salonUpdate.status, 200, "a salon owner must be able to update an appointment");
+    assertCalendarDate(
+      (salonUpdate.body as { date: string }).date,
+      salonBookingDate,
+      "the salon appointment update response date",
     );
 
     const bookingPayload = {

@@ -2376,7 +2376,9 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const { appointment: updated, employee } = result;
   const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
   await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
-  res.json(UpdateAppointmentResponse.parse(appointmentView(updated, salon[0]!, service[0]!, user, employee)));
+  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee);
+  UpdateAppointmentResponse.parse(response);
+  res.json(response);
 });
 
 router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<void> => {
@@ -2409,7 +2411,9 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
   const { appointment } = result;
   const [salon, service, employee] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1), appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([])]);
   await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
-  res.json(CancelAppointmentResponse.parse(appointmentView(appointment, salon[0]!, service[0]!, user, employee[0])));
+  const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0]);
+  CancelAppointmentResponse.parse(response);
+  res.json(response);
 });
 
 router.get("/customer/dashboard", async (req, res): Promise<void> => {
@@ -2778,7 +2782,9 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
     type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
     text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment.startTime}.`,
   });
-  res.status(201).json(CreateSalonAppointmentResponse.parse(appointmentView(appointment, salon, service, contact!, employee)));
+  const response = appointmentView(appointment, salon, service, contact!, employee);
+  CreateSalonAppointmentResponse.parse(response);
+  res.status(201).json(response);
 });
 
 router.post("/salon/appointment-series/preview", async (req, res): Promise<void> => {
@@ -2990,7 +2996,8 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   }
   const { updated } = result;
   const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id))))[0];
-  res.json(UpdateSalonAppointmentResponse.parse(view));
+  UpdateSalonAppointmentResponse.parse(view);
+  res.json(view);
 });
 
 router.get("/salon/services", async (req, res): Promise<void> => {
