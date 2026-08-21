@@ -68,7 +68,14 @@ export default function AdminReviews() {
         toast.success("Obrisano", { description: "Recenzija je uklonjena iz sistema." });
         queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
       },
-      onError: () => {
+      onError: (error: unknown) => {
+        if ((error as { status?: number }).status === 404) {
+          toast.info("Recenzija više nije dostupna", {
+            description: "Klijent je u međuvremenu povukao ovu recenziju. Lista je osvežena.",
+          });
+          queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+          return;
+        }
         toast.error("Greška", { description: "Nije moguće obrisati recenziju." });
       }
     });
