@@ -1414,7 +1414,7 @@ function card(
     popularServices: services.slice(0, 3).map((item) => item.name),
     startingPrice: services.length ? Math.min(...services.map((item) => item.promoPrice ?? item.price)) : 0,
     earliestSlot,
-    homeService: services.some((service) => service.homeServiceAvailable),
+    homeService: services.some((service) => service.active && service.homeServiceAvailable),
     featured: salon.featured,
     isVerified: salon.isVerified,
     topSalon: salon.topSalon,
@@ -1428,6 +1428,15 @@ function card(
     latitude: salon.latitude,
     longitude: salon.longitude,
   };
+}
+
+async function salonHasActiveHomeService(salonId: string): Promise<boolean> {
+  const [service] = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(
+    eq(servicesTable.salonId, salonId),
+    eq(servicesTable.active, true),
+    eq(servicesTable.homeServiceAvailable, true),
+  )).limit(1);
+  return Boolean(service);
 }
 
 function findEarliestSlot(
@@ -2925,6 +2934,11 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
 router.get("/salon/profile", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
+  const [homeService, openSunday] = await Promise.all([
+    salonHasActiveHomeService(salon.id),
+    db.select({ id: salonHoursTable.id }).from(salonHoursTable)
+      .where(and(eq(salonHoursTable.salonId, salon.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1),
+  ]);
   res.json(GetManagedSalonProfileResponse.parse({
     id: salon.id,
     name: salon.name,
@@ -2932,16 +2946,19 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     videoUrl: salon.videoUrl,
     acceptsCards: salon.acceptsCards,
     instantBooking: salon.instantBooking,
-    homeService: salon.homeService,
+    homeService,
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
     servesMen: salon.servesMen,
-    openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
-      .where(and(eq(salonHoursTable.salonId, salon.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
+    openSunday: openSunday.length > 0,
   }));
 });
 
 router.patch("/salon/profile", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
+  if (req.body && typeof req.body === "object" && Object.prototype.hasOwnProperty.call(req.body, "homeService")) {
+    res.status(400).json({ error: "Dostupnost dolaska se podešava kroz aktivne usluge." });
+    return;
+  }
   const parsed = UpdateManagedSalonProfileBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (parsed.data.videoUrl !== undefined && !isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
@@ -2949,13 +2966,14 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
-  if (parsed.data.homeService !== undefined) updates.homeService = parsed.data.homeService;
   if (parsed.data.homeServiceRadiusKm !== undefined) updates.homeServiceRadiusKm = Math.max(1, Math.min(100, Math.round(parsed.data.homeServiceRadiusKm)));
   if (parsed.data.servesMen !== undefined) {
     updates.servesMen = parsed.data.servesMen;
     updates.servesMenManuallySet = true;
   }
   if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
+  const homeService = await salonHasActiveHomeService(access.salon.id);
+  updates.homeService = homeService;
   const [updated] = await db.update(salonsTable)
     .set(updates)
     .where(eq(salonsTable.id, access.salon.id))
@@ -2967,7 +2985,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     videoUrl: updated!.videoUrl,
     acceptsCards: updated!.acceptsCards,
     instantBooking: updated!.instantBooking,
-    homeService: updated!.homeService,
+    homeService,
     homeServiceRadiusKm: updated!.homeServiceRadiusKm,
     servesMen: updated!.servesMen,
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
@@ -3352,12 +3370,7 @@ router.post("/salon/services", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
   const [service] = await db.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
-  const activeHomeServices = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(
-    eq(servicesTable.salonId, salon.id),
-    eq(servicesTable.active, true),
-    eq(servicesTable.homeServiceAvailable, true),
-  )).limit(1);
-  await db.update(salonsTable).set({ homeService: activeHomeServices.length > 0 }).where(eq(salonsTable.id, salon.id));
+  await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(salon.id) }).where(eq(salonsTable.id, salon.id));
   res.status(201).json(CreateSalonServiceResponse.parse({ id: service!.id, category: service!.categoryName, name: service!.name, description: service!.description, durationMinutes: service!.durationMinutes, price: service!.price, promoPrice: service!.promoPrice, imageUrl: service!.imageUrl, active: service!.active, homeServiceAvailable: service!.homeServiceAvailable, homeServiceFee: service!.homeServiceFee, homeServiceMinimumOrder: service!.homeServiceMinimumOrder }));
 });
 
@@ -3372,8 +3385,7 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
     homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
   }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
-  const remainingMobileServices = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true), eq(servicesTable.homeServiceAvailable, true))).limit(1);
-  await db.update(salonsTable).set({ homeService: remainingMobileServices.length > 0 }).where(eq(salonsTable.id, access.salon.id));
+  await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
   res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
 });
 

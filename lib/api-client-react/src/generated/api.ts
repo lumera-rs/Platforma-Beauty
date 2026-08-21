@@ -2380,7 +2380,7 @@ export const getUpdateManagedSalonProfileUrl = () => {
 }
 
 /**
- * @summary Update editable public profile settings for the active owned salon
+ * @summary Update public profile settings for the active owned salon
  */
 export const updateManagedSalonProfile = async (salonProfileMediaUpdate: SalonProfileMediaUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SalonProfileMedia> => {
 
@@ -2429,7 +2429,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateManagedSalonProfileMutationError = ErrorType<void>
 
     /**
- * @summary Update editable public profile settings for the active owned salon
+ * @summary Update public profile settings for the active owned salon
  */
 export const useUpdateManagedSalonProfile = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateManagedSalonProfile>>, TError,{data: BodyType<SalonProfileMediaUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}

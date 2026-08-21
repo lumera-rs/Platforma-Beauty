@@ -464,6 +464,32 @@ async function run(): Promise<void> {
       false,
       "removing home visits from the last active offering must clear the salon home-service indicator",
     );
+    const manualHomeServiceProfileUpdate = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", {
+      homeService: true,
+    });
+    assert.equal(
+      manualHomeServiceProfileUpdate.status,
+      400,
+      "an owner must not be able to manually enable home visits on the salon profile",
+    );
+    assert.match(
+      (manualHomeServiceProfileUpdate.body as { error: string }).error,
+      /aktivne usluge/,
+      "the profile update must explain that active services control home visits",
+    );
+    const profileAfterManualHomeServiceAttempt = await getRequest(baseUrl, ownerSession, "/salon/profile");
+    assert.equal(
+      (profileAfterManualHomeServiceAttempt.body as { homeService: boolean }).homeService,
+      false,
+      "the managed profile must keep deriving home visits from active services after a manual update attempt",
+    );
+    const [salonAfterManualHomeServiceAttempt] = await db.select({ homeService: salonsTable.homeService })
+      .from(salonsTable).where(eq(salonsTable.id, salon!.id)).limit(1);
+    assert.equal(
+      salonAfterManualHomeServiceAttempt!.homeService,
+      false,
+      "a rejected profile update must not persist home visits without an active service",
+    );
 
     const unavailableHomeBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
       salonId: salon!.id,

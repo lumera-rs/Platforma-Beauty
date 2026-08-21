@@ -517,7 +517,7 @@ paths:
     patch:
       operationId: updateManagedSalonProfile
       tags: [salon-management]
-      summary: Update editable public profile settings for the active owned salon
+      summary: Update public profile settings for the active owned salon
       requestBody:
         required: true
         content:
@@ -2624,7 +2624,6 @@ components:
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
-        homeService: { type: boolean }
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
     OpeningHour:

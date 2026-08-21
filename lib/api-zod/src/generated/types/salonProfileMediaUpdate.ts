@@ -11,7 +11,6 @@ export interface SalonProfileMediaUpdate {
   videoUrl?: string | null;
   acceptsCards?: boolean;
   instantBooking?: boolean;
-  homeService?: boolean;
   /**
      * @minimum 1
      * @maximum 100

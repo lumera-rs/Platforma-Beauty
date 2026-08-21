@@ -135,8 +135,8 @@ export default function OwnerServices() {
           <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-sm">
             <House className="h-4 w-4 shrink-0 text-primary" />
             {activeHomeServiceCount > 0
-              ? <span>Dolazak na adresu je dostupan za {activeHomeServiceCount} {activeHomeServiceCount === 1 ? "aktivnu uslugu" : "aktivne usluge"}.</span>
-              : <span>Dolazak na adresu nije dostupan ni za jednu aktivnu uslugu.</span>}
+              ? <span>Dolazak na adresu je dostupan za {activeHomeServiceCount} {activeHomeServiceCount === 1 ? "aktivnu uslugu" : "aktivne usluge"} i automatski se prikazuje na profilu salona.</span>
+              : <span>Dolazak na adresu nije dostupan ni za jednu aktivnu uslugu i ne prikazuje se na profilu salona.</span>}
           </div>
 
           <Card>

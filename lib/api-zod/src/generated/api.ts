@@ -1275,7 +1275,7 @@ export const GetManagedSalonProfileResponse = zod.object({
 
 
 /**
- * @summary Update editable public profile settings for the active owned salon
+ * @summary Update public profile settings for the active owned salon
  */
 export const updateManagedSalonProfileBodyHomeServiceRadiusKmMax = 100;
 
@@ -1285,7 +1285,6 @@ export const UpdateManagedSalonProfileBody = zod.object({
   "videoUrl": zod.string().nullish(),
   "acceptsCards": zod.boolean().optional(),
   "instantBooking": zod.boolean().optional(),
-  "homeService": zod.boolean().optional(),
   "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileBodyHomeServiceRadiusKmMax).optional(),
   "servesMen": zod.boolean().optional()
 })
