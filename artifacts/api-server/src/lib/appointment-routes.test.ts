@@ -28,6 +28,9 @@ const employeeBookingDate = "2099-10-21";
 const customerBookingDate = "2099-10-23";
 const updatedCustomerBookingDate = "2099-10-24";
 const salonBookingDate = "2099-10-25";
+const salonSeriesDate = "2099-10-26";
+const movedSalonSeriesDate = "2099-10-27";
+const employeeSeriesDate = "2099-10-28";
 
 type HttpResult = {
   status: number;
@@ -329,6 +332,59 @@ async function run(): Promise<void> {
       salonBookingDate,
       "the salon appointment update response date",
     );
+
+    const salonSeriesBooking = await request(baseUrl, ownerSession, "/salon/appointment-series", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      employeeId: employee!.id,
+      slots: [{ date: salonSeriesDate, startTime: "12:00" }],
+    });
+    assert.equal(salonSeriesBooking.status, 201, "a salon owner must be able to create an appointment series");
+    const createdSalonSeries = salonSeriesBooking.body as {
+      id: string;
+      appointments: Array<{ date: string }>;
+    };
+    for (const appointment of createdSalonSeries.appointments) {
+      assertCalendarDate(
+        appointment.date,
+        salonSeriesDate,
+        "the salon appointment-series creation response date",
+      );
+    }
+
+    const salonSeriesMove = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/appointment-series/${createdSalonSeries.id}/move`,
+      "POST",
+      { dayOffset: 1 },
+    );
+    assert.equal(salonSeriesMove.status, 200, "a salon owner must be able to move an appointment series");
+    const movedSalonSeries = salonSeriesMove.body as { appointments: Array<{ date: string }> };
+    for (const appointment of movedSalonSeries.appointments) {
+      assertCalendarDate(
+        appointment.date,
+        movedSalonSeriesDate,
+        "the salon appointment-series move response date",
+      );
+    }
+
+    const employeeSeriesBooking = await request(baseUrl, employeeSession, "/employee/appointment-series", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      slots: [{ date: employeeSeriesDate, startTime: "12:00" }],
+    });
+    assert.equal(employeeSeriesBooking.status, 201, "an employee must be able to create an appointment series");
+    const createdEmployeeSeries = employeeSeriesBooking.body as {
+      appointments: Array<{ date: string }>;
+    };
+    for (const appointment of createdEmployeeSeries.appointments) {
+      assertCalendarDate(
+        appointment.date,
+        employeeSeriesDate,
+        "the employee appointment-series creation response date",
+      );
+    }
 
     const bookingPayload = {
       serviceId: service!.id,

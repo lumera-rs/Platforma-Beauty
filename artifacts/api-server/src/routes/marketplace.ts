@@ -2844,7 +2844,9 @@ router.post("/salon/appointment-series", async (req, res): Promise<void> => {
     const employees = employeeIds.length ? await db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : [];
     const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId)));
     await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
-    res.status(201).json(CreateSalonAppointmentSeriesResponse.parse({ id: created.series.id, totalAppointments: created.appointments.length, appointments: views }));
+    const response = { id: created.series.id, totalAppointments: created.appointments.length, appointments: views };
+    CreateSalonAppointmentSeriesResponse.parse(response);
+    res.status(201).json(response);
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
@@ -2931,11 +2933,13 @@ router.post("/salon/appointment-series/:seriesId/move", async (req, res): Promis
     }
     const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, moved.map((appointment) => appointment.id))));
     const viewById = new Map(views.map((appointment) => [appointment.id, appointment]));
-    res.json(MoveSalonAppointmentSeriesResponse.parse({
+    const response = {
       id: series.id,
       movedAppointments: moved.length,
       appointments: moved.map((appointment) => viewById.get(appointment.id)!),
-    }));
+    };
+    MoveSalonAppointmentSeriesResponse.parse(response);
+    res.json(response);
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Pomeranje serije nije uspelo.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
@@ -3369,7 +3373,9 @@ router.post("/employee/appointment-series", async (req, res): Promise<void> => {
     });
     const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service[0], contact!, access.employee));
     await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
-    res.status(201).json(CreateEmployeeAppointmentSeriesResponse.parse({ id: created.series.id, totalAppointments: created.appointments.length, appointments: views }));
+    const response = { id: created.series.id, totalAppointments: created.appointments.length, appointments: views };
+    CreateEmployeeAppointmentSeriesResponse.parse(response);
+    res.status(201).json(response);
   } catch (error) {
     const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
     res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
