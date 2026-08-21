@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { courierServicesTable, shippingRulesTable } from "@workspace/db";
 import {
   appointmentsTable,
@@ -109,6 +109,7 @@ async function seed(): Promise<void> {
     }
     await seedEducationContent();
     await seedMarketplaceTaxonomy();
+    await synchronizeInferredServesMen();
     await seedCourierServices();
     await seedFutureBookingAvailability();
     await backfillSalonCustomers();
@@ -364,6 +365,7 @@ async function seed(): Promise<void> {
   await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0]!.id, completedByUserId: owner.id });
   await db.insert(usersTable).values({ firstName: "Podrška", lastName: "Lumera", email: "support@lumera.local", passwordHash, passwordSetAt, role: "ADMIN" });
   await seedMarketplaceTaxonomy();
+  await synchronizeInferredServesMen();
   await seedCourierServices();
   void customer;
 }
@@ -765,6 +767,32 @@ async function seedMarketplaceTaxonomy(): Promise<void> {
   const services = await db.select().from(servicesTable);
   const inspiration = salons.filter((salon) => !existingInspiration.some((item) => item.salonId === salon.id)).slice(0, 8).map((salon, index) => ({ salonId: salon.id, serviceId: services.find((service) => service.salonId === salon.id)?.id ?? null, title: ["Nude gel manikir", "Balayage inspiracija", "Glow tretman lica", "Relax ritual", "Svečana šminka"][index % 5]!, tags: [["nokti"], ["frizure"], ["lice"], ["masaža"], ["šminkanje"]][index % 5]!, imageUrl: salon.imageUrl }));
   if (inspiration.length) await db.insert(inspirationItemsTable).values(inspiration);
+}
+
+function serviceTargetsMen(service: Pick<typeof servicesTable.$inferSelect, "categoryName" | "tags">): boolean {
+  return service.categoryName === "Muški frizeri"
+    || service.tags.some((tag) => tag.toLowerCase().includes("muškar"));
+}
+
+async function synchronizeInferredServesMen(): Promise<void> {
+  const activeServices = await db.select({
+    salonId: servicesTable.salonId,
+    categoryName: servicesTable.categoryName,
+    tags: servicesTable.tags,
+  }).from(servicesTable).where(eq(servicesTable.active, true));
+  const salonIdsServingMen = [...new Set(activeServices.filter(serviceTargetsMen).map((service) => service.salonId))];
+
+  await db.update(salonsTable)
+    .set({ servesMen: false })
+    .where(eq(salonsTable.servesMenManuallySet, false));
+  if (salonIdsServingMen.length) {
+    await db.update(salonsTable)
+      .set({ servesMen: true })
+      .where(and(
+        eq(salonsTable.servesMenManuallySet, false),
+        inArray(salonsTable.id, salonIdsServingMen),
+      ));
+  }
 }
 
 async function seedEducationContent(): Promise<void> {

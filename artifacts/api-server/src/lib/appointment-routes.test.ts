@@ -39,6 +39,14 @@ type HttpResult = {
   body: unknown;
 };
 
+type PublicSalonCard = {
+  id: string;
+  acceptsCards: boolean;
+  instantBooking: boolean;
+  homeService: boolean;
+  servesMen: boolean;
+};
+
 function fixtureEmail(role: string) {
   return `${role}-${suffix}@example.test`;
 }
@@ -81,14 +89,29 @@ async function getRequest(baseUrl: string, session: string, path: string): Promi
   };
 }
 
+async function getPublicSalonCards(baseUrl: string, query: string): Promise<PublicSalonCard[]> {
+  const response = await fetch(`${baseUrl}/api/salons?${query}`);
+  assert.equal(response.status, 200, `public salon filter "${query}" must succeed`);
+  return await response.json() as PublicSalonCard[];
+}
+
 async function run(): Promise<void> {
   await ensureDemoData();
+  const [seededMenService] = await db.select({
+    salonId: servicesTable.salonId,
+  }).from(servicesTable).where(eq(servicesTable.categoryName, "Muški frizeri")).limit(1);
+  assert.ok(seededMenService, "demo data must include a salon with men's services");
+  const [seededMenSalon] = await db.select({
+    id: salonsTable.id,
+    servesMen: salonsTable.servesMen,
+  }).from(salonsTable).where(eq(salonsTable.id, seededMenService.salonId));
+  assert.equal(seededMenSalon!.servesMen, true, "a salon with seeded men's services must be discoverable as serving men");
   const passwordHash = await hashPassword("test-password");
   const createdUserIds: string[] = [];
   let server: ReturnType<typeof app.listen> | undefined;
 
   try {
-    const [owner, customer, employeeUser] = await db.insert(usersTable).values([
+    const [owner, customer, employeeUser, admin] = await db.insert(usersTable).values([
       {
         firstName: "Vlasnik",
         lastName: "HTTP test",
@@ -113,8 +136,16 @@ async function run(): Promise<void> {
         passwordSetAt: new Date(),
         role: "SALON_EMPLOYEE",
       },
+      {
+        firstName: "Administrator",
+        lastName: "HTTP test",
+        email: fixtureEmail("admin"),
+        passwordHash,
+        passwordSetAt: new Date(),
+        role: "ADMIN",
+      },
     ]).returning();
-    createdUserIds.push(owner!.id, customer!.id, employeeUser!.id);
+    createdUserIds.push(owner!.id, customer!.id, employeeUser!.id, admin!.id);
 
     const [salon, foreignSalon] = await db.insert(salonsTable).values([
       {
@@ -129,6 +160,10 @@ async function run(): Promise<void> {
         shortDescription: "Izolovan salon za HTTP regresione testove termina.",
         description: "Izolovan salon za proveru zaključavanja, statusa i autorizacije termina.",
         imageUrl: "/test.jpg",
+        acceptsCards: true,
+        instantBooking: true,
+        homeService: false,
+        servesMen: true,
       },
       {
         ownerId: owner!.id,
@@ -142,6 +177,10 @@ async function run(): Promise<void> {
         shortDescription: "Drugi izolovan salon za autorizacioni test.",
         description: "Salon koji sadrži zaposlenog nedostupnog vlasniku aktivnog salona.",
         imageUrl: "/test.jpg",
+        acceptsCards: false,
+        instantBooking: false,
+        homeService: true,
+        servesMen: false,
       },
     ]).returning();
     await db.update(usersTable).set({ activeSalonId: salon!.id }).where(eq(usersTable.id, owner!.id));
@@ -249,16 +288,53 @@ async function run(): Promise<void> {
       },
     ]).returning();
 
-    const [ownerSession, customerSession, employeeSession] = await Promise.all([
+    const [ownerSession, customerSession, employeeSession, adminSession] = await Promise.all([
       createSession(owner!.id),
       createSession(customer!.id),
       createSession(employeeUser!.id),
+      createSession(admin!.id),
     ]);
 
     server = app.listen(0, "127.0.0.1");
     await once(server, "listening");
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const acceptsCardsSalons = await getPublicSalonCards(baseUrl, "acceptsCards=true");
+    assert.ok(acceptsCardsSalons.every((item) => item.acceptsCards), "acceptsCards=true must only return card-accepting salons");
+    assert.ok(acceptsCardsSalons.some((item) => item.id === salon!.id), "acceptsCards=true must include the card-accepting fixture salon");
+    assert.ok(!acceptsCardsSalons.some((item) => item.id === foreignSalon!.id), "acceptsCards=true must exclude the non-card fixture salon");
+
+    const cashOnlySalons = await getPublicSalonCards(baseUrl, "acceptsCards=false");
+    assert.ok(cashOnlySalons.every((item) => !item.acceptsCards), "acceptsCards=false must only return non-card salons");
+    assert.ok(cashOnlySalons.some((item) => item.id === foreignSalon!.id), "acceptsCards=false must include the non-card fixture salon");
+    assert.ok(!cashOnlySalons.some((item) => item.id === salon!.id), "acceptsCards=false must exclude the card-accepting fixture salon");
+
+    const instantBookingSalons = await getPublicSalonCards(baseUrl, "instantBooking=true");
+    assert.ok(instantBookingSalons.every((item) => item.instantBooking), "instantBooking=true must only return instant-booking salons");
+    assert.ok(instantBookingSalons.some((item) => item.id === salon!.id), "instantBooking=true must include the instant-booking fixture salon");
+    assert.ok(!instantBookingSalons.some((item) => item.id === foreignSalon!.id), "instantBooking=true must exclude the pending-booking fixture salon");
+
+    const pendingBookingSalons = await getPublicSalonCards(baseUrl, "instantBooking=false");
+    assert.ok(pendingBookingSalons.every((item) => !item.instantBooking), "instantBooking=false must only return pending-booking salons");
+    assert.ok(pendingBookingSalons.some((item) => item.id === foreignSalon!.id), "instantBooking=false must include the pending-booking fixture salon");
+    assert.ok(!pendingBookingSalons.some((item) => item.id === salon!.id), "instantBooking=false must exclude the instant-booking fixture salon");
+
+    const homeServiceSalons = await getPublicSalonCards(baseUrl, "homeService=true");
+    assert.ok(homeServiceSalons.every((item) => item.homeService), "homeService=true must only return salons that offer home service");
+    assert.ok(homeServiceSalons.some((item) => item.id === foreignSalon!.id), "homeService=true must include the home-service fixture salon");
+    assert.ok(!homeServiceSalons.some((item) => item.id === salon!.id), "homeService=true must exclude the in-salon-only fixture salon");
+
+    const inSalonOnly = await getPublicSalonCards(baseUrl, "homeService=false");
+    assert.ok(inSalonOnly.every((item) => !item.homeService), "homeService=false must only return in-salon-only salons");
+    assert.ok(inSalonOnly.some((item) => item.id === salon!.id), "homeService=false must include the in-salon-only fixture salon");
+    assert.ok(!inSalonOnly.some((item) => item.id === foreignSalon!.id), "homeService=false must exclude the home-service fixture salon");
+
+    const menSalons = await getPublicSalonCards(baseUrl, "gender=men");
+    assert.ok(menSalons.every((item) => item.servesMen), "gender=men must only return salons marked as serving men");
+    assert.ok(menSalons.some((item) => item.id === seededMenSalon!.id), "gender=men must include a salon with seeded men's services");
+    assert.ok(menSalons.some((item) => item.id === salon!.id), "gender=men must include the men-serving fixture salon");
+    assert.ok(!menSalons.some((item) => item.id === foreignSalon!.id), "gender=men must exclude the salon not marked as serving men");
 
     const availability = await fetch(
       `${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${employeeBookingDate}&employeeId=${employee!.id}`,
@@ -273,10 +349,66 @@ async function run(): Promise<void> {
       employeeId: employee!.id,
     });
     assert.equal(customerBooking.status, 201, "a customer must be able to create an available appointment");
-    const createdCustomerAppointment = customerBooking.body as { id: string; date: string; startTime: string };
+    const createdCustomerAppointment = customerBooking.body as { id: string; date: string; startTime: string; status: string };
+    assert.equal(createdCustomerAppointment.status, "confirmed", "instantBooking=true must create confirmed appointments on the server");
     const [persistedCustomerAppointment] = await db.select().from(appointmentsTable)
       .where(eq(appointmentsTable.id, createdCustomerAppointment.id));
     assert.equal(persistedCustomerAppointment!.customerId, customer!.id, "customer booking must persist its customer ownership");
+    assert.equal(persistedCustomerAppointment!.status, "confirmed", "instantBooking=true must persist a confirmed appointment");
+
+    await db.update(salonsTable).set({ instantBooking: false }).where(eq(salonsTable.id, salon!.id));
+    const pendingBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: "2099-10-30",
+      startTime: "12:00",
+      employeeId: employee!.id,
+    });
+    assert.equal(pendingBooking.status, 201, "a customer must be able to create a pending-booking appointment");
+    const createdPendingAppointment = pendingBooking.body as { id: string; status: string };
+    assert.equal(createdPendingAppointment.status, "pending", "instantBooking=false must create pending appointments on the server");
+    const [persistedPendingAppointment] = await db.select().from(appointmentsTable)
+      .where(eq(appointmentsTable.id, createdPendingAppointment.id));
+    assert.equal(persistedPendingAppointment!.status, "pending", "instantBooking=false must persist a pending appointment");
+
+    const featuredOnly = await request(baseUrl, adminSession, `/admin/salons/${foreignSalon!.id}`, "PATCH", { featured: true });
+    assert.equal(featuredOnly.status, 200, "an admin must be able to feature a salon");
+    assert.deepEqual(
+      (({ featured, topSalon }) => ({ featured, topSalon }))(featuredOnly.body as { featured: boolean; topSalon: boolean }),
+      { featured: true, topSalon: false },
+      "setting featured must not also set topSalon",
+    );
+    const topSalonOnly = await request(baseUrl, adminSession, `/admin/salons/${foreignSalon!.id}`, "PATCH", { topSalon: true });
+    assert.equal(topSalonOnly.status, 200, "an admin must be able to mark a salon as top");
+    assert.deepEqual(
+      (({ featured, topSalon }) => ({ featured, topSalon }))(topSalonOnly.body as { featured: boolean; topSalon: boolean }),
+      { featured: true, topSalon: true },
+      "setting topSalon must retain an existing featured value",
+    );
+    const unfeatureOnly = await request(baseUrl, adminSession, `/admin/salons/${foreignSalon!.id}`, "PATCH", { featured: false });
+    assert.equal(unfeatureOnly.status, 200, "an admin must be able to remove a featured designation");
+    assert.deepEqual(
+      (({ featured, topSalon }) => ({ featured, topSalon }))(unfeatureOnly.body as { featured: boolean; topSalon: boolean }),
+      { featured: false, topSalon: true },
+      "changing featured must not clear an existing topSalon designation",
+    );
+
+    const ownerServesMenUpdate = await request(baseUrl, ownerSession, "/salon/profile", "PATCH", { servesMen: false });
+    assert.equal(ownerServesMenUpdate.status, 200, "a salon owner must be able to update the men's-services designation");
+    assert.equal(
+      (ownerServesMenUpdate.body as { servesMen: boolean }).servesMen,
+      false,
+      "the salon profile response must retain the owner's men's-services designation",
+    );
+    const [ownerUpdatedSalon] = await db.select({
+      servesMen: salonsTable.servesMen,
+      servesMenManuallySet: salonsTable.servesMenManuallySet,
+    }).from(salonsTable).where(eq(salonsTable.id, salon!.id));
+    assert.deepEqual(
+      ownerUpdatedSalon,
+      { servesMen: false, servesMenManuallySet: true },
+      "the owner's men's-services designation must persist and opt out of inferred values",
+    );
 
     const customerAppointments = await getRequest(baseUrl, customerSession, "/appointments");
     assert.equal(customerAppointments.status, 200, "a customer must be able to list their appointments");

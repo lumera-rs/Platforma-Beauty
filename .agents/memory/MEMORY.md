@@ -10,3 +10,4 @@
 - [Review history freshness](review-history-freshness.md) — browser history and BFCache restoration must revalidate public reviews and customer review eligibility.
 - [Moderated review aggregates](moderated-review-aggregates.md) — every moderator removal must refresh the salon’s public rating and review count atomically.
 - [Discovery ranking consistency](discovery-ranking-consistency.md) — homepage shelves and their directory links must share the same filter, window, and ranking semantics.
+- [Salon audience inference](salon-audience-inference.md) — men’s-service discovery is inferred until the owner sets an explicit audience choice.

@@ -17,7 +17,8 @@
     "test:browser": "pnpm --filter @workspace/scripts run test:browser",
     "test:carousel": "pnpm --filter @workspace/scripts run test:carousel",
     "test:review-photo-privacy": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/review-photo-privacy.test.ts && pnpm --filter @workspace/scripts run test:review-photo-privacy",
-    "test:admin-review-feedback": "pnpm --filter @workspace/scripts run test:admin-review-feedback"
+    "test:admin-review-feedback": "pnpm --filter @workspace/scripts run test:admin-review-feedback",
+    "test:admin-salon-designations": "pnpm --filter @workspace/scripts run test:admin-salon-designations"
   },
   "private": true,
   "dependencies": {

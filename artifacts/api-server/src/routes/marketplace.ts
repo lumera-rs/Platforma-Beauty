@@ -2829,7 +2829,10 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
   if (parsed.data.homeService !== undefined) updates.homeService = parsed.data.homeService;
-  if (parsed.data.servesMen !== undefined) updates.servesMen = parsed.data.servesMen;
+  if (parsed.data.servesMen !== undefined) {
+    updates.servesMen = parsed.data.servesMen;
+    updates.servesMenManuallySet = true;
+  }
   if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
   const [updated] = await db.update(salonsTable)
     .set(updates)
