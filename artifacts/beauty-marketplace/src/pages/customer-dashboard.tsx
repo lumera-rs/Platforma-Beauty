@@ -37,6 +37,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
+import { DiscoveryCarousel } from "@/components/discovery-carousel";
 
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
@@ -214,17 +215,17 @@ export default function CustomerDashboard() {
               </div>
               <Button variant="ghost" asChild><Link href="/saloni">Pogledajte sve</Link></Button>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <DiscoveryCarousel ariaLabel="Preporučeni saloni za vas">
               {dashboard.recommendations.map((salon) => (
-                <div key={salon.id} className="group relative overflow-hidden rounded-xl border bg-card">
+                <div key={salon.id} className="group relative h-full overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
                   <Link href={`/saloni/${salon.slug}`} className="block">
-                    <img src={salon.imageUrl} alt={salon.name} className="h-32 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <img src={salon.imageUrl} alt={salon.name} loading="lazy" className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                     <div className="p-4"><p className="font-semibold">{salon.name}</p><p className="mt-1 text-sm text-muted-foreground">{salon.city} · {salon.popularServices[0] ?? "Beauty usluge"}</p></div>
                   </Link>
                   <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
                 </div>
               ))}
-            </div>
+            </DiscoveryCarousel>
           </section>
         ) : null}
 

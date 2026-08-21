@@ -5,6 +5,7 @@ import { Search, MapPin, Star, CalendarDays, ArrowRight, Scissors, Leaf, Sparkle
 import { useListSalons, useGetPlatformTrustStats } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { useState } from "react";
 
 export default function Home() {
@@ -112,7 +113,10 @@ export default function Home() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <DiscoveryCarousel
+            ariaLabel="Popularne usluge"
+            itemClassName="basis-[70%] sm:basis-[38%] md:basis-1/4 lg:basis-1/6"
+          >
             {[
               { name: "Frizerski saloni", icon: Scissors, color: "bg-orange-100/50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400" },
               { name: "Masaža", icon: Leaf, color: "bg-emerald-100/50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400" },
@@ -120,15 +124,15 @@ export default function Home() {
               { name: "Kozmetički saloni", icon: Smile, color: "bg-blue-100/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400" },
               { name: "Depilacija", icon: Flower2, color: "bg-yellow-100/50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-400" },
               { name: "Wellness", icon: Droplets, color: "bg-purple-100/50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400" },
-            ].map((cat, i) => (
-              <Link key={i} href={`/saloni?category=${encodeURIComponent(cat.name)}`} className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-4 hover:shadow-md transition-all cursor-pointer group text-center border border-transparent hover:border-border bg-card`}>
-                <div className={`p-4 rounded-full ${cat.color} group-hover:scale-110 transition-transform duration-300`}>
+            ].map((cat) => (
+              <Link key={cat.name} href={`/saloni?category=${encodeURIComponent(cat.name)}`} className="group flex min-h-40 h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border border-transparent bg-card p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-lg">
+                <div className={`rounded-full p-4 ${cat.color} transition-transform duration-300 group-hover:scale-110`}>
                   <cat.icon className="w-8 h-8" strokeWidth={1.5} />
                 </div>
-                <span className="font-medium text-sm text-foreground/90">{cat.name}</span>
+                <span className="text-sm font-medium text-foreground/90">{cat.name}</span>
               </Link>
             ))}
-          </div>
+          </DiscoveryCarousel>
         </div>
       </section>
 
@@ -147,48 +151,49 @@ export default function Home() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <DiscoveryCarousel ariaLabel="Preporučeni saloni">
             {isLoading ? (
-              Array(4).fill(0).map((_, i) => (
-                <div key={i} className="flex flex-col gap-3">
-                  <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
+              Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className="flex flex-col gap-3">
+                  <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
                   <Skeleton className="h-6 w-3/4" />
                   <Skeleton className="h-4 w-1/2" />
                 </div>
               ))
-            ) : salons?.slice(0, 4).map((salon) => (
-              <Link key={salon.id} href={`/saloni/${salon.slug}`} className="group cursor-pointer flex flex-col gap-3">
-                <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden mb-2">
-                  <img 
-                    src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"} 
+            ) : salons?.slice(0, 15).map((salon) => (
+              <Link key={salon.id} href={`/saloni/${salon.slug}`} className="group flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-1 transition-all duration-300 hover:-translate-y-1 hover:bg-card hover:shadow-xl">
+                <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
+                  <img
+                    src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
                     alt={salon.name}
-                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-700 ease-out"
+                    className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                    loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors duration-500" />
+                  <div className="absolute inset-0 bg-black/10 transition-colors duration-500 group-hover:bg-transparent" />
                   {salon.featured && (
-                    <Badge className="absolute top-3 left-3 bg-white/95 text-primary hover:bg-white backdrop-blur-md font-semibold border-none shadow-sm">
+                    <Badge className="absolute left-3 top-3 border-none bg-white/95 font-semibold text-primary shadow-sm backdrop-blur-md hover:bg-white">
                       Istaknuto
                     </Badge>
                   )}
-                  <div className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-md px-2.5 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-sm text-foreground">
-                    <Star className="w-3.5 h-3.5 fill-accent text-accent" />
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-lg bg-white/95 px-2.5 py-1.5 text-sm font-bold text-foreground shadow-sm backdrop-blur-md">
+                    <Star className="h-3.5 w-3.5 fill-accent text-accent" />
                     <span>{salon.rating.toFixed(1)}</span>
-                    <span className="text-muted-foreground text-xs font-medium">({salon.reviewCount})</span>
+                    <span className="text-xs font-medium text-muted-foreground">({salon.reviewCount})</span>
                   </div>
                 </div>
-                <div>
-                  <h3 className="font-serif font-bold text-xl text-foreground group-hover:text-primary transition-colors line-clamp-1">{salon.name}</h3>
-                  <p className="text-muted-foreground text-sm flex items-center gap-1.5 mt-1.5">
-                    <MapPin className="w-3.5 h-3.5" />
+                <div className="px-1 pb-1">
+                  <h3 className="line-clamp-1 font-serif text-xl font-bold text-foreground transition-colors group-hover:text-primary">{salon.name}</h3>
+                  <p className="mt-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
                     {salon.city}, {salon.municipality}
                   </p>
-                  <div className="flex items-center gap-2 mt-3">
+                  <div className="mt-3 flex items-center gap-2">
                     <span className="text-sm font-semibold">Od {salon.startingPrice.toLocaleString("sr")} RSD</span>
                   </div>
                 </div>
               </Link>
             ))}
-          </div>
+          </DiscoveryCarousel>
           
           <div className="mt-10 flex justify-center md:hidden">
             <Button variant="outline" className="w-full h-12 rounded-xl" asChild>

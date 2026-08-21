@@ -2312,7 +2312,7 @@ router.get("/customer/dashboard", async (req, res): Promise<void> => {
     .sort((left, right) => Number(right.topSalon) - Number(left.topSalon)
       || Number(right.featured) - Number(left.featured)
       || right.rating - left.rating)
-    .slice(0, 3);
+    .slice(0, 15);
   const recentSalons = await db.select().from(salonsTable).where(eq(salonsTable.active, true)).limit(3);
   res.json(GetCustomerDashboardResponse.parse({
     upcoming: appointments.filter((item) => item.status !== "cancelled").slice(0, 3),
