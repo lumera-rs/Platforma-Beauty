@@ -41,6 +41,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { DiscoveryCarousel } from "@/components/discovery-carousel";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
@@ -562,6 +563,45 @@ export default function SalonProfile() {
 
   if (!salonData) return <Layout><div className="p-12 text-center text-xl font-medium">Salon nije pronađen.</div></Layout>;
 
+  const renderTopServiceCard = (service: (typeof salonData.topServices)[number]) => {
+    const quickBookSlot = firstAvailableResponse?.services?.find(s => s.serviceId === service.id);
+    return (
+      <Card key={service.id} className="group hover:border-primary/50 transition-all flex flex-col shadow-sm hover:shadow-lg rounded-2xl overflow-hidden border-border/60 h-full">
+        <CardContent className="p-6 flex-1 flex flex-col bg-card">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-bold text-xl group-hover:text-primary transition-colors pr-2 leading-tight">{service.name}</h3>
+            <Badge variant="secondary" className="bg-primary/5 text-primary border-none shrink-0 font-bold">{service.bookingCount}+</Badge>
+          </div>
+          <p className="text-muted-foreground line-clamp-3 mb-6 leading-relaxed flex-1">{service.description}</p>
+          <div className="flex items-center gap-4 text-sm font-semibold mt-auto bg-muted/30 p-3 rounded-xl">
+            <span className="flex items-center gap-2 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
+            <span className="text-foreground ml-auto text-lg">
+              {service.promoPrice ? <span className="flex items-center gap-2"><span className="line-through text-muted-foreground text-sm font-normal">{service.price} RSD</span><span className="text-primary font-bold">{service.promoPrice} RSD</span></span> : <span className="font-bold">{service.price} RSD</span>}
+            </span>
+          </div>
+          {quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
+            <div className="mt-4 pt-4 border-t border-border/50 text-sm">
+              <span className="text-muted-foreground text-xs block mb-1 uppercase tracking-wider font-bold">Prvi slobodan termin</span>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground">{format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}</span>
+                {quickBookSlot.employeeName && <span className="text-muted-foreground">kod {quickBookSlot.employeeName.split(' ')[0]}</span>}
+              </div>
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="p-6 pt-0 bg-card">
+          <Button
+            variant={quickBookSlot ? "default" : "outline"}
+            className={`w-full font-bold text-base h-12 rounded-xl transition-all ${!quickBookSlot ? 'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary' : 'shadow-md'}`}
+            onClick={() => quickBookSlot ? handleQuickBook(service.id, quickBookSlot) : handleSelectService(service.id)}
+          >
+            {quickBookSlot ? "Brzo zakazivanje" : "Izaberi termin"}
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  };
+
   return (
     <Layout>
       <div className="w-full bg-background border-b border-border/50">
@@ -662,56 +702,13 @@ export default function SalonProfile() {
                 <Flame className="w-6 h-6 text-primary" />
                 Popularne usluge
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  {salonData.topServices.map(service => {
-                    const quickBookSlot = firstAvailableResponse?.services?.find(s => s.serviceId === service.id);
-                    return (
-                      <Card key={service.id} className="group hover:border-primary/50 transition-all flex flex-col shadow-sm hover:shadow-lg rounded-2xl overflow-hidden border-border/60">
-                        <CardContent className="p-6 flex-1 flex flex-col bg-card">
-                          <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-xl group-hover:text-primary transition-colors pr-2 leading-tight">{service.name}</h3>
-                            <Badge variant="secondary" className="bg-primary/5 text-primary border-none shrink-0 font-bold">
-                              {service.bookingCount}+
-                            </Badge>
-                          </div>
-                          <p className="text-muted-foreground line-clamp-3 mb-6 leading-relaxed flex-1">{service.description}</p>
-                          <div className="flex items-center gap-4 text-sm font-semibold mt-auto bg-muted/30 p-3 rounded-xl">
-                            <span className="flex items-center gap-2 text-muted-foreground"><Clock className="w-4 h-4" /> {service.durationMinutes} min</span>
-                            <span className="text-foreground ml-auto text-lg">
-                              {service.promoPrice ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="line-through text-muted-foreground text-sm font-normal">{service.price} RSD</span>
-                                  <span className="text-primary font-bold">{service.promoPrice} RSD</span>
-                                </div>
-                              ) : <span className="font-bold">{service.price} RSD</span>}
-                            </span>
-                          </div>
-                          
-                          {quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
-                            <div className="mt-4 pt-4 border-t border-border/50 text-sm">
-                              <span className="text-muted-foreground text-xs block mb-1 uppercase tracking-wider font-bold">Prvi slobodan termin</span>
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-foreground">
-                                  {format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}
-                                </span>
-                                {quickBookSlot.employeeName && <span className="text-muted-foreground">kod {quickBookSlot.employeeName.split(' ')[0]}</span>}
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                        <CardFooter className="p-6 pt-0 bg-card">
-                          <Button
-                            variant={quickBookSlot ? "default" : "outline"}
-                            className={`w-full font-bold text-base h-12 rounded-xl transition-all ${!quickBookSlot ? 'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary' : 'shadow-md'}`}
-                            onClick={() => quickBookSlot ? handleQuickBook(service.id, quickBookSlot) : handleSelectService(service.id)}
-                          >
-                            {quickBookSlot ? "Brzo zakazivanje" : "Izaberi termin"}
-                          </Button>
-                        </CardFooter>
-                      </Card>
-                    );
-                  })}
-              </div>
+              {salonData.topServices.length === 1 ? (
+                <div className="w-full max-w-[520px]">{renderTopServiceCard(salonData.topServices[0])}</div>
+              ) : (
+                <DiscoveryCarousel ariaLabel="Popularne usluge" itemClassName="basis-[88%] sm:basis-2/3 md:basis-2/3 lg:!basis-2/3 xl:!basis-2/3">
+                  {salonData.topServices.map(renderTopServiceCard)}
+                </DiscoveryCarousel>
+              )}
             </section>
           )}
 

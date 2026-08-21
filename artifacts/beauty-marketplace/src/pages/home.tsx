@@ -88,23 +88,23 @@ export default function Home() {
   return (
     <Layout>
       {/* Hero Section - Quiet Luxury aesthetic */}
-      <section className="relative w-full bg-secondary pt-24 pb-32 md:pt-36 md:pb-48 overflow-hidden">
+      <section className="relative w-full bg-secondary pt-16 pb-20 md:pt-20 md:pb-24 overflow-hidden">
         {/* We use a generated elegant background to set the tone */}
         <div className="absolute inset-0 bg-[url('/hero-bg.jpg')] opacity-20 bg-cover bg-center mix-blend-multiply" />
         <div className="absolute inset-0 bg-gradient-to-b from-secondary/80 to-secondary/30 pointer-events-none" />
 
         <div className="container mx-auto px-4 relative z-10 flex flex-col items-center text-center">
-          <Badge variant="outline" className="mb-6 border-primary/20 text-primary bg-primary/5 px-4 py-1.5 text-sm font-medium tracking-widest uppercase">
+          <Badge variant="outline" className="mb-4 border-primary/20 text-primary bg-primary/5 px-4 py-1.5 text-sm font-medium tracking-widest uppercase">
             Dobrodošli na Lumeru
           </Badge>
-          <h1 className="text-5xl md:text-7xl font-serif font-bold text-foreground leading-[1.1] mb-6 max-w-4xl">
+          <h1 className="text-5xl md:text-7xl font-serif font-bold text-foreground leading-[1.1] mb-4 max-w-4xl">
             Vreme za vas je <span className="text-primary italic">neprocenjivo.</span>
           </h1>
-          <p className="text-lg md:text-xl text-foreground/80 mb-12 max-w-2xl font-light">
+          <p className="text-lg md:text-xl text-foreground/80 mb-7 max-w-2xl font-light">
             Otkrijte i rezervišite najbolje salone lepote, wellness centre i spa tretmane, provereno od strane hiljada korisnika.
           </p>
 
-          <form onSubmit={handleSearch} className="bg-background rounded-2xl shadow-xl p-3 flex flex-col md:flex-row gap-3 items-center w-full max-w-3xl mb-12 mx-auto">
+          <form onSubmit={handleSearch} className="bg-background rounded-2xl shadow-xl p-3 flex flex-col md:flex-row gap-3 items-center w-full max-w-3xl mb-6 mx-auto">
             <div className="flex-1 flex items-center gap-3 w-full bg-secondary/50 rounded-xl px-4 py-3.5 border border-transparent focus-within:border-primary/30 focus-within:bg-background transition-colors">
               <Search className="text-muted-foreground w-5 h-5 shrink-0" />
               <select
@@ -144,7 +144,7 @@ export default function Home() {
           </form>
 
           {trustStats ? (
-            <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 text-sm md:text-base font-medium text-foreground/90 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-1000 fill-mode-forwards">
+             <div className="flex flex-wrap items-center justify-center gap-4 md:gap-8 text-sm md:text-base font-medium text-foreground/90 mt-2 animate-in fade-in slide-in-from-bottom-4 duration-1000 fill-mode-forwards">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 <span><strong className="text-foreground">{trustStats.activeSalons.toLocaleString("sr")}</strong> salona</span>
@@ -161,7 +161,7 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex flex-wrap justify-center gap-4" aria-label="Učitavanje statistika platforme">
+             <div className="mt-2 flex flex-wrap justify-center gap-4" aria-label="Učitavanje statistika platforme">
               <Skeleton className="h-6 w-32 rounded-full" />
               <Skeleton className="h-6 w-32 rounded-full" />
               <Skeleton className="h-6 w-32 rounded-full" />
@@ -233,35 +233,31 @@ export default function Home() {
             <p className="text-muted-foreground text-lg">Vaš put do savršenog tretmana u tri jednostavna koraka, bez stresa i pozivanja.</p>
           </div>
 
-          <DiscoveryCarousel
-            ariaLabel="Kako LUMERA funkcioniše"
-            itemClassName="basis-[86%] sm:basis-[48%] md:basis-1/3"
-          >
+          <div className="hidden md:grid md:grid-cols-3 gap-5" aria-label="Kako LUMERA funkcioniše">
             <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
-              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105">
-                <Search className="h-7 w-7" strokeWidth={1.5} />
-              </div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 01</p>
-              <h3 className="mb-3 text-xl font-serif font-bold">Pronađite</h3>
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105"><Search className="h-7 w-7" strokeWidth={1.5} /></div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 01</p><h3 className="mb-3 text-xl font-serif font-bold">Pronađite</h3>
               <p className="text-muted-foreground">Istražite stotine proverenih salona. Filtrirajte po lokaciji, ocenama i uslugama koje vas zanimaju.</p>
             </article>
             <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
-              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105">
-                <CalendarDays className="h-7 w-7" strokeWidth={1.5} />
-              </div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 02</p>
-              <h3 className="mb-3 text-xl font-serif font-bold">Rezervišite</h3>
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary transition-transform duration-300 group-hover:scale-105"><CalendarDays className="h-7 w-7" strokeWidth={1.5} /></div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 02</p><h3 className="mb-3 text-xl font-serif font-bold">Rezervišite</h3>
               <p className="text-muted-foreground">Izaberite slobodan termin koji vam odgovara i rezervišite online u samo nekoliko klikova, 24/7.</p>
             </article>
             <article className="group h-full rounded-2xl border border-accent/20 bg-background p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
-              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-transform duration-300 group-hover:scale-105">
-                <Sparkles className="h-7 w-7" strokeWidth={1.5} />
-              </div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent/70">Korak 03</p>
-              <h3 className="mb-3 text-xl font-serif font-bold">Uživajte</h3>
+              <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-transform duration-300 group-hover:scale-105"><Sparkles className="h-7 w-7" strokeWidth={1.5} /></div>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent/70">Korak 03</p><h3 className="mb-3 text-xl font-serif font-bold">Uživajte</h3>
               <p className="text-muted-foreground">Pojavite se u salonu i uživajte u tretmanu. Podelite utiske i pomozite drugima u izboru.</p>
             </article>
-          </DiscoveryCarousel>
+          </div>
+          <div className="md:hidden">
+            <DiscoveryCarousel ariaLabel="Kako LUMERA funkcioniše" itemClassName="basis-[86%] sm:basis-[48%]">
+              {/* The mobile rail intentionally keeps the next step in view. */}
+              <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm"><div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary"><Search className="h-7 w-7" strokeWidth={1.5} /></div><p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 01</p><h3 className="mb-3 text-xl font-serif font-bold">Pronađite</h3><p className="text-muted-foreground">Istražite stotine proverenih salona. Filtrirajte po lokaciji, ocenama i uslugama koje vas zanimaju.</p></article>
+              <article className="group h-full rounded-2xl border border-primary/10 bg-background p-6 text-left shadow-sm"><div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-primary"><CalendarDays className="h-7 w-7" strokeWidth={1.5} /></div><p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary/60">Korak 02</p><h3 className="mb-3 text-xl font-serif font-bold">Rezervišite</h3><p className="text-muted-foreground">Izaberite slobodan termin koji vam odgovara i rezervišite online u samo nekoliko klikova, 24/7.</p></article>
+              <article className="group h-full rounded-2xl border border-accent/20 bg-background p-6 text-left shadow-sm"><div className="mb-8 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent"><Sparkles className="h-7 w-7" strokeWidth={1.5} /></div><p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent/70">Korak 03</p><h3 className="mb-3 text-xl font-serif font-bold">Uživajte</h3><p className="text-muted-foreground">Pojavite se u salonu i uživajte u tretmanu. Podelite utiske i pomozite drugima u izboru.</p></article>
+            </DiscoveryCarousel>
+          </div>
         </div>
       </section>
 
