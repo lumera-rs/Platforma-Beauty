@@ -243,3 +243,66 @@ test("salon owners only see and update their own notifications", async ({ page }
     await cleanUpNotificationFixture(fixture);
   }
 });
+
+test("a new B2B order refreshes mobile and desktop notification badges", async ({ page, browser }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createNotificationFixture();
+  let desktopContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let orderingContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+
+  try {
+    // Keep the fixture notification visible without letting it affect the
+    // before/after unread count for the order created in this test.
+    await db.update(salonNotificationsTable)
+      .set({ readAt: new Date() })
+      .where(eq(salonNotificationsTable.id, fixture.notificationAId));
+
+    await signIn(page, fixture.ownerA);
+    await page.goto("/vlasnik");
+    await page.getByTestId("button-mobile-menu").click();
+    await expect(page.getByTestId("link-notifications-mobile")).toBeVisible();
+    await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveCount(0);
+
+    desktopContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const desktopPage = await desktopContext.newPage();
+    await signIn(desktopPage, fixture.ownerA);
+    await desktopPage.goto("/vlasnik");
+    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0);
+
+    orderingContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const orderingPage = await orderingContext.newPage();
+    await signIn(orderingPage, fixture.ownerA);
+    const addToCart = await orderingPage.request.post("/api/shop/cart/items", {
+      data: { productId: fixture.productId, quantity: 1 },
+    });
+    expect(addToCart, "The new order fixture must be addable to the active salon cart.").toBeOK();
+
+    await orderingPage.goto("/vlasnik/prodavnica/korpa");
+    await orderingPage.getByRole("link", { name: /Nastavi na dostavu/ }).click();
+    await expect(orderingPage).toHaveURL(/\/vlasnik\/prodavnica\/dostava$/);
+    await orderingPage.getByRole("button", { name: /Nastavi na pregled i plaćanje/ }).click();
+    await expect(orderingPage).toHaveURL(/\/vlasnik\/prodavnica\/pregled$/);
+    await orderingPage.getByRole("checkbox").last().check();
+    const checkoutResponse = orderingPage.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/shop/checkout",
+    );
+    await orderingPage.getByRole("button", { name: "Potvrdi porudžbinu" }).click();
+    expect((await checkoutResponse).status(), "The checkout must create a new order and notification.").toBe(201);
+    fixture.orderId = (await orderingPage.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];
+    await expect(orderingPage.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible();
+
+    await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveText("1", { timeout: 15000 });
+    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveText("1", { timeout: 15000 });
+
+    await page.getByTestId("link-notifications-mobile").click();
+    await expect(page).toHaveURL(/\/vlasnik\/obavestenja$/);
+    await page.getByRole("button", { name: "Označi kao pročitano" }).click();
+    await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveCount(0);
+    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0, { timeout: 15000 });
+  } finally {
+    await orderingContext?.close();
+    await desktopContext?.close();
+    await cleanUpNotificationFixture(fixture);
+  }
+});

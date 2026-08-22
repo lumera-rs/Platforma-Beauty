@@ -21,7 +21,14 @@ export function BusinessNavbar() {
   const user = userResp?.user;
   const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = salonNotificationsQueryKey(user?.id);
-  const { data: notifications = [] } = useListSalonNotifications({ query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey } });
+  const { data: notifications = [] } = useListSalonNotifications({
+    query: {
+      enabled: user?.role === "SALON_OWNER",
+      queryKey: notificationsQueryKey,
+      refetchInterval: 5000,
+      refetchOnWindowFocus: true,
+    },
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [managedSalons, setManagedSalons] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [activeSalonId, setActiveSalonId] = useState<string>("");
@@ -212,6 +219,8 @@ export function BusinessNavbar() {
             size="icon" 
             className="md:hidden text-white hover:bg-white/10"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
+            data-testid="button-mobile-menu"
           >
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
