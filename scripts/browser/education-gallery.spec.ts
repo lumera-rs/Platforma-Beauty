@@ -19,7 +19,7 @@ import {
 import { eq, inArray, sql } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLq7wAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWPYEtD0HxkzkC4AAFKXKFH5WEhSAAAAAElFTkSuQmCC",
   "base64",
 );
 const maxGalleryImageBytes = 8 * 1024 * 1024;
@@ -326,7 +326,7 @@ test("education center owner uploads, manages, and removes a course gallery imag
     const servedImage = await page.request.get(ownerCourseJson.gallery[0]!.url);
     expect(servedImage).toBeOK();
     expect(servedImage.headers()["content-type"]).toContain("image/png");
-    expect(servedImage.headers()["cache-control"]).toBe("private, no-store");
+    expect(servedImage.headers()["cache-control"]).toBe("public, max-age=3600, stale-while-revalidate=86400");
     const originalImageBytes = await servedImage.body();
     const stagingOverwrite = await page.request.put(firstUploadTicket.uploadUrl, {
       headers: { "Content-Type": "image/png" },
