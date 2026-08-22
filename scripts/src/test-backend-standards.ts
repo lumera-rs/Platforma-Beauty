@@ -1,7 +1,7 @@
 /**
  * Task 131 — Backend regression gate
  *
- * Checks (all run via the shared @workspace/db pool; session settings rolled back):
+ * Checks:
  *   1. FK-index audit   – every FK column in public schema has a covering index
  *   2. Critical index   – curated named indexes exist in pg_indexes
  *   3. EXPLAIN probes   – representative query paths use expected indexes
@@ -9,10 +9,14 @@
  *   4. Cache / archive  – static source code checks for required cache patterns
  *   5. Static scan      – await-in-loop and unbounded-select violations
  *
+ * Modes:
+ *   --static-only       – publish-safe source checks; does not import @workspace/db
+ *   --database-only     – live schema/index checks after development schema sync
+ *   no flag             – run all checks (backward-compatible local default)
+ *
  * Exit codes:  0 = all pass  /  1 = one or more failures
  */
 
-import { pool } from "@workspace/db";
 import {
   checkAwaitInLoops,
   checkCacheInvariants,
@@ -22,8 +26,26 @@ import {
 // ─── pretty printing ───────────────────────────────────────────────────────
 
 type CheckResult = { name: string; ok: boolean; detail?: string };
+type CheckMode = "all" | "static-only" | "database-only";
 
 const results: CheckResult[] = [];
+
+function parseMode(args: string[]): CheckMode {
+  args = args.filter((arg) => arg !== "--");
+  const supportedFlags = new Set(["--static-only", "--database-only"]);
+  const unknownFlags = args.filter((arg) => !supportedFlags.has(arg));
+  if (unknownFlags.length > 0) {
+    throw new Error(`Unknown argument(s): ${unknownFlags.join(", ")}`);
+  }
+  if (args.includes("--static-only") && args.includes("--database-only")) {
+    throw new Error(
+      "--static-only and --database-only cannot be used together.",
+    );
+  }
+  if (args.includes("--static-only")) return "static-only";
+  if (args.includes("--database-only")) return "database-only";
+  return "all";
+}
 
 function pass(name: string, detail?: string) {
   results.push({ name, ok: true, detail });
@@ -53,7 +75,9 @@ function printResults() {
   if (failures === 0) {
     console.log(`  \x1b[32mAll ${results.length} checks passed.\x1b[0m\n`);
   } else {
-    console.log(`  \x1b[31m${failures} / ${results.length} checks failed.\x1b[0m\n`);
+    console.log(
+      `  \x1b[31m${failures} / ${results.length} checks failed.\x1b[0m\n`,
+    );
   }
 }
 
@@ -67,8 +91,14 @@ interface DbClient {
   release(): void;
 }
 
-async function query(client: DbClient, sql: string, values?: unknown[]): Promise<Row[]> {
-  const result = values ? await client.query(sql, values) : await client.query(sql);
+async function query(
+  client: DbClient,
+  sql: string,
+  values?: unknown[],
+): Promise<Row[]> {
+  const result = values
+    ? await client.query(sql, values)
+    : await client.query(sql);
   return result.rows as Row[];
 }
 
@@ -79,7 +109,9 @@ async function query(client: DbClient, sql: string, values?: unknown[]): Promise
  * leading-column index.  PostgreSQL does NOT auto-create indexes for FK columns.
  */
 async function auditForeignKeyIndexes(client: DbClient): Promise<string[]> {
-  const rows = await query(client, `
+  const rows = await query(
+    client,
+    `
     WITH fk_cols AS (
       SELECT
         kcu.table_name,
@@ -118,9 +150,12 @@ async function auditForeignKeyIndexes(client: DbClient): Promise<string[]> {
     GROUP BY fk.table_name, fk.constraint_name
     HAVING min(ic.index_name) IS NULL
     ORDER BY fk.table_name;
-  `);
+  `,
+  );
 
-  return rows.map((r) => `${String(r["table_name"])}(${String(r["fk_columns"])})`);
+  return rows.map(
+    (r) => `${String(r["table_name"])}(${String(r["fk_columns"])})`,
+  );
 }
 
 // ─── 2. Critical named indexes ─────────────────────────────────────────────
@@ -175,7 +210,10 @@ const REQUIRED_INDEXES = [
 async function auditNamedIndexes(
   client: DbClient,
 ): Promise<{ missing: string[]; found: number }> {
-  const rows = await query(client, `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`);
+  const rows = await query(
+    client,
+    `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`,
+  );
   const existing = new Set(rows.map((r) => String(r["indexname"])));
   const missing = REQUIRED_INDEXES.filter((name) => !existing.has(name));
   return { missing, found: REQUIRED_INDEXES.length - missing.length };
@@ -265,12 +303,12 @@ const EXPLAIN_CHECKS: ExplainCheck[] = [
 
 // ─── Main ──────────────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
+async function runDatabaseChecks(): Promise<void> {
   if (!process.env["DATABASE_URL"]) {
-    console.error("ERROR: DATABASE_URL is not set.");
-    process.exit(1);
+    throw new Error("DATABASE_URL is not set.");
   }
 
+  const { pool } = await import("@workspace/db");
   let client: DbClient | null = null;
   try {
     client = await pool.connect();
@@ -302,7 +340,9 @@ async function main(): Promise<void> {
     try {
       const { missing, found } = await auditNamedIndexes(client);
       if (missing.length === 0) {
-        pass(`Named-index check: all ${REQUIRED_INDEXES.length} critical indexes present (${found} found)`);
+        pass(
+          `Named-index check: all ${REQUIRED_INDEXES.length} critical indexes present (${found} found)`,
+        );
       } else {
         fail(
           `Named-index check: ${missing.length} critical index(es) missing`,
@@ -327,7 +367,9 @@ async function main(): Promise<void> {
             plan.toLowerCase().includes("rows=0") ||
             plan.toLowerCase().includes("rows=1");
           if (emptyTable) {
-            pass(`EXPLAIN: ${check.name} (empty/tiny table — index not needed, ok)`);
+            pass(
+              `EXPLAIN: ${check.name} (empty/tiny table — index not needed, ok)`,
+            );
           } else {
             fail(
               `EXPLAIN: ${check.name}`,
@@ -339,15 +381,13 @@ async function main(): Promise<void> {
         fail(`EXPLAIN: ${check.name}`, String(err));
       }
     }
-
   } finally {
     if (client) client.release();
     await pool.end();
   }
+}
 
-  // ── 4+5. Static code scans ─────────────────────────────────────────────
-  // Run after releasing the DB connection (no DB needed for these).
-
+async function runStaticChecks(): Promise<void> {
   // 4a. Cache invariants
   try {
     const cacheResults = await checkCacheInvariants();
@@ -390,6 +430,17 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     fail("Static: unbounded-select check", String(err));
+  }
+}
+
+async function main(): Promise<void> {
+  const mode = parseMode(process.argv.slice(2));
+
+  if (mode !== "static-only") {
+    await runDatabaseChecks();
+  }
+  if (mode !== "database-only") {
+    await runStaticChecks();
   }
 
   printResults();
