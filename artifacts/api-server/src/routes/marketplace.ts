@@ -6158,33 +6158,55 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
     res.status(400).json({ error: "Status nije ispravan." }); return;
   }
-  const [updated] = await db.update(educationCentersTable).set({
-    verificationStatus: verificationStatus as typeof center.verificationStatus,
-    verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : center.verificationNote,
-    verifiedAt: verificationStatus === "verified" ? new Date() : null,
-    verifiedByUserId: verificationStatus === "verified" ? user.id : null,
-    updatedAt: new Date(),
-  }).where(eq(educationCentersTable.id, center.id)).returning();
-  if (subscriptionStatus) {
-    const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
-    const [existing] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, center.id)).limit(1);
-    if (existing) {
-      await db.update(educationCenterSubscriptionsTable).set({
-        status: subscriptionStatus as typeof existing.status,
-        ...(planId ? { planId } : {}),
-        currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : existing.currentPeriodEnd,
+  const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
+  let updated: typeof center | undefined;
+  try {
+    await db.transaction(async (tx) => {
+      // Verification changes and settlements must share the same center lock.
+      // Otherwise a settlement can pass its eligibility check while a revocation
+      // is waiting to commit, then create access and financial records anyway.
+      await lockEducationCenterFinancials(tx, center.id);
+      const [currentCenter] = await tx.select().from(educationCentersTable)
+        .where(eq(educationCentersTable.id, center.id))
+        .for("update")
+        .limit(1);
+      if (!currentCenter) throw new Error("Edukativni centar nije pronađen.");
+      const currentVerificationStatus = verificationStatus as typeof currentCenter.verificationStatus;
+      [updated] = await tx.update(educationCentersTable).set({
+        verificationStatus: currentVerificationStatus,
+        verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : currentCenter.verificationNote,
+        verifiedAt: currentVerificationStatus === "verified" ? new Date() : null,
+        verifiedByUserId: currentVerificationStatus === "verified" ? user.id : null,
         updatedAt: new Date(),
-      }).where(eq(educationCenterSubscriptionsTable.id, existing.id));
-    } else {
-      const [fallbackPlan] = planId
-        ? await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1)
-        : await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
-      if (!fallbackPlan) { res.status(409).json({ error: "Pre aktivacije pretplate mora postojati aktivan plan." }); return; }
-      await db.insert(educationCenterSubscriptionsTable).values({
-        centerId: center.id, planId: fallbackPlan.id, status: subscriptionStatus as "trial" | "active" | "past_due" | "cancelled" | "suspended" | "free_via_loyalty",
-        dueAmount: fallbackPlan.price, currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
-      });
-    }
+      }).where(eq(educationCentersTable.id, currentCenter.id)).returning();
+      if (subscriptionStatus) {
+        const [existing] = await tx.select().from(educationCenterSubscriptionsTable)
+          .where(eq(educationCenterSubscriptionsTable.centerId, currentCenter.id))
+          .for("update")
+          .limit(1);
+        if (existing) {
+          await tx.update(educationCenterSubscriptionsTable).set({
+            status: subscriptionStatus as typeof existing.status,
+            ...(planId ? { planId } : {}),
+            currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : existing.currentPeriodEnd,
+            updatedAt: new Date(),
+          }).where(eq(educationCenterSubscriptionsTable.id, existing.id));
+        } else {
+          const [fallbackPlan] = planId
+            ? await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1)
+            : await tx.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
+          if (!fallbackPlan) throw new Error("Pre aktivacije pretplate mora postojati aktivan plan.");
+          await tx.insert(educationCenterSubscriptionsTable).values({
+            centerId: currentCenter.id, planId: fallbackPlan.id, status: subscriptionStatus as "trial" | "active" | "past_due" | "cancelled" | "suspended" | "free_via_loyalty",
+            dueAmount: fallbackPlan.price, currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
+          });
+        }
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Izmena centra nije uspela.";
+    res.status(message === "Edukativni centar nije pronađen." ? 404 : 409).json({ error: message });
+    return;
   }
   res.json({ id: updated!.id, verificationStatus: updated!.verificationStatus, verificationNote: updated!.verificationNote, verifiedAt: updated!.verifiedAt?.toISOString() ?? null });
 });

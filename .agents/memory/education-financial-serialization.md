@@ -9,6 +9,12 @@ All financial mutations for one education center must acquire the same transacti
 
 **How to apply:** Put center-level serialization around payout creation, dispute opening, and dispute resolution. Treat an escrow that has paid fields as ineligible for a refund transition; an explicit admin rejection can only record the decision and reconcile a legacy frozen status, never reverse a payment silently. Enrollment also needs a database-enforced participant identity and purchaser-scoped idempotency key so retries or concurrent requests cannot create a second escrow liability.
 
+Center verification and subscription changes must take that same center lock before committing eligibility changes.
+
+**Why:** A settlement that read the earlier eligible state could otherwise create access and financial records just as an administrator revokes the center.
+
+**How to apply:** Serialize eligibility updates with settlement before its final locked eligibility check, so the transaction that acquires the lock first defines whether settlement can continue.
+
 Release and refund ledger writes, plus release audit writes, should also have database uniqueness backstops per escrow; active disputes need one partial unique key per enrollment.
 
 **Why:** Transaction guards protect the intended code path, but database constraints prevent a future retry or alternate writer from duplicating a financial transition.

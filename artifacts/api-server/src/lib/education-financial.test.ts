@@ -510,6 +510,85 @@ async function run(): Promise<void> {
     });
     assert.equal(restoreCenterResponse.status, 200, "The center must be restored for the remaining finance coverage.");
 
+    const concurrentRevocationEnrollmentResponse = await request(baseUrl, `/education/courses/${revokedCourse!.id}/enrollments`, {
+      method: "POST",
+      cookie: outsiderCookie,
+      headers: { "idempotency-key": `revoked-race-${suffix}` },
+      body: {},
+    });
+    assert.equal(concurrentRevocationEnrollmentResponse.status, 201, "A verified center must accept the concurrent-race enrollment.");
+    const concurrentRevocationEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(concurrentRevocationEnrollmentResponse);
+    assert.equal(concurrentRevocationEnrollment.status, "pending");
+    assert.equal(concurrentRevocationEnrollment.paymentStatus, "pending");
+    enrollmentIds.push(concurrentRevocationEnrollment.id);
+
+    const revocationRaceLockKey = `education-center:${center.id}`;
+    let revocationRaceLockAcquired!: () => void;
+    const revocationRaceLockAcquiredPromise = new Promise<void>((resolve) => { revocationRaceLockAcquired = resolve; });
+    const revocationRaceLockReleasedPromise = new Promise<void>((resolve) => { releaseRaceLock = resolve; });
+    raceLockHolder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${revocationRaceLockKey}))`);
+      revocationRaceLockAcquired();
+      await revocationRaceLockReleasedPromise;
+    });
+    await revocationRaceLockAcquiredPromise;
+
+    const concurrentRevocationRequest = request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "pending", verificationNote: "Queued revocation must win settlement." },
+    });
+    await waitForAdvisoryLockWaiters(revocationRaceLockKey, 1);
+    const concurrentSettlementRequest = request(baseUrl, `/admin/education/enrollments/${concurrentRevocationEnrollment.id}/settle`, {
+      method: "POST",
+      cookie: adminCookie,
+    });
+    await waitForAdvisoryLockWaiters(revocationRaceLockKey, 2);
+    const releaseRevocationRaceLock = releaseRaceLock as (() => void) | undefined;
+    if (!releaseRevocationRaceLock) throw new Error("The revocation race lock must be releasable after both requests are queued.");
+    releaseRevocationRaceLock();
+    await raceLockHolder;
+    raceLockHolder = undefined;
+    releaseRaceLock = undefined;
+
+    const [concurrentRevocationResponse, concurrentSettlementResponse] = await Promise.all([
+      concurrentRevocationRequest,
+      concurrentSettlementRequest,
+    ]);
+    assert.equal(concurrentRevocationResponse.status, 200, "The queued center revocation must commit first.");
+    assert.equal(concurrentSettlementResponse.status, 409, "Settlement must reject after the queued revocation commits.");
+    const [concurrentRevocationEnrollmentRow] = await db.select().from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.id, concurrentRevocationEnrollment.id));
+    assert.equal(concurrentRevocationEnrollmentRow?.status, "pending", "A losing settlement must leave the enrollment pending.");
+    assert.equal(concurrentRevocationEnrollmentRow?.paymentStatus, "pending", "A losing settlement must not mark the purchase paid.");
+    assert.equal(concurrentRevocationEnrollmentRow?.accessGrantedAt, null, "A losing settlement must not grant course access.");
+    assert.equal(
+      (await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, concurrentRevocationEnrollment.id))).length,
+      0,
+      "A losing settlement must not create escrow.",
+    );
+    assert.equal(
+      (await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.enrollmentId, concurrentRevocationEnrollment.id))).length,
+      0,
+      "A losing settlement must not create ledger entries.",
+    );
+    assert.equal(
+      (await db.select().from(educationFinancialEventsTable).where(eq(educationFinancialEventsTable.enrollmentId, concurrentRevocationEnrollment.id))).length,
+      0,
+      "A losing settlement must not create financial events.",
+    );
+    assert.equal(
+      (await db.select().from(educationThreadsTable).where(eq(educationThreadsTable.enrollmentId, concurrentRevocationEnrollment.id))).length,
+      0,
+      "A losing settlement must not create an education thread.",
+    );
+    const restoreAfterConcurrentRevocation = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "verified" },
+    });
+    assert.equal(restoreAfterConcurrentRevocation.status, 200, "The center must be restored after the concurrency coverage.");
+
     const onlineEscrowBeforeDispute = (await db.select().from(educationEscrowsTable)
       .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId)))[0];
     const liveEscrowBeforeDispute = (await db.select().from(educationEscrowsTable)
@@ -900,8 +979,8 @@ async function run(): Promise<void> {
       body: { reason: "Dospeće i spor u isto vreme", details: "Provera zaštite granice roka." },
     });
     await waitForAdvisoryLockWaiters(raceLockKey, 2);
-    const releaseMaturityRaceLock = releaseRaceLock;
-    assert.ok(releaseMaturityRaceLock, "The maturity race lock must be releasable after both requests are queued.");
+    const releaseMaturityRaceLock = releaseRaceLock as (() => void) | undefined;
+    if (!releaseMaturityRaceLock) throw new Error("The maturity race lock must be releasable after both requests are queued.");
     releaseMaturityRaceLock();
     await raceLockHolder;
     raceLockHolder = undefined;
