@@ -372,10 +372,7 @@ export async function processImageBytes(input: {
       { name: "medium", width: 800 },
       { name: "large", width: 1600 },
     ] as const;
-    const avifEnabled = Boolean(
-      (sharp.format as typeof sharp.format & { avif?: { output?: boolean } }).avif?.output
-      || sharp.format.heif?.output,
-    );
+    const avifEnabled = sharp.format.heif.output.buffer;
 
     for (const size of sizes) {
       const resized = normalized.clone().resize({
