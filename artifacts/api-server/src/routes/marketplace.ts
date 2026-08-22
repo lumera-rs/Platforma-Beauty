@@ -5697,6 +5697,17 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
       if (!enrollment || enrollment.status !== "pending" || enrollment.paymentStatus !== "pending") throw new Error("Ovaj zahtev je već obrađen.");
       const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).for("update").limit(1);
       if (!course?.centerId) throw new Error("Kurs nema verifikovanog izdavača.");
+      const [center] = await tx.select().from(educationCentersTable)
+        .where(eq(educationCentersTable.id, course.centerId))
+        .for("update")
+        .limit(1);
+      const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+        .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId))
+        .for("update")
+        .limit(1);
+      if (center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+        throw new Error("Centar više nije verifikovan ili nema aktivnu pretplatu.");
+      }
       let session: typeof courseSessionsTable.$inferSelect | null = null;
       if (course.format !== "online") {
         const sessions = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt)).for("update");

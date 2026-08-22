@@ -16,6 +16,7 @@ import {
   educationLedgerEntriesTable,
   educationPayoutsTable,
   educationPlatformSettingsTable,
+  educationThreadsTable,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
@@ -236,7 +237,7 @@ async function run(): Promise<void> {
     assert.ok(unverifiedCourse);
     courseIds.push(unverifiedCourse.id);
 
-    const [onlineCourse, liveCourse, refundCourse, rejectCourse] = await db.insert(coursesTable).values([
+    const [onlineCourse, liveCourse, refundCourse, rejectCourse, revokedCourse] = await db.insert(coursesTable).values([
       {
         centerId: center.id,
         title: `Online financial course ${suffix}`,
@@ -289,8 +290,21 @@ async function run(): Promise<void> {
         imageUrl: "/test-education-finance.jpg",
         published: true,
       },
+      {
+        centerId: center.id,
+        title: `Revoked center course ${suffix}`,
+        description: "Kurs za proveru opoziva verifikacije centra.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 14500,
+        duration: "3 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
     ]).returning();
-    for (const course of [onlineCourse, liveCourse, refundCourse, rejectCourse]) {
+    for (const course of [onlineCourse, liveCourse, refundCourse, rejectCourse, revokedCourse]) {
       assert.ok(course);
       courseIds.push(course.id);
     }
@@ -437,6 +451,64 @@ async function run(): Promise<void> {
     const liveEnrollmentId = await enrollAndSettle(liveCourse!.id, `live-${suffix}`);
     const refundEnrollmentId = await enrollAndSettle(refundCourse!.id, `refund-${suffix}`);
     const rejectEnrollmentId = await enrollAndSettle(rejectCourse!.id, `reject-${suffix}`);
+
+    const revokedEnrollmentResponse = await request(baseUrl, `/education/courses/${revokedCourse!.id}/enrollments`, {
+      method: "POST",
+      cookie: buyerCookie,
+      headers: { "idempotency-key": `revoked-${suffix}` },
+      body: {},
+    });
+    assert.equal(revokedEnrollmentResponse.status, 201, "A verified center must accept a pending marketplace enrollment.");
+    const revokedEnrollment = await json<{ id: string; status: string; paymentStatus: string }>(revokedEnrollmentResponse);
+    assert.equal(revokedEnrollment.status, "pending");
+    assert.equal(revokedEnrollment.paymentStatus, "pending");
+    enrollmentIds.push(revokedEnrollment.id);
+
+    const revokeCenterResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "pending", verificationNote: "Verification revoked during settlement test." },
+    });
+    assert.equal(revokeCenterResponse.status, 200, "The center must be moved back to pending before settlement.");
+
+    const blockedRevokedSettlement = await request(baseUrl, `/admin/education/enrollments/${revokedEnrollment.id}/settle`, {
+      method: "POST",
+      cookie: adminCookie,
+    });
+    assert.equal(blockedRevokedSettlement.status, 409, "Settlement must reject a pending enrollment after center verification is revoked.");
+
+    const [revokedEnrollmentRow] = await db.select().from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.id, revokedEnrollment.id));
+    assert.equal(revokedEnrollmentRow?.status, "pending", "Rejected settlement must not grant course access.");
+    assert.equal(revokedEnrollmentRow?.paymentStatus, "pending", "Rejected settlement must not mark the purchase paid.");
+    assert.equal(revokedEnrollmentRow?.accessGrantedAt, null, "Rejected settlement must not set an access grant.");
+    assert.equal(
+      (await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, revokedEnrollment.id))).length,
+      0,
+      "Rejected settlement must not create escrow.",
+    );
+    assert.equal(
+      (await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.enrollmentId, revokedEnrollment.id))).length,
+      0,
+      "Rejected settlement must not create ledger entries.",
+    );
+    assert.equal(
+      (await db.select().from(educationFinancialEventsTable).where(eq(educationFinancialEventsTable.enrollmentId, revokedEnrollment.id))).length,
+      0,
+      "Rejected settlement must not create financial events.",
+    );
+    assert.equal(
+      (await db.select().from(educationThreadsTable).where(eq(educationThreadsTable.enrollmentId, revokedEnrollment.id))).length,
+      0,
+      "Rejected settlement must not create an education thread.",
+    );
+
+    const restoreCenterResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "verified" },
+    });
+    assert.equal(restoreCenterResponse.status, 200, "The center must be restored for the remaining finance coverage.");
 
     const onlineEscrowBeforeDispute = (await db.select().from(educationEscrowsTable)
       .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId)))[0];
