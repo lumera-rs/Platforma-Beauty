@@ -29,6 +29,7 @@ node_modules
 
 # misc
 /.sass-cache
+/.lumera-test-state/
 /connect.lock
 /coverage
 /scripts/test-results/
