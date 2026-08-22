@@ -15,6 +15,7 @@
     "test:admin-review-feedback": "playwright test browser/admin-review-feedback.spec.ts",
     "test:admin-salon-designations": "playwright test browser/admin-salon-designations.spec.ts",
     "test:service-library": "playwright test browser/service-library.spec.ts",
+    "test:service-availability": "playwright test browser/owner-service-availability.spec.ts",
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts"
   },
   "devDependencies": {
