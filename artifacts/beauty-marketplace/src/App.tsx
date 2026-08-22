@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, Suspense, lazy, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useGetCurrentUser, type UserRole } from '@workspace/api-client-react';
 import { Loader2 } from 'lucide-react';
@@ -12,49 +12,110 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 
-// Pages
-import Home from './pages/home';
-import Auth from './pages/auth';
-import BusinessAuth from './pages/business-auth';
-import BusinessLanding from './pages/business-landing';
-import BusinessHub from './pages/business-hub';
-import BusinessEducation, { InstructorPublicProfilePage } from './pages/business-education';
-import EducationMarketplace, { EducationPublicCenterPage, EducationPublicCourseDetail } from './pages/education-marketplace';
-import MarketplaceGuides from './pages/marketplace-guides';
-import Salons from './pages/salons';
-import SalonProfile from './pages/salon-profile';
-import CustomerDashboard from './pages/customer-dashboard';
-import OwnerDashboard from './pages/owner/dashboard';
-import OwnerSalonProfile from './pages/owner/profile';
-import OwnerServices from './pages/owner/services';
-import OwnerShop from './pages/owner/shop';
-import OwnerCalendar from './pages/owner/calendar';
-import OwnerLoyalty from './pages/owner/loyalty';
-import OwnerOrders from './pages/owner/orders';
-import OwnerProductDetail from './pages/owner/product-detail';
-import AdminDashboard from './pages/admin/dashboard';
-import AdminSalons from './pages/admin/salons';
-import AdminSalonDetail from './pages/admin/salon-detail';
-import AdminServiceTemplates from './pages/admin/service-templates';
-import AdminUsers from './pages/admin/users';
-import AdminLoyalty from './pages/admin/loyalty';
-import AdminSubscriptions from './pages/admin/subscriptions';
-import AdminReviews from './pages/admin/reviews';
-import AdminProducts from './pages/admin/products';
-import AdminCategories from './pages/admin/categories';
-import AdminBrands from './pages/admin/brands';
-import AdminShipping from './pages/admin/shipping';
-import AdminOrders from './pages/admin/orders';
-import AdminEmailMarketing from './pages/admin/email-marketing';
-import AdminSmsDeliveries from './pages/admin/sms-deliveries';
-import AdminIntegrations from './pages/admin/integrations';
-import AdminEducationMarketplace from './pages/admin/education-marketplace';
-import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, OwnerOrderConfirmationPage } from './pages/owner/checkout';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
-import OwnerNotifications from './pages/owner/notifications';
-import OwnerEmployees from './pages/owner/employees';
-import EmployeePortal, { EmployeePasswordChange } from './pages/employee/portal';
+
+// ---------------------------------------------------------------------------
+// Route-level code splitting.
+//
+// Each page (or logical route section) is loaded lazily so that a visitor only
+// downloads the JavaScript for the surface they actually navigate to. Pages
+// exported as `default` load directly; pages exported by name are re-mapped to a
+// `default` field so `React.lazy` can consume them. Sibling named exports that
+// live in the same module (for example the checkout flow) share a single chunk,
+// which keeps a logical section's code together instead of over-splitting.
+// ---------------------------------------------------------------------------
+
+// Public / client surface
+const Home = lazy(() => import('./pages/home'));
+const Auth = lazy(() => import('./pages/auth'));
+const Salons = lazy(() => import('./pages/salons'));
+const SalonProfile = lazy(() => import('./pages/salon-profile'));
+const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
+const CustomerDashboard = lazy(() => import('./pages/customer-dashboard'));
+
+// Business / B2B landing + auth surface
+const BusinessLanding = lazy(() => import('./pages/business-landing'));
+const BusinessAuth = lazy(() => import('./pages/business-auth'));
+const BusinessHub = lazy(() => import('./pages/business-hub'));
+
+// Education / LMS surface
+const BusinessEducation = lazy(() => import('./pages/business-education'));
+const InstructorPublicProfilePage = lazy(() =>
+  import('./pages/business-education').then((m) => ({
+    default: m.InstructorPublicProfilePage,
+  })),
+);
+const EducationMarketplace = lazy(() => import('./pages/education-marketplace'));
+const EducationPublicCourseDetail = lazy(() =>
+  import('./pages/education-marketplace').then((m) => ({
+    default: m.EducationPublicCourseDetail,
+  })),
+);
+const EducationPublicCenterPage = lazy(() =>
+  import('./pages/education-marketplace').then((m) => ({
+    default: m.EducationPublicCenterPage,
+  })),
+);
+
+// Owner surface
+const OwnerDashboard = lazy(() => import('./pages/owner/dashboard'));
+const OwnerSalonProfile = lazy(() => import('./pages/owner/profile'));
+const OwnerServices = lazy(() => import('./pages/owner/services'));
+const OwnerShop = lazy(() => import('./pages/owner/shop'));
+const OwnerCalendar = lazy(() => import('./pages/owner/calendar'));
+const OwnerLoyalty = lazy(() => import('./pages/owner/loyalty'));
+const OwnerOrders = lazy(() => import('./pages/owner/orders'));
+const OwnerProductDetail = lazy(() => import('./pages/owner/product-detail'));
+const OwnerNotifications = lazy(() => import('./pages/owner/notifications'));
+const OwnerEmployees = lazy(() => import('./pages/owner/employees'));
+const OwnerCartPage = lazy(() =>
+  import('./pages/owner/checkout').then((m) => ({ default: m.OwnerCartPage })),
+);
+const OwnerCheckoutDeliveryPage = lazy(() =>
+  import('./pages/owner/checkout').then((m) => ({
+    default: m.OwnerCheckoutDeliveryPage,
+  })),
+);
+const OwnerCheckoutReviewPage = lazy(() =>
+  import('./pages/owner/checkout').then((m) => ({
+    default: m.OwnerCheckoutReviewPage,
+  })),
+);
+const OwnerOrderConfirmationPage = lazy(() =>
+  import('./pages/owner/checkout').then((m) => ({
+    default: m.OwnerOrderConfirmationPage,
+  })),
+);
+
+// Employee surface
+const EmployeePortal = lazy(() => import('./pages/employee/portal'));
+const EmployeePasswordChange = lazy(() =>
+  import('./pages/employee/portal').then((m) => ({
+    default: m.EmployeePasswordChange,
+  })),
+);
+
+// Admin surface
+const AdminDashboard = lazy(() => import('./pages/admin/dashboard'));
+const AdminSalons = lazy(() => import('./pages/admin/salons'));
+const AdminSalonDetail = lazy(() => import('./pages/admin/salon-detail'));
+const AdminServiceTemplates = lazy(() => import('./pages/admin/service-templates'));
+const AdminUsers = lazy(() => import('./pages/admin/users'));
+const AdminLoyalty = lazy(() => import('./pages/admin/loyalty'));
+const AdminSubscriptions = lazy(() => import('./pages/admin/subscriptions'));
+const AdminReviews = lazy(() => import('./pages/admin/reviews'));
+const AdminProducts = lazy(() => import('./pages/admin/products'));
+const AdminCategories = lazy(() => import('./pages/admin/categories'));
+const AdminBrands = lazy(() => import('./pages/admin/brands'));
+const AdminShipping = lazy(() => import('./pages/admin/shipping'));
+const AdminOrders = lazy(() => import('./pages/admin/orders'));
+const AdminEmailMarketing = lazy(() => import('./pages/admin/email-marketing'));
+const AdminSmsDeliveries = lazy(() => import('./pages/admin/sms-deliveries'));
+const AdminIntegrations = lazy(() => import('./pages/admin/integrations'));
+const AdminEducationMarketplace = lazy(() =>
+  import('./pages/admin/education-marketplace'),
+);
 
 const queryClient = new QueryClient();
 
@@ -82,6 +143,21 @@ function PlaceholderPage({ title }: { title: string }) {
       </div>
     </Layout>
   )
+}
+
+function RouteFallback() {
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center bg-background"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      data-testid="route-loading"
+    >
+      <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
+      <span className="sr-only">Učitavanje stranice…</span>
+    </div>
+  );
 }
 
 function InstructorPublicPage(props: any) {
@@ -149,110 +225,112 @@ function RoleGuard({
 function Router() {
   return (
     <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/prijava" component={Auth} />
-        <Route path="/student/prijava" component={Auth} />
-        <Route path="/za-biznise" component={BusinessLanding} />
-        <Route path="/poslovna-prijava"><BusinessAuth initialTab="login" /></Route>
-        <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
-        <Route path="/saloni" component={Salons} />
-        <Route path="/saloni/:slug" component={SalonProfile} />
-        <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
-        <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
-        <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
-        <Route path="/moj-nalog">
-          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
-            <CustomerDashboard />
-          </RoleGuard>
-        </Route>
-        <Route path="/biznis/edukacije">
-          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/biznis/edukacije/lms/:enrollmentId">
-          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/moj-nalog/edukacije/lms/:enrollmentId">
-          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/student/edukacije">
-          <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/student/edukacije/lms/:enrollmentId">
-          <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/biznis/edukacije/:courseId">
-          <RoleGuard allowedRoles={['SALON_OWNER', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/biznis">
-          <RoleGuard allowedRoles={['EDUCATION_CENTER_OWNER']} loginPath="/poslovna-prijava">
-            <BusinessHub />
-          </RoleGuard>
-        </Route>
-        <Route path="/zaposleni/promeni-lozinku"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava" allowEmployeePasswordChange><EmployeePasswordChange /></RoleGuard></Route>
-        <Route path="/zaposleni"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><EmployeePortal /></RoleGuard></Route>
-        
-        <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
-        <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
-        <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
-        <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
-        <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
-        <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
-        <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
-        <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
-        <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
-        <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
-        <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
-        
-        <Route path="/edukacije/instruktori/:instructorId" component={InstructorPublicPage} />
-        <Route path="/edukacije/centri/:centerId" component={EducationPublicCenterPage} />
-        <Route path="/edukacije/:courseId" component={EducationPublicCourseDetail} />
-        <Route path="/edukacije"><EducationMarketplace /></Route>
+      <Suspense fallback={<RouteFallback />}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/prijava" component={Auth} />
+          <Route path="/student/prijava" component={Auth} />
+          <Route path="/za-biznise" component={BusinessLanding} />
+          <Route path="/poslovna-prijava"><BusinessAuth initialTab="login" /></Route>
+          <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
+          <Route path="/saloni" component={Salons} />
+          <Route path="/saloni/:slug" component={SalonProfile} />
+          <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
+          <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
+          <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
+          <Route path="/moj-nalog">
+            <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+              <CustomerDashboard />
+            </RoleGuard>
+          </Route>
+          <Route path="/biznis/edukacije">
+            <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/biznis/edukacije/lms/:enrollmentId">
+            <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/moj-nalog/edukacije/lms/:enrollmentId">
+            <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/student/edukacije">
+            <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/student/edukacije/lms/:enrollmentId">
+            <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/biznis/edukacije/:courseId">
+            <RoleGuard allowedRoles={['SALON_OWNER', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
+              <BusinessEducation />
+            </RoleGuard>
+          </Route>
+          <Route path="/biznis">
+            <RoleGuard allowedRoles={['EDUCATION_CENTER_OWNER']} loginPath="/poslovna-prijava">
+              <BusinessHub />
+            </RoleGuard>
+          </Route>
+          <Route path="/zaposleni/promeni-lozinku"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava" allowEmployeePasswordChange><EmployeePasswordChange /></RoleGuard></Route>
+          <Route path="/zaposleni"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><EmployeePortal /></RoleGuard></Route>
 
-        <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
-        <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>
-        <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
-        <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
-        <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
-        <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
-        <Route path="/admin/proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProducts /></RoleGuard></Route>
-        <Route path="/admin/kategorije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCategories /></RoleGuard></Route>
-        <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>
-        <Route path="/admin/dostava"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShipping /></RoleGuard></Route>
-        <Route path="/admin/email-marketing"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEmailMarketing /></RoleGuard></Route>
-        <Route path="/admin/sms-evidencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSmsDeliveries /></RoleGuard></Route>
-        <Route path="/admin/integracije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminIntegrations /></RoleGuard></Route>
-        <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
-        <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
-        <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
-        <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
-        <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
-        
-        <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>
-        <Route path="/politika-privatnosti"><PlaceholderPage title="Politika privatnosti" /></Route>
-        <Route path="/politika-kolacica"><PlaceholderPage title="Politika kolačića" /></Route>
-        <Route path="/uslovi-kupovine"><PlaceholderPage title="Uslovi kupovine" /></Route>
-        <Route path="/otkazivanje-termina"><PlaceholderPage title="Otkazivanje termina" /></Route>
-        <Route path="/povracaj-sredstava"><PlaceholderPage title="Povraćaj sredstava" /></Route>
-        
-        <Route component={NotFound} />
-      </Switch>
+          <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
+          <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+          <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
+          <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
+          <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
+          <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
+          <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
+          <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>
+          <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
+          <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
+          <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
+          <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+          <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
+          <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
+          <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
+
+          <Route path="/edukacije/instruktori/:instructorId" component={InstructorPublicPage} />
+          <Route path="/edukacije/centri/:centerId" component={EducationPublicCenterPage} />
+          <Route path="/edukacije/:courseId" component={EducationPublicCourseDetail} />
+          <Route path="/edukacije"><EducationMarketplace /></Route>
+
+          <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
+          <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>
+          <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
+          <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
+          <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+          <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
+          <Route path="/admin/proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProducts /></RoleGuard></Route>
+          <Route path="/admin/kategorije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminCategories /></RoleGuard></Route>
+          <Route path="/admin/brendovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBrands /></RoleGuard></Route>
+          <Route path="/admin/dostava"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminShipping /></RoleGuard></Route>
+          <Route path="/admin/email-marketing"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEmailMarketing /></RoleGuard></Route>
+          <Route path="/admin/sms-evidencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSmsDeliveries /></RoleGuard></Route>
+          <Route path="/admin/integracije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminIntegrations /></RoleGuard></Route>
+          <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
+          <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
+          <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
+          <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
+          <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
+
+          <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>
+          <Route path="/politika-privatnosti"><PlaceholderPage title="Politika privatnosti" /></Route>
+          <Route path="/politika-kolacica"><PlaceholderPage title="Politika kolačića" /></Route>
+          <Route path="/uslovi-kupovine"><PlaceholderPage title="Uslovi kupovine" /></Route>
+          <Route path="/otkazivanje-termina"><PlaceholderPage title="Otkazivanje termina" /></Route>
+          <Route path="/povracaj-sredstava"><PlaceholderPage title="Povraćaj sredstava" /></Route>
+
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </RoutedErrorBoundary>
   );
 }

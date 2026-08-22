@@ -7,8 +7,6 @@ import { Loader2, ArrowLeft, Check, Package, AlertTriangle, Truck, CreditCard, R
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetShopCart,
-  useUpdateShopCartItem,
-  useRemoveShopCartItem,
   useGetShopCheckoutProfile,
   useGetShopCheckoutPreview,
   useCheckoutShopCart,
@@ -34,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Separator } from "@/components/ui/separator";
+import { useShopCartMutations } from "@/hooks/use-shop-cart-mutations";
 
 const SESSION_STORAGE_KEY = "lumera_checkout_draft";
 
@@ -67,10 +66,8 @@ function CheckoutStepper({ step }: { step: 1 | 2 | 3 }) {
 }
 
 export function OwnerCartPage() {
-  const queryClient = useQueryClient();
   const { data: cart, isLoading, isError } = useGetShopCart();
-  const updateItem = useUpdateShopCartItem();
-  const removeItem = useRemoveShopCartItem();
+  const { updateItem, removeItem } = useShopCartMutations();
   const { toast } = useToast();
 
   const handleUpdateQuantity = (cartItemId: string, currentQty: number, delta: number, stock: number) => {
@@ -80,23 +77,14 @@ export function OwnerCartPage() {
       toast.error(`Nedovoljno na stanju. Dostupno je samo ${stock} komada.`);
       return;
     }
-    updateItem.mutate({ cartItemId, data: { quantity: newQty } }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() });
-      },
-      onError: () => toast.error("Nije uspelo ažuriranje količine.")
-    });
+    // Guard against rapid repeated clicks while a mutation is in flight.
+    if (updateItem.isPending) return;
+    updateItem.mutate({ cartItemId, data: { quantity: newQty } });
   };
 
   const handleRemove = (cartItemId: string) => {
-    removeItem.mutate({ cartItemId }, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() });
-      },
-      onError: () => toast.error("Nije uspelo uklanjanje stavke.")
-    });
+    if (removeItem.isPending) return;
+    removeItem.mutate({ cartItemId });
   };
 
   return (

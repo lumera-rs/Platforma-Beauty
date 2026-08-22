@@ -641,8 +641,15 @@ test("a listener outage falls back to polling and reconnects without a post-stop
     await signIn(page, fixture.ownerA);
     await page.goto("/vlasnik");
     await expect(page.getByTestId("status-unread-notification-count")).toHaveCount(0);
-    expect(notificationRequestTimes).toHaveLength(1);
-    const initialNotificationRequestAt = notificationRequestTimes[0]!;
+    // Owner routes are lazy-loaded, so the navbar query can start after
+    // page.goto resolves. Wait for the routed request instead of assuming it
+    // already happened synchronously.
+    await expect.poll(
+      () => notificationRequestTimes.length,
+      { timeout: 5_000 },
+    ).toBeGreaterThan(0);
+    await page.waitForTimeout(250);
+    const initialNotificationRequestAt = notificationRequestTimes.at(-1)!;
     const notificationRequestCountBeforeOutage = notificationRequestTimes.length;
     missedEventSubscription = await subscribeToNotificationEvents(secondaryApi.baseUrl, page);
 

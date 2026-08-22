@@ -29,3 +29,4 @@
 - [Artifact release gates](artifact-release-gates.md) — validation workflows do not block publishing; artifact-mode release checks belong in the root deployment pre-build hook.
 - [Interrupted media test cleanup](interrupted-media-test-cleanup.md) — use selective test markers and pre-write object manifests so force-stopped checks cannot leak uploads.
 - [Canonical availability ordering](canonical-availability-ordering.md) — rank paginated salon results with the exact availability value shown on each card.
+- [Development schema release gates](development-schema-release-gates.md) — source declarations are insufficient when release checks depend on the live development schema.

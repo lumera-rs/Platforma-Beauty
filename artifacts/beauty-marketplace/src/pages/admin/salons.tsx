@@ -9,24 +9,14 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Search, Store, Building2, MapPin, CheckCircle, Crown, FilterX, BadgeCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-}
+import { useDebounce } from "@/hooks/use-debounce";
 
 export default function AdminSalons() {
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 300);
   
   const [city, setCity] = useState("");
-  const debouncedCity = useDebounce(city, 400);
+  const debouncedCity = useDebounce(city, 300);
   
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [featuredFilter, setFeaturedFilter] = useState<string>("all");

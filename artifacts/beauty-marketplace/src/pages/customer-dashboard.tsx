@@ -266,7 +266,7 @@ export default function CustomerDashboard() {
                     <OptimizedImage src={salon.imageUrl} alt={salon.name} width={400} height={144} className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                     <div className="p-4"><p className="font-semibold">{salon.name}</p><p className="mt-1 text-sm text-muted-foreground">{salon.city} · {salon.popularServices[0] ?? "Beauty usluge"}</p></div>
                   </Link>
-                  <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                  <SalonFavoriteButton salon={salon} className="absolute right-3 top-3" />
                 </div>
               ))}
             </DiscoveryCarousel>
@@ -384,7 +384,7 @@ export default function CustomerDashboard() {
                         <div className="h-40 w-full overflow-hidden"><OptimizedImage src={salon.imageUrl} alt={salon.name} width={400} height={160} className="h-full w-full object-cover transition-transform group-hover:scale-105" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" /></div>
                         <div className="p-4"><h4 className="font-bold text-lg">{salon.name}</h4><p className="text-sm text-muted-foreground">{salon.city}</p></div>
                       </Link>
-                      <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                      <SalonFavoriteButton salon={salon} className="absolute right-3 top-3" />
                     </div>
                   ))}
                   {(!favorites || favorites.length === 0) && (

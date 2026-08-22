@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Download, Loader2, Printer, Truck, PackageCheck, StickyNote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/use-debounce";
 
 const statuses = ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"] as const;
 const paymentStatuses = ["unpaid", "pending", "paid", "refunded", "failed"] as const;
@@ -102,11 +103,13 @@ export default function AdminOrders() {
   const [, routeParams] = useRoute("/admin/porudzbine/:orderId");
   const qc = useQueryClient(); const { toast } = useToast();
   const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const [paymentStatus, setPaymentStatus] = useState("all"); const [deliveryMethod, setDeliveryMethod] = useState("all"); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [selected, setSelected] = useState<string[]>([]); const [bulkPrintMode, setBulkPrintMode] = useState<"packing" | "invoice">("packing");
+  // Debounce the server-bound search text; the input stays immediate.
+  const debouncedSearch = useDebounce(search, 300);
   const [page, setPage] = useState(1);
   const pageSize = 50;
   // Reset to the first page whenever any filter changes so results stay reachable.
-  useEffect(() => { setPage(1); }, [search, status, paymentStatus, deliveryMethod, from, to]);
-  const params = useMemo(() => ({ ...(search ? { search } : {}), ...(status !== "all" ? { status: status as typeof statuses[number] } : {}), ...(paymentStatus !== "all" ? { paymentStatus: paymentStatus as typeof paymentStatuses[number] } : {}), ...(deliveryMethod !== "all" ? { deliveryMethod: deliveryMethod as "courier" | "personal_belgrade" } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), page, pageSize }), [search, status, paymentStatus, deliveryMethod, from, to, page]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, status, paymentStatus, deliveryMethod, from, to]);
+  const params = useMemo(() => ({ ...(debouncedSearch ? { search: debouncedSearch } : {}), ...(status !== "all" ? { status: status as typeof statuses[number] } : {}), ...(paymentStatus !== "all" ? { paymentStatus: paymentStatus as typeof paymentStatuses[number] } : {}), ...(deliveryMethod !== "all" ? { deliveryMethod: deliveryMethod as "courier" | "personal_belgrade" } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), page, pageSize }), [debouncedSearch, status, paymentStatus, deliveryMethod, from, to, page]);
   const { data: orders = [], isLoading } = useAdminListOrders(params, { query: { enabled: !routeParams?.orderId, queryKey: getAdminListOrdersQueryKey(params) } });
   // customFetch returns only the body, so we infer "has next page" from whether
   // this page came back full (== pageSize).

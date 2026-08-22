@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
+import { useDebounce } from "@/hooks/use-debounce";
 
 const PAGE_SIZE = 6;
 const salonSortValues = ["recommended", "top-rated", "cheapest", "largest-discount", "nearest", "first-available", "most-popular", "most-booked-recently", "newest"] as const;
@@ -41,6 +42,12 @@ export default function Salons() {
   const [locationNote, setLocationNote] = useState("");
   const [page, setPage] = useState(1);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+
+  // Free-text location filters are server-bound, so debounce the values that
+  // reach the query while the inputs themselves stay immediate.
+  const debouncedCity = useDebounce(city, 300);
+  const debouncedMunicipality = useDebounce(municipality, 300);
+  const debouncedBrand = useDebounce(brand, 300);
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -75,12 +82,12 @@ export default function Salons() {
   // can reset to page 1 whenever any filter/sort changes, then fold the current
   // page into the query the server paginates.
   const filterParams = useMemo<ListSalonsParams>(() => ({
-    category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax, minReviewCount,
+    category: category || undefined, city: debouncedCity || undefined, municipality: debouncedMunicipality || undefined, brand: debouncedBrand || undefined, priceMax, minReviewCount,
     sort, discountsOnly: discountsOnly || undefined, gender: menOnly ? "men" : undefined,
     acceptsCards: acceptsCards || undefined, openSunday: openSunday || undefined,
     instantBooking: instantBooking || undefined, homeService: homeService || undefined, topSalon: topSalon || undefined, featured: featured || undefined,
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
-  }), [category, city, municipality, brand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, homeService, topSalon, featured, location]);
+  }), [category, debouncedCity, debouncedMunicipality, debouncedBrand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, homeService, topSalon, featured, location]);
 
   // Reset to the first page whenever the filter set changes.
   useEffect(() => {
@@ -292,7 +299,7 @@ export default function Salons() {
                       {salon.lastBookedAt && <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />Poslednji put zakazano {relativeLastBooked(salon.lastBookedAt)}</p>}
                     </div>
                   </Link>
-                   <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
+                   <SalonFavoriteButton salon={salon} className="absolute right-3 top-3" />
                   </div>
                 ))}
 

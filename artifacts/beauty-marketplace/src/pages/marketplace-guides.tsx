@@ -5,18 +5,21 @@ import { OptimizedImage } from "@/components/optimized-image";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useDebounce } from "@/hooks/use-debounce";
 
 type GuideKind = "inspiration" | "glossary" | "brands";
 
 export default function MarketplaceGuides({ kind }: { kind: GuideKind }) {
   const [items, setItems] = useState<any[]>([]);
   const [query, setQuery] = useState("");
+  // Debounce the value driving the client-side filter; the input stays immediate.
+  const debouncedQuery = useDebounce(query, 300);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     fetch(`/api/${kind === "inspiration" ? "inspiracija" : kind === "glossary" ? "recnik" : "brendovi"}`)
       .then((response) => response.json()).then(setItems).finally(() => setLoading(false));
   }, [kind]);
-  const filtered = items.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()));
+  const filtered = items.filter((item) => JSON.stringify(item).toLowerCase().includes(debouncedQuery.toLowerCase()));
   const copy = kind === "inspiration"
     ? ["Inspiracija za sledeći termin", "Pogledajte stilove, tretmane i ideje koje rade LUMERA saloni."]
     : kind === "glossary"

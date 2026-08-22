@@ -1,6 +1,6 @@
 import app from "./app";
 import { closePool, databasePoolStats } from "@workspace/db";
-import { logger } from "./lib/logger";
+import { logger, registerProcessSafetyHandlers } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
 import {
@@ -19,6 +19,10 @@ import {
 } from "./lib/catalog-cache";
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 
+// Register early so failures during startup are captured by the shared logger
+// and fatal uncaught exceptions flush/log before exiting in real runtime.
+registerProcessSafetyHandlers();
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
@@ -35,8 +39,12 @@ if (Number.isNaN(port) || port <= 0) {
 
 await ensureMediaSchema();
 
-void startSalonNotificationEventListener();
-void startCatalogCacheInvalidationListener();
+void startSalonNotificationEventListener().catch((error: unknown) => {
+  logger.error({ err: error }, "Salon notification event listener failed to start");
+});
+void startCatalogCacheInvalidationListener().catch((error: unknown) => {
+  logger.error({ err: error }, "Catalog cache invalidation listener failed to start");
+});
 const server = app.listen(port, "0.0.0.0", (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -51,19 +59,27 @@ const server = app.listen(port, "0.0.0.0", (err) => {
 // ---------------------------------------------------------------------------
 
 const retryInterval = setInterval(() => {
-  void runScheduledRescheduledConfirmationRetries();
+  void runScheduledRescheduledConfirmationRetries().catch((error: unknown) => {
+    logger.warn({ err: error }, "Rescheduled confirmation retry scheduler failed");
+  });
 }, 60_000);
 retryInterval.unref();
-void runScheduledRescheduledConfirmationRetries();
+void runScheduledRescheduledConfirmationRetries().catch((error: unknown) => {
+  logger.warn({ err: error }, "Rescheduled confirmation retry initial run failed");
+});
 
 // Education session lifecycle: drain expired waitlist offers and auto-cancel
 // under-enrolled sessions. Runs every 5 minutes on a self-unreferencing timer
 // so it never keeps the process alive on its own.
 const educationMaintenanceInterval = setInterval(() => {
-  void runScheduledEducationSessionMaintenance();
+  void runScheduledEducationSessionMaintenance().catch((error: unknown) => {
+    logger.warn({ err: error }, "Education session maintenance scheduler failed");
+  });
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
-void runScheduledEducationSessionMaintenance();
+void runScheduledEducationSessionMaintenance().catch((error: unknown) => {
+  logger.warn({ err: error }, "Education session maintenance initial run failed");
+});
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void runEducationGalleryCleanup().catch((error) => {

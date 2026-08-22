@@ -26,6 +26,7 @@ import {
   getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
   getListEducationNotificationsQueryKey,
 } from "@workspace/api-client-react";
+import type { EducationNotificationList } from "@workspace/api-client-react";
 
 import { BusinessLayout } from "@/components/business-layout";
 import { Layout } from "@/components/layout";
@@ -43,6 +44,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -143,7 +145,32 @@ function StudentEducationInbox() {
   const queryClient = useQueryClient();
   const { data: inbox, isLoading } = useListEducationNotifications();
   const acceptOffer = useAcceptEducationWaitlistOffer();
-  const markRead = useMarkEducationNotificationRead();
+  const educationNotificationsKey = getListEducationNotificationsQueryKey();
+  const markRead = useMarkEducationNotificationRead({
+    mutation: {
+      // Optimistically mark the education notification read, snapshot for
+      // rollback, and reconcile with the server on settle.
+      onMutate: async ({ notificationId }) => {
+        await queryClient.cancelQueries({ queryKey: educationNotificationsKey });
+        const readAt = new Date().toISOString();
+        const previous = queryClient.getQueryData<EducationNotificationList>(educationNotificationsKey);
+        if (previous) {
+          queryClient.setQueryData<EducationNotificationList>(educationNotificationsKey, {
+            ...previous,
+            notifications: previous.notifications.map((item) =>
+              item.id === notificationId && !item.readAt ? { ...item, readAt } : item,
+            ),
+          });
+        }
+        return { previous };
+      },
+      onError: (_error, _variables, context) => {
+        if (context?.previous !== undefined) queryClient.setQueryData(educationNotificationsKey, context.previous);
+        toast.error("Nije uspelo označavanje kao pročitano.");
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey: educationNotificationsKey }),
+    },
+  });
 
   const offers = inbox?.offers ?? [];
   const notifications = inbox?.notifications ?? [];
@@ -208,8 +235,8 @@ function StudentEducationInbox() {
                 key={item.id}
                 className={`rounded-lg border p-3 ${item.readAt ? "bg-background" : "bg-muted/40 border-primary/30"}`}
                 onClick={() => {
-                  if (item.readAt) return;
-                  markRead.mutate({ notificationId: item.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListEducationNotificationsQueryKey() }) });
+                  if (item.readAt || markRead.isPending) return;
+                  markRead.mutate({ notificationId: item.id });
                 }}
                 role="button"
                 tabIndex={0}
@@ -320,6 +347,10 @@ function CatalogView() {
 
   const [filters, setFilters] = useState<any>({});
   const [page, setPage] = useState(1);
+  // Free-text filters (category, city, center) are server-bound: keep the inputs
+  // immediate but debounce the values that reach the query and reset pagination.
+  const [textInputs, setTextInputs] = useState({ category: "", city: "", center: "" });
+  const debouncedText = useDebounce(textInputs, 300);
   const { data: courses, isLoading } = useListCourses({ ...filters, page, pageSize: EDUCATION_PAGE_SIZE });
   const [createOpen, setCreateOpen] = useState(false);
   const [instructorsOpen, setInstructorsOpen] = useState(false);
@@ -332,6 +363,24 @@ function CatalogView() {
       return updated;
     });
   };
+
+  const setTextFilter = (key: "category" | "city" | "center", value: string) => {
+    setTextInputs((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Fold the debounced free-text values into server-bound filters once typing
+  // settles, resetting the page for any change.
+  useEffect(() => {
+    setPage(1);
+    setFilters((prev: any) => {
+      const updated = { ...prev };
+      (["category", "city", "center"] as const).forEach((key) => {
+        if (debouncedText[key]) updated[key] = debouncedText[key];
+        else delete updated[key];
+      });
+      return updated;
+    });
+  }, [debouncedText]);
   // Bare-array response: a full page implies another page may exist.
   const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
 
@@ -356,7 +405,7 @@ function CatalogView() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Kategorija</Label>
-                <Input placeholder="Npr. Manikir, Masaža..." value={filters.category || ""} onChange={e => handleFilterChange("category", e.target.value)} />
+                <Input placeholder="Npr. Manikir, Masaža..." value={textInputs.category} onChange={e => setTextFilter("category", e.target.value)} />
               </div>
               
               <div className="space-y-2">
@@ -374,12 +423,12 @@ function CatalogView() {
               
               <div className="space-y-2">
                 <Label>Grad</Label>
-                <Input placeholder="Npr. Beograd" value={filters.city || ""} onChange={e => handleFilterChange("city", e.target.value)} />
+                <Input placeholder="Npr. Beograd" value={textInputs.city} onChange={e => setTextFilter("city", e.target.value)} />
               </div>
               
               <div className="space-y-2">
                 <Label>Edukativni centar</Label>
-                <Input placeholder="Naziv organizatora" value={filters.center || ""} onChange={e => handleFilterChange("center", e.target.value)} />
+                <Input placeholder="Naziv organizatora" value={textInputs.center} onChange={e => setTextFilter("center", e.target.value)} />
               </div>
 
               <div className="space-y-2">
@@ -521,7 +570,7 @@ function CatalogView() {
               <h3 className="text-xl font-serif font-medium text-foreground mb-2">Nema pronađenih edukacija</h3>
               <p className="text-muted-foreground max-w-md">Pokušajte da promenite filtere pretrage ili uklonite neke od kriterijuma kako biste videli više rezultata.</p>
               {Object.keys(filters).length > 0 && (
-                <Button variant="outline" className="mt-6" onClick={() => { setPage(1); setFilters({}); }}>Poništi sve filtere</Button>
+                <Button variant="outline" className="mt-6" onClick={() => { setPage(1); setTextInputs({ category: "", city: "", center: "" }); setFilters({}); }}>Poništi sve filtere</Button>
               )}
             </div>
           )}

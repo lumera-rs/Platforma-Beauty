@@ -53,6 +53,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    // Emit a manifest so the bundle report script can map source entry points to
+    // their emitted chunks and enforce route/baseline size budgets. We do not
+    // hand-craft manualChunks here: forcing broad vendor chunks would undo the
+    // route-level splitting and can break React deduping. Rollup's default
+    // per-dynamic-import chunking already keeps each route section isolated.
+    manifest: true,
   },
   server: {
     port,

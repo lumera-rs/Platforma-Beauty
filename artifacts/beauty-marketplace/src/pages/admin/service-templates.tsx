@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { AdminLayout } from "./layout";
+import { useDebounce } from "@/hooks/use-debounce";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +53,8 @@ export default function AdminServiceTemplates() {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
+  // Debounce the value driving the client-side filter; the input stays immediate.
+  const debouncedSearch = useDebounce(search, 300);
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceTemplate | null>(null);
@@ -64,13 +67,14 @@ export default function AdminServiceTemplates() {
 
   const filteredTemplates = useMemo(() => {
     if (!Array.isArray(templates)) return [];
+    const term = debouncedSearch.toLowerCase();
     return templates.filter((t: ServiceTemplate) => 
       (category === "all" || t.mainCategory === category) && (
-        t.name.toLowerCase().includes(search.toLowerCase()) || 
-        t.mainCategory.toLowerCase().includes(search.toLowerCase())
+        t.name.toLowerCase().includes(term) ||
+        t.mainCategory.toLowerCase().includes(term)
       )
     );
-  }, [templates, search, category]);
+  }, [templates, debouncedSearch, category]);
 
   const categories = useMemo(() => [...new Set((templates as ServiceTemplate[]).map((item) => item.mainCategory))].sort(), [templates]);
 

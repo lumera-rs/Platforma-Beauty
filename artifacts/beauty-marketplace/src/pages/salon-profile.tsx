@@ -637,7 +637,7 @@ export default function SalonProfile() {
                     </h1>
                   </div>
                    {user?.role === "CUSTOMER" && (
-                     <SalonFavoriteButton salonId={salonData.id} className="absolute right-4 top-4 md:static md:mt-2 md:mb-6" />
+                     <SalonFavoriteButton salon={salonData} className="absolute right-4 top-4 md:static md:mt-2 md:mb-6" />
                    )}
 
                   <button

@@ -6,9 +6,11 @@ import {
   useListSalonNotifications,
   useMarkSalonNotificationRead,
 } from "@workspace/api-client-react";
+import type { SalonNotification } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Bell, Check, ExternalLink } from "lucide-react";
@@ -22,6 +24,7 @@ function notificationDate(value: string) {
 
 export default function OwnerNotifications() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: userResponse, isLoading: isUserLoading } = useGetCurrentUser();
   const user = userResponse?.user;
   const [page, setPage] = useState(1);
@@ -35,9 +38,30 @@ export default function OwnerNotifications() {
     query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey },
   });
   const hasNextPage = notifications.length === pageSize;
+  const ownerNotificationsKey = salonNotificationsQueryKey(user?.id);
   const markAsRead = useMarkSalonNotificationRead({
     mutation: {
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: salonNotificationsQueryKey(user?.id) }),
+      // Optimistically flag the notification as read across every cached page
+      // (and the navbar badge, which shares the same key prefix), snapshotting
+      // for rollback and reconciling with the server on settle.
+      onMutate: async ({ notificationId }) => {
+        await queryClient.cancelQueries({ queryKey: ownerNotificationsKey });
+        const readAt = new Date().toISOString();
+        const previous = queryClient.getQueriesData<SalonNotification[]>({ queryKey: ownerNotificationsKey });
+        previous.forEach(([key, list]) => {
+          if (!list) return;
+          queryClient.setQueryData<SalonNotification[]>(
+            key,
+            list.map((item) => (item.id === notificationId && !item.readAt ? { ...item, readAt } : item)),
+          );
+        });
+        return { previous };
+      },
+      onError: (_error, _variables, context) => {
+        context?.previous?.forEach(([key, list]) => queryClient.setQueryData(key, list));
+        toast.error("Nije uspelo označavanje kao pročitano.");
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey: ownerNotificationsKey }),
     },
   });
 

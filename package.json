@@ -5,8 +5,10 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "validate:release": "export CI=true && pnpm run build && pnpm run test:backend-standards && pnpm run test:query-counts && pnpm run test:catalog-cache && pnpm run test:communication-archive && pnpm run test:admin-validation && pnpm run test:admin-order-search && pnpm run test:admin-list-pagination && pnpm run test:loyalty-status && pnpm run test:admin-authz && pnpm run test:b2b-catalog && pnpm run test:education-extras && pnpm run test:admin-form-resilience && pnpm run test:salon-notifications:release",
+    "validate:release": "export CI=true && pnpm run build && pnpm --filter @workspace/beauty-marketplace run bundle:report && pnpm run test:monitoring && pnpm run test:backend-standards && pnpm run test:query-counts && pnpm run test:catalog-cache && pnpm run test:communication-archive && pnpm run test:admin-validation && pnpm run test:admin-order-search && pnpm run test:admin-list-pagination && pnpm run test:loyalty-status && pnpm run test:admin-authz && pnpm run test:b2b-catalog && pnpm run test:education-extras && pnpm run test:admin-form-resilience && pnpm run test:salon-notifications:release",
     "typecheck:libs": "tsc --build",
+    "bundle:check": "pnpm --filter @workspace/beauty-marketplace run bundle:check",
+    "test:monitoring": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/monitoring.test.ts",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:admin-authz": "bash scripts/test-admin-authorization.sh",
     "test:admin-input-validation": "bash scripts/test-admin-input-validation.sh",

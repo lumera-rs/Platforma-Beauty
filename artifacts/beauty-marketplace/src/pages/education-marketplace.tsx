@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
   Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight,
@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/use-debounce";
 
 type PublicCourse = any;
 type PublicFilters = {
@@ -163,6 +164,10 @@ const EDUCATION_PAGE_SIZE = 24;
 export default function EducationMarketplace() {
   const [filters, setFilters] = useState<PublicFilters>({});
   const [page, setPage] = useState(1);
+  // The city text field is server-bound; keep the input immediate but debounce
+  // the value that reaches the query/filter (which also resets pagination).
+  const [cityInput, setCityInput] = useState("");
+  const debouncedCity = useDebounce(cityInput, 300);
   const { data: categories } = useListPublicEducationCategories();
   const { data: courses } = useListPublicEducationCourses({ ...filters, page, pageSize: EDUCATION_PAGE_SIZE } as any);
   const { data: featuredCourses } = useListFeaturedEducationCourses();
@@ -178,6 +183,18 @@ export default function EducationMarketplace() {
       return next;
     });
   };
+
+  // Fold the debounced city value into the server-bound filters (and reset the
+  // page) only once the user stops typing, avoiding a request per keystroke.
+  useEffect(() => {
+    setPage(1);
+    setFilters((previous) => {
+      const next = { ...previous };
+      if (debouncedCity) next.city = debouncedCity;
+      else delete next.city;
+      return next;
+    });
+  }, [debouncedCity]);
   // Bare-array response: a full page implies another page may exist.
   const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
 
@@ -211,9 +228,9 @@ export default function EducationMarketplace() {
 
         <section className="grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="h-fit rounded-xl border bg-card p-5 lg:sticky lg:top-24">
-            <div className="mb-5 flex items-center justify-between border-b pb-4"><span className="flex items-center gap-2 font-semibold"><Filter className="h-4 w-4" /> Filteri</span>{activeFilters ? <Button variant="ghost" size="sm" onClick={() => { setPage(1); setFilters({}); }}>Poništi</Button> : null}</div>
+            <div className="mb-5 flex items-center justify-between border-b pb-4"><span className="flex items-center gap-2 font-semibold"><Filter className="h-4 w-4" /> Filteri</span>{activeFilters ? <Button variant="ghost" size="sm" onClick={() => { setPage(1); setCityInput(""); setFilters({}); }}>Poništi</Button> : null}</div>
             <div className="space-y-4">
-              <div className="space-y-2"><Label htmlFor="education-city">Grad</Label><Input id="education-city" value={filters.city ?? ""} placeholder="Beograd, Novi Sad..." onChange={(event) => setFilter("city", event.target.value || undefined)} /></div>
+              <div className="space-y-2"><Label htmlFor="education-city">Grad</Label><Input id="education-city" value={cityInput} placeholder="Beograd, Novi Sad..." onChange={(event) => setCityInput(event.target.value)} /></div>
               <div className="space-y-2"><Label>Format</Label><Select value={filters.format ?? "all"} onValueChange={(value) => setFilter("format", value === "all" ? undefined : value as PublicFilters["format"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Svi formati</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="in-person">Uživo</SelectItem><SelectItem value="hybrid">Hibridno</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Nivo</Label><Select value={filters.level ?? "all"} onValueChange={(value) => setFilter("level", value === "all" ? undefined : value as PublicFilters["level"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Svi nivoi</SelectItem><SelectItem value="beginner">Početni</SelectItem><SelectItem value="intermediate">Srednji</SelectItem><SelectItem value="advanced">Napredni</SelectItem><SelectItem value="all-levels">Svi nivoi znanja</SelectItem></SelectContent></Select></div>
               <div className="grid grid-cols-2 gap-2"><div className="space-y-2"><Label htmlFor="min-price">Od RSD</Label><Input id="min-price" type="number" min="0" value={filters.minPrice ?? ""} onChange={(event) => setFilter("minPrice", event.target.value ? Number(event.target.value) : undefined)} /></div><div className="space-y-2"><Label htmlFor="max-price">Do RSD</Label><Input id="max-price" type="number" min="0" value={filters.maxPrice ?? ""} onChange={(event) => setFilter("maxPrice", event.target.value ? Number(event.target.value) : undefined)} /></div></div>

@@ -38,7 +38,7 @@ export default function Home() {
   const [searchCategory, setSearchCategory] = useState("");
   const [sessionCity, setSessionCity] = useState("");
   const [heroCityInput, setHeroCityInput] = useState("");
-  const debouncedHeroCityInput = useDebounce(heroCityInput, 400);
+  const debouncedHeroCityInput = useDebounce(heroCityInput, 300);
 
   // Hydrate city from session storage on mount
   useEffect(() => {

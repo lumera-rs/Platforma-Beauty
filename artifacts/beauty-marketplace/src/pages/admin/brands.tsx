@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AdminLayout } from "./layout";
+import { useDebounce } from "@/hooks/use-debounce";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { OptimizedImage } from "@/components/optimized-image";
 import {
@@ -33,6 +34,9 @@ export default function AdminBrands() {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
+  // Debounce the value driving the client-side filter so typing stays smooth
+  // while the input itself updates immediately.
+  const debouncedSearch = useDebounce(search, 300);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminBrand | null>(null);
   const [form, setForm] = useState<AdminBrandInput>(emptyForm);
@@ -40,7 +44,7 @@ export default function AdminBrands() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: getAdminListBrandsQueryKey() });
 
-  const filtered = brands.filter((b) => !search || b.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = brands.filter((b) => !debouncedSearch || b.name.toLowerCase().includes(debouncedSearch.toLowerCase()));
 
   const openNew = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
   const openEdit = (brand: AdminBrand) => {

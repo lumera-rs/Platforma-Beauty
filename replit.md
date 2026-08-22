@@ -3,7 +3,9 @@
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm run validate:release` — full release gate, including DB/query/cache/archive/admin validation regressions
+- `pnpm run bundle:check` — production frontend build plus manifest-based bundle budget validation
+- `pnpm run test:monitoring` — slow-API sanitization/threshold and safe-error response regressions
+- `pnpm run validate:release` — full release gate, including bundle, monitoring, DB/query/cache/archive/admin regressions
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm run test:query-budgets` — guard set-based marketplace list endpoints against N+1 regressions
@@ -35,6 +37,11 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 - API processes use the single exported PostgreSQL pool. New modules must not construct their own pool.
 - Admin mutations require strict generated request validation plus business-invariant checks, transactions for multi-write changes, and structured expected 4xx/409 errors. Admin numeric fields keep raw text until explicit validation and must remain editable after a failed request.
 - Retention jobs archive eligible read/terminal records before deleting live rows, using bounded batches, an advisory lock, row locking, and one transaction per batch.
+- Frontend route pages stay behind `React.lazy` + `Suspense`; keep only global providers, the router, guards, and the route fallback in the eager entry graph.
+- Text inputs that trigger server requests or expensive filtering use the shared 300 ms debounce. Reset pagination when a debounced criterion changes; selects, checkboxes, and other discrete filters remain immediate.
+- Favorites, B2B cart changes, and read-notification actions use TanStack Query optimistic updates: cancel matching reads, snapshot and patch every affected cache, roll back on error, then reconcile with precise invalidation. Checkout, payment, escrow, and other financial actions remain server-authoritative.
+- Slow API events contain only request ID, method, query-free pathname, status, and duration. Process-level failures use the shared logger without request bodies, query values, auth/cookies, raw provider responses, database details, or arbitrary error payloads.
+- Frontend bundle budgets are enforced from the Vite manifest: entry ≤200 KB gzip, largest lazy chunk ≤100 KB gzip, total JS ≤750 KB gzip, and at least 25 chunks. Deliberate budget changes require a measured review.
 
 ## Product
 
@@ -49,6 +56,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Keep generated API schemas compatible with Zod v3: represent whole numbers as `type: number` plus `multipleOf: 1`, then run codegen and its duplicate-export/EOF normalization checks.
 - Catalog mutations must invalidate every affected cache namespace; PostgreSQL notifications are cross-process wakeups, while the database remains the source of truth.
 - Any schema/query/cache/admin mutation change must keep `pnpm run test:backend-standards` and `pnpm run validate:release` passing.
+- New frontend routes, text filters, optimistic mutations, or monitoring changes must keep `pnpm run bundle:check`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

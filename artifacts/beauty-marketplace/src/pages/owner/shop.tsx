@@ -6,9 +6,7 @@ import {
   useListProductBrands,
   useListProductCategories,
   useGetShopSummary,
-  useAddShopCartItem,
   useGetCurrentUser,
-  getGetShopCartQueryKey,
   getGetShopSummaryQueryKey,
 } from "@workspace/api-client-react";
 import type { Product, ProductCategory, ProductCategorySubcategoriesItem, ListProductsParams } from "@workspace/api-client-react";
@@ -21,8 +19,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo, useEffect } from "react";
-import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useDebounce } from "@/hooks/use-debounce";
+import { useShopCartMutations } from "@/hooks/use-shop-cart-mutations";
 import {
   Dialog,
   DialogContent,
@@ -57,10 +55,12 @@ function QuickView({
   product,
   onClose,
   onAdd,
+  isAdding,
 }: {
   product: Product;
   onClose: () => void;
-  onAdd: (id: string, variant?: string) => void;
+  onAdd: (product: Product, variant?: string) => void;
+  isAdding: boolean;
 }) {
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.find((variant) => variant.stock === undefined || variant.stock > 0)?.value ?? ""
@@ -132,9 +132,10 @@ function QuickView({
           <div className="flex gap-2">
             <Button variant="outline" asChild><Link href={`/vlasnik/shop/proizvodi/${product.id}`}>Detalji</Link></Button>
             <Button
-              disabled={(product.variants?.length ?? 0) > 0 && !selectedVariant}
+              disabled={isAdding || ((product.variants?.length ?? 0) > 0 && !selectedVariant)}
+              data-pending={isAdding}
               onClick={() => {
-                onAdd(product.id, selectedVariant || undefined);
+                onAdd(product, selectedVariant || undefined);
                 onClose();
               }}
               className="gap-2"
@@ -154,10 +155,12 @@ function ProductCard({
   product,
   onAdd,
   onQuickView,
+  isAdding,
 }: {
   product: Product;
-  onAdd: (id: string, variant?: string) => void;
+  onAdd: (product: Product, variant?: string) => void;
   onQuickView: (p: Product) => void;
+  isAdding: boolean;
 }) {
   return (
     <Card className="overflow-hidden group flex flex-col relative">
@@ -254,11 +257,14 @@ function ProductCard({
         <Button
           size="sm"
           className="flex-1 gap-1"
+          disabled={isAdding || product.stock <= 0}
+          data-pending={isAdding}
+          data-testid={`button-add-cart-${product.id}`}
           onClick={() => {
             if (product.variants && product.variants.length > 0) {
               onQuickView(product);
             } else {
-              onAdd(product.id);
+              onAdd(product);
             }
           }}
         >
@@ -366,9 +372,7 @@ export default function OwnerShop() {
     query: { enabled: !!userResp?.user, queryKey: getGetShopSummaryQueryKey() },
   });
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const addCartItem = useAddShopCartItem();
+  const { addItem: addCartItem } = useShopCartMutations();
 
   const [filters, setFilters] = useState<FilterState>({
     category: "",
@@ -383,6 +387,10 @@ export default function OwnerShop() {
   const [page, setPage] = useState(1);
   const pageSize = 24;
 
+  // The search box is server-bound; keep the input immediate but debounce the
+  // value that reaches the query so we don't fire a request per keystroke.
+  const debouncedSearch = useDebounce(filters.search, 300);
+
   // Filtering, ordering and pagination now happen server-side so every product
   // stays reachable via the Previous/Next controls regardless of catalog size.
   const productParams = useMemo<ListProductsParams>(() => {
@@ -390,12 +398,12 @@ export default function OwnerShop() {
     if (filters.category) params.category = filters.category;
     if (filters.subcategory) params.subcategory = filters.subcategory;
     if (filters.brand) params.brand = filters.brand;
-    if (filters.search) params.search = filters.search;
+    if (debouncedSearch) params.search = debouncedSearch;
     if (filters.onSale || filters.tab === "akcije") params.onSale = true;
     if (filters.isNew) params.isNew = true;
     if (filters.isBestseller || filters.tab === "bestsellers") params.isBestseller = true;
     return params;
-  }, [filters, page]);
+  }, [filters.category, filters.subcategory, filters.brand, debouncedSearch, filters.onSale, filters.isNew, filters.isBestseller, filters.tab, page]);
 
   const { data: productList, isLoading: isLoadingProd } = useListProducts(productParams);
   const products = productList?.items ?? [];
@@ -418,25 +426,20 @@ export default function OwnerShop() {
     filters.category,
     filters.subcategory,
     filters.brand,
-    filters.search,
+    debouncedSearch,
     filters.onSale,
     filters.isNew,
     filters.isBestseller,
     filters.tab,
   ]);
 
-  const addToCart = (id: string, variantValue?: string) => {
-    addCartItem.mutate(
-      { data: { productId: id, ...(variantValue ? { variantValue } : {}) } },
-      {
-        onSuccess: (cart) => {
-          queryClient.setQueryData(getGetShopCartQueryKey(), cart);
-          queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() });
-          toast.success("Dodato u korpu");
-        },
-        onError: (error) => toast.error(error instanceof Error ? error.message : "Dodavanje u korpu nije uspelo."),
-      },
-    );
+  const addToCart = (product: Product, variantValue?: string) => {
+    // Guard against rapid repeated clicks while an add is in flight.
+    if (addCartItem.isPending) return;
+    addCartItem.mutate({
+      data: { productId: product.id, ...(variantValue ? { variantValue } : {}) },
+      optimisticProduct: product,
+    });
   };
 
   const activeFilterCount = [
@@ -596,6 +599,7 @@ export default function OwnerShop() {
                           product={product}
                           onAdd={addToCart}
                           onQuickView={setQuickViewProduct}
+                          isAdding={addCartItem.isPending}
                         />
                       ))}
                     </div>
@@ -639,6 +643,7 @@ export default function OwnerShop() {
           product={quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAdd={addToCart}
+          isAdding={addCartItem.isPending}
         />
       )}
     </BusinessLayout>

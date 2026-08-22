@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "./layout";
 import {
   useAdminListProducts,
@@ -38,6 +38,7 @@ import {
   ArrowUpDown, X, ImagePlus, Star, Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
@@ -649,6 +650,9 @@ export default function AdminProducts() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
+  // Keep the input value immediate for the user but debounce the server-bound
+  // query value so we don't fire a request per keystroke.
+  const debouncedSearch = useDebounce(search, 300);
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [brand, setBrand] = useState("");
@@ -658,14 +662,17 @@ export default function AdminProducts() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
+  // Reset to the first page when the debounced (server-bound) search settles.
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
   const params: AdminListProductsParams = useMemo(() => ({
-    ...(search ? { search } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(category ? { category } : {}),
     ...(subcategory ? { subcategory } : {}),
     ...(brand ? { brand } : {}),
     ...(status ? { status: status as NonNullable<AdminListProductsParams["status"]> } : {}),
     sortBy, sortDir, page, pageSize,
-  }), [search, category, subcategory, brand, status, sortBy, sortDir, page]);
+  }), [debouncedSearch, category, subcategory, brand, status, sortBy, sortDir, page]);
 
   const { data, isLoading, error } = useAdminListProducts(params);
   const { data: categories = [] } = useAdminListProductCategories();
@@ -749,7 +756,7 @@ export default function AdminProducts() {
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Pretraži po nazivu, SKU, brendu..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="pl-9" data-testid="input-search-products" />
+            <Input placeholder="Pretraži po nazivu, SKU, brendu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" data-testid="input-search-products" />
           </div>
           <div className="flex gap-2 flex-wrap">
             <Select value={category || "__all__"} onValueChange={(v) => { setCategory(v === "__all__" ? "" : v); setSubcategory(""); setPage(1); }}>
