@@ -1,0 +1,571 @@
+import { randomUUID } from "node:crypto";
+import { expect, test, type Page } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import {
+  db,
+  salonsTable,
+  subscriptionPlansTable,
+  subscriptionsTable,
+  usersTable,
+} from "@workspace/db";
+import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+
+const ADMIN_NAV = [
+  { href: "/admin", testId: "admin-nav-dashboard" },
+  { href: "/admin/saloni", testId: "admin-nav-saloni" },
+  { href: "/admin/predlosci-usluga", testId: "admin-nav-predlosci-usluga" },
+  { href: "/admin/korisnici", testId: "admin-nav-korisnici" },
+  { href: "/admin/loyalty", testId: "admin-nav-loyalty" },
+  { href: "/admin/pretplate", testId: "admin-nav-pretplate" },
+  { href: "/admin/edukacije", testId: "admin-nav-edukacije" },
+  { href: "/admin/recenzije", testId: "admin-nav-recenzije" },
+  { href: "/admin/proizvodi", testId: "admin-nav-proizvodi" },
+  { href: "/admin/porudzbine", testId: "admin-nav-porudzbine" },
+  { href: "/admin/kategorije", testId: "admin-nav-kategorije" },
+  { href: "/admin/brendovi", testId: "admin-nav-brendovi" },
+  { href: "/admin/dostava", testId: "admin-nav-dostava" },
+  { href: "/admin/email-marketing", testId: "admin-nav-email-marketing" },
+  { href: "/admin/sms-evidencija", testId: "admin-nav-sms-evidencija" },
+  { href: "/admin/integracije", testId: "admin-nav-integracije" },
+];
+
+const PROTECTED_ADMIN_ROUTES = [
+  ...ADMIN_NAV.map(({ href }) => href),
+  "/admin/saloni/00000000-0000-4000-8000-000000000001",
+  "/admin/porudzbine/00000000-0000-4000-8000-000000000002",
+];
+
+const admin = {
+  id: "00000000-0000-4000-8000-000000000071",
+  firstName: "Test",
+  lastName: "Administrator",
+  email: "admin-regression@example.test",
+  role: "ADMIN" as const,
+  active: true,
+  mustChangePassword: false,
+};
+
+const superAdmin = { ...admin, role: "SUPER_ADMIN" as const };
+const salonId = "00000000-0000-4000-8000-000000000072";
+const userId = "00000000-0000-4000-8000-000000000073";
+const tierId = "00000000-0000-4000-8000-000000000074";
+const planId = "00000000-0000-4000-8000-000000000075";
+const reviewId = "00000000-0000-4000-8000-000000000076";
+
+function adminSummary() {
+  return {
+    totalUsers: 4,
+    totalSalons: 2,
+    activeSalons: 2,
+    bookingsThisMonth: 8,
+    bookingsLastMonth: 6,
+    bookingsTrend: 33.3,
+    grossMerchandiseValue: 125000,
+    newSalonsThisMonth: 1,
+    totalReviews: 3,
+    hiddenReviews: 1,
+    activeSubscriptions: 2,
+    topCategories: [{ name: "Kosa", count: 4 }],
+  };
+}
+
+function adminSalon() {
+  return {
+    id: salonId,
+    name: "Regresioni salon",
+    slug: "regresioni-salon",
+    city: "Beograd",
+    active: true,
+    featured: false,
+    isVerified: true,
+    topSalon: false,
+    videoUrl: null,
+    rating: 4.8,
+    reviewCount: 12,
+    subscriptionStatus: "active",
+    subscriptionPlan: "LUMERA Pro",
+    loyaltyTier: "Gold",
+    loyaltySpend: 12000,
+    createdAt: "2026-08-21T09:00:00.000Z",
+  };
+}
+
+function adminUser() {
+  return {
+    id: userId,
+    firstName: "Salon",
+    lastName: "Vlasnik",
+    email: "owner-regression@example.test",
+    phone: null,
+    role: "SALON_OWNER",
+    active: true,
+    createdAt: "2026-08-21T09:00:00.000Z",
+  };
+}
+
+function loyaltyTier() {
+  return {
+    id: tierId,
+    name: "Gold",
+    sortOrder: 2,
+    spendThreshold: 10000,
+    period: "monthly",
+    subscriptionDiscountPercent: 10,
+    productDiscountPercent: 5,
+    freeSubscription: false,
+    premiumListing: true,
+    freeShipping: true,
+    benefits: ["Prioritetna podrška"],
+    active: true,
+  };
+}
+
+function subscriptionPlan() {
+  return {
+    id: planId,
+    name: "LUMERA Pro",
+    price: 4990,
+    trialDays: 14,
+    features: ["Neograničen kalendar"],
+    limits: { employees: 10, services: 50 },
+    active: true,
+  };
+}
+
+function adminReview() {
+  return {
+    id: reviewId,
+    salonId,
+    salonName: "Regresioni salon",
+    customerId: userId,
+    customerName: "Salon Vlasnik",
+    serviceName: "Regresioni tretman",
+    rating: 5,
+    text: "Odlična usluga.",
+    visible: true,
+    date: "2026-08-21T09:00:00.000Z",
+  };
+}
+
+async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn = true) {
+  let currentUser = role === "SUPER_ADMIN" ? superAdmin : admin;
+  let isLoggedIn = loggedIn;
+  let salon = adminSalon();
+  let user = adminUser();
+  let tier = loyaltyTier();
+  let plan = subscriptionPlan();
+  let review = adminReview();
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+    const method = request.method();
+
+    if (path === "/api/auth/me") {
+      await route.fulfill({ json: { user: isLoggedIn ? currentUser : null } });
+      return;
+    }
+    if (path === "/api/auth/login" && method === "POST") {
+      isLoggedIn = true;
+      currentUser = role === "SUPER_ADMIN" ? superAdmin : admin;
+      await route.fulfill({ json: { user: currentUser, message: "Uspešno ste prijavljeni." } });
+      return;
+    }
+    if (path === "/api/education/disputes" && method === "GET") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+
+    if (path.startsWith("/api/admin/")) {
+      if (path === "/api/admin/summary") {
+        await route.fulfill({ json: adminSummary() });
+        return;
+      }
+      if (path === "/api/admin/salons" && method === "GET") {
+        await route.fulfill({ json: [salon] });
+        return;
+      }
+      if (path === `/api/admin/salons/${salonId}` && method === "GET") {
+        await route.fulfill({
+          json: {
+            ...salon,
+            address: "Test 1",
+            postalCode: "11000",
+            phone: "+381110000000",
+            email: "salon@example.test",
+            orderCount: 0,
+            orderTotal: 0,
+            orders: [],
+          },
+        });
+        return;
+      }
+      if (path === `/api/admin/salons/${salonId}` && method === "PATCH") {
+        salon = { ...salon, ...(request.postDataJSON() as Partial<typeof salon>) };
+        await route.fulfill({ json: salon });
+        return;
+      }
+      if (path === "/api/admin/users" && method === "GET") {
+        await route.fulfill({ json: [user] });
+        return;
+      }
+      if (path === `/api/admin/users/${userId}` && method === "PATCH") {
+        user = { ...user, ...(request.postDataJSON() as Partial<typeof user>) };
+        await route.fulfill({ json: user });
+        return;
+      }
+      if (path === "/api/admin/loyalty-tiers" && method === "GET") {
+        await route.fulfill({ json: [tier] });
+        return;
+      }
+      if (path === `/api/admin/loyalty-tiers/${tierId}` && method === "PATCH") {
+        tier = { ...tier, ...(request.postDataJSON() as Partial<typeof tier>) };
+        await route.fulfill({ json: tier });
+        return;
+      }
+      if (path === "/api/admin/loyalty-tiers" && method === "POST") {
+        await route.fulfill({ status: 201, json: { ...tier, id: randomUUID() } });
+        return;
+      }
+      if (path === `/api/admin/loyalty-tiers/${tierId}` && method === "DELETE") {
+        await route.fulfill({ json: { ...tier, active: false } });
+        return;
+      }
+      if (path === "/api/admin/subscription-plans" && method === "GET") {
+        await route.fulfill({ json: [plan] });
+        return;
+      }
+      if (path === `/api/admin/subscription-plans/${planId}` && method === "PATCH") {
+        plan = { ...plan, ...(request.postDataJSON() as Partial<typeof plan>) };
+        await route.fulfill({ json: plan });
+        return;
+      }
+      if (path === "/api/admin/subscription-plans" && method === "POST") {
+        await route.fulfill({ status: 201, json: { ...plan, id: randomUUID() } });
+        return;
+      }
+      if (path === `/api/admin/subscription-plans/${planId}` && method === "DELETE") {
+        plan = { ...plan, active: false };
+        await route.fulfill({ json: plan });
+        return;
+      }
+      if (path === "/api/admin/reviews" && method === "GET") {
+        await route.fulfill({ json: [review] });
+        return;
+      }
+      if (path === `/api/admin/reviews/${reviewId}` && method === "PATCH") {
+        review = { ...review, ...(request.postDataJSON() as Partial<typeof review>) };
+        await route.fulfill({ json: review });
+        return;
+      }
+      if (path === `/api/admin/reviews/${reviewId}` && method === "DELETE") {
+        await route.fulfill({ status: 204 });
+        return;
+      }
+      if (path === "/api/admin/shipping" && method === "GET") {
+        await route.fulfill({
+          json: {
+            freeShippingThreshold: 10000,
+            tiers: [],
+            personalDeliveryEnabled: false,
+            personalDeliveryName: "Lična dostava u Beogradu",
+            personalDeliveryPrice: 0,
+            personalDeliveryDescription: "Dostava na adresu u Beogradu.",
+            updatedAt: "2026-08-21T09:00:00.000Z",
+          },
+        });
+        return;
+      }
+      if (path === "/api/admin/courier-services" && method === "GET") {
+        await route.fulfill({ json: [] });
+        return;
+      }
+      if (path === "/api/admin/email-marketing/campaigns" && method === "GET") {
+        await route.fulfill({ json: { campaigns: [] } });
+        return;
+      }
+      if (path === "/api/admin/integrations" && method === "GET") {
+        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+        await route.fulfill({
+          json: {
+            integrations: {
+              sms: card,
+              brevo: card,
+              google_oauth: card,
+              facebook_oauth: card,
+            },
+            redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
+            smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
+          },
+        });
+        return;
+      }
+      if (path === "/api/admin/education/settings" && method === "GET") {
+        await route.fulfill({
+          json: {
+            commissionPercent: 10,
+            reservePercent: 5,
+            onlineRefundDays: 14,
+            liveAppealDays: 7,
+            featuredCoursePrice: 5000,
+          },
+        });
+        return;
+      }
+      if (path === "/api/admin/education/centers" && method === "GET") {
+        await route.fulfill({ json: [] });
+        return;
+      }
+      if (path === "/api/admin/education/finance" && method === "GET") {
+        await route.fulfill({ json: { summary: {}, escrows: [], pendingEnrollments: [], featuredCharges: [] } });
+        return;
+      }
+
+      // The navigation test only needs these sections to resolve their initial
+      // list requests. Individual action tests above provide complete fixtures.
+      await route.fulfill({ json: [] });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
+
+async function openAdminPage(page: Page, path: string, role: "ADMIN" | "SUPER_ADMIN" = "SUPER_ADMIN") {
+  await mockAdminApi(page, role);
+  await page.goto(path);
+  await expect(page.getByTestId("admin-mobile-menu-trigger").or(page.getByText("Admin Panel", { exact: true })).first()).toBeVisible();
+}
+
+test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
+  await mockAdminApi(page, "ADMIN", false);
+  await page.goto("/poslovna-prijava");
+  await page.getByLabel("Email").fill("admin-regression@example.test");
+  await page.getByLabel("Lozinka").fill("regression-password");
+  await page.getByRole("button", { name: "Prijavi se u poslovni portal" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByRole("heading", { name: "Pregled Platforme" })).toBeVisible();
+
+  for (const [index, link] of ADMIN_NAV.entries()) {
+    if (index > 0) {
+      await page.getByTestId(link.testId).click();
+      await expect(page).toHaveURL(new RegExp(`${link.href.replaceAll("/", "\\/")}$`));
+    }
+    await expect(page.getByTestId(link.testId)).toBeVisible();
+  }
+});
+
+test("an admin can reach every admin section from the mobile menu", async ({ page }) => {
+  await openAdminPage(page, "/admin");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("admin-mobile-menu-trigger")).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Pregled Platforme" })).toBeVisible();
+  for (const link of ADMIN_NAV.slice(1)) {
+    await page.getByTestId("admin-mobile-menu-trigger").click();
+    await expect(page.getByTestId(link.testId).first()).toBeVisible();
+    await page.getByTestId(link.testId).first().click();
+    await expect(page).toHaveURL(new RegExp(`${link.href.replaceAll("/", "\\/")}$`));
+  }
+});
+
+test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
+  const customer = { ...admin, role: "CUSTOMER" as const };
+  const adminRequests: string[] = [];
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith("/api/admin/")) adminRequests.push(path);
+    if (path === "/api/auth/me") {
+      await route.fulfill({ json: { user: customer } });
+      return;
+    }
+    await route.fulfill({ json: [] });
+  });
+
+  for (const path of PROTECTED_ADMIN_ROUTES) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/moj-nalog$/);
+  }
+  expect(adminRequests).toEqual([]);
+});
+
+test("admin salon, user, loyalty, subscription, and review actions show success", async ({ page }) => {
+  await openAdminPage(page, "/admin/saloni");
+  const salonToggle = page.getByTestId(`toggle-featured-${salonId}`);
+  await salonToggle.click();
+  await expect(page.getByText("Salon uspešno ažuriran", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/korisnici");
+  await page.getByTestId(`toggle-active-${userId}`).click();
+  await expect(page.getByText("Korisnik ažuriran", { exact: true })).toBeVisible();
+  await page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId(`select-role-${userId}`).selectOption("ADMIN");
+  await expect(page.getByText("Uloga promenjena", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/loyalty");
+  await page.getByTestId(`btn-edit-${tierId}`).click();
+  await page.getByRole("button", { name: "Sačuvaj" }).click();
+  await expect(page.getByText("Sačuvano", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/pretplate");
+  await page.getByTestId(`btn-edit-${planId}`).click();
+  await page.getByRole("button", { name: "Sačuvaj" }).click();
+  await expect(page.getByText("Sačuvano", { exact: true })).toBeVisible();
+
+  await page.goto("/admin/recenzije");
+  await page.getByTestId(`toggle-visibility-${reviewId}`).click();
+  await expect(page.getByText("Recenzija ažurirana", { exact: true })).toBeVisible();
+});
+
+test("limited admins see protected user, loyalty, and subscription controls", async ({ page }) => {
+  await openAdminPage(page, "/admin/korisnici", "ADMIN");
+  await expect(page.getByTestId(`select-role-${userId}`)).toBeDisabled();
+  await expect(page.getByTestId(`toggle-active-${userId}`)).toBeDisabled();
+
+  await page.goto("/admin/loyalty");
+  await expect(page.getByTestId("btn-new-tier")).toBeDisabled();
+  await expect(page.getByTestId(`btn-edit-${tierId}`)).toBeDisabled();
+  await expect(page.getByTestId(`btn-delete-${tierId}`)).toBeDisabled();
+
+  await page.goto("/admin/pretplate");
+  await expect(page.getByTestId("btn-new-plan")).toBeDisabled();
+  await expect(page.getByTestId(`btn-edit-${planId}`)).toBeDisabled();
+  await expect(page.getByTestId(`btn-delete-${planId}`)).toBeDisabled();
+});
+
+type UserFixture = {
+  id: string;
+  email: string;
+  password: string;
+};
+
+async function createUser(role: "SUPER_ADMIN" | "CUSTOMER", suffix: string): Promise<UserFixture> {
+  const password = `admin-regression-${suffix}-password`;
+  const [user] = await db.insert(usersTable).values({
+    firstName: "Admin",
+    lastName: "Regression",
+    email: `admin-regression-${suffix}-${randomUUID()}@example.test`,
+    passwordHash: await hashPassword(password),
+    passwordSetAt: new Date(),
+    role,
+  }).returning();
+  if (!user) throw new Error(`Could not create ${role} fixture.`);
+  return { id: user.id, email: user.email, password };
+}
+
+async function login(page: Page, fixture: UserFixture) {
+  const response = await page.request.post("/api/auth/login", {
+    data: { email: fixture.email, password: fixture.password },
+  });
+  expect(response).toBeOK();
+}
+
+test("a customer cannot retrieve admin API data", async ({ page }) => {
+  const customer = await createUser("CUSTOMER", "api-customer");
+  try {
+    await login(page, customer);
+    for (const path of [
+      "/api/admin/summary",
+      "/api/admin/salons",
+      "/api/admin/users",
+      "/api/admin/loyalty-tiers",
+      "/api/admin/subscription-plans",
+      "/api/admin/reviews",
+    ]) {
+      expect((await page.request.get(path)).status(), path).toBe(403);
+    }
+  } finally {
+    await db.delete(usersTable).where(eq(usersTable.id, customer.id));
+  }
+});
+
+test("the last active super administrator cannot be removed", async ({ page }) => {
+  const existingActiveSuperAdmins = await db.select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.role, "SUPER_ADMIN"));
+  const first = await createUser("SUPER_ADMIN", "first");
+  const second = await createUser("SUPER_ADMIN", "second");
+  try {
+    // Isolate the invariant from demo data or another test-created admin.
+    await db.update(usersTable).set({ active: false }).where(eq(usersTable.role, "SUPER_ADMIN"));
+    await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, first.id));
+    await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, second.id));
+    await login(page, first);
+    const deactivateSecond = await page.request.patch(`/api/admin/users/${second.id}`, { data: { active: false } });
+    expect(deactivateSecond.status()).toBe(200);
+
+    const deactivateLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { active: false } });
+    expect(deactivateLast.status()).toBe(409);
+    await expect(deactivateLast.json()).resolves.toMatchObject({
+      error: "Nije moguće ukloniti ili deaktivirati poslednjeg aktivnog super administratora.",
+    });
+
+    const demoteLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { role: "ADMIN" } });
+    expect(demoteLast.status()).toBe(409);
+  } finally {
+    for (const existing of existingActiveSuperAdmins) {
+      await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, existing.id));
+    }
+    await db.delete(usersTable).where(eq(usersTable.id, second.id));
+    await db.delete(usersTable).where(eq(usersTable.id, first.id));
+  }
+});
+
+test("referenced subscription plans are archived instead of deleted", async ({ page }) => {
+  const adminFixture = await createUser("SUPER_ADMIN", "plan-owner");
+  const owner = await createUser("CUSTOMER", "salon-owner");
+  let salonIdForTest: string | undefined;
+  let planIdForTest: string | undefined;
+  try {
+    const [salon] = await db.insert(salonsTable).values({
+      ownerId: owner.id,
+      name: `Admin plan regression ${randomUUID()}`,
+      slug: `admin-plan-regression-${randomUUID()}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Test 1",
+      phone: "+381110000001",
+      email: `admin-plan-salon-${randomUUID()}@example.test`,
+      shortDescription: "Test salon.",
+      description: "Test salon for plan archival.",
+      imageUrl: "/test.jpg",
+    }).returning();
+    if (!salon) throw new Error("Could not create salon fixture.");
+    salonIdForTest = salon.id;
+
+    const [plan] = await db.insert(subscriptionPlansTable).values({
+      name: `Admin plan ${randomUUID()}`,
+      price: 2500,
+      trialDays: 7,
+      features: ["Istorija"],
+      limits: { employees: 3 },
+    }).returning();
+    if (!plan) throw new Error("Could not create plan fixture.");
+    planIdForTest = plan.id;
+
+    await db.insert(subscriptionsTable).values({
+      salonId: salon.id,
+      planId: plan.id,
+      status: "active",
+      dueAmount: 2500,
+      paymentMethod: "BANK_TRANSFER",
+    });
+
+    await login(page, adminFixture);
+    const response = await page.request.delete(`/api/admin/subscription-plans/${plan.id}`);
+    expect(response.status()).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ id: plan.id, active: false });
+
+    const [persisted] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, plan.id));
+    expect(persisted?.active).toBe(false);
+    const [history] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.planId, plan.id));
+    expect(history?.id).toBeDefined();
+  } finally {
+    if (salonIdForTest) await db.delete(subscriptionsTable).where(eq(subscriptionsTable.salonId, salonIdForTest));
+    if (planIdForTest) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planIdForTest));
+    if (salonIdForTest) await db.delete(salonsTable).where(eq(salonsTable.id, salonIdForTest));
+    await db.delete(usersTable).where(eq(usersTable.id, owner.id));
+    await db.delete(usersTable).where(eq(usersTable.id, adminFixture.id));
+  }
+});

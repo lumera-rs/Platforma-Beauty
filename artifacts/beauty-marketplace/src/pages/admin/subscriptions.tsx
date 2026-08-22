@@ -192,10 +192,10 @@ export default function AdminSubscriptions() {
                   </div>
 
                   <div className="flex gap-2 mt-auto">
-                    <Button variant="outline" className="flex-1 bg-background hover:bg-muted" onClick={() => handleOpenEdit(plan)} disabled={!canManagePlans}>
+                    <Button variant="outline" className="flex-1 bg-background hover:bg-muted" onClick={() => handleOpenEdit(plan)} disabled={!canManagePlans} data-testid={`btn-edit-${plan.id}`}>
                       <Edit2 className="w-4 h-4 mr-2" /> Izmeni
                     </Button>
-                    <Button variant="outline" size="icon" className="shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground border-border" onClick={() => handleDelete(plan.id)} disabled={!canManagePlans}>
+                    <Button variant="outline" size="icon" className="shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground border-border" onClick={() => handleDelete(plan.id)} disabled={!canManagePlans} data-testid={`btn-delete-${plan.id}`}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
