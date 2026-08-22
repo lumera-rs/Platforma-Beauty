@@ -69,6 +69,7 @@ export * from './appointmentRescheduledConfirmationEmail';
 export * from './appointmentRescheduledConfirmationEmailStatus';
 export * from './appointmentRescheduledConfirmationSms';
 export * from './appointmentRescheduledConfirmationSmsStatus';
+export * from './appointmentSalonContact';
 export * from './appointmentSeriesCancellation';
 export * from './appointmentSeriesMoveInput';
 export * from './appointmentSeriesMovePreview';

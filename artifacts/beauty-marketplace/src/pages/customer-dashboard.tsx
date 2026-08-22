@@ -1,6 +1,7 @@
 import { Layout } from "@/components/layout";
 import {
   getGetAuthSignInMethodsQueryKey,
+  getGetAppointmentSalonContactQueryKey,
   getGetCustomerDashboardQueryKey,
   getListFavoritesQueryKey,
   getListMyAppointmentsQueryKey,
@@ -9,6 +10,7 @@ import {
   useGetAuthSignInMethods,
   useGetCustomerDashboard,
   useGetCurrentUser,
+  useGetAppointmentSalonContact,
   useListFavorites,
   useListMyAppointments,
 } from "@workspace/api-client-react";
@@ -40,6 +42,8 @@ import { useBookingDraft } from "@/hooks/use-booking-draft";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { EducationPurchases } from "@/components/education-purchases";
 
+const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
+
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
@@ -50,6 +54,7 @@ export default function CustomerDashboard() {
   const [phone, setPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneBusy, setPhoneBusy] = useState(false);
+  const [contactAppointmentId, setContactAppointmentId] = useState<string | null>(null);
   
   useEffect(() => {
     if (!isUserLoading && !userResp?.user) {
@@ -65,6 +70,15 @@ export default function CustomerDashboard() {
   const { data: favorites, isLoading: isFavoritesLoading } = useListFavorites({
     query: { enabled: userResp?.user?.role === "CUSTOMER", queryKey: getListFavoritesQueryKey() },
   });
+  const { data: salonContact, isFetching: isSalonContactLoading, error: salonContactError } = useGetAppointmentSalonContact(
+    contactAppointmentId ?? "",
+    {
+      query: {
+        enabled: Boolean(contactAppointmentId),
+        queryKey: getGetAppointmentSalonContactQueryKey(contactAppointmentId ?? ""),
+      },
+    },
+  );
   const { draft } = useBookingDraft(userResp?.user?.role === "CUSTOMER" ? userResp.user.id : undefined);
   
   const cancelMutation = useCancelAppointment();
@@ -81,6 +95,8 @@ export default function CustomerDashboard() {
         onSuccess: () => {
           toast.success("Termin otkazan", { description: "Vaš termin je uspešno otkazan." });
           setAppointmentToCancel(null);
+          setContactAppointmentId((current) => current === id ? null : current);
+          queryClient.removeQueries({ queryKey: getGetAppointmentSalonContactQueryKey(id) });
           refetchDash();
           refetchAppts();
         },
@@ -286,8 +302,28 @@ export default function CustomerDashboard() {
                             <span>{appt.durationMinutes} min</span>
                             <span className="font-semibold text-foreground">{appt.price} RSD</span>
                           </div>
+                          {contactAppointmentId === appt.id && appointmentStatusesWithSalonContact.has(appt.status) && (
+                            <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
+                              {isSalonContactLoading ? (
+                                <span className="inline-flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Učitavanje privatnih podataka…</span>
+                              ) : salonContact ? (
+                                <>
+                                  <p className="font-semibold">Kontakt i lokacija salona</p>
+                                  <p className="mt-1">{salonContact.address}, {salonContact.postalCode ? `${salonContact.postalCode} ` : ""}{salonContact.city}</p>
+                                  <p>{salonContact.phone} · {salonContact.email}</p>
+                                </>
+                              ) : (
+                                <p className="text-destructive">{salonContactError ? "Privatni podaci nisu dostupni za ovaj termin." : "Privatni podaci nisu dostupni."}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-2">
+                          {appointmentStatusesWithSalonContact.has(appt.status) && (
+                            <Button variant="outline" size="sm" onClick={() => setContactAppointmentId((current) => current === appt.id ? null : appt.id)}>
+                              <MapPin className="mr-2 h-3.5 w-3.5" />{contactAppointmentId === appt.id ? "Sakrij kontakt" : "Kontakt i adresa"}
+                            </Button>
+                          )}
                           {appt.date < today && (
                             <Button variant="outline" size="sm" asChild>
                               <Link href={rebookUrl(appt)}><RotateCcw className="mr-2 h-3.5 w-3.5" />Zakaži ponovo</Link>

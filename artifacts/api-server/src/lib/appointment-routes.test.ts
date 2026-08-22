@@ -143,7 +143,7 @@ async function run(): Promise<void> {
   let server: ReturnType<typeof app.listen> | undefined;
 
   try {
-    const [owner, customer, employeeUser, admin] = await db.insert(usersTable).values([
+    const [owner, customer, otherCustomer, employeeUser, admin] = await db.insert(usersTable).values([
       {
         firstName: "Vlasnik",
         lastName: "HTTP test",
@@ -156,6 +156,14 @@ async function run(): Promise<void> {
         firstName: "Kupac",
         lastName: "HTTP test",
         email: fixtureEmail("customer"),
+        passwordHash,
+        passwordSetAt: new Date(),
+        role: "CUSTOMER",
+      },
+      {
+        firstName: "Drugi kupac",
+        lastName: "HTTP test",
+        email: fixtureEmail("other-customer"),
         passwordHash,
         passwordSetAt: new Date(),
         role: "CUSTOMER",
@@ -177,7 +185,7 @@ async function run(): Promise<void> {
         role: "ADMIN",
       },
     ]).returning();
-    createdUserIds.push(owner!.id, customer!.id, employeeUser!.id, admin!.id);
+    createdUserIds.push(owner!.id, customer!.id, otherCustomer!.id, employeeUser!.id, admin!.id);
 
     const [salon, foreignSalon] = await db.insert(salonsTable).values([
       {
@@ -187,8 +195,11 @@ async function run(): Promise<void> {
         city: "Beograd",
         municipality: "Vračar",
         address: "Test 29",
+        postalCode: "11000",
         phone: "+381110000029",
         email: fixtureEmail("salon"),
+        latitude: 44.7981,
+        longitude: 20.4734,
         shortDescription: "Izolovan salon za HTTP regresione testove termina.",
         description: "Izolovan salon za proveru zaključavanja, statusa i autorizacije termina.",
         imageUrl: "/test.jpg",
@@ -308,7 +319,7 @@ async function run(): Promise<void> {
       totalAppointments: 1,
       createdByUserId: owner!.id,
     }).returning();
-    const [seriesAppointment, completionRaceAppointment, cancelledAppointment] = await db.insert(appointmentsTable).values([
+    const [seriesAppointment, completionRaceAppointment, cancelledAppointment, noShowAppointment] = await db.insert(appointmentsTable).values([
       {
         salonId: salon!.id,
         customerId: customer!.id,
@@ -349,11 +360,25 @@ async function run(): Promise<void> {
         price: 1000,
         status: "cancelled",
       },
+      {
+        salonId: salon!.id,
+        customerId: customer!.id,
+        salonCustomerId: contact!.id,
+        employeeId: employee!.id,
+        serviceId: service!.id,
+        date: "2099-10-23",
+        startTime: "10:00",
+        endTime: "11:00",
+        durationMinutes: 60,
+        price: 1000,
+        status: "no-show",
+      },
     ]).returning();
 
-    const [ownerSession, customerSession, employeeSession, adminSession] = await Promise.all([
+    const [ownerSession, customerSession, otherCustomerSession, employeeSession, adminSession] = await Promise.all([
       createSession(owner!.id),
       createSession(customer!.id),
+      createSession(otherCustomer!.id),
       createSession(employeeUser!.id),
       createSession(admin!.id),
     ]);
@@ -362,6 +387,45 @@ async function run(): Promise<void> {
     await once(server, "listening");
     const address = server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const publicProfileResponse = await fetch(`${baseUrl}/api/salons/${salon!.slug}`);
+    assert.equal(publicProfileResponse.status, 200, "a public salon profile must remain discoverable");
+    const publicProfile = await publicProfileResponse.json() as Record<string, unknown>;
+    for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
+      assert.ok(!Object.hasOwn(publicProfile, privateField), `public salon profiles must omit ${privateField}`);
+    }
+    assert.ok(!JSON.stringify(publicProfile).includes("Test 29"), "public salon profiles must not serialize the street address");
+    assert.ok(!JSON.stringify(publicProfile).includes("+381110000029"), "public salon profiles must not serialize the phone number");
+    assert.ok(!JSON.stringify(publicProfile).includes(fixtureEmail("salon")), "public salon profiles must not serialize the email address");
+
+    const publicSalonCards = await getPublicSalonCards(baseUrl, "city=Beograd");
+    const publicFixtureCard = publicSalonCards.find((item) => item.id === salon!.id) as Record<string, unknown> | undefined;
+    assert.ok(publicFixtureCard, "public salon search must include the fixture salon");
+    for (const privateField of ["address", "phone", "email", "latitude", "longitude"]) {
+      assert.ok(!Object.hasOwn(publicFixtureCard!, privateField), `public salon cards must omit ${privateField}`);
+    }
+
+    const anonymousContactResponse = await fetch(`${baseUrl}/api/appointments/${seriesAppointment!.id}/salon-contact`);
+    assert.notEqual(anonymousContactResponse.status, 200, "anonymous visitors must not retrieve salon contact details");
+    const privateSalonContact = await getRequest(baseUrl, customerSession, `/appointments/${seriesAppointment!.id}/salon-contact`);
+    assert.equal(privateSalonContact.status, 200, "a customer must retrieve contact details for their qualifying booking");
+    assert.deepEqual(privateSalonContact.body, {
+      appointmentId: seriesAppointment!.id,
+      name: salon!.name,
+      phone: salon!.phone,
+      email: salon!.email,
+      address: salon!.address,
+      postalCode: salon!.postalCode,
+      city: salon!.city,
+      latitude: salon!.latitude,
+      longitude: salon!.longitude,
+    }, "the protected appointment-contact view must expose the complete salon contact details only after booking");
+    const cancelledContact = await getRequest(baseUrl, customerSession, `/appointments/${cancelledAppointment!.id}/salon-contact`);
+    assert.equal(cancelledContact.status, 403, "a cancelled appointment must not qualify for salon contact details");
+    const noShowContact = await getRequest(baseUrl, customerSession, `/appointments/${noShowAppointment!.id}/salon-contact`);
+    assert.equal(noShowContact.status, 403, "a no-show appointment must not qualify for salon contact details");
+    const anotherCustomerContact = await getRequest(baseUrl, otherCustomerSession, `/appointments/${seriesAppointment!.id}/salon-contact`);
+    assert.equal(anotherCustomerContact.status, 404, "a different customer must not retrieve another customer's salon contact details");
 
     const mobileServiceCreate = await request(baseUrl, ownerSession, "/salon/services", "POST", {
       category: "Test",

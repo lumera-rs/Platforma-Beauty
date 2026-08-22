@@ -58,6 +58,7 @@ import type {
   ApiError,
   Appointment,
   AppointmentInput,
+  AppointmentSalonContact,
   AppointmentSeriesCancellation,
   AppointmentSeriesMoveInput,
   AppointmentSeriesMovePreview,
@@ -1724,6 +1725,83 @@ export const useUpdateAppointment = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUpdateAppointmentMutationOptions(options));
     }
+
+export const getGetAppointmentSalonContactUrl = (appointmentId: string,) => {
+
+
+
+
+  return `/api/appointments/${appointmentId}/salon-contact`
+}
+
+/**
+ * @summary Get salon contact details for the signed-in customer's qualifying booking
+ */
+export const getAppointmentSalonContact = async (appointmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<AppointmentSalonContact> => {
+
+  return customFetch<AppointmentSalonContact>(getGetAppointmentSalonContactUrl(appointmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppointmentSalonContactQueryKey = (appointmentId: string,) => {
+    return [
+    `/api/appointments/${appointmentId}/salon-contact`
+    ] as const;
+    }
+
+
+export const getGetAppointmentSalonContactQueryOptions = <TData = Awaited<ReturnType<typeof getAppointmentSalonContact>>, TError = ErrorType<void>>(appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentSalonContact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppointmentSalonContactQueryKey(appointmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppointmentSalonContact>>> = ({ signal }) => getAppointmentSalonContact(appointmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: appointmentId !== null && appointmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppointmentSalonContact>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppointmentSalonContactQueryResult = NonNullable<Awaited<ReturnType<typeof getAppointmentSalonContact>>>
+export type GetAppointmentSalonContactQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get salon contact details for the signed-in customer's qualifying booking
+ */
+
+export function useGetAppointmentSalonContact<TData = Awaited<ReturnType<typeof getAppointmentSalonContact>>, TError = ErrorType<void>>(
+ appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppointmentSalonContact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppointmentSalonContactQueryOptions(appointmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getCancelAppointmentUrl = (appointmentId: string,) => {
 

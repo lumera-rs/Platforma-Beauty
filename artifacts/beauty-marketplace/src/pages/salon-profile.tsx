@@ -28,7 +28,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { SalonGallery, MediaItem } from "@/components/salon-gallery";
-import { SimpleMap } from "@/components/simple-map";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
@@ -130,21 +129,12 @@ export default function SalonProfile() {
   const { data: nearbySalonsResponse } = useListSalons(
     {
       city: salonData?.city,
-      latitude: salonData?.latitude ?? undefined,
-      longitude: salonData?.longitude ?? undefined,
-      sort: salonData?.latitude !== null && salonData?.latitude !== undefined
-        && salonData?.longitude !== null && salonData?.longitude !== undefined
-        ? "nearest"
-        : undefined,
     },
     {
       query: {
-        enabled: !!salonData?.city && salonData?.latitude !== null && salonData?.longitude !== null,
+        enabled: !!salonData?.city,
         queryKey: getListSalonsQueryKey({
           city: salonData?.city,
-          latitude: salonData?.latitude ?? undefined,
-          longitude: salonData?.longitude ?? undefined,
-          sort: "nearest",
         }),
       }
     }
@@ -191,7 +181,7 @@ export default function SalonProfile() {
     const list = Array.isArray(nearbySalonsResponse) 
       ? nearbySalonsResponse 
       : (nearbySalonsResponse as any)?.salons || (nearbySalonsResponse as any)?.data || [];
-    return list.filter((s: any) => s.id !== salonData?.id && s.latitude !== null && s.longitude !== null).slice(0, 5);
+    return list.filter((s: any) => s.id !== salonData?.id).slice(0, 5);
   }, [nearbySalonsResponse, salonData?.id]);
 
   const scrollToSection = (id: string) => {
@@ -665,7 +655,7 @@ export default function SalonProfile() {
                     <div className="w-12 h-12 rounded-full bg-primary/5 flex items-center justify-center shrink-0 border border-primary/10">
                       <MapPin className="w-5 h-5 text-primary" />
                     </div>
-                    <span>{salonData.address}, {salonData.city}</span>
+                    <span>{salonData.city}, {salonData.municipality}</span>
                   </div>
                 </div>
              </div>
@@ -951,23 +941,11 @@ export default function SalonProfile() {
               Lokacija i radno vreme
             </h2>
             <div className="grid lg:grid-cols-[1fr_300px] gap-6">
-               {salonData.latitude !== null && salonData.longitude !== null ? (
-                 <div className="h-[400px] rounded-3xl overflow-hidden shadow-md border border-border/60">
-                     <SimpleMap markers={[{
-                       id: salonData.id,
-                       latitude: salonData.latitude,
-                       longitude: salonData.longitude,
-                       label: salonData.name,
-                       active: true,
-                     }]} />
-                 </div>
-               ) : (
-                  <div className="h-[400px] rounded-3xl bg-muted/30 border border-dashed flex flex-col items-center justify-center text-muted-foreground">
-                    <MapPin className="w-12 h-12 mb-4 opacity-50" />
-                    <p className="font-medium">Mapa nije dostupna za ovu lokaciju</p>
-                    <p className="text-sm mt-1">{salonData.address}</p>
-                  </div>
-               )}
+                <div className="h-[400px] rounded-3xl bg-muted/30 border border-dashed flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+                  <MapPin className="w-12 h-12 mb-4 opacity-50" />
+                  <p className="font-medium">Salon se nalazi u: {salonData.city}, {salonData.municipality}</p>
+                  <p className="text-sm mt-2 max-w-sm">Tačna adresa, mapa i kontakt podaci prikazuju se u vašim terminima nakon zakazivanja.</p>
+                </div>
                <Card className="h-full rounded-3xl border-border/60 shadow-sm bg-card overflow-hidden flex flex-col">
                  <div className="bg-primary/5 p-6 border-b border-border/60">
                    <h3 className="font-serif font-bold text-xl flex items-center gap-2 text-foreground">
@@ -1014,7 +992,7 @@ export default function SalonProfile() {
                         <h3 className="font-serif font-bold text-lg leading-tight mb-2 group-hover:text-primary transition-colors">{nearbySalon.name}</h3>
                         <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-auto">
                           <MapPin className="w-4 h-4 shrink-0 text-primary/70" />
-                          <span className="truncate">{nearbySalon.address}, {nearbySalon.city}</span>
+                          <span className="truncate">{nearbySalon.city}, {nearbySalon.municipality}</span>
                         </p>
                       </CardContent>
                     </Card>

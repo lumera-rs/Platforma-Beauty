@@ -207,7 +207,6 @@ export interface SalonCard {
   name: string;
   city: string;
   municipality: string;
-  address: string;
   imageUrl: string;
   rating: number;
   reviewCount: number;
@@ -228,10 +227,6 @@ export interface SalonCard {
   /** @nullable */
   lastBookedAt?: string | null;
   createdAt: string;
-  /** @nullable */
-  latitude: number | null;
-  /** @nullable */
-  longitude: number | null;
 }
 
 export interface DiscoveryService {
@@ -352,12 +347,6 @@ export type SalonProfile = SalonCard & ({
   /** @nullable */
   videoUrl: string | null;
   description: string;
-  phone: string;
-  email: string;
-  /** @nullable */
-  latitude: number | null;
-  /** @nullable */
-  longitude: number | null;
   topServices: PopularSalonService[];
   hours: OpeningHour[];
   staff: Employee[];
@@ -747,6 +736,21 @@ export interface Appointment {
   notes?: string | null;
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
+}
+
+export interface AppointmentSalonContact {
+  appointmentId: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  /** @nullable */
+  postalCode: string | null;
+  city: string;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
 }
 
 export type AppointmentInputTreatmentLocation = typeof AppointmentInputTreatmentLocation[keyof typeof AppointmentInputTreatmentLocation];

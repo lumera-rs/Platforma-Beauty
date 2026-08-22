@@ -163,6 +163,8 @@ import {
   GetAuthSignInMethodsResponse,
   GetCurrentUserResponse,
   GetCustomerDashboardResponse,
+  GetAppointmentSalonContactParams,
+  GetAppointmentSalonContactResponse,
   GetCustomerSalonReviewParams,
   GetCustomerSalonReviewResponse,
   GetLoyaltyStatusResponse,
@@ -1541,7 +1543,6 @@ function card(
     name: salon.name,
     city: salon.city,
     municipality: salon.municipality,
-    address: salon.address,
     imageUrl: salon.imageUrl,
     rating: salon.rating / 10,
     reviewCount: salon.reviewCount,
@@ -1560,8 +1561,6 @@ function card(
     openSunday: hours.some((item) => item.weekday === 7 && !item.closed),
     lastBookedAt: lastBookedAt?.toISOString() ?? null,
     createdAt: salon.createdAt.toISOString(),
-    latitude: salon.latitude,
-    longitude: salon.longitude,
   };
 }
 
@@ -2604,10 +2603,6 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     gallery: salon.gallery,
     videoUrl: salon.videoUrl,
     description: salon.description,
-    phone: salon.phone,
-    email: salon.email,
-    latitude: salon.latitude,
-    longitude: salon.longitude,
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
     topServices,
     hours: hours.map((item) => ({ day: ["Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota", "Nedelja"][item.weekday - 1] ?? "Ponedeljak", open: item.openTime, close: item.closeTime, closed: item.closed })),
@@ -2714,6 +2709,38 @@ router.get("/appointments", async (req, res): Promise<void> => {
   if (parsed.data.scope === "past") appointments = appointments.filter((item) => item.date < new Date().toISOString().slice(0, 10));
   ListMyAppointmentsResponse.parse(appointments);
   res.json(appointments);
+});
+
+const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
+
+router.get("/appointments/:appointmentId/salon-contact", async (req, res): Promise<void> => {
+  const user = await requireCustomer(req, res); if (!user) return;
+  const params = GetAppointmentSalonContactParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Termin nije ispravno izabran." }); return; }
+
+  const [appointment] = await db.select().from(appointmentsTable).where(and(
+    eq(appointmentsTable.id, params.data.appointmentId),
+    eq(appointmentsTable.customerId, user.id),
+  )).limit(1);
+  if (!appointment) { res.status(404).json({ error: "Termin nije pronađen." }); return; }
+  if (!appointmentStatusesWithSalonContact.has(appointment.status)) {
+    res.status(403).json({ error: "Kontakt salona je dostupan samo uz aktivan ili završen termin." });
+    return;
+  }
+
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1);
+  if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
+  res.json(GetAppointmentSalonContactResponse.parse({
+    appointmentId: appointment.id,
+    name: salon.name,
+    phone: salon.phone,
+    email: salon.email,
+    address: salon.address,
+    postalCode: salon.postalCode,
+    city: salon.city,
+    latitude: salon.latitude,
+    longitude: salon.longitude,
+  }));
 });
 
 router.post("/appointments", async (req, res): Promise<void> => {

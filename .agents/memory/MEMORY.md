@@ -18,3 +18,4 @@
 - [Booking calendar mobile sizing](booking-calendar-mobile-sizing.md) — booking-specific DayPicker overrides must preserve its full flex layout before sizing day cells.
 - [Education financial serialization](education-financial-serialization.md) — payouts, disputes, and dispute resolutions must serialize by education center before changing escrow.
 - [Database-clock test boundaries](database-clock-test-boundaries.md) — SQL deadline tests must share PostgreSQL’s clock when JavaScript time is overridden.
+- [Appointment contact privacy](appointment-contact-privacy.md) — exact salon details require ownership of a pending, confirmed, or completed appointment.

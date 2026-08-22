@@ -301,7 +301,6 @@ export const ListSalonsResponseItem = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -319,9 +318,7 @@ export const ListSalonsResponseItem = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })
 export const ListSalonsResponse = zod.array(ListSalonsResponseItem)
 
@@ -354,7 +351,6 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -372,9 +368,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })),
   "newSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -382,7 +376,6 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -400,9 +393,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })),
   "discountedSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -410,7 +401,6 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -428,9 +418,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 }).and(zod.object({
   "discount": zod.object({
   "serviceName": zod.string(),
@@ -444,7 +432,6 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -462,9 +449,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })),
   "topRatedSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -472,7 +457,6 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -490,9 +474,7 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 }))
 })
 
@@ -548,7 +530,6 @@ export const GetSalonResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -566,17 +547,11 @@ export const GetSalonResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 }).and(zod.object({
   "gallery": zod.array(zod.string()),
   "videoUrl": zod.string().nullable(),
   "description": zod.string(),
-  "phone": zod.string(),
-  "email": zod.string(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable(),
   "topServices": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -872,6 +847,26 @@ export const UpdateAppointmentResponse = zod.object({
 
 
 /**
+ * @summary Get salon contact details for the signed-in customer's qualifying booking
+ */
+export const GetAppointmentSalonContactParams = zod.object({
+  "appointmentId": zod.coerce.string()
+})
+
+export const GetAppointmentSalonContactResponse = zod.object({
+  "appointmentId": zod.string(),
+  "name": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string(),
+  "address": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "city": zod.string(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable()
+})
+
+
+/**
  * @summary Cancel appointment
  */
 export const CancelAppointmentParams = zod.object({
@@ -976,7 +971,6 @@ export const GetCustomerDashboardResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -994,9 +988,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })),
   "recommendations": zod.array(zod.object({
   "id": zod.string(),
@@ -1004,7 +996,6 @@ export const GetCustomerDashboardResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -1022,9 +1013,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })),
   "favoriteCount": zod.number(),
   "visitCount": zod.number()
@@ -1040,7 +1029,6 @@ export const ListFavoritesResponseItem = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -1058,9 +1046,7 @@ export const ListFavoritesResponseItem = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 })
 export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem)
 
@@ -1174,7 +1160,6 @@ export const GetSalonDashboardResponse = zod.object({
   "name": zod.string(),
   "city": zod.string(),
   "municipality": zod.string(),
-  "address": zod.string(),
   "imageUrl": zod.string(),
   "rating": zod.number(),
   "reviewCount": zod.number(),
@@ -1192,9 +1177,7 @@ export const GetSalonDashboardResponse = zod.object({
   "hasDiscount": zod.boolean(),
   "openSunday": zod.boolean(),
   "lastBookedAt": zod.coerce.date().nullish(),
-  "createdAt": zod.coerce.date(),
-  "latitude": zod.number().nullable(),
-  "longitude": zod.number().nullable()
+  "createdAt": zod.coerce.date()
 }),
   "todayAppointments": zod.array(zod.object({
   "id": zod.string(),

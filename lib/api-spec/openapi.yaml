@@ -383,6 +383,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+  /appointments/{appointmentId}/salon-contact:
+    get:
+      operationId: getAppointmentSalonContact
+      tags: [appointments]
+      summary: Get salon contact details for the signed-in customer's qualifying booking
+      parameters:
+        - $ref: "#/components/parameters/AppointmentId"
+      responses:
+        "200":
+          description: Private salon contact and exact location for this booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentSalonContact"
+        "403": { description: The appointment is cancelled or does not belong to the signed-in customer }
+        "404": { description: Appointment not found }
   /appointments/{appointmentId}/cancel:
     post:
       operationId: cancelAppointment
@@ -2873,7 +2889,6 @@ components:
         name: { type: string }
         city: { type: string }
         municipality: { type: string }
-        address: { type: string }
         imageUrl: { type: string }
         rating: { type: number }
         reviewCount: { type: number }
@@ -2894,9 +2909,7 @@ components:
         openSunday: { type: boolean }
         lastBookedAt: { type: ["string", "null"], format: date-time }
         createdAt: { type: string, format: date-time }
-        latitude: { type: ["number", "null"], format: double }
-        longitude: { type: ["number", "null"], format: double }
-      required: [id, slug, name, city, municipality, address, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt, latitude, longitude]
+      required: [id, slug, name, city, municipality, imageUrl, rating, reviewCount, shortDescription, popularServices, startingPrice, homeService, featured, topSalon, acceptsCards, instantBooking, servesMen, isVerified, hasDiscount, openSunday, createdAt]
     DiscoveryService:
       type: object
       properties:
@@ -2957,10 +2970,6 @@ components:
               items: { type: string }
             videoUrl: { type: ["string", "null"] }
             description: { type: string }
-            phone: { type: string }
-            email: { type: string }
-            latitude: { type: ["number", "null"] }
-            longitude: { type: ["number", "null"] }
             topServices:
               type: array
               items: { $ref: "#/components/schemas/PopularSalonService" }
@@ -2978,7 +2987,7 @@ components:
               items: { $ref: "#/components/schemas/Review" }
             returnClientRate: { type: ["number", "null"], minimum: 0, maximum: 100 }
             homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
-          required: [gallery, videoUrl, description, phone, email, latitude, longitude, topServices, hours, staff, services, reviews, returnClientRate, homeServiceRadiusKm]
+          required: [gallery, videoUrl, description, topServices, hours, staff, services, reviews, returnClientRate, homeServiceRadiusKm]
     PopularSalonService:
       type: object
       properties:
@@ -3271,6 +3280,19 @@ components:
               required: [status]
           required: [sms, email]
       required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status]
+    AppointmentSalonContact:
+      type: object
+      properties:
+        appointmentId: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        address: { type: string }
+        postalCode: { type: ["string", "null"] }
+        city: { type: string }
+        latitude: { type: ["number", "null"], format: double }
+        longitude: { type: ["number", "null"], format: double }
+      required: [appointmentId, name, phone, email, address, postalCode, city, latitude, longitude]
     AppointmentInput:
       type: object
       properties:

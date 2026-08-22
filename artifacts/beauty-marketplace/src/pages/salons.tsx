@@ -1,14 +1,12 @@
 import { Layout } from "@/components/layout";
 import { useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
 import { Link, useSearch } from "wouter";
-import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight, List as ListIcon, Map as MapIcon } from "lucide-react";
+import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { SimpleMap } from "@/components/simple-map";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 
@@ -41,9 +39,7 @@ export default function Salons() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationNote, setLocationNote] = useState("");
   const [page, setPage] = useState(1);
-  const [selectedSalonId, setSelectedSalonId] = useState<string | null>(null);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState("lista");
 
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -88,7 +84,6 @@ export default function Salons() {
   // Reset page when filters change
   useEffect(() => {
     setPage(1);
-    setSelectedSalonId(null);
   }, [params]);
 
   const categories = ["Frizerski saloni", "Muški frizeri", "Kozmetički saloni", "Depilacija", "Lice", "Nokti", "Masaža", "Telo", "Wellness", "Lux tretmani", "Paketi usluga", "Ordinacije i poliklinike"];
@@ -106,50 +101,15 @@ export default function Salons() {
   }, [allSalons, page]);
 
   const totalPages = allSalons ? Math.max(1, Math.ceil(allSalons.length / PAGE_SIZE)) : 1;
-  const mapMarkers = useMemo(
-    () => (allSalons ?? []).flatMap((salon) => (
-      salon.latitude === null || salon.longitude === null
-        ? []
-        : [{ id: salon.id, label: salon.name, latitude: salon.latitude, longitude: salon.longitude, active: selectedSalonId === salon.id }]
-    )),
-    [allSalons, selectedSalonId],
-  );
-
   const relativeLastBooked = (value: Date | string) => {
     const hours = Math.round((new Date(value).getTime() - Date.now()) / 3_600_000);
     if (Math.abs(hours) < 24) return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(hours, "hour");
     return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(Math.round(hours / 24), "day");
   };
 
-  const handleMarkerClick = (id: string) => {
-    setSelectedSalonId(id);
-    if (window.innerWidth < 1024) {
-      setMobileTab("lista");
-    }
-  };
-
   const goToPage = (nextPage: number) => {
-    if (nextPage !== page) setSelectedSalonId(null);
     setPage(nextPage);
   };
-
-  useEffect(() => {
-    if (!selectedSalonId || !allSalons) return;
-    const selectedIndex = allSalons.findIndex((salon) => salon.id === selectedSalonId);
-    if (selectedIndex < 0) return;
-    const selectedPage = Math.floor(selectedIndex / PAGE_SIZE) + 1;
-    if (page !== selectedPage) setPage(selectedPage);
-  }, [allSalons, page, selectedSalonId]);
-
-  useEffect(() => {
-    if (!selectedSalonId) return;
-    const timeout = window.setTimeout(() => {
-      const prefix = window.innerWidth < 1024 ? "mobile" : "desktop";
-      const element = document.getElementById(`${prefix}-salon-${selectedSalonId}`);
-      element?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [mobileTab, page, selectedSalonId]);
 
   const FiltersContent = () => (
     <div className="space-y-6">
@@ -238,124 +198,8 @@ export default function Salons() {
           <FiltersContent />
         </aside>
 
-        {/* Results & Map Container */}
-        <div className="flex-1 w-full h-full flex flex-col lg:flex-row gap-6 min-h-0">
-
-          <Tabs value={mobileTab} onValueChange={setMobileTab} className="w-full h-full flex flex-col lg:hidden">
-            <TabsList className="grid w-full grid-cols-2 mb-4">
-              <TabsTrigger value="lista" className="gap-2"><ListIcon className="w-4 h-4" /> Lista</TabsTrigger>
-              <TabsTrigger value="mapa" className="gap-2"><MapIcon className="w-4 h-4" /> Mapa</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="lista" className="flex-1 overflow-y-auto mt-0 min-h-0">
-              <div className="flex justify-between items-center mb-6">
-                <p className="text-muted-foreground text-sm font-medium">
-                  {isResultsLoading ? "Učitavanje..." : `Pronađeno ${allSalons?.length || 0} salona`}
-                </p>
-                <div className="flex items-center gap-2 text-sm">
-                  <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
-                    <option value="recommended">Preporučeno</option>
-                    <option value="nearest">U mojoj blizini</option>
-                    <option value="newest">Nedavno dodato</option>
-                    <option value="top-rated">Najbolje ocenjeno</option>
-                    <option value="cheapest">Najniža cena</option>
-                    <option value="most-popular">Najpopularnije</option>
-                    <option value="most-booked-recently">Najviše rezervacija u poslednjih 30 dana</option>
-                    <option value="largest-discount">Najveći popust</option>
-                    <option value="first-available">Prvi slobodan termin</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {isResultsLoading ? (
-                  Array(6).fill(0).map((_, i) => (
-                    <div key={i} className="flex flex-col gap-3">
-                      <Skeleton className="w-full aspect-[4/3] rounded-2xl" />
-                      <Skeleton className="h-6 w-3/4" />
-                      <Skeleton className="h-4 w-1/2" />
-                    </div>
-                  ))
-                ) : allSalons?.length === 0 ? (
-                  <div className="col-span-full py-12 text-center text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
-                    Nije pronađen nijedan salon koji odgovara kriterijumima.
-                  </div>
-                ) : paginatedSalons?.map((salon) => (
-                   <div key={salon.id} className="relative">
-                   <Link href={`/saloni/${salon.slug}`} id={`mobile-salon-${salon.id}`} onFocus={() => setSelectedSalonId(salon.id)} className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300 ${selectedSalonId === salon.id ? "ring-2 ring-primary" : ""}`}>
-                    <div className="relative w-full aspect-[4/3] overflow-hidden">
-                        <img
-                          src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
-                        alt={salon.name}
-                        className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
-                      />
-                      <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors" />
-                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-                        {salon.featured && <Badge className="bg-white/95 text-primary hover:bg-white backdrop-blur-md font-semibold border-none shadow-sm">Istaknuto</Badge>}
-                        {salon.topSalon && <Badge className="bg-amber-100/95 text-amber-900 hover:bg-amber-100 border-none shadow-sm backdrop-blur-md"><BadgeCheck className="mr-1 h-3.5 w-3.5" />Top Salon</Badge>}
-                        {salon.instantBooking && <Badge className="bg-emerald-100/95 text-emerald-900 hover:bg-emerald-100 border-none shadow-sm backdrop-blur-md"><Zap className="mr-1 h-3.5 w-3.5" />Instant</Badge>}
-                      </div>
-                    </div>
-                    <div className="p-5 pt-2">
-                      <div className="flex justify-between items-start mt-2">
-                        <h3 className="font-serif font-bold text-xl text-foreground group-hover:text-primary transition-colors line-clamp-1">{salon.name}</h3>
-                        <div className="bg-muted px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm">
-                          <Star className="w-3.5 h-3.5 fill-accent text-accent" />
-                          {salon.rating.toFixed(1)}
-                        </div>
-                      </div>
-                      <p className="text-muted-foreground text-sm flex items-center gap-1.5 mt-1.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                        {salon.city}, {salon.municipality}
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 mt-4">
-                        {salon.popularServices?.slice(0, 2).map((srv, i) => (
-                          <span key={i} className="text-xs font-medium bg-secondary/50 text-secondary-foreground px-2.5 py-1 rounded-md">
-                            {srv}
-                          </span>
-                        ))}
-                        {salon.popularServices?.length > 2 && (
-                          <span className="text-xs font-medium bg-muted text-muted-foreground px-2.5 py-1 rounded-md">
-                            +{salon.popularServices.length - 2}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-4 pt-4 border-t flex flex-wrap gap-3 text-xs text-muted-foreground font-medium">
-                        {salon.hasDiscount && <span className="text-primary flex items-center gap-1">Aktivni popusti</span>}
-                        {salon.acceptsCards && <span className="flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" />Kartice</span>}
-                        {salon.lastBookedAt && <span className="flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" />Poslednji put zakazano {relativeLastBooked(salon.lastBookedAt)}</span>}
-                      </div>
-                    </div>
-                  </Link>
-                   <SalonFavoriteButton salonId={salon.id} className="absolute right-3 top-3" />
-                   </div>
-                ))}
-              </div>
-
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-8 pb-8">
-                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={page === 1}>
-                    <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
-                  </Button>
-                  <span className="text-sm font-medium text-muted-foreground px-2">Strana {page} od {totalPages}</span>
-                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}>
-                    Sledeća <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="mapa" className="flex-1 mt-0 h-full rounded-2xl overflow-hidden border">
-              <SimpleMap
-                markers={mapMarkers}
-                onMarkerClick={handleMarkerClick}
-                className="w-full h-full"
-              />
-            </TabsContent>
-          </Tabs>
-
-          {/* Desktop Split View */}
-          <div className="hidden lg:flex w-full h-full gap-6 min-h-0">
+        <div className="flex-1 w-full h-full min-h-0">
+          <div className="flex w-full h-full min-h-0">
             {/* List side */}
             <div className="flex-1 flex flex-col min-w-[50%] h-full">
               <div className="flex justify-between items-center mb-4 shrink-0">
@@ -394,10 +238,7 @@ export default function Salons() {
                   <div key={salon.id} className="relative">
                    <Link
                     href={`/saloni/${salon.slug}`}
-                    id={`desktop-salon-${salon.id}`}
-                    onMouseEnter={() => setSelectedSalonId(salon.id)}
-                    onFocus={() => setSelectedSalonId(salon.id)}
-                    className={`group cursor-pointer flex flex-col gap-3 bg-card border rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${selectedSalonId === salon.id ? "ring-2 ring-primary shadow-xl" : ""}`}
+                      className="group cursor-pointer flex flex-col gap-3 overflow-hidden rounded-2xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
                   >
                     <div className="relative w-full h-48 overflow-hidden bg-muted">
                       <img
@@ -458,14 +299,6 @@ export default function Salons() {
               </div>
             </div>
 
-            {/* Map side */}
-            <div className="flex-1 h-full rounded-2xl overflow-hidden border shadow-sm shrink-0 sticky top-24">
-              <SimpleMap
-                markers={mapMarkers}
-                onMarkerClick={handleMarkerClick}
-                className="w-full h-full"
-              />
-            </div>
           </div>
         </div>
       </div>

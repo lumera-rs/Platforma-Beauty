@@ -17,12 +17,6 @@ export type SalonProfile = SalonCard & ({
   /** @nullable */
   videoUrl: string | null;
   description: string;
-  phone: string;
-  email: string;
-  /** @nullable */
-  latitude: number | null;
-  /** @nullable */
-  longitude: number | null;
   topServices: PopularSalonService[];
   hours: OpeningHour[];
   staff: Employee[];

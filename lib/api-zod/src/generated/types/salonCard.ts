@@ -12,7 +12,6 @@ export interface SalonCard {
   name: string;
   city: string;
   municipality: string;
-  address: string;
   imageUrl: string;
   rating: number;
   reviewCount: number;
@@ -33,8 +32,4 @@ export interface SalonCard {
   /** @nullable */
   lastBookedAt?: Date | null;
   createdAt: Date;
-  /** @nullable */
-  latitude: number | null;
-  /** @nullable */
-  longitude: number | null;
 }
