@@ -1215,6 +1215,29 @@ export interface FavoriteResult {
   favorited: boolean;
 }
 
+export type SalonDashboardScope = typeof SalonDashboardScope[keyof typeof SalonDashboardScope];
+
+
+export const SalonDashboardScope = {
+  location: 'location',
+  all: 'all',
+} as const;
+
+export type SalonDashboardLoyaltyScope = typeof SalonDashboardLoyaltyScope[keyof typeof SalonDashboardLoyaltyScope];
+
+
+export const SalonDashboardLoyaltyScope = {
+  owner: 'owner',
+} as const;
+
+export type SalonDashboardLocationsItem = {
+  id: string;
+  name: string;
+  revenueThisMonth: number;
+  bookingsThisMonth: number;
+  newCustomers: number;
+};
+
 export interface LoyaltyStatus {
   currentTier: string;
   monthlySpend: number;
@@ -1230,7 +1253,10 @@ export interface LoyaltyStatus {
 }
 
 export interface SalonDashboard {
+  scope: SalonDashboardScope;
+  loyaltyScope: SalonDashboardLoyaltyScope;
   salon: SalonCard;
+  locations: SalonDashboardLocationsItem[];
   todayAppointments: Appointment[];
   revenueThisMonth: number;
   bookingsThisMonth: number;
@@ -3571,6 +3597,18 @@ export type ListMyAppointmentsScope = typeof ListMyAppointmentsScope[keyof typeo
 export const ListMyAppointmentsScope = {
   upcoming: 'upcoming',
   past: 'past',
+  all: 'all',
+} as const;
+
+export type GetSalonDashboardParams = {
+scope?: GetSalonDashboardScope;
+};
+
+export type GetSalonDashboardScope = typeof GetSalonDashboardScope[keyof typeof GetSalonDashboardScope];
+
+
+export const GetSalonDashboardScope = {
+  location: 'location',
   all: 'all',
 } as const;
 

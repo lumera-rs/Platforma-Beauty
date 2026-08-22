@@ -32,3 +32,4 @@
 - [Development schema release gates](development-schema-release-gates.md) — source declarations are insufficient when release checks depend on the live development schema.
 - [Drizzle development schema scope](drizzle-development-schema-scope.md) — keep non-interactive development pushes explicitly limited to the app-owned public schema.
 - [Overlapping optimistic mutations](overlapping-optimistic-mutations.md) — independent snapshots are unsafe for shared caches; serialize operations or maintain a rebaseable operation log.
+- [Multi-location owner billing](multi-location-owner-billing.md) — legacy location loyalty and subscriptions roll up safely while the canonical subscription is pinned per owner.

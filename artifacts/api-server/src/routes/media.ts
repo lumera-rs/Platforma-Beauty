@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import sharp from "sharp";
 import {
   coursesTable,
@@ -171,10 +171,18 @@ async function requireMediaUser(req: Request, res: Response) {
 
 async function ownedSalon(userId: string) {
   const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const [salon] = owner?.activeSalonId
+  const [selected] = owner?.activeSalonId
     ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
-    : await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).limit(1);
-  return salon ?? null;
+    : [];
+  if (selected) return selected;
+  const [fallback] = await db.select().from(salonsTable)
+    .where(eq(salonsTable.ownerId, userId))
+    .orderBy(asc(salonsTable.createdAt), asc(salonsTable.id))
+    .limit(1);
+  if (fallback && owner?.activeSalonId !== fallback.id) {
+    await db.update(usersTable).set({ activeSalonId: fallback.id, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  }
+  return fallback ?? null;
 }
 
 /**

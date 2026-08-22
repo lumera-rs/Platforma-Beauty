@@ -8,9 +8,15 @@
 import type { Appointment } from './appointment';
 import type { LoyaltyStatus } from './loyaltyStatus';
 import type { SalonCard } from './salonCard';
+import type { SalonDashboardLocationsItem } from './salonDashboardLocationsItem';
+import type { SalonDashboardLoyaltyScope } from './salonDashboardLoyaltyScope';
+import type { SalonDashboardScope } from './salonDashboardScope';
 
 export interface SalonDashboard {
+  scope: SalonDashboardScope;
+  loyaltyScope: SalonDashboardLoyaltyScope;
   salon: SalonCard;
+  locations: SalonDashboardLocationsItem[];
   todayAppointments: Appointment[];
   revenueThisMonth: number;
   bookingsThisMonth: number;

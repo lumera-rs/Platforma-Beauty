@@ -132,6 +132,7 @@ import type {
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
   GetSalonAvailabilityParams,
+  GetSalonDashboardParams,
   GetShippingQuoteParams,
   HealthStatus,
   LinkEducationCourseInstructorBody,
@@ -2430,20 +2431,27 @@ export const useDeleteCustomerSalonReview = <TError = ErrorType<void>,
       return useMutation(getDeleteCustomerSalonReviewMutationOptions(options));
     }
 
-export const getGetSalonDashboardUrl = () => {
+export const getGetSalonDashboardUrl = (params?: GetSalonDashboardParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/salon/dashboard`
+  return stringifiedParams.length > 0 ? `/api/salon/dashboard?${stringifiedParams}` : `/api/salon/dashboard`
 }
 
 /**
- * @summary Salon dashboard summary
+ * @summary Active salon or owner-wide dashboard summary
  */
-export const getSalonDashboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonDashboard> => {
+export const getSalonDashboard = async (params?: GetSalonDashboardParams, options?: Parameters<typeof customFetch>[1]): Promise<SalonDashboard> => {
 
-  return customFetch<SalonDashboard>(getGetSalonDashboardUrl(),
+  return customFetch<SalonDashboard>(getGetSalonDashboardUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2456,23 +2464,23 @@ export const getSalonDashboard = async ( options?: Parameters<typeof customFetch
 
 
 
-export const getGetSalonDashboardQueryKey = () => {
+export const getGetSalonDashboardQueryKey = (params?: GetSalonDashboardParams,) => {
     return [
-    `/api/salon/dashboard`
+    `/api/salon/dashboard`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetSalonDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getSalonDashboard>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetSalonDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getSalonDashboard>>, TError = ErrorType<unknown>>(params?: GetSalonDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetSalonDashboardQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetSalonDashboardQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonDashboard>>> = ({ signal }) => getSalonDashboard({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonDashboard>>> = ({ signal }) => getSalonDashboard(params, { signal, ...requestOptions });
 
 
 
@@ -2486,15 +2494,15 @@ export type GetSalonDashboardQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Salon dashboard summary
+ * @summary Active salon or owner-wide dashboard summary
  */
 
 export function useGetSalonDashboard<TData = Awaited<ReturnType<typeof getSalonDashboard>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetSalonDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetSalonDashboardQueryOptions(options)
+  const queryOptions = getGetSalonDashboardQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -618,10 +618,22 @@ async function signInMethods(user: typeof usersTable.$inferSelect) {
 
 async function ownedSalon(userId: string) {
   const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  const [salon] = owner?.activeSalonId
+  const [selected] = owner?.activeSalonId
     ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
-    : await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).orderBy(asc(salonsTable.createdAt)).limit(1);
-  return salon ?? null;
+    : [];
+  if (selected) return selected;
+
+  // A removed or no-longer-owned saved selection must not make every
+  // owner-scoped route fail. Recover to the deterministic first location and
+  // persist it so subsequent requests share the same authorized context.
+  const [fallback] = await db.select().from(salonsTable)
+    .where(eq(salonsTable.ownerId, userId))
+    .orderBy(asc(salonsTable.createdAt), asc(salonsTable.id))
+    .limit(1);
+  if (fallback && owner?.activeSalonId !== fallback.id) {
+    await db.update(usersTable).set({ activeSalonId: fallback.id, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+  }
+  return fallback ?? null;
 }
 
 async function employeeInSalon(employeeId: string, salonId: string) {
@@ -4564,7 +4576,13 @@ router.put("/customer/favorite-employees/:salonId", async (req, res): Promise<vo
 
 router.get("/salon/dashboard", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const { salon } = access;
+  const { salon, user } = access;
+  const scope = req.query.scope === "all" ? "all" : "location";
+  const scopeSalons = scope === "all"
+    ? await db.select().from(salonsTable).where(eq(salonsTable.ownerId, user.id)).orderBy(asc(salonsTable.name))
+    : [salon];
+  const scopeSalonIds = scopeSalons.map((item) => item.id);
+  if (!scopeSalonIds.length) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
   // Bound reads to what the dashboard renders instead of the salon's whole
   // history: today's list uses a SQL date predicate + order + limit, and the
   // month stats are SQL aggregates over the current calendar month.
@@ -4575,10 +4593,10 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
     value.setUTCMonth(value.getUTCMonth() + 1);
     return value.toISOString().slice(0, 10);
   })();
-  const [services, todayAppointments, monthStatsRows] = await Promise.all([
+  const [services, todayAppointments, monthStatsRows, locationStatsRows, loyaltyData] = await Promise.all([
     db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
     appointmentList(
-      and(eq(appointmentsTable.salonId, salon.id), eq(appointmentsTable.date, today)),
+      and(inArray(appointmentsTable.salonId, scopeSalonIds), eq(appointmentsTable.date, today)),
       true,
       { limit: 5, offset: 0 },
     ),
@@ -4587,20 +4605,50 @@ router.get("/salon/dashboard", async (req, res): Promise<void> => {
       bookingsThisMonth: count(),
       newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId}))`,
     }).from(appointmentsTable).where(and(
-      eq(appointmentsTable.salonId, salon.id),
+      inArray(appointmentsTable.salonId, scopeSalonIds),
       gte(appointmentsTable.date, monthStart),
       lt(appointmentsTable.date, nextMonthStart),
     )),
+    db.select({
+      salonId: appointmentsTable.salonId,
+      revenueThisMonth: sql<number>`coalesce(sum(${appointmentsTable.price}) filter (where ${appointmentsTable.status} = 'completed'), 0)`,
+      bookingsThisMonth: count(),
+      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId}))`,
+    }).from(appointmentsTable).where(and(
+      inArray(appointmentsTable.salonId, scopeSalonIds),
+      gte(appointmentsTable.date, monthStart),
+      lt(appointmentsTable.date, nextMonthStart),
+    )).groupBy(appointmentsTable.salonId),
+    loyaltyStatusForOwner(user.id),
   ]);
-  const loyaltyData = await loyaltyStatus(salon.id);
   const monthStats = monthStatsRows[0];
+  const statsBySalonId = new Map(locationStatsRows.map((item) => [item.salonId, item]));
+  const locations = scopeSalons.map((item) => {
+    const stats = statsBySalonId.get(item.id);
+    return {
+      id: item.id,
+      name: item.name,
+      revenueThisMonth: Number(stats?.revenueThisMonth ?? 0),
+      bookingsThisMonth: Number(stats?.bookingsThisMonth ?? 0),
+      newCustomers: Number(stats?.newCustomers ?? 0),
+    };
+  });
+  const reviewCount = scopeSalons.reduce((total, item) => total + item.reviewCount, 0);
+  const rating = scope === "all"
+    ? (reviewCount > 0
+      ? scopeSalons.reduce((total, item) => total + item.rating * item.reviewCount, 0) / reviewCount / 10
+      : 0)
+    : salon.rating / 10;
   res.json(GetSalonDashboardResponse.parse({
+    scope,
+    loyaltyScope: "owner",
     salon: card(salon, services),
+    locations,
     todayAppointments,
     revenueThisMonth: Number(monthStats?.revenueThisMonth ?? 0),
     bookingsThisMonth: Number(monthStats?.bookingsThisMonth ?? 0),
     newCustomers: Number(monthStats?.newCustomers ?? 0),
-    rating: salon.rating / 10,
+    rating,
     revenueChange: 12,
     loyalty: loyaltyData,
   }));
@@ -4744,7 +4792,8 @@ router.get("/salon/managed-salons", async (req, res): Promise<void> => {
   if (!user) return;
   if (user.role !== "SALON_OWNER") { res.status(403).json({ error: "Ova funkcija je dostupna samo vlasnicima salona." }); return; }
   const salons = await db.select({ id: salonsTable.id, name: salonsTable.name, slug: salonsTable.slug }).from(salonsTable).where(eq(salonsTable.ownerId, user.id)).orderBy(asc(salonsTable.name));
-  res.json({ activeSalonId: (await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1))[0]?.activeSalonId ?? salons[0]?.id ?? null, salons });
+  const activeSalon = await ownedSalon(user.id);
+  res.json({ activeSalonId: activeSalon?.id ?? null, salons });
 });
 
 router.put("/salon/active-salon", async (req, res): Promise<void> => {
@@ -6309,32 +6358,72 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
   })) });
 });
 
-async function loyaltyStatus(salonId: string) {
-  const [status] = await db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salonId)).limit(1);
+async function loyaltyStatusForSalons(salonIds: string[], subscriptionBaseDue = 2490) {
+  const statuses = salonIds.length
+    ? await db.select().from(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds))
+    : [];
   const tiers = await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.active, true)).orderBy(asc(loyaltyTiersTable.sortOrder));
+  // Existing status rows stay attached to their original location. Summing
+  // them here safely migrates every owner to account-wide loyalty without
+  // destructive data movement or a duplicate business-account table.
+  const spend = statuses.reduce((total, status) => total + status.currentPeriodSpend, 0);
   // With zero active tiers there is nothing to rank against. Return a
   // schema-valid neutral default instead of throwing/500, preserving any
-  // current spend the salon has already accrued.
+  // current spend the owner has already accrued.
   if (tiers.length === 0) {
-    const spend = status?.currentPeriodSpend ?? 0;
     return GetLoyaltyStatusResponse.parse({
       currentTier: "",
       monthlySpend: spend,
       tierThreshold: 0,
       amountToNextTier: 0,
       nextTier: null,
-      subscriptionDue: 2490,
+      subscriptionDue: subscriptionBaseDue,
       subscriptionDiscountPercent: 0,
       productDiscountPercent: 0,
       benefits: [],
       freeSubscription: false,
     });
   }
-  const current = tiers.find((tier) => tier.id === status?.tierId) ?? tiers[0]!;
+  const current = [...tiers].reverse().find((tier) => tier.spendThreshold <= spend) ?? tiers[0]!;
   const next = tiers.find((tier) => tier.sortOrder > current.sortOrder) ?? null;
-  const spend = status?.currentPeriodSpend ?? 0;
-  const due = current.freeSubscription ? 0 : Math.round(2490 * (1 - current.subscriptionDiscountPercent / 100));
+  const due = current.freeSubscription ? 0 : Math.round(subscriptionBaseDue * (1 - current.subscriptionDiscountPercent / 100));
   return GetLoyaltyStatusResponse.parse({ currentTier: current.name, monthlySpend: spend, tierThreshold: current.spendThreshold, amountToNextTier: next ? Math.max(next.spendThreshold - spend, 0) : 0, nextTier: next?.name ?? null, subscriptionDue: due, subscriptionDiscountPercent: current.subscriptionDiscountPercent, productDiscountPercent: current.productDiscountPercent, benefits: current.benefits, freeSubscription: current.freeSubscription });
+}
+
+async function loyaltyStatusForOwner(ownerId: string) {
+  const [salons, subscriptionRows] = await Promise.all([
+    db.select({ id: salonsTable.id }).from(salonsTable).where(eq(salonsTable.ownerId, ownerId)),
+    db.select({ subscription: subscriptionsTable, plan: subscriptionPlansTable })
+      .from(subscriptionsTable)
+      .innerJoin(salonsTable, eq(subscriptionsTable.salonId, salonsTable.id))
+      .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
+      .where(eq(salonsTable.ownerId, ownerId)),
+  ]);
+  // Subscription rows remain location-linked for admin auditing. Owner-facing
+  // calculation deliberately chooses one deterministic account subscription
+  // rather than charging once per location.
+  const priority: Record<(typeof subscriptionsTable.$inferSelect)["status"], number> = {
+    free_via_loyalty: 6,
+    active: 5,
+    trial: 4,
+    past_due: 3,
+    suspended: 2,
+    cancelled: 1,
+  };
+  const rankedSubscriptions = [...subscriptionRows].sort((a, b) =>
+    priority[b.subscription.status] - priority[a.subscription.status]
+    || b.subscription.dueAmount - a.subscription.dueAmount
+    || a.subscription.id.localeCompare(b.subscription.id),
+  );
+  // Legacy subscriptions remain location-linked for administration and audit.
+  // Owner billing deliberately applies one explicit rule: the best live
+  // status wins; equal statuses retain the highest *recorded* due amount, then
+  // UUID breaks an exact tie. This never depends on mutable plan pricing or
+  // period-end dates and avoids silently undercharging a legacy owner with two
+  // active location subscriptions.
+  const accountSubscription = rankedSubscriptions[0];
+  const subscriptionBaseDue = accountSubscription?.subscription.dueAmount ?? 2490;
+  return loyaltyStatusForSalons(salons.map((salon) => salon.id), subscriptionBaseDue);
 }
 
 router.get("/shop/brands", async (_req, res): Promise<void> => {
@@ -6725,8 +6814,7 @@ router.get("/shop/shipping-quote", async (req, res): Promise<void> => {
 
 router.get("/loyalty/status", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const { salon } = access;
-  res.json(await loyaltyStatus(salon.id));
+  res.json(await loyaltyStatusForOwner(access.user.id));
 });
 
 router.get("/loyalty/tiers", async (req, res): Promise<void> => {
@@ -6741,7 +6829,7 @@ router.get("/loyalty/tiers", async (req, res): Promise<void> => {
 router.get("/shop/summary", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const loyalty = await loyaltyStatus(salon.id);
+  const loyalty = await loyaltyStatusForOwner(access.user.id);
   const cart = await shopCartDto(salon.id);
   res.json(GetShopSummaryResponse.parse({ monthlySpend: loyalty.monthlySpend, nextTierSpend: loyalty.monthlySpend + loyalty.amountToNextTier, amountToNextTier: loyalty.amountToNextTier, currentTier: loyalty.currentTier, subscriptionDue: loyalty.subscriptionDue, subscriptionDiscount: loyalty.subscriptionDiscountPercent, benefits: loyalty.benefits, cartCount: cart.itemCount }));
 });

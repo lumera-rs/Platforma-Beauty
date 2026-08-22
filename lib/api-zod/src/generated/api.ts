@@ -1232,14 +1232,22 @@ export const DeleteCustomerSalonReviewResponse = zod.void()
 
 
 /**
- * @summary Salon dashboard summary
+ * @summary Active salon or owner-wide dashboard summary
  */
+export const getSalonDashboardQueryScopeDefault = `location`;
+
+export const GetSalonDashboardQueryParams = zod.object({
+  "scope": zod.enum(['location', 'all']).default(getSalonDashboardQueryScopeDefault)
+})
+
 export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
 
 
 
 export const GetSalonDashboardResponse = zod.object({
+  "scope": zod.enum(['location', 'all']),
+  "loyaltyScope": zod.enum(['owner']),
   "salon": zod.object({
   "id": zod.string(),
   "slug": zod.string(),
@@ -1265,6 +1273,13 @@ export const GetSalonDashboardResponse = zod.object({
   "lastBookedAt": zod.coerce.date().nullish(),
   "createdAt": zod.coerce.date()
 }),
+  "locations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "revenueThisMonth": zod.number(),
+  "bookingsThisMonth": zod.number(),
+  "newCustomers": zod.number()
+})),
   "todayAppointments": zod.array(zod.object({
   "id": zod.string(),
   "salonId": zod.string(),

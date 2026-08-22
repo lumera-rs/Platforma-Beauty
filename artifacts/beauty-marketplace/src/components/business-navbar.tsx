@@ -32,6 +32,7 @@ export function BusinessNavbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [managedSalons, setManagedSalons] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [activeSalonId, setActiveSalonId] = useState<string>("");
+  const [isSwitchingSalon, setIsSwitchingSalon] = useState(false);
   const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length;
 
   const handleLogout = () => {
@@ -92,10 +93,20 @@ export function BusinessNavbar() {
   }, [notificationsQueryKey, queryClient, user?.role]);
 
   const switchSalon = async (salonId: string) => {
+    if (!salonId || salonId === activeSalonId || isSwitchingSalon) return;
+    setIsSwitchingSalon(true);
     const response = await fetch("/api/salon/active-salon", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ salonId }) });
-    if (!response.ok) return;
+    if (!response.ok) {
+      setIsSwitchingSalon(false);
+      return;
+    }
     setActiveSalonId(salonId);
-    window.location.assign("/vlasnik");
+    // Active salon scopes every operational owner query. Cancel and clear
+    // location-bound cache entries before navigation so no screen can flash
+    // stale data from the previous location.
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    window.location.assign(location.startsWith("/vlasnik") ? location : "/vlasnik");
   };
 
   const getNavLinks = () => {
@@ -176,8 +187,8 @@ export function BusinessNavbar() {
               Nazad na Market
             </Link>
 
-            {user?.role === "SALON_OWNER" && (
-              <select aria-label="Aktivni salon" className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white" value={activeSalonId} onChange={(event) => switchSalon(event.target.value)}>
+            {user?.role === "SALON_OWNER" && managedSalons.length > 1 && (
+              <select aria-label="Aktivni salon" disabled={isSwitchingSalon} className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white disabled:cursor-wait disabled:opacity-70" value={activeSalonId} onChange={(event) => { void switchSalon(event.target.value); }}>
                 {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
               </select>
             )}
@@ -305,6 +316,23 @@ export function BusinessNavbar() {
                 </Link>
               );
             })}
+            {user?.role === "SALON_OWNER" && managedSalons.length > 1 && (
+              <label className="flex flex-col gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-sm font-medium text-background">
+                Aktivna lokacija
+                <select
+                  aria-label="Aktivni salon (mobilni)"
+                  disabled={isSwitchingSalon}
+                  className="rounded-md border border-white/20 bg-foreground px-2 py-2 text-sm text-background disabled:cursor-wait disabled:opacity-70"
+                  value={activeSalonId}
+                  onChange={(event) => {
+                    setIsMobileMenuOpen(false);
+                    void switchSalon(event.target.value);
+                  }}
+                >
+                  {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
+                </select>
+              </label>
+            )}
             {user?.role === "SALON_OWNER" && (
               <Link
                 href="/vlasnik/prodavnica/korpa"

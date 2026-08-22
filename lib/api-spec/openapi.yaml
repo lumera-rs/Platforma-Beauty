@@ -539,7 +539,15 @@ paths:
     get:
       operationId: getSalonDashboard
       tags: [salon-management]
-      summary: Salon dashboard summary
+      summary: Active salon or owner-wide dashboard summary
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [location, all]
+            default: location
       responses:
         "200":
           description: Salon dashboard
@@ -4370,7 +4378,20 @@ components:
     SalonDashboard:
       type: object
       properties:
+        scope: { type: string, enum: [location, all] }
+        loyaltyScope: { type: string, enum: [owner] }
         salon: { $ref: "#/components/schemas/SalonCard" }
+        locations:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              revenueThisMonth: { type: number }
+              bookingsThisMonth: { type: number }
+              newCustomers: { type: number }
+            required: [id, name, revenueThisMonth, bookingsThisMonth, newCustomers]
         todayAppointments: { type: array, items: { $ref: "#/components/schemas/Appointment" } }
         revenueThisMonth: { type: number }
         bookingsThisMonth: { type: number }
@@ -4378,7 +4399,7 @@ components:
         rating: { type: number }
         revenueChange: { type: number }
         loyalty: { $ref: "#/components/schemas/LoyaltyStatus" }
-      required: [salon, todayAppointments, revenueThisMonth, bookingsThisMonth, newCustomers, rating, revenueChange, loyalty]
+      required: [scope, loyaltyScope, salon, locations, todayAppointments, revenueThisMonth, bookingsThisMonth, newCustomers, rating, revenueChange, loyalty]
     ServiceInput:
       type: object
       properties:

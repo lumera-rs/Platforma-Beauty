@@ -1,7 +1,7 @@
 import { BusinessLayout } from "@/components/business-layout";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ export function OwnerSidebar({ current }: { current: string }) {
 export default function OwnerDashboard() {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
+  const [scope, setScope] = useState<"location" | "all">("location");
   
   useEffect(() => {
     if (!isUserLoading) {
@@ -48,7 +49,14 @@ export default function OwnerDashboard() {
     }
   }, [userResp, isUserLoading, setLocation]);
 
-  const { data: dash, isLoading } = useGetSalonDashboard({ query: { enabled: !!userResp?.user && userResp.user.role === 'SALON_OWNER', queryKey: getGetSalonDashboardQueryKey() } });
+  const dashboardParams = scope === "all" ? { scope } : undefined;
+  const { data: dash, isLoading } = useGetSalonDashboard(
+    dashboardParams,
+    { query: {
+      enabled: !!userResp?.user && userResp.user.role === "SALON_OWNER",
+      queryKey: getGetSalonDashboardQueryKey(dashboardParams),
+    } },
+  );
 
   if (isUserLoading || isLoading) return <BusinessLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin" /></div></BusinessLayout>;
   if (!dash) return null;
@@ -59,9 +67,37 @@ export default function OwnerDashboard() {
         <OwnerSidebar current="/vlasnik" />
         
         <div className="flex-1 space-y-6 w-full">
-          <div>
-            <h1 className="text-3xl font-serif font-bold mb-2">Dashboard salona</h1>
-            <p className="text-muted-foreground">{dash.salon.name} - Pregled poslovanja</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-serif font-bold mb-2">{scope === "all" ? "Pregled poslovanja" : "Dashboard salona"}</h1>
+              <p className="text-muted-foreground">
+                {scope === "all"
+                  ? `Zbirni pregled za svih ${dash.locations.length} ${dash.locations.length === 1 ? "lokaciju" : "lokacija"}`
+                  : `${dash.salon.name} - Pregled poslovanja`}
+              </p>
+            </div>
+            <div className="inline-flex w-full rounded-lg border bg-muted/40 p-1 sm:w-auto" aria-label="Opseg dashboarda">
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === "location" ? "default" : "ghost"}
+                className="flex-1 sm:flex-none"
+                aria-pressed={scope === "location"}
+                onClick={() => setScope("location")}
+              >
+                Aktivna lokacija
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === "all" ? "default" : "ghost"}
+                className="flex-1 sm:flex-none"
+                aria-pressed={scope === "all"}
+                onClick={() => setScope("all")}
+              >
+                Sve lokacije
+              </Button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -101,7 +137,7 @@ export default function OwnerDashboard() {
             <Card className="bg-primary/5 border-primary/20">
               <CardContent className="p-6">
                 <div className="flex justify-between items-start mb-2">
-                  <p className="text-sm font-medium text-primary">Loyalty Nivo</p>
+                  <p className="text-sm font-medium text-primary">Loyalty za sve lokacije</p>
                   <Star className="w-4 h-4 text-primary" />
                 </div>
                 <h3 className="text-xl font-bold text-primary">{dash.loyalty.currentTier}</h3>
@@ -111,6 +147,24 @@ export default function OwnerDashboard() {
               </CardContent>
             </Card>
           </div>
+
+          {scope === "all" && (
+            <Card>
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-lg">Učinak po lokaciji</CardTitle>
+              </CardHeader>
+              <CardContent className="divide-y p-0">
+                {dash.locations.map((salon) => (
+                  <div key={salon.id} className="grid gap-3 p-4 text-sm sm:grid-cols-[1fr_auto_auto_auto] sm:items-center sm:gap-8">
+                    <p className="font-semibold">{salon.name}</p>
+                    <p><span className="text-muted-foreground">Prihod: </span><strong>{salon.revenueThisMonth.toLocaleString()} RSD</strong></p>
+                    <p><span className="text-muted-foreground">Termini: </span><strong>{salon.bookingsThisMonth}</strong></p>
+                    <p><span className="text-muted-foreground">Klijenti: </span><strong>{salon.newCustomers}</strong></p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
@@ -130,7 +184,7 @@ export default function OwnerDashboard() {
                         </div>
                         <div>
                           <p className="font-bold">{appt.customerName}</p>
-                          <p className="text-sm text-muted-foreground">{appt.serviceName} • {appt.employeeName}</p>
+                          <p className="text-sm text-muted-foreground">{appt.serviceName} • {appt.employeeName}{scope === "all" ? ` • ${appt.salonName}` : ""}</p>
                         </div>
                       </div>
                       <Badge variant={appt.status === 'confirmed' ? 'default' : 'secondary'}>{appt.status}</Badge>

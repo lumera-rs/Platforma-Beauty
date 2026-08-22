@@ -20,6 +20,7 @@
     "test:query-budgets": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
     "test:crm-backfill": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/seed.test.ts",
     "test:appointment-concurrency": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-locks.test.ts && pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/appointment-routes.test.ts",
+    "test:multi-location": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/multi-location.test.ts && pnpm --filter @workspace/scripts run test:multi-location",
     "test:rescheduled-confirmations": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/rescheduled-confirmation-retries.test.ts",
     "test:bundle-budget": "pnpm --filter @workspace/scripts run test:bundle-budget",
     "test:frontend-standards": "pnpm --filter @workspace/scripts run test:frontend-standards",
