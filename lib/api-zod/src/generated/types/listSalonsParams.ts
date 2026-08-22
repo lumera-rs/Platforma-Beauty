@@ -40,4 +40,15 @@ featured?: boolean;
 brand?: string;
 latitude?: number;
 longitude?: number;
+/**
+ * 1-based page number. All filters and the chosen sort are applied in SQL BEFORE this page is selected.
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of salons per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

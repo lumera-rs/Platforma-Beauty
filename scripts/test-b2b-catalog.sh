@@ -105,10 +105,10 @@ restore_shared_state() {
       --data "{\"role\":\"$ORIGINAL_ROLE\",\"active\":$ORIGINAL_ACTIVE}" \
       "$BASE_URL/admin/users/$TARGET_ID")"
     [[ "$status" == "200" ]] || return 1
-    status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users")"
+    status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
     [[ "$status" == "200" ]] || return 1
     jq -e --arg id "$TARGET_ID" --arg role "$ORIGINAL_ROLE" --argjson active "$ORIGINAL_ACTIVE" \
-      '.[] | select(.id == $id and .role == $role and .active == $active)' "$BODY" >/dev/null || return 1
+      '(if type == "array" then . else .items end)[] | select(.id == $id and .role == $role and .active == $active)' "$BODY" >/dev/null || return 1
   fi
 }
 
@@ -287,11 +287,11 @@ echo "Running B2B catalog regression checks against $BASE_URL"
 # Establish SUPER_ADMIN access and remember the existing role of the temporary
 # ADMIN fixture so the script is safe to rerun against a seeded environment.
 login "$SUPER_COOKIE" "admin@lumera.local"
-status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users")"
+status="$(request -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
 expect_status 200 "$status" "SUPER_ADMIN user list"
-TARGET_ID="$(jq -r '.[] | select(.email == "edukacija@lumera.local") | .id' "$BODY")"
-ORIGINAL_ROLE="$(jq -r '.[] | select(.email == "edukacija@lumera.local") | .role' "$BODY")"
-ORIGINAL_ACTIVE="$(jq -r '.[] | select(.email == "edukacija@lumera.local") | .active' "$BODY")"
+TARGET_ID="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .id' "$BODY")"
+ORIGINAL_ROLE="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .role' "$BODY")"
+ORIGINAL_ACTIVE="$(jq -r '(if type == "array" then . else .items end)[] | select(.email == "edukacija@lumera.local") | .active' "$BODY")"
 if [[ -z "$TARGET_ID" || "$TARGET_ID" == "null" ]]; then
   echo "FAIL: seeded ADMIN fixture edukacija@lumera.local was not found." >&2
   exit 1

@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -23,13 +24,20 @@ export default function OwnerNotifications() {
   const queryClient = useQueryClient();
   const { data: userResponse, isLoading: isUserLoading } = useGetCurrentUser();
   const user = userResponse?.user;
-  const notificationsQueryKey = salonNotificationsQueryKey(user?.id);
-  const { data: notifications = [], isLoading, isError } = useListSalonNotifications({
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const listParams = useMemo(() => ({ page, pageSize }), [page]);
+  // Page is appended to the end of the shared owner-scoped key so prefix-based
+  // invalidation (used by the navbar SSE refresh and mark-as-read) still matches
+  // every page while keeping pages cached independently.
+  const notificationsQueryKey = useMemo(() => [...salonNotificationsQueryKey(user?.id), page] as const, [user?.id, page]);
+  const { data: notifications = [], isLoading, isError } = useListSalonNotifications(listParams, {
     query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey },
   });
+  const hasNextPage = notifications.length === pageSize;
   const markAsRead = useMarkSalonNotificationRead({
     mutation: {
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: notificationsQueryKey }),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: salonNotificationsQueryKey(user?.id) }),
     },
   });
 
@@ -48,7 +56,7 @@ export default function OwnerNotifications() {
           ) : isError ? (
             <Card><CardContent className="p-8 text-center text-muted-foreground" data-testid="status-notifications-error">Obaveštenja trenutno nisu dostupna. Pokušajte ponovo.</CardContent></Card>
           ) : notifications.length === 0 ? (
-            <Card><CardContent className="p-10 text-center text-muted-foreground" data-testid="status-notifications-empty"><Bell className="mx-auto mb-3 h-8 w-8 opacity-30" />Nemate novih obaveštenja.</CardContent></Card>
+            <Card><CardContent className="p-10 text-center text-muted-foreground" data-testid="status-notifications-empty"><Bell className="mx-auto mb-3 h-8 w-8 opacity-30" />{page > 1 ? "Nema više obaveštenja." : "Nemate novih obaveštenja."}</CardContent></Card>
           ) : (
             <div className="space-y-3">
               {notifications.map((notification) => {
@@ -86,6 +94,14 @@ export default function OwnerNotifications() {
                   </Card>
                 );
               })}
+            </div>
+          )}
+
+          {!isUserLoading && !isLoading && !isError && (page > 1 || hasNextPage) && (
+            <div className="flex items-center justify-between gap-3 pt-4">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button>
+              <span className="text-sm text-muted-foreground">Strana {page}</span>
+              <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button>
             </div>
           )}
         </main>

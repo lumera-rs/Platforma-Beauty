@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { AdminLayout } from "./layout";
+import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,24 +32,13 @@ interface ServiceTemplate {
   active: boolean;
 }
 
-interface ServiceTemplateFormDraft {
-  name: string;
-  mainCategory: string;
-  subcategory: string;
-  typicalDurationMinutes: string;
-  priceMin: string;
-  priceMax: string;
-  description: string;
-  active: boolean;
-}
-
-const emptyForm: ServiceTemplateFormDraft = {
+const emptyForm = {
   name: "",
   mainCategory: "",
   subcategory: "",
-  typicalDurationMinutes: "",
-  priceMin: "",
-  priceMax: "",
+  typicalDurationMinutes: "30",
+  priceMin: "0",
+  priceMax: "0",
   description: "",
   active: true,
 };
@@ -65,7 +55,7 @@ export default function AdminServiceTemplates() {
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceTemplate | null>(null);
-  const [form, setForm] = useState<ServiceTemplateFormDraft>(emptyForm);
+  const [form, setForm] = useState(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<ServiceTemplate | null>(null);
 
   const invalidate = () => {
@@ -106,31 +96,28 @@ export default function AdminServiceTemplates() {
   };
 
   const handleSave = () => {
-    const name = form.name.trim();
-    const mainCategory = form.mainCategory.trim();
-    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
-    if (!mainCategory) { toast.error("Greška", { description: "Glavna kategorija je obavezna." }); return; }
-    const duration = Number(form.typicalDurationMinutes);
-    if (form.typicalDurationMinutes === "" || !Number.isFinite(duration) || duration < 5) {
-      toast.error("Greška", { description: "Trajanje mora biti najmanje 5 minuta." }); return;
+    if (createTemplate?.isPending || updateTemplate?.isPending) return;
+    if (!form.name.trim() || !form.mainCategory.trim()) {
+      toast.error("Greška", { description: "Naziv i glavna kategorija su obavezni." });
+      return;
     }
-    const priceMin = form.priceMin === "" ? NaN : Number(form.priceMin);
-    const priceMax = form.priceMax === "" ? NaN : Number(form.priceMax);
-    if (!Number.isFinite(priceMin) || priceMin < 0) { toast.error("Greška", { description: "Minimalna cena nije validna (unesite 0 ili više)." }); return; }
-    if (!Number.isFinite(priceMax) || priceMax < 0) { toast.error("Greška", { description: "Maksimalna cena nije validna (unesite 0 ili više)." }); return; }
-    if (priceMax > 0 && priceMin > priceMax) { toast.error("Greška", { description: "Minimalna cena ne može biti veća od maksimalne." }); return; }
+    const durationParsed = parseStrictInt(String(form.typicalDurationMinutes), { label: "Trajanje", allowNegative: false, allowZero: false, min: 1 });
+    if (!durationParsed.ok) { toast.error("Greška", { description: durationParsed.message }); return; }
+    const priceMinParsed = parseStrictInt(String(form.priceMin), { label: "Min. cena", allowNegative: false, allowZero: true });
+    if (!priceMinParsed.ok) { toast.error("Greška", { description: priceMinParsed.message }); return; }
+    const priceMaxParsed = parseStrictInt(String(form.priceMax), { label: "Max. cena", allowNegative: false, allowZero: true });
+    if (!priceMaxParsed.ok) { toast.error("Greška", { description: priceMaxParsed.message }); return; }
+    if (priceMaxParsed.value > 0 && priceMaxParsed.value < priceMinParsed.value) {
+      toast.error("Greška", { description: "Max. cena ne može biti manja od min. cene." }); return;
+    }
 
     const payload = {
-      name,
-      mainCategory,
-      subcategory: form.subcategory.trim(),
-      typicalDurationMinutes: Math.round(duration),
-      priceMin: Math.round(priceMin),
-      priceMax: Math.round(priceMax),
-      description: form.description.trim() || null,
-      active: form.active,
+      ...form,
+      typicalDurationMinutes: durationParsed.value,
+      priceMin: priceMinParsed.value,
+      priceMax: priceMaxParsed.value,
     };
-    
+
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Predložak je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
@@ -138,8 +125,7 @@ export default function AdminServiceTemplates() {
         setModalOpen(false);
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Greška", { description: msg ?? "Pokušajte ponovo." });
+        toast.error("Greška", { description: extractApiError(err, "Pokušajte ponovo.") });
       },
     };
 
@@ -173,7 +159,7 @@ export default function AdminServiceTemplates() {
             <h1 className="text-2xl font-serif font-bold text-foreground">Predlošci usluga</h1>
             <p className="text-muted-foreground text-sm">Centralna biblioteka usluga za lakše dodavanje u salonima.</p>
           </div>
-          <Button onClick={openNew} className="shrink-0 gap-2">
+          <Button onClick={openNew} className="shrink-0 gap-2" data-testid="btn-new-template">
             <Plus className="w-4 h-4" /> Novi predložak
           </Button>
         </div>
@@ -230,10 +216,10 @@ export default function AdminServiceTemplates() {
                     <p className="text-muted-foreground">~{t.typicalDurationMinutes} min</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-4">
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(t)}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => openEdit(t)} data-testid={`btn-edit-template-${t.id}`}>
                       <Edit2 className="w-4 h-4 text-muted-foreground" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => setDeleteTarget(t)}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => setDeleteTarget(t)} data-testid={`btn-delete-template-${t.id}`}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -269,16 +255,16 @@ export default function AdminServiceTemplates() {
             </div>
             <div className="space-y-2">
               <Label>Tipično trajanje (min)</Label>
-              <Input type="number" min="5" step="5" value={form.typicalDurationMinutes} onChange={(e) => setForm({ ...form, typicalDurationMinutes: e.target.value })} placeholder="npr. 30" />
+              <Input type="number" min="5" step="5" value={form.typicalDurationMinutes} onChange={(e) => setForm({ ...form, typicalDurationMinutes: e.target.value })} data-testid="input-template-duration" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Min. cena (RSD)</Label>
-                <Input type="number" min="0" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="npr. 1000" />
+                <Input type="number" min="0" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} data-testid="input-template-price-min" />
               </div>
               <div className="space-y-2">
                 <Label>Max. cena (RSD)</Label>
-                <Input type="number" min="0" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="npr. 2000" />
+                <Input type="number" min="0" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} data-testid="input-template-price-max" />
               </div>
             </div>
             <div className="space-y-2">
@@ -298,7 +284,7 @@ export default function AdminServiceTemplates() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={createTemplate?.isPending || updateTemplate?.isPending}>
+            <Button onClick={handleSave} disabled={createTemplate?.isPending || updateTemplate?.isPending} data-testid="btn-save-template">
               {(createTemplate?.isPending || updateTemplate?.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>

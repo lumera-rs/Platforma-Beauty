@@ -62,7 +62,12 @@ export const productCategoriesTable = pgTable("product_categories", {
   icon: text("icon"),
   imageUrl: text("image_url"),
   active: boolean("active").notNull().default(true),
-});
+}, (table) => [
+  // Category tree navigation: children of a parent node.
+  index("product_categories_parent_sort_idx").on(table.parentId, table.sortOrder),
+  // Active category listing ordered by sortOrder.
+  index("product_categories_active_sort_idx").on(table.active, table.sortOrder),
+]);
 
 export const productsTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -87,7 +92,12 @@ export const productsTable = pgTable("products", {
   variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string }>>(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Product catalog: active listings by category, sorted by creation date or price.
+  index("products_category_active_idx").on(table.categoryId, table.active),
+  index("products_active_created_idx").on(table.active, table.createdAt),
+  index("products_brand_active_idx").on(table.brand, table.active),
+]);
 
 export const shippingRulesTable = pgTable("shipping_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -134,7 +144,10 @@ export const salonLoyaltyStatusesTable = pgTable("salon_loyalty_statuses", {
   tierId: uuid("tier_id").references(() => loyaltyTiersTable.id, { onDelete: "set null" }),
   currentPeriodSpend: integer("current_period_spend").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for tierId (e.g. "all salons on this tier").
+  index("salon_loyalty_statuses_tier_idx").on(table.tierId),
+]);
 
 export const subscriptionPlansTable = pgTable("subscription_plans", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -155,7 +168,9 @@ export const subscriptionsTable = pgTable("subscriptions", {
   paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
 }, (table) => [
+  // Leading FK coverage for salonId (a salon's subscription).
   index("subscriptions_salon_idx").on(table.salonId),
+  // Leading FK coverage for planId (all subscribers on a plan).
   index("subscriptions_plan_idx").on(table.planId),
 ]);
 
@@ -191,7 +206,11 @@ export const ordersTable = pgTable("orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Order list: all orders for a salon, sorted by date; also filter by status.
   index("orders_salon_created_idx").on(table.salonId, table.createdAt),
+  index("orders_salon_status_idx").on(table.salonId, table.status),
+  index("orders_payment_status_idx").on(table.paymentStatus, table.createdAt),
+  // Leading FK coverage for courierServiceId.
   index("orders_courier_service_idx").on(table.courierServiceId),
 ]);
 
@@ -206,6 +225,7 @@ export const orderStatusHistoryTable = pgTable("order_status_history", {
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Leading FK coverage for orderId (also ordered for timeline display).
   index("order_status_history_order_created_idx").on(table.orderId, table.createdAt),
 ]);
 
@@ -230,6 +250,7 @@ export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Leading FK coverage for both sides of the cart-items join.
   index("shopping_cart_items_cart_idx").on(table.cartId),
   index("shopping_cart_items_product_idx").on(table.productId),
 ]);
@@ -245,6 +266,7 @@ export const orderItemsTable = pgTable("order_items", {
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
 }, (table) => [
+  // Leading FK coverage for both sides.
   index("order_items_order_idx").on(table.orderId),
   index("order_items_product_idx").on(table.productId),
 ]);
@@ -258,7 +280,9 @@ export const productReviewsTable = pgTable("product_reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Unique covers productId as leading column.
   uniqueIndex("product_reviews_product_salon_unique").on(table.productId, table.salonId),
+  // Leading FK coverage for salonId (all reviews a salon has written).
   index("product_reviews_salon_idx").on(table.salonId),
 ]);
 
@@ -271,29 +295,25 @@ export const salonNotificationsTable = pgTable("salon_notifications", {
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Leading FK coverage for salonId (notification inbox, newest-first).
   index("salon_notifications_salon_created_at_idx").on(table.salonId, table.createdAt),
   index("salon_notifications_retention_idx")
     .on(table.createdAt)
     .where(sql`${table.readAt} is not null`),
 ]);
 
-/**
- * Cold storage for salon notifications older than the live-retention window.
- * Rows are copied here verbatim (identity of the original row is preserved)
- * before being deleted from {@link salonNotificationsTable}. No foreign keys:
- * the archive must survive even if a source salon is later removed, and it is
- * never written on the request path. {@link archivedAt} records when the row
- * was moved so operators can audit and prune the archive independently.
- */
-export const salonNotificationsArchiveTable = pgTable("salon_notifications_archive", {
-  id: uuid("id").primaryKey(),
-  salonId: uuid("salon_id").notNull(),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  href: text("href"),
-  readAt: timestamp("read_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+// ---------------------------------------------------------------------------
+// Salon notification archive.
+// Immutable copy of salon_notifications rows as they leave the live table,
+// keyed by the originating notification id (sourceId).
+// ---------------------------------------------------------------------------
+export const salonNotificationArchivesTable = pgTable("salon_notification_archives", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Stable reference back to salon_notifications.id. */
+  sourceId: text("source_id").notNull().unique(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  originalCreatedAt: timestamp("original_created_at", { withTimezone: true }).notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index("salon_notifications_archive_salon_created_idx").on(table.salonId, table.createdAt),
+  index("salon_notification_archives_archived_at_idx").on(table.archivedAt),
 ]);

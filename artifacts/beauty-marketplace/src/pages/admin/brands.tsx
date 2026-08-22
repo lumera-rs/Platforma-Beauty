@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AdminLayout } from "./layout";
+import { extractApiError } from "@/lib/admin-form-utils";
 import { OptimizedImage } from "@/components/optimized-image";
 import {
   useAdminListBrands,
@@ -49,10 +50,8 @@ export default function AdminBrands() {
   };
 
   const handleSave = () => {
-    const name = form.name.trim();
-    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
-    const logoUrl = form.logoUrl?.trim() || null;
-    const payload: AdminBrandInput = { ...form, name, logoUrl };
+    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    if (createBrand.isPending || updateBrand.isPending) return;
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Brend je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
@@ -60,12 +59,11 @@ export default function AdminBrands() {
         setModalOpen(false);
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Greška", { description: msg ?? "Brend nije sačuvan." });
+        toast.error("Greška", { description: extractApiError(err, "Brend nije sačuvan.") });
       },
     };
-    if (editing) updateBrand.mutate({ brandId: editing.id, data: payload }, opts);
-    else createBrand.mutate({ data: payload }, opts);
+    if (editing) updateBrand.mutate({ brandId: editing.id, data: form }, opts);
+    else createBrand.mutate({ data: form }, opts);
   };
 
   const handleDelete = () => {

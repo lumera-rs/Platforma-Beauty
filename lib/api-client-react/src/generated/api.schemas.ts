@@ -5,8 +5,20 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusDatabasePool = {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  idle: number;
+  /** @minimum 0 */
+  waiting: number;
+  /** @minimum 1 */
+  max: number;
+};
+
 export interface HealthStatus {
   status: string;
+  databasePool: HealthStatusDatabasePool;
 }
 
 export type UserRole = typeof UserRole[keyof typeof UserRole];
@@ -257,6 +269,13 @@ export interface MarketplaceHomeDiscovery {
   discountedSalons: DiscountedSalonCard[];
   popularSalons: SalonCard[];
   topRatedSalons: SalonCard[];
+}
+
+export interface CitySummary {
+  /** @minLength 1 */
+  name: string;
+  /** @minimum 0 */
+  salonCount: number;
 }
 
 export interface PlatformTrustStats {
@@ -558,18 +577,19 @@ export interface AdminServiceTemplateInput {
   /**
      * @minLength 1
      * @maxLength 160
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   mainCategory: string;
   /**
-     * @minLength 0
+     * @minLength 1
      * @maxLength 120
+     * @pattern .*\S.*
      */
   subcategory: string;
   /**
@@ -599,18 +619,19 @@ export interface AdminServiceTemplateUpdate {
   /**
      * @minLength 1
      * @maxLength 160
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   mainCategory?: string;
   /**
-     * @minLength 0
+     * @minLength 1
      * @maxLength 120
+     * @pattern .*\S.*
      */
   subcategory?: string;
   /**
@@ -1127,7 +1148,10 @@ export interface SalonDashboard {
 
 export interface ServiceInput {
   category: string;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @pattern .*\S.*
+     */
   name: string;
   description: string;
   /** @minimum 5 */
@@ -1210,6 +1234,14 @@ export interface Product {
   /** @nullable */
   averageRating?: number | null;
   reviewCount: number;
+}
+
+export interface ProductList {
+  items: Product[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface ProductReview {
@@ -1702,7 +1734,6 @@ export interface CourierServiceInput {
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
      */
   name: string;
   /**
@@ -1717,7 +1748,6 @@ export interface CourierServiceUpdate {
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
      */
   name?: string;
   /**
@@ -2394,7 +2424,10 @@ export interface EducationMarketplaceSettingsInput {
      * @maximum 365
      */
   liveAppealDays: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   featuredCoursePrice: number;
 }
 
@@ -2545,13 +2578,9 @@ export const EducationAdminCenterUpdateSubscriptionStatus = {
 
 export interface EducationAdminCenterUpdate {
   verificationStatus?: EducationAdminCenterUpdateVerificationStatus;
-  /**
-     * @maxLength 1000
-     * @nullable
-     */
+  /** @nullable */
   verificationNote?: string | null;
   subscriptionStatus?: EducationAdminCenterUpdateSubscriptionStatus;
-  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
   planId?: string;
 }
 
@@ -2788,30 +2817,27 @@ export interface LoyaltyTier {
   active: boolean;
 }
 
-export type LoyaltyTierInputPeriod = typeof LoyaltyTierInputPeriod[keyof typeof LoyaltyTierInputPeriod];
-
-
-export const LoyaltyTierInputPeriod = {
-  monthly: 'monthly',
-  quarterly: 'quarterly',
-  yearly: 'yearly',
-} as const;
-
 export interface LoyaltyTierInput {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /**
-     * @minimum 1
-     * @maximum 999
+     * @minimum 0
+     * @maximum 100000
      */
   sortOrder: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 1000000000
+     */
   spendThreshold: number;
-  period: LoyaltyTierInputPeriod;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  period: string;
   /**
      * @minimum 0
      * @maximum 100
@@ -2825,35 +2851,31 @@ export interface LoyaltyTierInput {
   freeSubscription: boolean;
   premiumListing: boolean;
   freeShipping: boolean;
-  /** @items.minLength 1 */
   benefits?: string[];
   active: boolean;
 }
 
-export type LoyaltyTierUpdatePeriod = typeof LoyaltyTierUpdatePeriod[keyof typeof LoyaltyTierUpdatePeriod];
-
-
-export const LoyaltyTierUpdatePeriod = {
-  monthly: 'monthly',
-  quarterly: 'quarterly',
-  yearly: 'yearly',
-} as const;
-
 export interface LoyaltyTierUpdate {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
   /**
-     * @minimum 1
-     * @maximum 999
+     * @minimum 0
+     * @maximum 100000
      */
   sortOrder?: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 1000000000
+     */
   spendThreshold?: number;
-  period?: LoyaltyTierUpdatePeriod;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  period?: string;
   /**
      * @minimum 0
      * @maximum 100
@@ -2867,7 +2889,6 @@ export interface LoyaltyTierUpdate {
   freeSubscription?: boolean;
   premiumListing?: boolean;
   freeShipping?: boolean;
-  /** @items.minLength 1 */
   benefits?: string[];
   active?: boolean;
 }
@@ -2889,20 +2910,21 @@ export type SubscriptionPlanInputLimits = {[key: string]: number};
 export interface SubscriptionPlanInput {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price: number;
   /**
      * @minimum 0
-     * @maximum 365
+     * @maximum 3650
      */
   trialDays: number;
-  /** @items.minLength 1 */
-  features?: string[];
-  limits?: SubscriptionPlanInputLimits;
+  features: string[];
+  limits: SubscriptionPlanInputLimits;
   active: boolean;
 }
 
@@ -2911,18 +2933,19 @@ export type SubscriptionPlanUpdateLimits = {[key: string]: number};
 export interface SubscriptionPlanUpdate {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price?: number;
   /**
      * @minimum 0
-     * @maximum 365
+     * @maximum 3650
      */
   trialDays?: number;
-  /** @items.minLength 1 */
   features?: string[];
   limits?: SubscriptionPlanUpdateLimits;
   active?: boolean;
@@ -2946,11 +2969,18 @@ export interface AdminReview {
 }
 
 export interface AdminReviewUpdate {
-  visible: boolean;
+  visible?: boolean;
 }
+
+export type ApiErrorIssuesItem = {
+  path: string;
+  message: string;
+};
 
 export interface ApiError {
   error: string;
+  code?: string;
+  issues?: ApiErrorIssuesItem[];
 }
 
 export interface ProductVariant {
@@ -3012,80 +3042,54 @@ export interface AdminProductList {
 export interface AdminProductInput {
   /**
      * @minLength 1
-     * @maxLength 240
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
   categoryId?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   categoryName: string;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   subcategoryName?: string | null;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   brand?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 10000
-     * @pattern ^\S[\s\S]*\S$|^\S$
-     */
+  /** @minLength 1 */
   description: string;
-  /**
-     * @maxLength 500
-     * @nullable
-     */
+  /** @nullable */
   shortDescription?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
+  /** @minLength 1 */
   imageUrl: string;
-  /**
-     * @maxItems 12
-     * @items.minLength 1
-     * @items.maxLength 2000
-     */
   images?: string[];
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price: number;
   /**
      * @minimum 0
+     * @maximum 100000000
      * @nullable
      */
   discountPrice?: number | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   stock: number;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   sku: string;
-  /**
-     * @minLength 1
-     * @maxLength 40
-     */
+  /** @minLength 1 */
   unit: string;
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   weightGrams: number;
   isNew?: boolean;
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
-  /**
-     * @maxLength 80
-     * @nullable
-     */
+  /** @nullable */
   variantType?: string | null;
   active?: boolean;
 }
@@ -3093,80 +3097,54 @@ export interface AdminProductInput {
 export interface AdminProductUpdate {
   /**
      * @minLength 1
-     * @maxLength 240
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
   /** @nullable */
   categoryId?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   categoryName?: string;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   subcategoryName?: string | null;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   brand?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 10000
-     * @pattern ^\S[\s\S]*\S$|^\S$
-     */
+  /** @minLength 1 */
   description?: string;
-  /**
-     * @maxLength 500
-     * @nullable
-     */
+  /** @nullable */
   shortDescription?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
+  /** @minLength 1 */
   imageUrl?: string;
-  /**
-     * @maxItems 12
-     * @items.minLength 1
-     * @items.maxLength 2000
-     */
   images?: string[];
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price?: number;
   /**
      * @minimum 0
+     * @maximum 100000000
      * @nullable
      */
   discountPrice?: number | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   stock?: number;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   sku?: string;
-  /**
-     * @minLength 1
-     * @maxLength 40
-     */
+  /** @minLength 1 */
   unit?: string;
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   weightGrams?: number;
   isNew?: boolean;
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
-  /**
-     * @maxLength 80
-     * @nullable
-     */
+  /** @nullable */
   variantType?: string | null;
   active?: boolean;
 }
@@ -3218,26 +3196,19 @@ export interface AdminProductCategory {
 export interface AdminProductCategoryInput {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
   parentId?: string | null;
   /**
      * @minimum 0
-     * @maximum 9999
+     * @maximum 100000
      */
   sortOrder?: number;
-  /**
-     * @maxLength 10
-     * @nullable
-     */
+  /** @nullable */
   icon?: string | null;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   imageUrl?: string | null;
   active?: boolean;
 }
@@ -3245,26 +3216,19 @@ export interface AdminProductCategoryInput {
 export interface AdminProductCategoryUpdate {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
   /** @nullable */
   parentId?: string | null;
   /**
      * @minimum 0
-     * @maximum 9999
+     * @maximum 100000
      */
   sortOrder?: number;
-  /**
-     * @maxLength 10
-     * @nullable
-     */
+  /** @nullable */
   icon?: string | null;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   imageUrl?: string | null;
   active?: boolean;
 }
@@ -3323,36 +3287,29 @@ export interface AdminBrand {
   productCount: number;
 }
 
-export interface AdminBrandInput {
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+export interface ProductBrand {
+  id: string;
   name: string;
-  /** @maxLength 2000 */
+  slug: string;
+  description: string;
+  /** @nullable */
+  logoUrl: string | null;
+}
+
+export interface AdminBrandInput {
+  /** @minLength 1 */
+  name: string;
   description?: string;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   logoUrl?: string | null;
   active?: boolean;
 }
 
 export interface AdminBrandUpdate {
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   name?: string;
-  /** @maxLength 2000 */
   description?: string;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   logoUrl?: string | null;
   active?: boolean;
 }
@@ -3384,7 +3341,6 @@ export interface ShippingConfigInput {
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
      */
   personalDeliveryName: string;
   /** @minimum 0 */
@@ -3442,6 +3398,17 @@ featured?: boolean;
 brand?: string;
 latitude?: number;
 longitude?: number;
+/**
+ * 1-based page number. All filters and the chosen sort are applied in SQL BEFORE this page is selected.
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of salons per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListSalonsAvailability = typeof ListSalonsAvailability[keyof typeof ListSalonsAvailability];
@@ -3476,6 +3443,17 @@ date: string;
 export type ListMyAppointmentsParams = {
 status?: ListMyAppointmentsStatus;
 scope?: ListMyAppointmentsScope;
+/**
+ * 1-based page number for stable pagination (date asc, startTime asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of appointments per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListMyAppointmentsStatus = typeof ListMyAppointmentsStatus[keyof typeof ListMyAppointmentsStatus];
@@ -3528,6 +3506,31 @@ export type ListSalonAppointmentsParams = {
 from?: string;
 to?: string;
 status?: string;
+/**
+ * 1-based page number for stable pagination (date asc, startTime asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of appointments per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListSalonCustomersParams = {
+/**
+ * 1-based page number for stable pagination (lastName asc, firstName asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of CRM customers per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListServiceTemplatesParams = {
@@ -3557,6 +3560,45 @@ search?: string;
 onSale?: boolean;
 isNew?: boolean;
 isBestseller?: boolean;
+/**
+ * 1-based page number for stable pagination (name asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of products per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListSalonNotificationsParams = {
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of notifications per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListOrdersParams = {
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of orders per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type GetShippingQuoteParams = {
@@ -3578,6 +3620,17 @@ to?: string;
 search?: string;
 paymentStatus?: AdminListOrdersPaymentStatus;
 deliveryMethod?: AdminListOrdersDeliveryMethod;
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of rows per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type AdminListOrdersStatus = typeof AdminListOrdersStatus[keyof typeof AdminListOrdersStatus];
@@ -3657,6 +3710,17 @@ startDate?: string;
  */
 minRating?: number;
 mine?: boolean;
+/**
+ * 1-based page index for stable createdAt desc, id desc ordering.
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of courses per page.
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListCoursesFormat = typeof ListCoursesFormat[keyof typeof ListCoursesFormat];
@@ -3667,6 +3731,20 @@ export const ListCoursesFormat = {
   'in-person': 'in-person',
   hybrid: 'hybrid',
 } as const;
+
+export type ListEnrollmentsParams = {
+/**
+ * 1-based page number for stable pagination (purchasedAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of rows per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
 
 export type LinkEducationCourseInstructorBody = {
   /** @nullable */
@@ -3695,6 +3773,17 @@ startDate?: string;
  * @minimum 1
  */
 maxDurationDays?: number;
+/**
+ * 1-based page index for stable createdAt desc, id desc ordering.
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of courses per page.
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListPublicEducationCoursesFormat = typeof ListPublicEducationCoursesFormat[keyof typeof ListPublicEducationCoursesFormat];
@@ -3730,12 +3819,34 @@ city?: string;
 active?: boolean;
 featured?: boolean;
 subscriptionStatus?: string;
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of rows per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type AdminListUsersParams = {
 search?: string;
 role?: AdminListUsersRole;
 active?: boolean;
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of rows per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type AdminListUsersRole = typeof AdminListUsersRole[keyof typeof AdminListUsersRole];

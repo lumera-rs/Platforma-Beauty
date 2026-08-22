@@ -10,18 +10,19 @@ export interface AdminServiceTemplateInput {
   /**
      * @minLength 1
      * @maxLength 160
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   mainCategory: string;
   /**
-     * @minLength 0
+     * @minLength 1
      * @maxLength 120
+     * @pattern .*\S.*
      */
   subcategory: string;
   /**

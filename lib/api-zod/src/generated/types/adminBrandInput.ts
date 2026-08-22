@@ -7,18 +7,10 @@
  */
 
 export interface AdminBrandInput {
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   name: string;
-  /** @maxLength 2000 */
   description?: string;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   logoUrl?: string | null;
   active?: boolean;
 }

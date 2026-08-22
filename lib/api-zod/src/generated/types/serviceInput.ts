@@ -8,7 +8,10 @@
 
 export interface ServiceInput {
   category: string;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @pattern .*\S.*
+     */
   name: string;
   description: string;
   /** @minimum 5 */

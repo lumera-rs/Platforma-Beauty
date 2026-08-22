@@ -3,6 +3,7 @@ import { OwnerSidebar } from "./dashboard";
 import { Link } from "wouter";
 import {
   useListProducts,
+  useListProductBrands,
   useListProductCategories,
   useGetShopSummary,
   useAddShopCartItem,
@@ -10,16 +11,16 @@ import {
   getGetShopCartQueryKey,
   getGetShopSummaryQueryKey,
 } from "@workspace/api-client-react";
-import type { Product, ProductCategory, ProductCategorySubcategoriesItem } from "@workspace/api-client-react";
+import type { Product, ProductCategory, ProductCategorySubcategoriesItem, ListProductsParams } from "@workspace/api-client-react";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   ShoppingCart, Package, Star, Loader2, Search, X,
-  ChevronDown, ChevronRight, Tag, Sparkles, Flame, Eye
+  ChevronDown, ChevronLeft, ChevronRight, Tag, Sparkles, Flame, Eye
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -364,8 +365,6 @@ export default function OwnerShop() {
   const { data: summary, isLoading: isLoadingSum } = useGetShopSummary({
     query: { enabled: !!userResp?.user, queryKey: getGetShopSummaryQueryKey() },
   });
-  const { data: allProducts = [], isLoading: isLoadingProd } = useListProducts();
-
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -381,31 +380,50 @@ export default function OwnerShop() {
     isBestseller: false,
     tab: "all",
   });
+  const [page, setPage] = useState(1);
+  const pageSize = 24;
 
-  // Derive brands from products
-  const brands = useMemo(() => {
-    const set = new Set<string>();
-    allProducts.forEach((p) => { if (p.brand) set.add(p.brand); });
-    return Array.from(set).sort();
-  }, [allProducts]);
+  // Filtering, ordering and pagination now happen server-side so every product
+  // stays reachable via the Previous/Next controls regardless of catalog size.
+  const productParams = useMemo<ListProductsParams>(() => {
+    const params: ListProductsParams = { page, pageSize };
+    if (filters.category) params.category = filters.category;
+    if (filters.subcategory) params.subcategory = filters.subcategory;
+    if (filters.brand) params.brand = filters.brand;
+    if (filters.search) params.search = filters.search;
+    if (filters.onSale || filters.tab === "akcije") params.onSale = true;
+    if (filters.isNew) params.isNew = true;
+    if (filters.isBestseller || filters.tab === "bestsellers") params.isBestseller = true;
+    return params;
+  }, [filters, page]);
 
-  // Filter products client-side for instant feedback
-  const filtered = useMemo(() => {
-    let list = allProducts;
-    if (filters.tab === "akcije") list = list.filter((p) => p.discountPrice != null);
-    if (filters.tab === "bestsellers") list = list.filter((p) => p.isBestseller);
-    if (filters.category) list = list.filter((p) => p.category === filters.category);
-    if (filters.subcategory) list = list.filter((p) => p.subcategory === filters.subcategory);
-    if (filters.brand) list = list.filter((p) => p.brand?.toLowerCase() === filters.brand.toLowerCase());
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      list = list.filter((p) => `${p.name} ${p.description} ${p.brand ?? ""}`.toLowerCase().includes(q));
-    }
-    if (filters.onSale) list = list.filter((p) => p.discountPrice != null);
-    if (filters.isNew) list = list.filter((p) => p.isNew);
-    if (filters.isBestseller) list = list.filter((p) => p.isBestseller);
-    return list;
-  }, [allProducts, filters]);
+  const { data: productList, isLoading: isLoadingProd } = useListProducts(productParams);
+  const products = productList?.items ?? [];
+  const total = productList?.total ?? 0;
+  const totalPages = productList?.totalPages ?? 1;
+
+  // Brands are loaded from their own endpoint so the dropdown is not limited to
+  // the products on the current page.
+  const { data: brandRecords = [] } = useListProductBrands();
+  const brands = useMemo(
+    () => Array.from(new Set(brandRecords.map((b) => b.name))).sort(),
+    [brandRecords],
+  );
+
+  // Reset to the first page whenever the active filters change so the user never
+  // lands on an out-of-range page.
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filters.category,
+    filters.subcategory,
+    filters.brand,
+    filters.search,
+    filters.onSale,
+    filters.isNew,
+    filters.isBestseller,
+    filters.tab,
+  ]);
 
   const addToCart = (id: string, variantValue?: string) => {
     addCartItem.mutate(
@@ -549,7 +567,7 @@ export default function OwnerShop() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm text-muted-foreground">
-                    {isLoadingProd ? "Učitavanje..." : `${filtered.length} proizvoda`}
+                    {isLoadingProd ? "Učitavanje..." : `${total} proizvoda`}
                     {(filters.category || filters.subcategory) && (
                       <span className="ml-1 font-medium text-foreground">
                         — {filters.subcategory || filters.category}
@@ -561,7 +579,7 @@ export default function OwnerShop() {
                   <div className="py-24 flex justify-center">
                     <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   </div>
-                ) : filtered.length === 0 ? (
+                ) : products.length === 0 ? (
                   <div className="py-24 text-center text-muted-foreground">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p className="text-sm">Nema proizvoda koji odgovaraju filterima.</p>
@@ -570,16 +588,43 @@ export default function OwnerShop() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filtered.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onAdd={addToCart}
-                        onQuickView={setQuickViewProduct}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {products.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onAdd={addToCart}
+                          onQuickView={setQuickViewProduct}
+                        />
+                      ))}
+                    </div>
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-center gap-4 mt-8">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page <= 1}
+                          onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Prethodna
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          Strana {page} od {totalPages}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={page >= totalPages}
+                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        >
+                          Sledeća
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 

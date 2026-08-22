@@ -50,12 +50,12 @@ status="$(curl -sS -o "$BODY" -w "%{http_code}" -c "$SUPER_COOKIE" \
   "$BASE_URL/auth/login")"
 expect_status 200 "$status" "SUPER_ADMIN login"
 
-status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" "$BASE_URL/admin/users")"
+status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" "$BASE_URL/admin/users?search=edukacija%40lumera.local&page=1&pageSize=100")"
 expect_status 200 "$status" "SUPER_ADMIN user list"
 
-TARGET_ID="$(node -e 'const users=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const user=users.find((item)=>item.email==="edukacija@lumera.local"); if(!user) process.exit(1); process.stdout.write(user.id)' "$BODY")"
-ORIGINAL_ROLE="$(node -e 'const users=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(users.find((item)=>item.email==="edukacija@lumera.local").role)' "$BODY")"
-ORIGINAL_ACTIVE="$(node -e 'const users=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(users.find((item)=>item.email==="edukacija@lumera.local").active))' "$BODY")"
+TARGET_ID="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; const user=users.find((item)=>item.email==="edukacija@lumera.local"); if(!user) process.exit(1); process.stdout.write(user.id)' "$BODY")"
+ORIGINAL_ROLE="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; process.stdout.write(users.find((item)=>item.email==="edukacija@lumera.local").role)' "$BODY")"
+ORIGINAL_ACTIVE="$(node -e 'const body=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const users=Array.isArray(body)?body:body.items; process.stdout.write(String(users.find((item)=>item.email==="edukacija@lumera.local").active))' "$BODY")"
 
 status="$(curl -sS -o "$BODY" -w "%{http_code}" -b "$SUPER_COOKIE" -X PATCH \
   -H "Content-Type: application/json" \

@@ -28,13 +28,22 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [activeFilter, setActiveFilter] = useState<string>("all");
 
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  // Reset to the first page whenever any filter changes so results stay reachable.
+  useEffect(() => { setPage(1); }, [debouncedSearch, roleFilter, activeFilter]);
+
   const queryParams = {
     search: debouncedSearch || undefined,
     role: roleFilter === "all" ? undefined : (roleFilter as AdminListUsersRole),
     active: activeFilter === "all" ? undefined : activeFilter === "true",
+    page,
+    pageSize,
   };
 
   const { data: users, isLoading, error } = useAdminListUsers(queryParams);
+  // customFetch returns only the body; infer next-page availability from length.
+  const hasNextPage = (users?.length ?? 0) === pageSize;
   const { data: currentUserResponse } = useGetCurrentUser();
   const updateUser = useAdminUpdateUser();
   const queryClient = useQueryClient();
@@ -219,6 +228,14 @@ export default function AdminUsers() {
             </div>
           )}
         </div>
+
+        {!isLoading && !error && users && users.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button>
+            <span className="text-sm text-muted-foreground">Strana {page}</span>
+            <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

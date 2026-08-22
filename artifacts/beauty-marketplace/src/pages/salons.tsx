@@ -71,7 +71,10 @@ export default function Salons() {
     setMinReviewCount(Number.isFinite(minReviewCountFromQuery) && minReviewCountFromQuery > 0 ? minReviewCountFromQuery : undefined);
   }, [searchParams]);
 
-  const params = useMemo<ListSalonsParams>(() => ({
+  // Filters (everything except the page cursor) are memoized separately so we
+  // can reset to page 1 whenever any filter/sort changes, then fold the current
+  // page into the query the server paginates.
+  const filterParams = useMemo<ListSalonsParams>(() => ({
     category: category || undefined, city: city || undefined, municipality: municipality || undefined, brand: brand || undefined, priceMax, minReviewCount,
     sort, discountsOnly: discountsOnly || undefined, gender: menOnly ? "men" : undefined,
     acceptsCards: acceptsCards || undefined, openSunday: openSunday || undefined,
@@ -79,13 +82,19 @@ export default function Salons() {
     latitude: sort === "nearest" ? location?.latitude : undefined, longitude: sort === "nearest" ? location?.longitude : undefined,
   }), [category, city, municipality, brand, priceMax, minReviewCount, sort, discountsOnly, menOnly, acceptsCards, openSunday, instantBooking, homeService, topSalon, featured, location]);
 
-  const { data: allSalons, isLoading, isFetching } = useListSalons(params);
-  const isResultsLoading = isLoading || isFetching;
-
-  // Reset page when filters change
+  // Reset to the first page whenever the filter set changes.
   useEffect(() => {
     setPage(1);
-  }, [params]);
+  }, [filterParams]);
+
+  const params = useMemo<ListSalonsParams>(() => ({
+    ...filterParams,
+    page,
+    pageSize: PAGE_SIZE,
+  }), [filterParams, page]);
+
+  const { data: pageSalons, isLoading, isFetching } = useListSalons(params);
+  const isResultsLoading = isLoading || isFetching;
 
   const categories = ["Frizerski saloni", "Muški frizeri", "Kozmetički saloni", "Depilacija", "Lice", "Nokti", "Masaža", "Telo", "Wellness", "Lux tretmani", "Paketi usluga", "Ordinacije i poliklinike"];
 
@@ -96,12 +105,11 @@ export default function Salons() {
     </label>
   );
 
-  const paginatedSalons = useMemo(() => {
-    if (!allSalons) return [];
-    return allSalons.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  }, [allSalons, page]);
-
-  const totalPages = allSalons ? Math.max(1, Math.ceil(allSalons.length / PAGE_SIZE)) : 1;
+  // The server returns exactly one page. A full page implies another page may
+  // exist; a short page (or empty) means we are on the last page.
+  const paginatedSalons = pageSalons ?? [];
+  const hasNextPage = paginatedSalons.length === PAGE_SIZE;
+  const hasPreviousPage = page > 1;
   const relativeLastBooked = (value: Date | string) => {
     const hours = Math.round((new Date(value).getTime() - Date.now()) / 3_600_000);
     if (Math.abs(hours) < 24) return new Intl.RelativeTimeFormat("sr", { numeric: "auto" }).format(hours, "hour");
@@ -205,7 +213,7 @@ export default function Salons() {
             <div className="flex-1 flex flex-col min-w-[50%] h-full">
               <div className="flex justify-between items-center mb-4 shrink-0">
                 <p className="text-muted-foreground text-sm font-medium">
-                  {isResultsLoading ? "Učitavanje..." : `Pronađeno ${allSalons?.length || 0} salona`}
+                  {isResultsLoading ? "Učitavanje..." : (paginatedSalons.length === 0 ? "Nema rezultata" : `Strana ${page} — prikazano ${paginatedSalons.length} salona`)}
                 </p>
                 <div className="flex items-center gap-2 text-sm">
                   <select value={sort} onChange={(event) => setSort(event.target.value as ListSalonsParams["sort"])} className="bg-transparent border border-border rounded-md px-2 py-1.5 outline-none text-sm font-medium focus:border-primary">
@@ -231,7 +239,7 @@ export default function Salons() {
                       <Skeleton className="h-4 w-1/2" />
                     </div>
                   ))
-                ) : allSalons?.length === 0 ? (
+                ) : paginatedSalons.length === 0 ? (
                   <div className="col-span-full py-12 text-center text-muted-foreground bg-muted/30 rounded-xl border border-dashed">
                     Nije pronađen nijedan salon koji odgovara kriterijumima.
                   </div>
@@ -289,13 +297,13 @@ export default function Salons() {
                 ))}
 
                 {/* Pagination */}
-                {totalPages > 1 && (
+                {(hasPreviousPage || hasNextPage) && (
                   <div className="col-span-full flex items-center justify-center gap-2 mt-6 pb-6">
-                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={page === 1} className="h-9">
+                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.max(1, page - 1))} disabled={!hasPreviousPage} className="h-9">
                       <ChevronLeft className="w-4 h-4 mr-1" /> Prethodna
                     </Button>
-                    <span className="text-sm font-medium text-muted-foreground px-3">Strana {page} od {totalPages}</span>
-                    <Button variant="outline" size="sm" onClick={() => goToPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="h-9">
+                    <span className="text-sm font-medium text-muted-foreground px-3">Strana {page}</span>
+                    <Button variant="outline" size="sm" onClick={() => goToPage(page + 1)} disabled={!hasNextPage} className="h-9">
                       Sledeća <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </div>

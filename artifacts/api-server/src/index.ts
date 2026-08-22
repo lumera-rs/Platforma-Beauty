@@ -1,5 +1,5 @@
 import app from "./app";
-import { databasePoolStats, pool } from "@workspace/db";
+import { closePool, databasePoolStats } from "@workspace/db";
 import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
@@ -17,7 +17,7 @@ import {
   startCatalogCacheInvalidationListener,
   stopCatalogCacheInvalidationListener,
 } from "./lib/catalog-cache";
-import { runDataRetentionArchive } from "./lib/data-retention-archive";
+import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 
 const rawPort = process.env["PORT"];
 
@@ -35,13 +35,8 @@ if (Number.isNaN(port) || port <= 0) {
 
 await ensureMediaSchema();
 
-pool.on("error", (error) => {
-  logger.error({ err: error }, "Idle PostgreSQL pool client failed");
-});
-
 void startSalonNotificationEventListener();
 void startCatalogCacheInvalidationListener();
-
 const server = app.listen(port, "0.0.0.0", (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -50,6 +45,10 @@ const server = app.listen(port, "0.0.0.0", (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+// ---------------------------------------------------------------------------
+// Scheduled tasks
+// ---------------------------------------------------------------------------
 
 const retryInterval = setInterval(() => {
   void runScheduledRescheduledConfirmationRetries();
@@ -91,9 +90,19 @@ const compatibilityImageCleanupInterval = setInterval(() => {
     logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
   });
 }, 10 * 60_000);
+
+const communicationArchiveInterval = setInterval(() => {
+  void runCommunicationArchiveBatch().catch((error) => {
+    logger.warn({ err: error }, "Communication archive batch scheduler failed");
+  });
+}, 24 * 60 * 60_000);
+communicationArchiveInterval.unref();
 compatibilityImageCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
   logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
+});
+void runCommunicationArchiveBatch().catch((error) => {
+  logger.warn({ err: error }, "Communication archive batch initial run failed");
 });
 
 const databaseMetricsInterval = setInterval(() => {
@@ -106,16 +115,6 @@ const databaseMetricsInterval = setInterval(() => {
   );
 }, 60_000);
 databaseMetricsInterval.unref();
-
-const runScheduledDataRetentionArchive = () => {
-  void runDataRetentionArchive().catch((error) => {
-    logger.error({ err: error }, "Data-retention archive scheduler failed");
-  });
-};
-const initialDataRetentionArchiveTimeout = setTimeout(runScheduledDataRetentionArchive, 30_000);
-initialDataRetentionArchiveTimeout.unref();
-const dataRetentionArchiveInterval = setInterval(runScheduledDataRetentionArchive, 24 * 60 * 60_000);
-dataRetentionArchiveInterval.unref();
 
 // Safe on every boot: already-managed references are ignored and legacy
 // sources are never removed. Running after listen keeps readiness fast.
@@ -133,16 +132,21 @@ function shutDown(signal: NodeJS.Signals): void {
   clearInterval(educationGalleryCleanupInterval);
   clearInterval(mediaCleanupInterval);
   clearInterval(compatibilityImageCleanupInterval);
+  clearInterval(communicationArchiveInterval);
   clearInterval(databaseMetricsInterval);
-  clearTimeout(initialDataRetentionArchiveTimeout);
-  clearInterval(dataRetentionArchiveInterval);
 
   void Promise.allSettled([
     stopSalonNotificationEventListener(),
     stopCatalogCacheInvalidationListener(),
   ]).finally(() => {
     server.close(() => {
-      void pool.end().finally(() => process.exit(0));
+      void closePool().then(
+        () => { process.exit(0); },
+        (error: unknown) => {
+          logger.warn({ err: error }, "Pool close failed during shutdown");
+          process.exit(0);
+        },
+      );
     });
   });
   setTimeout(() => process.exit(1), 10_000).unref();

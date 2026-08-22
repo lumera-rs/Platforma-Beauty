@@ -30,6 +30,7 @@ import {
   salonsTable,
 } from "@workspace/db";
 import app from "../app";
+import { batchEducationCourseViews, type EducationAccess } from "../routes/marketplace";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
 
@@ -77,6 +78,7 @@ async function run(): Promise<void> {
   const enrollmentIds: string[] = [];
   let centerId: string | undefined;
   let salonId: string | undefined;
+  const extraCenterIds: string[] = [];
 
   try {
     const fixturePasswordHash = await hashPassword(password);
@@ -525,6 +527,399 @@ async function run(): Promise<void> {
       console.log("✓ Foreign employee ID rejected in group enrollment.");
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // TEST: Authenticated /education/courses pushes ownership + scalar filters to
+    // SQL so owned (even unpublished) courses are never silently omitted, and the
+    // session-location authorization is preserved in the list view.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const centerOwnerCookie = await login(baseUrl, centerOwner.email);
+
+      // An owned but UNPUBLISHED course must still be visible to its owner. If the
+      // route only kept public-eligible rows (the regression), this would vanish.
+      const [ownedUnpublished] = await db.insert(coursesTable).values({
+        centerId: center.id,
+        title: `Owned Unpublished ${suffix}`,
+        description: "Vlasnički kurs koji još nije objavljen.",
+        category: "Interno",
+        format: "hybrid",
+        city: "Novi Sad",
+        price: 12345,
+        duration: "3 dana",
+        certification: false,
+        imageUrl: "/test-extras.jpg",
+        published: false,
+        archived: false,
+      }).returning();
+      assert.ok(ownedUnpublished);
+      courseIds.push(ownedUnpublished.id);
+
+      // Owner sees the owned unpublished course.
+      const ownerListResp = await request(baseUrl, "/education/courses", { cookie: centerOwnerCookie });
+      assert.equal(ownerListResp.status, 200, "Owner must be able to browse /education/courses.");
+      const ownerCourses = await json<Array<Record<string, unknown>>>(ownerListResp);
+      assert.ok(
+        ownerCourses.some((c) => c.id === ownedUnpublished.id),
+        "Owned unpublished course must appear for its owner (ownership pushed to SQL, not dropped).",
+      );
+      // ?mine=true also keeps the owned unpublished course.
+      const mineResp = await request(baseUrl, "/education/courses?mine=true", { cookie: centerOwnerCookie });
+      const mineCourses = await json<Array<Record<string, unknown>>>(mineResp);
+      assert.ok(
+        mineCourses.some((c) => c.id === ownedUnpublished.id),
+        "?mine=true must return the owner's unpublished course.",
+      );
+      console.log("✓ Owned unpublished course retained via SQL ownership predicate.");
+
+      // Scalar filter pushed to SQL: format=in-person selects liveCourse, excludes
+      // the online certCourse and the hybrid owned course.
+      const formatResp = await request(baseUrl, "/education/courses?format=in-person", { cookie: centerOwnerCookie });
+      assert.equal(formatResp.status, 200, "Format-filtered list must respond 200.");
+      const formatCourses = await json<Array<Record<string, unknown>>>(formatResp);
+      assert.ok(formatCourses.some((c) => c.id === liveCourse.id), "format=in-person must include the in-person course.");
+      assert.ok(!formatCourses.some((c) => c.id === certCourse.id), "format=in-person must exclude the online course.");
+      assert.ok(!formatCourses.some((c) => c.id === ownedUnpublished.id), "format=in-person must exclude the hybrid course.");
+
+      // Scalar price filter pushed to SQL (exact prior >= / <= semantics).
+      const priceResp = await request(baseUrl, "/education/courses?minPrice=12345&maxPrice=12345", { cookie: centerOwnerCookie });
+      const priceCourses = await json<Array<Record<string, unknown>>>(priceResp);
+      assert.ok(priceCourses.some((c) => c.id === ownedUnpublished.id), "Exact price bounds must include the matching course.");
+      assert.ok(!priceCourses.some((c) => c.id === liveCourse.id), "Price bounds must exclude non-matching prices.");
+      console.log("✓ Scalar filters (format, price) applied in SQL with prior AND semantics.");
+
+      // Session-location authorization (batchEducationCourseViews). The
+      // authenticated list response schema strips `sessions`, so exercise the
+      // observable HTTP contract on the public list — unauthorized public viewers
+      // must never receive the session location.
+      const publicListResp = await request(baseUrl, "/education/public/courses");
+      const publicCourses = await json<Array<Record<string, unknown>>>(publicListResp);
+      const publicLive = publicCourses.find((c) => c.id === liveCourse.id);
+      assert.ok(publicLive, "liveCourse must appear in the public listing.");
+      const publicSessions = publicLive.sessions as Array<{ location: string | null }>;
+      assert.ok(publicSessions.length > 0, "liveCourse must expose at least one session in the public view.");
+      assert.equal(
+        publicSessions[0]!.location,
+        null,
+        "Unauthorized public viewers must not receive session location.",
+      );
+
+      // Authenticated list still surfaces the session-derived availableSeats,
+      // proving sessions are assembled without leaking location via the list schema.
+      const ownerLive = ownerCourses.find((c) => c.id === liveCourse.id);
+      assert.ok(ownerLive, "liveCourse must appear in the owner's authenticated list.");
+      assert.equal(
+        ownerLive.availableSeats,
+        10,
+        "Session-derived availableSeats must be present for the owner.",
+      );
+
+      // Positive authorization: exercise batchEducationCourseViews directly with
+      // authorized access contexts and assert the session location IS visible.
+      const liveCourseLocation = (views: Awaited<ReturnType<typeof batchEducationCourseViews>>) => {
+        const view = views.find((v) => v.id === liveCourse.id);
+        assert.ok(view, "liveCourse view must be assembled.");
+        assert.ok(view.sessions.length > 0, "liveCourse view must include a session.");
+        return view.sessions[0]!.location;
+      };
+
+      const ownerAccess: EducationAccess = { user: centerOwner, salon: null, centers: [center], admin: false };
+      const ownerViews = await batchEducationCourseViews([liveCourse], ownerAccess);
+      assert.equal(
+        liveCourseLocation(ownerViews),
+        "Testna ulica 5, Novi Sad",
+        "Publisher/owner must see the session location.",
+      );
+
+      const adminAccess: EducationAccess = { user: admin, salon: null, centers: [], admin: true };
+      const adminViews = await batchEducationCourseViews([liveCourse], adminAccess);
+      assert.equal(
+        liveCourseLocation(adminViews),
+        "Testna ulica 5, Novi Sad",
+        "Admin must see the session location.",
+      );
+
+      // Paid enrollee (non-owner buyer) must also see the location. The buyer
+      // already holds a paid enrollment on liveCourse from the ICS test above.
+      const [existingPaidLive] = await db.select().from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.courseId, liveCourse.id),
+        eq(courseEnrollmentsTable.purchaserId, buyer.id),
+        eq(courseEnrollmentsTable.paymentStatus, "paid"),
+      )).limit(1);
+      assert.ok(existingPaidLive, "Buyer must already have a paid enrollment on liveCourse.");
+
+      const buyerAccess: EducationAccess = { user: buyer, salon: null, centers: [], admin: false };
+      const buyerViews = await batchEducationCourseViews([liveCourse], buyerAccess);
+      assert.equal(
+        liveCourseLocation(buyerViews),
+        "Testna ulica 5, Novi Sad",
+        "Paid enrollee must see the session location.",
+      );
+
+      // Unauthorized access context (no ownership, no paid enrollment) gets null.
+      const centerOwnerUnrelated = await db.insert(usersTable).values({
+        firstName: "Nepovezani", lastName: "Kupac",
+        email: `extras-unrelated-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash, passwordSetAt: new Date(), role: "CUSTOMER",
+      }).returning();
+      createdUserIds.push(centerOwnerUnrelated[0]!.id);
+      const unrelatedAccess: EducationAccess = { user: centerOwnerUnrelated[0]!, salon: null, centers: [], admin: false };
+      const unrelatedViews = await batchEducationCourseViews([liveCourse], unrelatedAccess);
+      assert.equal(
+        liveCourseLocation(unrelatedViews),
+        null,
+        "Unauthorized authenticated viewer (no ownership/paid enrollment) must not see the location.",
+      );
+
+      // No access at all (public) also yields null.
+      const noAccessViews = await batchEducationCourseViews([liveCourse]);
+      assert.equal(
+        liveCourseLocation(noAccessViews),
+        null,
+        "Unauthorized public viewers must not see the location.",
+      );
+      console.log("✓ Session location authorization: owner/admin/paid see location; unauthorized get null.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TEST: GET /education/courses & /education/public/courses — page/pageSize
+    //   pagination. Proves page 2 is reachable via ?page=&pageSize= with a
+    //   stable createdAt desc, id desc ordering and non-overlapping slices, so
+    //   the OFFSET/LIMIT bound never silently omits matching rows.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const centerOwnerCookie = await login(baseUrl, centerOwner.email);
+      const pageSize = 3;
+      const listCourseCount = pageSize * 2 + 1; // 7 → at least 3 pages worth
+
+      // Distinct owned + published + eligible-center courses with a unique
+      // category so the scalar filter isolates this test's rows from any others.
+      const listCategory = `PagerCat-${suffix}`;
+      const listCourses = await db.insert(coursesTable).values(
+        Array.from({ length: listCourseCount }, (_, i) => ({
+          centerId: center.id,
+          title: `List Pager Course ${i} ${suffix}`,
+          description: "Kurs za proveru paginacije liste.",
+          category: listCategory,
+          format: "online" as const,
+          city: "Novi Sad",
+          price: 4200,
+          duration: "1 nedelja",
+          certification: false,
+          imageUrl: "/test-extras.jpg",
+          published: true,
+          archived: false,
+          refundPolicy: "Bez povraćaja.",
+        })),
+      ).returning();
+      courseIds.push(...listCourses.map((c) => c.id));
+      const listCourseIds = new Set(listCourses.map((c) => c.id));
+
+      // Reference: the full stably ordered set the owner can see for this category.
+      const allResp = await request(
+        baseUrl,
+        `/education/courses?category=${encodeURIComponent(listCategory)}&page=1&pageSize=100`,
+        { cookie: centerOwnerCookie },
+      );
+      assert.equal(allResp.status, 200, "Category-filtered course list must respond 200.");
+      const allRows = await json<Array<{ id: string }>>(allResp);
+      const allIds = allRows.map((r) => r.id);
+      assert.equal(allRows.length, listCourseCount, "All inserted list-pager courses must be reachable in one large page.");
+      for (const id of listCourseIds) {
+        assert.ok(allIds.includes(id), "Every inserted course must be visible to its owner.");
+      }
+
+      // Page 1
+      const p1Resp = await request(
+        baseUrl,
+        `/education/courses?category=${encodeURIComponent(listCategory)}&page=1&pageSize=${pageSize}`,
+        { cookie: centerOwnerCookie },
+      );
+      assert.equal(p1Resp.status, 200, "Course list page 1 must respond 200.");
+      const p1 = await json<Array<{ id: string }>>(p1Resp);
+      assert.equal(p1.length, pageSize, "Page 1 must return exactly pageSize courses.");
+      const p1Ids = new Set(p1.map((r) => r.id));
+
+      // Page 2 must be reachable with fresh, non-overlapping rows.
+      const p2Resp = await request(
+        baseUrl,
+        `/education/courses?category=${encodeURIComponent(listCategory)}&page=2&pageSize=${pageSize}`,
+        { cookie: centerOwnerCookie },
+      );
+      assert.equal(p2Resp.status, 200, "Course list page 2 must be reachable.");
+      const p2 = await json<Array<{ id: string }>>(p2Resp);
+      assert.equal(p2.length, pageSize, "Page 2 must return exactly pageSize courses.");
+      for (const row of p2) {
+        assert.ok(!p1Ids.has(row.id), "Page 2 rows must not overlap page 1.");
+      }
+      // page1 ∪ page2 must equal the first 2*pageSize rows of the reference list.
+      assert.deepEqual(
+        [...p1.map((r) => r.id), ...p2.map((r) => r.id)],
+        allIds.slice(0, pageSize * 2),
+        "Paged course slices must match the stably ordered (createdAt desc, id desc) reference list.",
+      );
+      console.log("✓ /education/courses: page 2 reachable; stable non-overlapping OFFSET/LIMIT slices.");
+
+      // The same pagination contract holds on the public endpoint (bare array).
+      const pub1Resp = await request(
+        baseUrl,
+        `/education/public/courses?category=${encodeURIComponent(listCategory)}&page=1&pageSize=${pageSize}`,
+      );
+      assert.equal(pub1Resp.status, 200, "Public course list page 1 must respond 200.");
+      const pub1 = await json<Array<{ id: string }>>(pub1Resp);
+      assert.equal(pub1.length, pageSize, "Public page 1 must return exactly pageSize courses.");
+      const pub1Ids = new Set(pub1.map((r) => r.id));
+      const pub2Resp = await request(
+        baseUrl,
+        `/education/public/courses?category=${encodeURIComponent(listCategory)}&page=2&pageSize=${pageSize}`,
+      );
+      assert.equal(pub2Resp.status, 200, "Public course list page 2 must be reachable.");
+      const pub2 = await json<Array<{ id: string }>>(pub2Resp);
+      assert.ok(pub2.length >= 1, "Public page 2 must be reachable and return at least one course.");
+      for (const row of pub2) {
+        assert.ok(!pub1Ids.has(row.id), "Public page 2 rows must not overlap page 1.");
+      }
+      console.log("✓ /education/public/courses: page 2 reachable; non-overlapping slices.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TEST: GET /education/enrollments — SQL access predicate + pagination
+    //   Proves (a) another user's / another center's enrollments are excluded
+    //   in SQL, and (b) page 2 is reachable via ?page=&pageSize=.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const centerOwnerCookie = await login(baseUrl, centerOwner.email);
+
+      // A second, unrelated education center owned by a different user, with its
+      // own course and a paid enrollment. The primary center owner must NEVER
+      // see this row through /education/enrollments.
+      const [otherOwner] = await db.insert(usersTable).values({
+        firstName: "Drugi", lastName: "Centar",
+        email: `extras-other-center-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash, passwordSetAt: new Date(), role: "EDUCATION_CENTER_OWNER",
+      }).returning();
+      createdUserIds.push(otherOwner!.id);
+
+      const [otherCenter] = await db.insert(educationCentersTable).values({
+        ownerId: otherOwner!.id,
+        name: `Extras Other Center ${suffix}`,
+        city: "Niš",
+        description: "Nepovezani edukacioni centar.",
+        imageUrl: "/test-other.jpg",
+        verificationStatus: "verified",
+        verifiedAt: new Date(),
+        verifiedByUserId: admin.id,
+      }).returning();
+      const otherCenterId = otherCenter!.id;
+      extraCenterIds.push(otherCenterId);
+
+      const [otherCourse] = await db.insert(coursesTable).values({
+        centerId: otherCenterId,
+        title: `Other Center Course ${suffix}`,
+        description: "Kurs drugog centra.",
+        category: "Ostalo",
+        format: "online",
+        city: "Niš",
+        price: 5000,
+        duration: "1 nedelja",
+        certification: false,
+        imageUrl: "/test-other.jpg",
+        published: true,
+        refundPolicy: "Bez povraćaja.",
+      }).returning();
+      courseIds.push(otherCourse!.id);
+
+      // Enrollment on the OTHER center's course, purchased by a different user.
+      const otherRows = await db.insert(courseEnrollmentsTable).values({
+        courseId: otherCourse!.id,
+        userId: buyer.id,
+        purchaserId: otherOwner!.id,
+        status: "active",
+        paymentStatus: "paid",
+        progress: 0,
+        purchasedAt: new Date(Date.now() - 60 * 60 * 1000),
+      }).returning();
+      const otherEnrollmentId = otherRows[0]!.id;
+      enrollmentIds.push(otherEnrollmentId);
+
+      // Create > pageSize enrollments purchased by the PRIMARY center owner. The
+      // (course_id, purchaser_id, participant_key) uniqueness on non-cancelled
+      // rows means we spread these across distinct owned courses (one seat each),
+      // with distinct purchasedAt so ordering is deterministic.
+      const pageSize = 5;
+      const ownerEnrollmentCount = pageSize + 2; // 7 → 2 pages (5 + 2)
+      const paginationCourses = await db.insert(coursesTable).values(
+        Array.from({ length: ownerEnrollmentCount }, (_, i) => ({
+          centerId: center.id,
+          title: `Pagination Course ${i} ${suffix}`,
+          description: "Kurs za proveru paginacije prijava.",
+          category: "Paginacija",
+          format: "online" as const,
+          city: "Novi Sad",
+          price: 4000,
+          duration: "1 nedelja",
+          certification: false,
+          imageUrl: "/test-extras.jpg",
+          published: true,
+          refundPolicy: "Bez povraćaja.",
+        })),
+      ).returning();
+      courseIds.push(...paginationCourses.map((c) => c.id));
+      const ownerEnrollmentValues = paginationCourses.map((c, i) => ({
+        courseId: c.id,
+        userId: centerOwner.id,
+        purchaserId: centerOwner.id,
+        status: "active" as const,
+        paymentStatus: "paid" as const,
+        progress: 0,
+        // Newest first: index 0 is the most recent.
+        purchasedAt: new Date(Date.now() - (i + 1) * 60 * 1000),
+      }));
+      const ownerRows = await db.insert(courseEnrollmentsTable).values(ownerEnrollmentValues).returning();
+      const ownerEnrollmentIds = new Set(ownerRows.map((r) => r.id));
+      enrollmentIds.push(...ownerRows.map((r) => r.id));
+
+      // Full unbounded reference set the owner may see (large pageSize) — used to
+      // prove the SQL predicate scopes rows and that pages are non-overlapping,
+      // regardless of pre-existing owner-visible rows from earlier tests.
+      const allResp = await request(baseUrl, `/education/enrollments?page=1&pageSize=100`, { cookie: centerOwnerCookie });
+      assert.equal(allResp.status, 200, "Center owner must list enrollments.");
+      const allRows = await json<Array<{ id: string }>>(allResp);
+      const allOwnerVisible = new Set(allRows.map((r) => r.id));
+      // Every enrollment we inserted for the owner's own scope is visible.
+      for (const id of ownerEnrollmentIds) {
+        assert.ok(allOwnerVisible.has(id), "Owner-scoped enrollment must be visible to the center owner.");
+      }
+      // The other center's / other user's enrollment must be excluded in SQL.
+      assert.ok(!allOwnerVisible.has(otherEnrollmentId), "Another user's / another center's enrollment must be excluded from the SQL access predicate.");
+      // There must be enough rows for a second page.
+      assert.ok(allRows.length > pageSize, "Test requires more than one page of owner-visible enrollments.");
+
+      // Page 1
+      const page1Resp = await request(baseUrl, `/education/enrollments?page=1&pageSize=${pageSize}`, { cookie: centerOwnerCookie });
+      assert.equal(page1Resp.status, 200, "Center owner must list enrollments (page 1).");
+      const page1 = await json<Array<{ id: string }>>(page1Resp);
+      assert.equal(page1.length, pageSize, "Page 1 must return exactly pageSize rows.");
+      const page1Ids = new Set(page1.map((r) => r.id));
+      assert.ok(!page1Ids.has(otherEnrollmentId), "Another user's / another center's enrollment must be excluded (page 1).");
+
+      // Page 2 must be reachable with fresh, non-overlapping rows.
+      const page2Resp = await request(baseUrl, `/education/enrollments?page=2&pageSize=${pageSize}`, { cookie: centerOwnerCookie });
+      assert.equal(page2Resp.status, 200, "Center owner must reach page 2.");
+      const page2 = await json<Array<{ id: string }>>(page2Resp);
+      assert.ok(page2.length >= 1, "Page 2 must be reachable and return at least one row.");
+      assert.ok(!page2.some((r) => r.id === otherEnrollmentId), "Another user's / another center's enrollment must be excluded (page 2).");
+      // No overlap between page 1 and page 2 (stable ordering, non-overlapping slices).
+      for (const row of page2) {
+        assert.ok(!page1Ids.has(row.id), "Page 2 rows must not overlap page 1.");
+      }
+      // page1 ∪ page2 must equal the first 2*pageSize rows of the reference list.
+      const expectedFirstTwoPages = allRows.slice(0, page1.length + page2.length).map((r) => r.id);
+      const actualFirstTwoPages = [...page1.map((r) => r.id), ...page2.map((r) => r.id)];
+      assert.deepEqual(actualFirstTwoPages, expectedFirstTwoPages, "Paged slices must match the stably ordered reference list.");
+
+      console.log("✓ /education/enrollments: SQL predicate excludes other user/center; page 2 reachable.");
+    }
+
     console.log("\nAll Education extras tests passed. ✓");
   } finally {
     if (server) {
@@ -540,6 +935,10 @@ async function run(): Promise<void> {
     if (centerId) {
       await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
       await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    }
+    if (extraCenterIds.length) {
+      await db.delete(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, extraCenterIds));
+      await db.delete(educationCentersTable).where(inArray(educationCentersTable.id, extraCenterIds));
     }
     if (salonId) {
       await db.delete(employeesTable).where(eq(employeesTable.salonId, salonId));

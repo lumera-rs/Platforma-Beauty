@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { AdminLayout } from "./layout";
 import { 
   useAdminListSubscriptionPlans, 
@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Plus, Edit2, Trash2, CreditCard, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 
 export default function AdminSubscriptions() {
   const { data: plans, isLoading, error } = useAdminListSubscriptionPlans();
@@ -38,6 +39,8 @@ export default function AdminSubscriptions() {
     limits: { employees: 1, services: 10 },
     active: true
   });
+  // Raw string state so number inputs aren't clobbered while typing
+  const [rawNums, setRawNums] = useState({ price: "0", trialDays: "14", employees: "1", services: "10" });
   const [featureInput, setFeatureInput] = useState("");
 
   const handleOpenNew = () => {
@@ -46,6 +49,7 @@ export default function AdminSubscriptions() {
     setFormData({
       name: "", price: 0, trialDays: 14, features: [], limits: { employees: 1, services: 10 }, active: true
     });
+    setRawNums({ price: "0", trialDays: "14", employees: "1", services: "10" });
     setFeatureInput("");
     setIsModalOpen(true);
   };
@@ -56,6 +60,12 @@ export default function AdminSubscriptions() {
     setFormData({
       name: plan.name, price: plan.price, trialDays: plan.trialDays,
       features: plan.features || [], limits: plan.limits || {}, active: plan.active
+    });
+    setRawNums({
+      price: String(plan.price),
+      trialDays: String(plan.trialDays),
+      employees: String(plan.limits?.employees ?? 1),
+      services: String(plan.limits?.services ?? 10),
     });
     setFeatureInput("");
     setIsModalOpen(true);
@@ -71,27 +81,30 @@ export default function AdminSubscriptions() {
     setFormData(prev => ({ ...prev, features: (prev.features || []).filter((_, i) => i !== idx) }));
   };
 
-  const handleLimitChange = (key: string, val: number) => {
-    setFormData(prev => ({ ...prev, limits: { ...(prev.limits || {}), [key]: val } }));
-  };
-
   const handleSave = () => {
     if (!canManagePlans) return;
-    const name = formData.name.trim();
-    if (!name) { toast.error("Greška", { description: "Naziv plana je obavezan." }); return; }
-    const price = Number(formData.price);
-    if (!Number.isFinite(price) || price < 0) { toast.error("Greška", { description: "Cena mora biti 0 ili više." }); return; }
-    const trialDays = Number(formData.trialDays);
-    if (!Number.isFinite(trialDays) || trialDays < 0) { toast.error("Greška", { description: "Probni period ne može biti negativan." }); return; }
+    if (createPlan.isPending || updatePlan.isPending) return;
+    if (!formData.name?.trim()) {
+      toast.error("Greška", { description: "Ime je obavezno." });
+      return;
+    }
+    const priceParsed = parseStrictInt(rawNums.price, { label: "Cena", allowNegative: false, allowZero: true });
+    if (!priceParsed.ok) { toast.error("Greška", { description: priceParsed.message }); return; }
+    const trialParsed = parseStrictInt(rawNums.trialDays, { label: "Probni period", allowNegative: false, allowZero: true });
+    if (!trialParsed.ok) { toast.error("Greška", { description: trialParsed.message }); return; }
+    // Limits allow -1 for unlimited
+    const empParsed = parseStrictInt(rawNums.employees, { label: "Zaposleni", allowNegative: true, allowZero: true, min: -1 });
+    if (!empParsed.ok) { toast.error("Greška", { description: empParsed.message }); return; }
+    const srvParsed = parseStrictInt(rawNums.services, { label: "Usluge", allowNegative: true, allowZero: true, min: -1 });
+    if (!srvParsed.ok) { toast.error("Greška", { description: srvParsed.message }); return; }
 
     const payload: SubscriptionPlanInput = {
       ...formData,
-      name,
-      price: Math.round(price),
-      trialDays: Math.round(trialDays),
-      features: (formData.features || []).filter(f => f.trim()),
+      price: priceParsed.value,
+      trialDays: trialParsed.value,
+      limits: { ...(formData.limits || {}), employees: empParsed.value, services: srvParsed.value },
     };
-    
+
     if (editingPlan) {
       updatePlan.mutate({ planId: editingPlan.id, data: payload }, {
         onSuccess: () => {
@@ -99,10 +112,7 @@ export default function AdminSubscriptions() {
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
         },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast.error("Greška", { description: msg ?? "Pretplatnički plan nije sačuvan." });
-        },
+        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije sačuvan.") }),
       });
     } else {
       createPlan.mutate({ data: payload }, {
@@ -111,10 +121,7 @@ export default function AdminSubscriptions() {
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
         },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast.error("Greška", { description: msg ?? "Pretplatnički plan nije kreiran." });
-        },
+        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije kreiran.") }),
       });
     }
   };
@@ -240,11 +247,11 @@ export default function AdminSubscriptions() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="price">Cena (RSD mesečno)</Label>
-                <Input id="price" type="number" min="0" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
+                <Input id="price" type="number" min="0" value={rawNums.price} onChange={e => setRawNums({ ...rawNums, price: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="trial">Probni period (dana)</Label>
-                <Input id="trial" type="number" min="0" value={formData.trialDays} onChange={e => setFormData({...formData, trialDays: Number(e.target.value)})} />
+                <Input id="trial" type="number" min="0" value={rawNums.trialDays} onChange={e => setRawNums({ ...rawNums, trialDays: e.target.value })} />
               </div>
             </div>
 
@@ -253,11 +260,11 @@ export default function AdminSubscriptions() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="lim_emp" className="text-xs">Maksimalno zaposlenih</Label>
-                  <Input id="lim_emp" type="number" value={formData.limits?.employees ?? 1} onChange={e => handleLimitChange('employees', Number(e.target.value))} />
+                  <Input id="lim_emp" type="number" value={rawNums.employees} onChange={e => setRawNums({ ...rawNums, employees: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lim_srv" className="text-xs">Maksimalno usluga</Label>
-                  <Input id="lim_srv" type="number" value={formData.limits?.services ?? 10} onChange={e => handleLimitChange('services', Number(e.target.value))} />
+                  <Input id="lim_srv" type="number" value={rawNums.services} onChange={e => setRawNums({ ...rawNums, services: e.target.value })} />
                 </div>
               </div>
             </div>

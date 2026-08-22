@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AdminLayout } from "./layout";
+import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 import {
   getAdminListCourierServicesQueryKey,
   useAdminGetShippingConfig,
@@ -100,9 +101,11 @@ export default function AdminShipping() {
 
   const [tiers, setTiers] = useState<ShippingTier[]>([]);
   const [threshold, setThreshold] = useState(0);
+  const [thresholdRaw, setThresholdRaw] = useState("0");
   const [personalEnabled, setPersonalEnabled] = useState(false);
   const [personalName, setPersonalName] = useState("Lična dostava u Beogradu");
   const [personalPrice, setPersonalPrice] = useState(0);
+  const [personalPriceRaw, setPersonalPriceRaw] = useState("0");
   const [personalDescription, setPersonalDescription] = useState("Dostava na adresu u Beogradu.");
   const [draftWeight, setDraftWeight] = useState("");
   const [draftPrice, setDraftPrice] = useState("");
@@ -112,23 +115,25 @@ export default function AdminShipping() {
     if (config && !dirty) {
       setTiers(config.tiers);
       setThreshold(config.freeShippingThreshold);
+      setThresholdRaw(String(config.freeShippingThreshold));
       setPersonalEnabled(config.personalDeliveryEnabled);
       setPersonalName(config.personalDeliveryName);
       setPersonalPrice(config.personalDeliveryPrice);
+      setPersonalPriceRaw(String(config.personalDeliveryPrice));
       setPersonalDescription(config.personalDeliveryDescription);
     }
   }, [config, dirty]);
 
   const addTier = () => {
-    const maxKg = Number(draftWeight);
-    const price = Number(draftPrice);
-    if (draftWeight === "" || !Number.isFinite(maxKg) || maxKg <= 0) { toast.error("Greška", { description: "Unesite maksimalnu težinu ranga u kilogramima (mora biti > 0)." }); return; }
-    if (draftPrice === "" || !Number.isFinite(price) || price < 0) { toast.error("Greška", { description: "Unesite cenu dostave za ovaj rang (0 ili više)." }); return; }
-    const maxWeightGrams = Math.round(maxKg * 1000);
+    const weightParsed = parseStrictDecimal(draftWeight, { label: "Maksimalna težina", allowNegative: false, allowZero: false });
+    if (!weightParsed.ok) { toast.error("Greška", { description: weightParsed.message }); return; }
+    const priceParsed = parseStrictInt(draftPrice, { label: "Cena dostave", allowNegative: false, allowZero: true });
+    if (!priceParsed.ok) { toast.error("Greška", { description: priceParsed.message }); return; }
+    const maxWeightGrams = Math.round(weightParsed.value * 1000);
     if (tiers.some((t) => t.maxWeightGrams === maxWeightGrams)) {
       toast.error("Greška", { description: "Rang sa ovom težinom već postoji." }); return;
     }
-    const next = [...tiers, { maxWeightGrams, price: Math.round(price), label: `do ${formatWeight(maxWeightGrams)}` }]
+    const next = [...tiers, { maxWeightGrams, price: priceParsed.value, label: `do ${formatWeight(maxWeightGrams)}` }]
       .sort((a, b) => a.maxWeightGrams - b.maxWeightGrams);
     setTiers(next);
     setDraftWeight("");
@@ -142,23 +147,23 @@ export default function AdminShipping() {
   };
 
   const handleSave = () => {
-    const trimmedName = personalName.trim();
-    if (!trimmedName) { toast.error("Greška", { description: "Naziv metode lične dostave je obavezan." }); return; }
-    const thresholdVal = Number(threshold);
-    if (!Number.isFinite(thresholdVal) || thresholdVal < 0) { toast.error("Greška", { description: "Prag besplatne dostave ne može biti negativan." }); return; }
-    const personalPriceVal = Number(personalPrice);
-    if (!Number.isFinite(personalPriceVal) || personalPriceVal < 0) { toast.error("Greška", { description: "Cena lične dostave ne može biti negativna." }); return; }
+    if (updateConfig.isPending) return;
+    const thresholdParsed = parseStrictInt(thresholdRaw, { label: "Prag besplatne dostave", allowNegative: false, allowZero: true });
+    if (!thresholdParsed.ok) { toast.error("Greška", { description: thresholdParsed.message }); return; }
+    const personalPriceParsed = parseStrictInt(personalPriceRaw, { label: "Cena lične dostave", allowNegative: false, allowZero: true });
+    if (!personalPriceParsed.ok) { toast.error("Greška", { description: personalPriceParsed.message }); return; }
     updateConfig.mutate(
-      { data: { freeShippingThreshold: Math.round(thresholdVal), tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: trimmedName, personalDeliveryPrice: Math.round(personalPriceVal), personalDeliveryDescription: personalDescription.trim() } },
+      { data: { freeShippingThreshold: thresholdParsed.value, tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: personalName, personalDeliveryPrice: personalPriceParsed.value, personalDeliveryDescription: personalDescription } },
       {
         onSuccess: () => {
+          setThreshold(thresholdParsed.value);
+          setPersonalPrice(personalPriceParsed.value);
           toast.success("Sačuvano", { description: "Podešavanja dostave su ažurirana." });
           queryClient.invalidateQueries({ queryKey: getAdminGetShippingConfigQueryKey() });
           setDirty(false);
         },
         onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast.error("Greška", { description: msg ?? "Podešavanja nisu sačuvana." });
+          toast.error("Greška", { description: extractApiError(err, "Podešavanja nisu sačuvana.") });
         },
       }
     );
@@ -236,7 +241,7 @@ export default function AdminShipping() {
               <label className="flex items-center gap-3 rounded-lg border p-3 cursor-pointer"><input type="checkbox" checked={personalEnabled} onChange={e => { setPersonalEnabled(e.target.checked); setDirty(true); }} /><span className="text-sm font-medium">Uključi ličnu dostavu</span></label>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1"><Label>Naziv metode</Label><Input value={personalName} onChange={e => { setPersonalName(e.target.value); setDirty(true); }} /></div>
-                <div className="space-y-1"><Label>Cena (RSD)</Label><Input type="number" min="0" value={personalPrice} onChange={e => { setPersonalPrice(Number(e.target.value)); setDirty(true); }} /></div>
+                <div className="space-y-1"><Label>Cena (RSD)</Label><Input type="number" min="0" value={personalPriceRaw} onChange={e => { setPersonalPriceRaw(e.target.value); setDirty(true); }} /></div>
                 <div className="space-y-1 sm:col-span-2"><Label>Opis za kupca</Label><Input value={personalDescription} onChange={e => { setPersonalDescription(e.target.value); setDirty(true); }} /></div>
               </div>
             </div>
@@ -255,8 +260,8 @@ export default function AdminShipping() {
               <div className="flex items-center gap-3 max-w-xs">
                 <Input
                   type="number" min="0"
-                  value={threshold}
-                  onChange={(e) => { setThreshold(Number(e.target.value)); setDirty(true); }}
+                  value={thresholdRaw}
+                  onChange={(e) => { setThresholdRaw(e.target.value); setDirty(true); }}
                   data-testid="input-free-shipping-threshold"
                 />
                 <span className="text-sm text-muted-foreground shrink-0">RSD</span>

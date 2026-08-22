@@ -9,26 +9,19 @@
 export interface AdminProductCategoryInput {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
   parentId?: string | null;
   /**
      * @minimum 0
-     * @maximum 9999
+     * @maximum 100000
      */
   sortOrder?: number;
-  /**
-     * @maxLength 10
-     * @nullable
-     */
+  /** @nullable */
   icon?: string | null;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
+  /** @nullable */
   imageUrl?: string | null;
   active?: boolean;
 }

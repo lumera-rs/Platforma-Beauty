@@ -10,4 +10,15 @@ export type ListSalonAppointmentsParams = {
 from?: Date;
 to?: Date;
 status?: string;
+/**
+ * 1-based page number for stable pagination (date asc, startTime asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of appointments per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

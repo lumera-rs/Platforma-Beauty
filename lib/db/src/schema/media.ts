@@ -78,7 +78,10 @@ export const mediaUploadTicketsTable = pgTable("media_upload_tickets", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("media_upload_tickets_staging_path_unique").on(table.stagingObjectPath),
+  // ownerUserId is leading — covers FK.
   index("media_upload_tickets_owner_expires_idx").on(table.ownerUserId, table.expiresAt),
   index("media_upload_tickets_cleanup_idx").on(table.expiresAt, table.finalizedAt),
   index("media_upload_tickets_test_cleanup_idx").on(table.testCleanupKey),
+  // Leading FK coverage for finalizedAssetId.
+  index("media_upload_tickets_finalized_asset_idx").on(table.finalizedAssetId),
 ]);

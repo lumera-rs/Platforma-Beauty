@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import {
-  Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronRight,
+  Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight,
   Clock3, Filter, Loader2, MapPin, ShieldCheck, Sparkles, Star, Users, Zap,
 } from "lucide-react";
 import {
@@ -158,22 +158,28 @@ function CourseGrid({ courses, onBuy, buying }: { courses?: PublicCourse[]; onBu
   return <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">{courses.map((course) => <EducationCourseCard key={course.id} course={course} onBuy={onBuy} buying={buying} />)}</div>;
 }
 
+const EDUCATION_PAGE_SIZE = 24;
+
 export default function EducationMarketplace() {
   const [filters, setFilters] = useState<PublicFilters>({});
+  const [page, setPage] = useState(1);
   const { data: categories } = useListPublicEducationCategories();
-  const { data: courses } = useListPublicEducationCourses(filters as any);
+  const { data: courses } = useListPublicEducationCourses({ ...filters, page, pageSize: EDUCATION_PAGE_SIZE } as any);
   const { data: featuredCourses } = useListFeaturedEducationCourses();
   const { data: popularCourses } = useListPopularEducationCourses({ limit: 6 });
   const { buy, buying } = useEducationPurchase();
 
   const activeFilters = Object.keys(filters).length;
   const setFilter = <K extends keyof PublicFilters>(key: K, value: PublicFilters[K] | undefined) => {
+    setPage(1); // Reset to the first page whenever a filter changes.
     setFilters((previous) => {
       const next = { ...previous, [key]: value };
       if (value === undefined || value === "") delete next[key];
       return next;
     });
   };
+  // Bare-array response: a full page implies another page may exist.
+  const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
 
   return (
     <Layout>
@@ -205,7 +211,7 @@ export default function EducationMarketplace() {
 
         <section className="grid gap-8 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="h-fit rounded-xl border bg-card p-5 lg:sticky lg:top-24">
-            <div className="mb-5 flex items-center justify-between border-b pb-4"><span className="flex items-center gap-2 font-semibold"><Filter className="h-4 w-4" /> Filteri</span>{activeFilters ? <Button variant="ghost" size="sm" onClick={() => setFilters({})}>Poništi</Button> : null}</div>
+            <div className="mb-5 flex items-center justify-between border-b pb-4"><span className="flex items-center gap-2 font-semibold"><Filter className="h-4 w-4" /> Filteri</span>{activeFilters ? <Button variant="ghost" size="sm" onClick={() => { setPage(1); setFilters({}); }}>Poništi</Button> : null}</div>
             <div className="space-y-4">
               <div className="space-y-2"><Label htmlFor="education-city">Grad</Label><Input id="education-city" value={filters.city ?? ""} placeholder="Beograd, Novi Sad..." onChange={(event) => setFilter("city", event.target.value || undefined)} /></div>
               <div className="space-y-2"><Label>Format</Label><Select value={filters.format ?? "all"} onValueChange={(value) => setFilter("format", value === "all" ? undefined : value as PublicFilters["format"])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Svi formati</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="in-person">Uživo</SelectItem><SelectItem value="hybrid">Hibridno</SelectItem></SelectContent></Select></div>
@@ -218,6 +224,17 @@ export default function EducationMarketplace() {
           <div>
             <div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-sm text-muted-foreground">Verifikovani centri i aktivni termini</p><h2 className="font-serif text-3xl font-bold">Sve edukacije</h2></div>{courses ? <Badge variant="secondary">{courses.length} dostupno</Badge> : null}</div>
             <CourseGrid courses={courses} onBuy={buy} buying={buying} />
+            {(page > 1 || hasNextPage) ? (
+              <div className="mt-8 flex items-center justify-between gap-4">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+                  <ChevronLeft className="mr-1 h-4 w-4" /> Prethodna
+                </Button>
+                <span className="text-sm text-muted-foreground">Strana {page}</span>
+                <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage((current) => current + 1)}>
+                  Sledeća <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
           </div>
         </section>
       </main>

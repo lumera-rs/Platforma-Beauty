@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { pool } from "@workspace/db";
 import {
+  CatalogCache,
   catalogCacheKey,
   catalogCacheStats,
   invalidateCatalogCache,
@@ -37,6 +38,7 @@ async function runChildInvalidator(namespace: string): Promise<void> {
 }
 
 async function run(): Promise<void> {
+  process.env.NODE_ENV = "test";
   const suffix = randomUUID();
 
   let cachedLoads = 0;
@@ -64,10 +66,19 @@ async function run(): Promise<void> {
 
   let ttlLoads = 0;
   const ttlKey = catalogCacheKey("education-categories", `ttl-${suffix}`);
-  await readThroughCatalogCache(ttlKey, async () => ++ttlLoads, 10);
-  await pause(25);
-  await readThroughCatalogCache(ttlKey, async () => ++ttlLoads, 10);
-  assert.equal(ttlLoads, 2, "an expired cache entry must be refreshed");
+  const realNow = Date.now;
+  let now = 10_000;
+  Date.now = () => now;
+  try {
+    await readThroughCatalogCache(ttlKey, async () => ++ttlLoads, 10);
+    now += 5 * 60_000 - 1;
+    await readThroughCatalogCache(ttlKey, async () => ++ttlLoads, 10);
+    now += 2;
+    await readThroughCatalogCache(ttlKey, async () => ++ttlLoads, 10);
+    assert.equal(ttlLoads, 2, "an expired cache entry must be refreshed");
+  } finally {
+    Date.now = realNow;
+  }
 
   await invalidateCatalogCache("brands");
   const refreshed = await readThroughCatalogCache(cachedKey, cachedLoader);
@@ -99,6 +110,23 @@ async function run(): Promise<void> {
   await pause(150);
   await readThroughCatalogCache(crossProcessKey, async () => ++crossProcessLoads);
   assert.equal(crossProcessLoads, 2, "a PostgreSQL notification from another process must evict the namespace");
+
+  const boundedCache = new CatalogCache({ maxEntries: 2 });
+  boundedCache.set("oldest", 1, ["cities", "salons"]);
+  boundedCache.set("newest", 2);
+  await boundedCache.getOrLoad("oldest", ["cities", "salons"], async () => 99);
+  boundedCache.set("replacement", 3);
+  assert.equal(boundedCache.getTestStatus().size, 2, "cache must remain LRU-bounded");
+  assert.equal(await boundedCache.getOrLoad("newest", [], async () => 4), 4);
+
+  const taggedCache = new CatalogCache();
+  taggedCache.set("city", 1, ["cities", "salons"]);
+  taggedCache.invalidateTag("salons");
+  assert.equal(
+    await taggedCache.getOrLoad("city", ["cities", "salons"], async () => 5),
+    5,
+    "invalidating salons must evict a city entry carrying both tags",
+  );
 
   const stats = catalogCacheStats();
   assert.ok(stats.entries > 0);

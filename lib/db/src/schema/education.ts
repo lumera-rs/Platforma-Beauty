@@ -46,7 +46,11 @@ export const educationCentersTable = pgTable("education_centers", {
   verifiedByUserId: uuid("verified_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for ownerId and verifiedByUserId.
+  index("education_centers_owner_idx").on(table.ownerId),
+  index("education_centers_verified_by_idx").on(table.verifiedByUserId),
+]);
 
 export const educationCenterSubscriptionsTable = pgTable("education_center_subscriptions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -58,7 +62,10 @@ export const educationCenterSubscriptionsTable = pgTable("education_center_subsc
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for planId (all education centers on a plan).
+  index("education_center_subscriptions_plan_idx").on(table.planId),
+]);
 
 export const educationPlatformSettingsTable = pgTable("education_platform_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -70,7 +77,10 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for updatedByUserId (audit trail).
+  index("education_platform_settings_updated_by_idx").on(table.updatedByUserId),
+]);
 
 export const courseCategoriesTable = pgTable("course_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -113,9 +123,17 @@ export const coursesTable = pgTable("courses", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index("courses_center_idx").on(table.centerId),
+  // Course catalog: published/active courses by center, category, format, city.
+  index("courses_center_published_idx").on(table.centerId, table.published, table.archived),
+  index("courses_category_published_idx").on(table.categoryId, table.published, table.archived),
+  index("courses_format_city_published_idx").on(table.format, table.city, table.published),
+  index("courses_featured_until_idx").on(table.isFeatured, table.featuredUntil),
+  // Directory ORDER BY created_at (published/active courses sorted by newest).
+  index("courses_published_archived_created_idx").on(table.published, table.archived, table.createdAt),
+  // Leading FK coverage for salonId, instructorId, instructorProfileId.
   index("courses_salon_idx").on(table.salonId),
-  index("courses_category_idx").on(table.categoryId),
+  index("courses_instructor_idx").on(table.instructorId),
+  index("courses_instructor_profile_idx").on(table.instructorProfileId),
 ]);
 
 /**
@@ -148,6 +166,7 @@ export const educationMediaTable = pgTable("education_media", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Both FK columns are leading in their respective composites.
   index("education_media_course_sort_idx").on(table.courseId, table.sortOrder),
   index("education_media_center_sort_idx").on(table.centerId, table.sortOrder),
 ]);
@@ -170,9 +189,12 @@ export const educationMediaUploadsTable = pgTable("education_media_uploads", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("education_media_uploads_object_path_unique").on(table.objectPath),
+  // courseId is leading in this composite — covers the FK.
   index("education_media_uploads_course_expires_idx").on(table.courseId, table.expiresAt),
   index("education_media_uploads_cleanup_idx").on(table.expiresAt, table.attachedAt),
   index("education_media_uploads_cleanup_failures_idx").on(table.cleanupFailureCount, table.createdAt),
+  // Leading FK coverage for centerId.
+  index("education_media_uploads_center_idx").on(table.centerId),
 ]);
 
 export const courseReviewsTable = pgTable("course_reviews", {
@@ -186,7 +208,10 @@ export const courseReviewsTable = pgTable("course_reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // courseId is leading — covers FK.
   index("course_reviews_course_status_created_idx").on(table.courseId, table.status, table.createdAt),
+  // Leading FK coverage for userId (all reviews written by a user).
+  index("course_reviews_user_idx").on(table.userId),
 ]);
 
 export const educationFeaturedChargeStatusEnum = pgEnum("education_featured_charge_status", ["pending", "paid", "cancelled", "refunded"]);
@@ -208,8 +233,14 @@ export const educationFeaturedChargesTable = pgTable("education_featured_charges
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // courseId is leading — covers FK.
   index("education_featured_charges_course_created_idx").on(table.courseId, table.createdAt),
   index("education_featured_charges_status_idx").on(table.status, table.createdAt),
+  // Leading FK coverage for centerId, salonId, and actor FKs.
+  index("education_featured_charges_center_idx").on(table.centerId),
+  index("education_featured_charges_salon_idx").on(table.salonId),
+  index("education_featured_charges_activated_by_idx").on(table.activatedByUserId),
+  index("education_featured_charges_settled_by_idx").on(table.settledByUserId),
 ]);
 
 export const courseSessionsTable = pgTable("course_sessions", {
@@ -225,7 +256,9 @@ export const courseSessionsTable = pgTable("course_sessions", {
   cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index("course_sessions_course_starts_idx").on(table.courseId, table.startsAt),
+  // Session schedule: all upcoming sessions for a course ordered by start time.
+  // courseId is leading — covers FK.
+  index("course_sessions_course_starts_at_idx").on(table.courseId, table.startsAt),
 ]);
 
 export const courseModulesTable = pgTable("course_modules", {
@@ -235,6 +268,7 @@ export const courseModulesTable = pgTable("course_modules", {
   description: text("description").notNull().default(""),
   sortOrder: integer("sort_order").notNull().default(0),
 }, (table) => [
+  // courseId is leading — covers FK.
   index("course_modules_course_sort_idx").on(table.courseId, table.sortOrder),
 ]);
 
@@ -247,6 +281,7 @@ export const courseLessonsTable = pgTable("course_lessons", {
   durationMinutes: integer("duration_minutes").notNull().default(30),
   sortOrder: integer("sort_order").notNull().default(0),
 }, (table) => [
+  // moduleId is leading — covers FK.
   index("course_lessons_module_sort_idx").on(table.moduleId, table.sortOrder),
 ]);
 
@@ -280,15 +315,20 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // courseId is leading in the unique index — covers FK.
   uniqueIndex("course_enrollments_course_purchaser_participant_unique")
     .on(table.courseId, table.purchaserId, table.participantKey)
     .where(sql`${table.status} <> 'cancelled'`),
+  // purchaserId is leading in idempotency unique — covers purchaser FK.
   uniqueIndex("course_enrollments_purchaser_idempotency_unique")
     .on(table.purchaserId, table.idempotencyKey)
     .where(sql`${table.idempotencyKey} is not null`),
+  // sessionId is leading — covers FK.
   index("course_enrollments_session_status_idx").on(table.sessionId, table.status),
-  index("course_enrollments_purchaser_idx").on(table.purchaserId),
-  index("course_enrollments_user_idx").on(table.userId),
+  // Leading FK coverage for userId, salonId, employeeId.
+  index("course_enrollments_user_status_idx").on(table.userId, table.status),
+  index("course_enrollments_salon_idx").on(table.salonId),
+  index("course_enrollments_employee_idx").on(table.employeeId),
 ]);
 
 export const educationWaitlistTable = pgTable("education_waitlist", {
@@ -306,9 +346,15 @@ export const educationWaitlistTable = pgTable("education_waitlist", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // sessionId is leading in both uniques — covers that FK.
   uniqueIndex("education_waitlist_session_user_unique").on(table.sessionId, table.userId).where(sql`${table.status} in ('waiting', 'offered')`),
   uniqueIndex("education_waitlist_session_position_unique").on(table.sessionId, table.position).where(sql`${table.status} in ('waiting', 'offered')`),
   index("education_waitlist_session_status_idx").on(table.sessionId, table.status, table.position),
+  // Leading FK coverage for courseId, userId, purchaserId, employeeId.
+  index("education_waitlist_course_idx").on(table.courseId),
+  index("education_waitlist_user_idx").on(table.userId),
+  index("education_waitlist_purchaser_idx").on(table.purchaserId),
+  index("education_waitlist_employee_idx").on(table.employeeId),
 ]);
 
 export const educationInstructorsTable = pgTable("education_instructors", {
@@ -324,7 +370,11 @@ export const educationInstructorsTable = pgTable("education_instructors", {
   qualifications: jsonb("qualifications").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for centerId and userId.
+  index("education_instructors_center_idx").on(table.centerId),
+  index("education_instructors_user_idx").on(table.userId),
+]);
 
 export const educationNotificationsTable = pgTable("education_notifications", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -339,36 +389,14 @@ export const educationNotificationsTable = pgTable("education_notifications", {
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // userId is leading — covers FK and is the primary inbox query.
   index("education_notifications_user_created_idx").on(table.userId, table.createdAt),
+  // Leading FK coverage for enrollmentId and waitlistId.
+  index("education_notifications_enrollment_idx").on(table.enrollmentId),
+  index("education_notifications_waitlist_idx").on(table.waitlistId),
   index("education_notifications_retention_idx")
     .on(table.createdAt)
     .where(sql`${table.readAt} is not null`),
-]);
-
-/**
- * Cold storage for education notifications older than the live-retention window.
- * Rows are copied here verbatim before deletion from
- * {@link educationNotificationsTable}. No foreign keys and no request-path
- * writes: the archive is populated only by the batch archiver. The original
- * {@link eventKey} is preserved but intentionally NOT unique here so that
- * re-runs after a partial move can never fail on a duplicate; the archiver's
- * copy-then-delete is guarded by an advisory lock and keyed on the primary id.
- */
-export const educationNotificationsArchiveTable = pgTable("education_notifications_archive", {
-  id: uuid("id").primaryKey(),
-  userId: uuid("user_id").notNull(),
-  enrollmentId: uuid("enrollment_id"),
-  waitlistId: uuid("waitlist_id"),
-  type: text("type").notNull(),
-  title: text("title").notNull(),
-  body: text("body").notNull(),
-  actionUrl: text("action_url"),
-  eventKey: text("event_key").notNull(),
-  readAt: timestamp("read_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  index("education_notifications_archive_user_created_idx").on(table.userId, table.createdAt),
 ]);
 
 export const educationEscrowsTable = pgTable("education_escrows", {
@@ -389,6 +417,7 @@ export const educationEscrowsTable = pgTable("education_escrows", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // centerId is leading — covers FK.
   index("education_escrows_center_status_idx").on(table.centerId, table.status),
   index("education_escrows_release_idx").on(table.status, table.releaseAt),
 ]);
@@ -406,14 +435,19 @@ export const educationLedgerEntriesTable = pgTable("education_ledger_entries", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // centerId is leading — covers FK.
   index("education_ledger_center_created_idx").on(table.centerId, table.createdAt),
+  // enrollmentId is leading — covers FK.
   index("education_ledger_enrollment_created_idx").on(table.enrollmentId, table.createdAt),
+  // escrowId is leading in both partial uniques — covers FK.
   uniqueIndex("education_ledger_release_per_escrow_unique")
     .on(table.escrowId)
     .where(sql`${table.type} = 'release'`),
   uniqueIndex("education_ledger_refund_per_escrow_unique")
     .on(table.escrowId)
     .where(sql`${table.type} = 'refund'`),
+  // Leading FK coverage for actorUserId.
+  index("education_ledger_actor_idx").on(table.actorUserId),
 ]);
 
 export const educationPayoutsTable = pgTable("education_payouts", {
@@ -428,7 +462,11 @@ export const educationPayoutsTable = pgTable("education_payouts", {
   createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for centerId and createdByUserId.
+  index("education_payouts_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_payouts_created_by_idx").on(table.createdByUserId),
+]);
 
 export const educationFinancialEventsTable = pgTable("education_financial_events", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -443,10 +481,14 @@ export const educationFinancialEventsTable = pgTable("education_financial_events
   metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // escrowId is leading — covers FK.
   index("education_financial_events_escrow_created_idx").on(table.escrowId, table.createdAt),
   uniqueIndex("education_financial_events_release_per_escrow_unique")
     .on(table.escrowId)
     .where(sql`${table.eventType} = 'escrow_released'`),
+  // Leading FK coverage for enrollmentId and actorUserId.
+  index("education_financial_events_enrollment_idx").on(table.enrollmentId),
+  index("education_financial_events_actor_idx").on(table.actorUserId),
 ]);
 
 export const educationDisputesTable = pgTable("education_disputes", {
@@ -463,9 +505,13 @@ export const educationDisputesTable = pgTable("education_disputes", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_disputes_status_created_idx").on(table.status, table.createdAt),
+  // enrollmentId is leading in partial unique — covers FK.
   uniqueIndex("education_disputes_one_active_per_enrollment_unique")
     .on(table.enrollmentId)
     .where(sql`${table.status} in ('open', 'under_review')`),
+  // Leading FK coverage for openedByUserId and resolvedByUserId.
+  index("education_disputes_opened_by_idx").on(table.openedByUserId),
+  index("education_disputes_resolved_by_idx").on(table.resolvedByUserId),
 ]);
 
 export const educationThreadsTable = pgTable("education_threads", {
@@ -476,7 +522,11 @@ export const educationThreadsTable = pgTable("education_threads", {
   status: educationThreadStatusEnum("status").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for purchaserId and centerId.
+  index("education_threads_purchaser_idx").on(table.purchaserId),
+  index("education_threads_center_idx").on(table.centerId),
+]);
 
 export const educationMessagesTable = pgTable("education_messages", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -486,7 +536,10 @@ export const educationMessagesTable = pgTable("education_messages", {
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // threadId is leading — covers FK.
   index("education_messages_thread_created_idx").on(table.threadId, table.createdAt),
+  // Leading FK coverage for senderId.
+  index("education_messages_sender_idx").on(table.senderId),
 ]);
 
 export const lessonProgressTable = pgTable("lesson_progress", {
@@ -496,5 +549,26 @@ export const lessonProgressTable = pgTable("lesson_progress", {
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
   completedByUserId: uuid("completed_by_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
 }, (table) => [
-  index("lesson_progress_enrollment_lesson_idx").on(table.enrollmentId, table.lessonId),
+  // enrollmentId is leading in unique — covers FK.
+  uniqueIndex("lesson_progress_enrollment_lesson_unique").on(table.enrollmentId, table.lessonId),
+  index("lesson_progress_enrollment_idx").on(table.enrollmentId),
+  // Leading FK coverage for lessonId and completedByUserId.
+  index("lesson_progress_lesson_idx").on(table.lessonId),
+  index("lesson_progress_completed_by_idx").on(table.completedByUserId),
+]);
+
+// ---------------------------------------------------------------------------
+// Education notification archive.
+// Immutable copy of education_notifications rows, keyed by the originating
+// notification id (sourceId = education_notifications.event_key).
+// ---------------------------------------------------------------------------
+export const educationNotificationArchivesTable = pgTable("education_notification_archives", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Stable reference back to education_notifications.event_key. */
+  sourceId: text("source_id").notNull().unique(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  originalCreatedAt: timestamp("original_created_at", { withTimezone: true }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_notification_archives_archived_at_idx").on(table.archivedAt),
 ]);

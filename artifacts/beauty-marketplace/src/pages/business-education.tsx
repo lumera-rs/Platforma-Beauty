@@ -226,8 +226,12 @@ function StudentEducationInbox() {
   );
 }
 
+const ENROLLMENTS_PAGE_SIZE = 20;
+
 function StudentLearningView() {
-  const { data: enrollments, isLoading, isError } = useListEnrollments();
+  const [page, setPage] = useState(1);
+  const { data: enrollments, isLoading, isError } = useListEnrollments({ page, pageSize: ENROLLMENTS_PAGE_SIZE });
+  const hasNext = (enrollments?.length ?? 0) === ENROLLMENTS_PAGE_SIZE;
   return <div className="container mx-auto max-w-5xl px-4 py-10">
     <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> STUDENT</Badge>
     <h1 className="font-serif text-3xl font-bold">Moje edukacije</h1>
@@ -235,13 +239,31 @@ function StudentLearningView() {
     <StudentEducationInbox />
     {isLoading ? <div className="mt-8 grid gap-4 md:grid-cols-2">{[1, 2].map((item) => <Skeleton key={item} className="h-44 rounded-xl" />)}</div>
       : isError ? <Card className="mt-8"><CardContent className="py-10 text-center">Edukacije trenutno nisu dostupne.</CardContent></Card>
-        : enrollments?.length ? <div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={`/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div>
-          : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
+        : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={`/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
+          : page > 1 ? <Card className="mt-8"><CardContent className="py-10 text-center"><p className="text-sm text-muted-foreground">Nema više edukacija.</p><Button variant="outline" className="mt-4" onClick={() => setPage((p) => Math.max(1, p - 1))}>Nazad</Button></CardContent></Card>
+            : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
   </div>;
 }
 
+function EnrollmentsPager({ page, hasNext, onChange }: { page: number; hasNext: boolean; onChange: (updater: (prev: number) => number) => void }) {
+  if (page <= 1 && !hasNext) return null;
+  return (
+    <div className="mt-8 flex items-center justify-center gap-3">
+      <Button variant="outline" disabled={page <= 1} onClick={() => onChange((p) => Math.max(1, p - 1))}>
+        <ArrowLeft className="mr-1.5 h-4 w-4" /> Prethodna
+      </Button>
+      <span className="text-sm text-muted-foreground">Strana {page}</span>
+      <Button variant="outline" disabled={!hasNext} onClick={() => onChange((p) => p + 1)}>
+        Sledeća <ArrowRight className="ml-1.5 h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
 function EmployeeLearningView() {
-  const { data: enrollments, isLoading, isError } = useListEnrollments();
+  const [page, setPage] = useState(1);
+  const { data: enrollments, isLoading, isError } = useListEnrollments({ page, pageSize: ENROLLMENTS_PAGE_SIZE });
+  const hasNext = (enrollments?.length ?? 0) === ENROLLMENTS_PAGE_SIZE;
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-8 sm:py-12">
@@ -278,12 +300,17 @@ function EmployeeLearningView() {
             </Card>
           ))}
         </div>
+      ) : page > 1 ? (
+        <Card><CardContent className="py-10 text-center"><p className="text-sm text-muted-foreground">Nema više edukacija.</p><Button variant="outline" className="mt-4" onClick={() => setPage((p) => Math.max(1, p - 1))}>Nazad</Button></CardContent></Card>
       ) : (
         <Card><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate dodeljenih edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada vas vlasnik salona upiše na kurs, pojaviće se ovde.</p></CardContent></Card>
       )}
+      {!isLoading && !isError && !!enrollments?.length && <EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} />}
     </div>
   );
 }
+
+const EDUCATION_PAGE_SIZE = 24;
 
 function CatalogView() {
   const { data: userResponse } = useGetCurrentUser();
@@ -292,17 +319,21 @@ function CatalogView() {
   const isEducationCenter = user?.role === 'EDUCATION_CENTER_OWNER';
 
   const [filters, setFilters] = useState<any>({});
-  const { data: courses, isLoading } = useListCourses(filters);
+  const [page, setPage] = useState(1);
+  const { data: courses, isLoading } = useListCourses({ ...filters, page, pageSize: EDUCATION_PAGE_SIZE });
   const [createOpen, setCreateOpen] = useState(false);
   const [instructorsOpen, setInstructorsOpen] = useState(false);
 
   const handleFilterChange = (key: string, value: any) => {
+    setPage(1); // Reset to the first page whenever a filter changes.
     setFilters((prev: any) => {
       const updated = { ...prev, [key]: value };
       if (value === undefined || value === "") delete updated[key];
       return updated;
     });
   };
+  // Bare-array response: a full page implies another page may exist.
+  const hasNextPage = (courses?.length ?? 0) === EDUCATION_PAGE_SIZE;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -490,8 +521,19 @@ function CatalogView() {
               <h3 className="text-xl font-serif font-medium text-foreground mb-2">Nema pronađenih edukacija</h3>
               <p className="text-muted-foreground max-w-md">Pokušajte da promenite filtere pretrage ili uklonite neke od kriterijuma kako biste videli više rezultata.</p>
               {Object.keys(filters).length > 0 && (
-                <Button variant="outline" className="mt-6" onClick={() => setFilters({})}>Poništi sve filtere</Button>
+                <Button variant="outline" className="mt-6" onClick={() => { setPage(1); setFilters({}); }}>Poništi sve filtere</Button>
               )}
+            </div>
+          )}
+          {!isLoading && (page > 1 || hasNextPage) && (
+            <div className="flex items-center justify-between gap-4 pt-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+                <ArrowLeft className="w-4 h-4 mr-1.5" /> Prethodna
+              </Button>
+              <span className="text-sm text-muted-foreground">Strana {page}</span>
+              <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage((current) => current + 1)}>
+                Sledeća <ArrowRight className="w-4 h-4 ml-1.5" />
+              </Button>
             </div>
           )}
         </div>
@@ -520,7 +562,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 
   const isEducationCenter = user?.role === "EDUCATION_CENTER_OWNER";
 
-  const { data: enrollments } = useListEnrollments({ query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
+  const { data: enrollments } = useListEnrollments(undefined, { query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
   const { data: employees } = useListSalonEmployees({
     query: {
       enabled: user?.role === "SALON_OWNER",

@@ -12,6 +12,7 @@ import {
   getGetMarketplaceHomeDiscoveryQueryKey,
 } from "@workspace/api-client-react";
 import type { AdminProductCategory, AdminProductCategoryInput, AdminServiceCategory } from "@workspace/api-client-react";
+import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,15 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 
-const emptyForm: AdminProductCategoryInput = { name: "", parentId: null, sortOrder: 0, icon: null, imageUrl: null, active: true };
-
-function trimCategoryForm(form: AdminProductCategoryInput): AdminProductCategoryInput {
-  return {
-    ...form,
-    name: form.name.trim(),
-    icon: form.icon?.trim() || null,
-  };
-}
+const emptyForm: AdminProductCategoryInput & { sortOrderRaw: string } = { name: "", parentId: null, sortOrder: 0, sortOrderRaw: "0", icon: null, imageUrl: null, active: true };
 
 export default function AdminCategories() {
   const { data: categories = [], isLoading, error } = useAdminListProductCategories();
@@ -51,7 +44,7 @@ export default function AdminCategories() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminProductCategory | null>(null);
-  const [form, setForm] = useState<AdminProductCategoryInput>(emptyForm);
+  const [form, setForm] = useState<AdminProductCategoryInput & { sortOrderRaw: string }>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<AdminProductCategory | null>(null);
   const [serviceImageDrafts, setServiceImageDrafts] = useState<Record<string, string>>({});
   const [uploadingServiceCategoryId, setUploadingServiceCategoryId] = useState<string | null>(null);
@@ -83,8 +76,7 @@ export default function AdminCategories() {
       invalidateServiceCategories();
       toast.success("Sačuvano", { description: `Rezervna fotografija za „${category.name}“ je ažurirana.` });
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      toast.error("Slika nije sačuvana", { description: msg ?? "Pokušajte ponovo." });
+      toast.error("Slika nije sačuvana", { description: extractApiError(err, "Pokušajte ponovo.") });
     } finally {
       setSavingServiceCategoryId(null);
     }
@@ -125,7 +117,8 @@ export default function AdminCategories() {
   const openNew = (parentId: string | null = null) => {
     setEditing(null);
     const siblings = parentId ? childrenOf(parentId) : parents;
-    setForm({ ...emptyForm, parentId, sortOrder: siblings.length + 1 });
+    const sortOrder = siblings.length + 1;
+    setForm({ ...emptyForm, parentId, sortOrder, sortOrderRaw: String(sortOrder) });
     setModalOpen(true);
   };
 
@@ -135,6 +128,7 @@ export default function AdminCategories() {
       name: cat.name,
       parentId: cat.parentId ?? null,
       sortOrder: cat.sortOrder,
+      sortOrderRaw: String(cat.sortOrder),
       icon: cat.icon ?? null,
       imageUrl: cat.imageUrl ?? null,
       active: cat.active,
@@ -143,11 +137,12 @@ export default function AdminCategories() {
   };
 
   const handleSave = () => {
-    const trimmed = trimCategoryForm(form);
-    if (!trimmed.name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
-    const sortOrder = Number(trimmed.sortOrder);
-    if (!Number.isFinite(sortOrder) || sortOrder < 0) { toast.error("Greška", { description: "Redosled mora biti nenegativan broj." }); return; }
-    const payload: AdminProductCategoryInput = { ...trimmed, sortOrder: Math.round(sortOrder) };
+    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const sortParsed = parseStrictInt(form.sortOrderRaw, { label: "Redosled", allowNegative: false, allowZero: true });
+    if (!sortParsed.ok) { toast.error("Greška", { description: sortParsed.message }); return; }
+    const data: AdminProductCategoryInput = { ...form, sortOrder: sortParsed.value };
+    const isPending = createCategory.isPending || updateCategory.isPending;
+    if (isPending) return;
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Kategorija je uspešno ${editing ? "ažurirana" : "kreirana"}.` });
@@ -155,12 +150,11 @@ export default function AdminCategories() {
         setModalOpen(false);
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Greška", { description: msg ?? "Kategorija nije sačuvana." });
+        toast.error("Greška", { description: extractApiError(err, "Kategorija nije sačuvana.") });
       },
     };
-    if (editing) updateCategory.mutate({ categoryId: editing.id, data: payload }, opts);
-    else createCategory.mutate({ data: payload }, opts);
+    if (editing) updateCategory.mutate({ categoryId: editing.id, data }, opts);
+    else createCategory.mutate({ data }, opts);
   };
 
   const handleDelete = () => {
@@ -172,8 +166,7 @@ export default function AdminCategories() {
         setDeleteTarget(null);
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Nije moguće obrisati", { description: msg ?? "Kategorija nije obrisana." });
+        toast.error("Nije moguće obrisati", { description: extractApiError(err, "Kategorija nije obrisana.") });
         setDeleteTarget(null);
       },
     });
@@ -357,7 +350,12 @@ export default function AdminCategories() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Redosled</Label>
-                <Input type="number" min="0" value={form.sortOrder ?? ""} onChange={(e) => setForm({ ...form, sortOrder: e.target.value === "" ? 0 : Number(e.target.value) })} placeholder="0" />
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.sortOrderRaw}
+                  onChange={(e) => setForm({ ...form, sortOrderRaw: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Ikonica (emoji, opciono)</Label>

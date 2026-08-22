@@ -2,6 +2,8 @@ import { defineConfig } from "@playwright/test";
 
 const chromiumExecutablePath = process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const isolatedAdminBrowserTest = process.env.LUMERA_ISOLATED_ADMIN_BROWSER_TEST === "1";
+const isolatedAdminFormResilienceBrowserTest =
+  process.env.LUMERA_ISOLATED_ADMIN_FORM_RESILIENCE_BROWSER_TEST === "1";
 const isolatedSalonNotificationBrowserTest =
   process.env.LUMERA_ISOLATED_SALON_NOTIFICATION_BROWSER_TEST === "1";
 const releaseBrowserTest = process.env.LUMERA_RELEASE_BROWSER_TEST === "1";
@@ -28,9 +30,18 @@ function isHarnessWebUrl(webUrl: string): boolean {
   }
 }
 
-const isolatedBrowserTest = isolatedAdminBrowserTest || isolatedSalonNotificationBrowserTest;
+const isolatedBrowserTest =
+  isolatedAdminBrowserTest
+  || isolatedAdminFormResilienceBrowserTest
+  || isolatedSalonNotificationBrowserTest;
 
-if (isolatedAdminBrowserTest && isolatedSalonNotificationBrowserTest) {
+if (
+  [
+    isolatedAdminBrowserTest,
+    isolatedAdminFormResilienceBrowserTest,
+    isolatedSalonNotificationBrowserTest,
+  ].filter(Boolean).length > 1
+) {
   throw new Error("Only one isolated browser suite may run in a harness process.");
 }
 
@@ -38,7 +49,9 @@ if (isolatedBrowserTest) {
   const testDatabaseUrl = process.env.LUMERA_TEST_DATABASE_URL;
   const databaseNamePattern = isolatedAdminBrowserTest
     ? /^lumera_admin_browser_\d+_[a-f0-9]{32}$/
-    : /^lumera_alert_browser_\d+_[a-f0-9]{32}$/;
+    : isolatedAdminFormResilienceBrowserTest
+      ? /^lumera_form_browser_\d+_[a-f0-9]{32}$/
+      : /^lumera_alert_browser_\d+_[a-f0-9]{32}$/;
   if (
     !testDatabaseUrl
     || process.env.DATABASE_URL !== testDatabaseUrl

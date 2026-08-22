@@ -21,7 +21,7 @@ export function BusinessNavbar() {
   const user = userResp?.user;
   const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
-  const { data: notifications = [] } = useListSalonNotifications({
+  const { data: notifications = [] } = useListSalonNotifications({ page: 1, pageSize: 100 }, {
     query: {
       enabled: user?.role === "SALON_OWNER",
       queryKey: notificationsQueryKey,

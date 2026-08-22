@@ -10,80 +10,54 @@ import type { ProductVariant } from './productVariant';
 export interface AdminProductInput {
   /**
      * @minLength 1
-     * @maxLength 240
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name: string;
   /** @nullable */
   categoryId?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   categoryName: string;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   subcategoryName?: string | null;
-  /**
-     * @maxLength 120
-     * @nullable
-     */
+  /** @nullable */
   brand?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 10000
-     * @pattern ^\S[\s\S]*\S$|^\S$
-     */
+  /** @minLength 1 */
   description: string;
-  /**
-     * @maxLength 500
-     * @nullable
-     */
+  /** @nullable */
   shortDescription?: string | null;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
+  /** @minLength 1 */
   imageUrl: string;
-  /**
-     * @maxItems 12
-     * @items.minLength 1
-     * @items.maxLength 2000
-     */
   images?: string[];
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price: number;
   /**
      * @minimum 0
+     * @maximum 100000000
      * @nullable
      */
   discountPrice?: number | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   stock: number;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     * @pattern ^\S.*\S$|^\S$
-     */
+  /** @minLength 1 */
   sku: string;
-  /**
-     * @minLength 1
-     * @maxLength 40
-     */
+  /** @minLength 1 */
   unit: string;
-  /** @minimum 1 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   weightGrams: number;
   isNew?: boolean;
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
-  /**
-     * @maxLength 80
-     * @nullable
-     */
+  /** @nullable */
   variantType?: string | null;
   active?: boolean;
 }

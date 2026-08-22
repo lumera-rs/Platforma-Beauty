@@ -35,7 +35,7 @@ import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
@@ -64,7 +64,10 @@ export default function CustomerDashboard() {
   }, [userResp, isUserLoading, setLocation]);
 
   const { data: dashboard, isLoading: isDashboardLoading, refetch: refetchDash } = useGetCustomerDashboard({ query: { enabled: !!userResp?.user, queryKey: getGetCustomerDashboardQueryKey() }});
-  const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(undefined) }});
+  const APPOINTMENTS_PAGE_SIZE = 20;
+  const [appointmentsPage, setAppointmentsPage] = useState(1);
+  const appointmentsParams = useMemo(() => ({ page: appointmentsPage, pageSize: APPOINTMENTS_PAGE_SIZE }), [appointmentsPage]);
+  const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(appointmentsParams, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(appointmentsParams) }});
   const { data: signInMethods, isLoading: isSignInMethodsLoading, refetch: refetchSignInMethods } = useGetAuthSignInMethods({
     query: { enabled: !!userResp?.user, queryKey: getGetAuthSignInMethodsQueryKey() },
   });
@@ -361,6 +364,13 @@ export default function CustomerDashboard() {
                     </div>
                   </Card>
                 ))}
+                {(appointmentsPage > 1 || (appointments?.length ?? 0) >= APPOINTMENTS_PAGE_SIZE) && (
+                  <div className="flex items-center justify-between pt-2">
+                    <Button variant="outline" size="sm" disabled={appointmentsPage <= 1} onClick={() => setAppointmentsPage((page) => Math.max(1, page - 1))}>Prethodna</Button>
+                    <span className="text-sm text-muted-foreground">Strana {appointmentsPage}</span>
+                    <Button variant="outline" size="sm" disabled={(appointments?.length ?? 0) < APPOINTMENTS_PAGE_SIZE} onClick={() => setAppointmentsPage((page) => page + 1)}>Sledeća</Button>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>

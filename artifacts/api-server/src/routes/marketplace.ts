@@ -1,16 +1,11 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   publishSalonNotificationUpdate,
   subscribeToSalonNotificationEvents,
 } from "../lib/salon-notification-events";
-import {
-  catalogCacheKey,
-  invalidateCatalogCache,
-  readThroughCatalogCache,
-} from "../lib/catalog-cache";
 import {
   appointmentSeriesTable,
   appointmentsTable,
@@ -118,7 +113,6 @@ import {
   AdminUpdateProductCategoryParams,
   AdminUpdateProductParams,
   AdminUpdateShippingConfigBody,
-  UpdateAdminEducationSettingsBody,
   AdminGetOrderParams,
   AdminGetOrderResponse,
   AdminGetSalonParams,
@@ -264,6 +258,7 @@ import {
   ListServiceTemplatesResponse,
   ListSalonsQueryParams,
   ListSalonsResponse,
+  ListCitiesResponse,
   LoginBody,
   LoginResponse,
   RegisterBusinessBody,
@@ -345,9 +340,9 @@ import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
 import { logger } from "../lib/logger";
+import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
 import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
-import { selectPopularPublicCourses } from "../lib/education-public-course-order";
 import {
   canClaimMediaReference,
   claimMediaReference,
@@ -532,6 +527,23 @@ function normalizeBooleanQuery(query: Request["query"], keys: string[]): Record<
     else return null;
   }
   return normalized;
+}
+
+// Stable pagination for admin list endpoints. `page` is 1-based, `pageSize` is
+// clamped to 1..100. Invalid values fall back to defaults (never a 400) so that
+// existing UI callers that omit the params keep working. Returns limit/offset to
+// slice a stably ordered query (createdAt desc, id desc).
+type PaginationInput = { page?: unknown; pageSize?: unknown };
+function parsePagination(query: PaginationInput, defaultPageSize: number): { page: number; pageSize: number; limit: number; offset: number } {
+  const rawPage = Array.isArray(query.page) ? query.page[0] : query.page;
+  const rawPageSize = Array.isArray(query.pageSize) ? query.pageSize[0] : query.pageSize;
+  const parsedPage = Number.parseInt(String(rawPage ?? ""), 10);
+  const parsedPageSize = Number.parseInt(String(rawPageSize ?? ""), 10);
+  const page = Number.isFinite(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+  const pageSize = Number.isFinite(parsedPageSize)
+    ? Math.min(100, Math.max(1, parsedPageSize))
+    : defaultPageSize;
+  return { page, pageSize, limit: pageSize, offset: (page - 1) * pageSize };
 }
 
 function calendarDate(value: string | Date): string {
@@ -739,7 +751,7 @@ type FirstAvailableResponse = {
   services: FirstAvailableServiceSlot[];
 };
 
-const firstAvailableCache = new Map<string, { expiresAt: number; response: FirstAvailableResponse }>();
+const FIRST_AVAILABLE_HORIZON_DAYS = 30;
 const firstAvailablePending = new Map<string, Promise<FirstAvailableResponse>>();
 
 function dateAtOffset(startDate: Date, offset: number) {
@@ -749,54 +761,42 @@ function dateAtOffset(startDate: Date, offset: number) {
 }
 
 async function firstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
-  const cached = firstAvailableCache.get(salonId);
-  if (cached && cached.expiresAt > Date.now()) return cached.response;
   const pending = firstAvailablePending.get(salonId);
   if (pending) return pending;
 
   const request = computeFirstAvailableByService(salonId);
   firstAvailablePending.set(salonId, request);
   try {
-    const response = await request;
-    firstAvailableCache.set(salonId, { response, expiresAt: Date.now() + 30_000 });
-    return response;
+    return await request;
   } finally {
     firstAvailablePending.delete(salonId);
   }
 }
 
-async function computeFirstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
-  const [services, employees, appointments] = await Promise.all([
-    db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true))),
-    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true))),
-    db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salonId)),
-  ]);
-  const employeeIds = employees.map((employee) => employee.id);
-  const [relevantLinks, relevantSchedules, relevantTimeOff] = employeeIds.length
-    ? await Promise.all([
-      db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)),
-      db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)),
-      db.select().from(employeeTimeOffTable).where(inArray(employeeTimeOffTable.employeeId, employeeIds)),
-    ])
-    : [[], [], []];
-  const now = new Date();
+function computeFirstAvailableServiceSlots(input: {
+  services: (typeof servicesTable.$inferSelect)[];
+  employees: (typeof employeesTable.$inferSelect)[];
+  appointments: (typeof appointmentsTable.$inferSelect)[];
+  employeeServices: (typeof employeeServicesTable.$inferSelect)[];
+  schedules: (typeof employeeSchedulesTable.$inferSelect)[];
+  timeOff: (typeof employeeTimeOffTable.$inferSelect)[];
+  now: Date;
+}): FirstAvailableServiceSlot[] {
+  const { services, employees, appointments, employeeServices, schedules, timeOff, now } = input;
   const today = now.toISOString().slice(0, 10);
   const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
-  const horizonDays = 30;
 
-  const servicesWithFirstSlot = services.map((service): FirstAvailableServiceSlot => {
+  return services.map((service): FirstAvailableServiceSlot => {
     const candidateIds = new Set(
-      relevantLinks.filter((link) => link.serviceId === service.id).map((link) => link.employeeId),
+      employeeServices.filter((link) => link.serviceId === service.id).map((link) => link.employeeId),
     );
     const candidates = employees.filter((employee) => candidateIds.has(employee.id));
 
-    for (let dayOffset = 0; dayOffset < horizonDays; dayOffset += 1) {
+    for (let dayOffset = 0; dayOffset < FIRST_AVAILABLE_HORIZON_DAYS; dayOffset += 1) {
       const date = dateAtOffset(now, dayOffset);
       const weekStart = mondayOf(date);
-      const sameDay = appointments.filter((appointment) => appointment.date === date && appointment.status !== "cancelled");
-      const sameWeek = appointments.filter((appointment) =>
-        appointment.status !== "cancelled" && appointment.date >= weekStart && appointment.date <= date,
-      );
+      const sameDay = appointments.filter((appointment) => appointment.date === date);
+      const sameWeek = appointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
 
       for (let hour = 9; hour < 18; hour += 1) {
         const startTime = `${String(hour).padStart(2, "0")}:00`;
@@ -804,7 +804,7 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
         const endTime = appointmentEndTime(startTime, service.durationMinutes);
         if (!endTime) continue;
         const available = candidates.filter((employee) =>
-          employeeWorksAt(employee.id, date, startTime, endTime, relevantSchedules, relevantTimeOff)
+          employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
           && !sameDay.some((appointment) => appointment.employeeId === employee.id
             && overlapsAppointment(startTime, endTime, appointment)),
         );
@@ -822,10 +822,54 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
 
     return { serviceId: service.id, date: null, startTime: null, endTime: null, employeeId: null, employeeName: null };
   });
+}
+
+function earliestSlotFromResponse(response: FirstAvailableResponse): string | null {
+  const earliest = response.services
+    .flatMap((service) => service.date && service.startTime ? [`${service.date}T${service.startTime}:00.000Z`] : [])
+    .sort()[0];
+  return earliest ?? null;
+}
+
+async function computeFirstAvailableByService(salonId: string): Promise<FirstAvailableResponse> {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const horizonEnd = dateAtOffset(now, FIRST_AVAILABLE_HORIZON_DAYS - 1);
+  const [services, employees, appointments] = await Promise.all([
+    db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salonId), eq(servicesTable.active, true))),
+    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true))),
+    db.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, salonId),
+      gte(appointmentsTable.date, today),
+      lte(appointmentsTable.date, horizonEnd),
+      ne(appointmentsTable.status, "cancelled"),
+    )),
+  ]);
+  const employeeIds = employees.map((employee) => employee.id);
+  const [relevantLinks, relevantSchedules, relevantTimeOff] = employeeIds.length
+    ? await Promise.all([
+      db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)),
+      db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)),
+      db.select().from(employeeTimeOffTable).where(and(
+        inArray(employeeTimeOffTable.employeeId, employeeIds),
+        lte(employeeTimeOffTable.startDate, horizonEnd),
+        gte(employeeTimeOffTable.endDate, today),
+      )),
+    ])
+    : [[], [], []];
+  const servicesWithFirstSlot = computeFirstAvailableServiceSlots({
+    services,
+    employees,
+    appointments,
+    employeeServices: relevantLinks,
+    schedules: relevantSchedules,
+    timeOff: relevantTimeOff,
+    now,
+  });
 
   const response = {
     generatedAt: now.toISOString(),
-    horizonDays,
+    horizonDays: FIRST_AVAILABLE_HORIZON_DAYS,
     services: servicesWithFirstSlot,
   };
   return response;
@@ -1210,7 +1254,7 @@ async function linkPhoneContactsToUser(store: any, userId: string, phone: string
   }
 }
 
-type EducationAccess = {
+export type EducationAccess = {
   user: typeof usersTable.$inferSelect;
   salon: typeof salonsTable.$inferSelect | null;
   centers: (typeof educationCentersTable.$inferSelect)[];
@@ -1309,24 +1353,44 @@ async function educationCenterEligibility(centerId: string) {
 }
 
 /**
- * Batch-load eligibility for a set of center IDs in two queries instead of
- * 2×N queries. Returns a Map<centerId, boolean> — eligible when the center is
- * verified AND has an active subscription.
+ * Batch variant of educationCenterEligibility.
+ * Returns a Map<centerId, boolean> for all requested centerIds in two DB round-trips.
  */
-async function educationCenterEligibilityMap(centerIds: string[]): Promise<Map<string, boolean>> {
+async function batchCenterEligibility(centerIds: string[]): Promise<Map<string, boolean>> {
+  _hookAssembler("batchCenterEligibility");
   if (!centerIds.length) return new Map();
-  const unique = [...new Set(centerIds)];
   const [centers, subscriptions] = await Promise.all([
-    db.select({ id: educationCentersTable.id, verificationStatus: educationCentersTable.verificationStatus })
-      .from(educationCentersTable).where(inArray(educationCentersTable.id, unique)),
-    db.select({ centerId: educationCenterSubscriptionsTable.centerId, status: educationCenterSubscriptionsTable.status })
-      .from(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, unique)),
+    db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)),
+    db.select().from(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, centerIds)),
   ]);
-  const subMap = new Map(subscriptions.map((s) => [s.centerId, s.status]));
-  return new Map(centers.map((c) => [
-    c.id,
-    c.verificationStatus === "verified" && hasActiveEducationSubscription(subMap.get(c.id)),
-  ]));
+  const subByCenterId = new Map(subscriptions.map((s) => [s.centerId, s]));
+  const result = new Map<string, boolean>();
+  for (const center of centers) {
+    const sub = subByCenterId.get(center.id);
+    result.set(center.id, center.verificationStatus === "verified" && hasActiveEducationSubscription(sub?.status));
+  }
+  return result;
+}
+
+/**
+ * Test-only instrumentation sink.  In NODE_ENV=test callers may set this via
+ * setMarketplaceAssemblerTestHook() to assert that batch assemblers are used
+ * instead of per-row DB queries.  No-op in production — zero runtime overhead.
+ *
+ * Usage (vitest/jest):
+ *   import { setMarketplaceAssemblerTestHook } from "./marketplace";
+ *   const calls: string[] = [];
+ *   setMarketplaceAssemblerTestHook((name) => calls.push(name));
+ *   // ... invoke route ...
+ *   expect(calls).toContain("batchEducationCourseViews");
+ *   afterEach(() => setMarketplaceAssemblerTestHook(null));
+ */
+let _assemblerHook: ((assembler: string) => void) | null = null;
+export function setMarketplaceAssemblerTestHook(fn: ((assembler: string) => void) | null): void {
+  _assemblerHook = fn;
+}
+function _hookAssembler(name: string) {
+  if (process.env.NODE_ENV !== "production") _assemblerHook?.(name);
 }
 
 async function isPublicEducationCourse(course: typeof coursesTable.$inferSelect) {
@@ -1768,20 +1832,17 @@ async function educationMediaViews(scope: { courseId?: string; centerId?: string
 }
 
 async function centerEducationMediaViews(centerId: string) {
-  // All courses for this center share the same eligibility check — do it once.
-  const { eligible } = await educationCenterEligibility(centerId);
+  const centerCourses = await db.select().from(coursesTable).where(eq(coursesTable.centerId, centerId));
+  // Use batch eligibility to avoid one center+subscription query per course.
+  const uniqueCenterIds = [...new Set(centerCourses.map((c) => c.centerId).filter(Boolean) as string[])];
+  const eligibilityMap = await batchCenterEligibility(uniqueCenterIds);
+  const publicCourseIds = centerCourses
+    .filter((course) => course.published && !course.archived && course.centerId && eligibilityMap.get(course.centerId) === true)
+    .map((course) => course.id);
   const directMedia = await db.select().from(educationMediaTable).where(and(
     eq(educationMediaTable.centerId, centerId),
     isNull(educationMediaTable.courseId),
   ));
-  if (!eligible) {
-    // Center not eligible: return only center-level media (no course media).
-    return directMedia.sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime())
-      .map((item) => ({ id: item.id, url: publicEducationMediaUrl(item), altText: item.altText, sortOrder: item.sortOrder }));
-  }
-  const centerCourses = await db.select({ id: coursesTable.id, published: coursesTable.published, archived: coursesTable.archived })
-    .from(coursesTable).where(eq(coursesTable.centerId, centerId));
-  const publicCourseIds = centerCourses.filter((c) => c.published && !c.archived).map((c) => c.id);
   const courseMedia = publicCourseIds.length
     ? await db.select().from(educationMediaTable).where(inArray(educationMediaTable.courseId, publicCourseIds))
     : [];
@@ -1844,8 +1905,6 @@ async function educationCourseView(
   access?: EducationAccess,
   completedLessonIds = new Set<string>(),
   includeLessonContent = false,
-  // Optional pre-resolved featured flag; when undefined the function resolves it itself.
-  preResolvedFeatured?: boolean,
 ) {
   const owned = Boolean(access && isCourseOwner(access, course));
   const enrollment = access
@@ -1884,7 +1943,6 @@ async function educationCourseView(
       instructorProfileId = instructorProfile.id;
     }
   }
-  const featured = preResolvedFeatured !== undefined ? preResolvedFeatured : await isPubliclyFeaturedEducationCourse(course);
   return {
     id: course.id,
     title: course.title,
@@ -1905,7 +1963,7 @@ async function educationCourseView(
     requirements: course.requirements,
     rating: course.rating / 10,
     certification: course.certification,
-    featured,
+    featured: await isPubliclyFeaturedEducationCourse(course),
     featuredUntil: course.featuredUntil?.toISOString() ?? null,
     refundPolicy: course.refundPolicy,
     groupDiscountMinimum: course.groupDiscountMinimum,
@@ -1963,6 +2021,99 @@ async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable
       createdAt: disputes[0].createdAt.toISOString(),
     } : null,
   };
+}
+
+/**
+ * Batch assembler for a list of enrollments.
+ * Replaces N×6 DB calls with 6 batch queries total, then assembles views in memory.
+ * Drop-in replacement for `Promise.all(enrollments.map(educationEnrollmentView))`.
+ */
+async function batchEducationEnrollmentViews(enrollments: (typeof courseEnrollmentsTable.$inferSelect)[]) {
+  _hookAssembler("batchEducationEnrollmentViews");
+  if (!enrollments.length) return [];
+
+  const courseIds = [...new Set(enrollments.map((e) => e.courseId))];
+  const employeeIds = [...new Set(enrollments.flatMap((e) => (e.employeeId ? [e.employeeId] : [])))];
+  const purchaserIds = [...new Set(enrollments.map((e) => e.purchaserId))];
+  const enrollmentIds = enrollments.map((e) => e.id);
+
+  const [courses, employees, purchasers, allModules, escrows, disputes] = await Promise.all([
+    db.select().from(coursesTable).where(inArray(coursesTable.id, courseIds)),
+    employeeIds.length ? db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : Promise.resolve([] as (typeof employeesTable.$inferSelect)[]),
+    db.select().from(usersTable).where(inArray(usersTable.id, purchaserIds)),
+    db.select().from(courseModulesTable).where(inArray(courseModulesTable.courseId, courseIds)).orderBy(asc(courseModulesTable.sortOrder)),
+    db.select().from(educationEscrowsTable).where(inArray(educationEscrowsTable.enrollmentId, enrollmentIds)),
+    db.select().from(educationDisputesTable)
+      .where(and(inArray(educationDisputesTable.enrollmentId, enrollmentIds), inArray(educationDisputesTable.status, ["open", "under_review"])))
+      .orderBy(desc(educationDisputesTable.createdAt)),
+  ]);
+
+  // Batch-fetch all lessons for all course modules in one query.
+  const allModuleIds = allModules.map((m) => m.id);
+  const allLessons = allModuleIds.length
+    ? await db.select().from(courseLessonsTable).where(inArray(courseLessonsTable.moduleId, allModuleIds)).orderBy(asc(courseLessonsTable.sortOrder))
+    : [];
+
+  const courseById = new Map(courses.map((c) => [c.id, c]));
+  const employeeById = new Map(employees.map((e) => [e.id, e]));
+  const purchaserById = new Map(purchasers.map((u) => [u.id, u]));
+  const modulesByCourseId = new Map<string, (typeof courseModulesTable.$inferSelect)[]>();
+  for (const m of allModules) {
+    const arr = modulesByCourseId.get(m.courseId) ?? [];
+    arr.push(m);
+    modulesByCourseId.set(m.courseId, arr);
+  }
+  const lessonsByModuleId = new Map<string, (typeof courseLessonsTable.$inferSelect)[]>();
+  for (const l of allLessons) {
+    const arr = lessonsByModuleId.get(l.moduleId) ?? [];
+    arr.push(l);
+    lessonsByModuleId.set(l.moduleId, arr);
+  }
+  const escrowByEnrollmentId = new Map(escrows.map((e) => [e.enrollmentId, e]));
+  // Keep only the latest open/under_review dispute per enrollment (already desc-sorted).
+  const disputeByEnrollmentId = new Map<string, typeof educationDisputesTable.$inferSelect>();
+  for (const d of disputes) {
+    if (!disputeByEnrollmentId.has(d.enrollmentId)) disputeByEnrollmentId.set(d.enrollmentId, d);
+  }
+
+  return enrollments.map((enrollment) => {
+    const course = courseById.get(enrollment.courseId);
+    const employee = enrollment.employeeId ? employeeById.get(enrollment.employeeId) : undefined;
+    const purchaser = purchaserById.get(enrollment.purchaserId);
+    const escrow = escrowByEnrollmentId.get(enrollment.id);
+    const dispute = disputeByEnrollmentId.get(enrollment.id);
+
+    // Reconstruct flat lesson list for this course from cached maps.
+    const courseModules = modulesByCourseId.get(enrollment.courseId) ?? [];
+    const flatLessons = courseModules.flatMap((m) => lessonsByModuleId.get(m.id) ?? []);
+
+    // Normalize nextLesson: accept legacy title-based values, resolve to ID.
+    const nextLesson = enrollment.nextLesson
+      ? flatLessons.find((l) => l.id === enrollment.nextLesson || l.title === enrollment.nextLesson)?.id ?? null
+      : null;
+
+    return {
+      id: enrollment.id,
+      courseId: enrollment.courseId,
+      courseTitle: course?.title ?? "Arhivirani kurs",
+      learnerName: employee?.name ?? `${purchaser?.firstName ?? "Poslovni"} ${purchaser?.lastName ?? "korisnik"}`,
+      employeeId: enrollment.employeeId,
+      status: enrollment.status,
+      paymentStatus: enrollment.paymentStatus,
+      progress: enrollment.progress,
+      nextLesson,
+      purchasedAt: enrollment.purchasedAt.toISOString(),
+      escrowStatus: escrow?.status ?? null,
+      escrowReleaseAt: escrow?.releaseAt?.toISOString() ?? null,
+      dispute: dispute ? {
+        id: dispute.id,
+        reason: dispute.reason,
+        details: dispute.details,
+        status: dispute.status,
+        createdAt: dispute.createdAt.toISOString(),
+      } : null,
+    };
+  });
 }
 
 async function requireCustomer(req: Request, res: Response) {
@@ -2051,11 +2202,10 @@ function card(
   salon: typeof salonsTable.$inferSelect,
   services: (typeof servicesTable.$inferSelect)[] = [],
   hours: (typeof salonHoursTable.$inferSelect)[] = [],
-  appointments: (typeof appointmentsTable.$inferSelect)[] = [],
-  employees: (typeof employeesTable.$inferSelect)[] = [],
+  earliestSlot: string | null = null,
+  lastBookedAtOverride?: Date | null,
 ) {
-  const lastBookedAt = appointments.reduce<Date | null>((latest, item) => !latest || item.createdAt > latest ? item.createdAt : latest, null);
-  const earliestSlot = findEarliestSlot(services, hours, appointments, employees);
+  const lastBookedAt = lastBookedAtOverride ?? null;
   return {
     id: salon.id,
     slug: salon.slug,
@@ -2092,54 +2242,45 @@ async function salonHasActiveHomeService(salonId: string): Promise<boolean> {
   return Boolean(service);
 }
 
-function findEarliestSlot(
-  services: (typeof servicesTable.$inferSelect)[],
-  hours: (typeof salonHoursTable.$inferSelect)[],
-  appointments: (typeof appointmentsTable.$inferSelect)[],
-  employees: (typeof employeesTable.$inferSelect)[],
-) {
-  const service = services.find((item) => item.active);
-  if (!service || !employees.length) return null;
-  const durationHours = Math.max(1, Math.ceil(service.durationMinutes / 60));
-  const now = new Date();
-  for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-    const day = new Date(now);
-    day.setDate(now.getDate() + dayOffset);
-    const weekday = day.getDay() === 0 ? 7 : day.getDay();
-    const workingHours = hours.find((item) => item.weekday === weekday && !item.closed);
-    if (!workingHours) continue;
-    const date = day.toISOString().slice(0, 10);
-    const firstHour = Math.max(Number(workingHours.openTime.slice(0, 2)), dayOffset === 0 ? now.getHours() + 1 : 0);
-    const lastHour = Number(workingHours.closeTime.slice(0, 2)) - durationHours;
-    for (let hour = firstHour; hour <= lastHour; hour += 1) {
-      const start = `${String(hour).padStart(2, "0")}:00`;
-      const end = `${String(hour + durationHours).padStart(2, "0")}:00`;
-      const available = employees.some((employee) => !appointments.some((appointment) =>
-        appointment.employeeId === employee.id && appointment.date === date && appointment.status !== "cancelled"
-          && appointment.startTime < end && appointment.endTime > start,
-      ));
-      if (available) return `${date}T${start}:00.000Z`;
-    }
-  }
-  return null;
-}
+const SALON_CARD_LOOK_BACK_DAYS = 90;
 
-async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
+async function salonCards(
+  salons: (typeof salonsTable.$inferSelect)[],
+  earliestSlotBySalon: ReadonlyMap<string, string | null> = new Map(),
+) {
   if (!salons.length) return [];
   const ids = salons.map((salon) => salon.id);
-  const [allServices, allHours, allAppointments, allEmployees] = await Promise.all([
+  const lastBookedSince = new Date(Date.now() - SALON_CARD_LOOK_BACK_DAYS * 24 * 60 * 60 * 1000);
+  const [allServices, allHours, lastBookedRows] = await Promise.all([
     db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, ids), eq(servicesTable.active, true))),
     db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, ids)),
-    db.select().from(appointmentsTable).where(inArray(appointmentsTable.salonId, ids)),
-    db.select().from(employeesTable).where(and(inArray(employeesTable.salonId, ids), eq(employeesTable.active, true))),
+    db.select({ salonId: appointmentsTable.salonId, lastBookedAt: sql<Date | null>`max(${appointmentsTable.createdAt})` })
+      .from(appointmentsTable)
+      .where(and(inArray(appointmentsTable.salonId, ids), gte(appointmentsTable.createdAt, lastBookedSince)))
+      .groupBy(appointmentsTable.salonId),
   ]);
+  // Replace per-salon array filters with grouped maps so card assembly stays
+  // O(n) instead of O(salons * appointments).
+  const servicesBySalon = groupBySalon(allServices);
+  const hoursBySalon = groupBySalon(allHours);
+  const lastBookedBySalon = new Map<string, Date | null>();
+  for (const row of lastBookedRows) lastBookedBySalon.set(row.salonId, row.lastBookedAt ? new Date(row.lastBookedAt) : null);
   return salons.map((salon) => card(
     salon,
-    allServices.filter((service) => service.salonId === salon.id),
-    allHours.filter((hour) => hour.salonId === salon.id),
-    allAppointments.filter((appointment) => appointment.salonId === salon.id),
-    allEmployees.filter((employee) => employee.salonId === salon.id),
+    servicesBySalon.get(salon.id) ?? [],
+    hoursBySalon.get(salon.id) ?? [],
+    earliestSlotBySalon.get(salon.id) ?? null,
+    lastBookedBySalon.get(salon.id) ?? null,
   ));
+}
+
+function groupBySalon<T extends { salonId: string }>(rows: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const bucket = map.get(row.salonId);
+    if (bucket) bucket.push(row); else map.set(row.salonId, [row]);
+  }
+  return map;
 }
 
 type MarketplaceHomeDiscoveryPayload = ReturnType<typeof GetMarketplaceHomeDiscoveryResponse.parse>;
@@ -2236,8 +2377,20 @@ function appointmentView(
   };
 }
 
-async function appointmentList(where?: ReturnType<typeof eq>, includeTreatmentAddress = false) {
-  const appointments = await db.select().from(appointmentsTable).where(where).orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime));
+type AppointmentListPage = { limit: number; offset: number };
+async function appointmentList(
+  where?: ReturnType<typeof eq> | ReturnType<typeof and>,
+  includeTreatmentAddress = false,
+  page?: AppointmentListPage,
+) {
+  // The list query orders stably (date, startTime, id) so that any status/date/scope
+  // predicate folded into `where` is applied in SQL BEFORE the optional LIMIT/OFFSET.
+  // This keeps the per-request query count independent of the total appointment count.
+  const baseQuery = db.select().from(appointmentsTable).where(where)
+    .orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime), asc(appointmentsTable.id));
+  const appointments = page
+    ? await baseQuery.limit(page.limit).offset(page.offset)
+    : await baseQuery;
   if (!appointments.length) return [];
   const salonIds = [...new Set(appointments.map((item) => item.salonId))];
   const serviceIds = [...new Set(appointments.map((item) => item.serviceId))];
@@ -2248,9 +2401,9 @@ async function appointmentList(where?: ReturnType<typeof eq>, includeTreatmentAd
   const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries] = await Promise.all([
     db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
     db.select().from(servicesTable).where(inArray(servicesTable.id, serviceIds)),
-    customerIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
-    salonCustomerIds.length ? db.select().from(salonCustomersTable).where(inArray(salonCustomersTable.id, salonCustomerIds)) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
-    employeeIds.length ? db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : Promise.resolve([]),
+    db.select().from(usersTable).where(customerIds.length ? inArray(usersTable.id, customerIds) : sql`false`),
+    db.select().from(salonCustomersTable).where(salonCustomerIds.length ? inArray(salonCustomersTable.id, salonCustomerIds) : sql`false`),
+    db.select().from(employeesTable).where(employeeIds.length ? inArray(employeesTable.id, employeeIds) : sql`false`),
     db.select().from(smsDeliveriesTable).where(inArray(smsDeliveriesTable.appointmentId, appointmentIds)),
     db.select().from(emailDeliveriesTable).where(and(
       inArray(emailDeliveriesTable.appointmentId, appointmentIds),
@@ -2660,24 +2813,9 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
     res.status(400).json({ error: "Pošaljite enabled vrednost i polja integracije." }); return;
   }
   const definition = integrationDefinitions[req.params.integration];
-  const submittedValues = Object.entries(body.values as Record<string, unknown>);
-  const invalidValue = submittedValues.find(([key, value]) =>
-    !definition.keys.includes(key)
-    || typeof value !== "string"
-    || value.trim().length === 0);
-  if (invalidValue) {
-    res.status(400).json({ error: `Polje integracije "${invalidValue[0]}" nije ispravno.` });
-    return;
-  }
-  const values = Object.fromEntries(submittedValues.map(([key, value]) => [key, (value as string).trim()]));
-  if (body.enabled) {
-    const currentDisplay = await integrationDisplay(req.params.integration, definition.keys, definition.required);
-    const missingRequired = definition.required.find((key) => !values[key]?.trim() && !currentDisplay.values[key]);
-    if (missingRequired) {
-      res.status(400).json({ error: `Popunite obavezno polje "${missingRequired}" pre uključivanja integracije.` });
-      return;
-    }
-  }
+  const values = Object.fromEntries(Object.entries(body.values as Record<string, unknown>)
+    .filter(([key, value]) => definition.keys.includes(key) && typeof value === "string")
+    .map(([key, value]) => [key, value as string]));
   if (req.params.integration === "sms" && values.baseUrl) {
     try { infobipBaseUrl(values.baseUrl); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "SMS base URL nije ispravan." }); return; }
   }
@@ -2926,96 +3064,229 @@ router.get("/salons", async (req, res): Promise<void> => {
   if (!normalized) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
   const parsed = ListSalonsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let salons = [...await readThroughCatalogCache(
-    catalogCacheKey("cities", "active-salons"),
-    () => db.select().from(salonsTable).where(eq(salonsTable.active, true)),
-  )];
   const query = parsed.data;
-  if (query.city) salons = salons.filter((item) => item.city.toLowerCase() === query.city!.toLowerCase());
-  if (query.municipality) salons = salons.filter((item) => item.municipality.toLowerCase() === query.municipality!.toLowerCase());
-  const allCards = await salonCards(salons);
-  const allServices = salons.length
-    ? await db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, salons.map((item) => item.id)), eq(servicesTable.active, true)))
-    : [];
-  const activeServiceIds = new Set(allServices.map((service) => service.id));
-  const linkedBrands = salons.length ? await db.select().from(salonBrandsTable).where(inArray(salonBrandsTable.salonId, salons.map((item) => item.id))) : [];
-  const brands = linkedBrands.length ? await db.select().from(productBrandsTable).where(inArray(productBrandsTable.id, linkedBrands.map((item) => item.brandId))) : [];
-  const bestDiscountBySalon = new Map<string, number>();
-  for (const service of allServices) {
-    if (service.promoPrice === null || service.promoPrice >= service.price) continue;
-    bestDiscountBySalon.set(
-      service.salonId,
-      Math.max(bestDiscountBySalon.get(service.salonId) ?? 0, service.price - service.promoPrice),
-    );
-  }
-  const treatment = (query.treatment ?? query.category ?? "").toLowerCase();
-  const filtered = allCards.filter((item) => {
-    const services = allServices.filter((service) => service.salonId === item.id);
-    const matchesTreatment = !treatment || services.some((service) => `${service.categoryName} ${service.name} ${service.tags.join(" ")}`.toLowerCase().includes(treatment));
-    const matchesPrice = query.priceMax === undefined || item.startingPrice <= query.priceMax;
-    const matchesRating = query.minRating === undefined || item.rating >= query.minRating;
-    const matchesReviewCount = query.minReviewCount === undefined || item.reviewCount >= query.minReviewCount;
-    const matchesMen = query.gender !== "men" || item.servesMen;
-    const matchesBrand = !query.brand || linkedBrands.filter((link) => link.salonId === item.id).some((link) => brands.find((brand) => brand.id === link.brandId)?.name.toLowerCase() === query.brand!.toLowerCase());
-    return matchesTreatment && matchesPrice && matchesRating && matchesReviewCount && matchesMen && matchesBrand
-      && (query.discountsOnly === undefined || item.hasDiscount === query.discountsOnly)
-      && (query.acceptsCards === undefined || item.acceptsCards === query.acceptsCards)
-      && (query.openSunday === undefined || item.openSunday === query.openSunday)
-      && (query.instantBooking === undefined || item.instantBooking === query.instantBooking)
-      && (query.homeService === undefined || item.homeService === query.homeService)
-      && (query.topSalon === undefined || item.topSalon === query.topSalon)
-      && (query.featured === undefined || item.featured === query.featured);
-  });
-  const recentSalonBookingCounts = new Map<string, number>();
-  if (query.sort === "most-booked-recently" && salons.length) {
-    const recentAppointments = await db.select({
-      salonId: appointmentsTable.salonId,
-      serviceId: appointmentsTable.serviceId,
-    }).from(appointmentsTable).where(and(
-      inArray(appointmentsTable.salonId, salons.map((salon) => salon.id)),
-      gte(appointmentsTable.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-      ne(appointmentsTable.status, "cancelled"),
-    ));
-    for (const appointment of recentAppointments) {
-      if (!activeServiceIds.has(appointment.serviceId)) continue;
-      recentSalonBookingCounts.set(appointment.salonId, (recentSalonBookingCounts.get(appointment.salonId) ?? 0) + 1);
+  const page = query.page ?? 1;
+  const pageSize = query.pageSize ?? 24;
+  const offset = (page - 1) * pageSize;
+
+  // --- SQL-expressible predicates (applied BEFORE pagination) ---------------
+  // Derived service booleans (home service, discount, treatment/category match,
+  // price ceiling) and salon-hours booleans (open Sunday) are expressed as
+  // correlated EXISTS / aggregate subqueries so filtering happens in PostgreSQL
+  // over the whole directory, not in application memory over a full table scan.
+  const activeService = sql`${servicesTable.salonId} = ${salonsTable.id} and ${servicesTable.active} = true`;
+  const homeServiceExists = sql`exists (select 1 from ${servicesTable} where ${activeService} and ${servicesTable.homeServiceAvailable} = true)`;
+  const discountExists = sql`exists (select 1 from ${servicesTable} where ${activeService} and ${servicesTable.promoPrice} is not null and ${servicesTable.promoPrice} < ${servicesTable.price})`;
+  const openSundayExists = sql`exists (select 1 from ${salonHoursTable} where ${salonHoursTable.salonId} = ${salonsTable.id} and ${salonHoursTable.weekday} = 7 and ${salonHoursTable.closed} = false)`;
+  // startingPrice mirrors the card: MIN(COALESCE(promo, price)) over active
+  // services, defaulting to 0 when a salon has no active services.
+  const startingPriceExpr = sql`coalesce((select min(coalesce(${servicesTable.promoPrice}, ${servicesTable.price})) from ${servicesTable} where ${activeService}), 0)`;
+  const bestDiscountExpr = sql`coalesce((select max(${servicesTable.price} - ${servicesTable.promoPrice}) from ${servicesTable} where ${activeService} and ${servicesTable.promoPrice} is not null and ${servicesTable.promoPrice} < ${servicesTable.price}), 0)`;
+  // Recent booking count for most-booked-recently: non-cancelled appointments in
+  // the last 30 days that target an active service of the salon. Computed with a
+  // SQL aggregate so no appointment rows are loaded into memory.
+  const recentSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recentBookingExpr = sql`coalesce((select count(*) from ${appointmentsTable}
+    where ${appointmentsTable.salonId} = ${salonsTable.id}
+      and ${appointmentsTable.status} <> 'cancelled'
+      and ${appointmentsTable.createdAt} >= ${recentSince}
+      and exists (select 1 from ${servicesTable} where ${activeService} and ${servicesTable.id} = ${appointmentsTable.serviceId})), 0)`;
+  // Mirrors firstAvailableByService's 30-day, hourly-slot algorithm in SQL so
+  // LIMIT/OFFSET are applied after the global earliest-slot ordering, not before
+  // a page-local JavaScript sort. Employees with no weekday schedule are treated
+  // as available, matching employeeWorksAt().
+  const earliestAvailabilityExpr = sql`(
+    select min(
+      ((now() at time zone 'UTC')::date + day_offset::integer)::timestamp
+        + make_interval(hours => slot_hour::integer)
+    )
+    from generate_series(0, 29) as day_offset
+    cross join generate_series(9, 17) as slot_hour
+    where (
+      day_offset > 0
+      or make_time(slot_hour::integer, 0, 0) > (now() at time zone 'UTC')::time
+    )
+    and exists (
+      select 1
+      from ${servicesTable}
+      inner join ${employeeServicesTable}
+        on ${employeeServicesTable.serviceId} = ${servicesTable.id}
+      inner join ${employeesTable}
+        on ${employeesTable.id} = ${employeeServicesTable.employeeId}
+       and ${employeesTable.salonId} = ${salonsTable.id}
+       and ${employeesTable.active} = true
+      where ${servicesTable.salonId} = ${salonsTable.id}
+        and ${servicesTable.active} = true
+        and slot_hour::integer * 60 + ${servicesTable.durationMinutes} <= 1440
+        and not exists (
+          select 1
+          from ${employeeTimeOffTable}
+          where ${employeeTimeOffTable.employeeId} = ${employeesTable.id}
+            and ${employeeTimeOffTable.startDate}
+              <= (now() at time zone 'UTC')::date + day_offset::integer
+            and ${employeeTimeOffTable.endDate}
+              >= (now() at time zone 'UTC')::date + day_offset::integer
+        )
+        and (
+          not exists (
+            select 1
+            from ${employeeSchedulesTable}
+            where ${employeeSchedulesTable.employeeId} = ${employeesTable.id}
+              and ${employeeSchedulesTable.weekday}
+                = extract(isodow from ((now() at time zone 'UTC')::date + day_offset::integer))::integer
+          )
+          or exists (
+            select 1
+            from ${employeeSchedulesTable}
+            where ${employeeSchedulesTable.employeeId} = ${employeesTable.id}
+              and ${employeeSchedulesTable.weekday}
+                = extract(isodow from ((now() at time zone 'UTC')::date + day_offset::integer))::integer
+              and ${employeeSchedulesTable.startTime}
+                <= to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI')
+              and ${employeeSchedulesTable.endTime}
+                >= to_char(
+                  make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}),
+                  'HH24:MI'
+                )
+              and not (
+                ${employeeSchedulesTable.breakStart} is not null
+                and ${employeeSchedulesTable.breakEnd} is not null
+                and to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI') < ${employeeSchedulesTable.breakEnd}
+                and to_char(
+                  make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}),
+                  'HH24:MI'
+                ) > ${employeeSchedulesTable.breakStart}
+              )
+          )
+        )
+        and not exists (
+          select 1
+          from ${appointmentsTable}
+          where ${appointmentsTable.employeeId} = ${employeesTable.id}
+            and ${appointmentsTable.date}
+              = (now() at time zone 'UTC')::date + day_offset::integer
+            and ${appointmentsTable.status} <> 'cancelled'
+            and ${appointmentsTable.startTime}
+              < to_char(
+                make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}),
+                'HH24:MI'
+              )
+            and ${appointmentsTable.endTime}
+              > to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI')
+        )
+    )
+  )`;
+
+  const treatment = (query.treatment ?? query.category ?? "").trim().toLowerCase();
+
+  const predicates = [
+    eq(salonsTable.active, true),
+    query.city ? sql`lower(${salonsTable.city}) = ${query.city.toLowerCase()}` : undefined,
+    query.municipality ? sql`lower(${salonsTable.municipality}) = ${query.municipality.toLowerCase()}` : undefined,
+    treatment
+      ? sql`exists (select 1 from ${servicesTable} where ${activeService} and position(${treatment} in lower(${servicesTable.categoryName} || ' ' || ${servicesTable.name} || ' ' || coalesce(array_to_string(${servicesTable.tags}, ' '), ''))) > 0)`
+      : undefined,
+    query.priceMax !== undefined ? sql`${startingPriceExpr} <= ${query.priceMax}` : undefined,
+    query.minRating !== undefined ? sql`${salonsTable.rating} >= ${Math.round(query.minRating * 10)}` : undefined,
+    query.minReviewCount !== undefined ? gte(salonsTable.reviewCount, query.minReviewCount) : undefined,
+    query.gender === "men" ? eq(salonsTable.servesMen, true) : undefined,
+    query.brand
+      ? sql`exists (select 1 from ${salonBrandsTable} inner join ${productBrandsTable} on ${productBrandsTable.id} = ${salonBrandsTable.brandId} where ${salonBrandsTable.salonId} = ${salonsTable.id} and lower(${productBrandsTable.name}) = ${query.brand.toLowerCase()})`
+      : undefined,
+    query.discountsOnly !== undefined ? sql`${discountExists} = ${query.discountsOnly}` : undefined,
+    query.openSunday !== undefined ? sql`${openSundayExists} = ${query.openSunday}` : undefined,
+    query.homeService !== undefined ? sql`${homeServiceExists} = ${query.homeService}` : undefined,
+    query.acceptsCards !== undefined ? eq(salonsTable.acceptsCards, query.acceptsCards) : undefined,
+    query.instantBooking !== undefined ? eq(salonsTable.instantBooking, query.instantBooking) : undefined,
+    query.topSalon !== undefined ? eq(salonsTable.topSalon, query.topSalon) : undefined,
+    query.featured !== undefined ? eq(salonsTable.featured, query.featured) : undefined,
+  ].filter((predicate): predicate is Exclude<typeof predicate, undefined> => predicate !== undefined);
+  const where = and(...predicates);
+
+  // --- Stable SQL ordering for all practical sort modes ---------------------
+  // Every ordering ends with salons.id ASC so pagination is deterministic and
+  // page boundaries never skip or duplicate a salon.
+  const idTiebreak = asc(salonsTable.id);
+  const orderByForSort = (): ReturnType<typeof sql>[] => {
+    switch (query.sort) {
+      case "top-rated":
+        return [sql`${salonsTable.rating} desc`, sql`${salonsTable.reviewCount} desc`, sql`${salonsTable.id} asc`];
+      case "cheapest":
+        return [sql`${startingPriceExpr} asc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
+      case "largest-discount":
+        return [sql`${bestDiscountExpr} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.reviewCount} desc`, sql`${salonsTable.id} asc`];
+      case "most-popular":
+        return [sql`${salonsTable.reviewCount} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
+      case "most-booked-recently":
+        return [sql`${recentBookingExpr} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.reviewCount} desc`, sql`${salonsTable.id} asc`];
+      case "newest":
+        return [sql`${salonsTable.createdAt} desc`, sql`${salonsTable.id} asc`];
+      case "nearest":
+        if (query.latitude !== undefined && query.longitude !== undefined) {
+          // Haversine distance in SQL; salons without coordinates sort last.
+          const lat = query.latitude;
+          const lng = query.longitude;
+          const distanceExpr = sql`(case when ${salonsTable.latitude} is null or ${salonsTable.longitude} is null then null else
+            6371 * 2 * asin(sqrt(
+              power(sin(radians(${salonsTable.latitude} - ${lat}) / 2), 2)
+              + cos(radians(${lat})) * cos(radians(${salonsTable.latitude})) * power(sin(radians(${salonsTable.longitude} - ${lng}) / 2), 2)
+            )) end)`;
+          return [sql`${distanceExpr} asc nulls last`, sql`${salonsTable.id} asc`];
+        }
+        return [sql`${salonsTable.topSalon} desc`, sql`${salonsTable.featured} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
+      case "first-available":
+        return [sql`${earliestAvailabilityExpr} asc nulls last`, sql`${salonsTable.id} asc`];
+      default:
+        // recommended
+        return [sql`${salonsTable.topSalon} desc`, sql`${salonsTable.featured} desc`, sql`${salonsTable.rating} desc`, sql`${salonsTable.id} asc`];
     }
-  }
-  const sorted = [...filtered].sort((a, b) => {
-    if (query.sort === "top-rated") return b.rating - a.rating;
-    if (query.sort === "cheapest") return a.startingPrice - b.startingPrice;
-    if (query.sort === "largest-discount") {
-      return (bestDiscountBySalon.get(b.id) ?? 0) - (bestDiscountBySalon.get(a.id) ?? 0)
-        || b.rating - a.rating
-        || b.reviewCount - a.reviewCount;
-    }
-    if (query.sort === "most-popular") return b.reviewCount - a.reviewCount;
-    if (query.sort === "most-booked-recently") {
-      return (recentSalonBookingCounts.get(b.id) ?? 0) - (recentSalonBookingCounts.get(a.id) ?? 0)
-        || b.rating - a.rating
-        || b.reviewCount - a.reviewCount;
-    }
-    if (query.sort === "newest") return b.createdAt.localeCompare(a.createdAt);
-    if (query.sort === "first-available") {
-      if (!a.earliestSlot) return 1;
-      if (!b.earliestSlot) return -1;
-      return a.earliestSlot.localeCompare(b.earliestSlot);
-    }
-    if (query.sort === "nearest" && query.latitude !== undefined && query.longitude !== undefined) {
-      const distance = (item: typeof a) => {
-        const source = salons.find((salon) => salon.id === item.id);
-        if (source?.latitude === null || source?.latitude === undefined || source?.longitude === null || source?.longitude === undefined) return Number.POSITIVE_INFINITY;
-        const toRadians = (value: number) => value * Math.PI / 180;
-        const latitudeDelta = toRadians(source.latitude - query.latitude!);
-        const longitudeDelta = toRadians(source.longitude - query.longitude!);
-        const base = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(toRadians(query.latitude!)) * Math.cos(toRadians(source.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
-        return 6371 * 2 * Math.atan2(Math.sqrt(base), Math.sqrt(1 - base));
-      };
-      return distance(a) - distance(b);
-    }
-    return Number(b.topSalon) - Number(a.topSalon) || Number(b.featured) - Number(a.featured) || b.rating - a.rating;
-  });
-  res.json(ListSalonsResponse.parse(sorted));
+  };
+
+  // Select ONE page with the canonical availability expression used both for
+  // global ordering and for the card payload, so rank and advertised slot can
+  // never diverge.
+  const pageRows = await db.select({
+    salon: salonsTable,
+    earliestSlot: sql<string | null>`to_char(${earliestAvailabilityExpr}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+  }).from(salonsTable)
+    .where(where)
+    .orderBy(...orderByForSort())
+    .limit(pageSize)
+    .offset(offset);
+  const pageSalons = pageRows.map((row) => row.salon);
+  const earliestSlotBySalon = new Map(pageRows.map((row) => [row.salon.id, row.earliestSlot]));
+
+  // Assemble supporting card data only for the page that survived SQL filters.
+  const cards = await salonCards(pageSalons, earliestSlotBySalon);
+  const cardById = new Map(cards.map((item) => [item.id, item]));
+  const ordered = pageSalons.map((salon) => cardById.get(salon.id)).filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  res.json(ListSalonsResponse.parse(ordered));
+});
+
+router.get("/cities", async (_req, res): Promise<void> => {
+  await ensureDemoData();
+  // Cache the city catalog under the shared "salons" tag so any salon
+  // active/city mutation that broadcasts "salons" also drops this entry.
+  const cities = await catalogCache.getOrLoad(
+    "cities:catalog",
+    ["cities", "salons"],
+    async () => {
+      // Derive stable city summaries in PostgreSQL from active salons.
+      // Deterministic ordering: highest salon count first, then name (sr collation).
+      const rows = await db
+        .select({ name: salonsTable.city, salonCount: count() })
+        .from(salonsTable)
+        .where(eq(salonsTable.active, true))
+        .groupBy(salonsTable.city)
+        .orderBy(desc(count()), asc(salonsTable.city));
+      return rows
+        .filter((row) => typeof row.name === "string" && row.name.trim().length > 0)
+        .map((row) => ({ name: row.name, salonCount: Number(row.salonCount) }));
+    },
+  );
+  res.set("Cache-Control", "public, max-age=60, s-maxage=60");
+  res.json(ListCitiesResponse.parse(cities));
 });
 
 router.get("/discovery/home", async (req, res): Promise<void> => {
@@ -3024,152 +3295,202 @@ router.get("/discovery/home", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const city = parsed.data.city?.trim().toLowerCase();
-  const payload = await readThroughCatalogCache<MarketplaceHomeDiscoveryPayload>(
-    catalogCacheKey("discovery", city || "all"),
-    async () => {
-  const salons = [...await readThroughCatalogCache(
-    catalogCacheKey("cities", "active-salons"),
-    () => db.select().from(salonsTable).where(eq(salonsTable.active, true)),
-  )].filter((salon) => !city || salon.city.toLowerCase() === city);
-  const serviceCategories = await readThroughCatalogCache(
-    catalogCacheKey("service-categories", "active"),
-    () => db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.active, true)),
-  );
-  const mainServiceCategories = serviceCategories.filter((category) => DEFAULT_POPULAR_CATEGORY_ORDER.includes(category.name));
-  const fallbackCategoryCards = mainServiceCategories
-    .sort((a, b) => {
-      const aIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(a.name);
-      const bIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(b.name);
-      return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex)
-        || a.name.localeCompare(b.name, "sr");
-    })
-    .slice(0, 8)
-    .map((category) => ({
-      name: category.name,
-      categoryName: category.name,
-      bookingCount: 0,
-      imageUrl: category.fallbackImageUrl ?? DEFAULT_CATEGORY_CARD_IMAGE,
-    }));
-  let computedPayload: MarketplaceHomeDiscoveryPayload;
-  if (!salons.length) {
-    computedPayload = GetMarketplaceHomeDiscoveryResponse.parse({
-      popularServices: fallbackCategoryCards,
-      featuredSalons: [],
-      newSalons: [],
-      discountedSalons: [],
-      popularSalons: [],
-      topRatedSalons: [],
-    });
-  } else {
-    const salonIds = salons.map((salon) => salon.id);
-    const [services, hours, recentAppointments] = await Promise.all([
-      db.select().from(servicesTable).where(and(inArray(servicesTable.salonId, salonIds), eq(servicesTable.active, true))),
-      db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, salonIds)),
-      db.select().from(appointmentsTable).where(and(
-        inArray(appointmentsTable.salonId, salonIds),
-        gte(appointmentsTable.createdAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-        ne(appointmentsTable.status, "cancelled"),
-      )),
-    ]);
-    const servicesBySalon = new Map<string, (typeof servicesTable.$inferSelect)[]>();
-    const hoursBySalon = new Map<string, (typeof salonHoursTable.$inferSelect)[]>();
-    for (const service of services) servicesBySalon.set(service.salonId, [...(servicesBySalon.get(service.salonId) ?? []), service]);
-    for (const hour of hours) hoursBySalon.set(hour.salonId, [...(hoursBySalon.get(hour.salonId) ?? []), hour]);
-    const cards = salons.map((salon) => card(salon, servicesBySalon.get(salon.id), hoursBySalon.get(salon.id)));
-    const knownCategoryNames = new Set(mainServiceCategories.map((category) => category.name));
-    const categoryServices = services.filter((service) => knownCategoryNames.has(service.categoryName));
-    const bookingCounts = new Map<string, number>();
-    const activeServiceIds = new Set(services.map((service) => service.id));
-    for (const appointment of recentAppointments) {
-      if (!activeServiceIds.has(appointment.serviceId)) continue;
-      bookingCounts.set(appointment.serviceId, (bookingCounts.get(appointment.serviceId) ?? 0) + 1);
-    }
-    const salonBookingCounts = new Map<string, number>();
-    const discountsBySalon = new Map<string, typeof servicesTable.$inferSelect>();
-    for (const service of services) {
-      salonBookingCounts.set(service.salonId, (salonBookingCounts.get(service.salonId) ?? 0) + (bookingCounts.get(service.id) ?? 0));
-      if (service.promoPrice !== null && service.promoPrice < service.price) {
-        const current = discountsBySalon.get(service.salonId);
-        const currentSaving = current ? current.price - (current.promoPrice ?? current.price) : 0;
-        if (!current || service.price - service.promoPrice > currentSaving) discountsBySalon.set(service.salonId, service);
-      }
-    }
-    const rankCards = (items: typeof cards, compare: (a: typeof cards[number], b: typeof cards[number]) => number, limit = 12) =>
-      [...items].sort(compare).slice(0, limit);
-    const servicesById = new Map(categoryServices.map((service) => [service.id, service]));
-    const categoryBookingCounts = new Map<string, number>();
-    const categorySalonBookingCounts = new Map<string, number>();
-    for (const appointment of recentAppointments) {
-      const service = servicesById.get(appointment.serviceId);
-      if (!service) continue;
-      categoryBookingCounts.set(service.categoryName, (categoryBookingCounts.get(service.categoryName) ?? 0) + 1);
-      const key = `${service.categoryName}\u0000${service.salonId}`;
-      categorySalonBookingCounts.set(key, (categorySalonBookingCounts.get(key) ?? 0) + 1);
-    }
-    const salonById = new Map(salons.map((salon) => [salon.id, salon]));
-    const categoryPhotos = new Map<string, { imageUrl: string; bookingCount: number; createdAt: Date }>();
-    for (const service of categoryServices) {
-      const salon = salonById.get(service.salonId);
-      const galleryImage = salon?.gallery.find(isRealSalonGalleryImage);
-      if (!salon || !galleryImage) continue;
-      const bookingCount = categorySalonBookingCounts.get(`${service.categoryName}\u0000${service.salonId}`) ?? 0;
-      const current = categoryPhotos.get(service.categoryName);
-      if (!current || bookingCount > current.bookingCount || (bookingCount === current.bookingCount && salon.createdAt > current.createdAt)) {
-        categoryPhotos.set(service.categoryName, { imageUrl: galleryImage, bookingCount, createdAt: salon.createdAt });
-      }
-    }
-    const categoriesByName = new Map(mainServiceCategories.map((category) => [category.name, category]));
-    const bookedCategories = [...categoryBookingCounts.entries()]
-      .map(([categoryName, bookingCount]) => ({
-        name: categoryName,
-        categoryName,
-        bookingCount,
-        imageUrl: categoryPhotos.get(categoryName)?.imageUrl
-          ?? categoriesByName.get(categoryName)?.fallbackImageUrl
-          ?? DEFAULT_CATEGORY_CARD_IMAGE,
-      }))
-      .filter((category) => category.bookingCount > 0)
-      .sort((a, b) => b.bookingCount - a.bookingCount || a.categoryName.localeCompare(b.categoryName, "sr"))
-      .slice(0, 8);
-    const popularServices = bookedCategories.length ? bookedCategories : fallbackCategoryCards;
-    const featuredSalons = rankCards(
-      cards.filter((item) => item.featured),
-      (a, b) => Number(b.topSalon) - Number(a.topSalon) || b.rating - a.rating || b.reviewCount - a.reviewCount,
-    );
-    const discountedSalons = rankCards(
-      cards.filter((item) => discountsBySalon.has(item.id)),
-      (a, b) => {
-        const saving = (salonId: string) => {
-          const service = discountsBySalon.get(salonId)!;
-          return service.price - (service.promoPrice ?? service.price);
-        };
-        return saving(b.id) - saving(a.id) || b.rating - a.rating;
-      },
-    ).flatMap((item) => {
-      const discount = discountsBySalon.get(item.id)!;
-      return discount.promoPrice === null
-        ? []
-        : [{ ...item, discount: { serviceName: discount.name, price: discount.price, promoPrice: discount.promoPrice } }];
-    });
-    computedPayload = GetMarketplaceHomeDiscoveryResponse.parse({
-      popularServices,
-      featuredSalons,
-      newSalons: rankCards(cards, (a, b) => b.createdAt.localeCompare(a.createdAt)),
-      discountedSalons,
-      popularSalons: rankCards(
-        cards.filter((item) => (salonBookingCounts.get(item.id) ?? 0) > 0),
-        (a, b) => (salonBookingCounts.get(b.id) ?? 0) - (salonBookingCounts.get(a.id) ?? 0) || b.rating - a.rating,
-      ),
-      topRatedSalons: rankCards(
-        cards.filter((item) => item.reviewCount >= 5),
-        (a, b) => b.rating - a.rating || b.reviewCount - a.reviewCount,
-      ),
-    });
-  }
+  const cacheKey = `discovery:home:${city || "all"}`;
 
-  return computedPayload;
+  const payload = await catalogCache.getOrLoad<MarketplaceHomeDiscoveryPayload>(
+    cacheKey,
+    ["salons", "services", "service-categories"],
+    async () => {
+      const shelfLimit = 12;
+      const recentSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const basePredicate = and(
+        eq(salonsTable.active, true),
+        city ? sql`lower(${salonsTable.city}) = ${city}` : undefined,
+      );
+      const bestDiscountExpr = sql`coalesce((
+        select max(${servicesTable.price} - ${servicesTable.promoPrice})
+        from ${servicesTable}
+        where ${servicesTable.salonId} = ${salonsTable.id}
+          and ${servicesTable.active} = true
+          and ${servicesTable.promoPrice} is not null
+          and ${servicesTable.promoPrice} < ${servicesTable.price}
+      ), 0)`;
+      const recentBookingExpr = sql`coalesce((
+        select count(*)
+        from ${appointmentsTable}
+        inner join ${servicesTable}
+          on ${servicesTable.id} = ${appointmentsTable.serviceId}
+         and ${servicesTable.salonId} = ${salonsTable.id}
+         and ${servicesTable.active} = true
+        where ${appointmentsTable.salonId} = ${salonsTable.id}
+          and ${appointmentsTable.createdAt} >= ${recentSince}
+          and ${appointmentsTable.status} <> 'cancelled'
+      ), 0)`;
+
+      // Each shelf is ranked and bounded in PostgreSQL. A cold cache miss
+      // therefore touches at most the union of five 12-salon candidate sets.
+      const [
+        serviceCategories,
+        featuredRows,
+        newRows,
+        discountedRows,
+        popularRows,
+        topRatedRows,
+      ] = await Promise.all([
+        db.select().from(serviceCategoriesTable)
+          .where(and(
+            eq(serviceCategoriesTable.active, true),
+            inArray(serviceCategoriesTable.name, DEFAULT_POPULAR_CATEGORY_ORDER),
+          ))
+          .orderBy(asc(serviceCategoriesTable.name))
+          .limit(DEFAULT_POPULAR_CATEGORY_ORDER.length),
+        db.select().from(salonsTable)
+          .where(and(basePredicate, eq(salonsTable.featured, true)))
+          .orderBy(desc(salonsTable.topSalon), desc(salonsTable.rating), desc(salonsTable.reviewCount), asc(salonsTable.id))
+          .limit(shelfLimit),
+        db.select().from(salonsTable)
+          .where(basePredicate)
+          .orderBy(desc(salonsTable.createdAt), asc(salonsTable.id))
+          .limit(shelfLimit),
+        db.select().from(salonsTable)
+          .where(and(basePredicate, sql`${bestDiscountExpr} > 0`))
+          .orderBy(sql`${bestDiscountExpr} desc`, desc(salonsTable.rating), asc(salonsTable.id))
+          .limit(shelfLimit),
+        db.select().from(salonsTable)
+          .where(and(basePredicate, sql`${recentBookingExpr} > 0`))
+          .orderBy(sql`${recentBookingExpr} desc`, desc(salonsTable.rating), asc(salonsTable.id))
+          .limit(shelfLimit),
+        db.select().from(salonsTable)
+          .where(and(basePredicate, gte(salonsTable.reviewCount, 5)))
+          .orderBy(desc(salonsTable.rating), desc(salonsTable.reviewCount), asc(salonsTable.id))
+          .limit(shelfLimit),
+      ]);
+
+      const mainServiceCategories = [...serviceCategories].sort((a, b) => {
+        const aIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(a.name);
+        const bIndex = DEFAULT_POPULAR_CATEGORY_ORDER.indexOf(b.name);
+        return aIndex - bIndex || a.name.localeCompare(b.name, "sr");
+      });
+      const fallbackCategoryCards = mainServiceCategories.slice(0, 8).map((category) => ({
+        name: category.name,
+        categoryName: category.name,
+        bookingCount: 0,
+        imageUrl: category.fallbackImageUrl ?? DEFAULT_CATEGORY_CARD_IMAGE,
+      }));
+
+      const candidateById = new Map<string, typeof salonsTable.$inferSelect>();
+      for (const salon of [...featuredRows, ...newRows, ...discountedRows, ...popularRows, ...topRatedRows]) {
+        candidateById.set(salon.id, salon);
+      }
+      const candidates = [...candidateById.values()];
+      if (candidates.length === 0) {
+        return GetMarketplaceHomeDiscoveryResponse.parse({
+          popularServices: fallbackCategoryCards,
+          featuredSalons: [],
+          newSalons: [],
+          discountedSalons: [],
+          popularSalons: [],
+          topRatedSalons: [],
+        });
+      }
+
+      const candidateIds = candidates.map((salon) => salon.id);
+      const categoryNames = mainServiceCategories.map((category) => category.name);
+      const [services, hours, discountServices, categoryBookings] = await Promise.all([
+        db.select().from(servicesTable)
+          .where(and(inArray(servicesTable.salonId, candidateIds), eq(servicesTable.active, true))),
+        db.select().from(salonHoursTable).where(inArray(salonHoursTable.salonId, candidateIds)),
+        discountedRows.length
+          ? db.select().from(servicesTable)
+              .where(and(
+                inArray(servicesTable.salonId, discountedRows.map((salon) => salon.id)),
+                eq(servicesTable.active, true),
+                isNotNull(servicesTable.promoPrice),
+                sql`${servicesTable.promoPrice} < ${servicesTable.price}`,
+              ))
+              .orderBy(asc(servicesTable.salonId), sql`${servicesTable.price} - ${servicesTable.promoPrice} desc`, asc(servicesTable.id))
+          : Promise.resolve([] as (typeof servicesTable.$inferSelect)[]),
+        categoryNames.length
+          ? db.select({
+              categoryName: servicesTable.categoryName,
+              bookingCount: count(),
+            })
+              .from(appointmentsTable)
+              .innerJoin(servicesTable, and(
+                eq(servicesTable.id, appointmentsTable.serviceId),
+                eq(servicesTable.active, true),
+              ))
+              .innerJoin(salonsTable, and(
+                eq(salonsTable.id, appointmentsTable.salonId),
+                basePredicate,
+              ))
+              .where(and(
+                inArray(servicesTable.categoryName, categoryNames),
+                gte(appointmentsTable.createdAt, recentSince),
+                ne(appointmentsTable.status, "cancelled"),
+              ))
+              .groupBy(servicesTable.categoryName)
+              .orderBy(desc(count()), asc(servicesTable.categoryName))
+              .limit(8)
+          : Promise.resolve([] as { categoryName: string; bookingCount: number }[]),
+      ]);
+
+      const servicesBySalon = groupBySalon(services);
+      const hoursBySalon = groupBySalon(hours);
+      const cardById = new Map(candidates.map((salon) => [
+        salon.id,
+        card(salon, servicesBySalon.get(salon.id) ?? [], hoursBySalon.get(salon.id) ?? []),
+      ]));
+      const cardsFor = (rows: (typeof salonsTable.$inferSelect)[]) =>
+        rows.flatMap((salon) => {
+          const value = cardById.get(salon.id);
+          return value ? [value] : [];
+        });
+
+      const discountsBySalon = new Map<string, typeof servicesTable.$inferSelect>();
+      for (const service of discountServices) {
+        if (!discountsBySalon.has(service.salonId)) discountsBySalon.set(service.salonId, service);
+      }
+      const discountedSalons = cardsFor(discountedRows).flatMap((item) => {
+        const discount = discountsBySalon.get(item.id);
+        return !discount || discount.promoPrice === null
+          ? []
+          : [{ ...item, discount: { serviceName: discount.name, price: discount.price, promoPrice: discount.promoPrice } }];
+      });
+
+      const categoriesByName = new Map(mainServiceCategories.map((category) => [category.name, category]));
+      const categoryImageByName = new Map<string, string>();
+      for (const salon of candidates) {
+        const imageUrl = salon.gallery.find(isRealSalonGalleryImage);
+        if (!imageUrl) continue;
+        for (const service of servicesBySalon.get(salon.id) ?? []) {
+          if (categoriesByName.has(service.categoryName) && !categoryImageByName.has(service.categoryName)) {
+            categoryImageByName.set(service.categoryName, imageUrl);
+          }
+        }
+      }
+      const popularServices = categoryBookings.length
+        ? categoryBookings.map((row) => ({
+            name: row.categoryName,
+            categoryName: row.categoryName,
+            bookingCount: Number(row.bookingCount),
+            imageUrl: categoryImageByName.get(row.categoryName)
+              ?? categoriesByName.get(row.categoryName)?.fallbackImageUrl
+              ?? DEFAULT_CATEGORY_CARD_IMAGE,
+          }))
+        : fallbackCategoryCards;
+
+      return GetMarketplaceHomeDiscoveryResponse.parse({
+        popularServices,
+        featuredSalons: cardsFor(featuredRows),
+        newSalons: cardsFor(newRows),
+        discountedSalons,
+        popularSalons: cardsFor(popularRows),
+        topRatedSalons: cardsFor(topRatedRows),
+      });
     },
   );
+
   res.set("Cache-Control", "public, max-age=60, s-maxage=60");
   res.json(payload);
 });
@@ -3197,42 +3518,75 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.slug, parsed.data.slug)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
-  const [services, staff, hours, reviews, appointments] = await Promise.all([
+  const [services, staff, hours, reviews, firstAvailability] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
     db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
     db.select().from(salonHoursTable).where(eq(salonHoursTable.salonId, salon.id)).orderBy(asc(salonHoursTable.weekday)),
-    db.select().from(reviewsTable).where(and(eq(reviewsTable.salonId, salon.id), eq(reviewsTable.visible, true))),
-    db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id)),
+    db.select().from(reviewsTable)
+      .where(and(eq(reviewsTable.salonId, salon.id), eq(reviewsTable.visible, true)))
+      .orderBy(desc(reviewsTable.createdAt), desc(reviewsTable.id))
+      .limit(100),
+    firstAvailableByService(salon.id),
   ]);
-  const reviewUsers = reviews.length ? await db.select().from(usersTable).where(inArray(usersTable.id, reviews.map((item) => item.customerId))) : [];
+  const reviewCustomerIds = [...new Set(reviews.map((item) => item.customerId))];
+  const serviceIds = services.map((service) => service.id);
+  const [reviewUsers, employeeLinks, completedPairs, completedCustomerSummary, serviceBookingRows, lastBookedRows] = await Promise.all([
+    reviewCustomerIds.length
+      ? db.select().from(usersTable).where(inArray(usersTable.id, reviewCustomerIds))
+      : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
+    staff.length
+      ? db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, staff.map((item) => item.id)))
+      : Promise.resolve([] as (typeof employeeServicesTable.$inferSelect)[]),
+    reviewCustomerIds.length && serviceIds.length
+      ? db.selectDistinct({
+          customerId: appointmentsTable.customerId,
+          serviceId: appointmentsTable.serviceId,
+        }).from(appointmentsTable).where(and(
+          eq(appointmentsTable.salonId, salon.id),
+          eq(appointmentsTable.status, "completed"),
+          inArray(appointmentsTable.customerId, reviewCustomerIds),
+          inArray(appointmentsTable.serviceId, serviceIds),
+        ))
+      : Promise.resolve([] as { customerId: string | null; serviceId: string }[]),
+    db.execute<{ total_visits: string; customer_count: string; repeat_customer_count: string }>(sql`
+      select
+        coalesce(sum(visits), 0)::text as total_visits,
+        count(*)::text as customer_count,
+        count(*) filter (where visits > 1)::text as repeat_customer_count
+      from (
+        select ${appointmentsTable.customerId} as customer_id, count(*) as visits
+        from ${appointmentsTable}
+        where ${appointmentsTable.salonId} = ${salon.id}
+          and ${appointmentsTable.status} = 'completed'
+          and ${appointmentsTable.customerId} is not null
+        group by ${appointmentsTable.customerId}
+      ) completed_by_customer
+    `),
+    db.select({
+      serviceId: appointmentsTable.serviceId,
+      bookingCount: count(),
+    }).from(appointmentsTable)
+      .where(and(eq(appointmentsTable.salonId, salon.id), ne(appointmentsTable.status, "cancelled")))
+      .groupBy(appointmentsTable.serviceId),
+    db.select({ lastBookedAt: sql<Date | null>`max(${appointmentsTable.createdAt})` })
+      .from(appointmentsTable)
+      .where(and(eq(appointmentsTable.salonId, salon.id), ne(appointmentsTable.status, "cancelled"))),
+  ]);
   const reviewUsersById = new Map(reviewUsers.map((user) => [user.id, user]));
-  const employeeLinks = staff.length ? await db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, staff.map((item) => item.id))) : [];
   const serviceByName = new Map(services.map((service) => [service.name, service]));
   const completedAppointmentKeys = new Set(
-    appointments
-      .filter((appointment) => appointment.status === "completed" && appointment.customerId)
-      .map((appointment) => `${appointment.customerId}:${appointment.serviceId}`),
+    completedPairs.flatMap((appointment) =>
+      appointment.customerId ? [`${appointment.customerId}:${appointment.serviceId}`] : [],
+    ),
   );
-  const completedVisitsByCustomer = new Map<string, number>();
-  for (const appointment of appointments) {
-    if (appointment.status !== "completed" || !appointment.customerId) continue;
-    completedVisitsByCustomer.set(
-      appointment.customerId,
-      (completedVisitsByCustomer.get(appointment.customerId) ?? 0) + 1,
-    );
-  }
-  const returnClientRate = appointments.filter((appointment) => appointment.status === "completed").length >= 5
-    && completedVisitsByCustomer.size >= 3
-    ? Math.round(
-      [...completedVisitsByCustomer.values()].filter((visits) => visits > 1).length
-      / completedVisitsByCustomer.size * 100,
-    )
+  const completedSummary = completedCustomerSummary.rows[0];
+  const completedVisitCount = Number(completedSummary?.total_visits ?? 0);
+  const completedCustomerCount = Number(completedSummary?.customer_count ?? 0);
+  const repeatCustomerCount = Number(completedSummary?.repeat_customer_count ?? 0);
+  const returnClientRate = completedVisitCount >= 5 && completedCustomerCount >= 3
+    ? Math.round(repeatCustomerCount / completedCustomerCount * 100)
     : null;
-  const bookingsByServiceId = new Map<string, number>();
-  for (const appointment of appointments) {
-    if (appointment.status === "cancelled") continue;
-    bookingsByServiceId.set(appointment.serviceId, (bookingsByServiceId.get(appointment.serviceId) ?? 0) + 1);
-  }
+  const bookingsByServiceId = new Map(serviceBookingRows.map((row) => [row.serviceId, Number(row.bookingCount)]));
   const topServices = services
     .map((service) => ({ ...service, bookingCount: bookingsByServiceId.get(service.id) ?? 0 }))
     .filter((service) => service.bookingCount > 0)
@@ -3248,7 +3602,13 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       bookingCount: service.bookingCount,
     }));
   res.json(GetSalonResponse.parse({
-    ...card(salon, services, hours, appointments, staff),
+    ...card(
+      salon,
+      services,
+      hours,
+      earliestSlotFromResponse(firstAvailability),
+      lastBookedRows[0]?.lastBookedAt ? new Date(lastBookedRows[0].lastBookedAt) : null,
+    ),
     gallery: salon.gallery,
     videoUrl: salon.videoUrl,
     description: salon.description,
@@ -3303,9 +3663,17 @@ router.get("/recnik", async (_req, res): Promise<void> => {
 router.get("/brendovi", async (_req, res): Promise<void> => {
   await ensureDemoData();
   const [brands, links, salons] = await Promise.all([db.select().from(productBrandsTable), db.select().from(salonBrandsTable), db.select().from(salonsTable)]);
+  // Build active salon set and per-brand count map to avoid O(n²) scans.
+  const activeSalonIds = new Set(salons.filter((s) => s.active).map((s) => s.id));
+  const activeSalonCountByBrandId = new Map<string, number>();
+  for (const link of links) {
+    if (activeSalonIds.has(link.salonId)) {
+      activeSalonCountByBrandId.set(link.brandId, (activeSalonCountByBrandId.get(link.brandId) ?? 0) + 1);
+    }
+  }
   res.json(brands.map((brand) => ({
     id: brand.id, name: brand.name, slug: brand.slug, description: brand.description,
-    salonCount: links.filter((link) => link.brandId === brand.id && salons.some((salon) => salon.id === link.salonId && salon.active)).length,
+    salonCount: activeSalonCountByBrandId.get(brand.id) ?? 0,
   })));
 });
 
@@ -3352,10 +3720,15 @@ router.get("/appointments", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
   const parsed = ListMyAppointmentsQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let appointments = await appointmentList(eq(appointmentsTable.customerId, user.id), true);
-  if (parsed.data.status) appointments = appointments.filter((item) => item.status === parsed.data.status);
-  if (parsed.data.scope === "upcoming") appointments = appointments.filter((item) => item.date >= new Date().toISOString().slice(0, 10));
-  if (parsed.data.scope === "past") appointments = appointments.filter((item) => item.date < new Date().toISOString().slice(0, 10));
+  // Fold status/scope predicates into SQL so they filter before the stable page,
+  // keeping the query count independent of page size and applied filters.
+  const today = new Date().toISOString().slice(0, 10);
+  const predicates = [eq(appointmentsTable.customerId, user.id)];
+  if (parsed.data.status) predicates.push(eq(appointmentsTable.status, parsed.data.status));
+  if (parsed.data.scope === "upcoming") predicates.push(gte(appointmentsTable.date, today));
+  if (parsed.data.scope === "past") predicates.push(lt(appointmentsTable.date, today));
+  const { limit, offset } = parsePagination(req.query, 50);
+  const appointments = await appointmentList(and(...predicates), true, { limit, offset });
   ListMyAppointmentsResponse.parse(appointments);
   res.json(appointments);
 });
@@ -3536,45 +3909,66 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
 
 router.get("/customer/dashboard", async (req, res): Promise<void> => {
   const user = await requireCustomer(req, res); if (!user) return;
-  const [appointments, bookingRecords, favorites] = await Promise.all([
-    appointmentList(eq(appointmentsTable.customerId, user.id), true),
-    db.select().from(appointmentsTable).where(eq(appointmentsTable.customerId, user.id)),
-    db.select().from(favoritesTable).where(eq(favoritesTable.userId, user.id)),
+  // Bound every read to what the dashboard renders instead of loading the
+  // customer's entire appointment history:
+  //   - `upcoming` is the earliest 3 non-cancelled appointments (SQL order + limit).
+  //   - visit/favorite counts and booked/preference sets are SQL aggregates.
+  //   - recommendation candidates are ranked and limited in SQL before card assembly.
+  const [upcoming, visitCountRows, favoriteCountRows, bookedSalonRows, preferredCategoryRows] = await Promise.all([
+    appointmentList(
+      and(eq(appointmentsTable.customerId, user.id), ne(appointmentsTable.status, "cancelled")),
+      true,
+      { limit: 3, offset: 0 },
+    ),
+    db.select({ value: count() }).from(appointmentsTable)
+      .where(and(eq(appointmentsTable.customerId, user.id), eq(appointmentsTable.status, "completed"))),
+    db.select({ value: count() }).from(favoritesTable).where(eq(favoritesTable.userId, user.id)),
+    db.selectDistinct({ salonId: appointmentsTable.salonId }).from(appointmentsTable)
+      .where(and(eq(appointmentsTable.customerId, user.id), ne(appointmentsTable.status, "cancelled"))),
+    db.selectDistinct({ categoryName: servicesTable.categoryName })
+      .from(appointmentsTable)
+      .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .where(and(eq(appointmentsTable.customerId, user.id), ne(appointmentsTable.status, "cancelled"))),
   ]);
-  const bookedSalonIds = [...new Set(bookingRecords
-    .filter((appointment) => appointment.status !== "cancelled")
-    .map((appointment) => appointment.salonId))];
-  const bookedServiceIds = [...new Set(bookingRecords
-    .filter((appointment) => appointment.status !== "cancelled")
-    .map((appointment) => appointment.serviceId))];
-  const bookedServices = bookedServiceIds.length
-    ? await db.select().from(servicesTable).where(inArray(servicesTable.id, bookedServiceIds))
+  const bookedSalonIds = bookedSalonRows.map((row) => row.salonId);
+  const preferredCategories = preferredCategoryRows.map((row) => row.categoryName);
+  // Rank recommendation candidates in SQL (active salons with an active service
+  // in a preferred category, excluding already-booked salons) and cap at 15 so
+  // card assembly only ever sees a bounded set.
+  const recommendedSalonIdRows = preferredCategories.length
+    ? await db.selectDistinct({
+        id: salonsTable.id,
+        topSalon: salonsTable.topSalon,
+        featured: salonsTable.featured,
+        rating: salonsTable.rating,
+      })
+      .from(salonsTable)
+      .innerJoin(servicesTable, eq(servicesTable.salonId, salonsTable.id))
+      .where(and(
+        eq(salonsTable.active, true),
+        eq(servicesTable.active, true),
+        inArray(servicesTable.categoryName, preferredCategories),
+        ...(bookedSalonIds.length ? [notInArray(salonsTable.id, bookedSalonIds)] : []),
+      ))
+      .orderBy(desc(salonsTable.topSalon), desc(salonsTable.featured), desc(salonsTable.rating), asc(salonsTable.id))
+      .limit(15)
     : [];
-  const preferredCategories = new Set(bookedServices.map((service) => service.categoryName));
-  const activeSalons = preferredCategories.size
-    ? await db.select().from(salonsTable).where(eq(salonsTable.active, true))
-    : [];
-  const candidateSalonIds = activeSalons
-    .filter((salon) => !bookedSalonIds.includes(salon.id))
-    .map((salon) => salon.id);
-  const candidateServices = candidateSalonIds.length
-    ? await db.select().from(servicesTable).where(inArray(servicesTable.salonId, candidateSalonIds))
-    : [];
-  const recommendedSalons = activeSalons
-    .filter((salon) => candidateServices.some((service) =>
-      service.salonId === salon.id && service.active && preferredCategories.has(service.categoryName),
-    ))
-    .sort((left, right) => Number(right.topSalon) - Number(left.topSalon)
-      || Number(right.featured) - Number(left.featured)
-      || right.rating - left.rating)
-    .slice(0, 15);
-  const recentSalons = await db.select().from(salonsTable).where(eq(salonsTable.active, true)).limit(3);
+  const recommendedIds = recommendedSalonIdRows.map((row) => row.id);
+  const [recommendedSalons, recentSalons] = await Promise.all([
+    recommendedIds.length
+      ? db.select().from(salonsTable).where(inArray(salonsTable.id, recommendedIds))
+      : Promise.resolve([] as (typeof salonsTable.$inferSelect)[]),
+    db.select().from(salonsTable).where(eq(salonsTable.active, true)).limit(3),
+  ]);
+  // Preserve the SQL ranking order when reloading full salon rows for cards.
+  const recommendedRank = new Map(recommendedIds.map((id, index) => [id, index]));
+  recommendedSalons.sort((left, right) => (recommendedRank.get(left.id) ?? 0) - (recommendedRank.get(right.id) ?? 0));
   res.json(GetCustomerDashboardResponse.parse({
-    upcoming: appointments.filter((item) => item.status !== "cancelled").slice(0, 3),
+    upcoming,
     recentSalons: await salonCards(recentSalons),
     recommendations: await salonCards(recommendedSalons),
-    favoriteCount: favorites.length,
-    visitCount: appointments.filter((item) => item.status === "completed").length,
+    favoriteCount: favoriteCountRows[0]?.value ?? 0,
+    visitCount: visitCountRows[0]?.value ?? 0,
   }));
 });
 
@@ -3742,10 +4136,45 @@ router.put("/customer/favorite-employees/:salonId", async (req, res): Promise<vo
 router.get("/salon/dashboard", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const [services, appointments, loyalty] = await Promise.all([db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)), appointmentList(eq(appointmentsTable.salonId, salon.id), true), db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salon.id)).limit(1)]);
+  // Bound reads to what the dashboard renders instead of the salon's whole
+  // history: today's list uses a SQL date predicate + order + limit, and the
+  // month stats are SQL aggregates over the current calendar month.
+  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const nextMonthStart = (() => {
+    const value = new Date(`${monthStart}T00:00:00.000Z`);
+    value.setUTCMonth(value.getUTCMonth() + 1);
+    return value.toISOString().slice(0, 10);
+  })();
+  const [services, todayAppointments, monthStatsRows] = await Promise.all([
+    db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
+    appointmentList(
+      and(eq(appointmentsTable.salonId, salon.id), eq(appointmentsTable.date, today)),
+      true,
+      { limit: 5, offset: 0 },
+    ),
+    db.select({
+      revenueThisMonth: sql<number>`coalesce(sum(${appointmentsTable.price}) filter (where ${appointmentsTable.status} = 'completed'), 0)`,
+      bookingsThisMonth: count(),
+      newCustomers: sql<number>`count(distinct coalesce(${appointmentsTable.customerId}, ${appointmentsTable.salonCustomerId}))`,
+    }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, salon.id),
+      gte(appointmentsTable.date, monthStart),
+      lt(appointmentsTable.date, nextMonthStart),
+    )),
+  ]);
   const loyaltyData = await loyaltyStatus(salon.id);
-  const completed = appointments.filter((item) => item.status === "completed");
-  res.json(GetSalonDashboardResponse.parse({ salon: card(salon, services), todayAppointments: appointments.slice(0, 5), revenueThisMonth: completed.reduce((sum, item) => sum + item.price, 0), bookingsThisMonth: appointments.length, newCustomers: new Set(appointments.map((item) => item.customerName)).size, rating: salon.rating / 10, revenueChange: 12, loyalty: loyaltyData }));
+  const monthStats = monthStatsRows[0];
+  res.json(GetSalonDashboardResponse.parse({
+    salon: card(salon, services),
+    todayAppointments,
+    revenueThisMonth: Number(monthStats?.revenueThisMonth ?? 0),
+    bookingsThisMonth: Number(monthStats?.bookingsThisMonth ?? 0),
+    newCustomers: Number(monthStats?.newCustomers ?? 0),
+    rating: salon.rating / 10,
+    revenueChange: 12,
+    loyalty: loyaltyData,
+  }));
 });
 
 router.get("/salon/profile", async (req, res): Promise<void> => {
@@ -3863,7 +4292,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  await invalidateCatalogCache("cities", "discovery");
+  void publishCatalogInvalidation(["salons"]);
   res.json(GetManagedSalonProfileResponse.parse({
     id: updated!.id,
     name: updated!.name,
@@ -3905,61 +4334,86 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
   const parseQueryDate = (value: unknown) => typeof value === "string" ? new Date(`${value}T12:00:00.000Z`) : value;
   const parsed = ListSalonAppointmentsQueryParams.safeParse({ ...req.query, from: parseQueryDate(req.query.from), to: parseQueryDate(req.query.to) });
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  let items = await appointmentList(eq(appointmentsTable.salonId, salon.id), true);
-  if (parsed.data.status) items = items.filter((item) => item.status === parsed.data.status);
-  if (parsed.data.from) items = items.filter((item) => item.date >= calendarDate(parsed.data.from!));
-  if (parsed.data.to) items = items.filter((item) => item.date <= calendarDate(parsed.data.to!));
+  // Push status/date-range predicates into SQL so they filter before the stable
+  // page. Query count stays constant regardless of page size or applied filters.
+  const predicates = [eq(appointmentsTable.salonId, salon.id)];
+  if (parsed.data.status) predicates.push(sql`${appointmentsTable.status}::text = ${parsed.data.status}`);
+  if (parsed.data.from) predicates.push(gte(appointmentsTable.date, calendarDate(parsed.data.from)));
+  if (parsed.data.to) predicates.push(lte(appointmentsTable.date, calendarDate(parsed.data.to)));
+  const { limit, offset } = parsePagination(req.query, 100);
+  const items = await appointmentList(and(...predicates), true, { limit, offset });
   res.json(ListSalonAppointmentsResponse.parse(items));
 });
 
 router.get("/salon/customers", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const salonId = access.salon.id;
-  const [contacts, appointments, series, services] = await Promise.all([
-    db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salonId)).orderBy(asc(salonCustomersTable.lastName), asc(salonCustomersTable.firstName)),
-    db.select({ id: appointmentsTable.id, salonCustomerId: appointmentsTable.salonCustomerId, seriesId: appointmentsTable.seriesId, status: appointmentsTable.status, date: appointmentsTable.date })
-      .from(appointmentsTable).where(eq(appointmentsTable.salonId, salonId)),
-    db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, salonId)),
-    db.select({ id: servicesTable.id, name: servicesTable.name }).from(servicesTable).where(eq(servicesTable.salonId, salonId)),
-  ]);
-
-  // Pre-index appointments by customerId and seriesId to avoid O(n×m) scans.
-  const visitCountByCustomer = new Map<string, number>();
-  const noShowCountByCustomer = new Map<string, number>();
-  const apptsBySeriesId = new Map<string, typeof appointments>();
   const today = new Date().toISOString().slice(0, 10);
-  for (const appt of appointments) {
-    if (appt.salonCustomerId) {
-      visitCountByCustomer.set(appt.salonCustomerId, (visitCountByCustomer.get(appt.salonCustomerId) ?? 0) + 1);
-      if (appt.status === "no-show") noShowCountByCustomer.set(appt.salonCustomerId, (noShowCountByCustomer.get(appt.salonCustomerId) ?? 0) + 1);
-    }
-    if (appt.seriesId) {
-      const bucket = apptsBySeriesId.get(appt.seriesId);
-      if (bucket) bucket.push(appt); else apptsBySeriesId.set(appt.seriesId, [appt]);
-    }
-  }
-  const serviceNameById = new Map(services.map((s) => [s.id, s.name]));
-  const seriesByCustomer = new Map<string, typeof series>();
-  for (const item of series) {
-    if (item.salonCustomerId) {
-      const bucket = seriesByCustomer.get(item.salonCustomerId);
-      if (bucket) bucket.push(item); else seriesByCustomer.set(item.salonCustomerId, [item]);
-    }
-  }
+  // Page the CRM contacts first with a stable order (lastName, firstName, id) so
+  // that every downstream read is scoped to the page's contact IDs instead of the
+  // full salon appointment/series tables. Query count is constant per page.
+  const { limit, offset } = parsePagination(req.query, 50);
+  const contacts = await db.select().from(salonCustomersTable)
+    .where(eq(salonCustomersTable.salonId, access.salon.id))
+    .orderBy(asc(salonCustomersTable.lastName), asc(salonCustomersTable.firstName), asc(salonCustomersTable.id))
+    .limit(limit).offset(offset);
+  if (!contacts.length) { res.json(ListSalonCustomersResponse.parse([])); return; }
+  const contactIds = contacts.map((contact) => contact.id);
 
+  // Grouped aggregate counts restricted to the page contacts (no full table read).
+  const [visitCounts, noShowCounts, series] = await Promise.all([
+    db.select({ salonCustomerId: appointmentsTable.salonCustomerId, value: count() }).from(appointmentsTable)
+      .where(inArray(appointmentsTable.salonCustomerId, contactIds))
+      .groupBy(appointmentsTable.salonCustomerId),
+    db.select({ salonCustomerId: appointmentsTable.salonCustomerId, value: count() }).from(appointmentsTable)
+      .where(and(inArray(appointmentsTable.salonCustomerId, contactIds), eq(appointmentsTable.status, "no-show")))
+      .groupBy(appointmentsTable.salonCustomerId),
+    db.select().from(appointmentSeriesTable)
+      .where(and(eq(appointmentSeriesTable.salonId, access.salon.id), inArray(appointmentSeriesTable.salonCustomerId, contactIds))),
+  ]);
+  const visitCountByContactId = new Map(visitCounts.flatMap((row) => row.salonCustomerId ? [[row.salonCustomerId, Number(row.value)] as const] : []));
+  const noShowCountByContactId = new Map(noShowCounts.flatMap((row) => row.salonCustomerId ? [[row.salonCustomerId, Number(row.value)] as const] : []));
+
+  // Batch reads for series membership + service names restricted to the page's
+  // series/service IDs only.
+  const seriesIds = [...new Set(series.map((item) => item.id))];
+  const serviceIds = [...new Set(series.map((item) => item.serviceId))];
+  const [seriesAppointments, services] = await Promise.all([
+    seriesIds.length
+      ? db.select({ seriesId: appointmentsTable.seriesId, status: appointmentsTable.status, date: appointmentsTable.date })
+          .from(appointmentsTable).where(inArray(appointmentsTable.seriesId, seriesIds))
+      : Promise.resolve([] as { seriesId: string | null; status: string; date: string }[]),
+    serviceIds.length
+      ? db.select({ id: servicesTable.id, name: servicesTable.name }).from(servicesTable).where(inArray(servicesTable.id, serviceIds))
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
+  const serviceNameById = new Map(services.map((s) => [s.id, s.name]));
+  const appointmentsBySeriesId = new Map<string, { status: string; date: string }[]>();
+  for (const appt of seriesAppointments) {
+    if (!appt.seriesId) continue;
+    const arr = appointmentsBySeriesId.get(appt.seriesId) ?? [];
+    arr.push({ status: appt.status, date: appt.date });
+    appointmentsBySeriesId.set(appt.seriesId, arr);
+  }
+  const seriesByContactId = new Map<string, (typeof appointmentSeriesTable.$inferSelect)[]>();
+  for (const s of series) {
+    if (!s.salonCustomerId) continue;
+    const arr = seriesByContactId.get(s.salonCustomerId) ?? [];
+    arr.push(s);
+    seriesByContactId.set(s.salonCustomerId, arr);
+  }
   res.json(ListSalonCustomersResponse.parse(contacts.map((contact) => ({
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
     smsOptOut: contact.smsOptOut,
-    visitCount: visitCountByCustomer.get(contact.id) ?? 0,
-    noShowCount: noShowCountByCustomer.get(contact.id) ?? 0,
+    visitCount: visitCountByContactId.get(contact.id) ?? 0,
+    noShowCount: noShowCountByContactId.get(contact.id) ?? 0,
     isRegistered: Boolean(contact.userId),
-    series: (seriesByCustomer.get(contact.id) ?? []).map((item) => {
-      const members = apptsBySeriesId.get(item.id) ?? [];
+    series: (seriesByContactId.get(contact.id) ?? []).map((item) => {
+      const members = appointmentsBySeriesId.get(item.id) ?? [];
       return {
         id: item.id, serviceName: serviceNameById.get(item.serviceId) ?? "Usluga",
         totalAppointments: item.totalAppointments,
-        completedAppointments: members.filter((appointment) => appointment.status === "completed").length,
-        upcomingAppointments: members.filter((appointment) => appointment.date >= today && ["pending", "confirmed"].includes(appointment.status)).length,
+        completedAppointments: members.filter((a) => a.status === "completed").length,
+        upcomingAppointments: members.filter((a) => a.date >= today && ["pending", "confirmed"].includes(a.status)).length,
       };
     }),
   }))));
@@ -4314,16 +4768,21 @@ router.get("/service-templates", async (req, res): Promise<void> => {
   const parsed = ListServiceTemplatesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const input = parsed.data;
-  const templates = await readThroughCatalogCache(
-    catalogCacheKey("service-templates", JSON.stringify(["owner", input.mainCategory ?? "", input.subcategory ?? "", input.search?.toLowerCase() ?? ""])),
+  const allTemplates = await catalogCache.getOrLoad(
+    "service-templates:all",
+    ["service-templates"],
     () => db.select().from(serviceTemplatesTable)
-      .where(and(
-        eq(serviceTemplatesTable.active, true),
-        input.mainCategory ? eq(serviceTemplatesTable.mainCategory, input.mainCategory) : undefined,
-        input.subcategory ? eq(serviceTemplatesTable.subcategory, input.subcategory) : undefined,
-        input.search ? sql`lower(${serviceTemplatesTable.name} || ' ' || ${serviceTemplatesTable.mainCategory} || ' ' || ${serviceTemplatesTable.subcategory}) like ${`%${input.search.toLowerCase()}%`}` : undefined,
-      )).orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name)),
+      .where(eq(serviceTemplatesTable.active, true))
+      .orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name)),
+    600_000,
   );
+  let templates = allTemplates;
+  if (input.mainCategory) templates = templates.filter((t) => t.mainCategory === input.mainCategory);
+  if (input.subcategory) templates = templates.filter((t) => t.subcategory === input.subcategory);
+  if (input.search) {
+    const term = input.search.toLowerCase();
+    templates = templates.filter((t) => `${t.name} ${t.mainCategory} ${t.subcategory}`.toLowerCase().includes(term));
+  }
   res.json(ListServiceTemplatesResponse.parse(templates.map(serviceTemplateDto)));
 });
 
@@ -4335,10 +4794,7 @@ router.post("/salon/services/from-templates", async (req, res): Promise<void> =>
   if (uniqueIds.length !== parsed.data.items.length) { res.status(400).json({ error: "Svaki predložak može biti izabran samo jednom." }); return; }
   const templates = await db.select().from(serviceTemplatesTable).where(and(inArray(serviceTemplatesTable.id, uniqueIds), eq(serviceTemplatesTable.active, true)));
   if (templates.length !== uniqueIds.length) { res.status(400).json({ error: "Neki izabrani predlošci nisu dostupni." }); return; }
-  const categories = await readThroughCatalogCache(
-    catalogCacheKey("service-categories"),
-    () => db.select().from(serviceCategoriesTable),
-  );
+  const categories = await db.select().from(serviceCategoriesTable);
   const categoryByName = new Map(categories.map((category) => [category.name, category]));
   const existing = await db.select({ name: servicesTable.name, categoryName: servicesTable.categoryName }).from(servicesTable)
     .where(eq(servicesTable.salonId, access.salon.id));
@@ -4357,7 +4813,7 @@ router.post("/salon/services/from-templates", async (req, res): Promise<void> =>
     }];
   });
   const created = toCreate.length ? await db.insert(servicesTable).values(toCreate).returning() : [];
-  await invalidateCatalogCache("discovery");
+  if (created.length) void publishCatalogInvalidation(["salons", "services"]);
   res.status(201).json(CreateSalonServicesBatchResponse.parse({
     created: created.map(salonServiceDto),
     skipped: parsed.data.items.filter((item) => {
@@ -4379,7 +4835,7 @@ router.post("/salon/services", async (req, res): Promise<void> => {
     return row!;
   });
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(salon.id) }).where(eq(salonsTable.id, salon.id));
-  await invalidateCatalogCache("cities", "discovery");
+  void publishCatalogInvalidation(["salons", "services"]);
   res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
 });
 
@@ -4400,7 +4856,7 @@ router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   });
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
-  await invalidateCatalogCache("cities", "discovery");
+  void publishCatalogInvalidation(["salons", "services"]);
   res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
 });
 
@@ -4440,25 +4896,56 @@ router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
 
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) })
     .where(eq(salonsTable.id, access.salon.id));
-  await invalidateCatalogCache("cities", "discovery");
+  void publishCatalogInvalidation(["salons", "services"]);
   res.status(204).end();
 });
 
 router.get("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const [employees, services, links, users] = await Promise.all([
-    db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true))),
-    db.select().from(servicesTable).where(eq(servicesTable.salonId, salon.id)),
-    db.select().from(employeeServicesTable),
-    db.select().from(usersTable).where(eq(usersTable.role, "SALON_EMPLOYEE")),
+  // Employee counts are plan-bounded, but all related reads must still be scoped:
+  // links, service names, and user accounts are restricted with inArray to the
+  // returned employee/service/user IDs instead of scanning full global tables.
+  const [employeeRows, services] = await Promise.all([
+    db.select({
+      employee: employeesTable,
+      account: {
+        active: usersTable.active,
+        email: usersTable.email,
+        mustChangePassword: usersTable.mustChangePassword,
+      },
+    })
+      .from(employeesTable)
+      .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+      .where(and(eq(employeesTable.salonId, salon.id), eq(employeesTable.active, true)))
+      .orderBy(asc(employeesTable.name), asc(employeesTable.id))
+      .limit(500),
+    db.select().from(servicesTable)
+      .where(eq(servicesTable.salonId, salon.id))
+      .orderBy(asc(servicesTable.name), asc(servicesTable.id))
+      .limit(500),
   ]);
+  const employees = employeeRows.map((row) => row.employee);
+  const employeeIds = employees.map((item) => item.id);
+  const links = await db.select().from(employeeServicesTable)
+    .where(employeeIds.length ? inArray(employeeServicesTable.employeeId, employeeIds) : sql`false`);
+  const accountByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.account]));
+  const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
+  const serviceIdsByEmployeeId = new Map<string, string[]>();
+  for (const link of links) {
+    const assigned = serviceIdsByEmployeeId.get(link.employeeId) ?? [];
+    assigned.push(link.serviceId);
+    serviceIdsByEmployeeId.set(link.employeeId, assigned);
+  }
   res.json(employees.map((item) => {
-    const serviceIds = links.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
-    const account = users.find((user) => user.id === item.userId);
+    const serviceIds = serviceIdsByEmployeeId.get(item.id) ?? [];
+    const account = item.userId ? accountByEmployeeId.get(item.id) : null;
     return {
       id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, email: item.email,
-      specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name),
+      specialties: item.specialties, serviceIds, serviceNames: serviceIds.flatMap((id) => {
+        const name = serviceNameById.get(id);
+        return name ? [name] : [];
+      }),
       account: account ? { active: account.active, email: account.email, mustChangePassword: account.mustChangePassword } : null,
     };
   }));
@@ -4667,26 +5154,78 @@ router.patch("/salon/leave-requests/:requestId", async (req, res): Promise<void>
   res.json({ id: request.id, status });
 });
 
+// Bounds the employee portal's appointment detail feed so the payload never
+// grows with lifetime booking history. Only past history accumulates without
+// limit, so we cap the look-back to a short operational window while keeping
+// every upcoming appointment visible (future bookings are naturally bounded and
+// all operationally relevant). A row cap guarantees the query stays bounded even
+// with an unusually dense future calendar. Stats/notification counts come from
+// scoped SQL aggregates instead of scanning every appointment ever booked.
+const EMPLOYEE_PORTAL_WINDOW_LOOKBACK_DAYS = 45;
+const EMPLOYEE_PORTAL_WINDOW_LIMIT = 2000;
+const EMPLOYEE_PORTAL_NOTIFICATION_LIMIT = 5;
+
 router.get("/employee/portal", async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
   const { employee, salon, user } = access;
-  const [appointments, schedules, timeOff, leaveRequests, serviceLinks] = await Promise.all([
-    db.select().from(appointmentsTable).where(eq(appointmentsTable.employeeId, employee.id)).orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime)),
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = mondayOf(today);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const tomorrowString = shiftCalendarDate(today, 1);
+  // Lower bound covers both the current week (which can start in the previous
+  // month) and the requested look-back; upcoming appointments have no upper bound.
+  const windowStart = [monthStart, weekStart, shiftCalendarDate(today, -EMPLOYEE_PORTAL_WINDOW_LOOKBACK_DAYS)]
+    .reduce((earliest, candidate) => (candidate < earliest ? candidate : earliest));
+  const recentCreatedThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const employeeScope = eq(appointmentsTable.employeeId, employee.id);
+  const inMonth = and(gte(appointmentsTable.date, monthStart), lte(appointmentsTable.date, shiftCalendarDate(monthStart, 31)));
+
+  const [
+    windowAppointments,
+    recentlyCreated,
+    schedules,
+    timeOff,
+    leaveRequests,
+    serviceLinks,
+    [statRow],
+  ] = await Promise.all([
+    // Bounded operational window (short look-back + all upcoming), stably
+    // ordered for the calendar/day view and row-capped for a hard upper bound.
+    db.select().from(appointmentsTable)
+      .where(and(employeeScope, gte(appointmentsTable.date, windowStart)))
+      .orderBy(asc(appointmentsTable.date), asc(appointmentsTable.startTime), asc(appointmentsTable.id))
+      .limit(EMPLOYEE_PORTAL_WINDOW_LIMIT),
+    // Most recently added appointments (any date) for the "new termin" feed.
+    db.select().from(appointmentsTable)
+      .where(and(employeeScope, gte(appointmentsTable.createdAt, recentCreatedThreshold)))
+      .orderBy(desc(appointmentsTable.createdAt), desc(appointmentsTable.id))
+      .limit(EMPLOYEE_PORTAL_NOTIFICATION_LIMIT),
     db.select().from(employeeSchedulesTable).where(eq(employeeSchedulesTable.employeeId, employee.id)).orderBy(asc(employeeSchedulesTable.weekday)),
     db.select().from(employeeTimeOffTable).where(eq(employeeTimeOffTable.employeeId, employee.id)),
     db.select().from(employeeLeaveRequestsTable).where(eq(employeeLeaveRequestsTable.employeeId, employee.id)).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
     db.select().from(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id)),
+    // Stat counters computed in SQL over the full history, scoped to this employee.
+    db.select({
+      week: sql<number>`count(*) filter (where ${appointmentsTable.status} <> 'cancelled' and ${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${today})::int`,
+      month: sql<number>`count(*) filter (where ${appointmentsTable.status} <> 'cancelled' and ${appointmentsTable.date} >= ${monthStart} and to_char(${appointmentsTable.date}, 'YYYY-MM') = ${today.slice(0, 7)})::int`,
+      completed: sql<number>`count(*) filter (where ${appointmentsTable.status} = 'completed' and ${appointmentsTable.date} >= ${monthStart})::int`,
+      noShow: sql<number>`count(*) filter (where ${appointmentsTable.status} = 'no-show' and ${appointmentsTable.date} >= ${monthStart})::int`,
+    }).from(appointmentsTable).where(and(employeeScope, or(inMonth, and(gte(appointmentsTable.date, weekStart), lte(appointmentsTable.date, today))))),
   ]);
+
+  // Resolve only the customers/contacts referenced by the bounded window.
+  const salonCustomerIds = [...new Set(windowAppointments.map((appointment) => appointment.salonCustomerId).filter((id): id is string => Boolean(id)))];
+  const customerUserIds = [...new Set(windowAppointments.map((appointment) => appointment.customerId).filter((id): id is string => Boolean(id)))];
   const [services, contacts, customers] = await Promise.all([
     serviceLinks.length ? db.select().from(servicesTable).where(inArray(servicesTable.id, serviceLinks.map((link) => link.serviceId))) : Promise.resolve([] as (typeof servicesTable.$inferSelect)[]),
-    appointments.some((appointment) => appointment.salonCustomerId) ? db.select().from(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id)) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
-    appointments.some((appointment) => appointment.customerId) ? db.select().from(usersTable) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
+    salonCustomerIds.length ? db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), inArray(salonCustomersTable.id, salonCustomerIds))) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
+    customerUserIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerUserIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
   ]);
   const serviceById = new Map(services.map((service) => [service.id, service]));
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const customerById = new Map(customers.map((customer) => [customer.id, customer]));
   const ownClients = new Map<string, { id: string; firstName: string; lastName: string; phone: string | null }>();
-  const appointmentViews = appointments.map((appointment) => {
+  const appointmentViews = windowAppointments.map((appointment) => {
     const contact = appointment.salonCustomerId ? contactById.get(appointment.salonCustomerId) : undefined;
     const customer = appointment.customerId ? customerById.get(appointment.customerId) : undefined;
     const person = contact ?? customer;
@@ -4699,17 +5238,11 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
       customerPhone: person?.phone ?? null,
     };
   });
-  const today = new Date().toISOString().slice(0, 10);
-  const weekStart = mondayOf(today);
-  const monthStart = `${today.slice(0, 7)}-01`;
-  const tomorrow = new Date(`${today}T12:00:00Z`); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  const tomorrowString = tomorrow.toISOString().slice(0, 10);
-  const visibleStatuses = appointments.filter((item) => item.status !== "cancelled");
   const notifications = [
-    ...appointments.filter((item) => item.createdAt >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).slice(-5).reverse().map((item) => ({
+    ...recentlyCreated.map((item) => ({
       id: `new-${item.id}`, title: "Dodat vam je novi termin", date: item.date, createdAt: item.createdAt,
     })),
-    ...appointments.filter((item) => item.date === tomorrowString && !["cancelled", "completed", "no-show"].includes(item.status)).map((item) => ({
+    ...windowAppointments.filter((item) => item.date === tomorrowString && !["cancelled", "completed", "no-show"].includes(item.status)).map((item) => ({
       id: `reminder-${item.id}`, title: `Podsetnik: sutra u ${item.startTime} imate termin`, date: item.date, createdAt: item.createdAt,
     })),
   ];
@@ -4724,10 +5257,10 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     leaveRequests,
     notifications,
     stats: {
-      week: visibleStatuses.filter((item) => item.date >= weekStart && item.date <= today).length,
-      month: visibleStatuses.filter((item) => item.date >= monthStart && item.date.slice(0, 7) === today.slice(0, 7)).length,
-      completed: appointments.filter((item) => item.status === "completed" && item.date >= monthStart).length,
-      noShow: appointments.filter((item) => item.status === "no-show" && item.date >= monthStart).length,
+      week: Number(statRow?.week ?? 0),
+      month: Number(statRow?.month ?? 0),
+      completed: Number(statRow?.completed ?? 0),
+      noShow: Number(statRow?.noShow ?? 0),
     },
   });
 });
@@ -5008,6 +5541,24 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
 async function loyaltyStatus(salonId: string) {
   const [status] = await db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salonId)).limit(1);
   const tiers = await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.active, true)).orderBy(asc(loyaltyTiersTable.sortOrder));
+  // With zero active tiers there is nothing to rank against. Return a
+  // schema-valid neutral default instead of throwing/500, preserving any
+  // current spend the salon has already accrued.
+  if (tiers.length === 0) {
+    const spend = status?.currentPeriodSpend ?? 0;
+    return GetLoyaltyStatusResponse.parse({
+      currentTier: "",
+      monthlySpend: spend,
+      tierThreshold: 0,
+      amountToNextTier: 0,
+      nextTier: null,
+      subscriptionDue: 2490,
+      subscriptionDiscountPercent: 0,
+      productDiscountPercent: 0,
+      benefits: [],
+      freeSubscription: false,
+    });
+  }
   const current = tiers.find((tier) => tier.id === status?.tierId) ?? tiers[0]!;
   const next = tiers.find((tier) => tier.sortOrder > current.sortOrder) ?? null;
   const spend = status?.currentPeriodSpend ?? 0;
@@ -5015,10 +5566,25 @@ async function loyaltyStatus(salonId: string) {
   return GetLoyaltyStatusResponse.parse({ currentTier: current.name, monthlySpend: spend, tierThreshold: current.spendThreshold, amountToNextTier: next ? Math.max(next.spendThreshold - spend, 0) : 0, nextTier: next?.name ?? null, subscriptionDue: due, subscriptionDiscountPercent: current.subscriptionDiscountPercent, productDiscountPercent: current.productDiscountPercent, benefits: current.benefits, freeSubscription: current.freeSubscription });
 }
 
+router.get("/shop/brands", async (_req, res): Promise<void> => {
+  const brands = await catalogCache.getOrLoad(
+    "shop-brands:active",
+    ["product-brands"],
+    () => db.select().from(productBrandsTable).where(eq(productBrandsTable.active, true)).orderBy(asc(productBrandsTable.name)),
+    600_000,
+  );
+  res.json(brands.map((b) => ({ id: b.id, name: b.name, slug: b.slug, description: b.description, logoUrl: b.logoUrl ?? null })));
+});
+
 router.get("/shop/categories", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   void access;
-  const allCats = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.active, true)).orderBy(asc(productCategoriesTable.sortOrder));
+  const allCats = await catalogCache.getOrLoad(
+    "product-categories:active",
+    ["product-categories"],
+    () => db.select().from(productCategoriesTable).where(eq(productCategoriesTable.active, true)).orderBy(asc(productCategoriesTable.sortOrder)),
+    600_000,
+  );
   const parents = allCats.filter((c) => !c.parentId);
   const result = parents.map((p) => ({
     id: p.id,
@@ -5048,14 +5614,71 @@ function productBelongsToActiveCategory(
   return Boolean(category?.active);
 }
 
-function productDto(
+// SQL mirror of productBelongsToActiveCategory so category availability can be
+// filtered, counted and paginated in the database rather than in JS. Products
+// reference categories by name (not id), matching the in-memory logic exactly:
+// - With a subcategory: the subcategory must be active with an active parent
+//   whose name equals the product's categoryName.
+// - Without a subcategory: a top-level (parentId IS NULL) category with the
+//   matching name must be active.
+function activeCategoryCondition() {
+  const sub = sql`${productCategoriesTable} AS sub`;
+  const parent = sql`${productCategoriesTable} AS parent`;
+  const cat = sql`${productCategoriesTable} AS cat`;
+  return sql`(
+    CASE WHEN ${productsTable.subcategoryName} IS NOT NULL THEN
+      EXISTS (
+        SELECT 1 FROM ${sub}
+        WHERE sub.name = ${productsTable.subcategoryName}
+          AND sub.active = true
+          AND sub.parent_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM ${parent}
+            WHERE parent.id = sub.parent_id
+              AND parent.active = true
+              AND parent.name = ${productsTable.categoryName}
+          )
+      )
+    ELSE
+      EXISTS (
+        SELECT 1 FROM ${cat}
+        WHERE cat.name = ${productsTable.categoryName}
+          AND cat.parent_id IS NULL
+          AND cat.active = true
+      )
+    END
+  )`;
+}
+
+// Grouped review aggregate (count + rounded average) for a set of product ids,
+// computed in one query so callers never load every review row and never run
+// per-product array reductions.
+async function productReviewAggregates(productIds: string[]): Promise<Map<string, { count: number; averageRating: number | null }>> {
+  const map = new Map<string, { count: number; averageRating: number | null }>();
+  if (productIds.length === 0) return map;
+  const rows = await db
+    .select({
+      productId: productReviewsTable.productId,
+      count: count(productReviewsTable.id),
+      average: sql<number | null>`avg(${productReviewsTable.rating})`,
+    })
+    .from(productReviewsTable)
+    .where(inArray(productReviewsTable.productId, productIds))
+    .groupBy(productReviewsTable.productId);
+  for (const row of rows) {
+    const average = row.average == null ? null : Math.round(Number(row.average) * 10) / 10;
+    map.set(row.productId, { count: Number(row.count), averageRating: average });
+  }
+  return map;
+}
+
+// Build a product DTO from a precomputed aggregate, avoiding repeated review
+// array scans. Falls back to a zero aggregate when the product has no reviews.
+function productDtoWithAggregate(
   item: typeof productsTable.$inferSelect,
-  reviews: Array<typeof productReviewsTable.$inferSelect> = [],
+  aggregate: { count: number; averageRating: number | null } | undefined,
 ) {
   const discountPercent = item.discountPrice ? Math.round((1 - item.discountPrice / item.price) * 100) : null;
-  const averageRating = reviews.length
-    ? Math.round((reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length) * 10) / 10
-    : null;
   return {
     id: item.id,
     name: item.name,
@@ -5077,8 +5700,8 @@ function productDto(
     isBestseller: item.isBestseller,
     variantType: item.variantType ?? null,
     variants: item.variants ?? null,
-    averageRating,
-    reviewCount: reviews.length,
+    averageRating: aggregate?.averageRating ?? null,
+    reviewCount: aggregate?.count ?? 0,
   };
 }
 
@@ -5105,46 +5728,77 @@ router.get("/shop/products", async (req, res): Promise<void> => {
   if (!normalized) { res.status(400).json({ error: "Invalid boolean filter" }); return; }
   const parsed = ListProductsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [catalogCategories, activeProducts, allReviews] = await Promise.all([
-    db.select().from(productCategoriesTable),
-    db.select().from(productsTable).where(eq(productsTable.active, true)),
-    db.select().from(productReviewsTable),
-  ]);
-  let products = activeProducts.filter((product) => productBelongsToActiveCategory(product, catalogCategories));
   const q = parsed.data;
-  if (q.category) products = products.filter((item) => item.categoryName === q.category);
-  if (q.subcategory) products = products.filter((item) => item.subcategoryName === q.subcategory);
-  if (q.brand) products = products.filter((item) => item.brand?.toLowerCase() === q.brand!.toLowerCase());
-  if (q.search) products = products.filter((item) => `${item.name} ${item.description} ${item.brand ?? ""}`.toLowerCase().includes(q.search!.toLowerCase()));
-  if (q.onSale) products = products.filter((item) => item.discountPrice != null);
-  if (q.isNew) products = products.filter((item) => item.isNew);
-  if (q.isBestseller) products = products.filter((item) => item.isBestseller);
-  res.json(ListProductsResponse.parse(products.map((item) => productDto(item, allReviews.filter((review) => review.productId === item.id)))));
+  const productFilters: Parameters<typeof and>[0][] = [eq(productsTable.active, true)];
+  if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
+  if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
+  if (q.brand) productFilters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
+  if (q.onSale) productFilters.push(isNotNull(productsTable.discountPrice));
+  if (q.isNew) productFilters.push(eq(productsTable.isNew, true));
+  if (q.isBestseller) productFilters.push(eq(productsTable.isBestseller, true));
+  if (q.search) productFilters.push(sql`lower(${productsTable.name} || ' ' || ${productsTable.description} || ' ' || coalesce(${productsTable.brand}, '')) like ${`%${q.search.toLowerCase()}%`}`);
+  // Category availability is enforced in SQL so counting and paging stay stable
+  // and every matching product remains reachable across pages.
+  productFilters.push(activeCategoryCondition());
+  const whereClause = and(...productFilters);
+  const page = q.page ?? 1;
+  const pageSize = q.pageSize ?? 24;
+  // Count the full matching set, then fetch only the requested page ordered
+  // deterministically (name asc, id asc) so page boundaries never shift.
+  const [[totals], pageProducts] = await Promise.all([
+    db.select({ total: count(productsTable.id) }).from(productsTable).where(whereClause),
+    db
+      .select()
+      .from(productsTable)
+      .where(whereClause)
+      .orderBy(asc(productsTable.name), asc(productsTable.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+  ]);
+  const total = Number(totals?.total ?? 0);
+  // Review aggregates are grouped and scoped to only the products on this page.
+  const aggregates = await productReviewAggregates(pageProducts.map((item) => item.id));
+  res.json(ListProductsResponse.parse({
+    items: pageProducts.map((item) => productDtoWithAggregate(item, aggregates.get(item.id))),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }));
 });
 
 router.get("/shop/products/:productId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = GetShopProductParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [product, categories] = await Promise.all([
-    db.select().from(productsTable).where(eq(productsTable.id, parsed.data.productId)).limit(1),
-    db.select().from(productCategoriesTable),
-  ]);
-  const item = product[0];
-  if (!item || !item.active || !productBelongsToActiveCategory(item, categories)) {
+  // Availability (active + active category) is enforced in SQL; a miss is a 404.
+  const [product] = await db
+    .select()
+    .from(productsTable)
+    .where(and(eq(productsTable.id, parsed.data.productId), eq(productsTable.active, true), activeCategoryCondition()))
+    .limit(1);
+  if (!product) {
     res.status(404).json({ error: "Proizvod nije pronađen ili nije dostupan." }); return;
   }
-  const [reviewRows, allReviews, related] = await Promise.all([
+  const item = product;
+  // Fetch up to 4 related candidates in SQL, already excluding the current
+  // product and enforcing category availability, so the full same-category set
+  // is never loaded into memory.
+  const [reviewRows, related] = await Promise.all([
     productReviewViews(item.id, access.salon.id),
-    db.select().from(productReviewsTable),
-    db.select().from(productsTable).where(and(eq(productsTable.active, true), eq(productsTable.categoryName, item.categoryName))),
+    db
+      .select()
+      .from(productsTable)
+      .where(and(eq(productsTable.active, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition()))
+      .orderBy(asc(productsTable.name), asc(productsTable.id))
+      .limit(4),
   ]);
-  const relatedProducts = related
-    .filter((candidate) => candidate.id !== item.id && productBelongsToActiveCategory(candidate, categories))
-    .slice(0, 4)
-    .map((candidate) => productDto(candidate, allReviews.filter((review) => review.productId === candidate.id)));
+  // Review aggregates are queried only for the current product plus the related
+  // ones and read from grouped maps instead of repeated array filters.
+  const aggregates = await productReviewAggregates([item.id, ...related.map((candidate) => candidate.id)]);
+  const relatedProducts = related.map((candidate) => productDtoWithAggregate(candidate, aggregates.get(candidate.id)));
   res.json(GetShopProductResponse.parse({
-    ...productDto(item, allReviews.filter((review) => review.productId === item.id)),
+    ...productDtoWithAggregate(item, aggregates.get(item.id)),
     reviews: reviewRows,
     relatedProducts,
   }));
@@ -5755,18 +6409,40 @@ function adminOrderDto(
 router.get("/shop/orders", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
-  const orders = await db.select().from(ordersTable).where(eq(ordersTable.salonId, salon.id)).orderBy(desc(ordersTable.createdAt));
-  const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((item) => item.id))) : [];
+  // Stable pagination in SQL (createdAt desc, id desc); page/pageSize read
+  // directly from req.query (page/pageSize 1..100) so paging works before
+  // codegen regenerates the query schema. Response stays a flat array.
+  const { limit, offset } = parsePagination(req.query, 50);
+  const orders = await db.select().from(ordersTable)
+    .where(eq(ordersTable.salonId, salon.id))
+    .orderBy(desc(ordersTable.createdAt), desc(ordersTable.id))
+    .limit(limit).offset(offset);
+  if (!orders.length) { res.json(ListOrdersResponse.parse([])); return; }
+  // Fetch order items only for the page's order ids, then pre-group them so the
+  // DTO mapping does not scan the whole item set per order.
+  const orderIds = orders.map((order) => order.id);
+  const items = await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds));
+  const itemsByOrderId = new Map<string, (typeof orderItemsTable.$inferSelect)[]>();
+  for (const item of items) {
+    const arr = itemsByOrderId.get(item.orderId) ?? [];
+    arr.push(item);
+    itemsByOrderId.set(item.orderId, arr);
+  }
+  // Only referenced courier rows are fetched (couriersForOrders dedupes ids).
   const couriers = await couriersForOrders(orders);
-  res.json(ListOrdersResponse.parse(orders.map((order) => orderDto(order, items.filter((item) => item.orderId === order.id), salon, order.courierServiceId ? couriers.get(order.courierServiceId) : undefined))));
+  res.json(ListOrdersResponse.parse(orders.map((order) => orderDto(order, itemsByOrderId.get(order.id) ?? [], salon, order.courierServiceId ? couriers.get(order.courierServiceId) : undefined))));
 });
 
 router.get("/shop/notifications", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
+  // Stable pagination in SQL (createdAt desc, id desc); flat-array response and
+  // unread behavior are preserved because unread state lives on each row.
+  const { limit, offset } = parsePagination(req.query, 50);
   const notifications = await db.select()
     .from(salonNotificationsTable)
     .where(eq(salonNotificationsTable.salonId, access.salon.id))
-    .orderBy(desc(salonNotificationsTable.createdAt));
+    .orderBy(desc(salonNotificationsTable.createdAt), desc(salonNotificationsTable.id))
+    .limit(limit).offset(offset);
   res.json(ListSalonNotificationsResponse.parse(notifications));
 });
 
@@ -6015,59 +6691,77 @@ router.get("/admin/orders", async (req, res): Promise<void> => {
   const parsed = AdminListOrdersQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const q = parsed.data;
+  // page/pageSize are read directly from req.query (independent of the generated
+  // query schema) so pagination works before codegen regenerates the params.
+  const { limit, offset } = parsePagination(req.query, 50);
 
-  // Build SQL conditions for fields that can be pushed into the query.
-  const sqlConditions = [];
-  if (q.status) sqlConditions.push(eq(ordersTable.status, q.status));
-  if (q.paymentStatus) sqlConditions.push(eq(ordersTable.paymentStatus, q.paymentStatus));
-  if (q.deliveryMethod) sqlConditions.push(eq(ordersTable.deliveryMethod, q.deliveryMethod));
-  if (q.from) sqlConditions.push(gte(ordersTable.createdAt, new Date(`${q.from}T00:00:00.000Z`)));
-  if (q.to) sqlConditions.push(lte(ordersTable.createdAt, new Date(`${q.to}T23:59:59.999Z`)));
+  // Push all scalar filters into SQL predicates; ALL filters apply before pagination.
+  const sqlPredicates = [];
+  if (q.status) sqlPredicates.push(eq(ordersTable.status, q.status));
+  if (q.paymentStatus) sqlPredicates.push(eq(ordersTable.paymentStatus, q.paymentStatus));
+  if (q.deliveryMethod) sqlPredicates.push(eq(ordersTable.deliveryMethod, q.deliveryMethod));
+  if (q.from) sqlPredicates.push(gte(ordersTable.createdAt, new Date(`${q.from}T00:00:00.000Z`)));
+  if (q.to) sqlPredicates.push(lte(ordersTable.createdAt, new Date(`${q.to}T23:59:59.999Z`)));
 
-  let orders = await db.select().from(ordersTable)
-    .where(sqlConditions.length ? and(...sqlConditions) : undefined)
-    .orderBy(desc(ordersTable.createdAt));
-
-  // Salon name/email filter and free-text search require joining salon data.
-  // Load only the distinct salons referenced by the result set.
-  const salonIds = [...new Set(orders.map((o) => o.salonId))];
-  const salonRows = salonIds.length ? await db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)) : [];
-  const salonsMap = new Map(salonRows.map((s) => [s.id, s]));
-
+  // The `salon` filter is a hard AND constraint: resolve matching salon IDs by
+  // name/email and require the order to belong to one of them. If nothing matches
+  // the salon term there can be no results.
   if (q.salon) {
-    const term = q.salon.toLowerCase();
-    orders = orders.filter((order) => {
-      const salon = salonsMap.get(order.salonId);
-      return salon?.name.toLowerCase().includes(term) || salon?.email.toLowerCase().includes(term);
-    });
+    const term = `%${q.salon}%`;
+    const matchingSalons = await db.select({ id: salonsTable.id }).from(salonsTable)
+      .where(or(ilike(salonsTable.name, term), ilike(salonsTable.email, term)));
+    const salonFilterIds = matchingSalons.map((s) => s.id);
+    if (!salonFilterIds.length) { res.json([]); return; }
+    sqlPredicates.push(inArray(ordersTable.salonId, salonFilterIds));
   }
+  // `search` matches the order id, shippingName, or the order's salon (name/email).
+  // It is ANDed with every other predicate (including the salon filter above), so it
+  // narrows within the salon constraint rather than escaping it.
   if (q.search) {
-    const term = q.search.toLowerCase();
-    orders = orders.filter((order) => {
-      const salon = salonsMap.get(order.salonId);
-      return order.id.toLowerCase().includes(term) || order.shippingName.toLowerCase().includes(term) || Boolean(salon?.name.toLowerCase().includes(term));
-    });
+    const term = `%${q.search}%`;
+    const searchSalons = await db.select({ id: salonsTable.id }).from(salonsTable)
+      .where(or(ilike(salonsTable.name, term), ilike(salonsTable.email, term)));
+    const searchSalonIds = searchSalons.map((s) => s.id);
+    const searchClauses = [
+      ilike(sql`${ordersTable.id}::text`, term),
+      ilike(ordersTable.shippingName, term),
+    ];
+    if (searchSalonIds.length) searchClauses.push(inArray(ordersTable.salonId, searchSalonIds));
+    sqlPredicates.push(or(...searchClauses)!);
   }
 
-  const items = orders.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orders.map((order) => order.id))) : [];
-  const histories = orders.length ? await db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orders.map((order) => order.id))).orderBy(desc(orderStatusHistoryTable.createdAt)) : [];
+  const orders = await db.select().from(ordersTable)
+    .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
+    .orderBy(desc(ordersTable.createdAt), desc(ordersTable.id))
+    .limit(limit).offset(offset);
+
+  if (!orders.length) { res.json([]); return; }
+
+  // Fetch related rows only for the bounded result set.
+  const orderIds = orders.map((o) => o.id);
+  const salonIds = [...new Set(orders.map((o) => o.salonId))];
+  const [items, histories, salons] = await Promise.all([
+    db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds)),
+    db.select().from(orderStatusHistoryTable).where(inArray(orderStatusHistoryTable.orderId, orderIds)).orderBy(desc(orderStatusHistoryTable.createdAt)),
+    db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
+  ]);
   const couriers = await couriersForOrders(orders);
-
-  // Build secondary maps for O(1) lookups in the response assembly.
-  const itemsByOrder = new Map<string, typeof items>();
+  const salonById = new Map(salons.map((s) => [s.id, s]));
+  const itemsByOrderId = new Map<string, (typeof orderItemsTable.$inferSelect)[]>();
   for (const item of items) {
-    const bucket = itemsByOrder.get(item.orderId);
-    if (bucket) bucket.push(item); else itemsByOrder.set(item.orderId, [item]);
+    const arr = itemsByOrderId.get(item.orderId) ?? [];
+    arr.push(item);
+    itemsByOrderId.set(item.orderId, arr);
   }
-  const historiesByOrder = new Map<string, typeof histories>();
+  const historiesByOrderId = new Map<string, (typeof orderStatusHistoryTable.$inferSelect)[]>();
   for (const event of histories) {
-    const bucket = historiesByOrder.get(event.orderId);
-    if (bucket) bucket.push(event); else historiesByOrder.set(event.orderId, [event]);
+    const arr = historiesByOrderId.get(event.orderId) ?? [];
+    arr.push(event);
+    historiesByOrderId.set(event.orderId, arr);
   }
-
   res.json(AdminListOrdersResponse.parse(orders.flatMap((order) => {
-    const salon = salonsMap.get(order.salonId);
-    return salon ? [adminOrderDto(order, itemsByOrder.get(order.id) ?? [], salon, historiesByOrder.get(order.id) ?? [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
+    const salon = salonById.get(order.salonId);
+    return salon ? [adminOrderDto(order, itemsByOrderId.get(order.id) ?? [], salon, historiesByOrderId.get(order.id) ?? [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
   })));
 });
 
@@ -6116,19 +6810,23 @@ router.patch("/admin/orders/bulk", async (req, res): Promise<void> => {
     }
     return result;
   });
-  const itemRows = changed.length ? await db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, changed.map((order) => order.id))) : [];
+  if (!changed.length) { res.json([]); return; }
   const changedSalonIds = [...new Set(changed.map((o) => o.salonId))];
-  const salonRows = changedSalonIds.length ? await db.select().from(salonsTable).where(inArray(salonsTable.id, changedSalonIds)) : [];
-  const salonsMap = new Map(salonRows.map((s) => [s.id, s]));
-  const itemsByOrder = new Map<string, typeof itemRows>();
+  const [itemRows, salonRows, couriers] = await Promise.all([
+    db.select().from(orderItemsTable).where(inArray(orderItemsTable.orderId, changed.map((o) => o.id))),
+    db.select().from(salonsTable).where(inArray(salonsTable.id, changedSalonIds)),
+    couriersForOrders(changed),
+  ]);
+  const salonById = new Map(salonRows.map((s) => [s.id, s]));
+  const itemsByOrderId = new Map<string, (typeof orderItemsTable.$inferSelect)[]>();
   for (const item of itemRows) {
-    const bucket = itemsByOrder.get(item.orderId);
-    if (bucket) bucket.push(item); else itemsByOrder.set(item.orderId, [item]);
+    const arr = itemsByOrderId.get(item.orderId) ?? [];
+    arr.push(item);
+    itemsByOrderId.set(item.orderId, arr);
   }
-  const couriers = await couriersForOrders(changed);
   res.json(changed.flatMap((order) => {
-    const salon = salonsMap.get(order.salonId);
-    return salon ? [adminOrderDto(order, itemsByOrder.get(order.id) ?? [], salon, [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
+    const salon = salonById.get(order.salonId);
+    return salon ? [adminOrderDto(order, itemsByOrderId.get(order.id) ?? [], salon, [], order.courierServiceId ? couriers.get(order.courierServiceId) : undefined)] : [];
   }));
 });
 
@@ -6151,7 +6849,6 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
   const params = AdminUpdateOrderStatusParams.safeParse(req.params);
   const body = AdminUpdateOrderStatusBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." }); return; }
-  if (Object.keys(body.data).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.orderId)).limit(1);
   if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
   if (body.data.status && !allowedOrderTransitions[order.status]?.includes(body.data.status)) {
@@ -6228,32 +6925,89 @@ router.get("/education/courses", async (req, res): Promise<void> => {
   const parsed = ListCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const query = parsed.data;
-  let courses = await db.select().from(coursesTable);
-  const visibility = await Promise.all(courses.map(async (course) => ({
-    course,
-    owned: isCourseOwner(access, course),
-    public: await isPublicEducationCourse(course),
-  })));
-  courses = visibility.filter(({ owned, public: isPublic }) => {
-    if (query.mine) return access.admin || owned;
-    return access.admin || owned || isPublic;
-  }).map(({ course }) => course);
-  if (query.format) courses = courses.filter((course) => course.format === query.format);
-  if (query.city) courses = courses.filter((course) => course.city?.toLowerCase() === query.city!.toLowerCase());
-  if (query.category) courses = courses.filter((course) => course.category.toLowerCase().includes(query.category!.toLowerCase()));
-  if (query.certification !== undefined) courses = courses.filter((course) => course.certification === query.certification);
-  if (query.minPrice !== undefined) courses = courses.filter((course) => course.price >= query.minPrice!);
-  if (query.maxPrice !== undefined) courses = courses.filter((course) => course.price <= query.maxPrice!);
-  if (query.minRating !== undefined) courses = courses.filter((course) => course.rating / 10 >= query.minRating!);
-  if (query.startDate) {
-    const earliestStartDate = calendarDate(query.startDate);
-    courses = courses.filter((course) => course.startDate !== null && course.startDate >= earliestStartDate);
+
+  // Ownership predicate (SQL): owner salon/center matches. Admins own nothing but
+  // see everything, so they impose no ownership restriction. isCourseOwner() returns
+  // false for admins, so mirror that exact semantics here.
+  const ownershipPredicates: Parameters<typeof and>[0][] = [];
+  if (!access.admin && access.salon) ownershipPredicates.push(eq(coursesTable.salonId, access.salon.id));
+  if (!access.admin && access.centers.length) {
+    ownershipPredicates.push(inArray(coursesTable.centerId, access.centers.map((center) => center.id)));
   }
+  const ownedPredicate = ownershipPredicates.length ? or(...ownershipPredicates) : undefined;
+
+  // Center-eligibility predicate (SQL EXISTS): matches educationCenterEligibility
+  // exactly — verificationStatus = 'verified' AND an active/free-via-loyalty
+  // subscription. Pushed to SQL so it applies *before* the bound.
+  const eligibleCenterExists = sql`exists (
+    select 1 from ${educationCentersTable} ec
+    join ${educationCenterSubscriptionsTable} ecs on ecs.center_id = ec.id
+    where ec.id = ${coursesTable.centerId}
+      and ec.verification_status = 'verified'
+      and ecs.status in ('active', 'free_via_loyalty')
+  )`;
+
+  // Public-candidate predicate (SQL): published, not archived, center-linked AND
+  // the linked center is eligible. Fully expressed in SQL — no post-limit filtering.
+  const publicCandidatePredicate = and(
+    eq(coursesTable.published, true),
+    eq(coursesTable.archived, false),
+    isNotNull(coursesTable.centerId),
+    eligibleCenterExists,
+  );
+
+  // Visibility predicate: exact prior semantics.
+  //   mine  -> admin || owned
+  //   else  -> admin || owned || (publicCandidate AND eligible center)
+  // Admins impose no visibility restriction. Non-admins restrict to owned (+public unless mine).
+  let visibilityPredicate: Parameters<typeof and>[0] | undefined;
+  if (!access.admin) {
+    const clauses: Parameters<typeof and>[0][] = [];
+    if (ownedPredicate) clauses.push(ownedPredicate);
+    if (!query.mine) clauses.push(publicCandidatePredicate);
+    // No clauses means a non-admin with no ownership asking for `mine` — matches nothing.
+    visibilityPredicate = clauses.length ? or(...clauses) : sql`false`;
+  }
+
+  // Scalar filters pushed to SQL — preserve exact prior AND semantics/comparisons.
+  const scalarPredicates: Parameters<typeof and>[0][] = [];
+  if (query.format) scalarPredicates.push(eq(coursesTable.format, query.format));
+  if (query.city) scalarPredicates.push(eq(sql`lower(${coursesTable.city})`, query.city.toLowerCase()));
+  if (query.category) scalarPredicates.push(ilike(coursesTable.category, `%${query.category}%`));
+  if (query.certification !== undefined) scalarPredicates.push(eq(coursesTable.certification, query.certification));
+  if (query.minPrice !== undefined) scalarPredicates.push(gte(coursesTable.price, query.minPrice));
+  if (query.maxPrice !== undefined) scalarPredicates.push(lte(coursesTable.price, query.maxPrice));
+  // rating column stores tenths (course.rating / 10 in the view). minRating is on the 0–5 scale.
+  if (query.minRating !== undefined) scalarPredicates.push(gte(coursesTable.rating, Math.ceil(query.minRating * 10)));
+  if (query.startDate) scalarPredicates.push(gte(coursesTable.startDate, calendarDate(query.startDate)));
+
+  // Publisher-name (center) filter pushed to SQL via EXISTS over the linked salon
+  // or center. Preserves prior case-insensitive substring semantics. Runs before
+  // the bound so older matching rows are not truncated.
   if (query.center) {
-    const publishers = await Promise.all(courses.map(async (course) => (await educationCourseView(course, access)).publisher));
-    courses = courses.filter((_, index) => publishers[index]!.toLowerCase().includes(query.center!.toLowerCase()));
+    const centerLike = `%${query.center.toLowerCase()}%`;
+    scalarPredicates.push(or(
+      sql`exists (select 1 from ${salonsTable} s where s.id = ${coursesTable.salonId} and lower(s.name) like ${centerLike})`,
+      sql`exists (select 1 from ${educationCentersTable} ec where ec.id = ${coursesTable.centerId} and lower(ec.name) like ${centerLike})`,
+    ));
   }
-  const views = await Promise.all(courses.map((course) => educationCourseView(course, access)));
+
+  const whereClauses: Parameters<typeof and>[0][] = [];
+  if (visibilityPredicate) whereClauses.push(visibilityPredicate);
+  whereClauses.push(...scalarPredicates);
+
+  // Every filter (ownership, visibility, eligibility, scalar, publisher-name) is now
+  // in the SQL WHERE, so the stable ORDER BY + OFFSET/LIMIT paginates the full match
+  // set deterministically — no matching rows are silently omitted by the bound.
+  const pageSize = query.pageSize;
+  const offset = (query.page - 1) * pageSize;
+  const courses = await db.select().from(coursesTable)
+    .where(whereClauses.length ? and(...whereClauses) : undefined)
+    .orderBy(desc(coursesTable.createdAt), desc(coursesTable.id))
+    .limit(pageSize)
+    .offset(offset);
+
+  const views = await batchEducationCourseViews(courses, access);
   res.json(ListCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
@@ -6313,8 +7067,8 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     res.status(409).json({ error: "Naslovna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
+  void publishCatalogInvalidation(["education-categories"]);
   const view = await educationCourseView(course!, access);
-  await invalidatePublicEducationCatalog();
   res.status(201).json(calendarDateCourseResponse(CreateEducationCourseResponse.parse(view)));
 });
 
@@ -6382,7 +7136,9 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
     res.status(409).json({ error: "Naslovna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
-  await invalidatePublicEducationCatalog();
+  if (body.data.category !== undefined) {
+    void publishCatalogInvalidation(["education-categories"]);
+  }
   res.json(calendarDateCourseResponse(UpdateEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
 
@@ -6396,7 +7152,7 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
     return;
   }
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
-  await invalidatePublicEducationCatalog();
+  void publishCatalogInvalidation(["education-categories"]);
   res.json(calendarDateCourseResponse(PublishEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
 
@@ -6546,7 +7302,6 @@ router.post("/education/courses/:courseId/gallery", async (req, res): Promise<vo
       res.status(409).json({ error: "Fotografija je u međuvremenu povezana sa drugim zapisom." });
       return;
     }
-    if (genericResult.kind === "created") await invalidatePublicEducationCatalog();
     res.status(genericResult.kind === "created" ? 201 : 200).json(AddEducationCourseGalleryMediaResponse.parse({
       id: genericResult.media.id,
       url: publicEducationMediaUrl(genericResult.media),
@@ -6606,7 +7361,6 @@ router.post("/education/courses/:courseId/gallery", async (req, res): Promise<vo
     res.status(400).json({ error: "Otpremljeni fajl nije ispravna slika ili ne odgovara odabranoj datoteci." });
     return;
   }
-  if (result.kind === "created") await invalidatePublicEducationCatalog();
   const status = result.kind === "created" ? 201 : 200;
   res.status(status).json(AddEducationCourseGalleryMediaResponse.parse({
     id: result.media.id,
@@ -6644,7 +7398,6 @@ router.put("/education/courses/:courseId/gallery", async (req, res): Promise<voi
     res.status(400).json({ error: "Redosled mora sadržati sve fotografije kursa tačno jednom." });
     return;
   }
-  await invalidatePublicEducationCatalog();
   res.json(ReorderEducationCourseGalleryResponse.parse(await educationMediaViews({ courseId: course.id })));
 });
 
@@ -6691,7 +7444,6 @@ router.delete("/education/courses/:courseId/gallery/:mediaId", async (req, res):
     res.status(404).json({ error: "Fotografija nije pronađena." });
     return;
   }
-  await invalidatePublicEducationCatalog();
   res.status(204).send();
 });
 
@@ -6701,7 +7453,7 @@ router.delete("/education/courses/:courseId", async (req, res): Promise<void> =>
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
   await db.update(coursesTable).set({ archived: true, published: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id));
-  await invalidatePublicEducationCatalog();
+  void publishCatalogInvalidation(["education-categories"]);
   res.sendStatus(204);
 });
 
@@ -6791,7 +7543,6 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
     }
     return { updated: row, charge: chargeRow };
   });
-  await invalidatePublicEducationCatalog();
   res.json({
     courseId: updated.id, isFeatured: updated.isFeatured && (!updated.featuredUntil || updated.featuredUntil > new Date()),
     featuredUntil: updated.featuredUntil?.toISOString() ?? null,
@@ -6816,11 +7567,9 @@ router.patch("/education/courses/:courseId/instructor", async (req, res): Promis
     // only when the profile has one, so nothing is silently dropped for profiles
     // without a user account.
     const [updated] = await db.update(coursesTable).set({ instructorProfileId: instructor.id, instructorId: instructor.userId ?? null, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
-    await invalidatePublicEducationCatalog();
     res.json(await educationCourseView(updated!, access));
   } else {
     const [updated] = await db.update(coursesTable).set({ instructorProfileId: null, instructorId: null, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
-    await invalidatePublicEducationCatalog();
     res.json(await educationCourseView(updated!, access));
   }
 });
@@ -6845,7 +7594,6 @@ router.put("/education/courses/:courseId/days", async (req, res): Promise<void> 
     await tx.update(coursesTable).set({ updatedAt: new Date() }).where(eq(coursesTable.id, course.id));
   });
   const [updated] = await db.select().from(coursesTable).where(eq(coursesTable.id, course.id)).limit(1);
-  await invalidatePublicEducationCatalog();
   res.json(calendarDateCourseResponse(ReplaceEducationCourseDaysResponse.parse(await educationCourseView(updated!, access))));
 });
 
@@ -6864,7 +7612,6 @@ router.post("/education/courses/:courseId/modules", async (req, res): Promise<vo
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci modula nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const [module] = await db.insert(courseModulesTable).values({ courseId: course.id, title: body.data.title, description: body.data.description ?? "", sortOrder: body.data.sortOrder ?? 0 }).returning();
-  await invalidatePublicEducationCatalog();
   res.status(201).json(CreateEducationModuleResponse.parse({ id: module!.id, title: module!.title, description: module!.description, sortOrder: module!.sortOrder, lessons: [] }));
 });
 
@@ -6877,7 +7624,6 @@ router.patch("/education/modules/:moduleId", async (req, res): Promise<void> => 
   const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
   const [updated] = await db.update(courseModulesTable).set(body.data).where(eq(courseModulesTable.id, module.id)).returning();
   const lessons = await modulesForCourse(course.id);
-  await invalidatePublicEducationCatalog();
   res.json(UpdateEducationModuleResponse.parse(lessons.find((item) => item.id === updated!.id)!));
 });
 
@@ -6888,7 +7634,6 @@ router.delete("/education/modules/:moduleId", async (req, res): Promise<void> =>
   if (!module) { res.status(404).json({ error: "Modul nije pronađen." }); return; }
   const course = await requireOwnedCourse(access, module.courseId, res); if (!course) return;
   await db.delete(courseModulesTable).where(eq(courseModulesTable.id, module.id));
-  await invalidatePublicEducationCatalog();
   res.sendStatus(204);
 });
 
@@ -6899,7 +7644,6 @@ router.post("/education/modules/:moduleId/lessons", async (req, res): Promise<vo
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, params.data.moduleId)).limit(1);
   if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
   const [lesson] = await db.insert(courseLessonsTable).values({ moduleId: module.id, title: body.data.title, description: body.data.description ?? "", content: body.data.content ?? "", durationMinutes: body.data.durationMinutes ?? 30, sortOrder: body.data.sortOrder ?? 0 }).returning();
-  await invalidatePublicEducationCatalog();
   res.status(201).json(CreateEducationLessonResponse.parse({ ...lesson!, completed: false }));
 });
 
@@ -6912,7 +7656,6 @@ router.patch("/education/lessons/:lessonId", async (req, res): Promise<void> => 
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
   if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
   const [updated] = await db.update(courseLessonsTable).set(body.data).where(eq(courseLessonsTable.id, lesson.id)).returning();
-  await invalidatePublicEducationCatalog();
   res.json(UpdateEducationLessonResponse.parse({ ...updated!, completed: false }));
 });
 
@@ -6924,7 +7667,6 @@ router.delete("/education/lessons/:lessonId", async (req, res): Promise<void> =>
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson.moduleId)).limit(1);
   if (!module || !(await requireOwnedCourse(access, module.courseId, res))) return;
   await db.delete(courseLessonsTable).where(eq(courseLessonsTable.id, lesson.id));
-  await invalidatePublicEducationCatalog();
   res.sendStatus(204);
 });
 
@@ -6944,7 +7686,6 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const createMinimumEnrollments = Number.isInteger(req.body?.minimumEnrollments) && req.body.minimumEnrollments >= 0 ? Number(req.body.minimumEnrollments) : null;
   const [session] = await db.insert(courseSessionsTable).values({ courseId: course.id, startsAt: body.data.startsAt, endsAt: body.data.endsAt, location: body.data.location ?? null, capacity: body.data.capacity, minimumEnrollments: createMinimumEnrollments }).returning();
-  await invalidatePublicEducationCatalog();
   res.status(201).json(CreateEducationSessionResponse.parse({ id: session!.id, startsAt: session!.startsAt.toISOString(), endsAt: session!.endsAt.toISOString(), location: session!.location, capacity: session!.capacity, reservedSeats: session!.reservedSeats, availableSeats: session!.capacity, minimumEnrollments: session!.minimumEnrollments, cancelledAt: session!.cancelledAt?.toISOString() ?? null }));
 });
 
@@ -7422,7 +8163,6 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
     htmlContent: lumeraEmailHtml("Kupovina edukacije je potvrđena", `<p>Uplata je ručno potvrđena. Sada imate pristup sadržaju kursa i zaštićenim detaljima termina.</p>`),
     metadata: { enrollmentId: settled.id, courseId: settled.courseId },
   });
-  await invalidatePublicEducationCatalog();
   res.json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(settled)));
 });
 
@@ -7441,7 +8181,6 @@ router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> =
     capacity: body.data.capacity,
     minimumEnrollments: updateMinimumEnrollments,
   }).where(eq(courseSessionsTable.id, session.id)).returning();
-  await invalidatePublicEducationCatalog();
   res.json(UpdateEducationSessionResponse.parse({
     id: updated!.id,
     startsAt: updated!.startsAt.toISOString(),
@@ -7462,7 +8201,6 @@ router.delete("/education/sessions/:sessionId", async (req, res): Promise<void> 
   if (!session || !(await requireOwnedCourse(access, session.courseId, res))) return;
   if (session.reservedSeats > 0) { res.status(409).json({ error: "Termin sa rezervacijama ne može biti obrisan." }); return; }
   await db.delete(courseSessionsTable).where(eq(courseSessionsTable.id, session.id));
-  await invalidatePublicEducationCatalog();
   res.sendStatus(204);
 });
 
@@ -7480,7 +8218,6 @@ router.post("/education/sessions/:sessionId/cancel", async (req, res): Promise<v
   if (session.cancelledAt) { res.status(409).json({ error: "Termin je već otkazan." }); return; }
   try {
     const result = await cancelEducationSession(sessionId, access.user.id, reason);
-    await invalidatePublicEducationCatalog();
     res.json({ ok: true, ...result });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Otkazivanje termina nije uspelo." });
@@ -7502,7 +8239,6 @@ router.post("/education/enrollments/:enrollmentId/cancel", async (req, res): Pro
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "Otkazivanje prijave.";
   try {
     const result = await cancelEducationEnrollment({ enrollmentId, actorUserId: user.id, reason });
-    await invalidatePublicEducationCatalog();
     res.json({ ok: true, ...result });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Otkazivanje prijave nije uspelo." });
@@ -7511,14 +8247,39 @@ router.post("/education/enrollments/:enrollmentId/cancel", async (req, res): Pro
 
 router.get("/education/enrollments", async (req, res): Promise<void> => {
   const lmsAccess = await requireLmsAccess(req, res); if (!lmsAccess) return;
-  const [enrollments, courses] = await Promise.all([db.select().from(courseEnrollmentsTable), db.select().from(coursesTable)]);
-  const visible = enrollments.filter((enrollment) => {
-    if (lmsAccess.learnerEmployeeId) return enrollment.employeeId === lmsAccess.learnerEmployeeId;
-    if (lmsAccess.access.admin || enrollment.purchaserId === lmsAccess.access.user.id) return true;
-    const course = courses.find((item) => item.id === enrollment.courseId);
-    return Boolean(course && isCourseOwner(lmsAccess.access, course));
-  });
-  res.json(ListEnrollmentsResponse.parse(await Promise.all(visible.map(educationEnrollmentView))));
+  // Build the access predicate in SQL so we never full-scan course_enrollments or
+  // courses: the DB filters to the rows this caller may see, orders them stably,
+  // and only the paginated slice is loaded before batch assembly.
+  const { access, learnerEmployeeId } = lmsAccess;
+  let accessPredicate;
+  if (learnerEmployeeId) {
+    // Salon employee learner: only their own enrolled seats.
+    accessPredicate = eq(courseEnrollmentsTable.employeeId, learnerEmployeeId);
+  } else if (access.admin) {
+    // Admin sees every enrollment.
+    accessPredicate = sql`true`;
+  } else {
+    // Purchaser OR owner of the course's salon/center. The ownership branch is
+    // an EXISTS subquery keyed on the course, using the courses_salon_idx /
+    // courses_center_published_idx indexes — no course table scan.
+    const ownedPredicates = [];
+    if (access.salon) ownedPredicates.push(eq(coursesTable.salonId, access.salon.id));
+    if (access.centers.length) ownedPredicates.push(inArray(coursesTable.centerId, access.centers.map((center) => center.id)));
+    const purchaserPredicate = eq(courseEnrollmentsTable.purchaserId, access.user.id);
+    accessPredicate = ownedPredicates.length
+      ? or(
+          purchaserPredicate,
+          sql`exists (select 1 from ${coursesTable} where ${coursesTable.id} = ${courseEnrollmentsTable.courseId} and ${or(...ownedPredicates)})`,
+        )
+      : purchaserPredicate;
+  }
+  const { limit, offset } = parsePagination(req.query, 50);
+  const enrollments = await db.select().from(courseEnrollmentsTable)
+    .where(accessPredicate)
+    .orderBy(desc(courseEnrollmentsTable.purchasedAt), desc(courseEnrollmentsTable.id))
+    .limit(limit)
+    .offset(offset);
+  res.json(ListEnrollmentsResponse.parse(await batchEducationEnrollmentViews(enrollments)));
 });
 
 router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise<void> => {
@@ -7577,814 +8338,239 @@ router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", a
 });
 
 /**
- * Load all eligible public education courses (published, not archived,
- * center-backed, verified + active subscription) and the center/subscription
- * data needed to build PublicCourseViewsContext without re-querying.
- *
- * Also returns allCenterCourses — every course for all centers,
- * used for accurate courseCount and center review aggregation in the
- * batch builder.  This avoids a separate centerAllCourses query later.
- *
- * Total queries: 3 (allCenterCourses/centers/subscriptions in parallel).
+ * Returns all publicly visible courses, optionally narrowed by SQL predicates.
+ * Scalar filter predicates should be passed in so they are pushed to the DB
+ * rather than applied in JS after a full-table load. Center eligibility
+ * (verification + active subscription) is enforced in SQL via EXISTS so it
+ * applies *before* the bound and never truncates matching older rows.
+ * Ordered by descending createdAt + id. Bounded to LIMIT 500 by default;
+ * pass { limit, offset } for stable page/pageSize pagination — every predicate
+ * is applied before the OFFSET/LIMIT so pages never drop matching rows.
  */
-async function publicEducationCoursesWithContext(): Promise<{
-  courses: Array<typeof coursesTable.$inferSelect>;
-  centers: Array<typeof educationCentersTable.$inferSelect>;
-  subscriptionStatusMap: Map<string, string>;
-  allCenterCourses: Array<typeof coursesTable.$inferSelect>;
-}> {
-  // Fetch all center-backed courses in one query, then filter in memory.
-  // We also need centers + subscriptions to determine eligibility.
-  // Fire all three queries in parallel; we can filter after.
-  const [allCenterCourses, centers, subscriptions] = await Promise.all([
-    db.select().from(coursesTable)
-      .where(isNotNull(coursesTable.centerId))
-      .orderBy(desc(coursesTable.createdAt)),
-    db.select().from(educationCentersTable),
-    db.select({ centerId: educationCenterSubscriptionsTable.centerId, status: educationCenterSubscriptionsTable.status })
-      .from(educationCenterSubscriptionsTable),
-  ]);
-  const subscriptionStatusMap = new Map(subscriptions.map((s) => [s.centerId, s.status]));
-  const eligibility = new Map(centers.map((c) => [
-    c.id,
-    c.verificationStatus === "verified" && hasActiveEducationSubscription(subscriptionStatusMap.get(c.id) as any),
-  ]));
-  // Filter to only courses from eligible centers AND published + not archived.
-  const courses = allCenterCourses.filter((c) => c.published && !c.archived && eligibility.get(c.centerId!));
-  // Eligible center rows only (others are irrelevant to callers)
-  const eligibleCenters = centers.filter((c) => eligibility.get(c.id));
-  return { courses, centers: eligibleCenters, subscriptionStatusMap, allCenterCourses };
+async function publicEducationCourses(
+  extraPredicates: Parameters<typeof and>[0][] = [],
+  pagination?: { limit: number; offset: number },
+) {
+  return db.select().from(coursesTable)
+    .where(publicEducationCoursePredicate(extraPredicates))
+    .orderBy(desc(coursesTable.createdAt), desc(coursesTable.id))
+    .limit(pagination?.limit ?? 500)
+    .offset(pagination?.offset ?? 0);
 }
 
-/**
- * Combined single-pass loader for the public course list endpoint.
- *
- * Query plan — total ≤8 SQL queries independent of N:
- *  Phase 1 (2 parallel):
- *   1  allCenterCourses  – courses WHERE center_id IS NOT NULL
- *   2  centersWithSubs   – education_centers LEFT JOIN education_center_subscriptions
- *  Phase 2 (6 parallel, after filtering eligibility in memory):
- *   3  sessions
- *   4  modules + lessons (via JOIN — one query for both)
- *   5  day programs
- *   6  allMedia          – course gallery + center direct media (combined OR)
- *   7  reviews           – published, for all courseIds
- *   8  instructors       – for all centerIds
- *   9  featured flags    – 0 queries if no isFeatured candidates; 1 otherwise
- */
-async function publicCourseListBatch(
-  courseFilter: (course: typeof coursesTable.$inferSelect) => boolean,
-  selectCourses?: (
-    courses: Array<typeof coursesTable.$inferSelect>,
-    featuredFlags: ReadonlyMap<string, boolean>,
-  ) => Array<typeof coursesTable.$inferSelect>,
-): Promise<Array<ReturnType<typeof educationCourseView> extends Promise<infer T> ? T : never>> {
-  // ── Phase 1: Load ALL center-backed courses + center/sub data in 2 queries ─
-  const [allCenterCourses, centersWithSubs] = await Promise.all([
-    db.select().from(coursesTable)
-      .where(isNotNull(coursesTable.centerId))
-      .orderBy(desc(coursesTable.createdAt)),
-    db.select({
-      id: educationCentersTable.id,
-      name: educationCentersTable.name,
-      city: educationCentersTable.city,
-      description: educationCentersTable.description,
-      imageUrl: educationCentersTable.imageUrl,
-      websiteUrl: educationCentersTable.websiteUrl,
-      instagramUrl: educationCentersTable.instagramUrl,
-      verificationStatus: educationCentersTable.verificationStatus,
-      subStatus: educationCenterSubscriptionsTable.status,
-    })
-      .from(educationCentersTable)
-      .leftJoin(educationCenterSubscriptionsTable, eq(educationCenterSubscriptionsTable.centerId, educationCentersTable.id)),
-  ]);
-
-  // Build eligibility from the combined center+sub result
-  const centersMap = new Map(centersWithSubs.map((c) => [c.id, c]));
-  const eligibility = new Map(centersWithSubs.map((c) => [
-    c.id,
-    c.verificationStatus === "verified" && hasActiveEducationSubscription(c.subStatus as any),
-  ]));
-
-  // Filter to eligible + published + not archived + caller's extra filter
-  const eligibleCourseCandidates = allCenterCourses.filter(
-    (c) => c.published && !c.archived && eligibility.get(c.centerId!) && courseFilter(c),
+function publicEducationCoursePredicate(extraPredicates: Parameters<typeof and>[0][] = []) {
+  return and(
+    eq(coursesTable.published, true),
+    eq(coursesTable.archived, false),
+    isNotNull(coursesTable.centerId),
+    // Mirror educationCenterEligibility exactly: verified center with an
+    // active / free-via-loyalty subscription.
+    sql`exists (
+      select 1 from ${educationCentersTable} ec
+      join ${educationCenterSubscriptionsTable} ecs on ecs.center_id = ec.id
+      where ec.id = ${coursesTable.centerId}
+        and ec.verification_status = 'verified'
+        and ecs.status in ('active', 'free_via_loyalty')
+    )`,
+    ...extraPredicates,
   );
-  const featuredFlagsBeforeSelection = selectCourses
-    ? await publiclyFeaturedMap(eligibleCourseCandidates)
-    : undefined;
-  const eligibleCourses = selectCourses
-    ? selectCourses([...eligibleCourseCandidates], featuredFlagsBeforeSelection!)
-    : eligibleCourseCandidates;
-
-  if (!eligibleCourses.length) return [];
-
-  const courseIds = eligibleCourses.map((c) => c.id);
-  const centerIds = [...new Set(eligibleCourses.map((c) => c.centerId as string))];
-  const centerIdSet = new Set(centerIds);
-  const salonIds = [...new Set(eligibleCourses.map((c) => c.salonId).filter(Boolean) as string[])];
-  // All public course IDs for the centers represented in this response. These
-  // keep center gallery/review aggregates complete even when the selected list
-  // was sliced for a shelf such as "popular".
-  const relevantCenterPublicCourseIds = allCenterCourses
-    .filter((c) => c.centerId && centerIdSet.has(c.centerId) && eligibility.get(c.centerId) && c.published && !c.archived)
-    .map((c) => c.id);
-  const selectedFeaturedFlags = featuredFlagsBeforeSelection
-    ? new Map(eligibleCourses.map((course) => [course.id, featuredFlagsBeforeSelection.get(course.id) ?? false]))
-    : undefined;
-
-  // ── Phase 2: Load all related data in parallel (6 queries + optional featured) ─
-  // modules+lessons: one LEFT JOIN query returns both; saves one round-trip.
-  // allMedia: combined course gallery + center-direct in one OR query.
-  const [sessions, modulesWithLessons, allCourseDays, allMedia, reviews, instructors, salons, featuredFlags] = await Promise.all([
-    db.select().from(courseSessionsTable)
-      .where(inArray(courseSessionsTable.courseId, courseIds))
-      .orderBy(asc(courseSessionsTable.startsAt)),
-    // Modules LEFT JOIN lessons — one row per lesson (nulls for modules with no lessons)
-    db.select({
-      moduleId: courseModulesTable.id,
-      moduleCourseId: courseModulesTable.courseId,
-      moduleTitle: courseModulesTable.title,
-      moduleDescription: courseModulesTable.description,
-      moduleSortOrder: courseModulesTable.sortOrder,
-      lessonId: courseLessonsTable.id,
-      lessonTitle: courseLessonsTable.title,
-      lessonDescription: courseLessonsTable.description,
-      lessonDurationMinutes: courseLessonsTable.durationMinutes,
-      lessonSortOrder: courseLessonsTable.sortOrder,
-    })
-      .from(courseModulesTable)
-      .leftJoin(courseLessonsTable, eq(courseLessonsTable.moduleId, courseModulesTable.id))
-      .where(inArray(courseModulesTable.courseId, courseIds))
-      .orderBy(asc(courseModulesTable.sortOrder), asc(courseLessonsTable.sortOrder)),
-    db.select().from(courseDaysTable)
-      .where(inArray(courseDaysTable.courseId, courseIds))
-      .orderBy(asc(courseDaysTable.sortOrder), asc(courseDaysTable.dayNumber)),
-    // Combined media: course gallery + center direct media in one OR query
-    db.select().from(educationMediaTable)
-      .where(or(
-        inArray(educationMediaTable.courseId, relevantCenterPublicCourseIds),
-        and(inArray(educationMediaTable.centerId, centerIds), isNull(educationMediaTable.courseId)),
-      ))
-      .orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt)),
-    db.select().from(courseReviewsTable)
-      .where(and(inArray(courseReviewsTable.courseId, relevantCenterPublicCourseIds), eq(courseReviewsTable.status, "published")))
-      .orderBy(desc(courseReviewsTable.createdAt)),
-    db.select().from(educationInstructorsTable)
-      .where(inArray(educationInstructorsTable.centerId, centerIds)),
-    salonIds.length
-      ? db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds))
-      : Promise.resolve([] as Array<typeof salonsTable.$inferSelect>),
-    // Popular sorting resolves these before slicing; other paths resolve them
-    // here in parallel with related data.
-    selectedFeaturedFlags ?? publiclyFeaturedMap(eligibleCourses),
-  ]);
-
-  // ── Build Maps ───────────────────────────────────────────────────────────
-  // centersMap is already built above from centersWithSubs
-
-  const sessionsMap = new Map<string, typeof sessions>();
-  for (const s of sessions) {
-    const arr = sessionsMap.get(s.courseId) ?? []; arr.push(s); sessionsMap.set(s.courseId, arr);
-  }
-
-  // Build modules map and lessons map from the combined modulesWithLessons result
-  type ModuleRow = { id: string; courseId: string; title: string; description: string; sortOrder: number };
-  type LessonRow = { id: string; moduleId: string; title: string; description: string; durationMinutes: number; sortOrder: number };
-  const modulesMap = new Map<string, ModuleRow[]>();
-  const lessonsMap = new Map<string, LessonRow[]>();
-  const seenModuleIds = new Set<string>();
-  for (const row of modulesWithLessons) {
-    // Add module row (once per unique moduleId)
-    if (!seenModuleIds.has(row.moduleId)) {
-      seenModuleIds.add(row.moduleId);
-      const arr = modulesMap.get(row.moduleCourseId) ?? [];
-      arr.push({ id: row.moduleId, courseId: row.moduleCourseId, title: row.moduleTitle, description: row.moduleDescription, sortOrder: row.moduleSortOrder });
-      modulesMap.set(row.moduleCourseId, arr);
-    }
-    // Add lesson row (lessonId is null when no lessons for this module)
-    if (row.lessonId != null) {
-      const arr = lessonsMap.get(row.moduleId) ?? [];
-      arr.push({ id: row.lessonId, moduleId: row.moduleId, title: row.lessonTitle!, description: row.lessonDescription!, durationMinutes: row.lessonDurationMinutes!, sortOrder: row.lessonSortOrder! });
-      lessonsMap.set(row.moduleId, arr);
-    }
-  }
-
-  const dayProgramMap = new Map<string, typeof allCourseDays>();
-  for (const d of allCourseDays) {
-    const arr = dayProgramMap.get(d.courseId) ?? []; arr.push(d); dayProgramMap.set(d.courseId, arr);
-  }
-  // Split allMedia into course media and center direct media
-  const courseMediaMap = new Map<string, typeof allMedia>();
-  const centerDirectMediaMap = new Map<string, typeof allMedia>();
-  const centerCourseMediaMap = new Map<string, typeof allMedia>();
-  // (courseIdToCenterId built below after allCenterCourses)
-
-  const reviewsMap = new Map<string, typeof reviews>();
-  for (const r of reviews) {
-    const arr = reviewsMap.get(r.courseId) ?? [];
-    if (arr.length < 12) arr.push(r);
-    reviewsMap.set(r.courseId, arr);
-  }
-  const instructorByProfileId = new Map<string, typeof instructors[0]>();
-  const instructorByUserId = new Map<string, typeof instructors[0]>();
-  for (const inst of instructors) {
-    instructorByProfileId.set(`${inst.centerId}:${inst.id}`, inst);
-    if (inst.userId) instructorByUserId.set(`${inst.centerId}:${inst.userId}`, inst);
-  }
-  const salonsMap = new Map(salons.map((salon) => [salon.id, salon]));
-
-  // Center all-courses maps
-  const centerCourseCountMap = new Map<string, number>();
-  const courseIdToCenterId = new Map<string, string>();
-  for (const c of allCenterCourses) {
-    if (!c.centerId) continue;
-    courseIdToCenterId.set(c.id, c.centerId);
-    if (eligibility.get(c.centerId)) {
-      centerCourseCountMap.set(c.centerId, (centerCourseCountMap.get(c.centerId) ?? 0) + 1);
-    }
-  }
-
-  // Now split allMedia (needs courseIdToCenterId)
-  for (const item of allMedia) {
-    if (item.courseId) {
-      // Course media — grouped by courseId
-      const arr = courseMediaMap.get(item.courseId) ?? []; arr.push(item); courseMediaMap.set(item.courseId, arr);
-      // Also group by centerId for center gallery
-      const cId = courseIdToCenterId.get(item.courseId);
-      if (cId) { const arr2 = centerCourseMediaMap.get(cId) ?? []; arr2.push(item); centerCourseMediaMap.set(cId, arr2); }
-    } else if (item.centerId) {
-      // Center-level (direct) media
-      const arr = centerDirectMediaMap.get(item.centerId) ?? []; arr.push(item); centerDirectMediaMap.set(item.centerId, arr);
-    }
-  }
-
-  // Center reviews from the course reviews we already have
-  const centerReviewMap = new Map<string, Array<{ courseId: string; rating: number }>>();
-  for (const r of reviews) {
-    const cId = courseIdToCenterId.get(r.courseId);
-    if (!cId) continue;
-    const arr = centerReviewMap.get(cId) ?? []; arr.push({ courseId: r.courseId, rating: r.rating }); centerReviewMap.set(cId, arr);
-  }
-
-  // ── Assemble views ────────────────────────────────────────────────────────
-  return eligibleCourses.map((course) => {
-    const center = course.centerId ? centersMap.get(course.centerId) : undefined;
-    const salon = course.salonId ? salonsMap.get(course.salonId) : undefined;
-    const courseSessions = (sessionsMap.get(course.id) ?? []).map((session) => ({
-      id: session.id, startsAt: session.startsAt.toISOString(), endsAt: session.endsAt.toISOString(),
-      location: null, capacity: session.capacity, reservedSeats: session.reservedSeats,
-      availableSeats: Math.max(0, session.capacity - session.reservedSeats),
-      minimumEnrollments: session.minimumEnrollments, cancelledAt: session.cancelledAt?.toISOString() ?? null,
-    }));
-    const courseModules = (modulesMap.get(course.id) ?? []).map((mod) => ({
-      id: mod.id, title: mod.title, description: mod.description, sortOrder: mod.sortOrder,
-      lessons: (lessonsMap.get(mod.id) ?? []).map((lesson) => ({
-        id: lesson.id, title: lesson.title, description: lesson.description,
-        durationMinutes: lesson.durationMinutes, sortOrder: lesson.sortOrder, completed: false,
-      })),
-    }));
-    const dayProgram = (dayProgramMap.get(course.id) ?? []).map((day) => ({
-      id: day.id, dayNumber: day.dayNumber, title: day.title, description: day.description, durationMinutes: day.durationMinutes,
-    }));
-    const gallery = (courseMediaMap.get(course.id) ?? []).map((item) => ({
-      id: item.id, url: publicEducationMediaUrl(item), altText: item.altText, sortOrder: item.sortOrder,
-    }));
-    const courseReviews = (reviewsMap.get(course.id) ?? []).map((review) => ({
-      id: review.id, rating: review.rating, comment: review.comment, createdAt: review.createdAt.toISOString(),
-    }));
-    let instructorName = "Stručni tim";
-    let instructorProfileId: string | null = null;
-    if (course.centerId) {
-      let instructorProfile: typeof instructors[0] | undefined;
-      if (course.instructorProfileId) {
-        instructorProfile = instructorByProfileId.get(`${course.centerId}:${course.instructorProfileId}`);
-      } else if (course.instructorId) {
-        instructorProfile = instructorByUserId.get(`${course.centerId}:${course.instructorId}`);
-      }
-      if (instructorProfile) { instructorName = instructorProfile.fullName; instructorProfileId = instructorProfile.id; }
-    }
-    const featured = featuredFlags.get(course.id) ?? false;
-    const availableSeats = courseSessions.length ? Math.max(...courseSessions.map((s) => s.availableSeats)) : null;
-    let centerView: {
-      id: string; name: string; city: string; description: string; imageUrl: string;
-      websiteUrl: string | null; instagramUrl: string | null; verified: boolean;
-      rating: number; reviewCount: number; courseCount: number;
-      gallery: Array<{ id: string; url: string; altText: string; sortOrder: number }>;
-      courses: Array<Record<string, unknown>>;
-    } | null = null;
-    if (center) {
-      const cId = center.id;
-      const cReviews = centerReviewMap.get(cId) ?? [];
-      const cRating = cReviews.length
-        ? Math.round((cReviews.reduce((sum, r) => sum + r.rating, 0) / cReviews.length) * 10) / 10
-        : 0;
-      const courseCount = centerCourseCountMap.get(cId) ?? 0;
-      const directItems = centerDirectMediaMap.get(cId) ?? [];
-      const courseItems = centerCourseMediaMap.get(cId) ?? [];
-      const galleryItems = [...directItems, ...courseItems]
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime())
-        .map((item) => ({ id: item.id, url: publicEducationMediaUrl(item), altText: item.altText, sortOrder: item.sortOrder }));
-      centerView = {
-        id: center.id, name: center.name, city: center.city, description: center.description, imageUrl: center.imageUrl,
-        websiteUrl: center.websiteUrl ?? null, instagramUrl: center.instagramUrl ?? null,
-        verified: center.verificationStatus === "verified",
-        rating: cRating, reviewCount: cReviews.length, courseCount, gallery: galleryItems, courses: [],
-      };
-    }
-    return {
-      id: course.id, title: course.title, description: course.description,
-      instructor: instructorName, instructorProfileId,
-      publisher: salon?.name ?? center?.name ?? "LUMERA partner",
-      publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
-      publisherVerified: center?.verificationStatus === "verified",
-      category: course.category, format: course.format, city: course.city,
-      price: course.price, duration: course.duration, level: course.level,
-      learningOutcomes: course.learningOutcomes, includedItems: course.includedItems, requirements: course.requirements,
-      rating: course.rating / 10, certification: course.certification,
-      featured, featuredUntil: course.featuredUntil?.toISOString() ?? null,
-      refundPolicy: course.refundPolicy,
-      groupDiscountMinimum: course.groupDiscountMinimum, groupDiscountPercent: course.groupDiscountPercent,
-      centerId: course.centerId, imageUrl: course.imageUrl, startDate: course.startDate,
-      published: course.published, archived: course.archived,
-      availableSeats, enrollmentStatus: null as null,
-      modules: courseModules, sessions: courseSessions, dayProgram, gallery, center: centerView, reviews: courseReviews,
-    };
-  });
-}
-
-/** Legacy wrapper for callers that only need the course list. */
-async function publicEducationCourses() {
-  return (await publicEducationCoursesWithContext()).courses;
 }
 
 /**
- * Batch-resolve the "publicly featured" flag for a list of courses in two
- * queries (one for the latest paid charge per course) instead of 1 query
- * per course.  Returns a Map<courseId, boolean>.
+ * Batch assembler for course card/list views.
+ * Fetches all sub-resources for N courses in a fixed number of batch queries,
+ * then assembles results in memory — no per-course DB round-trips.
+ * Used by the list and popular endpoints; the single-course detail endpoint
+ * still calls educationCourseView() directly to preserve full detail.
  */
-async function publiclyFeaturedMap(courses: Array<typeof coursesTable.$inferSelect>): Promise<Map<string, boolean>> {
-  const now = new Date();
-  const candidates = courses.filter((c) => c.isFeatured && (!c.featuredUntil || c.featuredUntil > now));
-  if (!candidates.length) return new Map();
-  const candidateIds = candidates.map((c) => c.id);
-  // Get the most-recent charge per course in one query using a lateral-style
-  // distinct-on approach: order by courseId + createdAt desc, then deduplicate.
-  const charges = await db.select({
-    courseId: educationFeaturedChargesTable.courseId,
-    status: educationFeaturedChargesTable.status,
-    createdAt: educationFeaturedChargesTable.createdAt,
-  }).from(educationFeaturedChargesTable)
-    .where(inArray(educationFeaturedChargesTable.courseId, candidateIds))
-    .orderBy(desc(educationFeaturedChargesTable.createdAt));
-  // Keep only the latest charge per course.
-  const latestByCourseid = new Map<string, string>();
-  for (const charge of charges) {
-    if (!latestByCourseid.has(charge.courseId)) {
-      latestByCourseid.set(charge.courseId, charge.status);
-    }
-  }
-  return new Map(candidates.map((c) => [c.id, latestByCourseid.get(c.id) === "paid"]));
-}
-
-async function publicCourseCard(course: typeof coursesTable.$inferSelect, preResolvedFeatured?: boolean) {
-  const { modules, sessions, dayProgram, gallery, center, reviews, ...card } = await educationCourseView(course, undefined, undefined, undefined, preResolvedFeatured);
-  return card;
-}
-
-/**
- * Context pre-loaded by the caller so the batch function avoids re-fetching
- * data that was already loaded for eligibility filtering.
- */
-type PublicCourseViewsContext = {
-  /** All center rows for the centerIds that appear in the course list. */
-  centers: Array<typeof educationCentersTable.$inferSelect>;
-  /** Subscription status per centerId (used for eligibility). */
-  subscriptionStatusMap: Map<string, string>;
-  /** Featured flags per courseId, pre-resolved by the caller. */
-  featuredFlags: Map<string, boolean>;
-  /**
-   * All courses belonging to the eligible centers (used for courseCount
-   * and center review aggregation). When omitted the batch will issue an
-   * extra query to fetch this data.
-   */
-  allCenterCourses?: Array<typeof coursesTable.$inferSelect>;
-};
-
-/**
- * Batch-build full public course views (same fields as educationCourseView with
- * no access/enrollment) for a list of courses using a fixed number of
- * set-based queries regardless of list length.
- *
- * The caller must supply a PublicCourseViewsContext with centers, subscription
- * statuses, and featured flags that have already been fetched, so this function
- * can share those results rather than re-querying.
- *
- * Query plan (all issued in parallel in one Promise.all, then one sequential):
- *  A  sessions       – all sessions for all courseIds
- *  B  modules        – all modules for all courseIds
- *  C  day programs   – all course_days for all courseIds
- *  D  course media   – education_media WHERE courseId IN (...)
- *  E  reviews        – published reviews WHERE courseId IN (...)
- *  F  instructors    – education_instructors for all centerIds
- *  G  centerAllCourses – all courses per center for courseCount
- *  H  centerReviews  – published reviews for all center courses
- *  I  centerDirectMedia – center-level media (courseId IS NULL)
- *  J  lessons        – after B completes (needs moduleIds)
- *  K  centerCourseMedia – after G completes (needs publicCourseIds per center)
- *
- * Total: 9 parallel + 2 sequential = at most 11 queries; independent of N.
- */
-async function publicCourseViewsBatch(
-  courses: Array<typeof coursesTable.$inferSelect>,
-  ctx: PublicCourseViewsContext,
-): Promise<Array<ReturnType<typeof educationCourseView> extends Promise<infer T> ? T : never>> {
+export async function batchEducationCourseViews(
+  courses: (typeof coursesTable.$inferSelect)[],
+  access?: EducationAccess,
+) {
+  _hookAssembler("batchEducationCourseViews");
   if (!courses.length) return [];
 
   const courseIds = courses.map((c) => c.id);
-  const centerIds = [...new Set(courses.map((c) => c.centerId).filter(Boolean) as string[])];
+  const centerIds = [...new Set(courses.flatMap((c) => (c.centerId ? [c.centerId] : [])))];
+  const salonIds = [...new Set(courses.flatMap((c) => (c.salonId ? [c.salonId] : [])))];
 
-  // ── Parallel set-based fetches ────────────────────────────────────────────
-  const [
-    sessions,
-    modules,
-    allCourseDays,
-    courseMedia,
-    reviews,
-    instructors,
-    centerDirectMedia,
-  ] = await Promise.all([
-    // A. Sessions — location always null for public (no access)
-    db.select().from(courseSessionsTable)
-      .where(inArray(courseSessionsTable.courseId, courseIds))
-      .orderBy(asc(courseSessionsTable.startsAt)),
-
-    // B. Modules
-    db.select().from(courseModulesTable)
-      .where(inArray(courseModulesTable.courseId, courseIds))
-      .orderBy(asc(courseModulesTable.sortOrder)),
-
-    // C. Day programs
-    db.select().from(courseDaysTable)
-      .where(inArray(courseDaysTable.courseId, courseIds))
-      .orderBy(asc(courseDaysTable.sortOrder), asc(courseDaysTable.dayNumber)),
-
-    // D. Course gallery media
-    db.select().from(educationMediaTable)
-      .where(inArray(educationMediaTable.courseId, courseIds))
-      .orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt)),
-
-    // E. Published reviews (up to 12 per course — sliced during grouping)
-    db.select().from(courseReviewsTable)
+  // One query per cross-cutting resource; all parallelised.
+  const [centers, salons, allSessions, allModules, allDayProgram, allGallery, allReviewRows, allInstructors, paidFeaturedCharges] = await Promise.all([
+    centerIds.length ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds)) : Promise.resolve([] as (typeof educationCentersTable.$inferSelect)[]),
+    salonIds.length ? db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)) : Promise.resolve([] as (typeof salonsTable.$inferSelect)[]),
+    db.select().from(courseSessionsTable).where(inArray(courseSessionsTable.courseId, courseIds)).orderBy(asc(courseSessionsTable.startsAt)),
+    db.select().from(courseModulesTable).where(inArray(courseModulesTable.courseId, courseIds)).orderBy(asc(courseModulesTable.sortOrder)),
+    db.select().from(courseDaysTable).where(inArray(courseDaysTable.courseId, courseIds)).orderBy(asc(courseDaysTable.sortOrder), asc(courseDaysTable.dayNumber)),
+    db.select().from(educationMediaTable).where(inArray(educationMediaTable.courseId, courseIds)).orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt)),
+    db.select().from(courseReviewsTable).where(and(inArray(courseReviewsTable.courseId, courseIds), eq(courseReviewsTable.status, "published"))).orderBy(desc(courseReviewsTable.createdAt)),
+    centerIds.length ? db.select().from(educationInstructorsTable).where(inArray(educationInstructorsTable.centerId, centerIds)) : Promise.resolve([] as (typeof educationInstructorsTable.$inferSelect)[]),
+    // Only fetch featured charges for isFeatured courses that haven't expired.
+    db.select().from(educationFeaturedChargesTable)
       .where(and(
-        inArray(courseReviewsTable.courseId, courseIds),
-        eq(courseReviewsTable.status, "published"),
+        inArray(educationFeaturedChargesTable.courseId, courseIds),
+        eq(educationFeaturedChargesTable.status, "paid"),
       ))
-      .orderBy(desc(courseReviewsTable.createdAt)),
-
-    // F. Instructor profiles for all centers
-    centerIds.length
-      ? db.select().from(educationInstructorsTable)
-        .where(inArray(educationInstructorsTable.centerId, centerIds))
-      : Promise.resolve([] as Array<typeof educationInstructorsTable.$inferSelect>),
-
-    // I. Center-level (direct) media (courseId IS NULL)
-    centerIds.length
-      ? db.select().from(educationMediaTable)
-        .where(and(
-          inArray(educationMediaTable.centerId, centerIds),
-          isNull(educationMediaTable.courseId),
-        ))
-        .orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt))
-      : Promise.resolve([] as Array<typeof educationMediaTable.$inferSelect>),
+      .orderBy(desc(educationFeaturedChargesTable.createdAt)),
   ]);
 
-  // G. All center courses — use ctx.allCenterCourses if pre-loaded, else query.
-  const allCenterCourses: Array<{ id: string; centerId: string | null; published: boolean; archived: boolean }> =
-    ctx.allCenterCourses
-      ? ctx.allCenterCourses.map((c) => ({ id: c.id, centerId: c.centerId, published: c.published, archived: c.archived }))
-      : centerIds.length
-        ? await db.select({ id: coursesTable.id, centerId: coursesTable.centerId, published: coursesTable.published, archived: coursesTable.archived })
-          .from(coursesTable)
-          .where(inArray(coursesTable.centerId, centerIds))
-        : [];
-
-  // H. Published center reviews — derive from the course reviews we already have (E)
-  // plus reviews for other center courses.  When allCenterCourses covers all courses
-  // for the center, a simple re-use of `reviews` is correct.  For the center rating
-  // to be accurate across ALL center courses (not just the visible slice), we fetch
-  // all center course IDs and then filter reviews we already have, supplemented by
-  // a targeted query when we have courses not in `courseIds`.
-  //
-  // Implementation: build a quick lookup of all courseIds we have reviews for, then
-  // for any center course IDs NOT in courseIds run one extra query.  In practice,
-  // for the /public/courses endpoint ALL public courses are loaded so no extra query.
-  const centerCourseIdsSet = new Set(courseIds);
-  const missingCenterCourseIds = allCenterCourses
-    .filter((c) => c.published && !c.archived && c.centerId && centerIds.includes(c.centerId) && !centerCourseIdsSet.has(c.id))
-    .map((c) => c.id);
-  const extraReviews = missingCenterCourseIds.length
-    ? await db.select({ courseId: courseReviewsTable.courseId, rating: courseReviewsTable.rating })
-      .from(courseReviewsTable)
-      .where(and(inArray(courseReviewsTable.courseId, missingCenterCourseIds), eq(courseReviewsTable.status, "published")))
-    : [];
-  // All center reviews = reviews we already have (E) + any extra
-  const allCenterReviews: Array<{ courseId: string; rating: number }> = [
-    ...reviews.map((r) => ({ courseId: r.courseId, rating: r.rating })),
-    ...extraReviews,
-  ];
-
-  // J. Lessons — needs module IDs from step B
-  const moduleIds = modules.map((m) => m.id);
-  const lessons = moduleIds.length
-    ? await db.select().from(courseLessonsTable)
-      .where(inArray(courseLessonsTable.moduleId, moduleIds))
-      .orderBy(asc(courseLessonsTable.sortOrder))
+  // Batch-fetch lessons for the collected modules.
+  const allModuleIds = allModules.map((m) => m.id);
+  const allLessons = allModuleIds.length
+    ? await db.select().from(courseLessonsTable).where(inArray(courseLessonsTable.moduleId, allModuleIds)).orderBy(asc(courseLessonsTable.sortOrder))
     : [];
 
-  // ── Build Maps ────────────────────────────────────────────────────────────
-
-  const centerMap = new Map(ctx.centers.map((c) => [c.id, c]));
-  const centerEligible = new Map(ctx.centers.map((c) => [
-    c.id,
-    c.verificationStatus === "verified" && hasActiveEducationSubscription(ctx.subscriptionStatusMap.get(c.id) as any),
-  ]));
-
-  // Sessions grouped by courseId
-  const sessionsMap = new Map<string, typeof sessions>();
-  for (const session of sessions) {
-    const arr = sessionsMap.get(session.courseId) ?? [];
-    arr.push(session);
-    sessionsMap.set(session.courseId, arr);
+  // Build look-up maps.
+  const centerById = new Map(centers.map((c) => [c.id, c]));
+  const salonById = new Map(salons.map((s) => [s.id, s]));
+  const sessionsByCourseId = new Map<string, (typeof courseSessionsTable.$inferSelect)[]>();
+  for (const s of allSessions) {
+    const arr = sessionsByCourseId.get(s.courseId) ?? [];
+    arr.push(s);
+    sessionsByCourseId.set(s.courseId, arr);
   }
-
-  // Modules grouped by courseId
-  const modulesMap = new Map<string, typeof modules>();
-  for (const mod of modules) {
-    const arr = modulesMap.get(mod.courseId) ?? [];
-    arr.push(mod);
-    modulesMap.set(mod.courseId, arr);
+  const modulesByCourseId = new Map<string, (typeof courseModulesTable.$inferSelect)[]>();
+  for (const m of allModules) {
+    const arr = modulesByCourseId.get(m.courseId) ?? [];
+    arr.push(m);
+    modulesByCourseId.set(m.courseId, arr);
   }
-
-  // Lessons grouped by moduleId
-  const lessonsMap = new Map<string, typeof lessons>();
-  for (const lesson of lessons) {
-    const arr = lessonsMap.get(lesson.moduleId) ?? [];
-    arr.push(lesson);
-    lessonsMap.set(lesson.moduleId, arr);
+  const lessonsByModuleId = new Map<string, (typeof courseLessonsTable.$inferSelect)[]>();
+  for (const l of allLessons) {
+    const arr = lessonsByModuleId.get(l.moduleId) ?? [];
+    arr.push(l);
+    lessonsByModuleId.set(l.moduleId, arr);
   }
-
-  // Day programs grouped by courseId
-  const dayProgramMap = new Map<string, typeof allCourseDays>();
-  for (const day of allCourseDays) {
-    const arr = dayProgramMap.get(day.courseId) ?? [];
-    arr.push(day);
-    dayProgramMap.set(day.courseId, arr);
+  const dayProgramByCourseId = new Map<string, (typeof courseDaysTable.$inferSelect)[]>();
+  for (const d of allDayProgram) {
+    const arr = dayProgramByCourseId.get(d.courseId) ?? [];
+    arr.push(d);
+    dayProgramByCourseId.set(d.courseId, arr);
   }
-
-  // Course gallery grouped by courseId
-  const courseMediaMap = new Map<string, typeof courseMedia>();
-  for (const item of courseMedia) {
+  const galleryByCourseId = new Map<string, (typeof educationMediaTable.$inferSelect)[]>();
+  for (const item of allGallery) {
     if (!item.courseId) continue;
-    const arr = courseMediaMap.get(item.courseId) ?? [];
+    const arr = galleryByCourseId.get(item.courseId) ?? [];
     arr.push(item);
-    courseMediaMap.set(item.courseId, arr);
+    galleryByCourseId.set(item.courseId, arr);
+  }
+  // Keep up to 12 published reviews per course.
+  const reviewsByCourseId = new Map<string, (typeof courseReviewsTable.$inferSelect)[]>();
+  for (const r of allReviewRows) {
+    const arr = reviewsByCourseId.get(r.courseId) ?? [];
+    if (arr.length < 12) arr.push(r);
+    reviewsByCourseId.set(r.courseId, arr);
+  }
+  const instructorById = new Map(allInstructors.map((i) => [i.id, i]));
+  const instructorByUserIdAndCenter = new Map<string, typeof educationInstructorsTable.$inferSelect>();
+  for (const i of allInstructors) {
+    if (i.userId) instructorByUserIdAndCenter.set(`${i.centerId}:${i.userId}`, i);
+  }
+  // Latest paid featured charge per course.
+  const paidFeaturedByCourseId = new Map<string, typeof educationFeaturedChargesTable.$inferSelect>();
+  for (const ch of paidFeaturedCharges) {
+    if (!paidFeaturedByCourseId.has(ch.courseId)) paidFeaturedByCourseId.set(ch.courseId, ch);
   }
 
-  // Reviews grouped by courseId (course-level reviews, up to 12 per course)
-  const reviewsMap = new Map<string, typeof reviews>();
-  for (const review of reviews) {
-    const arr = reviewsMap.get(review.courseId) ?? [];
-    if (arr.length < 12) arr.push(review);
-    reviewsMap.set(review.courseId, arr);
+  // Optionally resolve per-user enrollment status in one batch query.
+  const enrollmentByCourseId = new Map<string, typeof courseEnrollmentsTable.$inferSelect>();
+  if (access?.user) {
+    const enrollments = await db.select().from(courseEnrollmentsTable)
+      .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), eq(courseEnrollmentsTable.purchaserId, access.user.id)));
+    for (const e of enrollments) enrollmentByCourseId.set(e.courseId, e);
   }
 
-  // Instructors: by (centerId, profileId) and by (centerId, userId)
-  const instructorByProfileId = new Map<string, typeof instructors[0]>();
-  const instructorByUserId = new Map<string, typeof instructors[0]>();
-  for (const inst of instructors) {
-    instructorByProfileId.set(`${inst.centerId}:${inst.id}`, inst);
-    if (inst.userId) instructorByUserId.set(`${inst.centerId}:${inst.userId}`, inst);
-  }
-
-  // Center all-courses grouped by centerId (for courseCount and gallery)
-  const centerCourseCountMap = new Map<string, number>();
-  const centerPublicCourseIdsMap = new Map<string, string[]>();
-  const courseIdToCenterId = new Map<string, string>();
-  for (const c of allCenterCourses) {
-    if (!c.centerId) continue;
-    courseIdToCenterId.set(c.id, c.centerId);
-    centerCourseCountMap.set(c.centerId, (centerCourseCountMap.get(c.centerId) ?? 0) + 1);
-    if (c.published && !c.archived) {
-      const arr = centerPublicCourseIdsMap.get(c.centerId) ?? [];
-      arr.push(c.id);
-      centerPublicCourseIdsMap.set(c.centerId, arr);
-    }
-  }
-
-  // Center reviews grouped by centerId (for rating/reviewCount)
-  // Uses allCenterReviews which combines per-course reviews we already have
-  // with any extra reviews for center courses not in the current batch.
-  const centerReviewMap = new Map<string, Array<{ courseId: string; rating: number }>>();
-  for (const r of allCenterReviews) {
-    const cId = courseIdToCenterId.get(r.courseId);
-    if (!cId) continue;
-    const arr = centerReviewMap.get(cId) ?? [];
-    arr.push(r);
-    centerReviewMap.set(cId, arr);
-  }
-
-  // Center direct media grouped by centerId
-  const centerDirectMediaMap = new Map<string, typeof centerDirectMedia>();
-  for (const item of centerDirectMedia) {
-    if (!item.centerId) continue;
-    const arr = centerDirectMediaMap.get(item.centerId) ?? [];
-    arr.push(item);
-    centerDirectMediaMap.set(item.centerId, arr);
-  }
-
-  // K. Center course media (for gallery): only for eligible centers.
-  // Collect public course IDs NOT already covered by courseMedia (D).
-  // (When all public courses are in the batch, this is empty = 0 extra query.)
-  const galleryExtraCourseIds: string[] = [];
-  for (const centerId of centerIds) {
-    if (centerEligible.get(centerId)) {
-      for (const cId of (centerPublicCourseIdsMap.get(centerId) ?? [])) {
-        if (!centerCourseIdsSet.has(cId)) galleryExtraCourseIds.push(cId);
-      }
-    }
-  }
-  const centerCourseMedia = galleryExtraCourseIds.length
-    ? await db.select().from(educationMediaTable)
-      .where(inArray(educationMediaTable.courseId, galleryExtraCourseIds))
-      .orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt))
-    : [];
-
-  // Center course media grouped by centerId (via course -> centerId lookup)
-  // Includes both the batch course media (D) and any extra gallery media (K)
-  const centerCourseMediaMap = new Map<string, Array<typeof educationMediaTable.$inferSelect>>();
-  // Add batch course media (D) - the current courses
-  for (const item of courseMedia) {
-    if (!item.courseId) continue;
-    const cId = courseIdToCenterId.get(item.courseId) ?? (item.centerId ?? undefined);
-    if (!cId) continue;
-    const arr = centerCourseMediaMap.get(cId) ?? [];
-    arr.push(item);
-    centerCourseMediaMap.set(cId, arr);
-  }
-  // Add extra gallery media (K)
-  for (const item of centerCourseMedia) {
-    if (!item.courseId) continue;
-    const cId = courseIdToCenterId.get(item.courseId);
-    if (!cId) continue;
-    const arr = centerCourseMediaMap.get(cId) ?? [];
-    arr.push(item);
-    centerCourseMediaMap.set(cId, arr);
-  }
-
-  // ── Assemble per-course views ─────────────────────────────────────────────
+  const now = new Date();
 
   return courses.map((course) => {
-    const center = course.centerId ? centerMap.get(course.centerId) : undefined;
+    const center = course.centerId ? centerById.get(course.centerId) : undefined;
+    const salon = course.salonId ? salonById.get(course.salonId) : undefined;
+    const publisher = salon ?? center;
 
-    // Sessions (public: location = null)
-    const courseSessions = (sessionsMap.get(course.id) ?? []).map((session) => ({
-      id: session.id,
-      startsAt: session.startsAt.toISOString(),
-      endsAt: session.endsAt.toISOString(),
-      location: null,
-      capacity: session.capacity,
-      reservedSeats: session.reservedSeats,
-      availableSeats: Math.max(0, session.capacity - session.reservedSeats),
-      minimumEnrollments: session.minimumEnrollments,
-      cancelledAt: session.cancelledAt?.toISOString() ?? null,
+    // Instructor resolution.
+    let instructorName = "Stručni tim";
+    let instructorProfileId: string | null = null;
+    if (course.centerId) {
+      const profile = course.instructorProfileId
+        ? instructorById.get(course.instructorProfileId)
+        : course.instructorId
+          ? instructorByUserIdAndCenter.get(`${course.centerId}:${course.instructorId}`)
+          : undefined;
+      if (profile) {
+        instructorName = profile.fullName;
+        instructorProfileId = profile.id;
+      }
+    }
+
+    // Session logistics authorization — mirror educationCourseView() exactly:
+    // admins, the publisher/owner, and paid/enrolled viewers see the location;
+    // unauthorized public viewers get null.
+    const owned = Boolean(access && isCourseOwner(access, course));
+    const enrollmentForLogistics = enrollmentByCourseId.get(course.id);
+    const mayReadLogistics = Boolean(
+      access && (access.admin || owned || enrollmentForLogistics?.paymentStatus === "paid"),
+    );
+
+    // Sessions view (location gated by mayReadLogistics).
+    const rawSessions = sessionsByCourseId.get(course.id) ?? [];
+    const sessions = rawSessions.map((s) => ({
+      id: s.id,
+      startsAt: s.startsAt.toISOString(),
+      endsAt: s.endsAt.toISOString(),
+      location: mayReadLogistics ? s.location : null,
+      capacity: s.capacity,
+      reservedSeats: s.reservedSeats,
+      availableSeats: Math.max(0, s.capacity - s.reservedSeats),
+      minimumEnrollments: s.minimumEnrollments,
+      cancelledAt: s.cancelledAt?.toISOString() ?? null,
     }));
 
-    // Modules + lessons (no lesson content for public)
-    const courseModules = (modulesMap.get(course.id) ?? []).map((mod) => ({
-      id: mod.id,
-      title: mod.title,
-      description: mod.description,
-      sortOrder: mod.sortOrder,
-      lessons: (lessonsMap.get(mod.id) ?? []).map((lesson) => ({
-        id: lesson.id,
-        title: lesson.title,
-        description: lesson.description,
-        // no content field for public
-        durationMinutes: lesson.durationMinutes,
-        sortOrder: lesson.sortOrder,
+    // Modules + lessons view.
+    const courseModules = modulesByCourseId.get(course.id) ?? [];
+    const modules = courseModules.map((m) => ({
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      sortOrder: m.sortOrder,
+      lessons: (lessonsByModuleId.get(m.id) ?? []).map((l) => ({
+        id: l.id,
+        title: l.title,
+        description: l.description,
+        durationMinutes: l.durationMinutes,
+        sortOrder: l.sortOrder,
         completed: false,
       })),
     }));
 
-    // Day program
-    const dayProgram = (dayProgramMap.get(course.id) ?? []).map((day) => ({
-      id: day.id,
-      dayNumber: day.dayNumber,
-      title: day.title,
-      description: day.description,
-      durationMinutes: day.durationMinutes,
+    // Day program view.
+    const dayProgram = (dayProgramByCourseId.get(course.id) ?? []).map((d) => ({
+      id: d.id,
+      dayNumber: d.dayNumber,
+      title: d.title,
+      description: d.description,
+      durationMinutes: d.durationMinutes,
     }));
 
-    // Course gallery
-    const gallery = (courseMediaMap.get(course.id) ?? []).map((item) => ({
+    // Gallery view.
+    const gallery = (galleryByCourseId.get(course.id) ?? []).map((item) => ({
       id: item.id,
       url: publicEducationMediaUrl(item),
       altText: item.altText,
       sortOrder: item.sortOrder,
     }));
 
-    // Reviews (up to 12, already limited)
-    const courseReviews = (reviewsMap.get(course.id) ?? []).map((review) => ({
-      id: review.id,
-      rating: review.rating,
-      comment: review.comment,
-      createdAt: review.createdAt.toISOString(),
+    // Reviews view (max 12, already filtered to published, desc).
+    const reviews = (reviewsByCourseId.get(course.id) ?? []).map((r) => ({
+      id: r.id,
+      rating: r.rating,
+      comment: r.comment,
+      createdAt: r.createdAt.toISOString(),
     }));
 
-    // Instructor
-    let instructorName = "Stručni tim";
-    let instructorProfileId: string | null = null;
-    if (course.centerId) {
-      let instructorProfile: typeof instructors[0] | undefined;
-      if (course.instructorProfileId) {
-        instructorProfile = instructorByProfileId.get(`${course.centerId}:${course.instructorProfileId}`);
-      } else if (course.instructorId) {
-        instructorProfile = instructorByUserId.get(`${course.centerId}:${course.instructorId}`);
-      }
-      if (instructorProfile) {
-        instructorName = instructorProfile.fullName;
-        instructorProfileId = instructorProfile.id;
-      }
-    }
+    // Featured: isFeatured flag + not expired + latest charge is "paid".
+    const isFeaturedActive = course.isFeatured && (!course.featuredUntil || course.featuredUntil > now);
+    const featured = isFeaturedActive && Boolean(paidFeaturedByCourseId.get(course.id));
 
-    // Featured flag
-    const featured = ctx.featuredFlags.get(course.id) ?? false;
-
-    // Publisher
-    const publisher = center;
-    const publisherName = publisher?.name ?? "LUMERA partner";
-    const publisherVerified = center?.verificationStatus === "verified";
-
-    // Available seats
-    const availableSeats = courseSessions.length
-      ? Math.max(...courseSessions.map((s) => s.availableSeats))
-      : null;
-
-    // Center summary
-    let centerView: {
-      id: string;
-      name: string;
-      city: string;
-      description: string;
-      imageUrl: string;
-      websiteUrl: string | null;
-      instagramUrl: string | null;
-      verified: boolean;
-      rating: number;
-      reviewCount: number;
-      courseCount: number;
-      gallery: Array<{ id: string; url: string; altText: string; sortOrder: number }>;
-      courses: Array<Record<string, unknown>>;
-    } | null = null;
-
-    if (center) {
-      const cId = center.id;
-      const eligible = centerEligible.get(cId) ?? false;
-      const cReviews = centerReviewMap.get(cId) ?? [];
-      const cRating = cReviews.length
-        ? Math.round((cReviews.reduce((sum, r) => sum + r.rating, 0) / cReviews.length) * 10) / 10
-        : 0;
-      const courseCount = centerCourseCountMap.get(cId) ?? 0;
-
-      // Center gallery: direct media + (if eligible) public course media
-      const directItems = centerDirectMediaMap.get(cId) ?? [];
-      const courseItems = eligible ? (centerCourseMediaMap.get(cId) ?? []) : [];
-      const galleryItems = [...directItems, ...courseItems]
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime())
-        .map((item) => ({
-          id: item.id,
-          url: publicEducationMediaUrl(item),
-          altText: item.altText,
-          sortOrder: item.sortOrder,
-        }));
-
-      centerView = {
-        id: center.id,
-        name: center.name,
-        city: center.city,
-        description: center.description,
-        imageUrl: center.imageUrl,
-        websiteUrl: center.websiteUrl ?? null,
-        instagramUrl: center.instagramUrl ?? null,
-        verified: center.verificationStatus === "verified",
-        rating: cRating,
-        reviewCount: cReviews.length,
-        courseCount,
-        gallery: galleryItems,
-        courses: [],
-      };
-    }
+    const enrollment = enrollmentByCourseId.get(course.id);
 
     return {
       id: course.id,
@@ -8392,9 +8578,9 @@ async function publicCourseViewsBatch(
       description: course.description,
       instructor: instructorName,
       instructorProfileId,
-      publisher: publisherName,
+      publisher: publisher?.name ?? "LUMERA partner",
       publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
-      publisherVerified,
+      publisherVerified: center?.verificationStatus === "verified",
       category: course.category,
       format: course.format,
       city: course.city,
@@ -8416,48 +8602,21 @@ async function publicCourseViewsBatch(
       startDate: course.startDate,
       published: course.published,
       archived: course.archived,
-      availableSeats,
-      enrollmentStatus: null as null,
-      modules: courseModules,
-      sessions: courseSessions,
+      availableSeats: sessions.length ? Math.max(...sessions.map((s) => s.availableSeats)) : null,
+      enrollmentStatus: enrollment?.status ?? null,
+      modules,
+      sessions,
       dayProgram,
       gallery,
-      center: centerView,
-      reviews: courseReviews,
+      center: center ? null : null, // center detail only needed on single-course view
+      reviews,
     };
   });
 }
 
-/**
- * Build the PublicCourseViewsContext that publicCourseViewsBatch needs.
- * Fetches centers + subscriptions in 2 parallel queries and featured flags
- * in 0-1 additional queries. Call this once per request and pass the result
- * to publicCourseViewsBatch to avoid re-fetching the same data.
- */
-async function buildPublicCourseViewsContext(
-  courses: Array<typeof coursesTable.$inferSelect>,
-): Promise<PublicCourseViewsContext> {
-  const centerIds = [...new Set(courses.map((c) => c.centerId).filter(Boolean) as string[])];
-  const [centers, subscriptions, featuredFlags] = await Promise.all([
-    centerIds.length
-      ? db.select().from(educationCentersTable).where(inArray(educationCentersTable.id, centerIds))
-      : Promise.resolve([] as Array<typeof educationCentersTable.$inferSelect>),
-    centerIds.length
-      ? db.select({ centerId: educationCenterSubscriptionsTable.centerId, status: educationCenterSubscriptionsTable.status })
-        .from(educationCenterSubscriptionsTable)
-        .where(inArray(educationCenterSubscriptionsTable.centerId, centerIds))
-      : Promise.resolve([] as Array<{ centerId: string; status: string }>),
-    publiclyFeaturedMap(courses),
-  ]);
-  return {
-    centers,
-    subscriptionStatusMap: new Map(subscriptions.map((s) => [s.centerId, s.status])),
-    featuredFlags,
-  };
-}
-
-async function invalidatePublicEducationCatalog() {
-  await invalidateCatalogCache("education-categories", "education-popular", "education-featured");
+async function publicCourseCard(course: typeof coursesTable.$inferSelect) {
+  const { modules, sessions, dayProgram, gallery, center, reviews, ...card } = await educationCourseView(course);
+  return card;
 }
 
 router.get("/education/public/courses", async (req, res): Promise<void> => {
@@ -8470,33 +8629,32 @@ router.get("/education/public/courses", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Filteri nisu ispravni." }); return;
   }
   const query = parsed.data;
-  // Build a filter closure that captures query params; publicCourseListBatch
-  // applies it after eligibility filtering, so we never need a separate
-  // publicEducationCourses() call first.
-  // The maxDurationDays filter needs day counts which are fetched inside the
-  // batch (phase 2C), so we derive it from the allCourseDays already loaded.
-  // Since publicCourseListBatch does not expose dayProgram counts pre-filter,
-  // we apply the maxDurationDays filter as a post-batch step when present.
-  const inlineFilter = (course: typeof coursesTable.$inferSelect): boolean => {
-    if (query.format && course.format !== query.format) return false;
-    if (query.city && course.city?.toLowerCase() !== query.city.toLowerCase()) return false;
-    if (query.category && !course.category.toLowerCase().includes(query.category.toLowerCase())) return false;
-    if (query.level && course.level !== query.level) return false;
-    if (query.minPrice !== undefined && course.price < query.minPrice) return false;
-    if (query.maxPrice !== undefined && course.price > query.maxPrice) return false;
-    if (query.startDate) {
-      const start = calendarDate(query.startDate);
-      if (!course.startDate || course.startDate < start) return false;
-    }
-    return true;
-  };
-  let views = await publicCourseListBatch(inlineFilter);
-  // maxDurationDays: the batch already fetched day programs; filter after.
+
+  // Push all scalar predicates into the DB query via publicEducationCourses().
+  const sqlPredicates: Parameters<typeof and>[0][] = [];
+  if (query.format) sqlPredicates.push(eq(coursesTable.format, query.format));
+  if (query.city) sqlPredicates.push(eq(sql`lower(${coursesTable.city})`, query.city.toLowerCase()));
+  if (query.category) sqlPredicates.push(ilike(coursesTable.category, `%${query.category}%`));
+  if (query.level) sqlPredicates.push(eq(coursesTable.level, query.level));
+  if (query.minPrice !== undefined) sqlPredicates.push(gte(coursesTable.price, query.minPrice));
+  if (query.maxPrice !== undefined) sqlPredicates.push(lte(coursesTable.price, query.maxPrice));
+  if (query.startDate) sqlPredicates.push(gte(coursesTable.startDate, calendarDate(query.startDate)));
+
+  // maxDurationDays pushed to SQL via a correlated day-program count so it applies
+  // before the bound. Courses with no published day-program count as 1 day (prior
+  // JS default); since maxDurationDays >= 1, a 0-count row always satisfies
+  // `count <= maxDurationDays`, matching the prior `(dayCount ?? 1) <= max` semantics.
   if (query.maxDurationDays !== undefined) {
-    const maxDays = query.maxDurationDays;
-    // Match original: treat 0 day records as 1 day (same as original dayCount.get(id) ?? 1)
-    views = views.filter((v) => (v.dayProgram.length === 0 ? 1 : v.dayProgram.length) <= maxDays);
+    sqlPredicates.push(sql`(
+      select count(*) from ${courseDaysTable} cd where cd.course_id = ${coursesTable.id}
+    ) <= ${query.maxDurationDays}`);
   }
+
+  // Stable page/pageSize pagination: OFFSET/LIMIT applied after every SQL predicate.
+  const pageSize = query.pageSize;
+  const offset = (query.page - 1) * pageSize;
+  const courses = await publicEducationCourses(sqlPredicates, { limit: pageSize, offset });
+  const views = await batchEducationCourseViews(courses);
   res.json(ListPublicEducationCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
@@ -8507,47 +8665,47 @@ router.get("/education/public/courses/:courseId", async (req, res): Promise<void
   if (!course || !(await isPublicEducationCourse(course))) {
     res.status(404).json({ error: "Edukacija nije dostupna." }); return;
   }
+  // Single-course detail: use educationCourseView for full center/session/gallery depth.
   res.json(calendarDateCourseResponse(GetPublicEducationCourseResponse.parse(await educationCourseView(course))));
 });
 
 router.get("/education/public/categories", async (_req, res): Promise<void> => {
-  const result = await readThroughCatalogCache(
-    catalogCacheKey("education-categories"),
+  const result = await catalogCache.getOrLoad(
+    "education-categories:public-counts",
+    ["education-categories"],
     async () => {
-      const [categories, publicCourses] = await Promise.all([
+      const [categories, counts] = await Promise.all([
         db.select().from(courseCategoriesTable).orderBy(asc(courseCategoriesTable.name)),
-        publicEducationCourses(),
+        db.select({
+          category: sql<string>`lower(${coursesTable.category})`,
+          courseCount: count(),
+        }).from(coursesTable)
+          .where(publicEducationCoursePredicate())
+          .groupBy(sql`lower(${coursesTable.category})`),
       ]);
-      const countByName = new Map<string, number>();
-      for (const course of publicCourses) countByName.set(course.category.toLowerCase(), (countByName.get(course.category.toLowerCase()) ?? 0) + 1);
-      return ListPublicEducationCategoriesResponse.parse(categories.map((category) => ({
+      const countByName = new Map(counts.map((row) => [row.category, Number(row.courseCount)]));
+      return categories.map((category) => ({
         id: category.id,
         name: category.name,
         slug: category.slug,
         courseCount: countByName.get(category.name.toLowerCase()) ?? 0,
-      })).filter((category) => category.courseCount > 0));
+      })).filter((category) => category.courseCount > 0);
     },
+    600_000,
   );
-  res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-  res.json(result);
+  res.json(ListPublicEducationCategoriesResponse.parse(result));
 });
 
 router.get("/education/public/popular", async (req, res): Promise<void> => {
   const parsed = ListPopularEducationCoursesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const limit = parsed.data.limit ?? 6;
-  const result = await readThroughCatalogCache(
-    catalogCacheKey("education-popular", String(limit)),
-    async () => {
-      const views = await publicCourseListBatch(
-        () => true,
-        (courses, featuredFlags) => selectPopularPublicCourses(courses, featuredFlags, limit),
-      );
-      return ListPopularEducationCoursesResponse.parse(views).map(calendarDateCourseResponse);
-    },
-  );
-  res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-  res.json(result);
+  const courses = await db.select().from(coursesTable)
+    .where(publicEducationCoursePredicate())
+    .orderBy(desc(coursesTable.rating), desc(coursesTable.isFeatured), desc(coursesTable.createdAt), desc(coursesTable.id))
+    .limit(limit);
+  const views = await batchEducationCourseViews(courses);
+  res.json(ListPopularEducationCoursesResponse.parse(views).map(calendarDateCourseResponse));
 });
 
 router.get("/education/public/centers/:centerId", async (req, res): Promise<void> => {
@@ -8557,31 +8715,38 @@ router.get("/education/public/centers/:centerId", async (req, res): Promise<void
   if (!eligibility.center || !eligibility.eligible) {
     res.status(404).json({ error: "Edukativni centar nije dostupan." }); return;
   }
-  const centerId = eligibility.center.id;
-  // Use publicCourseListBatch filtered to this center only
-  const cards = await publicCourseListBatch((course) => course.centerId === centerId);
-  // Strip the per-course modules/sessions/dayProgram/gallery/center/reviews for card view
-  const cardViews = cards.map(({ modules: _m, sessions: _s, dayProgram: _d, gallery: _g, center: _c, reviews: _r, ...card }) => card);
-  res.json(GetPublicEducationCenterResponse.parse(await centerPublicView(eligibility.center, cardViews)));
+  const publicCourses = await publicEducationCourses(
+    [eq(coursesTable.centerId, eligibility.center.id)],
+    { limit: 100, offset: 0 },
+  );
+  // Use batch assembler for card-level views (no deep center nesting needed here).
+  const cards = await batchEducationCourseViews(publicCourses);
+  res.json(GetPublicEducationCenterResponse.parse(await centerPublicView(eligibility.center, cards)));
 });
 
 router.get("/education/public/featured", async (_req, res): Promise<void> => {
-  const result = await readThroughCatalogCache(
-    catalogCacheKey("education-featured"),
-    async () => {
-      // Filter by isFeatured + featuredUntil + paid featured charge using publicCourseListBatch.
-      // publicCourseListBatch already resolves featured flags (paid charge check) so we filter
-      // the result to only those with featured=true.
-      const now = new Date();
-      const views = await publicCourseListBatch(
-        (course) => course.isFeatured && (!course.featuredUntil || course.featuredUntil > now),
-      );
-      // Keep only courses whose featured placement has a paid charge (resolved in batch)
-      return views.filter((v) => v.featured);
-    },
+  const courses = await db.select().from(coursesTable)
+    .where(and(
+      eq(coursesTable.published, true), eq(coursesTable.archived, false), isNotNull(coursesTable.centerId),
+      eq(coursesTable.isFeatured, true), or(sql`${coursesTable.featuredUntil} is null`, gte(coursesTable.featuredUntil, new Date())),
+    ))
+    .orderBy(desc(coursesTable.featuredActivatedAt));
+  if (!courses.length) { res.json([]); return; }
+  // Batch eligibility check — replaces N×2 per-course queries.
+  const centerIds = [...new Set(courses.map((c) => c.centerId) as string[])];
+  const eligibilityMap = await batchCenterEligibility(centerIds);
+  // Batch paid-charge check — one query for all candidates.
+  const paidCharges = await db.select().from(educationFeaturedChargesTable)
+    .where(and(
+      inArray(educationFeaturedChargesTable.courseId, courses.map((c) => c.id)),
+      eq(educationFeaturedChargesTable.status, "paid"),
+    ))
+    .orderBy(desc(educationFeaturedChargesTable.createdAt));
+  const paidCourseIds = new Set(paidCharges.map((ch) => ch.courseId));
+  const visible = courses.filter((course) =>
+    course.centerId && eligibilityMap.get(course.centerId) === true && paidCourseIds.has(course.id),
   );
-  res.set("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-  res.json(result);
+  res.json(await batchEducationCourseViews(visible));
 });
 
 router.get("/education/instructors", async (req, res): Promise<void> => {
@@ -8630,7 +8795,6 @@ router.post("/education/instructors", async (req, res): Promise<void> => {
   const [created] = await db.insert(educationInstructorsTable).values({
     centerId, userId, fullName, ...instructorBodyFields(body),
   }).returning();
-  await invalidatePublicEducationCatalog();
   res.status(201).json(instructorProfileView(created!));
 });
 
@@ -8654,7 +8818,6 @@ router.patch("/education/instructors/:instructorId", async (req, res): Promise<v
   const [updated] = await db.update(educationInstructorsTable).set({
     fullName, userId, ...instructorBodyFields(body), updatedAt: new Date(),
   }).where(eq(educationInstructorsTable.id, instructor.id)).returning();
-  await invalidatePublicEducationCatalog();
   res.json(instructorProfileView(updated!));
 });
 
@@ -8666,7 +8829,6 @@ router.delete("/education/instructors/:instructorId", async (req, res): Promise<
   const [instructor] = await db.select().from(educationInstructorsTable).where(and(eq(educationInstructorsTable.id, instructorId), eq(educationInstructorsTable.centerId, centerId))).limit(1);
   if (!instructor) { res.status(404).json({ error: "Instruktor nije pronađen." }); return; }
   await db.delete(educationInstructorsTable).where(eq(educationInstructorsTable.id, instructor.id));
-  await invalidatePublicEducationCatalog();
   res.sendStatus(204);
 });
 
@@ -8674,49 +8836,61 @@ router.get("/education/instructors/:instructorId/public", async (req, res): Prom
   const instructorId = String(req.params.instructorId ?? "");
   const [instructor] = await db.select().from(educationInstructorsTable).where(eq(educationInstructorsTable.id, instructorId)).limit(1);
   if (!instructor) { res.status(404).json({ error: "Instruktor nije pronađen." }); return; }
-  // Use publicCourseListBatch: filter to courses linked to this instructor
-  // (by profile ID or legacy user ID) within this center.
-  const instId = instructor.id;
-  const instUserId = instructor.userId;
-  const instCenterId = instructor.centerId;
-  const courseViews = await publicCourseListBatch((course) =>
-    course.centerId === instCenterId && (
-      course.instructorProfileId === instId
-      || (instUserId != null && course.instructorProfileId == null && course.instructorId === instUserId)
-    ),
+  const allCourses = await db.select().from(coursesTable).where(eq(coursesTable.centerId, instructor.centerId));
+  // Courses are linked to the instructor PROFILE (instructorProfileId). Older
+  // records may only carry the legacy userId link, so fall back to that when
+  // the profile is backed by a user account.
+  const courses = allCourses.filter((course) =>
+    course.instructorProfileId === instructor.id
+    || (instructor.userId != null && course.instructorProfileId == null && course.instructorId === instructor.userId));
+  // Batch eligibility check — one pair of queries for all center IDs.
+  const uniqueCenterIds = [...new Set(courses.flatMap((c) => (c.centerId ? [c.centerId] : [])))];
+  const eligibilityMap = await batchCenterEligibility(uniqueCenterIds);
+  const publicCourses = courses.filter((course) =>
+    course.published && !course.archived && course.centerId && eligibilityMap.get(course.centerId) === true,
   );
-  // Derive rating and participantCount from the views we have
-  const rating = courseViews.length ? courseViews.reduce((total, v) => total + v.rating, 0) / courseViews.length : 0;
-  const courseIds = courseViews.map((v) => v.id);
-  const enrollments = courseIds.length
-    ? await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable)
-      .where(and(inArray(courseEnrollmentsTable.courseId, courseIds), eq(courseEnrollmentsTable.paymentStatus, "paid")))
+  const enrollments = publicCourses.length
+    ? await db.select().from(courseEnrollmentsTable).where(and(inArray(courseEnrollmentsTable.courseId, publicCourses.map((course) => course.id)), eq(courseEnrollmentsTable.paymentStatus, "paid")))
     : [];
+  const rating = publicCourses.length ? publicCourses.reduce((total, course) => total + course.rating, 0) / publicCourses.length / 10 : 0;
   res.json({
     id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl ?? null, biography: instructor.biography,
     industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
     qualifications: instructor.qualifications, rating, participantCount: enrollments.length,
-    courses: courseViews,
+    courses: await batchEducationCourseViews(publicCourses),
   });
 });
 
 router.get("/education/center/status", async (req, res): Promise<void> => {
   const access = await requireEducationAccess(req, res); if (!access) return;
   if (access.admin) { res.status(403).json({ error: "Ovaj status je rezervisan za vlasnika edukativnog centra." }); return; }
-  const centers = await Promise.all(access.centers.map(async (center) => {
-    const { subscription, eligible } = await educationCenterEligibility(center.id);
+  // Batch-fetch subscriptions for all centers in one query.
+  const centerIds = access.centers.map((c) => c.id);
+  const subscriptions = centerIds.length
+    ? await db.select().from(educationCenterSubscriptionsTable).where(inArray(educationCenterSubscriptionsTable.centerId, centerIds))
+    : [];
+  const subByCenterId = new Map(subscriptions.map((s) => [s.centerId, s]));
+  const centers = access.centers.map((center) => {
+    const subscription = subByCenterId.get(center.id);
+    const eligible = center.verificationStatus === "verified" && hasActiveEducationSubscription(subscription?.status);
     return {
       id: center.id, name: center.name, verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
       subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null, eligible,
     };
-  }));
+  });
   res.json(centers);
 });
 
 router.get("/education/purchases", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  const enrollments = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.purchaserId, user.id)).orderBy(desc(courseEnrollmentsTable.purchasedAt));
-  res.json(await Promise.all(enrollments.map(educationEnrollmentView)));
+  // Bounded, stably ordered purchaser list — never full-scans course_enrollments.
+  const { limit, offset } = parsePagination(req.query, 50);
+  const enrollments = await db.select().from(courseEnrollmentsTable)
+    .where(eq(courseEnrollmentsTable.purchaserId, user.id))
+    .orderBy(desc(courseEnrollmentsTable.purchasedAt), desc(courseEnrollmentsTable.id))
+    .limit(limit)
+    .offset(offset);
+  res.json(await batchEducationEnrollmentViews(enrollments));
 });
 
 // ─── Certificate PDF ────────────────────────────────────────────────────────
@@ -9145,7 +9319,7 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
   });
 
   res.status(201).json({
-    enrollments: await Promise.all(enrollments.map(educationEnrollmentView)),
+    enrollments: await batchEducationEnrollmentViews(enrollments),
     discountPercent: effectiveDiscountPercent,
     unitPrice,
     totalPrice: unitPrice * enrollments.length,
@@ -9391,13 +9565,17 @@ router.get("/admin/education/settings", async (req, res): Promise<void> => {
 
 router.patch("/admin/education/settings", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const parsed = UpdateAdminEducationSettingsBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Sva podešavanja moraju biti celi, nenegativni brojevi u dozvoljenom opsegu." });
-    return;
-  }
-  const candidate = parsed.data;
-  if (candidate.commissionPercent + candidate.reservePercent > 100) {
+  const featuredCoursePriceRaw = Number(req.body?.featuredCoursePrice);
+  const candidate = {
+    commissionPercent: Number(req.body?.commissionPercent),
+    reservePercent: Number(req.body?.reservePercent),
+    onlineRefundDays: Number(req.body?.onlineRefundDays),
+    liveAppealDays: Number(req.body?.liveAppealDays),
+    featuredCoursePrice: Number.isInteger(featuredCoursePriceRaw) && featuredCoursePriceRaw >= 0 ? featuredCoursePriceRaw : 0,
+  };
+  if (!Object.values(candidate).every((value) => Number.isInteger(value) && value >= 0)
+    || candidate.commissionPercent + candidate.reservePercent > 100
+    || candidate.onlineRefundDays > 365 || candidate.liveAppealDays > 365) {
     res.status(400).json({ error: "Proverite procente i rokove. Zbir provizije i rezerve ne može preći 100%." });
     return;
   }
@@ -9433,42 +9611,17 @@ router.get("/admin/education/centers", async (req, res): Promise<void> => {
 
 router.patch("/admin/education/centers/:centerId", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
-    res.status(400).json({ error: "Podaci centra nisu ispravni." }); return;
-  }
-  const rawBody = req.body as Record<string, unknown>;
-  const allowedKeys = new Set(["verificationStatus", "verificationNote", "subscriptionStatus", "planId"]);
-  const bodyKeys = Object.keys(rawBody);
-  if (bodyKeys.length === 0 || bodyKeys.some((key) => !allowedKeys.has(key))) {
-    res.status(400).json({ error: "Pošaljite najmanje jednu podržanu izmenu centra." }); return;
-  }
-  if (
-    ("verificationStatus" in rawBody && typeof rawBody.verificationStatus !== "string")
-    || ("subscriptionStatus" in rawBody && typeof rawBody.subscriptionStatus !== "string")
-    || ("verificationNote" in rawBody && rawBody.verificationNote !== null && typeof rawBody.verificationNote !== "string")
-    || ("planId" in rawBody && typeof rawBody.planId !== "string")
-  ) {
-    res.status(400).json({ error: "Statusi, napomena i plan centra nisu ispravno uneti." }); return;
-  }
-  if ("planId" in rawBody && !("subscriptionStatus" in rawBody)) {
-    res.status(400).json({ error: "Promena plana mora sadržati i status pretplate." }); return;
-  }
   const centerId = String(req.params.centerId);
   const [center] = await db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1);
   if (!center) { res.status(404).json({ error: "Edukativni centar nije pronađen." }); return; }
-  const verificationStatus = typeof rawBody.verificationStatus === "string" ? rawBody.verificationStatus : center.verificationStatus;
+  const verificationStatus = typeof req.body?.verificationStatus === "string" ? req.body.verificationStatus : center.verificationStatus;
   const allowedVerification = ["pending", "verified", "rejected", "suspended"];
-  const subscriptionStatus = typeof rawBody.subscriptionStatus === "string" ? rawBody.subscriptionStatus : undefined;
+  const subscriptionStatus = typeof req.body?.subscriptionStatus === "string" ? req.body.subscriptionStatus : undefined;
   const allowedSubscription = ["trial", "active", "past_due", "cancelled", "suspended", "free_via_loyalty"];
   if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
     res.status(400).json({ error: "Status nije ispravan." }); return;
   }
-  const planId = typeof rawBody.planId === "string" ? rawBody.planId : null;
-  const verificationNote = rawBody.verificationNote === null
-    ? null
-    : typeof rawBody.verificationNote === "string"
-      ? rawBody.verificationNote.trim().slice(0, 1000) || null
-      : undefined;
+  const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
   let updated: typeof center | undefined;
   try {
     await db.transaction(async (tx) => {
@@ -9484,7 +9637,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
       const currentVerificationStatus = verificationStatus as typeof currentCenter.verificationStatus;
       [updated] = await tx.update(educationCentersTable).set({
         verificationStatus: currentVerificationStatus,
-        verificationNote: verificationNote === undefined ? currentCenter.verificationNote : verificationNote,
+        verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : currentCenter.verificationNote,
         verifiedAt: currentVerificationStatus === "verified" ? new Date() : null,
         verifiedByUserId: currentVerificationStatus === "verified" ? user.id : null,
         updatedAt: new Date(),
@@ -9518,7 +9671,7 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
     res.status(message === "Edukativni centar nije pronađen." ? 404 : 409).json({ error: message });
     return;
   }
-  await invalidatePublicEducationCatalog();
+  void publishCatalogInvalidation(["education-categories"]);
   res.json({ id: updated!.id, verificationStatus: updated!.verificationStatus, verificationNote: updated!.verificationNote, verifiedAt: updated!.verifiedAt?.toISOString() ?? null });
 });
 
@@ -9592,7 +9745,6 @@ router.post("/admin/education/featured-charges/:chargeId/settle", async (req, re
     paymentReference: paymentReference ?? charge.paymentReference, updatedAt: new Date(),
   }).where(and(eq(educationFeaturedChargesTable.id, charge.id), eq(educationFeaturedChargesTable.status, "pending"))).returning();
   if (!updated) { res.status(409).json({ error: "Ova naplata isticanja je već obrađena." }); return; }
-  await invalidatePublicEducationCatalog();
   res.json({
     id: updated.id, courseId: updated.courseId, amount: updated.amount, status: updated.status,
     paymentReference: updated.paymentReference, activatedAt: updated.activatedAt.toISOString(),
@@ -9722,7 +9874,6 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
     res.status(409).json({ error: error instanceof Error ? error.message : "Odluka o sporu nije moguća." });
     return;
   }
-  await invalidatePublicEducationCatalog();
   if (resolution.enrollment) {
     await sendTransactionalEmail({
       eventKey: `education-dispute:${resolution.result.id}:resolution`,
@@ -9752,7 +9903,6 @@ router.post("/admin/education/sessions/:sessionId/cancel", async (req, res): Pro
   if (session.cancelledAt) { res.status(409).json({ error: "Termin je već otkazan." }); return; }
   try {
     const result = await cancelEducationSession(sessionId, user.id, reason);
-    await invalidatePublicEducationCatalog();
     res.json({ ok: true, ...result });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Otkazivanje termina nije uspelo." });
@@ -9766,7 +9916,6 @@ router.post("/admin/education/sessions/process", async (req, res): Promise<void>
   const user = await requireAdmin(req, res); if (!user) return;
   try {
     const result = await processUpcomingEducationSessions();
-    await invalidatePublicEducationCatalog();
     res.json({ ok: true, ...result });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Obrada termina nije uspela." });
@@ -9778,36 +9927,58 @@ router.post("/admin/education/sessions/process", async (req, res): Promise<void>
 router.get("/admin/salons", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
 
-  let salons = await db.select().from(salonsTable);
   const normalizedQuery = normalizeBooleanQuery(req.query, ["active", "featured"]);
   if (!normalizedQuery) { res.status(400).json({ error: "Boolean filteri prihvataju samo true ili false." }); return; }
   const parsedQuery = AdminListSalonsQueryParams.safeParse(normalizedQuery);
   if (!parsedQuery.success) { res.status(400).json({ error: parsedQuery.error.message }); return; }
   const { search, city, active, featured, subscriptionStatus } = parsedQuery.data;
+  const { limit, offset } = parsePagination(req.query, 50);
 
+  // Push ALL scalar predicates into SQL so they apply before pagination.
+  const sqlPredicates = [];
+  if (active !== undefined) sqlPredicates.push(eq(salonsTable.active, active));
+  if (featured !== undefined) sqlPredicates.push(eq(salonsTable.featured, featured));
+  if (city) sqlPredicates.push(eq(sql`lower(${salonsTable.city})`, city.toLowerCase()));
   if (search) {
-    const q = search.toLowerCase();
-    salons = salons.filter((s) => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q) || s.email.toLowerCase().includes(q));
+    const term = `%${search}%`;
+    sqlPredicates.push(or(ilike(salonsTable.name, term), ilike(salonsTable.city, term), ilike(salonsTable.email, term))!);
   }
-  if (city) salons = salons.filter((s) => s.city.toLowerCase() === city.toLowerCase());
-  if (active !== undefined) salons = salons.filter((s) => s.active === active);
-  if (featured !== undefined) salons = salons.filter((s) => s.featured === featured);
+  // subscriptionStatus was previously filtered in JS after LIMIT 500, which could
+  // silently drop older matches. Move it into SQL as an EXISTS predicate so it is
+  // applied before pagination. Semantics are unchanged: a salon matches when it
+  // has a subscription row whose status equals the requested value.
+  if (subscriptionStatus) {
+    sqlPredicates.push(sql`exists (select 1 from ${subscriptionsTable} where ${subscriptionsTable.salonId} = ${salonsTable.id} and ${subscriptionsTable.status}::text = ${subscriptionStatus})`);
+  }
+
+  const salons = await db.select().from(salonsTable)
+    .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
+    .orderBy(desc(salonsTable.createdAt), desc(salonsTable.id))
+    .limit(limit).offset(offset);
 
   if (!salons.length) { res.json([]); return; }
 
   const salonIds = salons.map((s) => s.id);
-  const [subs, loyalties, tiers] = await Promise.all([
+  const [subs, loyalties] = await Promise.all([
     db.select().from(subscriptionsTable)
       .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
       .where(inArray(subscriptionsTable.salonId, salonIds)),
     db.select().from(salonLoyaltyStatusesTable).where(inArray(salonLoyaltyStatusesTable.salonId, salonIds)),
-    db.select().from(loyaltyTiersTable),
   ]);
 
-  let result = salons.map((s) => {
-    const sub = subs.find((sub) => sub.subscriptions.salonId === s.id);
-    const loyalty = loyalties.find((l) => l.salonId === s.id);
-    const tier = tiers.find((t) => t.id === loyalty?.tierId);
+  // Fetch only the tier IDs referenced by the returned loyalty rows (not the full table).
+  const tierIds = [...new Set(loyalties.flatMap((l) => (l.tierId ? [l.tierId] : [])))];
+  const tiers = tierIds.length
+    ? await db.select().from(loyaltyTiersTable).where(inArray(loyaltyTiersTable.id, tierIds))
+    : [];
+
+  const subBySalonId = new Map(subs.map((sub) => [sub.subscriptions.salonId, sub]));
+  const loyaltyBySalonId = new Map(loyalties.map((l) => [l.salonId, l]));
+  const tierById = new Map(tiers.map((t) => [t.id, t]));
+  const result = salons.map((s) => {
+    const sub = subBySalonId.get(s.id);
+    const loyalty = loyaltyBySalonId.get(s.id);
+    const tier = loyalty?.tierId ? tierById.get(loyalty.tierId) : undefined;
     return {
       id: s.id,
       name: s.name,
@@ -9828,8 +9999,6 @@ router.get("/admin/salons", async (req, res): Promise<void> => {
     };
   });
 
-  if (subscriptionStatus) result = result.filter((s) => s.subscriptionStatus === subscriptionStatus);
-
   res.json(result);
 });
 
@@ -9839,21 +10008,23 @@ router.get("/admin/salons/:salonId", async (req, res): Promise<void> => {
   if (!parsedParams.success) { res.status(400).json({ error: parsedParams.error.message }); return; }
   const { salonId } = parsedParams.data;
 
-  const [salon, subscriptions, loyaltyStatuses, tiers, orders] = await Promise.all([
+  const [salon, subscriptions, loyaltyStatuses, orders] = await Promise.all([
     db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1),
     db.select().from(subscriptionsTable)
       .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
       .where(eq(subscriptionsTable.salonId, salonId)),
     db.select().from(salonLoyaltyStatusesTable).where(eq(salonLoyaltyStatusesTable.salonId, salonId)).limit(1),
-    db.select().from(loyaltyTiersTable),
-    db.select().from(ordersTable).where(eq(ordersTable.salonId, salonId)).orderBy(desc(ordersTable.createdAt)),
+    db.select().from(ordersTable).where(eq(ordersTable.salonId, salonId)).orderBy(desc(ordersTable.createdAt)).limit(500),
   ]);
   const profile = salon[0];
   if (!profile) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
 
   const subscription = subscriptions[0];
   const loyalty = loyaltyStatuses[0];
-  const tier = tiers.find((candidate) => candidate.id === loyalty?.tierId);
+  // Fetch only the specific tier referenced by this salon's loyalty row.
+  const tier = loyalty?.tierId
+    ? (await db.select().from(loyaltyTiersTable).where(eq(loyaltyTiersTable.id, loyalty.tierId)).limit(1))[0]
+    : undefined;
   const itemCounts = orders.length
     ? await db.select({
         orderId: orderItemsTable.orderId,
@@ -9905,7 +10076,6 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const { salonId } = parsedParams.data;
   const parsed = AdminUpdateSalonBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (Object.keys(parsed.data).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const { active, featured, isVerified, topSalon, videoUrl } = parsed.data;
   if (videoUrl !== undefined && !isHttpVideoUrl(videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
 
@@ -9921,6 +10091,13 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
 
   const [updated] = await db.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
 
+  // Only after a successful mutation that can affect salon discovery visibility
+  // (active/featured/isVerified/topSalon) do we invalidate the shared catalog
+  // "salons" tag consumed by /discovery/home. videoUrl-only changes do not.
+  if (active !== undefined || featured !== undefined || isVerified !== undefined || topSalon !== undefined) {
+    void publishCatalogInvalidation(["salons"]);
+  }
+
   const [subs, loyalties, tiers] = await Promise.all([
     db.select().from(subscriptionsTable)
       .innerJoin(subscriptionPlansTable, eq(subscriptionsTable.planId, subscriptionPlansTable.id))
@@ -9932,7 +10109,6 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const loyalty = loyalties[0];
   const tier = tiers.find((t) => t.id === loyalty?.tierId);
 
-  await invalidateCatalogCache("cities", "discovery");
   res.json({
     id: updated!.id,
     name: updated!.name,
@@ -9958,19 +10134,31 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
 router.get("/admin/users", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
 
-  let users = await db.select().from(usersTable);
   const normalizedQuery = normalizeBooleanQuery(req.query, ["active"]);
   if (!normalizedQuery) { res.status(400).json({ error: "Boolean filter prihvata samo true ili false." }); return; }
   const parsedQuery = AdminListUsersQueryParams.safeParse(normalizedQuery);
   if (!parsedQuery.success) { res.status(400).json({ error: parsedQuery.error.message }); return; }
   const { search, role, active } = parsedQuery.data;
+  const { limit, offset } = parsePagination(req.query, 50);
 
+  // Push ALL scalar predicates into SQL so they apply before pagination.
+  const sqlPredicates = [];
+  if (role) sqlPredicates.push(eq(usersTable.role, role));
+  if (active !== undefined) sqlPredicates.push(eq(usersTable.active, active));
   if (search) {
-    const q = search.toLowerCase();
-    users = users.filter((u) => u.email.toLowerCase().includes(q) || `${u.firstName} ${u.lastName}`.toLowerCase().includes(q));
+    const term = `%${search}%`;
+    sqlPredicates.push(or(
+      ilike(usersTable.email, term),
+      ilike(usersTable.firstName, term),
+      ilike(usersTable.lastName, term),
+      sql`lower(${usersTable.firstName} || ' ' || ${usersTable.lastName}) like lower(${term})`,
+    )!);
   }
-  if (role) users = users.filter((u) => u.role === role);
-  if (active !== undefined) users = users.filter((u) => u.active === active);
+
+  const users = await db.select().from(usersTable)
+    .where(sqlPredicates.length ? and(...sqlPredicates) : undefined)
+    .orderBy(desc(usersTable.createdAt), desc(usersTable.id))
+    .limit(limit).offset(offset);
 
   res.json(users.map((u) => ({
     id: u.id,
@@ -9991,7 +10179,6 @@ router.patch("/admin/users/:userId", async (req, res): Promise<void> => {
   const { userId } = parsedParams.data;
   const parsed = AdminUpdateUserBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (Object.keys(parsed.data).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const { role, active } = parsed.data;
 
   const result = await db.transaction(async (tx) => {
@@ -10057,12 +10244,6 @@ router.post("/admin/loyalty-tiers", async (req, res): Promise<void> => {
   if (!body.name || body.sortOrder === undefined || body.spendThreshold === undefined) {
     res.status(400).json({ error: "Naziv, redosled i prag potrošnje su obavezni." }); return;
   }
-  if (body.benefits?.some((benefit) => benefit.trim().length === 0)) {
-    res.status(400).json({ error: "Pogodnosti ne mogu sadržati prazne vrednosti." }); return;
-  }
-  const [sortOrderTaken] = await db.select({ id: loyaltyTiersTable.id }).from(loyaltyTiersTable)
-    .where(eq(loyaltyTiersTable.sortOrder, body.sortOrder)).limit(1);
-  if (sortOrderTaken) { res.status(409).json({ error: "Drugi nivo već koristi ovaj redosled." }); return; }
   const [tier] = await db.insert(loyaltyTiersTable).values({
     name: body.name,
     sortOrder: body.sortOrder,
@@ -10094,15 +10275,6 @@ router.patch("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> => 
   const parsed = AdminUpdateLoyaltyTierBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
-  if (body.benefits?.some((benefit) => benefit.trim().length === 0)) {
-    res.status(400).json({ error: "Pogodnosti ne mogu sadržati prazne vrednosti." }); return;
-  }
-  if (body.sortOrder !== undefined && body.sortOrder !== existing.sortOrder) {
-    const [sortOrderTaken] = await db.select({ id: loyaltyTiersTable.id }).from(loyaltyTiersTable)
-      .where(and(eq(loyaltyTiersTable.sortOrder, body.sortOrder), ne(loyaltyTiersTable.id, tierId))).limit(1);
-    if (sortOrderTaken) { res.status(409).json({ error: "Drugi nivo već koristi ovaj redosled." }); return; }
-  }
   const [tier] = await db.update(loyaltyTiersTable).set({
     name: body.name ?? existing.name,
     sortOrder: body.sortOrder ?? existing.sortOrder,
@@ -10155,18 +10327,6 @@ router.delete("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> =>
 
 // ── Admin Subscription Plans ──────────────────────────────────────────────────
 
-const SUBSCRIPTION_LIMIT_KEYS = new Set(["employees", "services"]);
-
-function subscriptionPlanInputError(input: { features?: string[]; limits?: Record<string, number> }): string | null {
-  if (input.features?.some((feature) => feature.trim().length === 0)) {
-    return "Funkcionalnosti plana ne mogu sadržati prazne vrednosti.";
-  }
-  if (input.limits && Object.keys(input.limits).some((key) => !SUBSCRIPTION_LIMIT_KEYS.has(key))) {
-    return "Dozvoljeni limiti plana su samo employees i services.";
-  }
-  return null;
-}
-
 router.get("/admin/subscription-plans", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const plans = await db.select().from(subscriptionPlansTable);
@@ -10184,8 +10344,6 @@ router.post("/admin/subscription-plans", async (req, res): Promise<void> => {
   if (!body.name || body.price === undefined) {
     res.status(400).json({ error: "Naziv i cena su obavezni." }); return;
   }
-  const inputError = subscriptionPlanInputError(body);
-  if (inputError) { res.status(400).json({ error: inputError }); return; }
   const [plan] = await db.insert(subscriptionPlansTable).values({
     name: body.name,
     price: body.price,
@@ -10210,9 +10368,6 @@ router.patch("/admin/subscription-plans/:planId", async (req, res): Promise<void
   const parsed = AdminUpdateSubscriptionPlanBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
-  const inputError = subscriptionPlanInputError(body);
-  if (inputError) { res.status(400).json({ error: inputError }); return; }
   const [plan] = await db.update(subscriptionPlansTable).set({
     name: body.name ?? existing.name,
     price: body.price ?? existing.price,
@@ -10308,7 +10463,6 @@ router.patch("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateReviewBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { visible } = parsed.data;
-  if (visible === undefined) { res.status(400).json({ error: "Polje visible je obavezno." }); return; }
 
   const updated = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(reviewsTable).where(eq(reviewsTable.id, reviewId)).limit(1);
@@ -10343,7 +10497,6 @@ router.patch("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
     db.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1),
     db.select().from(usersTable).where(eq(usersTable.id, updated.customerId)).limit(1),
   ]);
-  await invalidateCatalogCache("cities", "discovery");
   res.json({
     id: updated.id,
     salonId: updated.salonId,
@@ -10386,7 +10539,6 @@ router.delete("/admin/reviews/:reviewId", async (req, res): Promise<void> => {
     return true;
   });
   if (!deleted) { res.status(404).json({ error: "Recenzija nije pronađena." }); return; }
-  await invalidateCatalogCache("cities", "discovery");
   res.sendStatus(204);
 });
 
@@ -10430,7 +10582,12 @@ router.get("/category-images/:imageId", async (req, res): Promise<void> => {
 router.get("/admin/service-categories", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const [categories, counts] = await Promise.all([
-    db.select().from(serviceCategoriesTable).orderBy(asc(serviceCategoriesTable.name)),
+    catalogCache.getOrLoad(
+      "service-categories:all",
+      ["service-categories"],
+      () => db.select().from(serviceCategoriesTable).orderBy(asc(serviceCategoriesTable.name)),
+      600_000,
+    ),
     db.select({ categoryId: servicesTable.categoryId, count: count() }).from(servicesTable).groupBy(servicesTable.categoryId),
   ]);
   const countByCategoryId = new Map(counts.map((item) => [item.categoryId, Number(item.count)]));
@@ -10444,14 +10601,21 @@ router.get("/admin/service-templates", async (req, res): Promise<void> => {
   const parsed = AdminListServiceTemplatesQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const input = parsed.data;
-  const templates = await readThroughCatalogCache(
-    catalogCacheKey("service-templates", JSON.stringify(["admin", input.mainCategory ?? "", input.subcategory ?? "", input.search?.toLowerCase() ?? ""])),
-    () => db.select().from(serviceTemplatesTable).where(and(
-      input.mainCategory ? eq(serviceTemplatesTable.mainCategory, input.mainCategory) : undefined,
-      input.subcategory ? eq(serviceTemplatesTable.subcategory, input.subcategory) : undefined,
-      input.search ? sql`lower(${serviceTemplatesTable.name} || ' ' || ${serviceTemplatesTable.mainCategory} || ' ' || ${serviceTemplatesTable.subcategory}) like ${`%${input.search.toLowerCase()}%`}` : undefined,
-    )).orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name)),
+  // Admin list: no active filter — use a separate cache key from the salon-owner (active-only) list
+  const allTemplates = await catalogCache.getOrLoad(
+    "service-templates:admin-all",
+    ["service-templates"],
+    () => db.select().from(serviceTemplatesTable)
+      .orderBy(asc(serviceTemplatesTable.mainCategory), asc(serviceTemplatesTable.subcategory), asc(serviceTemplatesTable.name)),
+    600_000,
   );
+  let templates = allTemplates;
+  if (input.mainCategory) templates = templates.filter((t) => t.mainCategory === input.mainCategory);
+  if (input.subcategory) templates = templates.filter((t) => t.subcategory === input.subcategory);
+  if (input.search) {
+    const term = input.search.toLowerCase();
+    templates = templates.filter((t) => `${t.name} ${t.mainCategory} ${t.subcategory}`.toLowerCase().includes(term));
+  }
   res.json(AdminListServiceTemplatesResponse.parse(templates.map(serviceTemplateDto)));
 });
 
@@ -10464,7 +10628,7 @@ router.post("/admin/service-templates", async (req, res): Promise<void> => {
     .where(and(eq(serviceTemplatesTable.mainCategory, parsed.data.mainCategory), eq(serviceTemplatesTable.name, parsed.data.name))).limit(1);
   if (existing) { res.status(409).json({ error: "Predložak sa ovim nazivom već postoji u kategoriji." }); return; }
   const [template] = await db.insert(serviceTemplatesTable).values(parsed.data).returning();
-  await invalidateCatalogCache("service-templates");
+  void publishCatalogInvalidation(["service-templates"]);
   res.status(201).json(AdminCreateServiceTemplateResponse.parse(serviceTemplateDto(template!)));
 });
 
@@ -10474,14 +10638,13 @@ router.patch("/admin/service-templates/:templateId", async (req, res): Promise<v
   const parsed = AdminUpdateServiceTemplateBody.safeParse(req.body);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (Object.keys(parsed.data).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const [existing] = await db.select().from(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, params.data.templateId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Predložak nije pronađen." }); return; }
   const next = { ...existing, ...parsed.data };
   if (next.priceMax < next.priceMin) { res.status(400).json({ error: "Maksimalna cena ne može biti manja od minimalne." }); return; }
   const [template] = await db.update(serviceTemplatesTable).set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(serviceTemplatesTable.id, existing.id)).returning();
-  await invalidateCatalogCache("service-templates");
+  void publishCatalogInvalidation(["service-templates"]);
   res.json(AdminUpdateServiceTemplateResponse.parse(serviceTemplateDto(template!)));
 });
 
@@ -10491,7 +10654,7 @@ router.delete("/admin/service-templates/:templateId", async (req, res): Promise<
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const [template] = await db.delete(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, params.data.templateId)).returning();
   if (!template) { res.status(404).json({ error: "Predložak nije pronađen." }); return; }
-  await invalidateCatalogCache("service-templates");
+  void publishCatalogInvalidation(["service-templates"]);
   res.json(serviceTemplateDto(template));
 });
 
@@ -10541,7 +10704,7 @@ router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<
   }
   if (!category) { res.status(404).json({ error: "Kategorija usluge nije pronađena." }); return; }
   const [serviceCount] = await db.select({ count: count() }).from(servicesTable).where(eq(servicesTable.categoryId, category.id));
-  await invalidateCatalogCache("service-categories", "discovery");
+  void publishCatalogInvalidation(["service-categories", "salons"]);
   res.json(AdminUpdateServiceCategoryResponse.parse(adminServiceCategoryDto(category, Number(serviceCount?.count ?? 0))));
 });
 
@@ -10606,12 +10769,19 @@ function validateVariantInventory(
 }
 
 async function categoryAssignment(categoryId: string) {
-  const [category] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId)).limit(1);
-  if (!category) return null;
-  if (!category.parentId) return { categoryId: category.id, categoryName: category.name, subcategoryName: null };
-  const [parent] = await db.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, category.parentId)).limit(1);
-  if (!parent) return null;
-  return { categoryId: category.id, categoryName: parent.name, subcategoryName: category.name };
+  // Single self-join: load child and optional parent in one round-trip
+  const rows = await db.execute<{ child_id: string; child_name: string; child_parent_id: string | null; parent_name: string | null }>(
+    sql`SELECT c.id AS child_id, c.name AS child_name, c.parent_id AS child_parent_id, p.name AS parent_name
+        FROM product_categories c
+        LEFT JOIN product_categories p ON p.id = c.parent_id
+        WHERE c.id = ${categoryId}
+        LIMIT 1`,
+  );
+  const row = rows.rows[0];
+  if (!row) return null;
+  if (!row.child_parent_id) return { categoryId: row.child_id, categoryName: row.child_name, subcategoryName: null };
+  if (!row.parent_name) return null;
+  return { categoryId: row.child_id, categoryName: row.parent_name, subcategoryName: row.child_name };
 }
 
 router.get("/admin/products", async (req, res): Promise<void> => {
@@ -10623,32 +10793,32 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   });
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const q = parsed.data;
-  let products = await db.select().from(productsTable);
-  if (q.search) {
-    const term = q.search.toLowerCase();
-    products = products.filter((p) => `${p.name} ${p.sku} ${p.brand ?? ""} ${p.description}`.toLowerCase().includes(term));
-  }
-  if (q.category) products = products.filter((p) => p.categoryName === q.category);
-  if (q.subcategory) products = products.filter((p) => p.subcategoryName === q.subcategory);
-  if (q.brand) products = products.filter((p) => p.brand?.toLowerCase() === q.brand!.toLowerCase());
-  if (q.status === "in-stock") products = products.filter((p) => p.stock > 0);
-  if (q.status === "out-of-stock") products = products.filter((p) => p.stock <= 0);
-  if (q.status === "new") products = products.filter((p) => p.isNew);
-  if (q.status === "on-sale") products = products.filter((p) => p.discountPrice != null);
-  if (q.status === "inactive") products = products.filter((p) => !p.active);
+  const filters: Parameters<typeof and>[0][] = [];
+  if (q.search) filters.push(sql`lower(${productsTable.name} || ' ' || ${productsTable.sku} || ' ' || coalesce(${productsTable.brand}, '') || ' ' || ${productsTable.description}) like ${`%${q.search.toLowerCase()}%`}`);
+  if (q.category) filters.push(eq(productsTable.categoryName, q.category));
+  if (q.subcategory) filters.push(eq(productsTable.subcategoryName, q.subcategory));
+  if (q.brand) filters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
+  if (q.status === "in-stock") filters.push(gt(productsTable.stock, 0));
+  if (q.status === "out-of-stock") filters.push(sql`${productsTable.stock} <= 0`);
+  if (q.status === "new") filters.push(eq(productsTable.isNew, true));
+  if (q.status === "on-sale") filters.push(isNotNull(productsTable.discountPrice));
+  if (q.status === "inactive") filters.push(eq(productsTable.active, false));
+  const whereClause = filters.length ? and(...filters) : undefined;
   const sortBy = q.sortBy ?? "createdAt";
-  const dir = (q.sortDir ?? "desc") === "asc" ? 1 : -1;
-  products.sort((a, b) => {
-    if (sortBy === "name") return a.name.localeCompare(b.name, "sr") * dir;
-    if (sortBy === "price") return ((a.discountPrice ?? a.price) - (b.discountPrice ?? b.price)) * dir;
-    if (sortBy === "stock") return (a.stock - b.stock) * dir;
-    return (a.createdAt.getTime() - b.createdAt.getTime()) * dir;
-  });
+  const sortDir = (q.sortDir ?? "desc") === "asc" ? asc : desc;
+  const sortExpr = sortBy === "name" ? sortDir(productsTable.name)
+    : sortBy === "price" ? sortDir(sql`coalesce(${productsTable.discountPrice}, ${productsTable.price})`)
+    : sortBy === "stock" ? sortDir(productsTable.stock)
+    : sortDir(productsTable.createdAt);
   const page = q.page ?? 1;
   const pageSize = q.pageSize ?? 20;
-  const total = products.length;
+  const offset = (page - 1) * pageSize;
+  const [[countRow], items] = await Promise.all([
+    db.select({ count: count() }).from(productsTable).where(whereClause),
+    db.select().from(productsTable).where(whereClause).orderBy(sortExpr).limit(pageSize).offset(offset),
+  ]);
+  const total = Number(countRow?.count ?? 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const items = products.slice((page - 1) * pageSize, page * pageSize);
   res.json({ items: items.map(adminProductDto), total, page, pageSize, totalPages });
 });
 
@@ -10764,7 +10934,6 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const nextPrice = body.price ?? existing.price;
   const nextDiscount = body.discountPrice !== undefined ? body.discountPrice : existing.discountPrice;
   if (nextDiscount != null && nextDiscount >= nextPrice) {
@@ -10933,6 +11102,7 @@ router.post("/admin/product-categories", async (req, res): Promise<void> => {
     res.status(409).json({ error: "Fotografija kategorije je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
+  void publishCatalogInvalidation(["product-categories"]);
   res.status(201).json(await adminCategoryDto(cat!));
 });
 
@@ -10946,7 +11116,6 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   const parsed = AdminUpdateProductCategoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const nextCategoryImageUrl = body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl;
   if (nextCategoryImageUrl && !await canClaimMediaReference({
     userId: user.id,
@@ -11013,6 +11182,7 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
     res.status(409).json({ error: "Fotografija kategorije je u međuvremenu povezana sa drugim zapisom." });
     return;
   }
+  void publishCatalogInvalidation(["product-categories"]);
   res.json(await adminCategoryDto(cat!));
 });
 
@@ -11031,6 +11201,7 @@ router.delete("/admin/product-categories/:categoryId", async (req, res): Promise
   ));
   if ((products?.count ?? 0) > 0) { res.status(409).json({ error: "Kategorija sadrži proizvode. Prvo premestite proizvode u drugu kategoriju." }); return; }
   await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+  void publishCatalogInvalidation(["product-categories"]);
   res.sendStatus(204);
 });
 
@@ -11039,9 +11210,11 @@ router.delete("/admin/product-categories/:categoryId", async (req, res): Promise
 router.get("/admin/brands", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const [brands, products] = await Promise.all([
-    readThroughCatalogCache(
-      catalogCacheKey("brands"),
+    catalogCache.getOrLoad(
+      "admin-brands:all",
+      ["product-brands"],
       () => db.select().from(productBrandsTable).orderBy(asc(productBrandsTable.name)),
+      600_000,
     ),
     db.select({ brand: productsTable.brand, count: count() }).from(productsTable).groupBy(productsTable.brand),
   ]);
@@ -11071,7 +11244,7 @@ router.post("/admin/brands", async (req, res): Promise<void> => {
     logoUrl: body.logoUrl ?? null,
     active: body.active ?? true,
   }).returning();
-  await invalidateCatalogCache("brands", "discovery");
+  void publishCatalogInvalidation(["product-brands"]);
   res.status(201).json({ id: brand!.id, name: brand!.name, slug: brand!.slug, description: brand!.description, logoUrl: brand!.logoUrl ?? null, active: brand!.active, productCount: 0 });
 });
 
@@ -11085,7 +11258,6 @@ router.patch("/admin/brands/:brandId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateBrandBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const [brand] = await db.update(productBrandsTable).set({
     name: body.name ?? existing.name,
     slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
@@ -11097,8 +11269,8 @@ router.patch("/admin/brands/:brandId", async (req, res): Promise<void> => {
   if (body.name && body.name !== existing.name) {
     await db.update(productsTable).set({ brand: body.name }).where(eq(productsTable.brand, existing.name));
   }
-  await invalidateCatalogCache("brands", "discovery");
   const [productCount] = await db.select({ count: count() }).from(productsTable).where(eq(productsTable.brand, brand!.name));
+  void publishCatalogInvalidation(["product-brands"]);
   res.json({ id: brand!.id, name: brand!.name, slug: brand!.slug, description: brand!.description, logoUrl: brand!.logoUrl ?? null, active: brand!.active, productCount: productCount?.count ?? 0 });
 });
 
@@ -11115,12 +11287,12 @@ router.delete("/admin/brands/:brandId", async (req, res): Promise<void> => {
   ]);
   if ((inProducts?.count ?? 0) > 0 || (inSalons?.count ?? 0) > 0) {
     const [deactivated] = await db.update(productBrandsTable).set({ active: false }).where(eq(productBrandsTable.id, brandId)).returning();
-    await invalidateCatalogCache("brands", "discovery");
+    void publishCatalogInvalidation(["product-brands"]);
     res.json({ id: deactivated!.id, name: deactivated!.name, slug: deactivated!.slug, description: deactivated!.description, logoUrl: deactivated!.logoUrl ?? null, active: deactivated!.active, productCount: inProducts?.count ?? 0 });
     return;
   }
   await db.delete(productBrandsTable).where(eq(productBrandsTable.id, brandId));
-  await invalidateCatalogCache("brands", "discovery");
+  void publishCatalogInvalidation(["product-brands"]);
   res.json({ id: existing.id, name: existing.name, slug: existing.slug, description: existing.description, logoUrl: existing.logoUrl ?? null, active: false, productCount: 0 });
 });
 
@@ -11197,7 +11369,6 @@ router.patch("/admin/courier-services/:courierServiceId", async (req, res): Prom
   const params = AdminUpdateCourierServiceParams.safeParse(req.params);
   const parsed = AdminUpdateCourierServiceBody.safeParse(req.body);
   if (!params.success || !parsed.success) { res.status(400).json({ error: !params.success ? params.error.message : parsed.error?.message ?? "Neispravan zahtev." }); return; }
-  if (Object.keys(parsed.data).length === 0) { res.status(400).json({ error: "Pošaljite najmanje jednu izmenu." }); return; }
   const [existing] = await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, params.data.courierServiceId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Kurirska služba nije pronađena." }); return; }
   const name = parsed.data.name?.trim();

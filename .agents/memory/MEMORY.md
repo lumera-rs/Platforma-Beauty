@@ -28,3 +28,4 @@
 - [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.
 - [Artifact release gates](artifact-release-gates.md) — validation workflows do not block publishing; artifact-mode release checks belong in the root deployment pre-build hook.
 - [Interrupted media test cleanup](interrupted-media-test-cleanup.md) — use selective test markers and pre-write object manifests so force-stopped checks cannot leak uploads.
+- [Canonical availability ordering](canonical-availability-ordering.md) — rank paginated salon results with the exact availability value shown on each card.

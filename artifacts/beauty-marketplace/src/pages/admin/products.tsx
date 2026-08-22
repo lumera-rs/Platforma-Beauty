@@ -40,6 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
+import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -117,6 +118,13 @@ function ProductFormDialog({
       : emptyForm
   );
   const [weightUnit, setWeightUnit] = useState<"g" | "kg">("g");
+  // Raw string state so numeric inputs aren't clobbered while typing
+  const [rawNums, setRawNums] = useState(() => ({
+    price: editing ? String(editing.price) : "0",
+    discountPrice: editing?.discountPrice != null ? String(editing.discountPrice) : "",
+    stock: editing ? String(editing.stock) : "0",
+    weightDisplay: editing ? (weightUnit === "kg" ? String((editing.weightGrams ?? 0) / 1000) : String(editing.weightGrams ?? 0)) : "0",
+  }));
   const [uploadingImages, setUploadingImages] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryParent, setNewCategoryParent] = useState<string>("");
@@ -135,12 +143,13 @@ function ProductFormDialog({
     ? categories.filter((c) => c.parentId === selectedParent.id)
     : [];
 
+  // Discount percent display — parsed from rawNums for live feedback
+  const rawPrice = parseFloat(rawNums.price);
+  const rawDiscount = rawNums.discountPrice.trim() !== "" ? parseFloat(rawNums.discountPrice) : NaN;
   const discountPercent =
-    form.discountPrice != null && form.price > 0 && form.discountPrice < form.price
-      ? Math.round((1 - form.discountPrice / form.price) * 100)
+    !isNaN(rawDiscount) && !isNaN(rawPrice) && rawPrice > 0 && rawDiscount < rawPrice
+      ? Math.round((1 - rawDiscount / rawPrice) * 100)
       : null;
-
-  const displayWeight = weightUnit === "kg" ? (form.weightGrams ?? 0) / 1000 : form.weightGrams ?? 0;
 
   const isPending = createProduct.isPending || updateProduct.isPending;
   const variantStockTotal = (form.variants ?? []).reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
@@ -261,25 +270,44 @@ function ProductFormDialog({
   };
 
   const handleSave = () => {
-    const name = form.name.trim();
-    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    if (isPending) return;
+    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
     if (!form.categoryName) { toast.error("Greška", { description: "Kategorija je obavezna." }); return; }
-    const sku = form.sku.trim();
-    if (!sku) { toast.error("Greška", { description: "SKU je obavezan." }); return; }
-    const description = form.description.trim();
-    if (!description) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
+    if (!form.sku.trim()) { toast.error("Greška", { description: "SKU je obavezan." }); return; }
+    if (!form.description.trim()) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
     if (!form.imageUrl) { toast.error("Greška", { description: "Bar jedna slika je obavezna." }); return; }
-    if (!Number.isFinite(form.price) || form.price <= 0) { toast.error("Greška", { description: "Cena mora biti veća od 0." }); return; }
-    if (!Number.isFinite(form.weightGrams) || !form.weightGrams || form.weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
-    if (!Number.isFinite(form.stock) || form.stock < 0) { toast.error("Greška", { description: "Stanje zaliha ne može biti negativno." }); return; }
-    if (form.discountPrice != null && (!Number.isFinite(form.discountPrice) || form.discountPrice < 0)) {
-      toast.error("Greška", { description: "Akcijska cena mora biti 0 ili više." }); return;
-    }
-    if (form.discountPrice != null && form.discountPrice >= form.price) {
+
+    const priceParsed = parseStrictInt(rawNums.price, { label: "Redovna cena", allowNegative: false, allowZero: false });
+    if (!priceParsed.ok) { toast.error("Greška", { description: priceParsed.message }); return; }
+
+    const discountParsed = rawNums.discountPrice.trim() === ""
+      ? { ok: true as const, value: null }
+      : parseStrictInt(rawNums.discountPrice, { label: "Akcijska cena", allowNegative: false, allowZero: false });
+    if (!discountParsed.ok) { toast.error("Greška", { description: discountParsed.message }); return; }
+    if (discountParsed.value !== null && discountParsed.value >= priceParsed.value) {
       toast.error("Greška", { description: "Akcijska cena mora biti niža od redovne." }); return;
     }
 
-    const payload = { ...form, name, sku, description, images: form.images?.length ? form.images : [form.imageUrl] };
+    let stockParsed = { ok: true as const, value: form.stock };
+    if (variantInventoryMode !== "per-variant") {
+      const sp = parseStrictInt(rawNums.stock, { label: "Stanje", allowNegative: false, allowZero: true });
+      if (!sp.ok) { toast.error("Greška", { description: sp.message }); return; }
+      stockParsed = sp;
+    }
+
+    const weightParsed = parseStrictDecimal(rawNums.weightDisplay, { label: "Težina", allowNegative: false, allowZero: false });
+    if (!weightParsed.ok) { toast.error("Greška", { description: weightParsed.message }); return; }
+    const weightGrams = weightUnit === "kg" ? Math.round(weightParsed.value * 1000) : Math.round(weightParsed.value);
+    if (weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
+
+    const payload = {
+      ...form,
+      price: priceParsed.value,
+      discountPrice: discountParsed.value,
+      stock: variantInventoryMode === "per-variant" ? variantStockTotal : stockParsed.value,
+      weightGrams,
+      images: form.images?.length ? form.images : [form.imageUrl],
+    };
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Proizvod je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
@@ -287,8 +315,7 @@ function ProductFormDialog({
         onSaved();
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Greška", { description: msg ?? "Proizvod nije sačuvan." });
+        toast.error("Greška", { description: extractApiError(err, "Proizvod nije sačuvan.") });
       },
     };
     if (editing) updateProduct.mutate({ productId: editing.id, data: payload }, opts);
@@ -419,14 +446,14 @@ function ProductFormDialog({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Redovna cena (RSD) *</Label>
-                <Input type="number" min="0" step="1" value={form.price || ""} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} data-testid="input-product-price" />
+                <Input type="number" min="0" step="1" value={rawNums.price} onChange={(e) => setRawNums({ ...rawNums, price: e.target.value })} data-testid="input-product-price" />
               </div>
               <div className="space-y-2">
                 <Label>Akcijska cena (RSD)</Label>
                 <Input
                   type="number" min="0"
-                  value={form.discountPrice ?? ""}
-                  onChange={(e) => setForm({ ...form, discountPrice: e.target.value === "" ? null : Number(e.target.value) })}
+                  value={rawNums.discountPrice}
+                  onChange={(e) => setRawNums({ ...rawNums, discountPrice: e.target.value })}
                   placeholder="Bez akcije"
                   data-testid="input-product-discount"
                 />
@@ -454,7 +481,7 @@ function ProductFormDialog({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Stanje (kom) *</Label>
-                <Input type="number" min="0" step="1" value={variantInventoryMode === "per-variant" ? variantStockTotal : form.stock} disabled={variantInventoryMode === "per-variant"} onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })} data-testid="input-product-stock" />
+                <Input type="number" min="0" step="1" value={variantInventoryMode === "per-variant" ? variantStockTotal : rawNums.stock} disabled={variantInventoryMode === "per-variant"} onChange={(e) => setRawNums({ ...rawNums, stock: e.target.value })} data-testid="input-product-stock" />
                 {variantInventoryMode === "per-variant" && <p className="text-xs text-muted-foreground">Automatski zbir zaliha varijanti.</p>}
               </div>
               <div className="space-y-2">
@@ -462,14 +489,22 @@ function ProductFormDialog({
                 <div className="flex gap-2">
                   <Input
                     type="number" min="0" step={weightUnit === "kg" ? "0.01" : "1"}
-                    value={displayWeight || ""}
+                    value={rawNums.weightDisplay}
                     onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setForm({ ...form, weightGrams: weightUnit === "kg" ? Math.round(v * 1000) : Math.round(v) });
+                      setRawNums({ ...rawNums, weightDisplay: e.target.value });
                     }}
                     data-testid="input-product-weight"
                   />
-                  <Select value={weightUnit} onValueChange={(v) => setWeightUnit(v as "g" | "kg")}>
+                  <Select value={weightUnit} onValueChange={(v) => {
+                    const newUnit = v as "g" | "kg";
+                    // Convert the currently displayed raw value to the new unit
+                    const parsed = parseFloat(rawNums.weightDisplay);
+                    if (!isNaN(parsed) && parsed > 0) {
+                      const newDisplay = newUnit === "kg" ? String(parsed / 1000) : String(Math.round(parsed * 1000));
+                      setRawNums({ ...rawNums, weightDisplay: newDisplay });
+                    }
+                    setWeightUnit(newUnit);
+                  }}>
                     <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="g">g</SelectItem>
@@ -690,8 +725,7 @@ export default function AdminProducts() {
         setBulkAction("");
       },
       onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        toast.error("Greška", { description: msg ?? "Masovna izmena nije uspela." });
+        toast.error("Greška", { description: extractApiError(err, "Masovna izmena nije uspela.") });
       },
     });
   };

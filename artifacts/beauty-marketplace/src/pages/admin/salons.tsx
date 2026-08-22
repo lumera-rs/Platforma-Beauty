@@ -31,16 +31,25 @@ export default function AdminSalons() {
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [featuredFilter, setFeaturedFilter] = useState<string>("all");
   const [subStatusFilter, setSubStatusFilter] = useState<string>("all");
-  
+
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  // Reset to the first page whenever any filter changes so results stay reachable.
+  useEffect(() => { setPage(1); }, [debouncedSearch, debouncedCity, activeFilter, featuredFilter, subStatusFilter]);
+
   const queryParams = {
     search: debouncedSearch || undefined,
     city: debouncedCity || undefined,
     active: activeFilter === "all" ? undefined : activeFilter === "true",
     featured: featuredFilter === "all" ? undefined : featuredFilter === "true",
     subscriptionStatus: subStatusFilter === "all" ? undefined : subStatusFilter,
+    page,
+    pageSize,
   };
 
   const { data: salons, isLoading, error } = useAdminListSalons(queryParams);
+  // customFetch returns only the body; infer next-page availability from length.
+  const hasNextPage = (salons?.length ?? 0) === pageSize;
   const updateSalon = useAdminUpdateSalon();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -243,6 +252,14 @@ export default function AdminSalons() {
             </div>
           )}
         </div>
+
+        {!isLoading && !error && salons && salons.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} data-testid="btn-prev-page">Prethodna</Button>
+            <span className="text-sm text-muted-foreground">Strana {page}</span>
+            <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage(p => p + 1)} data-testid="btn-next-page">Sledeća</Button>
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

@@ -100,7 +100,10 @@ export const sessionsTable = pgTable("sessions", {
   tokenHash: text("token_hash").notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Covers the leading FK; also used for "all sessions for user" and expiry cleanup.
+  index("sessions_user_expires_idx").on(table.userId, table.expiresAt),
+]);
 
 /**
  * Image bytes live in App Storage. PostgreSQL keeps only immutable object
@@ -123,6 +126,7 @@ export const imageAssetsTable = pgTable("image_assets", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Leading FK coverage for uploadedByUserId; also useful for per-uploader listings.
   index("image_assets_uploader_created_idx").on(table.uploadedByUserId, table.createdAt),
   index("image_assets_status_expires_idx").on(table.status, table.expiresAt),
 ]);
@@ -136,6 +140,8 @@ export const oauthIdentitiesTable = pgTable("oauth_identities", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("oauth_identities_provider_account_unique").on(table.provider, table.providerAccountId),
+  // Leading FK coverage: look up all identities for a user.
+  index("oauth_identities_user_idx").on(table.userId),
 ]);
 
 export const oauthLoginStatesTable = pgTable("oauth_login_states", {
@@ -147,7 +153,10 @@ export const oauthLoginStatesTable = pgTable("oauth_login_states", {
   codeVerifier: text("code_verifier"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for nullable userId.
+  index("oauth_login_states_user_idx").on(table.userId),
+]);
 
 export const phoneVerificationCodesTable = pgTable("phone_verification_codes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -172,6 +181,8 @@ export const integrationSettingsTable = pgTable("integration_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("integration_settings_integration_key_unique").on(table.integration, table.settingKey),
+  // Leading FK coverage for updatedByUserId (audit trail lookup).
+  index("integration_settings_updated_by_idx").on(table.updatedByUserId),
 ]);
 
 export const emailDeliveriesTable = pgTable("email_deliveries", {
@@ -196,6 +207,9 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("email_deliveries_retry_index").on(table.status, table.nextRetryAt),
+  // Leading FK coverage: deliveries for a salon, deliveries for an appointment.
+  index("email_deliveries_salon_idx").on(table.salonId),
+  index("email_deliveries_appointment_idx").on(table.appointmentId),
 ]);
 
 export const emailCampaignsTable = pgTable("email_campaigns", {
@@ -214,7 +228,10 @@ export const emailCampaignsTable = pgTable("email_campaigns", {
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for createdByUserId.
+  index("email_campaigns_created_by_idx").on(table.createdByUserId),
+]);
 
 export const serviceCategoriesTable = pgTable("service_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -279,7 +296,16 @@ export const salonsTable = pgTable("salons", {
   servesMenManuallySet: boolean("serves_men_manually_set").notNull().default(false),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Salon list pages: filter by city/municipality + active, sort by rating or featured.
+  index("salons_city_active_rating_idx").on(table.city, table.active, table.rating),
+  index("salons_municipality_active_idx").on(table.municipality, table.active),
+  index("salons_city_normalized_active_rating_idx").on(sql`lower(${table.city})`, table.active, table.rating),
+  index("salons_municipality_normalized_active_idx").on(sql`lower(${table.municipality})`, table.active),
+  index("salons_featured_active_idx").on(table.featured, table.active),
+  // Leading FK coverage for ownerId.
+  index("salons_owner_idx").on(table.ownerId),
+]);
 
 export const employeesTable = pgTable("employees", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -293,7 +319,10 @@ export const employeesTable = pgTable("employees", {
   specialties: jsonb("specialties").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
 }, (table) => [
-  index("employees_salon_idx").on(table.salonId),
+  // Leading FK coverage for salonId (also filters by active).
+  index("employees_salon_active_idx").on(table.salonId, table.active),
+  // Leading FK coverage for nullable userId (resolve linked user account).
+  index("employees_user_idx").on(table.userId),
 ]);
 
 export const employeeSchedulesTable = pgTable("employee_schedules", {
@@ -305,7 +334,8 @@ export const employeeSchedulesTable = pgTable("employee_schedules", {
   breakStart: text("break_start"),
   breakEnd: text("break_end"),
 }, (table) => [
-  index("employee_schedules_employee_idx").on(table.employeeId),
+  // Leading FK coverage: fetch full schedule for an employee.
+  index("employee_schedules_employee_weekday_idx").on(table.employeeId, table.weekday),
 ]);
 
 export const employeeTimeOffTable = pgTable("employee_time_off", {
@@ -314,7 +344,10 @@ export const employeeTimeOffTable = pgTable("employee_time_off", {
   startDate: date("start_date", { mode: "string" }).notNull(),
   endDate: date("end_date", { mode: "string" }).notNull(),
   reason: text("reason").notNull(),
-});
+}, (table) => [
+  // Leading FK coverage: all time-off for an employee, ordered by date range.
+  index("employee_time_off_employee_start_idx").on(table.employeeId, table.startDate),
+]);
 
 export const employeeLeaveRequestsTable = pgTable("employee_leave_requests", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -325,7 +358,10 @@ export const employeeLeaveRequestsTable = pgTable("employee_leave_requests", {
   status: leaveRequestStatusEnum("status").notNull().default("pending"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage: all leave requests for an employee, ordered by date.
+  index("employee_leave_requests_employee_created_idx").on(table.employeeId, table.createdAt),
+]);
 
 export const servicesTable = pgTable("services", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -345,7 +381,11 @@ export const servicesTable = pgTable("services", {
   homeServiceFee: integer("home_service_fee").notNull().default(0),
   homeServiceMinimumOrder: integer("home_service_minimum_order"),
 }, (table) => [
-  index("services_salon_idx").on(table.salonId),
+  // Service listing: all active services for a salon.
+  index("services_salon_active_idx").on(table.salonId, table.active),
+  // Leading FK coverage for categoryId (also covers services_salon_category query pattern).
+  index("services_salon_category_idx").on(table.salonId, table.categoryId),
+  // Leading FK coverage for categoryId alone (global category browse).
   index("services_category_idx").on(table.categoryId),
 ]);
 
@@ -363,6 +403,7 @@ export const salonBrandsTable = pgTable("salon_brands", {
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
   brandId: uuid("brand_id").notNull().references(() => productBrandsTable.id, { onDelete: "cascade" }),
 }, (table) => [
+  // Leading FK coverage for both sides of the join table.
   index("salon_brands_salon_idx").on(table.salonId),
   index("salon_brands_brand_idx").on(table.brandId),
 ]);
@@ -376,7 +417,10 @@ export const inspirationItemsTable = pgTable("inspiration_items", {
   imageUrl: text("image_url").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index("inspiration_items_salon_idx").on(table.salonId),
+  // Leading FK coverage: all inspiration items for a salon, sorted by date.
+  index("inspiration_items_salon_created_idx").on(table.salonId, table.createdAt),
+  // Leading FK coverage for serviceId.
+  index("inspiration_items_service_idx").on(table.serviceId),
 ]);
 
 export const beautyGlossaryTable = pgTable("beauty_glossary", {
@@ -393,6 +437,8 @@ export const employeeServicesTable = pgTable("employee_services", {
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
 }, (table) => [
   uniqueIndex("employee_services_employee_service_unique").on(table.employeeId, table.serviceId),
+  // Leading FK coverage for serviceId (reverse lookup: which employees do this service).
+  index("employee_services_service_idx").on(table.serviceId),
 ]);
 
 export const favoriteEmployeesTable = pgTable("favorite_employees", {
@@ -403,6 +449,9 @@ export const favoriteEmployeesTable = pgTable("favorite_employees", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("favorite_employees_user_salon_unique").on(table.userId, table.salonId),
+  // Leading FK coverage for salonId and employeeId (reverse lookups).
+  index("favorite_employees_salon_idx").on(table.salonId),
+  index("favorite_employees_employee_idx").on(table.employeeId),
 ]);
 
 export const salonHoursTable = pgTable("salon_hours", {
@@ -412,7 +461,10 @@ export const salonHoursTable = pgTable("salon_hours", {
   openTime: text("open_time").notNull(),
   closeTime: text("close_time").notNull(),
   closed: boolean("closed").notNull().default(false),
-});
+}, (table) => [
+  // Leading FK coverage: fetch all hours for a salon (also covers weekday filter).
+  index("salon_hours_salon_weekday_idx").on(table.salonId, table.weekday),
+]);
 
 export const salonCustomersTable = pgTable("salon_customers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -429,6 +481,8 @@ export const salonCustomersTable = pgTable("salon_customers", {
 }, (table) => [
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
+  // Leading FK coverage for userId alone (find all salon records for a given user).
+  index("salon_customers_user_idx").on(table.userId),
 ]);
 
 export const appointmentSeriesTable = pgTable("appointment_series", {
@@ -440,7 +494,15 @@ export const appointmentSeriesTable = pgTable("appointment_series", {
   totalAppointments: integer("total_appointments").notNull(),
   createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for salonId (all series for a salon).
+  index("appointment_series_salon_created_idx").on(table.salonId, table.createdAt),
+  // Leading FK coverage for remaining FKs.
+  index("appointment_series_salon_customer_idx").on(table.salonCustomerId),
+  index("appointment_series_service_idx").on(table.serviceId),
+  index("appointment_series_employee_idx").on(table.employeeId),
+  index("appointment_series_created_by_idx").on(table.createdByUserId),
+]);
 
 export const appointmentsTable = pgTable("appointments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -466,7 +528,14 @@ export const appointmentsTable = pgTable("appointments", {
   cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Primary schedule query: salon day-view, optionally filtered by employee/status.
   index("appointments_schedule_lookup_index").on(table.salonId, table.date, table.employeeId, table.status),
+  // Leading FK coverage for remaining FKs not covered as leading columns above.
+  index("appointments_employee_idx").on(table.employeeId),
+  index("appointments_customer_idx").on(table.customerId),
+  index("appointments_salon_customer_idx").on(table.salonCustomerId),
+  index("appointments_service_idx").on(table.serviceId),
+  index("appointments_series_idx").on(table.seriesId),
 ]);
 
 export const smsDeliveriesTable = pgTable("sms_deliveries", {
@@ -488,36 +557,10 @@ export const smsDeliveriesTable = pgTable("sms_deliveries", {
   index("sms_deliveries_retry_index").on(table.status, table.nextRetryAt),
   index("sms_deliveries_retention_idx")
     .on(table.createdAt)
-    .where(sql`${table.status} <> 'queued' and ${table.nextRetryAt} is null`),
-]);
-
-/**
- * Cold storage for SMS delivery logs older than the live-retention window.
- * Rows are copied here verbatim before deletion from
- * {@link smsDeliveriesTable}. No foreign keys and no request-path writes; only
- * the batch archiver populates it. {@link eventKey} is preserved but not made
- * unique so repeated/partial runs stay idempotent. Undelivered work (queued or
- * failed logs still eligible for retry) is never archived — see the archiver's
- * status/next-retry guard.
- */
-export const smsDeliveriesArchiveTable = pgTable("sms_deliveries_archive", {
-  id: uuid("id").primaryKey(),
-  eventKey: text("event_key").notNull(),
-  salonId: uuid("salon_id"),
-  appointmentId: uuid("appointment_id"),
-  messageType: smsMessageTypeEnum("message_type").notNull(),
-  recipientPhone: text("recipient_phone").notNull(),
-  body: text("body").notNull(),
-  status: smsDeliveryStatusEnum("status").notNull(),
-  providerMessageId: text("provider_message_id"),
-  errorMessage: text("error_message"),
-  sentAt: timestamp("sent_at", { withTimezone: true }),
-  retryCount: integer("retry_count").notNull(),
-  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  index("sms_deliveries_archive_created_idx").on(table.createdAt),
+    .where(sql`${table.status} in ('sent', 'skipped')`),
+  // Leading FK coverage for salonId and appointmentId.
+  index("sms_deliveries_salon_idx").on(table.salonId),
+  index("sms_deliveries_appointment_idx").on(table.appointmentId),
 ]);
 
 export const appointmentStatusHistoryTable = pgTable("appointment_status_history", {
@@ -527,7 +570,10 @@ export const appointmentStatusHistoryTable = pgTable("appointment_status_history
   changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  index("appointment_status_history_appointment_idx").on(table.appointmentId, table.createdAt),
+  // Leading FK coverage for appointmentId (also ordered for timeline display).
+  index("appointment_status_history_appt_created_idx").on(table.appointmentId, table.createdAt),
+  // Leading FK coverage for changedByUserId (audit trail by actor).
+  index("appointment_status_history_changed_by_idx").on(table.changedByUserId),
 ]);
 
 export const reviewsTable = pgTable("reviews", {
@@ -541,8 +587,10 @@ export const reviewsTable = pgTable("reviews", {
   showProfilePhoto: boolean("show_profile_photo").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  // Unique constraint also covers the FK for customerId as leading column.
   uniqueIndex("reviews_customer_salon_unique").on(table.customerId, table.salonId),
-  index("reviews_salon_created_idx").on(table.salonId, table.createdAt),
+  // Salon review listing ordered by date, filtered by visible.
+  index("reviews_salon_visible_created_idx").on(table.salonId, table.visible, table.createdAt),
 ]);
 
 export const favoritesTable = pgTable("favorites", {
@@ -550,7 +598,11 @@ export const favoritesTable = pgTable("favorites", {
   userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for both sides.
+  index("favorites_user_idx").on(table.userId),
+  index("favorites_salon_idx").on(table.salonId),
+]);
 
 export const customerNotesTable = pgTable("customer_notes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -558,4 +610,26 @@ export const customerNotesTable = pgTable("customer_notes", {
   customerId: uuid("customer_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   note: text("note").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Leading FK coverage for salonId (salon CRM view); customerId covered as second column.
+  index("customer_notes_salon_customer_idx").on(table.salonId, table.customerId),
+  // Leading FK coverage for customerId alone (customer history view).
+  index("customer_notes_customer_idx").on(table.customerId),
+]);
+
+// ---------------------------------------------------------------------------
+// SMS delivery snapshot archive.
+// Provides a cheap, immutable record of every outbound SMS as it leaves the
+// live delivery queue — useful for auditing, dispute resolution, and GDPR
+// erasure bookkeeping without touching the hot sms_deliveries table.
+// ---------------------------------------------------------------------------
+export const smsDeliveryArchivesTable = pgTable("sms_delivery_archives", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Stable reference back to the original sms_deliveries.event_key. */
+  sourceId: text("source_id").notNull().unique(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  originalCreatedAt: timestamp("original_created_at", { withTimezone: true }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("sms_delivery_archives_archived_at_idx").on(table.archivedAt),
+]);

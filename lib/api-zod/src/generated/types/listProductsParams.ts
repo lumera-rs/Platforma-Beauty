@@ -14,4 +14,15 @@ search?: string;
 onSale?: boolean;
 isNew?: boolean;
 isBestseller?: boolean;
+/**
+ * 1-based page number for stable pagination (name asc, id asc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of products per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

@@ -10,7 +10,6 @@ export interface CourierServiceInput {
   /**
      * @minLength 1
      * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
      */
   name: string;
   /**

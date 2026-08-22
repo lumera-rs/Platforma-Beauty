@@ -4,36 +4,52 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
+function parseEnvInt(
+  key: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < minimum || n > maximum) {
+    process.stderr.write(
+      `[db-pool] ignoring invalid ${key}; expected an integer from ${minimum} to ${maximum}\n`,
+    );
+    return fallback;
+  }
+  return n;
+}
+
 if (!process.env.DATABASE_URL) {
   throw new Error(
     "DATABASE_URL must be set. Did you forget to provision a database?",
   );
 }
 
-function boundedInteger(
-  environmentKey: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const raw = process.env[environmentKey];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
-    throw new Error(
-      `${environmentKey} must be an integer between ${minimum} and ${maximum}.`,
-    );
-  }
-  return parsed;
-}
+const poolMax = parseEnvInt("DB_POOL_MAX", 10, 4, 50);
+const configuredPoolMin = parseEnvInt("DB_POOL_MIN", 0, 0, 10);
+const poolMin = Math.min(configuredPoolMin, poolMax);
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  max: boundedInteger("DB_POOL_MAX", 12, 3, 50),
-  idleTimeoutMillis: boundedInteger("DB_POOL_IDLE_TIMEOUT_MS", 30_000, 1_000, 300_000),
-  connectionTimeoutMillis: boundedInteger("DB_POOL_CONNECTION_TIMEOUT_MS", 10_000, 500, 60_000),
+  max: poolMax,
+  min: poolMin,
+  idleTimeoutMillis: parseEnvInt("DB_IDLE_TIMEOUT_MS", 10_000, 1_000, 300_000),
+  connectionTimeoutMillis: parseEnvInt("DB_CONN_TIMEOUT_MS", 5_000, 500, 60_000),
+  query_timeout: parseEnvInt("DB_QUERY_TIMEOUT_MS", 30_000, 1_000, 300_000),
+  statement_timeout: parseEnvInt("DB_STMT_TIMEOUT_MS", 30_000, 1_000, 300_000),
   keepAlive: true,
   keepAliveInitialDelayMillis: 10_000,
+});
+
+pool.on("error", (err: Error) => {
+  const safeMessage = err.message.replace(
+    /postgres(?:ql)?:\/\/[^@]*@[^\s"']*/gi,
+    "postgres://<redacted>",
+  );
+  process.stderr.write(`[db-pool] idle client error: ${safeMessage}\n`);
 });
 
 export function databasePoolStats() {
@@ -41,6 +57,7 @@ export function databasePoolStats() {
     total: pool.totalCount,
     idle: pool.idleCount,
     waiting: pool.waitingCount,
+    max: poolMax,
   };
 }
 
@@ -71,3 +88,16 @@ export const db = drizzle(pool, {
 });
 
 export * from "./schema";
+
+export async function closePool(): Promise<void> {
+  await pool.end();
+}
+
+export function getPoolStatus(): {
+  total: number;
+  idle: number;
+  waiting: number;
+  max: number;
+} {
+  return databasePoolStats();
+}

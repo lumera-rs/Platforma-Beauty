@@ -11,8 +11,27 @@ import * as zod from 'zod';
 /**
  * @summary Health check
  */
+export const healthCheckResponseDatabasePoolTotalMin = 0;
+export const healthCheckResponseDatabasePoolTotalMultipleOf = 1;
+
+export const healthCheckResponseDatabasePoolIdleMin = 0;
+export const healthCheckResponseDatabasePoolIdleMultipleOf = 1;
+
+export const healthCheckResponseDatabasePoolWaitingMin = 0;
+export const healthCheckResponseDatabasePoolWaitingMultipleOf = 1;
+
+export const healthCheckResponseDatabasePoolMaxMultipleOf = 1;
+
+
+
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.string(),
+  "databasePool": zod.object({
+  "total": zod.number().min(healthCheckResponseDatabasePoolTotalMin).multipleOf(healthCheckResponseDatabasePoolTotalMultipleOf),
+  "idle": zod.number().min(healthCheckResponseDatabasePoolIdleMin).multipleOf(healthCheckResponseDatabasePoolIdleMultipleOf),
+  "waiting": zod.number().min(healthCheckResponseDatabasePoolWaitingMin).multipleOf(healthCheckResponseDatabasePoolWaitingMultipleOf),
+  "max": zod.number().min(1).multipleOf(healthCheckResponseDatabasePoolMaxMultipleOf)
+})
 })
 
 
@@ -227,7 +246,7 @@ export const AdminCreateEmailCampaignBody = zod.object({
   "htmlContent": zod.string().min(adminCreateEmailCampaignBodyHtmlContentMin).max(adminCreateEmailCampaignBodyHtmlContentMax),
   "sendMode": zod.enum(['now', 'scheduled']),
   "scheduledAt": zod.coerce.date().nullish()
-})
+}).strict()
 
 export const AdminCreateEmailCampaignResponse = zod.object({
   "id": zod.string(),
@@ -270,6 +289,11 @@ export const listSalonsQueryMinRatingMax = 5;
 
 export const listSalonsQueryMinReviewCountMin = 0;
 
+export const listSalonsQueryPageDefault = 1;
+
+export const listSalonsQueryPageSizeDefault = 24;
+export const listSalonsQueryPageSizeMax = 100;
+
 
 
 export const ListSalonsQueryParams = zod.object({
@@ -292,7 +316,9 @@ export const ListSalonsQueryParams = zod.object({
   "featured": zod.coerce.boolean().optional(),
   "brand": zod.coerce.string().optional(),
   "latitude": zod.coerce.number().optional(),
-  "longitude": zod.coerce.number().optional()
+  "longitude": zod.coerce.number().optional(),
+  "page": zod.coerce.number().int().min(1).default(listSalonsQueryPageDefault).describe('1-based page number. All filters and the chosen sort are applied in SQL BEFORE this page is selected.'),
+  "pageSize": zod.coerce.number().int().min(1).max(listSalonsQueryPageSizeMax).default(listSalonsQueryPageSizeDefault).describe('Number of salons per page (1..100).')
 })
 
 export const ListSalonsResponseItem = zod.object({
@@ -480,6 +506,21 @@ export const GetMarketplaceHomeDiscoveryResponse = zod.object({
 
 
 /**
+ * @summary List cities that have active salons with salon counts
+ */
+
+export const listCitiesResponseSalonCountMin = 0;
+
+
+
+export const ListCitiesResponseItem = zod.object({
+  "name": zod.string().min(1),
+  "salonCount": zod.number().int().min(listCitiesResponseSalonCountMin)
+})
+export const ListCitiesResponse = zod.array(ListCitiesResponseItem)
+
+
+/**
  * @summary Get public marketplace trust statistics
  */
 export const getPlatformTrustStatsResponseActiveSalonsMin = 0;
@@ -664,10 +705,18 @@ export const GetSalonFirstAvailableResponse = zod.object({
  * @summary List appointments for the signed-in user
  */
 export const listMyAppointmentsQueryScopeDefault = `all`;
+export const listMyAppointmentsQueryPageDefault = 1;
+
+export const listMyAppointmentsQueryPageSizeDefault = 50;
+export const listMyAppointmentsQueryPageSizeMax = 100;
+
+
 
 export const ListMyAppointmentsQueryParams = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']).optional(),
-  "scope": zod.enum(['upcoming', 'past', 'all']).default(listMyAppointmentsQueryScopeDefault)
+  "scope": zod.enum(['upcoming', 'past', 'all']).default(listMyAppointmentsQueryScopeDefault),
+  "page": zod.coerce.number().int().min(1).default(listMyAppointmentsQueryPageDefault).describe('1-based page number for stable pagination (date asc, startTime asc, id asc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listMyAppointmentsQueryPageSizeMax).default(listMyAppointmentsQueryPageSizeDefault).describe('Number of appointments per page (1..100).')
 })
 
 export const listMyAppointmentsResponseTravelFeeMin = 0;
@@ -1375,10 +1424,19 @@ export const GetMediaAssetResponse = zod.unknown()
 /**
  * @summary List salon appointments
  */
+export const listSalonAppointmentsQueryPageDefault = 1;
+
+export const listSalonAppointmentsQueryPageSizeDefault = 100;
+export const listSalonAppointmentsQueryPageSizeMax = 100;
+
+
+
 export const ListSalonAppointmentsQueryParams = zod.object({
   "from": zod.date().optional(),
   "to": zod.date().optional(),
-  "status": zod.coerce.string().optional()
+  "status": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(listSalonAppointmentsQueryPageDefault).describe('1-based page number for stable pagination (date asc, startTime asc, id asc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listSalonAppointmentsQueryPageSizeMax).default(listSalonAppointmentsQueryPageSizeDefault).describe('Number of appointments per page (1..100).')
 })
 
 export const listSalonAppointmentsResponseTravelFeeMin = 0;
@@ -1723,6 +1781,18 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
 /**
  * @summary List salon CRM customers
  */
+export const listSalonCustomersQueryPageDefault = 1;
+
+export const listSalonCustomersQueryPageSizeDefault = 50;
+export const listSalonCustomersQueryPageSizeMax = 100;
+
+
+
+export const ListSalonCustomersQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listSalonCustomersQueryPageDefault).describe('1-based page number for stable pagination (lastName asc, firstName asc, id asc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listSalonCustomersQueryPageSizeMax).default(listSalonCustomersQueryPageSizeDefault).describe('Number of CRM customers per page (1..100).')
+})
+
 export const listSalonCustomersResponseNoShowCountMin = 0;
 
 
@@ -1980,6 +2050,8 @@ export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem
  * @summary Create service
  */
 
+
+export const createSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const createSalonServiceBodyDurationMinutesMin = 5;
 
 export const createSalonServiceBodyPriceMin = 0;
@@ -1992,7 +2064,7 @@ export const createSalonServiceBodyHomeServiceMinimumOrderMin = 0;
 
 export const CreateSalonServiceBody = zod.object({
   "category": zod.string(),
-  "name": zod.string().min(1),
+  "name": zod.string().min(1).regex(createSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(createSalonServiceBodyDurationMinutesMin),
   "price": zod.number().min(createSalonServiceBodyPriceMin),
@@ -2124,6 +2196,8 @@ export const UpdateSalonServiceParams = zod.object({
 })
 
 
+
+export const updateSalonServiceBodyNameRegExp = new RegExp('.*\\S.*');
 export const updateSalonServiceBodyDurationMinutesMin = 5;
 
 export const updateSalonServiceBodyPriceMin = 0;
@@ -2136,7 +2210,7 @@ export const updateSalonServiceBodyHomeServiceMinimumOrderMin = 0;
 
 export const UpdateSalonServiceBody = zod.object({
   "category": zod.string(),
-  "name": zod.string().min(1),
+  "name": zod.string().min(1).regex(updateSalonServiceBodyNameRegExp),
   "description": zod.string(),
   "durationMinutes": zod.number().min(updateSalonServiceBodyDurationMinutesMin),
   "price": zod.number().min(updateSalonServiceBodyPriceMin),
@@ -2256,8 +2330,28 @@ export const ListProductCategoriesResponse = zod.array(ListProductCategoriesResp
 
 
 /**
+ * @summary List active B2B product brands
+ */
+export const ListProductBrandsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string(),
+  "logoUrl": zod.string().nullable()
+})
+export const ListProductBrandsResponse = zod.array(ListProductBrandsResponseItem)
+
+
+/**
  * @summary List professional products
  */
+export const listProductsQueryPageDefault = 1;
+
+export const listProductsQueryPageSizeDefault = 24;
+export const listProductsQueryPageSizeMax = 100;
+
+
+
 export const ListProductsQueryParams = zod.object({
   "category": zod.coerce.string().optional(),
   "subcategory": zod.coerce.string().optional(),
@@ -2265,30 +2359,33 @@ export const ListProductsQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "onSale": zod.coerce.boolean().optional(),
   "isNew": zod.coerce.boolean().optional(),
-  "isBestseller": zod.coerce.boolean().optional()
+  "isBestseller": zod.coerce.boolean().optional(),
+  "page": zod.coerce.number().int().min(1).default(listProductsQueryPageDefault).describe('1-based page number for stable pagination (name asc, id asc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listProductsQueryPageSizeMax).default(listProductsQueryPageSizeDefault).describe('Number of products per page (1..100).')
 })
 
-export const listProductsResponsePriceMultipleOf = 1;
+export const listProductsResponseItemsItemPriceMultipleOf = 1;
 
-export const listProductsResponseDiscountPriceMultipleOf = 1;
+export const listProductsResponseItemsItemDiscountPriceMultipleOf = 1;
 
-export const listProductsResponseStockMin = 0;
-export const listProductsResponseStockMultipleOf = 1;
+export const listProductsResponseItemsItemStockMin = 0;
+export const listProductsResponseItemsItemStockMultipleOf = 1;
 
-export const listProductsResponseWeightGramsMultipleOf = 1;
+export const listProductsResponseItemsItemWeightGramsMultipleOf = 1;
 
-export const listProductsResponseVariantsItemPriceAdjustMultipleOf = 1;
+export const listProductsResponseItemsItemVariantsItemPriceAdjustMultipleOf = 1;
 
-export const listProductsResponseVariantsItemPriceMin = 0;
-export const listProductsResponseVariantsItemPriceMultipleOf = 1;
-
-
-export const listProductsResponseVariantsItemStockMin = 0;
-export const listProductsResponseVariantsItemStockMultipleOf = 1;
+export const listProductsResponseItemsItemVariantsItemPriceMin = 0;
+export const listProductsResponseItemsItemVariantsItemPriceMultipleOf = 1;
 
 
+export const listProductsResponseItemsItemVariantsItemStockMin = 0;
+export const listProductsResponseItemsItemVariantsItemStockMultipleOf = 1;
 
-export const ListProductsResponseItem = zod.object({
+
+
+export const ListProductsResponse = zod.object({
+  "items": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "category": zod.string(),
@@ -2296,30 +2393,34 @@ export const ListProductsResponseItem = zod.object({
   "brand": zod.string().nullish(),
   "description": zod.string(),
   "imageUrl": zod.string(),
-  "price": zod.number().multipleOf(listProductsResponsePriceMultipleOf),
-  "discountPrice": zod.number().multipleOf(listProductsResponseDiscountPriceMultipleOf).nullish(),
+  "price": zod.number().multipleOf(listProductsResponseItemsItemPriceMultipleOf),
+  "discountPrice": zod.number().multipleOf(listProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
   "discountPercent": zod.number().nullish(),
-  "stock": zod.number().min(listProductsResponseStockMin).multipleOf(listProductsResponseStockMultipleOf),
+  "stock": zod.number().min(listProductsResponseItemsItemStockMin).multipleOf(listProductsResponseItemsItemStockMultipleOf),
   "sku": zod.string(),
   "unit": zod.string(),
   "isNew": zod.boolean(),
   "isBestseller": zod.boolean(),
-  "weightGrams": zod.number().multipleOf(listProductsResponseWeightGramsMultipleOf).nullish(),
+  "weightGrams": zod.number().multipleOf(listProductsResponseItemsItemWeightGramsMultipleOf).nullish(),
   "shortDescription": zod.string().nullish(),
   "images": zod.array(zod.string()),
   "variants": zod.array(zod.object({
   "label": zod.string(),
   "value": zod.string(),
-  "priceAdjust": zod.number().multipleOf(listProductsResponseVariantsItemPriceAdjustMultipleOf).optional(),
-  "price": zod.number().min(listProductsResponseVariantsItemPriceMin).multipleOf(listProductsResponseVariantsItemPriceMultipleOf).optional(),
+  "priceAdjust": zod.number().multipleOf(listProductsResponseItemsItemVariantsItemPriceAdjustMultipleOf).optional(),
+  "price": zod.number().min(listProductsResponseItemsItemVariantsItemPriceMin).multipleOf(listProductsResponseItemsItemVariantsItemPriceMultipleOf).optional(),
   "sku": zod.string().min(1).optional(),
-  "stock": zod.number().min(listProductsResponseVariantsItemStockMin).multipleOf(listProductsResponseVariantsItemStockMultipleOf).optional()
+  "stock": zod.number().min(listProductsResponseItemsItemVariantsItemStockMin).multipleOf(listProductsResponseItemsItemVariantsItemStockMultipleOf).optional()
 })).nullish(),
   "variantType": zod.string().nullable(),
   "averageRating": zod.number().nullish(),
   "reviewCount": zod.number()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number(),
+  "totalPages": zod.number()
 })
-export const ListProductsResponse = zod.array(ListProductsResponseItem)
 
 
 /**
@@ -2948,6 +3049,18 @@ export const CheckoutShopCartResponse = zod.object({
 /**
  * @summary List notifications for the current salon owner
  */
+export const listSalonNotificationsQueryPageDefault = 1;
+
+export const listSalonNotificationsQueryPageSizeDefault = 50;
+export const listSalonNotificationsQueryPageSizeMax = 100;
+
+
+
+export const ListSalonNotificationsQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listSalonNotificationsQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listSalonNotificationsQueryPageSizeMax).default(listSalonNotificationsQueryPageSizeDefault).describe('Number of notifications per page (1..100).')
+})
+
 export const ListSalonNotificationsResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -2979,6 +3092,18 @@ export const MarkSalonNotificationReadResponse = zod.object({
 /**
  * @summary List salon orders
  */
+export const listOrdersQueryPageDefault = 1;
+
+export const listOrdersQueryPageSizeDefault = 50;
+export const listOrdersQueryPageSizeMax = 100;
+
+
+
+export const ListOrdersQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listOrdersQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listOrdersQueryPageSizeMax).default(listOrdersQueryPageSizeDefault).describe('Number of orders per page (1..100).')
+})
+
 export const listOrdersResponseTotalMultipleOf = 1;
 
 export const listOrdersResponseSubtotalMultipleOf = 1;
@@ -3171,6 +3296,13 @@ export const GetShippingQuoteResponse = zod.object({
 /**
  * @summary List all B2B orders for administration
  */
+export const adminListOrdersQueryPageDefault = 1;
+
+export const adminListOrdersQueryPageSizeDefault = 50;
+export const adminListOrdersQueryPageSizeMax = 100;
+
+
+
 export const AdminListOrdersQueryParams = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
   "salon": zod.coerce.string().optional(),
@@ -3178,7 +3310,9 @@ export const AdminListOrdersQueryParams = zod.object({
   "to": zod.date().optional(),
   "search": zod.coerce.string().optional(),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional(),
-  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional()
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListOrdersQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListOrdersQueryPageSizeMax).default(adminListOrdersQueryPageSizeDefault).describe('Number of rows per page (1..100).')
 })
 
 export const adminListOrdersResponseOneTotalMultipleOf = 1;
@@ -3366,7 +3500,7 @@ export const AdminUpdateOrderStatusBody = zod.object({
   "courierServiceId": zod.string().nullish(),
   "trackingNumber": zod.string().max(adminUpdateOrderStatusBodyTrackingNumberMax).nullish(),
   "adminNote": zod.string().max(adminUpdateOrderStatusBodyAdminNoteMax).nullish()
-})
+}).strict()
 
 export const adminUpdateOrderStatusResponseOneTotalMultipleOf = 1;
 
@@ -3457,7 +3591,7 @@ export const AdminBulkUpdateOrdersBody = zod.object({
   "orderIds": zod.array(zod.string()).min(1),
   "status": zod.enum(['confirmed', 'shipped', 'delivered', 'cancelled']).optional(),
   "paymentStatus": zod.enum(['unpaid', 'pending', 'paid', 'refunded', 'failed']).optional()
-})
+}).strict()
 
 export const adminBulkUpdateOrdersResponseOneTotalMultipleOf = 1;
 
@@ -3716,6 +3850,7 @@ export const getAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
 export const getAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf = 1;
 
 export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
+export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMax = 100000000;
 export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf = 1;
 
 
@@ -3725,7 +3860,7 @@ export const GetAdminEducationSettingsResponse = zod.object({
   "reservePercent": zod.number().min(getAdminEducationSettingsResponseOneReservePercentMin).max(getAdminEducationSettingsResponseOneReservePercentMax).multipleOf(getAdminEducationSettingsResponseOneReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(getAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(getAdminEducationSettingsResponseOneOnlineRefundDaysMax).multipleOf(getAdminEducationSettingsResponseOneOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(getAdminEducationSettingsResponseOneLiveAppealDaysMin).max(getAdminEducationSettingsResponseOneLiveAppealDaysMax).multipleOf(getAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin).multipleOf(getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
+  "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(getAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(getAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -3749,6 +3884,7 @@ export const updateAdminEducationSettingsBodyLiveAppealDaysMax = 365;
 export const updateAdminEducationSettingsBodyLiveAppealDaysMultipleOf = 1;
 
 export const updateAdminEducationSettingsBodyFeaturedCoursePriceMin = 0;
+export const updateAdminEducationSettingsBodyFeaturedCoursePriceMax = 100000000;
 export const updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf = 1;
 
 
@@ -3758,8 +3894,8 @@ export const UpdateAdminEducationSettingsBody = zod.object({
   "reservePercent": zod.number().min(updateAdminEducationSettingsBodyReservePercentMin).max(updateAdminEducationSettingsBodyReservePercentMax).multipleOf(updateAdminEducationSettingsBodyReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsBodyOnlineRefundDaysMin).max(updateAdminEducationSettingsBodyOnlineRefundDaysMax).multipleOf(updateAdminEducationSettingsBodyOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(updateAdminEducationSettingsBodyLiveAppealDaysMin).max(updateAdminEducationSettingsBodyLiveAppealDaysMax).multipleOf(updateAdminEducationSettingsBodyLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin).multipleOf(updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf)
-})
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin).max(updateAdminEducationSettingsBodyFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsBodyFeaturedCoursePriceMultipleOf)
+}).strict()
 
 export const updateAdminEducationSettingsResponseOneCommissionPercentMin = 0;
 export const updateAdminEducationSettingsResponseOneCommissionPercentMax = 100;
@@ -3778,6 +3914,7 @@ export const updateAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
 export const updateAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf = 1;
 
 export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
+export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax = 100000000;
 export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf = 1;
 
 
@@ -3787,7 +3924,7 @@ export const UpdateAdminEducationSettingsResponse = zod.object({
   "reservePercent": zod.number().min(updateAdminEducationSettingsResponseOneReservePercentMin).max(updateAdminEducationSettingsResponseOneReservePercentMax).multipleOf(updateAdminEducationSettingsResponseOneReservePercentMultipleOf),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(updateAdminEducationSettingsResponseOneOnlineRefundDaysMax).multipleOf(updateAdminEducationSettingsResponseOneOnlineRefundDaysMultipleOf),
   "liveAppealDays": zod.number().min(updateAdminEducationSettingsResponseOneLiveAppealDaysMin).max(updateAdminEducationSettingsResponseOneLiveAppealDaysMax).multipleOf(updateAdminEducationSettingsResponseOneLiveAppealDaysMultipleOf),
-  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin).multipleOf(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin).max(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMax).multipleOf(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMultipleOf)
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -3812,17 +3949,12 @@ export const UpdateAdminEducationCenterParams = zod.object({
   "centerId": zod.coerce.string()
 })
 
-export const updateAdminEducationCenterBodyVerificationNoteMax = 1000;
-
-export const updateAdminEducationCenterBodyPlanIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
-
-
 export const UpdateAdminEducationCenterBody = zod.object({
   "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']).optional(),
-  "verificationNote": zod.string().max(updateAdminEducationCenterBodyVerificationNoteMax).nullish(),
+  "verificationNote": zod.string().nullish(),
   "subscriptionStatus": zod.enum(['trial', 'active', 'past_due', 'cancelled', 'suspended', 'free_via_loyalty']).optional(),
-  "planId": zod.string().regex(updateAdminEducationCenterBodyPlanIdRegExp).optional()
-})
+  "planId": zod.string().optional()
+}).strict()
 
 export const UpdateAdminEducationCenterResponse = zod.object({
   "id": zod.string(),
@@ -3891,7 +4023,7 @@ export const CreateAdminEducationPayoutBody = zod.object({
   "includeReserve": zod.boolean().optional(),
   "reference": zod.string().optional(),
   "note": zod.string().optional()
-})
+}).strict()
 
 export const CreateAdminEducationPayoutResponse = zod.object({
   "id": zod.string(),
@@ -3913,7 +4045,7 @@ export const resolveAdminEducationDisputeBodyResolutionNoteMax = 4000;
 export const ResolveAdminEducationDisputeBody = zod.object({
   "action": zod.enum(['refund', 'release', 'reject']),
   "resolutionNote": zod.string().min(1).max(resolveAdminEducationDisputeBodyResolutionNoteMax)
-})
+}).strict()
 
 export const ResolveAdminEducationDisputeResponse = zod.object({
   "id": zod.string(),
@@ -3938,6 +4070,11 @@ export const listCoursesQueryMaxPriceMin = 0;
 export const listCoursesQueryMinRatingMin = 0;
 export const listCoursesQueryMinRatingMax = 5;
 
+export const listCoursesQueryPageDefault = 1;
+
+export const listCoursesQueryPageSizeDefault = 24;
+export const listCoursesQueryPageSizeMax = 100;
+
 
 
 export const ListCoursesQueryParams = zod.object({
@@ -3950,7 +4087,9 @@ export const ListCoursesQueryParams = zod.object({
   "maxPrice": zod.coerce.number().min(listCoursesQueryMaxPriceMin).optional(),
   "startDate": zod.coerce.string().optional(),
   "minRating": zod.coerce.number().min(listCoursesQueryMinRatingMin).max(listCoursesQueryMinRatingMax).optional(),
-  "mine": zod.coerce.boolean().optional()
+  "mine": zod.coerce.boolean().optional(),
+  "page": zod.coerce.number().int().min(1).default(listCoursesQueryPageDefault).describe('1-based page index for stable createdAt desc, id desc ordering.'),
+  "pageSize": zod.coerce.number().int().min(1).max(listCoursesQueryPageSizeMax).default(listCoursesQueryPageSizeDefault).describe('Number of courses per page.')
 })
 
 export const ListCoursesResponseItem = zod.object({
@@ -5157,6 +5296,18 @@ export const DeleteEducationSessionResponse = zod.void()
 /**
  * @summary List business course enrollments
  */
+export const listEnrollmentsQueryPageDefault = 1;
+
+export const listEnrollmentsQueryPageSizeDefault = 50;
+export const listEnrollmentsQueryPageSizeMax = 100;
+
+
+
+export const ListEnrollmentsQueryParams = zod.object({
+  "page": zod.coerce.number().int().min(1).default(listEnrollmentsQueryPageDefault).describe('1-based page number for stable pagination (purchasedAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(listEnrollmentsQueryPageSizeMax).default(listEnrollmentsQueryPageSizeDefault).describe('Number of rows per page (1..100).')
+})
+
 export const ListEnrollmentsResponseItem = zod.object({
   "id": zod.string(),
   "courseId": zod.string(),
@@ -6043,6 +6194,11 @@ export const listPublicEducationCoursesQueryMaxPriceMin = 0;
 
 export const listPublicEducationCoursesQueryMaxDurationDaysMultipleOf = 1;
 
+export const listPublicEducationCoursesQueryPageDefault = 1;
+
+export const listPublicEducationCoursesQueryPageSizeDefault = 24;
+export const listPublicEducationCoursesQueryPageSizeMax = 100;
+
 
 
 export const ListPublicEducationCoursesQueryParams = zod.object({
@@ -6053,7 +6209,9 @@ export const ListPublicEducationCoursesQueryParams = zod.object({
   "minPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMinPriceMin).optional(),
   "maxPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMaxPriceMin).optional(),
   "startDate": zod.date().optional().describe('Include courses that start on or after this date.'),
-  "maxDurationDays": zod.coerce.number().min(1).multipleOf(listPublicEducationCoursesQueryMaxDurationDaysMultipleOf).optional().describe('Include courses whose published daily program has at most this many days.')
+  "maxDurationDays": zod.coerce.number().min(1).multipleOf(listPublicEducationCoursesQueryMaxDurationDaysMultipleOf).optional().describe('Include courses whose published daily program has at most this many days.'),
+  "page": zod.coerce.number().int().min(1).default(listPublicEducationCoursesQueryPageDefault).describe('1-based page index for stable createdAt desc, id desc ordering.'),
+  "pageSize": zod.coerce.number().int().min(1).max(listPublicEducationCoursesQueryPageSizeMax).default(listPublicEducationCoursesQueryPageSizeDefault).describe('Number of courses per page.')
 })
 
 export const listPublicEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
@@ -6389,12 +6547,11 @@ export const ListPublicEducationCategoriesResponse = zod.array(ListPublicEducati
  * @summary List popular education courses from verified centers
  */
 export const listPopularEducationCoursesQueryLimitMax = 12;
-export const listPopularEducationCoursesQueryLimitMultipleOf = 1;
 
 
 
 export const ListPopularEducationCoursesQueryParams = zod.object({
-  "limit": zod.coerce.number().min(1).max(listPopularEducationCoursesQueryLimitMax).multipleOf(listPopularEducationCoursesQueryLimitMultipleOf).optional()
+  "limit": zod.coerce.number().int().min(1).max(listPopularEducationCoursesQueryLimitMax).optional()
 })
 
 export const listPopularEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
@@ -6806,12 +6963,21 @@ export const GetAdminSummaryResponse = zod.object({
 /**
  * @summary Searchable/filterable salon list with subscription and loyalty details
  */
+export const adminListSalonsQueryPageDefault = 1;
+
+export const adminListSalonsQueryPageSizeDefault = 50;
+export const adminListSalonsQueryPageSizeMax = 100;
+
+
+
 export const AdminListSalonsQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "city": zod.coerce.string().optional(),
   "active": zod.coerce.boolean().optional(),
   "featured": zod.coerce.boolean().optional(),
-  "subscriptionStatus": zod.coerce.string().optional()
+  "subscriptionStatus": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListSalonsQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListSalonsQueryPageSizeMax).default(adminListSalonsQueryPageSizeDefault).describe('Number of rows per page (1..100).')
 })
 
 export const AdminListSalonsResponseItem = zod.object({
@@ -6904,7 +7070,7 @@ export const AdminUpdateSalonBody = zod.object({
   "isVerified": zod.boolean().optional(),
   "topSalon": zod.boolean().optional(),
   "videoUrl": zod.string().nullish()
-})
+}).strict()
 
 export const AdminUpdateSalonResponse = zod.object({
   "id": zod.string(),
@@ -6929,10 +7095,19 @@ export const AdminUpdateSalonResponse = zod.object({
 /**
  * @summary Searchable/filterable user list with role and active status
  */
+export const adminListUsersQueryPageDefault = 1;
+
+export const adminListUsersQueryPageSizeDefault = 50;
+export const adminListUsersQueryPageSizeMax = 100;
+
+
+
 export const AdminListUsersQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
-  "active": zod.coerce.boolean().optional()
+  "active": zod.coerce.boolean().optional(),
+  "page": zod.coerce.number().int().min(1).default(adminListUsersQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
+  "pageSize": zod.coerce.number().int().min(1).max(adminListUsersQueryPageSizeMax).default(adminListUsersQueryPageSizeDefault).describe('Number of rows per page (1..100).')
 })
 
 export const AdminListUsersResponseItem = zod.object({
@@ -6961,7 +7136,7 @@ export const AdminUpdateUserParams = zod.object({
 export const AdminUpdateUserBody = zod.object({
   "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateUserResponse = zod.object({
   "id": zod.string(),
@@ -6998,15 +7173,18 @@ export const AdminListLoyaltyTiersResponse = zod.array(AdminListLoyaltyTiersResp
 /**
  * @summary Create a loyalty tier
  */
-export const adminCreateLoyaltyTierBodyNameMax = 120;
 
 
-export const adminCreateLoyaltyTierBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateLoyaltyTierBodySortOrderMax = 999;
+export const adminCreateLoyaltyTierBodyNameRegExp = new RegExp('.*\\S.*');
+export const adminCreateLoyaltyTierBodySortOrderMin = 0;
+export const adminCreateLoyaltyTierBodySortOrderMax = 100000;
 export const adminCreateLoyaltyTierBodySortOrderMultipleOf = 1;
 
 export const adminCreateLoyaltyTierBodySpendThresholdMin = 0;
+export const adminCreateLoyaltyTierBodySpendThresholdMax = 1000000000;
 export const adminCreateLoyaltyTierBodySpendThresholdMultipleOf = 1;
+
+export const adminCreateLoyaltyTierBodyPeriodMax = 40;
 
 export const adminCreateLoyaltyTierBodySubscriptionDiscountPercentMin = 0;
 export const adminCreateLoyaltyTierBodySubscriptionDiscountPercentMax = 100;
@@ -7018,20 +7196,19 @@ export const adminCreateLoyaltyTierBodyProductDiscountPercentMultipleOf = 1;
 
 
 
-
 export const AdminCreateLoyaltyTierBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateLoyaltyTierBodyNameMax).regex(adminCreateLoyaltyTierBodyNameRegExp),
-  "sortOrder": zod.number().min(1).max(adminCreateLoyaltyTierBodySortOrderMax).multipleOf(adminCreateLoyaltyTierBodySortOrderMultipleOf),
-  "spendThreshold": zod.number().min(adminCreateLoyaltyTierBodySpendThresholdMin).multipleOf(adminCreateLoyaltyTierBodySpendThresholdMultipleOf),
-  "period": zod.enum(['monthly', 'quarterly', 'yearly']),
+  "name": zod.string().min(1).regex(adminCreateLoyaltyTierBodyNameRegExp),
+  "sortOrder": zod.number().min(adminCreateLoyaltyTierBodySortOrderMin).max(adminCreateLoyaltyTierBodySortOrderMax).multipleOf(adminCreateLoyaltyTierBodySortOrderMultipleOf),
+  "spendThreshold": zod.number().min(adminCreateLoyaltyTierBodySpendThresholdMin).max(adminCreateLoyaltyTierBodySpendThresholdMax).multipleOf(adminCreateLoyaltyTierBodySpendThresholdMultipleOf),
+  "period": zod.string().min(1).max(adminCreateLoyaltyTierBodyPeriodMax),
   "subscriptionDiscountPercent": zod.number().min(adminCreateLoyaltyTierBodySubscriptionDiscountPercentMin).max(adminCreateLoyaltyTierBodySubscriptionDiscountPercentMax).multipleOf(adminCreateLoyaltyTierBodySubscriptionDiscountPercentMultipleOf),
   "productDiscountPercent": zod.number().min(adminCreateLoyaltyTierBodyProductDiscountPercentMin).max(adminCreateLoyaltyTierBodyProductDiscountPercentMax).multipleOf(adminCreateLoyaltyTierBodyProductDiscountPercentMultipleOf),
   "freeSubscription": zod.boolean(),
   "premiumListing": zod.boolean(),
   "freeShipping": zod.boolean(),
-  "benefits": zod.array(zod.string().min(1)).optional(),
+  "benefits": zod.array(zod.string()).optional(),
   "active": zod.boolean()
-})
+}).strict()
 
 export const AdminCreateLoyaltyTierResponse = zod.object({
   "id": zod.string(),
@@ -7059,15 +7236,18 @@ export const AdminUpdateLoyaltyTierParams = zod.object({
   "tierId": zod.coerce.string().regex(adminUpdateLoyaltyTierPathTierIdRegExp)
 })
 
-export const adminUpdateLoyaltyTierBodyNameMax = 120;
 
 
-export const adminUpdateLoyaltyTierBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateLoyaltyTierBodySortOrderMax = 999;
+export const adminUpdateLoyaltyTierBodyNameRegExp = new RegExp('.*\\S.*');
+export const adminUpdateLoyaltyTierBodySortOrderMin = 0;
+export const adminUpdateLoyaltyTierBodySortOrderMax = 100000;
 export const adminUpdateLoyaltyTierBodySortOrderMultipleOf = 1;
 
 export const adminUpdateLoyaltyTierBodySpendThresholdMin = 0;
+export const adminUpdateLoyaltyTierBodySpendThresholdMax = 1000000000;
 export const adminUpdateLoyaltyTierBodySpendThresholdMultipleOf = 1;
+
+export const adminUpdateLoyaltyTierBodyPeriodMax = 40;
 
 export const adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMin = 0;
 export const adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMax = 100;
@@ -7079,20 +7259,19 @@ export const adminUpdateLoyaltyTierBodyProductDiscountPercentMultipleOf = 1;
 
 
 
-
 export const AdminUpdateLoyaltyTierBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateLoyaltyTierBodyNameMax).regex(adminUpdateLoyaltyTierBodyNameRegExp).optional(),
-  "sortOrder": zod.number().min(1).max(adminUpdateLoyaltyTierBodySortOrderMax).multipleOf(adminUpdateLoyaltyTierBodySortOrderMultipleOf).optional(),
-  "spendThreshold": zod.number().min(adminUpdateLoyaltyTierBodySpendThresholdMin).multipleOf(adminUpdateLoyaltyTierBodySpendThresholdMultipleOf).optional(),
-  "period": zod.enum(['monthly', 'quarterly', 'yearly']).optional(),
+  "name": zod.string().min(1).regex(adminUpdateLoyaltyTierBodyNameRegExp).optional(),
+  "sortOrder": zod.number().min(adminUpdateLoyaltyTierBodySortOrderMin).max(adminUpdateLoyaltyTierBodySortOrderMax).multipleOf(adminUpdateLoyaltyTierBodySortOrderMultipleOf).optional(),
+  "spendThreshold": zod.number().min(adminUpdateLoyaltyTierBodySpendThresholdMin).max(adminUpdateLoyaltyTierBodySpendThresholdMax).multipleOf(adminUpdateLoyaltyTierBodySpendThresholdMultipleOf).optional(),
+  "period": zod.string().min(1).max(adminUpdateLoyaltyTierBodyPeriodMax).optional(),
   "subscriptionDiscountPercent": zod.number().min(adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMin).max(adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMax).multipleOf(adminUpdateLoyaltyTierBodySubscriptionDiscountPercentMultipleOf).optional(),
   "productDiscountPercent": zod.number().min(adminUpdateLoyaltyTierBodyProductDiscountPercentMin).max(adminUpdateLoyaltyTierBodyProductDiscountPercentMax).multipleOf(adminUpdateLoyaltyTierBodyProductDiscountPercentMultipleOf).optional(),
   "freeSubscription": zod.boolean().optional(),
   "premiumListing": zod.boolean().optional(),
   "freeShipping": zod.boolean().optional(),
-  "benefits": zod.array(zod.string().min(1)).optional(),
+  "benefits": zod.array(zod.string()).optional(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateLoyaltyTierResponse = zod.object({
   "id": zod.string(),
@@ -7154,31 +7333,30 @@ export const AdminListSubscriptionPlansResponse = zod.array(AdminListSubscriptio
 /**
  * @summary Create a subscription plan
  */
-export const adminCreateSubscriptionPlanBodyNameMax = 120;
 
 
-export const adminCreateSubscriptionPlanBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminCreateSubscriptionPlanBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateSubscriptionPlanBodyPriceMin = 0;
+export const adminCreateSubscriptionPlanBodyPriceMax = 100000000;
 export const adminCreateSubscriptionPlanBodyPriceMultipleOf = 1;
 
 export const adminCreateSubscriptionPlanBodyTrialDaysMin = 0;
-export const adminCreateSubscriptionPlanBodyTrialDaysMax = 365;
+export const adminCreateSubscriptionPlanBodyTrialDaysMax = 3650;
 export const adminCreateSubscriptionPlanBodyTrialDaysMultipleOf = 1;
 
-
-export const adminCreateSubscriptionPlanBodyLimitsMinOne = -1;
+export const adminCreateSubscriptionPlanBodyLimitsMinOne = 0;
 export const adminCreateSubscriptionPlanBodyLimitsMultipleOfOne = 1;
 
 
 
 export const AdminCreateSubscriptionPlanBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateSubscriptionPlanBodyNameMax).regex(adminCreateSubscriptionPlanBodyNameRegExp),
-  "price": zod.number().min(adminCreateSubscriptionPlanBodyPriceMin).multipleOf(adminCreateSubscriptionPlanBodyPriceMultipleOf),
+  "name": zod.string().min(1).regex(adminCreateSubscriptionPlanBodyNameRegExp),
+  "price": zod.number().min(adminCreateSubscriptionPlanBodyPriceMin).max(adminCreateSubscriptionPlanBodyPriceMax).multipleOf(adminCreateSubscriptionPlanBodyPriceMultipleOf),
   "trialDays": zod.number().min(adminCreateSubscriptionPlanBodyTrialDaysMin).max(adminCreateSubscriptionPlanBodyTrialDaysMax).multipleOf(adminCreateSubscriptionPlanBodyTrialDaysMultipleOf),
-  "features": zod.array(zod.string().min(1)).optional(),
-  "limits": zod.record(zod.string(), zod.number().min(adminCreateSubscriptionPlanBodyLimitsMinOne).multipleOf(adminCreateSubscriptionPlanBodyLimitsMultipleOfOne)).optional(),
+  "features": zod.array(zod.string()),
+  "limits": zod.record(zod.string(), zod.number().min(adminCreateSubscriptionPlanBodyLimitsMinOne).multipleOf(adminCreateSubscriptionPlanBodyLimitsMultipleOfOne)),
   "active": zod.boolean()
-})
+}).strict()
 
 export const AdminCreateSubscriptionPlanResponse = zod.object({
   "id": zod.string(),
@@ -7201,31 +7379,30 @@ export const AdminUpdateSubscriptionPlanParams = zod.object({
   "planId": zod.coerce.string().regex(adminUpdateSubscriptionPlanPathPlanIdRegExp)
 })
 
-export const adminUpdateSubscriptionPlanBodyNameMax = 120;
 
 
-export const adminUpdateSubscriptionPlanBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminUpdateSubscriptionPlanBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminUpdateSubscriptionPlanBodyPriceMin = 0;
+export const adminUpdateSubscriptionPlanBodyPriceMax = 100000000;
 export const adminUpdateSubscriptionPlanBodyPriceMultipleOf = 1;
 
 export const adminUpdateSubscriptionPlanBodyTrialDaysMin = 0;
-export const adminUpdateSubscriptionPlanBodyTrialDaysMax = 365;
+export const adminUpdateSubscriptionPlanBodyTrialDaysMax = 3650;
 export const adminUpdateSubscriptionPlanBodyTrialDaysMultipleOf = 1;
 
-
-export const adminUpdateSubscriptionPlanBodyLimitsMinOne = -1;
+export const adminUpdateSubscriptionPlanBodyLimitsMinOne = 0;
 export const adminUpdateSubscriptionPlanBodyLimitsMultipleOfOne = 1;
 
 
 
 export const AdminUpdateSubscriptionPlanBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateSubscriptionPlanBodyNameMax).regex(adminUpdateSubscriptionPlanBodyNameRegExp).optional(),
-  "price": zod.number().min(adminUpdateSubscriptionPlanBodyPriceMin).multipleOf(adminUpdateSubscriptionPlanBodyPriceMultipleOf).optional(),
+  "name": zod.string().min(1).regex(adminUpdateSubscriptionPlanBodyNameRegExp).optional(),
+  "price": zod.number().min(adminUpdateSubscriptionPlanBodyPriceMin).max(adminUpdateSubscriptionPlanBodyPriceMax).multipleOf(adminUpdateSubscriptionPlanBodyPriceMultipleOf).optional(),
   "trialDays": zod.number().min(adminUpdateSubscriptionPlanBodyTrialDaysMin).max(adminUpdateSubscriptionPlanBodyTrialDaysMax).multipleOf(adminUpdateSubscriptionPlanBodyTrialDaysMultipleOf).optional(),
-  "features": zod.array(zod.string().min(1)).optional(),
+  "features": zod.array(zod.string()).optional(),
   "limits": zod.record(zod.string(), zod.number().min(adminUpdateSubscriptionPlanBodyLimitsMinOne).multipleOf(adminUpdateSubscriptionPlanBodyLimitsMultipleOfOne)).optional(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateSubscriptionPlanResponse = zod.object({
   "id": zod.string(),
@@ -7307,8 +7484,8 @@ export const AdminUpdateReviewParams = zod.object({
 })
 
 export const AdminUpdateReviewBody = zod.object({
-  "visible": zod.boolean()
-})
+  "visible": zod.boolean().optional()
+}).strict()
 
 export const adminUpdateReviewResponseRatingMax = 5;
 
@@ -7428,44 +7605,28 @@ export const AdminListProductsResponse = zod.object({
 /**
  * @summary Create a B2B product
  */
-export const adminCreateProductBodyNameMax = 240;
 
 
-export const adminCreateProductBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateProductBodyCategoryNameMax = 120;
+export const adminCreateProductBodyNameRegExp = new RegExp('.*\\S.*');
 
 
-export const adminCreateProductBodyCategoryNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateProductBodySubcategoryNameMax = 120;
 
-export const adminCreateProductBodyBrandMax = 120;
-
-export const adminCreateProductBodyDescriptionMax = 10000;
-
-
-export const adminCreateProductBodyDescriptionRegExp = new RegExp('^\\S[\\s\\S]*\\S$|^\\S$');
-export const adminCreateProductBodyShortDescriptionMax = 500;
-
-export const adminCreateProductBodyImageUrlMax = 2000;
-
-export const adminCreateProductBodyImagesItemMax = 2000;
-
-export const adminCreateProductBodyImagesMax = 12;
-
+export const adminCreateProductBodyPriceMin = 0;
+export const adminCreateProductBodyPriceMax = 100000000;
 export const adminCreateProductBodyPriceMultipleOf = 1;
 
 export const adminCreateProductBodyDiscountPriceMin = 0;
+export const adminCreateProductBodyDiscountPriceMax = 100000000;
 export const adminCreateProductBodyDiscountPriceMultipleOf = 1;
 
 export const adminCreateProductBodyStockMin = 0;
+export const adminCreateProductBodyStockMax = 100000000;
 export const adminCreateProductBodyStockMultipleOf = 1;
 
-export const adminCreateProductBodySkuMax = 100;
 
 
-export const adminCreateProductBodySkuRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateProductBodyUnitMax = 40;
-
+export const adminCreateProductBodyWeightGramsMin = 0;
+export const adminCreateProductBodyWeightGramsMax = 100000000;
 export const adminCreateProductBodyWeightGramsMultipleOf = 1;
 
 export const adminCreateProductBodyVariantsItemPriceAdjustMultipleOf = 1;
@@ -7477,26 +7638,24 @@ export const adminCreateProductBodyVariantsItemStockMin = 0;
 export const adminCreateProductBodyVariantsItemStockMultipleOf = 1;
 
 
-export const adminCreateProductBodyVariantTypeMax = 80;
-
 
 
 export const AdminCreateProductBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateProductBodyNameMax).regex(adminCreateProductBodyNameRegExp),
+  "name": zod.string().min(1).regex(adminCreateProductBodyNameRegExp),
   "categoryId": zod.string().nullish(),
-  "categoryName": zod.string().min(1).max(adminCreateProductBodyCategoryNameMax).regex(adminCreateProductBodyCategoryNameRegExp),
-  "subcategoryName": zod.string().max(adminCreateProductBodySubcategoryNameMax).nullish(),
-  "brand": zod.string().max(adminCreateProductBodyBrandMax).nullish(),
-  "description": zod.string().min(1).max(adminCreateProductBodyDescriptionMax).regex(adminCreateProductBodyDescriptionRegExp),
-  "shortDescription": zod.string().max(adminCreateProductBodyShortDescriptionMax).nullish(),
-  "imageUrl": zod.string().min(1).max(adminCreateProductBodyImageUrlMax),
-  "images": zod.array(zod.string().min(1).max(adminCreateProductBodyImagesItemMax)).max(adminCreateProductBodyImagesMax).optional(),
-  "price": zod.number().min(1).multipleOf(adminCreateProductBodyPriceMultipleOf),
-  "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
-  "stock": zod.number().min(adminCreateProductBodyStockMin).multipleOf(adminCreateProductBodyStockMultipleOf),
-  "sku": zod.string().min(1).max(adminCreateProductBodySkuMax).regex(adminCreateProductBodySkuRegExp),
-  "unit": zod.string().min(1).max(adminCreateProductBodyUnitMax),
-  "weightGrams": zod.number().min(1).multipleOf(adminCreateProductBodyWeightGramsMultipleOf),
+  "categoryName": zod.string().min(1),
+  "subcategoryName": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string().min(1),
+  "shortDescription": zod.string().nullish(),
+  "imageUrl": zod.string().min(1),
+  "images": zod.array(zod.string()).optional(),
+  "price": zod.number().min(adminCreateProductBodyPriceMin).max(adminCreateProductBodyPriceMax).multipleOf(adminCreateProductBodyPriceMultipleOf),
+  "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).max(adminCreateProductBodyDiscountPriceMax).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
+  "stock": zod.number().min(adminCreateProductBodyStockMin).max(adminCreateProductBodyStockMax).multipleOf(adminCreateProductBodyStockMultipleOf),
+  "sku": zod.string().min(1),
+  "unit": zod.string().min(1),
+  "weightGrams": zod.number().min(adminCreateProductBodyWeightGramsMin).max(adminCreateProductBodyWeightGramsMax).multipleOf(adminCreateProductBodyWeightGramsMultipleOf),
   "isNew": zod.boolean().optional(),
   "isBestseller": zod.boolean().optional(),
   "variants": zod.array(zod.object({
@@ -7507,9 +7666,9 @@ export const AdminCreateProductBody = zod.object({
   "stock": zod.number().min(adminCreateProductBodyVariantsItemStockMin).multipleOf(adminCreateProductBodyVariantsItemStockMultipleOf).optional(),
   "sku": zod.string().min(1).optional()
 })).nullish(),
-  "variantType": zod.string().max(adminCreateProductBodyVariantTypeMax).nullish(),
+  "variantType": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const adminCreateProductResponsePriceMultipleOf = 1;
 
@@ -7579,7 +7738,7 @@ export const AdminBulkUpdateProductsBody = zod.object({
   "action": zod.enum(['activate', 'deactivate', 'set-category', 'adjust-price-percent', 'set-new', 'unset-new']),
   "categoryId": zod.string().nullish(),
   "pricePercent": zod.number().min(adminBulkUpdateProductsBodyPricePercentMin).max(adminBulkUpdateProductsBodyPricePercentMax).optional()
-})
+}).strict()
 
 export const AdminBulkUpdateProductsResponse = zod.object({
   "updated": zod.number()
@@ -7596,44 +7755,28 @@ export const AdminUpdateProductParams = zod.object({
   "productId": zod.coerce.string().regex(adminUpdateProductPathProductIdRegExp)
 })
 
-export const adminUpdateProductBodyNameMax = 240;
 
 
-export const adminUpdateProductBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateProductBodyCategoryNameMax = 120;
+export const adminUpdateProductBodyNameRegExp = new RegExp('.*\\S.*');
 
 
-export const adminUpdateProductBodyCategoryNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateProductBodySubcategoryNameMax = 120;
 
-export const adminUpdateProductBodyBrandMax = 120;
-
-export const adminUpdateProductBodyDescriptionMax = 10000;
-
-
-export const adminUpdateProductBodyDescriptionRegExp = new RegExp('^\\S[\\s\\S]*\\S$|^\\S$');
-export const adminUpdateProductBodyShortDescriptionMax = 500;
-
-export const adminUpdateProductBodyImageUrlMax = 2000;
-
-export const adminUpdateProductBodyImagesItemMax = 2000;
-
-export const adminUpdateProductBodyImagesMax = 12;
-
+export const adminUpdateProductBodyPriceMin = 0;
+export const adminUpdateProductBodyPriceMax = 100000000;
 export const adminUpdateProductBodyPriceMultipleOf = 1;
 
 export const adminUpdateProductBodyDiscountPriceMin = 0;
+export const adminUpdateProductBodyDiscountPriceMax = 100000000;
 export const adminUpdateProductBodyDiscountPriceMultipleOf = 1;
 
 export const adminUpdateProductBodyStockMin = 0;
+export const adminUpdateProductBodyStockMax = 100000000;
 export const adminUpdateProductBodyStockMultipleOf = 1;
 
-export const adminUpdateProductBodySkuMax = 100;
 
 
-export const adminUpdateProductBodySkuRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateProductBodyUnitMax = 40;
-
+export const adminUpdateProductBodyWeightGramsMin = 0;
+export const adminUpdateProductBodyWeightGramsMax = 100000000;
 export const adminUpdateProductBodyWeightGramsMultipleOf = 1;
 
 export const adminUpdateProductBodyVariantsItemPriceAdjustMultipleOf = 1;
@@ -7645,26 +7788,24 @@ export const adminUpdateProductBodyVariantsItemStockMin = 0;
 export const adminUpdateProductBodyVariantsItemStockMultipleOf = 1;
 
 
-export const adminUpdateProductBodyVariantTypeMax = 80;
-
 
 
 export const AdminUpdateProductBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateProductBodyNameMax).regex(adminUpdateProductBodyNameRegExp).optional(),
+  "name": zod.string().min(1).regex(adminUpdateProductBodyNameRegExp).optional(),
   "categoryId": zod.string().nullish(),
-  "categoryName": zod.string().min(1).max(adminUpdateProductBodyCategoryNameMax).regex(adminUpdateProductBodyCategoryNameRegExp).optional(),
-  "subcategoryName": zod.string().max(adminUpdateProductBodySubcategoryNameMax).nullish(),
-  "brand": zod.string().max(adminUpdateProductBodyBrandMax).nullish(),
-  "description": zod.string().min(1).max(adminUpdateProductBodyDescriptionMax).regex(adminUpdateProductBodyDescriptionRegExp).optional(),
-  "shortDescription": zod.string().max(adminUpdateProductBodyShortDescriptionMax).nullish(),
-  "imageUrl": zod.string().min(1).max(adminUpdateProductBodyImageUrlMax).optional(),
-  "images": zod.array(zod.string().min(1).max(adminUpdateProductBodyImagesItemMax)).max(adminUpdateProductBodyImagesMax).optional(),
-  "price": zod.number().min(1).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
-  "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
-  "stock": zod.number().min(adminUpdateProductBodyStockMin).multipleOf(adminUpdateProductBodyStockMultipleOf).optional(),
-  "sku": zod.string().min(1).max(adminUpdateProductBodySkuMax).regex(adminUpdateProductBodySkuRegExp).optional(),
-  "unit": zod.string().min(1).max(adminUpdateProductBodyUnitMax).optional(),
-  "weightGrams": zod.number().min(1).multipleOf(adminUpdateProductBodyWeightGramsMultipleOf).optional(),
+  "categoryName": zod.string().min(1).optional(),
+  "subcategoryName": zod.string().nullish(),
+  "brand": zod.string().nullish(),
+  "description": zod.string().min(1).optional(),
+  "shortDescription": zod.string().nullish(),
+  "imageUrl": zod.string().min(1).optional(),
+  "images": zod.array(zod.string()).optional(),
+  "price": zod.number().min(adminUpdateProductBodyPriceMin).max(adminUpdateProductBodyPriceMax).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
+  "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).max(adminUpdateProductBodyDiscountPriceMax).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
+  "stock": zod.number().min(adminUpdateProductBodyStockMin).max(adminUpdateProductBodyStockMax).multipleOf(adminUpdateProductBodyStockMultipleOf).optional(),
+  "sku": zod.string().min(1).optional(),
+  "unit": zod.string().min(1).optional(),
+  "weightGrams": zod.number().min(adminUpdateProductBodyWeightGramsMin).max(adminUpdateProductBodyWeightGramsMax).multipleOf(adminUpdateProductBodyWeightGramsMultipleOf).optional(),
   "isNew": zod.boolean().optional(),
   "isBestseller": zod.boolean().optional(),
   "variants": zod.array(zod.object({
@@ -7675,9 +7816,9 @@ export const AdminUpdateProductBody = zod.object({
   "stock": zod.number().min(adminUpdateProductBodyVariantsItemStockMin).multipleOf(adminUpdateProductBodyVariantsItemStockMultipleOf).optional(),
   "sku": zod.string().min(1).optional()
 })).nullish(),
-  "variantType": zod.string().max(adminUpdateProductBodyVariantTypeMax).nullish(),
+  "variantType": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const adminUpdateProductResponsePriceMultipleOf = 1;
 
@@ -7817,28 +7958,23 @@ export const AdminListProductCategoriesResponse = zod.array(AdminListProductCate
 /**
  * @summary Create a product category or subcategory
  */
-export const adminCreateProductCategoryBodyNameMax = 120;
 
 
-export const adminCreateProductCategoryBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminCreateProductCategoryBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateProductCategoryBodySortOrderMin = 0;
-export const adminCreateProductCategoryBodySortOrderMax = 9999;
+export const adminCreateProductCategoryBodySortOrderMax = 100000;
 export const adminCreateProductCategoryBodySortOrderMultipleOf = 1;
-
-export const adminCreateProductCategoryBodyIconMax = 10;
-
-export const adminCreateProductCategoryBodyImageUrlMax = 2000;
 
 
 
 export const AdminCreateProductCategoryBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateProductCategoryBodyNameMax).regex(adminCreateProductCategoryBodyNameRegExp),
+  "name": zod.string().min(1).regex(adminCreateProductCategoryBodyNameRegExp),
   "parentId": zod.string().nullish(),
   "sortOrder": zod.number().min(adminCreateProductCategoryBodySortOrderMin).max(adminCreateProductCategoryBodySortOrderMax).multipleOf(adminCreateProductCategoryBodySortOrderMultipleOf).optional(),
-  "icon": zod.string().max(adminCreateProductCategoryBodyIconMax).nullish(),
-  "imageUrl": zod.string().max(adminCreateProductCategoryBodyImageUrlMax).nullish(),
+  "icon": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminCreateProductCategoryResponse = zod.object({
   "id": zod.string(),
@@ -7863,28 +7999,23 @@ export const AdminUpdateProductCategoryParams = zod.object({
   "categoryId": zod.coerce.string().regex(adminUpdateProductCategoryPathCategoryIdRegExp)
 })
 
-export const adminUpdateProductCategoryBodyNameMax = 120;
 
 
-export const adminUpdateProductCategoryBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminUpdateProductCategoryBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminUpdateProductCategoryBodySortOrderMin = 0;
-export const adminUpdateProductCategoryBodySortOrderMax = 9999;
+export const adminUpdateProductCategoryBodySortOrderMax = 100000;
 export const adminUpdateProductCategoryBodySortOrderMultipleOf = 1;
-
-export const adminUpdateProductCategoryBodyIconMax = 10;
-
-export const adminUpdateProductCategoryBodyImageUrlMax = 2000;
 
 
 
 export const AdminUpdateProductCategoryBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateProductCategoryBodyNameMax).regex(adminUpdateProductCategoryBodyNameRegExp).optional(),
+  "name": zod.string().min(1).regex(adminUpdateProductCategoryBodyNameRegExp).optional(),
   "parentId": zod.string().nullish(),
   "sortOrder": zod.number().min(adminUpdateProductCategoryBodySortOrderMin).max(adminUpdateProductCategoryBodySortOrderMax).multipleOf(adminUpdateProductCategoryBodySortOrderMultipleOf).optional(),
-  "icon": zod.string().max(adminUpdateProductCategoryBodyIconMax).nullish(),
-  "imageUrl": zod.string().max(adminUpdateProductCategoryBodyImageUrlMax).nullish(),
+  "icon": zod.string().nullish(),
+  "imageUrl": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateProductCategoryResponse = zod.object({
   "id": zod.string(),
@@ -7947,7 +8078,7 @@ export const AdminRequestServiceCategoryImageUploadBody = zod.object({
   "name": zod.string().min(1).max(adminRequestServiceCategoryImageUploadBodyNameMax),
   "size": zod.number().min(1).max(adminRequestServiceCategoryImageUploadBodySizeMax),
   "contentType": zod.string().min(1).max(adminRequestServiceCategoryImageUploadBodyContentTypeMax)
-})
+}).strict()
 
 export const AdminRequestServiceCategoryImageUploadResponse = zod.void()
 
@@ -7968,7 +8099,7 @@ export const adminUpdateServiceCategoryBodyFallbackImageUrlMax = 2000;
 
 export const AdminUpdateServiceCategoryBody = zod.object({
   "fallbackImageUrl": zod.string().max(adminUpdateServiceCategoryBodyFallbackImageUrlMax).nullable()
-})
+}).strict()
 
 export const adminUpdateServiceCategoryResponseServiceCountMin = 0;
 
@@ -8031,14 +8162,15 @@ export const AdminListServiceTemplatesResponse = zod.array(AdminListServiceTempl
 export const adminCreateServiceTemplateBodyNameMax = 160;
 
 
-export const adminCreateServiceTemplateBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminCreateServiceTemplateBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminCreateServiceTemplateBodyMainCategoryMax = 120;
 
 
-export const adminCreateServiceTemplateBodyMainCategoryRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateServiceTemplateBodySubcategoryMin = 0;
+export const adminCreateServiceTemplateBodyMainCategoryRegExp = new RegExp('.*\\S.*');
 export const adminCreateServiceTemplateBodySubcategoryMax = 120;
 
+
+export const adminCreateServiceTemplateBodySubcategoryRegExp = new RegExp('.*\\S.*');
 export const adminCreateServiceTemplateBodyTypicalDurationMinutesMin = 5;
 export const adminCreateServiceTemplateBodyTypicalDurationMinutesMax = 720;
 export const adminCreateServiceTemplateBodyTypicalDurationMinutesMultipleOf = 1;
@@ -8058,13 +8190,13 @@ export const adminCreateServiceTemplateBodyDescriptionMax = 1000;
 export const AdminCreateServiceTemplateBody = zod.object({
   "name": zod.string().min(1).max(adminCreateServiceTemplateBodyNameMax).regex(adminCreateServiceTemplateBodyNameRegExp),
   "mainCategory": zod.string().min(1).max(adminCreateServiceTemplateBodyMainCategoryMax).regex(adminCreateServiceTemplateBodyMainCategoryRegExp),
-  "subcategory": zod.string().min(adminCreateServiceTemplateBodySubcategoryMin).max(adminCreateServiceTemplateBodySubcategoryMax),
+  "subcategory": zod.string().min(1).max(adminCreateServiceTemplateBodySubcategoryMax).regex(adminCreateServiceTemplateBodySubcategoryRegExp),
   "typicalDurationMinutes": zod.number().min(adminCreateServiceTemplateBodyTypicalDurationMinutesMin).max(adminCreateServiceTemplateBodyTypicalDurationMinutesMax).multipleOf(adminCreateServiceTemplateBodyTypicalDurationMinutesMultipleOf),
   "priceMin": zod.number().min(adminCreateServiceTemplateBodyPriceMinMin).max(adminCreateServiceTemplateBodyPriceMinMax).multipleOf(adminCreateServiceTemplateBodyPriceMinMultipleOf),
   "priceMax": zod.number().min(adminCreateServiceTemplateBodyPriceMaxMin).max(adminCreateServiceTemplateBodyPriceMaxMax).multipleOf(adminCreateServiceTemplateBodyPriceMaxMultipleOf),
   "description": zod.string().max(adminCreateServiceTemplateBodyDescriptionMax).nullish(),
   "active": zod.boolean()
-})
+}).strict()
 
 export const adminCreateServiceTemplateResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 export const adminCreateServiceTemplateResponseTypicalDurationMinutesMin = 5;
@@ -8101,14 +8233,15 @@ export const AdminUpdateServiceTemplateParams = zod.object({
 export const adminUpdateServiceTemplateBodyNameMax = 160;
 
 
-export const adminUpdateServiceTemplateBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
+export const adminUpdateServiceTemplateBodyNameRegExp = new RegExp('.*\\S.*');
 export const adminUpdateServiceTemplateBodyMainCategoryMax = 120;
 
 
-export const adminUpdateServiceTemplateBodyMainCategoryRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateServiceTemplateBodySubcategoryMin = 0;
+export const adminUpdateServiceTemplateBodyMainCategoryRegExp = new RegExp('.*\\S.*');
 export const adminUpdateServiceTemplateBodySubcategoryMax = 120;
 
+
+export const adminUpdateServiceTemplateBodySubcategoryRegExp = new RegExp('.*\\S.*');
 export const adminUpdateServiceTemplateBodyTypicalDurationMinutesMin = 5;
 export const adminUpdateServiceTemplateBodyTypicalDurationMinutesMax = 720;
 export const adminUpdateServiceTemplateBodyTypicalDurationMinutesMultipleOf = 1;
@@ -8128,13 +8261,13 @@ export const adminUpdateServiceTemplateBodyDescriptionMax = 1000;
 export const AdminUpdateServiceTemplateBody = zod.object({
   "name": zod.string().min(1).max(adminUpdateServiceTemplateBodyNameMax).regex(adminUpdateServiceTemplateBodyNameRegExp).optional(),
   "mainCategory": zod.string().min(1).max(adminUpdateServiceTemplateBodyMainCategoryMax).regex(adminUpdateServiceTemplateBodyMainCategoryRegExp).optional(),
-  "subcategory": zod.string().min(adminUpdateServiceTemplateBodySubcategoryMin).max(adminUpdateServiceTemplateBodySubcategoryMax).optional(),
+  "subcategory": zod.string().min(1).max(adminUpdateServiceTemplateBodySubcategoryMax).regex(adminUpdateServiceTemplateBodySubcategoryRegExp).optional(),
   "typicalDurationMinutes": zod.number().min(adminUpdateServiceTemplateBodyTypicalDurationMinutesMin).max(adminUpdateServiceTemplateBodyTypicalDurationMinutesMax).multipleOf(adminUpdateServiceTemplateBodyTypicalDurationMinutesMultipleOf).optional(),
   "priceMin": zod.number().min(adminUpdateServiceTemplateBodyPriceMinMin).max(adminUpdateServiceTemplateBodyPriceMinMax).multipleOf(adminUpdateServiceTemplateBodyPriceMinMultipleOf).optional(),
   "priceMax": zod.number().min(adminUpdateServiceTemplateBodyPriceMaxMin).max(adminUpdateServiceTemplateBodyPriceMaxMax).multipleOf(adminUpdateServiceTemplateBodyPriceMaxMultipleOf).optional(),
   "description": zod.string().max(adminUpdateServiceTemplateBodyDescriptionMax).nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const adminUpdateServiceTemplateResponseIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
 export const adminUpdateServiceTemplateResponseTypicalDurationMinutesMin = 5;
@@ -8208,22 +8341,15 @@ export const AdminListBrandsResponse = zod.array(AdminListBrandsResponseItem)
 /**
  * @summary Create a brand
  */
-export const adminCreateBrandBodyNameMax = 120;
-
-
-export const adminCreateBrandBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminCreateBrandBodyDescriptionMax = 2000;
-
-export const adminCreateBrandBodyLogoUrlMax = 2000;
 
 
 
 export const AdminCreateBrandBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateBrandBodyNameMax).regex(adminCreateBrandBodyNameRegExp),
-  "description": zod.string().max(adminCreateBrandBodyDescriptionMax).optional(),
-  "logoUrl": zod.string().max(adminCreateBrandBodyLogoUrlMax).nullish(),
+  "name": zod.string().min(1),
+  "description": zod.string().optional(),
+  "logoUrl": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminCreateBrandResponse = zod.object({
   "id": zod.string(),
@@ -8246,22 +8372,15 @@ export const AdminUpdateBrandParams = zod.object({
   "brandId": zod.coerce.string().regex(adminUpdateBrandPathBrandIdRegExp)
 })
 
-export const adminUpdateBrandBodyNameMax = 120;
-
-
-export const adminUpdateBrandBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
-export const adminUpdateBrandBodyDescriptionMax = 2000;
-
-export const adminUpdateBrandBodyLogoUrlMax = 2000;
 
 
 
 export const AdminUpdateBrandBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateBrandBodyNameMax).regex(adminUpdateBrandBodyNameRegExp).optional(),
-  "description": zod.string().max(adminUpdateBrandBodyDescriptionMax).optional(),
-  "logoUrl": zod.string().max(adminUpdateBrandBodyLogoUrlMax).nullish(),
+  "name": zod.string().min(1).optional(),
+  "description": zod.string().optional(),
+  "logoUrl": zod.string().nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateBrandResponse = zod.object({
   "id": zod.string(),
@@ -8336,8 +8455,6 @@ export const adminUpdateShippingConfigBodyTiersItemPriceMultipleOf = 1;
 
 export const adminUpdateShippingConfigBodyPersonalDeliveryNameMax = 120;
 
-
-export const adminUpdateShippingConfigBodyPersonalDeliveryNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
 export const adminUpdateShippingConfigBodyPersonalDeliveryPriceMin = 0;
 export const adminUpdateShippingConfigBodyPersonalDeliveryPriceMultipleOf = 1;
 
@@ -8353,10 +8470,10 @@ export const AdminUpdateShippingConfigBody = zod.object({
   "label": zod.string()
 })),
   "personalDeliveryEnabled": zod.boolean(),
-  "personalDeliveryName": zod.string().min(1).max(adminUpdateShippingConfigBodyPersonalDeliveryNameMax).regex(adminUpdateShippingConfigBodyPersonalDeliveryNameRegExp),
+  "personalDeliveryName": zod.string().min(1).max(adminUpdateShippingConfigBodyPersonalDeliveryNameMax),
   "personalDeliveryPrice": zod.number().min(adminUpdateShippingConfigBodyPersonalDeliveryPriceMin).multipleOf(adminUpdateShippingConfigBodyPersonalDeliveryPriceMultipleOf),
   "personalDeliveryDescription": zod.string().max(adminUpdateShippingConfigBodyPersonalDeliveryDescriptionMax)
-})
+}).strict()
 
 export const adminUpdateShippingConfigResponseTiersItemMaxWeightGramsMultipleOf = 1;
 
@@ -8403,17 +8520,15 @@ export const AdminListCourierServicesResponse = zod.array(AdminListCourierServic
  */
 export const adminCreateCourierServiceBodyNameMax = 120;
 
-
-export const adminCreateCourierServiceBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
 export const adminCreateCourierServiceBodyTrackingUrlTemplateMax = 1000;
 
 
 
 export const AdminCreateCourierServiceBody = zod.object({
-  "name": zod.string().min(1).max(adminCreateCourierServiceBodyNameMax).regex(adminCreateCourierServiceBodyNameRegExp),
+  "name": zod.string().min(1).max(adminCreateCourierServiceBodyNameMax),
   "trackingUrlTemplate": zod.string().max(adminCreateCourierServiceBodyTrackingUrlTemplateMax).nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminCreateCourierServiceResponse = zod.object({
   "id": zod.string(),
@@ -8435,17 +8550,15 @@ export const AdminUpdateCourierServiceParams = zod.object({
 
 export const adminUpdateCourierServiceBodyNameMax = 120;
 
-
-export const adminUpdateCourierServiceBodyNameRegExp = new RegExp('^\\S.*\\S$|^\\S$');
 export const adminUpdateCourierServiceBodyTrackingUrlTemplateMax = 1000;
 
 
 
 export const AdminUpdateCourierServiceBody = zod.object({
-  "name": zod.string().min(1).max(adminUpdateCourierServiceBodyNameMax).regex(adminUpdateCourierServiceBodyNameRegExp).optional(),
+  "name": zod.string().min(1).max(adminUpdateCourierServiceBodyNameMax).optional(),
   "trackingUrlTemplate": zod.string().max(adminUpdateCourierServiceBodyTrackingUrlTemplateMax).nullish(),
   "active": zod.boolean().optional()
-})
+}).strict()
 
 export const AdminUpdateCourierServiceResponse = zod.object({
   "id": zod.string(),

@@ -1,12 +1,9 @@
-# [Project name]
-
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
-
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
+- `pnpm run validate:release` — full release gate, including DB/query/cache/archive/admin validation regressions
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm run test:query-budgets` — guard set-based marketplace list endpoints against N+1 regressions
@@ -32,10 +29,11 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 ## Architecture decisions
 
 - `ADMIN` can read the full admin workspace and perform day-to-day salon/review moderation. Only `SUPER_ADMIN` can change user roles/statuses, loyalty rules, or subscription-plan definitions.
-- Add database indexes for demonstrated filter, join, ordering, and retention paths; avoid speculative indexes that only increase write cost.
-- List endpoints must load related records with set-based queries. Add or extend a fixed SQL query-budget regression whenever optimizing a list path so N+1 behavior cannot silently return.
-- Stable public catalogs use a 10-minute process-local cache-aside layer with PostgreSQL `LISTEN/NOTIFY` invalidation and request coalescing. Do not cache user-specific or authorization-sensitive responses.
-- Admin writes are validated at the OpenAPI/Zod boundary, in route-level business rules, and in the form before submission. Reject empty PATCH payloads and return structured `400`/`409` errors.
+- Every new foreign key needs an index whose leading columns cover that key. Frequently used filter, join, ordering, and retention combinations need a deliberate composite or partial index; avoid speculative indexes that only increase write cost.
+- List handlers must filter, sort, aggregate, and paginate in PostgreSQL. Do not issue database reads inside item loops or load an unbounded table merely to filter or slice it in application memory. Add or extend a fixed SQL query-budget regression for critical list paths.
+- Stable shared catalogs use the typed server cache with a 5–15 minute TTL and request coalescing. Invalidate matching tags locally and through PostgreSQL only after a successful write/commit. Never cache personalized responses, carts, notifications, or live appointment availability.
+- API processes use the single exported PostgreSQL pool. New modules must not construct their own pool.
+- Admin mutations require strict generated request validation plus business-invariant checks, transactions for multi-write changes, and structured expected 4xx/409 errors. Admin numeric fields keep raw text until explicit validation and must remain editable after a failed request.
 - Retention jobs archive eligible read/terminal records before deleting live rows, using bounded batches, an advisory lock, row locking, and one transaction per batch.
 
 ## Product
@@ -50,7 +48,11 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - Keep generated API schemas compatible with Zod v3: represent whole numbers as `type: number` plus `multipleOf: 1`, then run codegen and its duplicate-export/EOF normalization checks.
 - Catalog mutations must invalidate every affected cache namespace; PostgreSQL notifications are cross-process wakeups, while the database remains the source of truth.
-
+- Any schema/query/cache/admin mutation change must keep `pnpm run test:backend-standards` and `pnpm run validate:release` passing.
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+
+# LUMERA
+
+Marketplace for beauty and wellness customers, salons, employees, B2B commerce, and education providers.

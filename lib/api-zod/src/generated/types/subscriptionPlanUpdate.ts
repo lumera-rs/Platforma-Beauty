@@ -10,18 +10,19 @@ import type { SubscriptionPlanUpdateLimits } from './subscriptionPlanUpdateLimit
 export interface SubscriptionPlanUpdate {
   /**
      * @minLength 1
-     * @maxLength 120
-     * @pattern ^\S.*\S$|^\S$
+     * @pattern .*\S.*
      */
   name?: string;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
   price?: number;
   /**
      * @minimum 0
-     * @maximum 365
+     * @maximum 3650
      */
   trialDays?: number;
-  /** @items.minLength 1 */
   features?: string[];
   limits?: SubscriptionPlanUpdateLimits;
   active?: boolean;

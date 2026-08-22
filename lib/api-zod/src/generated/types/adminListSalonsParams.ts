@@ -12,4 +12,15 @@ city?: string;
 active?: boolean;
 featured?: boolean;
 subscriptionStatus?: string;
+/**
+ * 1-based page number for stable pagination (createdAt desc, id desc).
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of rows per page (1..100).
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

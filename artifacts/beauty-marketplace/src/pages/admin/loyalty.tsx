@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { AdminLayout } from "./layout";
 import { 
   useAdminListLoyaltyTiers, 
@@ -9,7 +9,6 @@ import {
   useGetCurrentUser
 } from "@workspace/api-client-react";
 import type { LoyaltyTier, LoyaltyTierInput } from "@workspace/api-client-react";
-import { LoyaltyTierInputPeriod } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Plus, Edit2, Trash2, Crown, ChevronRight, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 
 export default function AdminLoyalty() {
   const { data: tiers, isLoading, error } = useAdminListLoyaltyTiers();
@@ -35,7 +35,7 @@ export default function AdminLoyalty() {
     name: "",
     sortOrder: 1,
     spendThreshold: 0,
-    period: LoyaltyTierInputPeriod.monthly,
+    period: "monthly",
     subscriptionDiscountPercent: 0,
     productDiscountPercent: 0,
     freeSubscription: false,
@@ -44,16 +44,20 @@ export default function AdminLoyalty() {
     benefits: [],
     active: true
   });
+  // Raw string state so inputs aren't clobbered while typing
+  const [rawNums, setRawNums] = useState({ sortOrder: "1", spendThreshold: "0", subscriptionDiscountPercent: "0", productDiscountPercent: "0" });
   const [benefitInput, setBenefitInput] = useState("");
 
   const handleOpenNew = () => {
     if (!canManageLoyalty) return;
     setEditingTier(null);
+    const sortOrder = tiers ? tiers.length + 1 : 1;
     setFormData({
-      name: "", sortOrder: tiers ? tiers.length + 1 : 1, spendThreshold: 0, period: LoyaltyTierInputPeriod.monthly,
+      name: "", sortOrder, spendThreshold: 0, period: "monthly",
       subscriptionDiscountPercent: 0, productDiscountPercent: 0, freeSubscription: false,
       premiumListing: false, freeShipping: false, benefits: [], active: true
     });
+    setRawNums({ sortOrder: String(sortOrder), spendThreshold: "0", subscriptionDiscountPercent: "0", productDiscountPercent: "0" });
     setBenefitInput("");
     setIsModalOpen(true);
   };
@@ -62,10 +66,16 @@ export default function AdminLoyalty() {
     if (!canManageLoyalty) return;
     setEditingTier(tier);
     setFormData({
-      name: tier.name, sortOrder: tier.sortOrder, spendThreshold: tier.spendThreshold, period: tier.period as LoyaltyTierInputPeriod,
+      name: tier.name, sortOrder: tier.sortOrder, spendThreshold: tier.spendThreshold, period: tier.period,
       subscriptionDiscountPercent: tier.subscriptionDiscountPercent, productDiscountPercent: tier.productDiscountPercent,
       freeSubscription: tier.freeSubscription, premiumListing: tier.premiumListing, freeShipping: tier.freeShipping,
       benefits: tier.benefits || [], active: tier.active
+    });
+    setRawNums({
+      sortOrder: String(tier.sortOrder),
+      spendThreshold: String(tier.spendThreshold),
+      subscriptionDiscountPercent: String(tier.subscriptionDiscountPercent),
+      productDiscountPercent: String(tier.productDiscountPercent),
     });
     setBenefitInput("");
     setIsModalOpen(true);
@@ -83,27 +93,28 @@ export default function AdminLoyalty() {
 
   const handleSave = () => {
     if (!canManageLoyalty) return;
-    const name = formData.name.trim();
-    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
-    const sortOrder = Number(formData.sortOrder);
-    if (!Number.isFinite(sortOrder) || sortOrder < 1) { toast.error("Greška", { description: "Redosled mora biti pozitivan broj." }); return; }
-    const spendThreshold = Number(formData.spendThreshold);
-    if (!Number.isFinite(spendThreshold) || spendThreshold < 0) { toast.error("Greška", { description: "Prag potrošnje ne može biti negativan." }); return; }
-    const subDisc = Number(formData.subscriptionDiscountPercent);
-    if (!Number.isFinite(subDisc) || subDisc < 0 || subDisc > 100) { toast.error("Greška", { description: "Popust na pretplatu mora biti između 0 i 100." }); return; }
-    const prodDisc = Number(formData.productDiscountPercent);
-    if (!Number.isFinite(prodDisc) || prodDisc < 0 || prodDisc > 100) { toast.error("Greška", { description: "Popust na opremu mora biti između 0 i 100." }); return; }
+    if (createTier.isPending || updateTier.isPending) return;
+    if (!formData.name?.trim()) {
+      toast.error("Greška", { description: "Ime je obavezno." });
+      return;
+    }
+    const sortParsed = parseStrictInt(rawNums.sortOrder, { label: "Redosled", allowNegative: false, allowZero: false, min: 1 });
+    if (!sortParsed.ok) { toast.error("Greška", { description: sortParsed.message }); return; }
+    const thresholdParsed = parseStrictInt(rawNums.spendThreshold, { label: "Prag potrošnje", allowNegative: false, allowZero: true });
+    if (!thresholdParsed.ok) { toast.error("Greška", { description: thresholdParsed.message }); return; }
+    const subDiscParsed = parseStrictInt(rawNums.subscriptionDiscountPercent, { label: "Popust na pretplatu", allowNegative: false, allowZero: true, max: 100 });
+    if (!subDiscParsed.ok) { toast.error("Greška", { description: subDiscParsed.message }); return; }
+    const prodDiscParsed = parseStrictInt(rawNums.productDiscountPercent, { label: "Popust na opremu", allowNegative: false, allowZero: true, max: 100 });
+    if (!prodDiscParsed.ok) { toast.error("Greška", { description: prodDiscParsed.message }); return; }
 
     const payload: LoyaltyTierInput = {
       ...formData,
-      name,
-      sortOrder: Math.round(sortOrder),
-      spendThreshold: Math.round(spendThreshold),
-      subscriptionDiscountPercent: Math.round(subDisc),
-      productDiscountPercent: Math.round(prodDisc),
-      benefits: (formData.benefits || []).filter(b => b.trim()),
+      sortOrder: sortParsed.value,
+      spendThreshold: thresholdParsed.value,
+      subscriptionDiscountPercent: subDiscParsed.value,
+      productDiscountPercent: prodDiscParsed.value,
     };
-    
+
     if (editingTier) {
       updateTier.mutate({ tierId: editingTier.id, data: payload }, {
         onSuccess: () => {
@@ -111,10 +122,7 @@ export default function AdminLoyalty() {
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
         },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast.error("Greška", { description: msg ?? "Loyalty nivo nije sačuvan." });
-        },
+        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije sačuvan.") }),
       });
     } else {
       createTier.mutate({ data: payload }, {
@@ -123,10 +131,7 @@ export default function AdminLoyalty() {
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
         },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast.error("Greška", { description: msg ?? "Loyalty nivo nije kreiran." });
-        },
+        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije kreiran.") }),
       });
     }
   };
@@ -242,18 +247,18 @@ export default function AdminLoyalty() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sortOrder">Redosled (1 je najniži)</Label>
-                <Input id="sortOrder" type="number" min="1" value={formData.sortOrder} onChange={e => setFormData({...formData, sortOrder: Number(e.target.value)})} />
+                <Input id="sortOrder" type="number" min="1" value={rawNums.sortOrder} onChange={e => setRawNums({ ...rawNums, sortOrder: e.target.value })} />
               </div>
             </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="spendThreshold">Prag potrošnje (RSD)</Label>
-                <Input id="spendThreshold" type="number" min="0" value={formData.spendThreshold} onChange={e => setFormData({...formData, spendThreshold: Number(e.target.value)})} />
+                <Input id="spendThreshold" type="number" min="0" value={rawNums.spendThreshold} onChange={e => setRawNums({ ...rawNums, spendThreshold: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="period">Period obračuna</Label>
-                <select id="period" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" value={formData.period} onChange={e => setFormData({...formData, period: e.target.value as LoyaltyTierInputPeriod})}>
+                <select id="period" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" value={formData.period} onChange={e => setFormData({...formData, period: e.target.value})}>
                   <option value="monthly">Mesečno</option>
                   <option value="quarterly">Kvartalno</option>
                   <option value="yearly">Godišnje</option>
@@ -264,11 +269,11 @@ export default function AdminLoyalty() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="subDisc">Popust na pretplatu (%)</Label>
-                <Input id="subDisc" type="number" min="0" max="100" value={formData.subscriptionDiscountPercent} onChange={e => setFormData({...formData, subscriptionDiscountPercent: Number(e.target.value)})} />
+                <Input id="subDisc" type="number" min="0" max="100" value={rawNums.subscriptionDiscountPercent} onChange={e => setRawNums({ ...rawNums, subscriptionDiscountPercent: e.target.value })} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="prodDisc">Popust na opremu (%)</Label>
-                <Input id="prodDisc" type="number" min="0" max="100" value={formData.productDiscountPercent} onChange={e => setFormData({...formData, productDiscountPercent: Number(e.target.value)})} />
+                <Input id="prodDisc" type="number" min="0" max="100" value={rawNums.productDiscountPercent} onChange={e => setRawNums({ ...rawNums, productDiscountPercent: e.target.value })} />
               </div>
             </div>
 

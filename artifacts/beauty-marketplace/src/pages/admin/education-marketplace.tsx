@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
 
 type Center = { id: string; name: string; city: string; verificationStatus: string; verificationNote: string | null; subscriptionStatus: string | null; subscriptionPlan: string | null; heldAmount: number };
 type Escrow = { id: string; centerId: string; centerName: string; courseTitle: string; grossAmount: number; platformFee: number; reserveAmount: number; netAmount: number; status: string; releaseAt: string; disputeOpen: boolean; netPaidAt: string | null; reservePaidAt: string | null };
@@ -25,6 +26,9 @@ const api = async <T,>(url: string, options?: RequestInit) => {
 export default function AdminEducationMarketplace() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<Settings | null>(null);
+  // Raw string state for settings inputs — validated strictly on save
+  const [settingsRaw, setSettingsRaw] = useState<Record<keyof Settings, string>>({ commissionPercent: "0", reservePercent: "0", onlineRefundDays: "0", liveAppealDays: "0", featuredCoursePrice: "0" });
+  const [savingSettings, setSavingSettings] = useState(false);
   const [centers, setCenters] = useState<Center[]>([]);
   const [finance, setFinance] = useState<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[]; featuredCharges: FeaturedCharge[] }>({ summary: {}, escrows: [], pendingEnrollments: [], featuredCharges: [] });
   const [disputes, setDisputes] = useState<Dispute[]>([]);
@@ -39,38 +43,56 @@ export default function AdminEducationMarketplace() {
         api<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[]; featuredCharges: FeaturedCharge[] }>("/api/admin/education/finance"),
         api<Dispute[]>("/api/education/disputes"),
       ]);
-      setSettings(nextSettings); setCenters(nextCenters); setFinance(nextFinance); setDisputes(nextDisputes);
+      setSettings(nextSettings);
+      setSettingsRaw({
+        commissionPercent: String(nextSettings.commissionPercent),
+        reservePercent: String(nextSettings.reservePercent),
+        onlineRefundDays: String(nextSettings.onlineRefundDays),
+        liveAppealDays: String(nextSettings.liveAppealDays),
+        featuredCoursePrice: String(nextSettings.featuredCoursePrice),
+      });
+      setCenters(nextCenters); setFinance(nextFinance); setDisputes(nextDisputes);
     } catch (error) { toast.error("Edukacije nisu učitane", { description: error instanceof Error ? error.message : undefined }); }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
 
   const saveSettings = async () => {
-    if (!settings) return;
-    if (!Number.isFinite(settings.commissionPercent) || settings.commissionPercent < 0 || settings.commissionPercent > 100) {
-      toast.error("Validacija", { description: "Provizija mora biti između 0 i 100." }); return;
-    }
-    if (!Number.isFinite(settings.reservePercent) || settings.reservePercent < 0 || settings.reservePercent > 100) {
-      toast.error("Validacija", { description: "Rezerva mora biti između 0 i 100." }); return;
-    }
-    if (!Number.isFinite(settings.onlineRefundDays) || settings.onlineRefundDays < 0 || settings.onlineRefundDays > 365) {
-      toast.error("Validacija", { description: "Dani za povraćaj moraju biti između 0 i 365." }); return;
-    }
-    if (!Number.isFinite(settings.liveAppealDays) || settings.liveAppealDays < 0 || settings.liveAppealDays > 365) {
-      toast.error("Validacija", { description: "Dani za žalbu moraju biti između 0 i 365." }); return;
-    }
-    if (!Number.isFinite(settings.featuredCoursePrice) || settings.featuredCoursePrice < 0) {
-      toast.error("Validacija", { description: "Cena isticanja ne može biti negativna." }); return;
-    }
+    if (!settings || savingSettings) return;
+    // Validate raw inputs before sending
+    const commParsed = parseStrictDecimal(settingsRaw.commissionPercent, { label: "Provizija", allowNegative: false, allowZero: true, max: 100 });
+    if (!commParsed.ok) { toast.error("Greška", { description: commParsed.message }); return; }
+    const resParsed = parseStrictDecimal(settingsRaw.reservePercent, { label: "Rezerva", allowNegative: false, allowZero: true, max: 100 });
+    if (!resParsed.ok) { toast.error("Greška", { description: resParsed.message }); return; }
+    const onlineParsed = parseStrictInt(settingsRaw.onlineRefundDays, { label: "Online povraćaj (dani)", allowNegative: false, allowZero: true });
+    if (!onlineParsed.ok) { toast.error("Greška", { description: onlineParsed.message }); return; }
+    const liveParsed = parseStrictInt(settingsRaw.liveAppealDays, { label: "Live žalba (dani)", allowNegative: false, allowZero: true });
+    if (!liveParsed.ok) { toast.error("Greška", { description: liveParsed.message }); return; }
+    const featuredParsed = parseStrictInt(settingsRaw.featuredCoursePrice, { label: "Istaknuti kurs (RSD)", allowNegative: false, allowZero: true });
+    if (!featuredParsed.ok) { toast.error("Greška", { description: featuredParsed.message }); return; }
+
     const payload: Settings = {
-      commissionPercent: settings.commissionPercent,
-      reservePercent: settings.reservePercent,
-      onlineRefundDays: Math.round(settings.onlineRefundDays),
-      liveAppealDays: Math.round(settings.liveAppealDays),
-      featuredCoursePrice: Math.round(settings.featuredCoursePrice),
+      commissionPercent: commParsed.value,
+      reservePercent: resParsed.value,
+      onlineRefundDays: onlineParsed.value,
+      liveAppealDays: liveParsed.value,
+      featuredCoursePrice: featuredParsed.value,
     };
-    try { setSettings(await api<Settings>("/api/admin/education/settings", { method: "PATCH", body: JSON.stringify(payload) })); toast.success("Pravila obračuna su sačuvana."); }
+    setSavingSettings(true);
+    try {
+      const updated = await api<Settings>("/api/admin/education/settings", { method: "PATCH", body: JSON.stringify(payload) });
+      setSettings(updated);
+      setSettingsRaw({
+        commissionPercent: String(updated.commissionPercent),
+        reservePercent: String(updated.reservePercent),
+        onlineRefundDays: String(updated.onlineRefundDays),
+        liveAppealDays: String(updated.liveAppealDays),
+        featuredCoursePrice: String(updated.featuredCoursePrice),
+      });
+      toast.success("Pravila obračuna su sačuvana.");
+    }
     catch (error) { toast.error("Promena nije sačuvana", { description: error instanceof Error ? error.message : undefined }); }
+    finally { setSavingSettings(false); }
   };
   const changeCenter = async (center: Center, verificationStatus: string) => {
     try {
@@ -125,8 +147,8 @@ export default function AdminEducationMarketplace() {
         <Card>
           <CardHeader><CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Pravila obračuna</CardTitle><CardDescription>Ova pravila se primenjuju na sledeće potvrđene kupovine.</CardDescription></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, keyof Settings][]).map(([label, key]) => <label key={key} className="space-y-2 text-sm font-medium">{label}<Input type="number" min="0" value={settings[key]} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}
-            <div className="flex items-end"><Button onClick={saveSettings} className="w-full"><Save className="mr-2 h-4 w-4" />Sačuvaj</Button></div>
+            {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, keyof Settings][]).map(([label, key]) => <label key={key} className="space-y-2 text-sm font-medium">{label}<Input type="number" min="0" value={settingsRaw[key]} onChange={(event) => setSettingsRaw({ ...settingsRaw, [key]: event.target.value })} /></label>)}
+            <div className="flex items-end"><Button onClick={() => void saveSettings()} disabled={savingSettings} className="w-full">{savingSettings ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Sačuvaj</Button></div>
           </CardContent>
         </Card>
         <Card>

@@ -7,5 +7,5 @@
  */
 
 export interface AdminReviewUpdate {
-  visible: boolean;
+  visible?: boolean;
 }

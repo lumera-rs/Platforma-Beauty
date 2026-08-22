@@ -30,4 +30,15 @@ startDate?: Date;
  * @minimum 1
  */
 maxDurationDays?: number;
+/**
+ * 1-based page index for stable createdAt desc, id desc ordering.
+ * @minimum 1
+ */
+page?: number;
+/**
+ * Number of courses per page.
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };

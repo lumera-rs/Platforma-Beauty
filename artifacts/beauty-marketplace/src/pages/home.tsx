@@ -9,7 +9,8 @@ import {
 import {
   useGetMarketplaceHomeDiscovery,
   useGetPlatformTrustStats,
-  useGetCurrentUser
+  useGetCurrentUser,
+  useListCities
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,17 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { data: authData } = useGetCurrentUser();
   const { data: trustStats } = useGetPlatformTrustStats();
+  const { data: cities, isLoading: isCitiesLoading } = useListCities();
+
+  // Cities are derived server-side from active salons via the cached /cities
+  // catalog. We deliberately avoid a hardcoded city array: until the live
+  // catalog resolves we show a loading state, and if it is empty we show a
+  // safe empty state — never stale, invented data.
+  const cityOptions = useMemo(() => {
+    if (cities && cities.length > 0) return cities.map((city) => city.name);
+    return [];
+  }, [cities]);
+  const popularCityLinks = cityOptions.slice(0, 5);
 
   const [searchCategory, setSearchCategory] = useState("");
   const [sessionCity, setSessionCity] = useState("");
@@ -133,10 +145,9 @@ export default function Home() {
                 aria-label="Izaberite grad"
               />
               <datalist id="hero-city-options">
-                <option value="Beograd" />
-                <option value="Novi Sad" />
-                <option value="Niš" />
-                <option value="Kragujevac" />
+                {cityOptions.map((city) => (
+                  <option key={city} value={city} />
+                ))}
               </datalist>
             </div>
             <Button type="submit" size="lg" className="w-full md:w-auto h-14 rounded-xl px-10 font-semibold text-lg hover:scale-[1.02] transition-transform">
@@ -502,15 +513,27 @@ export default function Home() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
             <div>
               <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Popularni gradovi</h4>
-              <ul className="space-y-3">
-                {["Beograd", "Novi Sad", "Niš", "Kragujevac", "Subotica"].map((city) => (
-                  <li key={city}>
-                    <Link href={`/saloni?city=${city}`} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
-                      <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {city}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              {isCitiesLoading && popularCityLinks.length === 0 ? (
+                <ul className="space-y-3" aria-label="Učitavanje gradova">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <li key={index}>
+                      <Skeleton className="h-4 w-24 rounded" />
+                    </li>
+                  ))}
+                </ul>
+              ) : popularCityLinks.length > 0 ? (
+                <ul className="space-y-3">
+                  {popularCityLinks.map((city) => (
+                    <li key={city}>
+                      <Link href={`/saloni?city=${encodeURIComponent(city)}`} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
+                        <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {city}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground text-sm">Trenutno nema dostupnih gradova.</p>
+              )}
             </div>
             <div>
               <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Top usluge</h4>
