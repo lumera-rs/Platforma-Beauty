@@ -2,6 +2,7 @@ import { Link, useLocation } from "wouter";
 import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, Bell, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
@@ -14,6 +15,7 @@ import {
 
 export function BusinessNavbar() {
   const [location, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const { data: userResp } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
@@ -27,7 +29,10 @@ export function BusinessNavbar() {
 
   const handleLogout = () => {
     logout.mutate(undefined, {
-      onSuccess: () => setLocation("/")
+      onSuccess: () => {
+        queryClient.clear();
+        setLocation("/");
+      }
     });
   };
 
