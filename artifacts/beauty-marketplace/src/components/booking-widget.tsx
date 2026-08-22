@@ -49,6 +49,7 @@ export interface BookingWidgetProps {
 export function BookingWidget(props: BookingWidgetProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [dateAvailability, setDateAvailability] = useState<Record<string, boolean>>({});
+  const isMobileDrawer = Boolean(props.onCloseMobile);
 
   const service = props.salon.services.find(s => s.id === props.selectedService);
   const employee = props.salon.staff.find(e => e.id === props.selectedEmployee);
@@ -123,7 +124,7 @@ export function BookingWidget(props: BookingWidgetProps) {
   };
 
   return (
-    <Card className={`flex min-h-0 flex-col overflow-hidden bg-card ${props.className || ''}`}>
+    <Card className={`flex flex-col bg-card ${isMobileDrawer ? 'min-h-full overflow-visible' : 'min-h-0 overflow-hidden'} ${props.className || ''}`}>
       {/* Header */}
       <div className="bg-primary/5 p-4 border-b flex flex-col gap-3 relative shrink-0">
         {props.onCloseMobile && (
@@ -180,7 +181,14 @@ export function BookingWidget(props: BookingWidgetProps) {
       </div>
 
       {/* Content Area */}
-      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar bg-card/50">
+      <div
+        ref={scrollRef}
+        data-testid="booking-widget-content"
+        className={isMobileDrawer
+          ? "relative flex-none touch-pan-y bg-card/50"
+          : "relative min-h-0 flex-1 overflow-y-auto overscroll-contain custom-scrollbar bg-card/50"
+        }
+      >
         <div className={props.step === 3 ? "p-3 pb-6 sm:p-5 sm:pb-8" : "p-5"}>
           <AnimatePresence mode="wait">
             <motion.div
@@ -335,7 +343,7 @@ export function BookingWidget(props: BookingWidgetProps) {
               )}
 
               {props.step === 3 && (
-                <div className="flex min-w-0 flex-col gap-0 bg-card rounded-2xl border shadow-sm overflow-hidden">
+                <div className="flex min-w-0 flex-col gap-0 rounded-2xl border bg-card shadow-sm">
                   {/* Calendar Section */}
                   <div className="relative z-0 flex min-w-0 flex-col border-b bg-muted/5 p-3 sm:p-6">
                     <h4 className="mb-4 flex min-w-0 items-center gap-2 text-sm font-bold tracking-tight text-foreground">
@@ -583,13 +591,16 @@ export function MobileBookingTrigger({ salon, selectedService, selectedSlot, onO
 export function MobileBookingDrawer({ isOpen, onClose, children }: { isOpen: boolean, onClose: () => void, children: React.ReactNode }) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="bottom" className="flex h-[90dvh] min-h-0 flex-col overflow-hidden rounded-t-3xl border-0 p-0 [&>button]:right-4 [&>button]:top-4 [&>button]:z-20">
+      <SheetContent side="bottom" className="flex h-[90dvh] min-h-0 flex-col overflow-visible rounded-t-3xl border-0 p-0 [&>button]:right-4 [&>button]:top-4 [&>button]:z-20">
         <SheetTitle className="sr-only">Zakažite termin</SheetTitle>
         <SheetDescription className="sr-only">Izaberite uslugu, zaposlenog i slobodan termin.</SheetDescription>
         <div className="w-full flex justify-center py-3 bg-background shrink-0" aria-hidden="true">
           <div className="w-12 h-1.5 bg-muted rounded-full" />
         </div>
-        <div className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div
+          data-testid="mobile-booking-scroll-area"
+          className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y [-webkit-overflow-scrolling:touch]"
+        >
           {children}
         </div>
       </SheetContent>
