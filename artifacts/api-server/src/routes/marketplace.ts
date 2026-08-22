@@ -3,6 +3,10 @@ import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or,
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
+  publishSalonNotificationUpdate,
+  subscribeToSalonNotificationEvents,
+} from "../lib/salon-notification-events";
+import {
   appointmentSeriesTable,
   appointmentsTable,
   beautyGlossaryTable,
@@ -5422,6 +5426,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna." });
     return;
   }
+  publishSalonNotificationUpdate(salon.id);
   await sendTransactionalEmail({
     eventKey: `b2b-order:${created.order.id}:created`,
     emailType: "b2b_order_created",
@@ -5545,6 +5550,18 @@ router.get("/shop/notifications", async (req, res): Promise<void> => {
   res.json(ListSalonNotificationsResponse.parse(notifications));
 });
 
+router.get("/shop/notifications/events", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  res.status(200).set({
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders();
+  subscribeToSalonNotificationEvents(access.salon.id, res);
+});
+
 router.patch("/shop/notifications/:notificationId/read", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = MarkSalonNotificationReadParams.safeParse(req.params);
@@ -5557,6 +5574,7 @@ router.patch("/shop/notifications/:notificationId/read", async (req, res): Promi
     ))
     .returning();
   if (!notification) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
+  publishSalonNotificationUpdate(access.salon.id);
   res.json(MarkSalonNotificationReadResponse.parse(notification));
 });
 

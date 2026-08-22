@@ -3,7 +3,7 @@ import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, Bel
 import { Button } from "@/components/ui/button";
 import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import {
@@ -20,7 +20,7 @@ export function BusinessNavbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
-  const notificationsQueryKey = salonNotificationsQueryKey(user?.id);
+  const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
   const { data: notifications = [] } = useListSalonNotifications({
     query: {
       enabled: user?.role === "SALON_OWNER",
@@ -52,6 +52,44 @@ export function BusinessNavbar() {
       setActiveSalonId(payload.activeSalonId ?? "");
     }).catch(() => undefined);
   }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "SALON_OWNER") return;
+
+    const refreshNotifications = () => {
+      void queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
+    };
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: number | undefined;
+    let disposed = false;
+
+    const connect = () => {
+      if (disposed) return;
+      if (reconnectTimeout !== undefined) {
+        window.clearTimeout(reconnectTimeout);
+        reconnectTimeout = undefined;
+      }
+      eventSource?.close();
+      eventSource = new EventSource("/api/shop/notifications/events");
+      // Rehydrate both after the first connection and every reconnect, covering
+      // any notification created while the network was down.
+      eventSource.onopen = refreshNotifications;
+      eventSource.onmessage = refreshNotifications;
+      eventSource.onerror = () => {
+        eventSource?.close();
+        if (!disposed) reconnectTimeout = window.setTimeout(connect, 1000);
+      };
+    };
+
+    connect();
+    window.addEventListener("online", connect);
+    return () => {
+      disposed = true;
+      window.removeEventListener("online", connect);
+      if (reconnectTimeout !== undefined) window.clearTimeout(reconnectTimeout);
+      eventSource?.close();
+    };
+  }, [notificationsQueryKey, queryClient, user?.role]);
 
   const switchSalon = async (salonId: string) => {
     const response = await fetch("/api/salon/active-salon", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ salonId }) });

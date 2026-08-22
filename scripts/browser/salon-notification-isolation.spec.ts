@@ -258,16 +258,28 @@ test("a new B2B order refreshes mobile and desktop notification badges", async (
       .where(eq(salonNotificationsTable.id, fixture.notificationAId));
 
     await signIn(page, fixture.ownerA);
+    const mobileEventConnection = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === "/api/shop/notifications/events"
+      && response.status() === 200,
+    );
     await page.goto("/vlasnik");
     await page.getByTestId("button-mobile-menu").click();
     await expect(page.getByTestId("link-notifications-mobile")).toBeVisible();
     await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveCount(0);
+    await mobileEventConnection;
 
     desktopContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const desktopPage = await desktopContext.newPage();
     await signIn(desktopPage, fixture.ownerA);
+    const desktopEventConnection = desktopPage.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === "/api/shop/notifications/events"
+      && response.status() === 200,
+    );
     await desktopPage.goto("/vlasnik");
     await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0);
+    await desktopEventConnection;
 
     orderingContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     const orderingPage = await orderingContext.newPage();
@@ -292,14 +304,24 @@ test("a new B2B order refreshes mobile and desktop notification badges", async (
     fixture.orderId = (await orderingPage.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];
     await expect(orderingPage.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible();
 
-    await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveText("1", { timeout: 15000 });
-    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveText("1", { timeout: 15000 });
+    // This must arrive well before the five-second polling fallback.
+    await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveText("1", { timeout: 3000 });
+    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveText("1", { timeout: 3000 });
 
+    await desktopContext.setOffline(true);
     await page.getByTestId("link-notifications-mobile").click();
     await expect(page).toHaveURL(/\/vlasnik\/obavestenja$/);
     await page.getByRole("button", { name: "Označi kao pročitano" }).click();
     await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveCount(0);
-    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0, { timeout: 15000 });
+
+    const desktopReconnect = desktopPage.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === "/api/shop/notifications/events"
+      && response.status() === 200,
+    );
+    await desktopContext.setOffline(false);
+    await desktopReconnect;
+    await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0, { timeout: 3000 });
   } finally {
     await orderingContext?.close();
     await desktopContext?.close();
