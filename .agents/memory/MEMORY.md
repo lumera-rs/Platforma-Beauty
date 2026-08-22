@@ -26,3 +26,4 @@
 - [EventSource reconnect recovery](eventsource-reconnect-recovery.md) — explicitly reconnect browser streams and rehydrate state after network restoration.
 - [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.
 - [Artifact release gates](artifact-release-gates.md) — validation workflows do not block publishing; artifact-mode release checks belong in the root deployment pre-build hook.
+- [Interrupted media test cleanup](interrupted-media-test-cleanup.md) — use selective test markers and pre-write object manifests so force-stopped checks cannot leak uploads.

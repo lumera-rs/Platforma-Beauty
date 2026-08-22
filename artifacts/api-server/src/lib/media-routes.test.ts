@@ -27,15 +27,23 @@ import { approvedServiceCategoryReference } from "./media-migration";
 import {
   canClaimMediaReference,
   claimMediaReference,
+  cleanupMediaRouteRegressionUploads,
   deletePrivateStorageObject,
+  enableMediaRouteRegressionUploadMarking,
+  MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
+  MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
   mediaAssetIdFromUrl,
+  processImageBytes,
   readPrivateStorageObject,
+  recordMediaRouteRegressionPromotionPath,
   runMediaUploadCleanup,
 } from "../routes/media";
+import { ensureMediaSchema } from "./media-schema";
 
 type Ticket = { uploadId: string; uploadUrl: string; expiresAt: string };
 type Asset = { id: string; imageUrl: string; width: number; height: number; contentHash: string };
 type EducationCourse = { id: string; imageUrl: string; published: boolean; archived: boolean };
+let mediaRegressionRequestHeaders: Record<string, string> = {};
 
 async function jsonRequest<T>(
   baseUrl: string,
@@ -43,11 +51,13 @@ async function jsonRequest<T>(
   session: string,
   method: "PATCH" | "POST",
   body?: unknown,
+  includeRegressionMarker = true,
 ): Promise<{ status: number; body: T }> {
   const response = await fetch(`${baseUrl}/api${path}`, {
     method,
     headers: {
       cookie: `${sessionCookieName}=${session}`,
+      ...(includeRegressionMarker ? mediaRegressionRequestHeaders : {}),
       ...(body ? { "content-type": "application/json" } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -91,6 +101,7 @@ async function forceEndpointClaimConflict<T>(
 }
 
 async function run() {
+  await ensureMediaSchema();
   assert.equal(
     approvedServiceCategoryReference(
       "Frizerski saloni",
@@ -134,8 +145,25 @@ async function run() {
     gallery: ownerAndSalon.salon.gallery,
   };
   let activeServer: Awaited<ReturnType<typeof startServer>> | null = null;
+  let disableRegressionUploadMarking: (() => void) | null = null;
+  const regressionLock = await pool.connect();
+  let regressionLockHeld = false;
 
   try {
+    const lockResult = await regressionLock.query<{ locked: boolean }>(
+      "select pg_try_advisory_lock(hashtext($1)) as locked",
+      [MEDIA_ROUTE_REGRESSION_CLEANUP_KEY],
+    );
+    assert.equal(
+      lockResult.rows[0]?.locked,
+      true,
+      "Another media route regression is already running against this development database.",
+    );
+    regressionLockHeld = true;
+    await cleanupMediaRouteRegressionUploads();
+    const marking = enableMediaRouteRegressionUploadMarking();
+    disableRegressionUploadMarking = marking.disable;
+    mediaRegressionRequestHeaders = marking.requestHeaders;
     activeServer = await startServer();
     assert.equal(await canClaimMediaReference({
       userId: ownerAndSalon.user.id,
@@ -163,6 +191,14 @@ async function run() {
       );
       assert.equal(ticket.status, 200, `${scope} upload ticket should be issued.`);
       createdUploadIds.push(ticket.body.uploadId);
+      const [persistedTicket] = await db.select({
+        testCleanupKey: mediaUploadTicketsTable.testCleanupKey,
+      }).from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, ticket.body.uploadId)).limit(1);
+      assert.equal(
+        persistedTicket?.testCleanupKey,
+        MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+        "The upload ticket and its recovery marker must be created atomically.",
+      );
       assert.ok((await fetch(ticket.body.uploadUrl, {
         method: "PUT",
         headers: { "content-type": "image/jpeg" },
@@ -177,6 +213,192 @@ async function run() {
       assert.equal(asset.status, 201, `${scope} asset should finalize.`);
       return asset.body;
     };
+    const ordinaryTicket = await jsonRequest<Ticket>(
+      activeServer.baseUrl,
+      "/media/uploads",
+      session,
+      "POST",
+      {
+        scope: "employee-avatar",
+        name: "ordinary-upload-control.jpg",
+        size: jpeg.length,
+        contentType: "image/jpeg",
+      },
+      false,
+    );
+    assert.equal(ordinaryTicket.status, 200);
+    createdUploadIds.push(ordinaryTicket.body.uploadId);
+    const [ordinaryUnmarkedTicket] = await db.select({
+      testCleanupKey: mediaUploadTicketsTable.testCleanupKey,
+    }).from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, ordinaryTicket.body.uploadId)).limit(1);
+    assert.equal(
+      ordinaryUnmarkedTicket?.testCleanupKey,
+      null,
+      "A request without the ephemeral regression token must remain unmarked.",
+    );
+    const [markedControlTicket] = await db.update(mediaUploadTicketsTable).set({
+      testCleanupKey: MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
+    }).where(eq(mediaUploadTicketsTable.id, ordinaryTicket.body.uploadId))
+      .returning({ id: mediaUploadTicketsTable.id });
+    assert.equal(
+      markedControlTicket?.id,
+      ordinaryTicket.body.uploadId,
+      "The safety-control ticket must receive its own durable cleanup identity before upload.",
+    );
+    assert.ok((await fetch(ordinaryTicket.body.uploadUrl, {
+      method: "PUT",
+      headers: { "content-type": "image/jpeg" },
+      body: jpeg,
+    })).ok);
+    const ordinaryAsset = await jsonRequest<Asset>(
+      activeServer.baseUrl,
+      `/media/uploads/${ordinaryTicket.body.uploadId}/finalize`,
+      session,
+      "POST",
+    );
+    assert.equal(ordinaryAsset.status, 201);
+    const [ordinaryAssetRecord] = await db.select({
+      testCleanupKey: mediaAssetsTable.testCleanupKey,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ordinaryAsset.body.id)).limit(1);
+    assert.equal(
+      ordinaryAssetRecord?.testCleanupKey,
+      MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
+      "The safety-control asset must retain its separate durable cleanup identity.",
+    );
+    const [ordinaryVariant] = await db.select({ objectPath: mediaVariantsTable.objectPath })
+      .from(mediaVariantsTable)
+      .where(eq(mediaVariantsTable.assetId, ordinaryAsset.body.id))
+      .limit(1);
+    assert.ok(ordinaryVariant && (await readPrivateStorageObject(ordinaryVariant.objectPath))?.length);
+    const strandedRecoveryUpload = await uploadAsset(
+      "employee-avatar",
+      session,
+      "recovery-stranded.jpg",
+    );
+    const interruptedTicket = await jsonRequest<Ticket>(
+      activeServer.baseUrl,
+      "/media/uploads",
+      session,
+      "POST",
+      {
+        scope: "employee-avatar",
+        name: "recovery-interrupted-before-commit.jpg",
+        size: jpeg.length,
+        contentType: "image/jpeg",
+      },
+    );
+    assert.equal(interruptedTicket.status, 200);
+    createdUploadIds.push(interruptedTicket.body.uploadId);
+    const [persistedInterruptedTicket] = await db.select({
+      stagingObjectPath: mediaUploadTicketsTable.stagingObjectPath,
+      testCleanupKey: mediaUploadTicketsTable.testCleanupKey,
+    }).from(mediaUploadTicketsTable)
+      .where(eq(mediaUploadTicketsTable.id, interruptedTicket.body.uploadId))
+      .limit(1);
+    assert.equal(
+      persistedInterruptedTicket?.testCleanupKey,
+      MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+      "An interrupted upload must be marked in the same insert that creates its ticket.",
+    );
+    assert.ok((await fetch(interruptedTicket.body.uploadUrl, {
+      method: "PUT",
+      headers: { "content-type": "image/jpeg" },
+      body: jpeg,
+    })).ok);
+    const promotedBeforeCommit = await processImageBytes({
+      assetId: interruptedTicket.body.uploadId,
+      bytes: jpeg,
+      declaredContentType: "image/jpeg",
+      beforeVariantUpload: (objectPath) => recordMediaRouteRegressionPromotionPath(
+        interruptedTicket.body.uploadId,
+        objectPath,
+      ),
+    });
+    const [promotionManifest] = await db.select({
+      promotionCleanupPaths: mediaUploadTicketsTable.promotionCleanupPaths,
+    }).from(mediaUploadTicketsTable)
+      .where(eq(mediaUploadTicketsTable.id, interruptedTicket.body.uploadId))
+      .limit(1);
+    assert.deepEqual(
+      new Set(promotionManifest?.promotionCleanupPaths),
+      new Set(promotedBeforeCommit.variants.map(({ objectPath }) => objectPath)),
+      "Every promoted object path must be durable before its App Storage upload starts.",
+    );
+    const [markedRecoveryAsset] = await db.select({
+      testCleanupKey: mediaAssetsTable.testCleanupKey,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, strandedRecoveryUpload.id)).limit(1);
+    assert.equal(
+      markedRecoveryAsset?.testCleanupKey,
+      MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+      "Finalized regression media must retain the ticket's database-only cleanup marker.",
+    );
+    disableRegressionUploadMarking();
+    disableRegressionUploadMarking = null;
+    mediaRegressionRequestHeaders = {};
+    const recovered = await cleanupMediaRouteRegressionUploads({
+      cleanupKeys: [MEDIA_ROUTE_REGRESSION_CLEANUP_KEY],
+    });
+    assert.ok(recovered.tickets >= 2 && recovered.assets >= 1, "Recovery must remove every interrupted regression upload.");
+    assert.equal(
+      (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, strandedRecoveryUpload.id))).length,
+      0,
+      "Recovery must remove marked finalized media and its database record.",
+    );
+    assert.equal(
+      (await db.select({ id: mediaUploadTicketsTable.id }).from(mediaUploadTicketsTable)
+        .where(eq(mediaUploadTicketsTable.id, interruptedTicket.body.uploadId))).length,
+      0,
+      "Recovery must remove a ticket interrupted after promotion but before its asset transaction.",
+    );
+    assert.equal(
+      await readPrivateStorageObject(persistedInterruptedTicket!.stagingObjectPath),
+      null,
+      "Recovery must remove the interrupted upload's staging object.",
+    );
+    for (const variant of promotedBeforeCommit.variants) {
+      assert.equal(
+        await readPrivateStorageObject(variant.objectPath),
+        null,
+        `Recovery must remove the uncommitted ${variant.sizeName}/${variant.format} object.`,
+      );
+    }
+    const [ordinaryTicketAfterRecovery] = await db.select({
+      testCleanupKey: mediaUploadTicketsTable.testCleanupKey,
+    }).from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, ordinaryTicket.body.uploadId)).limit(1);
+    assert.equal(
+      ordinaryTicketAfterRecovery?.testCleanupKey,
+      MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
+      "Primary recovery must preserve the separately marked safety-control ticket.",
+    );
+    assert.ok(
+      (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, ordinaryAsset.body.id))).length,
+      "Recovery must preserve the ordinary upload asset.",
+    );
+    assert.ok(
+      ordinaryVariant && (await readPrivateStorageObject(ordinaryVariant.objectPath))?.length,
+      "Recovery must preserve App Storage objects for an ordinary upload.",
+    );
+    const controlRecovery = await cleanupMediaRouteRegressionUploads({
+      cleanupKeys: [MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY],
+    });
+    assert.equal(controlRecovery.tickets, 1);
+    assert.equal(controlRecovery.assets, 1);
+    assert.equal(
+      (await db.select({ id: mediaAssetsTable.id }).from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, ordinaryAsset.body.id))).length,
+      0,
+      "The safety-control asset must also be recoverable after an interrupted run.",
+    );
+    assert.equal(
+      ordinaryVariant ? await readPrivateStorageObject(ordinaryVariant.objectPath) : null,
+      null,
+      "Safety-control App Storage objects must not leak after their recovery pass.",
+    );
+    const resumedMarking = enableMediaRouteRegressionUploadMarking();
+    disableRegressionUploadMarking = resumedMarking.disable;
+    mediaRegressionRequestHeaders = resumedMarking.requestHeaders;
     const ticketResponse = await jsonRequest<Ticket>(
       activeServer.baseUrl,
       "/media/uploads",
@@ -724,6 +946,8 @@ async function run() {
   } finally {
     const storageCleanupErrors: unknown[] = [];
     if (activeServer) await stopServer(activeServer.server).catch(() => undefined);
+    disableRegressionUploadMarking?.();
+    mediaRegressionRequestHeaders = {};
     await db.update(salonsTable).set(originalSalonMedia).where(eq(salonsTable.id, ownerAndSalon.salon.id));
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-ROLLBACK-%"));
     await db.delete(productCategoriesTable).where(like(productCategoriesTable.name, "Media category rollback %"));
@@ -757,6 +981,12 @@ async function run() {
     if (educationFixtureOwnerId) {
       await db.delete(usersTable).where(eq(usersTable.id, educationFixtureOwnerId));
     }
+    if (regressionLockHeld) {
+      await regressionLock.query("select pg_advisory_unlock(hashtext($1))", [
+        MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+      ]);
+    }
+    regressionLock.release();
     await pool.end();
     if (storageCleanupErrors.length) {
       throw new AggregateError(storageCleanupErrors, "Media regression cleanup left App Storage objects behind.");

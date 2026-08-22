@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -26,12 +27,14 @@ export const mediaAssetsTable = pgTable("media_assets", {
   height: integer("height").notNull(),
   contentHash: text("content_hash").notNull(),
   cleanupReservedAt: timestamp("cleanup_reserved_at", { withTimezone: true }),
+  testCleanupKey: text("test_cleanup_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("media_assets_owner_created_idx").on(table.ownerUserId, table.createdAt),
   index("media_assets_scope_resource_idx").on(table.scope, table.resourceId),
   index("media_assets_content_hash_idx").on(table.contentHash),
   index("media_assets_cleanup_reservation_idx").on(table.resourceId, table.cleanupReservedAt),
+  index("media_assets_test_cleanup_idx").on(table.testCleanupKey),
 ]);
 
 export const mediaVariantsTable = pgTable("media_variants", {
@@ -70,9 +73,12 @@ export const mediaUploadTicketsTable = pgTable("media_upload_tickets", {
   finalizedAt: timestamp("finalized_at", { withTimezone: true }),
   cleanupFailureCount: integer("cleanup_failure_count").notNull().default(0),
   lastCleanupFailureAt: timestamp("last_cleanup_failure_at", { withTimezone: true }),
+  testCleanupKey: text("test_cleanup_key"),
+  promotionCleanupPaths: jsonb("promotion_cleanup_paths").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("media_upload_tickets_staging_path_unique").on(table.stagingObjectPath),
   index("media_upload_tickets_owner_expires_idx").on(table.ownerUserId, table.expiresAt),
   index("media_upload_tickets_cleanup_idx").on(table.expiresAt, table.finalizedAt),
+  index("media_upload_tickets_test_cleanup_idx").on(table.testCleanupKey),
 ]);

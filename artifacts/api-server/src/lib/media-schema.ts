@@ -46,13 +46,16 @@ export async function ensureMediaSchema(): Promise<void> {
       height integer NOT NULL,
       content_hash text NOT NULL,
       cleanup_reserved_at timestamptz,
+      test_cleanup_key text,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS cleanup_reserved_at timestamptz`,
+    `ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS test_cleanup_key text`,
     `CREATE INDEX IF NOT EXISTS media_assets_owner_created_idx ON media_assets (owner_user_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS media_assets_scope_resource_idx ON media_assets (scope, resource_id)`,
     `CREATE INDEX IF NOT EXISTS media_assets_content_hash_idx ON media_assets (content_hash)`,
     `CREATE INDEX IF NOT EXISTS media_assets_cleanup_reservation_idx ON media_assets (resource_id, cleanup_reserved_at)`,
+    `CREATE INDEX IF NOT EXISTS media_assets_test_cleanup_idx ON media_assets (test_cleanup_key)`,
     `CREATE TABLE IF NOT EXISTS media_variants (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       asset_id uuid NOT NULL REFERENCES media_assets(id) ON DELETE CASCADE,
@@ -83,11 +86,16 @@ export async function ensureMediaSchema(): Promise<void> {
       finalized_at timestamptz,
       cleanup_failure_count integer NOT NULL DEFAULT 0,
       last_cleanup_failure_at timestamptz,
+      test_cleanup_key text,
+      promotion_cleanup_paths jsonb NOT NULL DEFAULT '[]'::jsonb,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE media_upload_tickets ADD COLUMN IF NOT EXISTS test_cleanup_key text`,
+    `ALTER TABLE media_upload_tickets ADD COLUMN IF NOT EXISTS promotion_cleanup_paths jsonb NOT NULL DEFAULT '[]'::jsonb`,
     `CREATE UNIQUE INDEX IF NOT EXISTS media_upload_tickets_staging_path_unique ON media_upload_tickets (staging_object_path)`,
     `CREATE INDEX IF NOT EXISTS media_upload_tickets_owner_expires_idx ON media_upload_tickets (owner_user_id, expires_at)`,
     `CREATE INDEX IF NOT EXISTS media_upload_tickets_cleanup_idx ON media_upload_tickets (expires_at, finalized_at)`,
+    `CREATE INDEX IF NOT EXISTS media_upload_tickets_test_cleanup_idx ON media_upload_tickets (test_cleanup_key)`,
   ];
 
   for (const statement of statements) {

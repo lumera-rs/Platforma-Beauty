@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
@@ -34,6 +34,48 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOAD_TTL_SECONDS = 15 * 60;
+export const MEDIA_ROUTE_REGRESSION_CLEANUP_KEY = "media-route-regression";
+export const MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY = "media-route-regression-control";
+const MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS = [
+  MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+  MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
+] as const;
+type MediaRouteRegressionCleanupKey = typeof MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS[number];
+const MEDIA_ROUTE_REGRESSION_HEADER = "x-lumera-media-regression-token";
+let mediaRouteRegressionMarker: {
+  token: string;
+  cleanupKey: MediaRouteRegressionCleanupKey;
+} | null = null;
+
+function isMediaRouteRegressionCleanupKey(value: string | null): value is MediaRouteRegressionCleanupKey {
+  return MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS.some((cleanupKey) => cleanupKey === value);
+}
+
+/**
+ * Enables an in-process test harness marker protected by an ephemeral token.
+ * The token is returned only to the regression process and is never persisted.
+ */
+export function enableMediaRouteRegressionUploadMarking(
+  cleanupKey: MediaRouteRegressionCleanupKey = MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
+): {
+  requestHeaders: Record<string, string>;
+  disable: () => void;
+} {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Media regression upload marking cannot run in production.");
+  }
+  if (mediaRouteRegressionMarker) {
+    throw new Error("Media regression upload marking is already enabled.");
+  }
+  const token = randomBytes(32).toString("hex");
+  mediaRouteRegressionMarker = { token, cleanupKey };
+  return {
+    requestHeaders: { [MEDIA_ROUTE_REGRESSION_HEADER]: token },
+    disable: () => {
+      if (mediaRouteRegressionMarker?.token === token) mediaRouteRegressionMarker = null;
+    },
+  };
+}
 const SUPPORTED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const CONTENT_TYPE_BY_SHARP_FORMAT: Record<string, string> = {
   avif: "image/avif",
@@ -299,9 +341,11 @@ async function addVariant(
   width: number,
   height: number,
   bytes: Buffer,
+  beforeUpload?: (objectPath: string) => Promise<void>,
 ): Promise<MediaVariantInsert> {
   const objectPath = variantStoragePath(assetId, contentHash, sizeName, format, contentType);
   try {
+    await beforeUpload?.(objectPath);
     await putPrivateObject(objectPath, contentType, bytes);
   } catch (error) {
     await deletePrivateStorageObject(objectPath).catch(() => undefined);
@@ -330,6 +374,7 @@ export async function processImageBytes(input: {
   assetId: string;
   bytes: Buffer;
   declaredContentType: string;
+  beforeVariantUpload?: (objectPath: string) => Promise<void>;
 }): Promise<{
   width: number;
   height: number;
@@ -362,6 +407,7 @@ export async function processImageBytes(input: {
       metadata.width,
       metadata.height,
       input.bytes,
+      input.beforeVariantUpload,
     ));
 
     const normalized = sharp(input.bytes, { failOn: "warning", limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
@@ -394,6 +440,7 @@ export async function processImageBytes(input: {
         fallbackMetadata.width!,
         fallbackMetadata.height!,
         fallbackBytes,
+        input.beforeVariantUpload,
       ));
 
       const webpBytes = await resized.clone().webp({ quality: 82, effort: 4 }).toBuffer();
@@ -407,6 +454,7 @@ export async function processImageBytes(input: {
         webpMetadata.width!,
         webpMetadata.height!,
         webpBytes,
+        input.beforeVariantUpload,
       ));
 
       if (avifEnabled) {
@@ -422,6 +470,7 @@ export async function processImageBytes(input: {
             avifMetadata.width!,
             avifMetadata.height!,
             avifBytes,
+            input.beforeVariantUpload,
           ));
         } catch (error) {
           logger.warn({ err: error, assetId: input.assetId, size: size.name }, "AVIF encoder unavailable; keeping WebP and fallback variants");
@@ -467,6 +516,24 @@ function mediaAssetResponse(asset: typeof mediaAssetsTable.$inferSelect) {
   });
 }
 
+export async function recordMediaRouteRegressionPromotionPath(
+  uploadId: string,
+  objectPath: string,
+): Promise<void> {
+  const [recorded] = await db.update(mediaUploadTicketsTable).set({
+    promotionCleanupPaths: sql`
+      ${mediaUploadTicketsTable.promotionCleanupPaths}
+      || jsonb_build_array(${objectPath}::text)
+    `,
+  }).where(and(
+    eq(mediaUploadTicketsTable.id, uploadId),
+    inArray(mediaUploadTicketsTable.testCleanupKey, [...MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS]),
+  )).returning({ id: mediaUploadTicketsTable.id });
+  if (!recorded) {
+    throw new Error("Media regression upload disappeared before promotion could be recorded.");
+  }
+}
+
 router.post("/media/uploads", async (req, res): Promise<void> => {
   const user = await requireMediaUser(req, res); if (!user) return;
   const parsed = RequestMediaUploadBody.safeParse(req.body);
@@ -500,6 +567,10 @@ router.post("/media/uploads", async (req, res): Promise<void> => {
       contentType: body.contentType,
       byteSize: body.size,
       expiresAt,
+      testCleanupKey: mediaRouteRegressionMarker
+        && req.get(MEDIA_ROUTE_REGRESSION_HEADER) === mediaRouteRegressionMarker.token
+        ? mediaRouteRegressionMarker.cleanupKey
+        : null,
     });
     res.json(RequestMediaUploadResponse.parse({ uploadId, uploadUrl, expiresAt: expiresAt.toISOString() }));
   } catch (error) {
@@ -526,7 +597,14 @@ router.post("/media/uploads/:uploadId/finalize", async (req, res): Promise<void>
   let processed: Awaited<ReturnType<typeof processImageBytes>> | null = null;
   try {
     const bytes = await readStagedUpload(ticket);
-    const promoted = await processImageBytes({ assetId: ticket.id, bytes, declaredContentType: ticket.contentType });
+    const promoted = await processImageBytes({
+      assetId: ticket.id,
+      bytes,
+      declaredContentType: ticket.contentType,
+      beforeVariantUpload: isMediaRouteRegressionCleanupKey(ticket.testCleanupKey)
+        ? (objectPath) => recordMediaRouteRegressionPromotionPath(ticket.id, objectPath)
+        : undefined,
+    });
     processed = promoted;
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`media-upload:${ticket.id}`}))`);
@@ -552,6 +630,7 @@ router.post("/media/uploads/:uploadId/finalize", async (req, res): Promise<void>
         width: promoted.width,
         height: promoted.height,
         contentHash: promoted.contentHash,
+        testCleanupKey: ticket.testCleanupKey,
       }).returning();
       await tx.insert(mediaVariantsTable).values(promoted.variants);
       await tx.update(mediaUploadTicketsTable).set({ finalizedAssetId: asset!.id, finalizedAt: new Date() }).where(eq(mediaUploadTicketsTable.id, ticket.id));
@@ -743,6 +822,73 @@ export async function runMediaUploadCleanup(options: {
       logger.warn({ err: error, assetId: item.assetId }, "Unattached finalized media cleanup failed");
     }
   }
+}
+
+/**
+ * Removes media left behind by a force-stopped media route regression.
+ *
+ * The marker is database-only and never originates from a browser request.
+ * This intentionally does not inspect filenames, owners, or business records,
+ * which keeps cleanup independent from fixture state and excludes real uploads.
+ */
+export async function cleanupMediaRouteRegressionUploads(options: {
+  cleanupKeys?: readonly MediaRouteRegressionCleanupKey[];
+} = {}): Promise<{
+  tickets: number;
+  assets: number;
+}> {
+  if (mediaRouteRegressionMarker) {
+    throw new Error("Media regression recovery cannot run while regression uploads are active.");
+  }
+  const cleanupKeys = [...(options.cleanupKeys ?? MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS)];
+  if (!cleanupKeys.length || cleanupKeys.some((key) => !isMediaRouteRegressionCleanupKey(key))) {
+    throw new Error("Media regression recovery received an unsupported cleanup key.");
+  }
+  const [tickets, assets] = await Promise.all([
+    db.select({
+      id: mediaUploadTicketsTable.id,
+      stagingObjectPath: mediaUploadTicketsTable.stagingObjectPath,
+      promotionCleanupPaths: mediaUploadTicketsTable.promotionCleanupPaths,
+    }).from(mediaUploadTicketsTable)
+      .where(inArray(mediaUploadTicketsTable.testCleanupKey, cleanupKeys)),
+    db.select({ id: mediaAssetsTable.id })
+      .from(mediaAssetsTable)
+      .where(inArray(mediaAssetsTable.testCleanupKey, cleanupKeys)),
+  ]);
+  if (!tickets.length && !assets.length) return { tickets: 0, assets: 0 };
+
+  const assetIds = assets.map(({ id }) => id);
+  const variants = assetIds.length
+    ? await db.select({ objectPath: mediaVariantsTable.objectPath })
+      .from(mediaVariantsTable)
+      .where(inArray(mediaVariantsTable.assetId, assetIds))
+    : [];
+  const objectPaths = new Set([
+    ...tickets.map(({ stagingObjectPath }) => stagingObjectPath),
+    ...tickets.flatMap(({ promotionCleanupPaths }) => (
+      Array.isArray(promotionCleanupPaths)
+        ? promotionCleanupPaths.filter((path): path is string => typeof path === "string")
+        : []
+    )),
+    ...variants.map(({ objectPath }) => objectPath),
+  ]);
+  const deletions = await Promise.allSettled(
+    [...objectPaths].map((objectPath) => deletePrivateStorageObject(objectPath)),
+  );
+  const failures = deletions
+    .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length) {
+    throw new AggregateError(failures, "Media regression recovery could not remove every App Storage object.");
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(mediaUploadTicketsTable)
+      .where(inArray(mediaUploadTicketsTable.testCleanupKey, cleanupKeys));
+    await tx.delete(mediaAssetsTable)
+      .where(inArray(mediaAssetsTable.testCleanupKey, cleanupKeys));
+  });
+  return { tickets: tickets.length, assets: assets.length };
 }
 
 export default router;
