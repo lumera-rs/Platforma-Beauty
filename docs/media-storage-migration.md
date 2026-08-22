@@ -19,6 +19,14 @@ sources that become available. The same completion log includes a
 path. Query parameters are stripped from external URLs so signed credentials
 cannot reach logs.
 
+The twelve historical service-category sources are the only approved exception:
+each exact legacy source is mapped to an original LUMERA replacement in
+`/lumera-media/categories/` before it enters the same image validation,
+variant-generation and App Storage promotion path. The replacements were
+generated for this project on 2026-08-22 and approved for LUMERA application
+use; they do not copy third-party website files. Unknown external category
+sources retain the safe leave-in-place and audit behavior above.
+
 New salon profile/gallery, employee avatar, product/gallery, Education
 cover/gallery, and administrative category uploads all use the staged,
 owner-scoped upload pipeline and no longer write to the deployment filesystem.

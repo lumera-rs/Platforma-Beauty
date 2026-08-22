@@ -54,6 +54,60 @@ type MigrationReport = {
   }>;
 };
 
+const APPROVED_SERVICE_CATEGORY_REPLACEMENTS: Record<string, {
+  source: string;
+  replacement: string;
+}> = {
+  "Frizerski saloni": {
+    source: "https://images.unsplash.com/photo-1562322140-8baeececf3df",
+    replacement: "/lumera-media/categories/frizerski-saloni.jpg",
+  },
+  "Muški frizeri": {
+    source: "https://images.unsplash.com/photo-1503951914875-452162b0f3f1",
+    replacement: "/lumera-media/categories/muski-frizeri.jpg",
+  },
+  "Kozmetički saloni": {
+    source: "https://images.unsplash.com/photo-1487412912498-0447578fcca8",
+    replacement: "/lumera-media/categories/kozmeticki-saloni.jpg",
+  },
+  Depilacija: {
+    source: "https://images.unsplash.com/photo-1515377905703-c4788e51af15",
+    replacement: "/lumera-media/categories/depilacija.jpg",
+  },
+  Lice: {
+    source: "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881",
+    replacement: "/lumera-media/categories/lice.jpg",
+  },
+  Nokti: {
+    source: "https://images.unsplash.com/photo-1519014816548-bf5fe059798b",
+    replacement: "/lumera-media/categories/nokti.jpg",
+  },
+  "Masaža": {
+    source: "https://images.unsplash.com/photo-1544161515-4ab6ce6db874",
+    replacement: "/lumera-media/categories/masaza.jpg",
+  },
+  Telo: {
+    source: "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c",
+    replacement: "/lumera-media/categories/telo.jpg",
+  },
+  Wellness: {
+    source: "https://images.unsplash.com/photo-1540555700478-4be289fbecef",
+    replacement: "/lumera-media/categories/wellness.jpg",
+  },
+  "Lux tretmani": {
+    source: "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9",
+    replacement: "/lumera-media/categories/lux-tretmani.jpg",
+  },
+  "Paketi usluga": {
+    source: "https://images.unsplash.com/photo-1515377905703-c4788e51af15",
+    replacement: "/lumera-media/categories/paketi-usluga.jpg",
+  },
+  "Ordinacije i poliklinike": {
+    source: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be",
+    replacement: "/lumera-media/categories/ordinacije-poliklinike.jpg",
+  },
+};
+
 const CONTENT_TYPE_BY_FORMAT: Record<string, string> = {
   avif: "image/avif",
   heif: "image/avif",
@@ -65,6 +119,23 @@ const CONTENT_TYPE_BY_FORMAT: Record<string, string> = {
 
 function isAlreadyManaged(reference: string) {
   return reference.startsWith("/api/media/");
+}
+
+function externalSource(reference: string): string | null {
+  if (!/^https?:\/\//i.test(reference)) return null;
+  try {
+    const url = new URL(reference);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+export function approvedServiceCategoryReference(categoryName: string, reference: string) {
+  const approved = APPROVED_SERVICE_CATEGORY_REPLACEMENTS[categoryName];
+  return approved && externalSource(reference) === approved.source
+    ? approved.replacement
+    : reference;
 }
 
 async function firstExistingPath(paths: string[]): Promise<string | null> {
@@ -203,6 +274,30 @@ export async function migrateLegacyMediaReferences() {
   const admin = (await db.select({ id: usersTable.id }).from(usersTable)
     .where(inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"])).limit(1))[0];
 
+  if (admin) {
+    for (const category of await db.select().from(serviceCategoriesTable)) {
+      if (!category.fallbackImageUrl) continue;
+      const approvedReference = approvedServiceCategoryReference(category.name, category.fallbackImageUrl);
+      const [fallbackImageUrl] = await migrateList({
+        references: [approvedReference],
+        scope: "service-category",
+        resourceId: category.id,
+        ownerUserId: admin.id,
+        visibility: "public",
+      }, report);
+      if (fallbackImageUrl !== category.fallbackImageUrl) {
+        await db.update(serviceCategoriesTable).set({ fallbackImageUrl }).where(eq(serviceCategoriesTable.id, category.id));
+      }
+    }
+    logger.info({
+      scope: "service-category",
+      migrated: report.migrated,
+      retained: report.retained,
+      skipped: report.skipped,
+      remainingSources: [...report.remainingSources],
+    }, "Legacy media migration scope completed");
+  }
+
   for (const salon of await db.select().from(salonsTable)) {
     const [imageUrl] = await migrateList({
       references: [salon.imageUrl],
@@ -303,19 +398,6 @@ export async function migrateLegacyMediaReferences() {
   }
 
   if (admin) {
-    for (const category of await db.select().from(serviceCategoriesTable)) {
-      if (!category.fallbackImageUrl) continue;
-      const [fallbackImageUrl] = await migrateList({
-        references: [category.fallbackImageUrl],
-        scope: "service-category",
-        resourceId: category.id,
-        ownerUserId: admin.id,
-        visibility: "public",
-      }, report);
-      if (fallbackImageUrl !== category.fallbackImageUrl) {
-        await db.update(serviceCategoriesTable).set({ fallbackImageUrl }).where(eq(serviceCategoriesTable.id, category.id));
-      }
-    }
     for (const category of await db.select().from(productCategoriesTable)) {
       if (!category.imageUrl) continue;
       const [imageUrl] = await migrateList({

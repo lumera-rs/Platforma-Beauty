@@ -264,7 +264,7 @@ export default function AdminCategories() {
               {serviceCategories.map((category) => (
                 <div key={category.id} className="grid gap-4 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
                    <OptimizedImage
-                    src={serviceImageValue(category) || "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=480&q=80"}
+                    src={serviceImageValue(category) || "/lumera-media/categories/kozmeticki-saloni.jpg"}
                     alt={`Rezervna fotografija: ${category.name}`}
                      width={448}
                      height={384}

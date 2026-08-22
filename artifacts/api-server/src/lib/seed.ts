@@ -84,18 +84,18 @@ const categories = [
 ] as const;
 
 const categoryFallbackImages: Record<(typeof categories)[number][0], string> = {
-  "Frizerski saloni": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=1200&q=85",
-  "Muški frizeri": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=1200&q=85",
-  "Kozmetički saloni": "https://images.unsplash.com/photo-1487412912498-0447578fcca8?auto=format&fit=crop&w=1200&q=85",
-  "Depilacija": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1200&q=85",
-  "Lice": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=1200&q=85",
-  "Nokti": "https://images.unsplash.com/photo-1519014816548-bf5fe059798b?auto=format&fit=crop&w=1200&q=85",
-  "Masaža": "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=1200&q=85",
-  "Telo": "https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?auto=format&fit=crop&w=1200&q=85",
-  "Wellness": "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=85",
-  "Lux tretmani": "https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=1200&q=85",
-  "Paketi usluga": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=1200&q=85",
-  "Ordinacije i poliklinike": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?auto=format&fit=crop&w=1200&q=85",
+  "Frizerski saloni": "/lumera-media/categories/frizerski-saloni.jpg",
+  "Muški frizeri": "/lumera-media/categories/muski-frizeri.jpg",
+  "Kozmetički saloni": "/lumera-media/categories/kozmeticki-saloni.jpg",
+  "Depilacija": "/lumera-media/categories/depilacija.jpg",
+  "Lice": "/lumera-media/categories/lice.jpg",
+  "Nokti": "/lumera-media/categories/nokti.jpg",
+  "Masaža": "/lumera-media/categories/masaza.jpg",
+  "Telo": "/lumera-media/categories/telo.jpg",
+  "Wellness": "/lumera-media/categories/wellness.jpg",
+  "Lux tretmani": "/lumera-media/categories/lux-tretmani.jpg",
+  "Paketi usluga": "/lumera-media/categories/paketi-usluga.jpg",
+  "Ordinacije i poliklinike": "/lumera-media/categories/ordinacije-poliklinike.jpg",
 };
 
 const massageTags = [

@@ -22,6 +22,7 @@ import {
 import app from "../app";
 import { createSession, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
+import { approvedServiceCategoryReference } from "./media-migration";
 import {
   canClaimMediaReference,
   claimMediaReference,
@@ -88,6 +89,22 @@ async function forceEndpointClaimConflict<T>(
 }
 
 async function run() {
+  assert.equal(
+    approvedServiceCategoryReference(
+      "Frizerski saloni",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=1200&q=85",
+    ),
+    "/lumera-media/categories/frizerski-saloni.jpg",
+    "The approved replacement should intercept the exact historical category source.",
+  );
+  assert.equal(
+    approvedServiceCategoryReference(
+      "Frizerski saloni",
+      "https://images.unsplash.com/photo-not-the-approved-source?auto=format",
+    ),
+    "https://images.unsplash.com/photo-not-the-approved-source?auto=format",
+    "An arbitrary external category image must remain subject to the normal migration audit.",
+  );
   await ensureDemoData();
   const [ownerAndSalon] = await db.select({ user: usersTable, salon: salonsTable }).from(usersTable)
     .innerJoin(salonsTable, eq(salonsTable.id, usersTable.activeSalonId))

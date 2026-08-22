@@ -28,3 +28,15 @@ packages = ["glib", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus", "expat"
 
 [userenv.production]
 APP_BASE_URL = "https://beauty-partner-hub.replit.app"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 23561
+externalPort = 3000

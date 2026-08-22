@@ -2108,7 +2108,7 @@ async function salonCards(salons: (typeof salonsTable.$inferSelect)[]) {
 
 type MarketplaceHomeDiscoveryPayload = ReturnType<typeof GetMarketplaceHomeDiscoveryResponse.parse>;
 const marketplaceHomeDiscoveryCache = new Map<string, { expiresAt: number; payload: MarketplaceHomeDiscoveryPayload }>();
-const DEFAULT_CATEGORY_CARD_IMAGE = "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=85";
+const DEFAULT_CATEGORY_CARD_IMAGE = "/lumera-media/categories/kozmeticki-saloni.jpg";
 const DEFAULT_POPULAR_CATEGORY_ORDER = [
   "Frizerski saloni",
   "Muški frizeri",
