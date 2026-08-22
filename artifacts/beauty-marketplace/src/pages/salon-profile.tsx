@@ -377,6 +377,24 @@ export default function SalonProfile() {
         setIsSuccess(true);
       },
       onError: (error: unknown) => {
+        const isBookingConflict = (error as { status?: number })?.status === 409;
+        if (isBookingConflict) {
+          const availabilityQueryKey = getGetSalonAvailabilityQueryKey(salonData.id, {
+            serviceId: selectedService,
+            date: dateStr,
+            employeeId: availabilityEmployeeId,
+          });
+
+          setLocationDialogOpen(false);
+          setSelectedSlot(null);
+          setBookingStep(3);
+          void queryClient.invalidateQueries({ queryKey: availabilityQueryKey, exact: true });
+          toast.error("Termin više nije slobodan", {
+            description: "Osvežili smo slobodne termine. Izaberite drugi termin.",
+          });
+          return;
+        }
+
         const description = (error as { data?: { error?: string }; message?: string })?.data?.error
           ?? (error as { message?: string })?.message
           ?? "Došlo je do greške prilikom zakazivanja.";

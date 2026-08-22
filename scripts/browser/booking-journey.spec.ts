@@ -324,6 +324,47 @@ test("customer can complete the desktop salon booking journey", async ({ page })
   }
 });
 
+test("a booking conflict returns the customer to refreshed available slots", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signInAsCustomer(page);
+  await page.goto(salonPath);
+
+  const widget = page.locator("#booking-widget");
+  await expect(widget).toBeVisible();
+  await reachBookingConfirmation(page, widget);
+
+  await page.route("**/api/appointments", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin.",
+      }),
+    });
+  });
+
+  const refreshedAvailability = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "GET" && url.pathname.includes("/availability");
+  });
+  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+
+  await expect(page.getByText("Osvežili smo slobodne termine. Izaberite drugi termin.")).toBeVisible();
+  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+  await expect(widget.getByText("Pregled rezervacije")).toHaveCount(0);
+  await expect(widget.getByRole("button", { name: "Dalje" })).toBeDisabled();
+  await refreshedAvailability;
+
+  const refreshedSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
+  await expect(refreshedSlot).toBeVisible();
+  await refreshedSlot.click();
+  await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
+});
+
 test("customer sees a sent request when the salon must approve an in-salon booking", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   const fixture = await createPendingBookingFixture();
