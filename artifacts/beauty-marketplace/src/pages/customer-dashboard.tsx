@@ -29,7 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap } from "lucide-react";
+import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,7 +64,7 @@ export default function CustomerDashboard() {
 
   const { data: dashboard, isLoading: isDashboardLoading, refetch: refetchDash } = useGetCustomerDashboard({ query: { enabled: !!userResp?.user, queryKey: getGetCustomerDashboardQueryKey() }});
   const { data: appointments, isLoading: isApptsLoading, refetch: refetchAppts } = useListMyAppointments(undefined, { query: { enabled: !!userResp?.user, queryKey: getListMyAppointmentsQueryKey(undefined) }});
-  const { data: signInMethods, isLoading: isSignInMethodsLoading } = useGetAuthSignInMethods({
+  const { data: signInMethods, isLoading: isSignInMethodsLoading, refetch: refetchSignInMethods } = useGetAuthSignInMethods({
     query: { enabled: !!userResp?.user, queryKey: getGetAuthSignInMethodsQueryKey() },
   });
   const { data: favorites, isLoading: isFavoritesLoading } = useListFavorites({
@@ -87,6 +87,24 @@ export default function CustomerDashboard() {
   // is observed by a render, so accept the query from either source.
   const requestedTab = new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search).get("tab");
   const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" ? requestedTab : "appointments";
+
+  useEffect(() => {
+    const search = location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search;
+    const params = new URLSearchParams(search);
+    const oauthStatus = params.get("oauth");
+    const oauthError = params.get("oauth_error");
+    if (!oauthStatus && !oauthError) return;
+
+    if (oauthStatus === "linked") {
+      const provider = params.get("provider") === "facebook" ? "Facebook" : "Google";
+      void refetchSignInMethods();
+      toast.success(`${provider} prijava je povezana.`, { description: "Novi način prijave je dodat na vaš LUMERA nalog." });
+    } else if (oauthError) {
+      toast.error("Povezivanje nije uspelo", { description: oauthError });
+    }
+
+    window.history.replaceState(null, "", `${window.location.pathname}?tab=settings`);
+  }, [location, refetchSignInMethods, toast]);
 
   const handleCancel = (id: string) => {
     cancelMutation.mutate(
@@ -122,6 +140,9 @@ export default function CustomerDashboard() {
         },
       },
     );
+  };
+  const connectProvider = (provider: "google" | "facebook") => {
+    window.location.assign(`/api/auth/oauth/${provider}/start?flow=link`);
   };
   const requestPhoneCode = async () => {
     setPhoneBusy(true);
@@ -461,6 +482,30 @@ export default function CustomerDashboard() {
                      Google i Facebook još nisu povezani sa ovim nalogom.
                    </div>
                  )}
+                  {!isSignInMethodsLoading && signInMethods && (
+                    <div className="flex flex-col gap-4 rounded-lg border border-primary/20 bg-primary/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium">Dodajte rezervnu prijavu</p>
+                        <p className="text-sm text-muted-foreground">Povežite Google ili Facebook da biste imali dodatni način pristupa nalogu.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(["google", "facebook"] as const)
+                          .filter((provider) => !signInMethods.providers.some((method) => method.provider === provider))
+                          .map((provider) => {
+                            const providerName = provider === "google" ? "Google" : "Facebook";
+                            return (
+                              <Button key={provider} variant="outline" size="sm" onClick={() => connectProvider(provider)}>
+                                <Link2 className="mr-2 h-4 w-4" />
+                                Poveži {providerName}
+                              </Button>
+                            );
+                          })}
+                        {!(["google", "facebook"] as const).some((provider) => !signInMethods.providers.some((method) => method.provider === provider)) && (
+                          <span className="self-center text-sm text-muted-foreground">Oba provajdera su već povezana.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                </CardContent>
              </Card>
              </div>

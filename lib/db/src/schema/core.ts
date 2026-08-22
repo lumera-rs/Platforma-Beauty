@@ -91,6 +91,7 @@ export const oauthLoginStatesTable = pgTable("oauth_login_states", {
   state: text("state").notNull().unique(),
   provider: oauthProviderEnum("provider").notNull(),
   flow: text("flow").notNull(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   codeVerifier: text("code_verifier"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

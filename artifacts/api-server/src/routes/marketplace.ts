@@ -349,8 +349,8 @@ function oauthRedirect(req: Request, provider: OAuthProvider) {
 }
 
 function oauthFailurePath(flow: string, reason: string) {
-  const page = flow === "business" ? "/poslovna-prijava" : "/prijava";
-  return `${page}?oauth_error=${encodeURIComponent(reason)}`;
+  const page = flow === "business" ? "/poslovna-prijava" : flow === "link" ? "/moj-nalog?tab=settings" : "/prijava";
+  return `${page}${page.includes("?") ? "&" : "?"}oauth_error=${encodeURIComponent(reason)}`;
 }
 
 function emailCampaignView(campaign: typeof emailCampaignsTable.$inferSelect) {
@@ -2170,15 +2170,28 @@ router.post("/auth/student-register", async (req, res): Promise<void> => {
 
 router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
   const provider = req.params.provider;
-  const flow = req.query.flow === "business" ? "business" : "customer";
   if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
+  const requestedFlow = typeof req.query.flow === "string" ? req.query.flow : "";
+  const flow = requestedFlow === "business" ? "business" : requestedFlow === "link" ? "link" : "customer";
+  const linkingUser = flow === "link" ? await getCurrentUser(req) : null;
+  if (flow === "link" && !linkingUser) {
+    res.redirect(oauthFailurePath("link", "Prijavite se da biste dodali način prijave."));
+    return;
+  }
   const oauthConfig = await oauthProviderConfig(provider);
   if (!oauthConfig) { res.redirect(oauthFailurePath(flow, "OAuth prijava trenutno nije podešena.")); return; }
   const redirectUri = oauthRedirect(req, provider);
   if (!redirectUri) { res.redirect(oauthFailurePath(flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
   const state = randomBytes(32).toString("base64url");
   const codeVerifier = provider === "google" ? randomBytes(48).toString("base64url") : null;
-  await db.insert(oauthLoginStatesTable).values({ state, provider, flow, codeVerifier, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
+  await db.insert(oauthLoginStatesTable).values({
+    state,
+    provider,
+    flow,
+    userId: linkingUser?.id ?? null,
+    codeVerifier,
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+  });
   res.cookie(OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",
@@ -2219,6 +2232,62 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
     const redirectUri = oauthRedirect(req, provider);
     if (!redirectUri) { res.redirect(oauthFailurePath(loginState.flow, "OAuth prijava zahteva bezbedan APP_BASE_URL u produkciji.")); return; }
     const profile = await resolveOAuthProfile(provider, req.query.code, redirectUri, loginState.codeVerifier);
+
+    if (loginState.flow === "link") {
+      const currentUser = await getCurrentUser(req);
+      if (!currentUser || !loginState.userId || currentUser.id !== loginState.userId) {
+        res.redirect(oauthFailurePath("link", "Sesija naloga je promenjena. Pokušajte ponovo."));
+        return;
+      }
+      const linkingUserId = loginState.userId;
+
+      try {
+        await db.transaction(async (tx) => {
+          await tx.execute(sql`select id from ${usersTable} where ${usersTable.id} = ${linkingUserId} for update`);
+          const [lockedUser] = await tx.select({ id: usersTable.id }).from(usersTable)
+            .where(and(eq(usersTable.id, linkingUserId), eq(usersTable.active, true)))
+            .limit(1);
+          if (!lockedUser) throw new Error("oauth_link_account_unavailable");
+
+          const [existingIdentity] = await tx.select().from(oauthIdentitiesTable).where(and(
+            eq(oauthIdentitiesTable.provider, provider),
+            eq(oauthIdentitiesTable.providerAccountId, profile.id),
+          )).limit(1);
+          if (existingIdentity) {
+            if (existingIdentity.userId === linkingUserId) return;
+            throw new Error("oauth_link_identity_conflict");
+          }
+
+          const [existingProvider] = await tx.select({ id: oauthIdentitiesTable.id }).from(oauthIdentitiesTable)
+            .where(and(
+              eq(oauthIdentitiesTable.userId, linkingUserId),
+              eq(oauthIdentitiesTable.provider, provider),
+            ))
+            .limit(1);
+          if (existingProvider) throw new Error("oauth_link_provider_exists");
+
+          await tx.insert(oauthIdentitiesTable).values({
+            userId: linkingUserId,
+            provider,
+            providerAccountId: profile.id,
+            providerEmail: profile.email,
+          });
+        });
+      } catch (error) {
+        const errorCode = error instanceof Error ? error.message : "";
+        const message = errorCode === "oauth_link_provider_exists"
+          ? `LUMERA nalog već ima povezanu ${provider === "google" ? "Google" : "Facebook"} prijavu.`
+          : errorCode === "oauth_link_account_unavailable"
+            ? "LUMERA nalog više nije dostupan."
+            : "Ovaj identitet je već povezan sa drugim LUMERA nalogom ili nije moguće povezivanje.";
+        res.redirect(oauthFailurePath("link", message));
+        return;
+      }
+
+      res.redirect(`/moj-nalog?tab=settings&oauth=linked&provider=${provider}`);
+      return;
+    }
+
     const user = await db.transaction(async (tx) => {
       const [identity] = await tx.select().from(oauthIdentitiesTable).where(and(eq(oauthIdentitiesTable.provider, provider), eq(oauthIdentitiesTable.providerAccountId, profile.id))).limit(1);
       if (identity) {
