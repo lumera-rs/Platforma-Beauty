@@ -202,6 +202,40 @@ async function run(): Promise<void> {
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
+    const [unverifiedCenter] = await db.insert(educationCentersTable).values({
+      ownerId: centerOwner.id,
+      name: `Unverified education center ${suffix}`,
+      city: "Beograd",
+      description: "Centar za proveru zaštite javne prodaje.",
+      imageUrl: "/test-education-finance.jpg",
+      verificationStatus: "pending",
+    }).returning();
+    assert.ok(unverifiedCenter);
+    raceCenterIds.push(unverifiedCenter.id);
+    await db.insert(educationCenterSubscriptionsTable).values({
+      centerId: unverifiedCenter.id,
+      planId: plan.id,
+      status: "active",
+      dueAmount: plan.price,
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const [unverifiedCourse] = await db.insert(coursesTable).values({
+      centerId: unverifiedCenter.id,
+      title: `Unverified public course ${suffix}`,
+      description: "Objavljen kurs koji ne sme biti dostupan za javnu kupovinu.",
+      category: "Zaštita javne prodaje",
+      format: "online",
+      city: "Beograd",
+      price: 11000,
+      duration: "2 nedelje",
+      certification: true,
+      imageUrl: "/test-education-finance.jpg",
+      published: true,
+    }).returning();
+    assert.ok(unverifiedCourse);
+    courseIds.push(unverifiedCourse.id);
+
     const [onlineCourse, liveCourse, refundCourse, rejectCourse] = await db.insert(coursesTable).values([
       {
         centerId: center.id,
@@ -354,6 +388,26 @@ async function run(): Promise<void> {
 
     const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
     assert.ok(settings);
+
+    const publicCoursesResponse = await request(baseUrl, "/education/public/courses");
+    assert.equal(publicCoursesResponse.status, 200);
+    const publicCourses = await json<Array<{ id: string }>>(publicCoursesResponse);
+    assert.equal(
+      publicCourses.some((course) => course.id === unverifiedCourse.id),
+      false,
+      "A published course from an unverified center must stay out of the public marketplace.",
+    );
+
+    const blockedEnrollmentResponse = await request(baseUrl, `/education/courses/${unverifiedCourse.id}/enrollments`, {
+      method: "POST",
+      cookie: buyerCookie,
+      headers: { "idempotency-key": `unverified-${suffix}` },
+      body: {},
+    });
+    assert.equal(blockedEnrollmentResponse.status, 404, "Unverified center courses must reject public enrollment.");
+    const blockedEnrollments = await db.select().from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.courseId, unverifiedCourse.id));
+    assert.equal(blockedEnrollments.length, 0, "A rejected public enrollment must not create an enrollment record.");
 
     async function enrollAndSettle(courseId: string, key: string) {
       const enrollmentResponse = await request(baseUrl, `/education/courses/${courseId}/enrollments`, {
