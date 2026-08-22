@@ -1550,6 +1550,26 @@ type EducationGalleryCleanupResult = {
   failed: number;
 };
 
+const EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT = 3;
+
+function educationMediaUploadCleanupEligibility(now: Date) {
+  return or(
+    isNotNull(educationMediaUploadsTable.attachedAt),
+    and(isNull(educationMediaUploadsTable.attachedAt), lt(educationMediaUploadsTable.expiresAt, now)),
+  );
+}
+
+async function recordEducationGalleryCleanupFailure(uploadId: string, failedAt: Date): Promise<number | null> {
+  const [upload] = await db.update(educationMediaUploadsTable)
+    .set({
+      cleanupFailureCount: sql`${educationMediaUploadsTable.cleanupFailureCount} + 1`,
+      lastCleanupFailureAt: failedAt,
+    })
+    .where(eq(educationMediaUploadsTable.id, uploadId))
+    .returning({ cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount });
+  return upload?.cleanupFailureCount ?? null;
+}
+
 export async function cleanupEducationMediaUpload(
   candidate: typeof educationMediaUploadsTable.$inferSelect,
   now: Date,
@@ -1601,10 +1621,7 @@ export async function cleanupEducationMediaUpload(
 export async function runEducationGalleryCleanup(): Promise<EducationGalleryCleanupResult> {
   const now = new Date();
   const candidates = await db.select().from(educationMediaUploadsTable)
-    .where(or(
-      isNotNull(educationMediaUploadsTable.attachedAt),
-      and(isNull(educationMediaUploadsTable.attachedAt), lt(educationMediaUploadsTable.expiresAt, now)),
-    ))
+    .where(educationMediaUploadCleanupEligibility(now))
     .orderBy(asc(educationMediaUploadsTable.createdAt))
     .limit(100);
   const result: EducationGalleryCleanupResult = {
@@ -1621,7 +1638,19 @@ export async function runEducationGalleryCleanup(): Promise<EducationGalleryClea
       }
     } catch (error) {
       result.failed += 1;
-      logger.warn({ err: error, uploadId: candidate.id }, "Education gallery cleanup failed");
+      let cleanupFailureCount: number | null = null;
+      try {
+        cleanupFailureCount = await recordEducationGalleryCleanupFailure(candidate.id, now);
+      } catch (recordingError) {
+        logger.error({ err: recordingError }, "Education gallery cleanup failure could not be recorded");
+      }
+      logger.warn({ err: error, cleanupFailureCount }, "Education gallery cleanup failed");
+      if (cleanupFailureCount === EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT) {
+        logger.warn(
+          { cleanupFailureCount },
+          "Education gallery cleanup needs attention: inspect App Storage availability and the cleanup job credentials",
+        );
+      }
     }
   }
   return result;
@@ -7876,7 +7905,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const [users, salons, allAppointments, orders, reviews, subscriptions, services] = await Promise.all([
+  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets] = await Promise.all([
     db.select().from(usersTable),
     db.select().from(salonsTable),
     db.select().from(appointmentsTable),
@@ -7884,6 +7913,12 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     db.select().from(reviewsTable),
     db.select({ status: subscriptionsTable.status }).from(subscriptionsTable),
     db.select({ id: servicesTable.id, categoryName: servicesTable.categoryName }).from(servicesTable),
+    db.select({
+      cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
+      createdAt: educationMediaUploadsTable.createdAt,
+    })
+      .from(educationMediaUploadsTable)
+      .where(educationMediaUploadCleanupEligibility(now)),
   ]);
 
   const bookingsThisMonth = allAppointments.filter((a) => a.createdAt >= thisMonthStart).length;
@@ -7892,6 +7927,14 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const newSalonsThisMonth = salons.filter((s) => s.createdAt >= thisMonthStart).length;
   const hiddenReviews = reviews.filter((r) => !r.visible).length;
   const activeSubscriptions = subscriptions.filter((s) => s.status === "active" || s.status === "free_via_loyalty").length;
+  const galleryCleanupFailedTickets = eligibleGalleryUploadTickets.filter((ticket) => ticket.cleanupFailureCount > 0);
+  const oldestEligibleGalleryUploadTicket = eligibleGalleryUploadTickets.reduce<Date | null>(
+    (oldest, ticket) => !oldest || ticket.createdAt < oldest ? ticket.createdAt : oldest,
+    null,
+  );
+  const galleryCleanupOldestEligibleTicketAgeMinutes = oldestEligibleGalleryUploadTicket
+    ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
+    : null;
 
   const categoryCount: Record<string, number> = {};
   const categoryByService = new Map(services.map((service) => [service.id, service.categoryName]));
@@ -7916,6 +7959,12 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     totalReviews: reviews.length,
     hiddenReviews,
     activeSubscriptions,
+    galleryCleanupFailedTickets: galleryCleanupFailedTickets.length,
+    galleryCleanupFailureAttempts: galleryCleanupFailedTickets.reduce((total, ticket) => total + ticket.cleanupFailureCount, 0),
+    galleryCleanupOldestEligibleTicketAgeMinutes,
+    galleryCleanupHasRepeatedFailures: galleryCleanupFailedTickets.some(
+      (ticket) => ticket.cleanupFailureCount >= EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT,
+    ),
     topCategories,
   }));
 });

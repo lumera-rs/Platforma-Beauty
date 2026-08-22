@@ -12,7 +12,10 @@ import {
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
-import { cleanupEducationMediaUpload } from "../../artifacts/api-server/src/routes/marketplace";
+import {
+  cleanupEducationMediaUpload,
+  runEducationGalleryCleanup,
+} from "../../artifacts/api-server/src/routes/marketplace";
 import { eq, inArray, sql } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
@@ -32,8 +35,11 @@ type GalleryFixture = {
   ownerPassword: string;
   outsiderEmail: string;
   outsiderPassword: string;
+  adminEmail: string;
+  adminPassword: string;
   ownerId: string;
   outsiderId: string;
+  adminId: string;
   centerId: string;
   courseId: string;
   planId: string;
@@ -43,8 +49,10 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
   const suffix = randomUUID();
   const ownerPassword = "gallery-owner-password";
   const outsiderPassword = "gallery-outsider-password";
+  const adminPassword = "gallery-admin-password";
   let ownerId: string | undefined;
   let outsiderId: string | undefined;
+  let adminId: string | undefined;
   let centerId: string | undefined;
   let courseId: string | undefined;
   let planId: string | undefined;
@@ -69,6 +77,16 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
     }).returning();
     if (!outsider) throw new Error("Could not create gallery outsider fixture.");
     outsiderId = outsider.id;
+    const [admin] = await db.insert(usersTable).values({
+      firstName: "Gallery",
+      lastName: "Administrator",
+      email: `browser-gallery-admin-${suffix}@example.test`,
+      passwordHash: await hashPassword(adminPassword),
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    }).returning();
+    if (!admin) throw new Error("Could not create gallery admin fixture.");
+    adminId = admin.id;
     const [center] = await db.insert(educationCentersTable).values({
       ownerId: owner.id,
       name: `Gallery test center ${suffix}`,
@@ -116,8 +134,11 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
       ownerPassword,
       outsiderEmail: outsider.email,
       outsiderPassword,
+      adminEmail: admin.email,
+      adminPassword,
       ownerId,
       outsiderId,
+      adminId,
       centerId,
       courseId,
       planId,
@@ -126,6 +147,7 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
     if (courseId) await db.delete(coursesTable).where(eq(coursesTable.id, courseId));
     if (centerId) await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
     if (planId) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId));
+    if (adminId) await db.delete(usersTable).where(eq(usersTable.id, adminId));
     if (outsiderId) await db.delete(usersTable).where(eq(usersTable.id, outsiderId));
     if (ownerId) await db.delete(usersTable).where(eq(usersTable.id, ownerId));
     throw error;
@@ -136,6 +158,7 @@ async function cleanUpGalleryFixture(fixture: GalleryFixture) {
   await db.delete(coursesTable).where(eq(coursesTable.id, fixture.courseId));
   await db.delete(educationCentersTable).where(eq(educationCentersTable.id, fixture.centerId));
   await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.adminId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.outsiderId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
 }
@@ -705,6 +728,84 @@ test("concurrent gallery attach, cleanup, and deletion preserve a referenced fin
     releaseGalleryLock?.();
     if (galleryLockHolder) await galleryLockHolder;
     for (const storagePath of storagePaths) await deleteStorageObject(storagePath);
+    await cleanUpGalleryFixture(fixture);
+  }
+});
+
+test("repeated gallery cleanup failures alert admins without exposing ticket details", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await createGalleryFixture();
+  try {
+    const ownerLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    });
+    expect(ownerLogin).toBeOK();
+
+    const uploadTicketResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
+      data: {
+        name: "cleanup-alert.png",
+        size: tinyPng.length,
+        contentType: "image/png",
+      },
+    });
+    expect(uploadTicketResponse).toBeOK();
+    const uploadTicket = await uploadTicketResponse.json() as { mediaId: string };
+    const malformedStoragePath = `/objects/invalid-cleanup-${randomUUID()}`;
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await db.update(educationMediaUploadsTable)
+      .set({
+        objectPath: malformedStoragePath,
+        expiresAt: new Date(0),
+        createdAt: twoHoursAgo,
+      })
+      .where(eq(educationMediaUploadsTable.id, uploadTicket.mediaId));
+
+    await runEducationGalleryCleanup();
+    await runEducationGalleryCleanup();
+    await runEducationGalleryCleanup();
+
+    const [failedTicket] = await db.select({
+      cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
+      lastCleanupFailureAt: educationMediaUploadsTable.lastCleanupFailureAt,
+    })
+      .from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, uploadTicket.mediaId));
+    expect(failedTicket?.cleanupFailureCount).toBeGreaterThanOrEqual(3);
+    expect(failedTicket?.lastCleanupFailureAt).not.toBeNull();
+
+    const forbiddenSummary = await page.request.get("/api/admin/summary");
+    expect(forbiddenSummary.status()).toBe(403);
+
+    await page.request.post("/api/auth/logout");
+    const adminLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.adminEmail, password: fixture.adminPassword },
+    });
+    expect(adminLogin).toBeOK();
+
+    const adminSummaryResponse = await page.request.get("/api/admin/summary");
+    expect(adminSummaryResponse).toBeOK();
+    const adminSummary = await adminSummaryResponse.json() as {
+      galleryCleanupFailedTickets: number;
+      galleryCleanupFailureAttempts: number;
+      galleryCleanupOldestEligibleTicketAgeMinutes: number | null;
+      galleryCleanupHasRepeatedFailures: boolean;
+    };
+    expect(adminSummary.galleryCleanupFailedTickets).toBeGreaterThanOrEqual(1);
+    expect(adminSummary.galleryCleanupFailureAttempts).toBeGreaterThanOrEqual(3);
+    expect(adminSummary.galleryCleanupOldestEligibleTicketAgeMinutes).toBeGreaterThanOrEqual(119);
+    expect(adminSummary.galleryCleanupHasRepeatedFailures).toBe(true);
+    expect(JSON.stringify(adminSummary)).not.toContain(malformedStoragePath);
+    expect(JSON.stringify(adminSummary)).not.toContain(uploadTicket.mediaId);
+    expect(adminSummary).not.toHaveProperty("objectPath");
+    expect(adminSummary).not.toHaveProperty("tickets");
+
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { name: "Pregled Platforme" })).toBeVisible();
+    await expect(page.getByTestId("gallery-cleanup-alert")).toContainText("Potrebna je intervencija.");
+    await expect(page.getByTestId("gallery-cleanup-failed-tickets")).not.toHaveText("0");
+    await expect(page.getByTestId("gallery-cleanup-failure-attempts")).not.toHaveText("0");
+    await expect(page.getByTestId("gallery-cleanup-oldest-ticket-age")).not.toHaveText("Nema");
+  } finally {
     await cleanUpGalleryFixture(fixture);
   }
 });

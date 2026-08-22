@@ -6689,6 +6689,10 @@ export const GetAdminSummaryResponse = zod.object({
   "totalReviews": zod.number(),
   "hiddenReviews": zod.number(),
   "activeSubscriptions": zod.number(),
+  "galleryCleanupFailedTickets": zod.number().describe('Number of eligible gallery upload tickets with at least one recorded cleanup failure.'),
+  "galleryCleanupFailureAttempts": zod.number().describe('Total recorded cleanup failures across eligible gallery upload tickets.'),
+  "galleryCleanupOldestEligibleTicketAgeMinutes": zod.number().nullable().describe('Age in minutes of the oldest gallery upload ticket currently eligible for cleanup.'),
+  "galleryCleanupHasRepeatedFailures": zod.boolean().describe('Whether any eligible gallery upload ticket has failed cleanup three or more times.'),
   "topCategories": zod.array(zod.object({
   "name": zod.string(),
   "count": zod.number()

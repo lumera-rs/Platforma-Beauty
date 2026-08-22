@@ -161,11 +161,14 @@ export const educationMediaUploadsTable = pgTable("education_media_uploads", {
   size: integer("size").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   attachedAt: timestamp("attached_at", { withTimezone: true }),
+  cleanupFailureCount: integer("cleanup_failure_count").notNull().default(0),
+  lastCleanupFailureAt: timestamp("last_cleanup_failure_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("education_media_uploads_object_path_unique").on(table.objectPath),
   index("education_media_uploads_course_expires_idx").on(table.courseId, table.expiresAt),
   index("education_media_uploads_cleanup_idx").on(table.expiresAt, table.attachedAt),
+  index("education_media_uploads_cleanup_failures_idx").on(table.cleanupFailureCount, table.createdAt),
 ]);
 
 export const courseReviewsTable = pgTable("course_reviews", {

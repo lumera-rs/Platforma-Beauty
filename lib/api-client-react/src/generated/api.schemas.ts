@@ -2574,6 +2574,17 @@ export interface AdminSummary {
   totalReviews: number;
   hiddenReviews: number;
   activeSubscriptions: number;
+  /** Number of eligible gallery upload tickets with at least one recorded cleanup failure. */
+  galleryCleanupFailedTickets: number;
+  /** Total recorded cleanup failures across eligible gallery upload tickets. */
+  galleryCleanupFailureAttempts: number;
+  /**
+     * Age in minutes of the oldest gallery upload ticket currently eligible for cleanup.
+     * @nullable
+     */
+  galleryCleanupOldestEligibleTicketAgeMinutes: number | null;
+  /** Whether any eligible gallery upload ticket has failed cleanup three or more times. */
+  galleryCleanupHasRepeatedFailures: boolean;
   topCategories: AdminSummaryTopCategoriesItem[];
 }
 

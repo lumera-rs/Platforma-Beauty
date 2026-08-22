@@ -3,6 +3,16 @@ import { useGetAdminSummary } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Store, Calendar, TrendingUp, DollarSign, AlertCircle, ShieldCheck, Loader2 } from "lucide-react";
 
+function formatCleanupTicketAge(ageMinutes: number | null): string {
+  if (ageMinutes === null) return "Nema";
+  if (ageMinutes < 60) return `${ageMinutes} min`;
+  const hours = Math.floor(ageMinutes / 60);
+  const minutes = ageMinutes % 60;
+  if (hours < 24) return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `${days} dan${days === 1 ? "" : "a"}`;
+}
+
 export default function AdminDashboard() {
   const { data: summary, isLoading, error } = useGetAdminSummary();
 
@@ -115,6 +125,42 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className={summary.galleryCleanupHasRepeatedFailures ? "border-destructive/50 bg-destructive/5" : ""}>
+          <CardHeader className="pb-2 border-b border-border/50 bg-muted/30">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <AlertCircle className={`w-5 h-5 ${summary.galleryCleanupHasRepeatedFailures ? "text-destructive" : "text-muted-foreground"}`} />
+              Čišćenje galerije
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {summary.galleryCleanupHasRepeatedFailures && (
+              <div className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="gallery-cleanup-alert">
+                <strong>Potrebna je intervencija.</strong> Proverite dostupnost App Storage-a i podešavanje zakazanog čišćenja; sistem će pokušati ponovo pri sledećem pokretanju.
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-background border border-border p-4 rounded-xl shadow-sm">
+                <p className="text-sm text-muted-foreground mb-1">Tiketi sa greškom</p>
+                <p className="text-3xl font-bold text-foreground" data-testid="gallery-cleanup-failed-tickets">
+                  {summary.galleryCleanupFailedTickets}
+                </p>
+              </div>
+              <div className="bg-background border border-border p-4 rounded-xl shadow-sm">
+                <p className="text-sm text-muted-foreground mb-1">Ukupno neuspešnih pokušaja</p>
+                <p className="text-3xl font-bold text-foreground" data-testid="gallery-cleanup-failure-attempts">
+                  {summary.galleryCleanupFailureAttempts}
+                </p>
+              </div>
+              <div className="bg-background border border-border p-4 rounded-xl shadow-sm">
+                <p className="text-sm text-muted-foreground mb-1">Najstariji kandidat za čišćenje</p>
+                <p className="text-2xl font-bold text-foreground" data-testid="gallery-cleanup-oldest-ticket-age">
+                  {formatCleanupTicketAge(summary.galleryCleanupOldestEligibleTicketAgeMinutes)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {summary.topCategories.length > 0 && (
           <Card>
