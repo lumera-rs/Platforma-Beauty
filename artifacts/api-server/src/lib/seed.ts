@@ -4,6 +4,7 @@ import {
   appointmentsTable,
   beautyGlossaryTable,
   courseCategoriesTable,
+  courseDaysTable,
   courseEnrollmentsTable,
   courseLessonsTable,
   courseModulesTable,
@@ -957,6 +958,14 @@ async function synchronizeInferredServesMen(): Promise<void> {
 async function seedEducationContent(): Promise<void> {
   const [course] = await db.select().from(coursesTable).limit(1);
   if (!course) return;
+  const [existingDay] = await db.select({ id: courseDaysTable.id }).from(courseDaysTable).where(eq(courseDaysTable.courseId, course.id)).limit(1);
+  if (!existingDay) {
+    await db.insert(courseDaysTable).values([
+      { courseId: course.id, dayNumber: 1, title: "Osnove i priprema", description: "Uvod u materijal, bezbedan rad i priprema za praktičnu vežbu.", durationMinutes: 180, sortOrder: 1 },
+      { courseId: course.id, dayNumber: 2, title: "Praktična tehnika", description: "Vođena demonstracija i samostalni rad uz povratnu informaciju instruktora.", durationMinutes: 240, sortOrder: 2 },
+      { courseId: course.id, dayNumber: 3, title: "Završna praksa", description: "Primena kompletnog protokola i plan narednih koraka.", durationMinutes: 180, sortOrder: 3 },
+    ]);
+  }
   let [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, course.id)).limit(1);
   if (!module) {
     [module] = await db.insert(courseModulesTable).values({

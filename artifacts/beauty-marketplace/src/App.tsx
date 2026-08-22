@@ -19,7 +19,7 @@ import BusinessAuth from './pages/business-auth';
 import BusinessLanding from './pages/business-landing';
 import BusinessHub from './pages/business-hub';
 import BusinessEducation, { InstructorPublicProfilePage } from './pages/business-education';
-import EducationMarketplace from './pages/education-marketplace';
+import EducationMarketplace, { EducationPublicCenterPage, EducationPublicCourseDetail } from './pages/education-marketplace';
 import MarketplaceGuides from './pages/marketplace-guides';
 import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
@@ -220,8 +220,10 @@ function Router() {
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
-        <Route path="/edukacije"><EducationMarketplace /></Route>
         <Route path="/edukacije/instruktori/:instructorId" component={InstructorPublicPage} />
+        <Route path="/edukacije/centri/:centerId" component={EducationPublicCenterPage} />
+        <Route path="/edukacije/:courseId" component={EducationPublicCourseDetail} />
+        <Route path="/edukacije"><EducationMarketplace /></Route>
 
         <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
         <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>

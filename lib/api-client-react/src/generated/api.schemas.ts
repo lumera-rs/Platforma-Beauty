@@ -1668,6 +1668,16 @@ export const CourseFormat = {
   hybrid: 'hybrid',
 } as const;
 
+export type CourseLevel = typeof CourseLevel[keyof typeof CourseLevel];
+
+
+export const CourseLevel = {
+  beginner: 'beginner',
+  intermediate: 'intermediate',
+  advanced: 'advanced',
+  'all-levels': 'all-levels',
+} as const;
+
 /**
  * @nullable
  */
@@ -1696,6 +1706,10 @@ export interface Course {
   city?: string | null;
   price: number;
   duration: string;
+  level: CourseLevel;
+  learningOutcomes: string[];
+  includedItems: string[];
+  requirements: string;
   rating: number;
   certification: boolean;
   imageUrl: string;
@@ -1714,6 +1728,8 @@ export interface Course {
   /** @nullable */
   groupDiscountPercent?: number | null;
   /** @nullable */
+  centerId?: string | null;
+  /** @nullable */
   availableSeats?: number | null;
   /** @nullable */
   enrollmentStatus?: CourseEnrollmentStatus;
@@ -1726,6 +1742,16 @@ export const EducationCourseInputFormat = {
   online: 'online',
   'in-person': 'in-person',
   hybrid: 'hybrid',
+} as const;
+
+export type EducationCourseInputLevel = typeof EducationCourseInputLevel[keyof typeof EducationCourseInputLevel];
+
+
+export const EducationCourseInputLevel = {
+  beginner: 'beginner',
+  intermediate: 'intermediate',
+  advanced: 'advanced',
+  'all-levels': 'all-levels',
 } as const;
 
 export interface EducationCourseInput {
@@ -1741,6 +1767,21 @@ export interface EducationCourseInput {
   price: number;
   /** @minLength 1 */
   duration: string;
+  level?: EducationCourseInputLevel;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  learningOutcomes?: string[];
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  includedItems?: string[];
+  /** @maxLength 2000 */
+  requirements?: string;
   certification?: boolean;
   /** @minLength 1 */
   imageUrl: string;
@@ -1774,6 +1815,16 @@ export const EducationCourseUpdateFormat = {
   hybrid: 'hybrid',
 } as const;
 
+export type EducationCourseUpdateLevel = typeof EducationCourseUpdateLevel[keyof typeof EducationCourseUpdateLevel];
+
+
+export const EducationCourseUpdateLevel = {
+  beginner: 'beginner',
+  intermediate: 'intermediate',
+  advanced: 'advanced',
+  'all-levels': 'all-levels',
+} as const;
+
 export interface EducationCourseUpdate {
   /** @minLength 2 */
   title?: string;
@@ -1787,6 +1838,21 @@ export interface EducationCourseUpdate {
   price?: number;
   /** @minLength 1 */
   duration?: string;
+  level?: EducationCourseUpdateLevel;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  learningOutcomes?: string[];
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  includedItems?: string[];
+  /** @maxLength 2000 */
+  requirements?: string;
   certification?: boolean;
   /** @minLength 1 */
   imageUrl?: string;
@@ -1880,10 +1946,102 @@ export interface EducationModuleInput {
   sortOrder?: number;
 }
 
-export type EducationCourseDetail = Course & {
+export interface EducationCourseDay {
+  id: string;
+  /** @minimum 1 */
+  dayNumber: number;
+  title: string;
+  description: string;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  durationMinutes?: number | null;
+}
+
+export interface EducationMedia {
+  id: string;
+  url: string;
+  altText: string;
+  sortOrder: number;
+}
+
+export interface EducationCenterPublic {
+  id: string;
+  name: string;
+  city: string;
+  description: string;
+  imageUrl: string;
+  /** @nullable */
+  websiteUrl?: string | null;
+  /** @nullable */
+  instagramUrl?: string | null;
+  verified: boolean;
+  rating: number;
+  /** @minimum 0 */
+  reviewCount: number;
+  /** @minimum 0 */
+  courseCount: number;
+  gallery: EducationMedia[];
+  courses: Course[];
+}
+
+export interface EducationCourseReview {
+  id: string;
+  /**
+     * @minimum 1
+     * @maximum 5
+     */
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export type EducationCourseDetail = Course & ({
   modules: EducationModule[];
   sessions: EducationSession[];
+  dayProgram: EducationCourseDay[];
+  gallery: EducationMedia[];
+  center?: null | EducationCenterPublic;
+  reviews: EducationCourseReview[];
+});
+
+export type EducationCourseDaysInputDaysItem = {
+  /**
+     * @minimum 1
+     * @maximum 31
+     */
+  dayNumber: number;
+  /**
+     * @minLength 2
+     * @maxLength 160
+     */
+  title: string;
+  /** @maxLength 2000 */
+  description?: string;
+  /**
+     * @minimum 0
+     * @maximum 1440
+     * @nullable
+     */
+  durationMinutes?: number | null;
 };
+
+export interface EducationCourseDaysInput {
+  /**
+     * @minItems 1
+     * @maxItems 31
+     */
+  days: EducationCourseDaysInputDaysItem[];
+}
+
+export interface EducationCategory {
+  id: string;
+  name: string;
+  slug: string;
+  /** @minimum 0 */
+  courseCount: number;
+}
 
 export interface EducationEnrollmentInput {
   /** @nullable */
@@ -3131,6 +3289,57 @@ export const ListCoursesFormat = {
 export type LinkEducationCourseInstructorBody = {
   /** @nullable */
   instructorId?: string | null;
+};
+
+export type ListPublicEducationCoursesParams = {
+format?: ListPublicEducationCoursesFormat;
+city?: string;
+category?: string;
+level?: ListPublicEducationCoursesLevel;
+/**
+ * @minimum 0
+ */
+minPrice?: number;
+/**
+ * @minimum 0
+ */
+maxPrice?: number;
+/**
+ * Include courses that start on or after this date.
+ */
+startDate?: string;
+/**
+ * Include courses whose published daily program has at most this many days.
+ * @minimum 1
+ */
+maxDurationDays?: number;
+};
+
+export type ListPublicEducationCoursesFormat = typeof ListPublicEducationCoursesFormat[keyof typeof ListPublicEducationCoursesFormat];
+
+
+export const ListPublicEducationCoursesFormat = {
+  online: 'online',
+  'in-person': 'in-person',
+  hybrid: 'hybrid',
+} as const;
+
+export type ListPublicEducationCoursesLevel = typeof ListPublicEducationCoursesLevel[keyof typeof ListPublicEducationCoursesLevel];
+
+
+export const ListPublicEducationCoursesLevel = {
+  beginner: 'beginner',
+  intermediate: 'intermediate',
+  advanced: 'advanced',
+  'all-levels': 'all-levels',
+} as const;
+
+export type ListPopularEducationCoursesParams = {
+/**
+ * @minimum 1
+ * @maximum 12
+ */
+limit?: number;
 };
 
 export type AdminListSalonsParams = {

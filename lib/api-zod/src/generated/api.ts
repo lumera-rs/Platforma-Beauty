@@ -3864,6 +3864,10 @@ export const ListCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -3876,6 +3880,7 @@ export const ListCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 })
@@ -3891,6 +3896,16 @@ export const createEducationCourseBodyCategoryMin = 2;
 
 export const createEducationCourseBodyPriceMin = 0;
 
+
+export const createEducationCourseBodyLearningOutcomesItemMax = 240;
+
+export const createEducationCourseBodyLearningOutcomesMax = 20;
+
+export const createEducationCourseBodyIncludedItemsItemMax = 240;
+
+export const createEducationCourseBodyIncludedItemsMax = 20;
+
+export const createEducationCourseBodyRequirementsMax = 2000;
 
 
 export const createEducationCourseBodyRefundPolicyMax = 2000;
@@ -3911,6 +3926,10 @@ export const CreateEducationCourseBody = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number().min(createEducationCourseBodyPriceMin),
   "duration": zod.string().min(1),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
+  "learningOutcomes": zod.array(zod.string().min(1).max(createEducationCourseBodyLearningOutcomesItemMax)).max(createEducationCourseBodyLearningOutcomesMax).optional(),
+  "includedItems": zod.array(zod.string().min(1).max(createEducationCourseBodyIncludedItemsItemMax)).max(createEducationCourseBodyIncludedItemsMax).optional(),
+  "requirements": zod.string().max(createEducationCourseBodyRequirementsMax).optional(),
   "certification": zod.boolean().optional(),
   "imageUrl": zod.string().min(1),
   "startDate": zod.coerce.date().nullish(),
@@ -3918,6 +3937,25 @@ export const CreateEducationCourseBody = zod.object({
   "groupDiscountMinimum": zod.number().min(createEducationCourseBodyGroupDiscountMinimumMin).max(createEducationCourseBodyGroupDiscountMinimumMax).nullish(),
   "groupDiscountPercent": zod.number().min(createEducationCourseBodyGroupDiscountPercentMin).max(createEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
+
+export const createEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const createEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const createEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const createEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const createEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
+export const createEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const createEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
+export const createEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const createEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const createEducationCourseResponseTwoReviewsItemRatingMax = 5;
+
+
 
 export const CreateEducationCourseResponse = zod.object({
   "id": zod.string(),
@@ -3932,6 +3970,10 @@ export const CreateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -3944,6 +3986,7 @@ export const CreateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -3972,6 +4015,77 @@ export const CreateEducationCourseResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(createEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(createEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(createEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(createEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(createEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(createEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(createEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(createEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(createEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(createEducationCourseResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 
@@ -3982,6 +4096,25 @@ export const CreateEducationCourseResponse = zod.object({
 export const GetEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
 })
+
+export const getEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const getEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const getEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const getEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
+export const getEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const getEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
+export const getEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const getEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationCourseResponseTwoReviewsItemRatingMax = 5;
+
+
 
 export const GetEducationCourseResponse = zod.object({
   "id": zod.string(),
@@ -3996,6 +4129,10 @@ export const GetEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4008,6 +4145,7 @@ export const GetEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4036,6 +4174,77 @@ export const GetEducationCourseResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(getEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(getEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(getEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(getEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(getEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(getEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(getEducationCourseResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 
@@ -4053,6 +4262,16 @@ export const updateEducationCourseBodyCategoryMin = 2;
 
 export const updateEducationCourseBodyPriceMin = 0;
 
+
+export const updateEducationCourseBodyLearningOutcomesItemMax = 240;
+
+export const updateEducationCourseBodyLearningOutcomesMax = 20;
+
+export const updateEducationCourseBodyIncludedItemsItemMax = 240;
+
+export const updateEducationCourseBodyIncludedItemsMax = 20;
+
+export const updateEducationCourseBodyRequirementsMax = 2000;
 
 
 export const updateEducationCourseBodyRefundPolicyMax = 2000;
@@ -4073,6 +4292,10 @@ export const UpdateEducationCourseBody = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number().min(updateEducationCourseBodyPriceMin).optional(),
   "duration": zod.string().min(1).optional(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
+  "learningOutcomes": zod.array(zod.string().min(1).max(updateEducationCourseBodyLearningOutcomesItemMax)).max(updateEducationCourseBodyLearningOutcomesMax).optional(),
+  "includedItems": zod.array(zod.string().min(1).max(updateEducationCourseBodyIncludedItemsItemMax)).max(updateEducationCourseBodyIncludedItemsMax).optional(),
+  "requirements": zod.string().max(updateEducationCourseBodyRequirementsMax).optional(),
   "certification": zod.boolean().optional(),
   "imageUrl": zod.string().min(1).optional(),
   "startDate": zod.coerce.date().nullish(),
@@ -4081,6 +4304,25 @@ export const UpdateEducationCourseBody = zod.object({
   "groupDiscountMinimum": zod.number().min(updateEducationCourseBodyGroupDiscountMinimumMin).max(updateEducationCourseBodyGroupDiscountMinimumMax).nullish(),
   "groupDiscountPercent": zod.number().min(updateEducationCourseBodyGroupDiscountPercentMin).max(updateEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
+
+export const updateEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const updateEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
+export const updateEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
+export const updateEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const updateEducationCourseResponseTwoReviewsItemRatingMax = 5;
+
+
 
 export const UpdateEducationCourseResponse = zod.object({
   "id": zod.string(),
@@ -4095,6 +4337,10 @@ export const UpdateEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4107,6 +4353,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4135,6 +4382,77 @@ export const UpdateEducationCourseResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(updateEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(updateEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(updateEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(updateEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(updateEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(updateEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(updateEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(updateEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(updateEducationCourseResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 
@@ -4156,6 +4474,25 @@ export const PublishEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
 })
 
+export const publishEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const publishEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
+export const publishEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
+export const publishEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const publishEducationCourseResponseTwoReviewsItemRatingMax = 5;
+
+
+
 export const PublishEducationCourseResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -4169,6 +4506,10 @@ export const PublishEducationCourseResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4181,6 +4522,7 @@ export const PublishEducationCourseResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4209,6 +4551,77 @@ export const PublishEducationCourseResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(publishEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(publishEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(publishEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(publishEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(publishEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(publishEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(publishEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(publishEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(publishEducationCourseResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 
@@ -4614,6 +5027,25 @@ export const GetEducationLmsParams = zod.object({
   "enrollmentId": zod.coerce.string()
 })
 
+export const getEducationLmsResponseCourseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMin = 0;
+export const getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoCenterTwoReviewCountMin = 0;
+export const getEducationLmsResponseCourseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoCenterTwoCourseCountMin = 0;
+export const getEducationLmsResponseCourseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getEducationLmsResponseCourseTwoReviewsItemRatingMax = 5;
+
+
+
 export const GetEducationLmsResponse = zod.object({
   "enrollment": zod.object({
   "id": zod.string(),
@@ -4642,6 +5074,10 @@ export const GetEducationLmsResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4654,6 +5090,7 @@ export const GetEducationLmsResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4682,6 +5119,77 @@ export const GetEducationLmsResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(getEducationLmsResponseCourseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMin).multipleOf(getEducationLmsResponseCourseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoReviewCountMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(getEducationLmsResponseCourseTwoCenterTwoCourseCountMin).multipleOf(getEducationLmsResponseCourseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getEducationLmsResponseCourseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(getEducationLmsResponseCourseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 })
@@ -4876,6 +5384,10 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4888,6 +5400,7 @@ export const GetPublicInstructorProfileResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }))
@@ -4962,6 +5475,25 @@ export const LinkEducationCourseInstructorBody = zod.object({
   "instructorId": zod.string().nullish()
 })
 
+export const linkEducationCourseInstructorResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMin = 0;
+export const linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMin = 0;
+export const linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const linkEducationCourseInstructorResponseTwoReviewsItemRatingMax = 5;
+
+
+
 export const LinkEducationCourseInstructorResponse = zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -4975,6 +5507,10 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -4987,6 +5523,7 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -5015,6 +5552,261 @@ export const LinkEducationCourseInstructorResponse = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(linkEducationCourseInstructorResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMin).multipleOf(linkEducationCourseInstructorResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMin).multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(linkEducationCourseInstructorResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(linkEducationCourseInstructorResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Replace the public daily program for an owned course
+ */
+export const ReplaceEducationCourseDaysParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const replaceEducationCourseDaysBodyDaysItemDayNumberMax = 31;
+export const replaceEducationCourseDaysBodyDaysItemDayNumberMultipleOf = 1;
+
+export const replaceEducationCourseDaysBodyDaysItemTitleMin = 2;
+export const replaceEducationCourseDaysBodyDaysItemTitleMax = 160;
+
+export const replaceEducationCourseDaysBodyDaysItemDescriptionMax = 2000;
+
+export const replaceEducationCourseDaysBodyDaysItemDurationMinutesMin = 0;
+export const replaceEducationCourseDaysBodyDaysItemDurationMinutesMax = 1440;
+export const replaceEducationCourseDaysBodyDaysItemDurationMinutesMultipleOf = 1;
+
+export const replaceEducationCourseDaysBodyDaysMax = 31;
+
+
+
+export const ReplaceEducationCourseDaysBody = zod.object({
+  "days": zod.array(zod.object({
+  "dayNumber": zod.number().min(1).max(replaceEducationCourseDaysBodyDaysItemDayNumberMax).multipleOf(replaceEducationCourseDaysBodyDaysItemDayNumberMultipleOf),
+  "title": zod.string().min(replaceEducationCourseDaysBodyDaysItemTitleMin).max(replaceEducationCourseDaysBodyDaysItemTitleMax),
+  "description": zod.string().max(replaceEducationCourseDaysBodyDaysItemDescriptionMax).optional(),
+  "durationMinutes": zod.number().min(replaceEducationCourseDaysBodyDaysItemDurationMinutesMin).max(replaceEducationCourseDaysBodyDaysItemDurationMinutesMax).multipleOf(replaceEducationCourseDaysBodyDaysItemDurationMinutesMultipleOf).nullish()
+})).min(1).max(replaceEducationCourseDaysBodyDaysMax)
+})
+
+export const replaceEducationCourseDaysResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMin = 0;
+export const replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMin = 0;
+export const replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const replaceEducationCourseDaysResponseTwoReviewsItemRatingMax = 5;
+
+
+
+export const ReplaceEducationCourseDaysResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(replaceEducationCourseDaysResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMin).multipleOf(replaceEducationCourseDaysResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMin).multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(replaceEducationCourseDaysResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(replaceEducationCourseDaysResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 
@@ -5022,6 +5814,44 @@ export const LinkEducationCourseInstructorResponse = zod.object({
 /**
  * @summary List courses available for public purchase
  */
+export const listPublicEducationCoursesQueryMinPriceMin = 0;
+
+export const listPublicEducationCoursesQueryMaxPriceMin = 0;
+
+export const listPublicEducationCoursesQueryMaxDurationDaysMultipleOf = 1;
+
+
+
+export const ListPublicEducationCoursesQueryParams = zod.object({
+  "format": zod.enum(['online', 'in-person', 'hybrid']).optional(),
+  "city": zod.coerce.string().optional(),
+  "category": zod.coerce.string().optional(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']).optional(),
+  "minPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMinPriceMin).optional(),
+  "maxPrice": zod.coerce.number().min(listPublicEducationCoursesQueryMaxPriceMin).optional(),
+  "startDate": zod.date().optional().describe('Include courses that start on or after this date.'),
+  "maxDurationDays": zod.coerce.number().min(1).multipleOf(listPublicEducationCoursesQueryMaxDurationDaysMultipleOf).optional().describe('Include courses whose published daily program has at most this many days.')
+})
+
+export const listPublicEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
+export const listPublicEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoCourseCountMin = 0;
+export const listPublicEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listPublicEducationCoursesResponseTwoReviewsItemRatingMax = 5;
+
+
+
 export const ListPublicEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -5035,6 +5865,10 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -5047,6 +5881,7 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -5075,14 +5910,515 @@ export const ListPublicEducationCoursesResponseItem = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(listPublicEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesMin).multipleOf(listPublicEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listPublicEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoReviewCountMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(listPublicEducationCoursesResponseTwoCenterTwoCourseCountMin).multipleOf(listPublicEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listPublicEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(listPublicEducationCoursesResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationCoursesResponseItem)
 
 
 /**
+ * @summary Get a public course detail with redacted logistics
+ */
+export const GetPublicEducationCourseParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const getPublicEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoReviewCountMin = 0;
+export const getPublicEducationCourseResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoCourseCountMin = 0;
+export const getPublicEducationCourseResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const getPublicEducationCourseResponseTwoReviewsItemRatingMax = 5;
+
+
+
+export const GetPublicEducationCourseResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(getPublicEducationCourseResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMin).multipleOf(getPublicEducationCourseResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getPublicEducationCourseResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoReviewCountMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(getPublicEducationCourseResponseTwoCenterTwoCourseCountMin).multipleOf(getPublicEducationCourseResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getPublicEducationCourseResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(getPublicEducationCourseResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary List public education categories with live course counts
+ */
+export const listPublicEducationCategoriesResponseCourseCountMin = 0;
+export const listPublicEducationCategoriesResponseCourseCountMultipleOf = 1;
+
+
+
+export const ListPublicEducationCategoriesResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "courseCount": zod.number().min(listPublicEducationCategoriesResponseCourseCountMin).multipleOf(listPublicEducationCategoriesResponseCourseCountMultipleOf)
+})
+export const ListPublicEducationCategoriesResponse = zod.array(ListPublicEducationCategoriesResponseItem)
+
+
+/**
+ * @summary List popular education courses from verified centers
+ */
+export const listPopularEducationCoursesQueryLimitMax = 12;
+
+
+
+export const ListPopularEducationCoursesQueryParams = zod.object({
+  "limit": zod.coerce.number().int().min(1).max(listPopularEducationCoursesQueryLimitMax).optional()
+})
+
+export const listPopularEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
+export const listPopularEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoCourseCountMin = 0;
+export const listPopularEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listPopularEducationCoursesResponseTwoReviewsItemRatingMax = 5;
+
+
+
+export const ListPopularEducationCoursesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(listPopularEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutesMin).multipleOf(listPopularEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listPopularEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoReviewCountMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(listPopularEducationCoursesResponseTwoCenterTwoCourseCountMin).multipleOf(listPopularEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listPopularEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(listPopularEducationCoursesResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+export const ListPopularEducationCoursesResponse = zod.array(ListPopularEducationCoursesResponseItem)
+
+
+/**
+ * @summary Get a public education center profile and its live courses
+ */
+export const GetPublicEducationCenterParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const getPublicEducationCenterResponseReviewCountMin = 0;
+export const getPublicEducationCenterResponseReviewCountMultipleOf = 1;
+
+export const getPublicEducationCenterResponseCourseCountMin = 0;
+export const getPublicEducationCenterResponseCourseCountMultipleOf = 1;
+
+export const getPublicEducationCenterResponseGalleryItemSortOrderMultipleOf = 1;
+
+
+
+export const GetPublicEducationCenterResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(getPublicEducationCenterResponseReviewCountMin).multipleOf(getPublicEducationCenterResponseReviewCountMultipleOf),
+  "courseCount": zod.number().min(getPublicEducationCenterResponseCourseCountMin).multipleOf(getPublicEducationCenterResponseCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(getPublicEducationCenterResponseGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})
+
+
+/**
  * @summary List currently featured education courses for the public catalog shelf
  */
+export const listFeaturedEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinutesMin = 0;
+export const listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMin = 0;
+export const listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCourseCountMin = 0;
+export const listFeaturedEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf = 1;
+
+export const listFeaturedEducationCoursesResponseTwoReviewsItemRatingMax = 5;
+
+
+
 export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "id": zod.string(),
   "title": zod.string(),
@@ -5096,6 +6432,10 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "city": zod.string().nullish(),
   "price": zod.number(),
   "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
   "rating": zod.number(),
   "certification": zod.boolean(),
   "imageUrl": zod.string(),
@@ -5108,6 +6448,7 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "refundPolicy": zod.string().nullish(),
   "groupDiscountMinimum": zod.number().nullish(),
   "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -5136,6 +6477,77 @@ export const ListFeaturedEducationCoursesResponseItem = zod.object({
   "availableSeats": zod.number(),
   "minimumEnrollments": zod.number().nullish(),
   "cancelledAt": zod.coerce.date().nullish()
+})),
+  "dayProgram": zod.array(zod.object({
+  "id": zod.string(),
+  "dayNumber": zod.number().min(1).multipleOf(listFeaturedEducationCoursesResponseTwoDayProgramItemDayNumberMultipleOf),
+  "title": zod.string(),
+  "description": zod.string(),
+  "durationMinutes": zod.number().min(listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinutesMin).multipleOf(listFeaturedEducationCoursesResponseTwoDayProgramItemDurationMinutesMultipleOf).nullish()
+})),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listFeaturedEducationCoursesResponseTwoGalleryItemSortOrderMultipleOf)
+})),
+  "center": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "description": zod.string(),
+  "imageUrl": zod.string(),
+  "websiteUrl": zod.string().nullish(),
+  "instagramUrl": zod.string().nullish(),
+  "verified": zod.boolean(),
+  "rating": zod.number(),
+  "reviewCount": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoReviewCountMultipleOf),
+  "courseCount": zod.number().min(listFeaturedEducationCoursesResponseTwoCenterTwoCourseCountMin).multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoCourseCountMultipleOf),
+  "gallery": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(listFeaturedEducationCoursesResponseTwoCenterTwoGalleryItemSortOrderMultipleOf)
+})),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "level": zod.enum(['beginner', 'intermediate', 'advanced', 'all-levels']),
+  "learningOutcomes": zod.array(zod.string()),
+  "includedItems": zod.array(zod.string()),
+  "requirements": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "centerId": zod.string().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})]).optional(),
+  "reviews": zod.array(zod.object({
+  "id": zod.string(),
+  "rating": zod.number().min(1).max(listFeaturedEducationCoursesResponseTwoReviewsItemRatingMax),
+  "comment": zod.string(),
+  "createdAt": zod.coerce.date()
 }))
 }))
 export const ListFeaturedEducationCoursesResponse = zod.array(ListFeaturedEducationCoursesResponseItem)

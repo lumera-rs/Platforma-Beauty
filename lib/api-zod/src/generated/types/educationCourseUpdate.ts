@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EducationCourseUpdateFormat } from './educationCourseUpdateFormat';
+import type { EducationCourseUpdateLevel } from './educationCourseUpdateLevel';
 
 export interface EducationCourseUpdate {
   /** @minLength 2 */
@@ -20,6 +21,21 @@ export interface EducationCourseUpdate {
   price?: number;
   /** @minLength 1 */
   duration?: string;
+  level?: EducationCourseUpdateLevel;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  learningOutcomes?: string[];
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 240
+     */
+  includedItems?: string[];
+  /** @maxLength 2000 */
+  requirements?: string;
   certification?: boolean;
   /** @minLength 1 */
   imageUrl?: string;

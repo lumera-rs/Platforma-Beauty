@@ -25,6 +25,8 @@ export const educationPayoutStatusEnum = pgEnum("education_payout_status", ["pen
 export const educationDisputeStatusEnum = pgEnum("education_dispute_status", ["open", "under_review", "resolved_refund", "resolved_payout", "rejected", "cancelled"]);
 export const educationThreadStatusEnum = pgEnum("education_thread_status", ["open", "closed"]);
 export const educationWaitlistStatusEnum = pgEnum("education_waitlist_status", ["waiting", "offered", "expired", "enrolled", "cancelled"]);
+export const educationCourseLevelEnum = pgEnum("education_course_level", ["beginner", "intermediate", "advanced", "all-levels"]);
+export const educationReviewStatusEnum = pgEnum("education_review_status", ["pending", "published", "rejected"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -36,6 +38,8 @@ export const educationCentersTable = pgTable("education_centers", {
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   contactAddress: text("contact_address"),
+  websiteUrl: text("website_url"),
+  instagramUrl: text("instagram_url"),
   verificationStatus: educationCenterVerificationStatusEnum("verification_status").notNull().default("pending"),
   verificationNote: text("verification_note"),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
@@ -88,6 +92,10 @@ export const coursesTable = pgTable("courses", {
   city: text("city"),
   price: integer("price").notNull(),
   duration: text("duration").notNull(),
+  level: educationCourseLevelEnum("level").notNull().default("all-levels"),
+  learningOutcomes: jsonb("learning_outcomes").$type<string[]>().notNull().default([]),
+  includedItems: jsonb("included_items").$type<string[]>().notNull().default([]),
+  requirements: text("requirements").notNull().default(""),
   rating: integer("rating").notNull().default(0),
   certification: boolean("certification").notNull().default(false),
   imageUrl: text("image_url").notNull(),
@@ -105,6 +113,54 @@ export const coursesTable = pgTable("courses", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Public course itinerary. The program deliberately contains no venue/address:
+ * exact live-session logistics stay behind the paid-enrollment access check.
+ */
+export const courseDaysTable = pgTable("course_days", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  dayNumber: integer("day_number").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  durationMinutes: integer("duration_minutes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [
+  uniqueIndex("course_days_course_day_unique").on(table.courseId, table.dayNumber),
+  index("course_days_course_sort_idx").on(table.courseId, table.sortOrder),
+]);
+
+/**
+ * Only an App Storage object path (or a vetted legacy HTTP URL) is persisted.
+ * The route layer turns private object paths into short-lived serving URLs.
+ */
+export const educationMediaTable = pgTable("education_media", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  objectPath: text("object_path").notNull(),
+  altText: text("alt_text").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_media_course_sort_idx").on(table.courseId, table.sortOrder),
+  index("education_media_center_sort_idx").on(table.centerId, table.sortOrder),
+]);
+
+export const courseReviewsTable = pgTable("course_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  enrollmentId: uuid("enrollment_id").notNull().unique().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),
+  comment: text("comment").notNull().default(""),
+  status: educationReviewStatusEnum("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("course_reviews_course_status_created_idx").on(table.courseId, table.status, table.createdAt),
+]);
 
 export const educationFeaturedChargeStatusEnum = pgEnum("education_featured_charge_status", ["pending", "paid", "cancelled", "refunded"]);
 

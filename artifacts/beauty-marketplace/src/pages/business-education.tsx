@@ -16,6 +16,7 @@ import {
   useCompleteEducationLesson,
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
+  useReplaceEducationCourseDays,
   useGetPublicInstructorProfile,
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
   getListCoursesQueryKey, getGetEducationCourseQueryKey, 
@@ -59,6 +60,10 @@ const courseSchema = z.object({
   city: z.string().optional(),
   price: z.coerce.number().min(0, "Cena ne može biti negativna"),
   duration: z.string().min(1, "Trajanje je obavezno"),
+  level: z.enum(["beginner", "intermediate", "advanced", "all-levels"]).optional(),
+  learningOutcomesText: z.string().optional(),
+  includedItemsText: z.string().optional(),
+  requirements: z.string().max(2000).optional(),
   certification: z.boolean().optional(),
   imageUrl: z.string().min(1, "Slika je obavezna"),
   startDate: z.string().optional(),
@@ -1022,12 +1027,58 @@ function CourseDetailView({ courseId }: { courseId: string }) {
         </div>
       </div>
 
+      {isMyCourse && <CourseProgramEditor courseId={courseId} days={(course as any).dayProgram ?? []} />}
       <CreateModuleDialog courseId={courseId} open={createModuleOpen} onOpenChange={setCreateModuleOpen} />
       {activeModuleId && <CreateLessonDialog courseId={courseId} moduleId={activeModuleId} open={createLessonOpen} onOpenChange={setCreateLessonOpen} />}
       <CreateSessionDialog courseId={courseId} open={createSessionOpen} onOpenChange={setCreateSessionOpen} />
       <CreateCourseDialog open={editCourseOpen} onOpenChange={setEditCourseOpen} course={course} />
     </div>
   );
+}
+
+function CourseProgramEditor({ courseId, days: initialDays }: { courseId: string; days: any[] }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const replaceProgram = useReplaceEducationCourseDays();
+  const [days, setDays] = useState(() => initialDays.length
+    ? initialDays.map((day) => ({ dayNumber: day.dayNumber, title: day.title, description: day.description ?? "", durationMinutes: day.durationMinutes ?? "" }))
+    : [{ dayNumber: 1, title: "", description: "", durationMinutes: "" }]);
+
+  useEffect(() => {
+    setDays(initialDays.length
+      ? initialDays.map((day) => ({ dayNumber: day.dayNumber, title: day.title, description: day.description ?? "", durationMinutes: day.durationMinutes ?? "" }))
+      : [{ dayNumber: 1, title: "", description: "", durationMinutes: "" }]);
+  }, [initialDays]);
+
+  const updateDay = (index: number, field: string, value: string | number) => setDays((current) => current.map((day, dayIndex) => dayIndex === index ? { ...day, [field]: value } : day));
+  const save = () => {
+    const normalized = days.map((day, index) => ({
+      dayNumber: Number(day.dayNumber) || index + 1,
+      title: String(day.title).trim(),
+      description: String(day.description ?? "").trim(),
+      durationMinutes: day.durationMinutes === "" || day.durationMinutes == null ? null : Number(day.durationMinutes),
+    }));
+    if (normalized.some((day) => day.title.length < 2)) { toast.error("Unesite naslov za svaki dan programa."); return; }
+    replaceProgram.mutate({ courseId, data: { days: normalized } }, {
+      onSuccess: () => {
+        toast.success("Dnevni program je sačuvan");
+        queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
+      },
+      onError: () => toast.error("Dnevni program nije sačuvan"),
+    });
+  };
+  return <Card className="container mx-auto mt-8 max-w-6xl border-primary/20">
+    <CardHeader><CardTitle className="font-serif text-xl">Javni dnevni program</CardTitle><p className="text-sm text-muted-foreground">Prikazuje se na stranici edukacije, bez detaljne lokacije ili privatne logistike.</p></CardHeader>
+    <CardContent className="space-y-3">
+      {days.map((day, index) => <div key={`${day.dayNumber}-${index}`} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[80px_1fr_1fr_120px]">
+        <Input aria-label={`Dan ${index + 1}`} type="number" min="1" value={day.dayNumber} onChange={(event) => updateDay(index, "dayNumber", event.target.value)} />
+        <Input aria-label={`Naslov dana ${index + 1}`} placeholder="Naslov dana" value={day.title} onChange={(event) => updateDay(index, "title", event.target.value)} />
+        <Input aria-label={`Opis dana ${index + 1}`} placeholder="Kratak opis" value={day.description} onChange={(event) => updateDay(index, "description", event.target.value)} />
+        <Input aria-label={`Trajanje dana ${index + 1}`} type="number" min="0" placeholder="min" value={day.durationMinutes} onChange={(event) => updateDay(index, "durationMinutes", event.target.value)} />
+      </div>)}
+      <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setDays((current) => [...current, { dayNumber: current.length + 1, title: "", description: "", durationMinutes: "" }])}><Plus className="mr-2 h-4 w-4" /> Dodaj dan</Button><Button type="button" onClick={save} disabled={replaceProgram.isPending}>{replaceProgram.isPending ? "Čuvanje..." : "Sačuvaj dnevni program"}</Button></div>
+    </CardContent>
+  </Card>;
 }
 
 function LmsView({ enrollmentId }: { enrollmentId: string }) {
@@ -1248,13 +1299,13 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
   const { register, handleSubmit, control, formState: { errors }, reset } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
-    defaultValues: { format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "" }
+    defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
   });
   
   useEffect(() => {
     if (!open) return;
     if (!course) {
-      reset({ format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "" });
+      reset({ format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" });
       return;
     }
     reset({
@@ -1265,6 +1316,10 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
       city: course.city ?? "",
       price: course.price,
       duration: course.duration,
+      level: course.level ?? "all-levels",
+      learningOutcomesText: (course.learningOutcomes ?? []).join("\n"),
+      includedItemsText: (course.includedItems ?? []).join("\n"),
+      requirements: course.requirements ?? "",
       certification: course.certification,
       imageUrl: course.imageUrl,
       startDate: course.startDate ? new Date(course.startDate).toISOString().slice(0, 10) : "",
@@ -1279,6 +1334,9 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
     // server clears the configuration; both must be provided together (enforced by zod).
     const data = {
       ...raw,
+      level: raw.level ?? "all-levels",
+      learningOutcomes: String(raw.learningOutcomesText ?? "").split("\n").map((value) => value.trim()).filter(Boolean),
+      includedItems: String(raw.includedItemsText ?? "").split("\n").map((value) => value.trim()).filter(Boolean),
       groupDiscountMinimum: raw.groupDiscountMinimum === "" || raw.groupDiscountMinimum == null ? null : Number(raw.groupDiscountMinimum),
       groupDiscountPercent: raw.groupDiscountPercent === "" || raw.groupDiscountPercent == null ? null : Number(raw.groupDiscountPercent),
     };
@@ -1352,6 +1410,21 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             </div>
 
             <div className="space-y-2">
+              <Label>Nivo znanja</Label>
+              <Controller name="level" control={control} render={({ field }) => (
+                <Select value={field.value ?? "all-levels"} onValueChange={field.onChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-levels">Svi nivoi</SelectItem>
+                    <SelectItem value="beginner">Početni nivo</SelectItem>
+                    <SelectItem value="intermediate">Srednji nivo</SelectItem>
+                    <SelectItem value="advanced">Napredni nivo</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
+            </div>
+
+            <div className="space-y-2">
               <Label>Cena (RSD) *</Label>
               <Input type="number" min="0" placeholder="0 za besplatno" {...register("price")} />
             </div>
@@ -1369,6 +1442,21 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             <div className="space-y-2 md:col-span-2">
               <Label>URL naslovne slike *</Label>
               <Input placeholder="https://..." {...register("imageUrl")} />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>Ishodi učenja</Label>
+              <Textarea rows={3} placeholder={"Jedan ishod po redu\nNpr. Samostalno izvodi protokol"} {...register("learningOutcomesText")} />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>Uključeno u cenu</Label>
+              <Textarea rows={3} placeholder={"Jedna stavka po redu\nNpr. Materijal za praktičan rad"} {...register("includedItemsText")} />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>Preduslovi (opciono)</Label>
+              <Textarea rows={2} placeholder="Potrebno prethodno znanje, materijal ili sertifikat..." {...register("requirements")} />
             </div>
           </div>
           

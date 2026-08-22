@@ -6,10 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Course } from './course';
+import type { EducationCenterPublic } from './educationCenterPublic';
+import type { EducationCourseDay } from './educationCourseDay';
+import type { EducationCourseReview } from './educationCourseReview';
+import type { EducationMedia } from './educationMedia';
 import type { EducationModule } from './educationModule';
 import type { EducationSession } from './educationSession';
 
-export type EducationCourseDetail = Course & {
+export type EducationCourseDetail = Course & ({
   modules: EducationModule[];
   sessions: EducationSession[];
-};
+  dayProgram: EducationCourseDay[];
+  gallery: EducationMedia[];
+  center?: null | EducationCenterPublic;
+  reviews: EducationCourseReview[];
+});

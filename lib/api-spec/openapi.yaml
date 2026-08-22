@@ -2113,11 +2113,58 @@ paths:
               schema: { $ref: "#/components/schemas/EducationCourseDetail" }
         "403": { description: Course owner access required }
         "404": { description: Course or instructor not found }
+  /education/courses/{courseId}/days:
+    put:
+      operationId: replaceEducationCourseDays
+      tags: [education]
+      summary: Replace the public daily program for an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCourseDaysInput" }
+      responses:
+        "200":
+          description: Updated course
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Course owner access required }
+        "404": { description: Course not found }
   /education/public/courses:
     get:
       operationId: listPublicEducationCourses
       tags: [education]
       summary: List courses available for public purchase
+      parameters:
+        - name: format
+          in: query
+          schema: { type: string, enum: [online, in-person, hybrid] }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: level
+          in: query
+          schema: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
+        - name: minPrice
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: maxPrice
+          in: query
+          schema: { type: number, minimum: 0 }
+        - name: startDate
+          in: query
+          description: Include courses that start on or after this date.
+          schema: { type: string, format: date }
+        - name: maxDurationDays
+          in: query
+          description: Include courses whose published daily program has at most this many days.
+          schema: { type: number, multipleOf: 1, minimum: 1 }
       responses:
         "200":
           description: Public courses with redacted logistics
@@ -2126,6 +2173,64 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/EducationCourseDetail" }
+  /education/public/courses/{courseId}:
+    get:
+      operationId: getPublicEducationCourse
+      tags: [education]
+      summary: Get a public course detail with redacted logistics
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Public course detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "404": { description: Course not available }
+  /education/public/categories:
+    get:
+      operationId: listPublicEducationCategories
+      tags: [education]
+      summary: List public education categories with live course counts
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCategory" }
+  /education/public/popular:
+    get:
+      operationId: listPopularEducationCourses
+      tags: [education]
+      summary: List popular education courses from verified centers
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 12 }
+      responses:
+        "200":
+          description: Popular courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseDetail" }
+  /education/public/centers/{centerId}:
+    get:
+      operationId: getPublicEducationCenter
+      tags: [education]
+      summary: Get a public education center profile and its live courses
+      parameters:
+        - $ref: "#/components/parameters/EducationCenterId"
+      responses:
+        "200":
+          description: Public center profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCenterPublic" }
+        "404": { description: Center not available }
   /education/public/featured:
     get:
       operationId: listFeaturedEducationCourses
@@ -4182,6 +4287,10 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number }
         duration: { type: string }
+        level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
+        learningOutcomes: { type: array, items: { type: string } }
+        includedItems: { type: array, items: { type: string } }
+        requirements: { type: string }
         rating: { type: number }
         certification: { type: boolean }
         imageUrl: { type: string }
@@ -4194,9 +4303,10 @@ components:
         refundPolicy: { type: ["string", "null"] }
         groupDiscountMinimum: { type: ["number", "null"] }
         groupDiscountPercent: { type: ["number", "null"] }
+        centerId: { type: ["string", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
-      required: [id, title, description, instructor, publisher, publisherType, category, format, price, duration, rating, certification, imageUrl, published, archived]
+      required: [id, title, description, instructor, publisher, publisherType, category, format, price, duration, level, learningOutcomes, includedItems, requirements, rating, certification, imageUrl, published, archived]
     EducationCourseInput:
       type: object
       properties:
@@ -4207,6 +4317,10 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
         duration: { type: string, minLength: 1 }
+        level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
+        learningOutcomes: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
+        includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
+        requirements: { type: string, maxLength: 2000 }
         certification: { type: boolean }
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
@@ -4224,6 +4338,10 @@ components:
         city: { type: ["string", "null"] }
         price: { type: number, minimum: 0 }
         duration: { type: string, minLength: 1 }
+        level: { type: string, enum: [beginner, intermediate, advanced, all-levels] }
+        learningOutcomes: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
+        includedItems: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 240 } }
+        requirements: { type: string, maxLength: 2000 }
         certification: { type: boolean }
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
@@ -4304,7 +4422,90 @@ components:
             sessions:
               type: array
               items: { $ref: "#/components/schemas/EducationSession" }
-          required: [modules, sessions]
+            dayProgram:
+              type: array
+              items: { $ref: "#/components/schemas/EducationCourseDay" }
+            gallery:
+              type: array
+              items: { $ref: "#/components/schemas/EducationMedia" }
+            center:
+              oneOf:
+                - type: "null"
+                - $ref: "#/components/schemas/EducationCenterPublic"
+            reviews:
+              type: array
+              items: { $ref: "#/components/schemas/EducationCourseReview" }
+          required: [modules, sessions, dayProgram, gallery, reviews]
+    EducationCourseDay:
+      type: object
+      properties:
+        id: { type: string }
+        dayNumber: { type: number, multipleOf: 1, minimum: 1 }
+        title: { type: string }
+        description: { type: string }
+        durationMinutes: { type: ["number", "null"], multipleOf: 1, minimum: 0 }
+      required: [id, dayNumber, title, description]
+    EducationCourseDaysInput:
+      type: object
+      properties:
+        days:
+          type: array
+          minItems: 1
+          maxItems: 31
+          items:
+            type: object
+            properties:
+              dayNumber: { type: number, multipleOf: 1, minimum: 1, maximum: 31 }
+              title: { type: string, minLength: 2, maxLength: 160 }
+              description: { type: string, maxLength: 2000 }
+              durationMinutes: { type: ["number", "null"], multipleOf: 1, minimum: 0, maximum: 1440 }
+            required: [dayNumber, title]
+      required: [days]
+    EducationMedia:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string }
+        altText: { type: string }
+        sortOrder: { type: number, multipleOf: 1 }
+      required: [id, url, altText, sortOrder]
+    EducationCourseReview:
+      type: object
+      properties:
+        id: { type: string }
+        rating: { type: number, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, rating, comment, createdAt]
+    EducationCategory:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        courseCount: { type: number, multipleOf: 1, minimum: 0 }
+      required: [id, name, slug, courseCount]
+    EducationCenterPublic:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        city: { type: string }
+        description: { type: string }
+        imageUrl: { type: string }
+        websiteUrl: { type: ["string", "null"] }
+        instagramUrl: { type: ["string", "null"] }
+        verified: { type: boolean }
+        rating: { type: number }
+        reviewCount: { type: number, multipleOf: 1, minimum: 0 }
+        courseCount: { type: number, multipleOf: 1, minimum: 0 }
+        gallery:
+          type: array
+          items: { $ref: "#/components/schemas/EducationMedia" }
+        courses:
+          type: array
+          items: { $ref: "#/components/schemas/Course" }
+      required: [id, name, city, description, imageUrl, verified, rating, reviewCount, courseCount, gallery, courses]
     EducationEnrollmentInput:
       type: object
       properties:

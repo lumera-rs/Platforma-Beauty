@@ -7,6 +7,7 @@
  */
 import type { CourseEnrollmentStatus } from './courseEnrollmentStatus';
 import type { CourseFormat } from './courseFormat';
+import type { CourseLevel } from './courseLevel';
 import type { CoursePublisherType } from './coursePublisherType';
 
 export interface Course {
@@ -24,6 +25,10 @@ export interface Course {
   city?: string | null;
   price: number;
   duration: string;
+  level: CourseLevel;
+  learningOutcomes: string[];
+  includedItems: string[];
+  requirements: string;
   rating: number;
   certification: boolean;
   imageUrl: string;
@@ -41,6 +46,8 @@ export interface Course {
   groupDiscountMinimum?: number | null;
   /** @nullable */
   groupDiscountPercent?: number | null;
+  /** @nullable */
+  centerId?: string | null;
   /** @nullable */
   availableSeats?: number | null;
   /** @nullable */
