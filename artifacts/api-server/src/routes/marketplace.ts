@@ -5636,22 +5636,39 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment)));
     return;
   }
-  let enrollment: typeof courseEnrollmentsTable.$inferSelect;
+  let enrollment: typeof courseEnrollmentsTable.$inferSelect | null;
   try {
     enrollment = await db.transaction(async (tx) => {
-    const [created] = await tx.insert(courseEnrollmentsTable).values({
-      courseId: course.id,
-      userId: user.id,
-      salonId: access?.salon?.id ?? null,
-      employeeId: employee?.id ?? null,
-      purchaserId: user.id,
-      status: "pending",
-      paymentStatus: "pending",
-      auditData: { source: "education-marketplace", idempotencyKey },
-      idempotencyKey,
-      idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
-    }).returning();
-    return created!;
+      // Public enrollments and center verification changes must share the
+      // center lock. Recheck eligibility after acquiring it so a revocation
+      // that commits first cannot be followed by a pending purchase.
+      if (course.centerId) {
+        await lockEducationCenterFinancials(tx, course.centerId);
+        const [currentCenter] = await tx.select().from(educationCentersTable)
+          .where(eq(educationCentersTable.id, course.centerId))
+          .for("update")
+          .limit(1);
+        const [subscription] = await tx.select().from(educationCenterSubscriptionsTable)
+          .where(eq(educationCenterSubscriptionsTable.centerId, course.centerId))
+          .for("update")
+          .limit(1);
+        if (currentCenter?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+          return null;
+        }
+      }
+      const [created] = await tx.insert(courseEnrollmentsTable).values({
+        courseId: course.id,
+        userId: user.id,
+        salonId: access?.salon?.id ?? null,
+        employeeId: employee?.id ?? null,
+        purchaserId: user.id,
+        status: "pending",
+        paymentStatus: "pending",
+        auditData: { source: "education-marketplace", idempotencyKey },
+        idempotencyKey,
+        idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
+      }).returning();
+      return created!;
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Kupovina nije uspela.";
@@ -5668,6 +5685,10 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
     }
     if (errorCode === "23505") { res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." }); return; }
     throw error;
+  }
+  if (!enrollment) {
+    res.status(404).json({ error: "Kurs nije dostupan za prijavu." });
+    return;
   }
   await sendTransactionalEmail({
     eventKey: `course-enrollment:${enrollment.id}:requested`,

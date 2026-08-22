@@ -510,6 +510,59 @@ async function run(): Promise<void> {
     });
     assert.equal(restoreCenterResponse.status, 200, "The center must be restored for the remaining finance coverage.");
 
+    const enrollmentRaceLockKey = `education-center:${center.id}`;
+    let enrollmentRaceLockAcquired!: () => void;
+    const enrollmentRaceLockAcquiredPromise = new Promise<void>((resolve) => { enrollmentRaceLockAcquired = resolve; });
+    const enrollmentRaceLockReleasedPromise = new Promise<void>((resolve) => { releaseRaceLock = resolve; });
+    raceLockHolder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${enrollmentRaceLockKey}))`);
+      enrollmentRaceLockAcquired();
+      await enrollmentRaceLockReleasedPromise;
+    });
+    await enrollmentRaceLockAcquiredPromise;
+
+    const queuedRevocationRequest = request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "pending", verificationNote: "Queued revocation must block marketplace enrollment." },
+    });
+    await waitForAdvisoryLockWaiters(enrollmentRaceLockKey, 1);
+    const queuedEnrollmentRequest = request(baseUrl, `/education/courses/${onlineCourse!.id}/enrollments`, {
+      method: "POST",
+      cookie: outsiderCookie,
+      headers: { "idempotency-key": `enrollment-revocation-race-${suffix}` },
+      body: {},
+    });
+    await waitForAdvisoryLockWaiters(enrollmentRaceLockKey, 2);
+    const releaseEnrollmentRaceLock = releaseRaceLock as (() => void) | undefined;
+    if (!releaseEnrollmentRaceLock) throw new Error("The enrollment race lock must be releasable after both requests are queued.");
+    releaseEnrollmentRaceLock();
+    await raceLockHolder;
+    raceLockHolder = undefined;
+    releaseRaceLock = undefined;
+
+    const [queuedRevocationResponse, queuedEnrollmentResponse] = await Promise.all([
+      queuedRevocationRequest,
+      queuedEnrollmentRequest,
+    ]);
+    assert.equal(queuedRevocationResponse.status, 200, "The queued center revocation must commit before enrollment.");
+    assert.equal(queuedEnrollmentResponse.status, 404, "Enrollment must reject after the queued center revocation commits.");
+    assert.equal(
+      (await db.select().from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.courseId, onlineCourse!.id),
+        eq(courseEnrollmentsTable.purchaserId, outsider.id),
+      ))).length,
+      0,
+      "A rejected enrollment after revocation must not create a pending enrollment record.",
+    );
+
+    const restoreAfterEnrollmentRevocation = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { verificationStatus: "verified" },
+    });
+    assert.equal(restoreAfterEnrollmentRevocation.status, 200, "The center must be restored after the enrollment concurrency coverage.");
+
     const concurrentRevocationEnrollmentResponse = await request(baseUrl, `/education/courses/${revokedCourse!.id}/enrollments`, {
       method: "POST",
       cookie: outsiderCookie,
