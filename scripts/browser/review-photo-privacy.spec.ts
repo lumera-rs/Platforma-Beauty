@@ -71,7 +71,7 @@ async function createReviewFixture(): Promise<ReviewFixture> {
       email: `browser-review-salon-${suffix}@example.test`,
       shortDescription: "Izolovan salon za proveru brisanja recenzije.",
       description: "Salon je napravljen samo za browser regresioni test.",
-      imageUrl: "/test-browser-review.jpg",
+      imageUrl: "/lumera-media/salon-1.jpg",
     }).returning();
     if (!salon) throw new Error("Review browser fixture could not create its salon.");
     salonId = salon.id;
@@ -83,7 +83,7 @@ async function createReviewFixture(): Promise<ReviewFixture> {
       description: "Usluga za browser proveru brisanja recenzije.",
       durationMinutes: 60,
       price: 1000,
-      imageUrl: "/test-browser-review.jpg",
+      imageUrl: "/lumera-media/salon-1.jpg",
     }).returning();
     if (!service) throw new Error("Review browser fixture could not create its service.");
 
