@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import { OptimizedImage } from "@/components/optimized-image";
 
 interface Marker {
   id: string;
@@ -163,9 +164,11 @@ export function SimpleMap({ markers, onMarkerClick, className = "" }: SimpleMapP
       {/* Container centered in the middle of the div */}
       <div className="absolute top-1/2 left-1/2 w-0 h-0">
         {tiles.map((t) => (
-          <img 
+          <OptimizedImage
             key={`${t.z}-${t.x}-${t.y}`}
             src={`https://a.tile.openstreetmap.org/${t.z}/${t.wrapX}/${t.y}.png`}
+            width={256}
+            height={256}
             className="absolute max-w-none pointer-events-none opacity-50 dark:opacity-30 dark:invert dark:hue-rotate-180"
             style={{
               width: TILE_SIZE,
@@ -173,7 +176,6 @@ export function SimpleMap({ markers, onMarkerClick, className = "" }: SimpleMapP
               transform: `translate(calc(${t.offsetX}px - 50%), calc(${t.offsetY}px - 50%))`
             }}
             alt=""
-            loading="lazy"
           />
         ))}
 

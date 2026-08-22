@@ -29,6 +29,7 @@ import {
 
 import { BusinessLayout } from "@/components/business-layout";
 import { Layout } from "@/components/layout";
+import { OptimizedImage } from "@/components/optimized-image";
 import { SalonGallery } from "@/components/salon-gallery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { uploadOptimizedImage } from "@/lib/image-upload";
 import { 
   GraduationCap, Search, MapPin, Clock, Award, 
   PlayCircle, Users, CheckCircle2, ArrowLeft, 
@@ -430,7 +432,7 @@ function CatalogView() {
                   <Card className="overflow-hidden hover:shadow-md transition-all h-full flex flex-col cursor-pointer border-border/60 group">
                     <div className="aspect-video relative overflow-hidden bg-muted/30">
                       {course.imageUrl ? (
-                        <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
+                        <OptimizedImage src={course.imageUrl} alt={course.title} width={640} height={360} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <GraduationCap className="w-12 h-12 text-muted-foreground/30" />
@@ -652,7 +654,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
             </div>
             {course.imageUrl && (
               <div className="w-full md:w-1/3 aspect-video md:aspect-auto md:h-48 rounded-xl overflow-hidden shadow-sm border">
-                <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover" />
+                <OptimizedImage src={course.imageUrl} alt={course.title} width={480} height={192} eager className="w-full h-full object-cover" sizes="(max-width: 768px) 100vw, 33vw" />
               </div>
             )}
           </div>
@@ -1192,7 +1194,7 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
         <div className="grid gap-4 sm:grid-cols-2">
           {gallery.map((media, index) => (
             <div key={media.id} className="overflow-hidden rounded-lg border bg-muted/10">
-              <img src={media.url} alt={media.altText || `Fotografija ${index + 1} kursa`} className="h-40 w-full object-cover" />
+              <OptimizedImage src={media.url} alt={media.altText || `Fotografija ${index + 1} kursa`} width={640} height={160} className="h-40 w-full object-cover" sizes="(max-width: 640px) 100vw, 50vw" />
               <div className="space-y-3 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground">Fotografija {index + 1}</span>
@@ -1488,10 +1490,24 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const update = useUpdateEducationCourse();
   
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
-  const { register, handleSubmit, control, formState: { errors }, reset } = useForm<any>({
+  const { register, handleSubmit, control, formState: { errors }, reset, setValue } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
     defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
   });
+  const [uploadingCover, setUploadingCover] = useState(false);
+
+  const uploadCover = async (file: File) => {
+    setUploadingCover(true);
+    try {
+      const uploaded = await uploadOptimizedImage(file);
+      setValue("imageUrl", uploaded.imageUrl, { shouldDirty: true, shouldValidate: true });
+      toast.success("Naslovna slika je optimizovana", { description: "Sačuvane su tri responsive veličine u App Storage-u." });
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte sa drugom slikom." });
+    } finally {
+      setUploadingCover(false);
+    }
+  };
   
   useEffect(() => {
     if (!open) return;
@@ -1631,8 +1647,29 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>URL naslovne slike *</Label>
-              <Input placeholder="https://..." {...register("imageUrl")} />
+              <Label>Naslovna slika *</Label>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" asChild disabled={uploadingCover}>
+                  <label className="cursor-pointer">
+                    {uploadingCover ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                    {uploadingCover ? "Optimizovanje..." : "Otpremi naslovnu sliku"}
+                    <input
+                      type="file"
+                      className="sr-only"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      disabled={uploadingCover}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) void uploadCover(file);
+                      }}
+                    />
+                  </label>
+                </Button>
+                <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ili GIF · do 8 MB</span>
+              </div>
+              <Input placeholder="Legacy URL slike (opciono)" {...register("imageUrl")} />
+              {errors.imageUrl && <p className="text-sm text-destructive">{errors.imageUrl.message as string}</p>}
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -1964,7 +2001,7 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <div className="space-y-2">
               {instructors?.map((inst) => (
                 <div key={inst.id} className="flex items-center gap-3 rounded-lg border p-3 bg-muted/20">
-                  {inst.photoUrl ? <img src={inst.photoUrl} alt={inst.fullName} className="w-10 h-10 rounded-full object-cover border" /> : <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><UserCircle2 className="w-6 h-6 text-muted-foreground" /></div>}
+                  {inst.photoUrl ? <OptimizedImage src={inst.photoUrl} alt={inst.fullName} width={40} height={40} className="w-10 h-10 rounded-full object-cover border" /> : <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><UserCircle2 className="w-6 h-6 text-muted-foreground" /></div>}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{inst.fullName}</p>
                     <p className="text-xs text-muted-foreground">{inst.experienceYears} god. iskustva</p>
@@ -2057,7 +2094,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
           </Link>
           <div className="flex items-start gap-6">
             {profile.photoUrl ? (
-              <img src={profile.photoUrl} alt={profile.name} className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
+              <OptimizedImage src={profile.photoUrl} alt={profile.name} width={96} height={96} eager className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
             ) : (
               <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center shrink-0"><UserCircle2 className="w-12 h-12 text-muted-foreground" /></div>
             )}
@@ -2111,7 +2148,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
                   <Card className="overflow-hidden hover:shadow-md transition-all cursor-pointer border-border/60 group">
                     {course.imageUrl && (
                       <div className="aspect-video overflow-hidden bg-muted/30">
-                        <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                        <OptimizedImage src={course.imageUrl} alt={course.title} width={640} height={360} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" sizes="(max-width: 640px) 100vw, 50vw" />
                       </div>
                     )}
                     <CardContent className="p-4">

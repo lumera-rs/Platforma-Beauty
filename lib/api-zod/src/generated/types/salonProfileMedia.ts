@@ -10,6 +10,9 @@ export interface SalonProfileMedia {
   id: string;
   name: string;
   slug: string;
+  imageUrl: string;
+  /** @maxItems 20 */
+  gallery: string[];
   /** @nullable */
   videoUrl: string | null;
   acceptsCards: boolean;

@@ -9,6 +9,76 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Request a direct App Storage upload URL for an image
+ */
+export const requestImageUploadBodyNameMax = 240;
+
+export const requestImageUploadBodySizeMax = 8388608;
+
+export const requestImageUploadBodyContentTypeMax = 120;
+
+
+
+export const RequestImageUploadBody = zod.object({
+  "name": zod.string().min(1).max(requestImageUploadBodyNameMax),
+  "size": zod.number().min(1).max(requestImageUploadBodySizeMax),
+  "contentType": zod.string().min(1).max(requestImageUploadBodyContentTypeMax)
+})
+
+export const requestImageUploadResponseAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const RequestImageUploadResponse = zod.object({
+  "assetId": zod.string().regex(requestImageUploadResponseAssetIdRegExp),
+  "uploadUrl": zod.string(),
+  "finalizeUrl": zod.string()
+})
+
+
+/**
+ * @summary Validate an uploaded image and create responsive variants
+ */
+export const finalizeImageUploadPathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const FinalizeImageUploadParams = zod.object({
+  "assetId": zod.coerce.string().regex(finalizeImageUploadPathAssetIdRegExp)
+})
+
+export const finalizeImageUploadResponseAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+
+
+export const FinalizeImageUploadResponse = zod.object({
+  "assetId": zod.string().regex(finalizeImageUploadResponseAssetIdRegExp),
+  "imageUrl": zod.string(),
+  "width": zod.number().min(1),
+  "height": zod.number().min(1)
+})
+
+
+/**
+ * @summary Serve an immutable optimized image variant
+ */
+export const getOptimizedImagePathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetOptimizedImageParams = zod.object({
+  "assetId": zod.coerce.string().regex(getOptimizedImagePathAssetIdRegExp)
+})
+
+export const getOptimizedImageQuerySizeDefault = `large`;
+
+export const GetOptimizedImageQueryParams = zod.object({
+  "size": zod.enum(['thumbnail', 'medium', 'large']).default(getOptimizedImageQuerySizeDefault),
+  "format": zod.enum(['avif', 'webp', 'fallback']).optional()
+})
+
+export const GetOptimizedImageResponse = zod.unknown()
+
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -1239,6 +1309,8 @@ export const GetSalonDashboardResponse = zod.object({
 /**
  * @summary Get editable public profile settings for the active owned salon
  */
+export const getManagedSalonProfileResponseGalleryMax = 20;
+
 export const getManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
 
 
@@ -1247,6 +1319,8 @@ export const GetManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
+  "imageUrl": zod.string(),
+  "gallery": zod.array(zod.string()).max(getManagedSalonProfileResponseGalleryMax),
   "videoUrl": zod.string().nullable(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
@@ -1260,17 +1334,25 @@ export const GetManagedSalonProfileResponse = zod.object({
 /**
  * @summary Update public profile settings for the active owned salon
  */
+
+
+export const updateManagedSalonProfileBodyGalleryMax = 20;
+
 export const updateManagedSalonProfileBodyHomeServiceRadiusKmMax = 100;
 
 
 
 export const UpdateManagedSalonProfileBody = zod.object({
+  "imageUrl": zod.string().min(1).optional(),
+  "gallery": zod.array(zod.string().min(1)).max(updateManagedSalonProfileBodyGalleryMax).optional(),
   "videoUrl": zod.string().nullish(),
   "acceptsCards": zod.boolean().optional(),
   "instantBooking": zod.boolean().optional(),
   "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileBodyHomeServiceRadiusKmMax).optional(),
   "servesMen": zod.boolean().optional()
 })
+
+export const updateManagedSalonProfileResponseGalleryMax = 20;
 
 export const updateManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
 
@@ -1280,6 +1362,8 @@ export const UpdateManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
+  "imageUrl": zod.string(),
+  "gallery": zod.array(zod.string()).max(updateManagedSalonProfileResponseGalleryMax),
   "videoUrl": zod.string().nullable(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),

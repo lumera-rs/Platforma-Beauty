@@ -370,6 +370,9 @@ export interface SalonProfileMedia {
   id: string;
   name: string;
   slug: string;
+  imageUrl: string;
+  /** @maxItems 20 */
+  gallery: string[];
   /** @nullable */
   videoUrl: string | null;
   acceptsCards: boolean;
@@ -385,6 +388,13 @@ export interface SalonProfileMedia {
 }
 
 export interface SalonProfileMediaUpdate {
+  /** @minLength 1 */
+  imageUrl?: string;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     */
+  gallery?: string[];
   /** @nullable */
   videoUrl?: string | null;
   acceptsCards?: boolean;
@@ -2035,6 +2045,41 @@ export interface EducationCourseDaysInput {
   days: EducationCourseDaysInputDaysItem[];
 }
 
+export interface ImageUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 8388608
+     */
+  size: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  contentType: string;
+}
+
+export interface ImageUploadIntent {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  assetId: string;
+  uploadUrl: string;
+  finalizeUrl: string;
+}
+
+export interface OptimizedImageUpload {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  assetId: string;
+  imageUrl: string;
+  /** @minimum 1 */
+  width: number;
+  /** @minimum 1 */
+  height: number;
+}
+
 export interface EducationGalleryUploadInput {
   /**
      * @minLength 1
@@ -3114,6 +3159,29 @@ export const SortQueryParameter = {
   'most-popular': 'most-popular',
   'most-booked-recently': 'most-booked-recently',
   newest: 'newest',
+} as const;
+
+export type GetOptimizedImageParams = {
+size?: GetOptimizedImageSize;
+format?: GetOptimizedImageFormat;
+};
+
+export type GetOptimizedImageSize = typeof GetOptimizedImageSize[keyof typeof GetOptimizedImageSize];
+
+
+export const GetOptimizedImageSize = {
+  thumbnail: 'thumbnail',
+  medium: 'medium',
+  large: 'large',
+} as const;
+
+export type GetOptimizedImageFormat = typeof GetOptimizedImageFormat[keyof typeof GetOptimizedImageFormat];
+
+
+export const GetOptimizedImageFormat = {
+  avif: 'avif',
+  webp: 'webp',
+  fallback: 'fallback',
 } as const;
 
 export type ListSalonsParams = {

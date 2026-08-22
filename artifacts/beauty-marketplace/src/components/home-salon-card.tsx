@@ -3,16 +3,19 @@ import { MapPin, Star, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { SalonCard, DiscountedSalonCard } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
+import { OptimizedImage } from "@/components/optimized-image";
 
 export function HomeSalonCard({ salon, className }: { salon: SalonCard; className?: string }) {
   return (
     <Link href={`/saloni/${salon.slug}`} className={cn("group flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-1 transition-all duration-300 hover:-translate-y-1 hover:bg-card hover:shadow-xl", className)}>
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
-        <img
+        <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
           alt={salon.name}
+          width={640}
+          height={480}
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 bg-muted"
-          loading="lazy"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         
@@ -60,11 +63,13 @@ export function HomeDiscountSalonCard({ salon, className }: { salon: DiscountedS
   return (
     <Link href={`/saloni/${salon.slug}`} className={cn("group flex h-full cursor-pointer flex-col gap-3 rounded-2xl p-1 transition-all duration-300 hover:-translate-y-1 hover:bg-card hover:shadow-xl", className)}>
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
-        <img
+        <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
           alt={salon.name}
+          width={640}
+          height={480}
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 bg-muted"
-          loading="lazy"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         

@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { OptimizedImage } from "@/components/optimized-image";
 import {
   Dialog,
   DialogContent,
@@ -73,9 +74,11 @@ function QuickView({
           <DialogTitle className="text-xl font-serif">{product.name}</DialogTitle>
         </DialogHeader>
         <div className="flex gap-4 mt-2">
-          <img
+          <OptimizedImage
             src={product.imageUrl}
             alt={product.name}
+            width={144}
+            height={144}
             className="w-36 h-36 object-cover rounded-xl flex-shrink-0"
           />
           <div className="flex flex-col gap-2 flex-1">
@@ -176,10 +179,13 @@ function ProductCard({
 
       {/* Image */}
       <div className="aspect-square bg-muted relative overflow-hidden">
-        <img
+        <OptimizedImage
           src={product.imageUrl}
           alt={product.name}
+          width={400}
+          height={400}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
         />
         {/* Quick View overlay */}
         <button

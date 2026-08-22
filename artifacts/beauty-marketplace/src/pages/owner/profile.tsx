@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CreditCard, ExternalLink, House, Loader2, Save, UserRoundCheck, Video, Zap } from "lucide-react";
+import { CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   useGetManagedSalonProfile,
   useUpdateManagedSalonProfile,
 } from "@workspace/api-client-react";
+import { uploadOptimizedImage } from "@/lib/image-upload";
 
 export default function OwnerSalonProfile() {
   const queryClient = useQueryClient();
@@ -24,6 +25,9 @@ export default function OwnerSalonProfile() {
   const [instantBooking, setInstantBooking] = useState(false);
   const [homeServiceRadiusKm, setHomeServiceRadiusKm] = useState(10);
   const [servesMen, setServesMen] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
+  const [gallery, setGallery] = useState<string[]>([]);
+  const [uploadingImage, setUploadingImage] = useState<"cover" | "gallery" | null>(null);
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
@@ -31,6 +35,8 @@ export default function OwnerSalonProfile() {
     setInstantBooking(salon?.instantBooking ?? false);
     setHomeServiceRadiusKm(salon?.homeServiceRadiusKm ?? 10);
     setServesMen(salon?.servesMen ?? false);
+    setImageUrl(salon?.imageUrl ?? "");
+    setGallery(salon?.gallery ?? []);
   }, [salon]);
 
   const save = (event: React.FormEvent) => {
@@ -44,6 +50,8 @@ export default function OwnerSalonProfile() {
       {
         data: {
           videoUrl: nextVideoUrl || null,
+          imageUrl,
+          gallery,
           acceptsCards,
           instantBooking,
           homeServiceRadiusKm: Number(homeServiceRadiusKm),
@@ -58,6 +66,20 @@ export default function OwnerSalonProfile() {
         onError: () => toast.error("Podešavanja javnog profila nisu sačuvana."),
       },
     );
+  };
+
+  const uploadImage = async (file: File, target: "cover" | "gallery") => {
+    setUploadingImage(target);
+    try {
+      const uploaded = await uploadOptimizedImage(file);
+      if (target === "cover") setImageUrl(uploaded.imageUrl);
+      else setGallery((current) => [...current, uploaded.imageUrl].slice(0, 20));
+      toast.success(target === "cover" ? "Naslovna slika je optimizovana." : "Fotografija je dodata u galeriju.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload slike nije uspeo.");
+    } finally {
+      setUploadingImage(null);
+    }
   };
 
   const setting = (
@@ -85,10 +107,19 @@ export default function OwnerSalonProfile() {
       <div className="container mx-auto flex flex-col items-start gap-8 px-4 py-8 md:flex-row">
         <OwnerSidebar current="/vlasnik/profil" />
         <main className="w-full max-w-2xl space-y-6">
-          <div>
-            <p className="text-sm font-medium text-primary">Javni profil</p>
-            <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
-            <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-primary">Javni profil</p>
+              <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
+              <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
+            </div>
+            {salon && (
+              <Button type="button" variant="outline" className="shrink-0" asChild>
+                <a href={`/saloni/${salon.slug}`} target="_blank" rel="noreferrer">
+                  Otvori javni profil <ExternalLink className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+            )}
           </div>
 
           {isLoading ? (
@@ -97,6 +128,39 @@ export default function OwnerSalonProfile() {
             <Card><CardContent className="p-6 text-muted-foreground">Profil salona trenutno nije dostupan.</CardContent></Card>
           ) : (
             <form className="space-y-6" onSubmit={save}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><ImagePlus className="h-5 w-5 text-primary" />Fotografije salona</CardTitle>
+                  <CardDescription>Fotografije se čuvaju u App Storage-u i automatski dobijaju AVIF, WebP i fallback varijante.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Naslovna fotografija</p>
+                    <Button type="button" variant="outline" asChild disabled={uploadingImage !== null}>
+                      <label className="cursor-pointer">
+                        {uploadingImage === "cover" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                        {uploadingImage === "cover" ? "Optimizovanje..." : "Otpremi naslovnu fotografiju"}
+                        <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadImage(file, "cover"); }} />
+                      </label>
+                    </Button>
+                    <Input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} aria-label="URL naslovne fotografije" placeholder="Legacy URL (opciono)" />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div><p className="text-sm font-medium">Galerija</p><p className="text-xs text-muted-foreground">{gallery.length}/20 fotografija</p></div>
+                      <Button type="button" variant="outline" asChild disabled={uploadingImage !== null || gallery.length >= 20}>
+                        <label className="cursor-pointer">
+                          {uploadingImage === "gallery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                          Dodaj u galeriju
+                          <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadImage(file, "gallery"); }} />
+                        </label>
+                      </Button>
+                    </div>
+                    {gallery.length ? <div className="grid gap-2 sm:grid-cols-2">{gallery.map((url, index) => <div key={`${url}-${index}`} className="flex items-center gap-2 rounded-lg border p-2"><span className="min-w-0 flex-1 truncate text-xs">{url}</span><Button type="button" size="icon" variant="ghost" aria-label={`Ukloni fotografiju ${index + 1}`} onClick={() => setGallery((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>)}</div> : <p className="text-sm text-muted-foreground">Galerija je prazna.</p>}
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle>Prikaz u pretrazi</CardTitle>

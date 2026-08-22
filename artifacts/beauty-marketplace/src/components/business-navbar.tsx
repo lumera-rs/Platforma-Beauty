@@ -115,7 +115,7 @@ export function BusinessNavbar() {
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-6">
+          <div className="hidden 2xl:flex items-center gap-6">
             {navLinks.map((link) => (
               <Link 
                 key={link.href} 
@@ -217,7 +217,7 @@ export function BusinessNavbar() {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="md:hidden text-white hover:bg-white/10"
+            className="2xl:hidden text-white hover:bg-white/10"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             data-testid="button-mobile-menu"
@@ -228,7 +228,7 @@ export function BusinessNavbar() {
       </div>
 
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t border-white/10 bg-foreground">
+        <div className="2xl:hidden border-t border-white/10 bg-foreground">
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             <Link 
               href="/"

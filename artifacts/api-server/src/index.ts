@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
 import { runEducationGalleryCleanup } from "./routes/marketplace";
+import { cleanupExpiredImageAssets } from "./routes/media";
 
 const rawPort = process.env["PORT"];
 
@@ -50,4 +51,14 @@ const educationGalleryCleanupInterval = setInterval(() => {
 educationGalleryCleanupInterval.unref();
 void runEducationGalleryCleanup().catch((error) => {
   logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
+});
+
+const imageAssetCleanupInterval = setInterval(() => {
+  void cleanupExpiredImageAssets().catch((error) => {
+    logger.warn({ err: error }, "Image asset cleanup scheduler failed");
+  });
+}, 10 * 60_000);
+imageAssetCleanupInterval.unref();
+void cleanupExpiredImageAssets().catch((error) => {
+  logger.warn({ err: error }, "Image asset cleanup scheduler failed");
 });

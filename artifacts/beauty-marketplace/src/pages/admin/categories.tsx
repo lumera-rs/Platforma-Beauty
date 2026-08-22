@@ -1,12 +1,12 @@
 import { ChangeEvent, useState } from "react";
 import { AdminLayout } from "./layout";
+import { OptimizedImage } from "@/components/optimized-image";
 import {
   useAdminListProductCategories,
   useAdminCreateProductCategory,
   useAdminUpdateProductCategory,
   useAdminDeleteProductCategory,
   useAdminListServiceCategories,
-  useAdminRequestServiceCategoryImageUpload,
   useAdminUpdateServiceCategory,
   getAdminListProductCategoriesQueryKey,
   getAdminListServiceCategoriesQueryKey,
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, Edit2, Trash2, FolderTree, ArrowUp, ArrowDown, CornerDownRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { uploadOptimizedImage } from "@/lib/image-upload";
 
 const emptyForm: AdminProductCategoryInput = { name: "", parentId: null, sortOrder: 0, icon: null, imageUrl: null, active: true };
 
@@ -37,7 +38,6 @@ export default function AdminCategories() {
   const deleteCategory = useAdminDeleteProductCategory();
   const { data: serviceCategories = [], isLoading: serviceCategoriesLoading } = useAdminListServiceCategories();
   const updateServiceCategory = useAdminUpdateServiceCategory();
-  const requestServiceCategoryUpload = useAdminRequestServiceCategoryImageUpload();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -91,19 +91,11 @@ export default function AdminCategories() {
     }
     setUploadingServiceCategoryId(category.id);
     try {
-      const upload = await requestServiceCategoryUpload.mutateAsync({
-        data: { name: file.name, size: file.size, contentType: file.type },
-      });
-      const response = await fetch(upload.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!response.ok) throw new Error("Upload nije uspeo.");
+      const upload = await uploadOptimizedImage(file);
       setServiceImageDrafts((drafts) => ({ ...drafts, [category.id]: upload.imageUrl }));
-      toast.success("Slika je otpremljena", { description: "Kliknite „Sačuvaj sliku“ da je postavite za kategoriju." });
-    } catch {
-      toast.error("Upload nije uspeo", { description: "Pokušajte ponovo sa drugom slikom." });
+      toast.success("Slika je optimizovana", { description: "Kreirane su thumbnail, medium i large AVIF/WebP varijante. Kliknite „Sačuvaj sliku“." });
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo sa drugom slikom." });
     } finally {
       setUploadingServiceCategoryId(null);
     }
@@ -179,7 +171,7 @@ export default function AdminCategories() {
     <div className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/10 transition-colors ${!cat.active ? "opacity-50" : ""} ${isChild ? "pl-12" : ""}`} data-testid={`category-row-${cat.id}`}>
       {isChild && <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
       {cat.imageUrl ? (
-        <img src={cat.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover border shrink-0" />
+        <OptimizedImage src={cat.imageUrl} alt="" width={32} height={32} className="w-8 h-8 rounded-lg object-cover border shrink-0" />
       ) : (
         <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs shrink-0">{cat.icon ?? (isChild ? "•" : "▣")}</div>
       )}
@@ -258,9 +250,11 @@ export default function AdminCategories() {
             <div className="divide-y divide-border/60">
               {serviceCategories.map((category) => (
                 <div key={category.id} className="grid gap-4 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
-                  <img
+                  <OptimizedImage
                     src={serviceImageValue(category) || "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=480&q=80"}
                     alt={`Rezervna fotografija: ${category.name}`}
+                    width={112}
+                    height={96}
                     className="h-24 w-full rounded-lg border bg-muted object-cover sm:w-28"
                   />
                   <div className="min-w-0 space-y-2">

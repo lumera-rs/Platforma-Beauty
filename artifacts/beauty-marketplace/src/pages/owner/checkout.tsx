@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { OptimizedImage } from "@/components/optimized-image";
 
 const SESSION_STORAGE_KEY = "lumera_checkout_draft";
 
@@ -145,7 +146,7 @@ export function OwnerCartPage() {
                       {i > 0 && <Separator className="bg-border/40" />}
                       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 relative group">
                         <div className="w-full sm:w-24 h-24 rounded-lg bg-muted/30 border border-border/30 overflow-hidden flex-shrink-0">
-                          <img src={item.productImageUrl} alt={item.productName} className="w-full h-full object-cover" />
+                          <OptimizedImage src={item.productImageUrl} alt={item.productName} width={96} height={96} className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 flex flex-col justify-between">
                           <div className="flex justify-between items-start gap-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronLeft, ChevronRight, Play, X, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OptimizedImage } from "@/components/optimized-image";
 
 export interface MediaItem {
   type: 'video' | 'image';
@@ -117,7 +118,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                </div>
              </>
           ) : (
-             <img src={mainMedia.url} alt={`${salonName} 1`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+             <OptimizedImage src={mainMedia.url} alt={`${salonName} 1`} width={1280} height={960} eager className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 75vw" />
           )}
           <span className="absolute bottom-4 right-4 bg-black/60 text-white backdrop-blur-md p-2.5 flex items-center gap-2 rounded-lg text-sm font-medium border border-white/10">
             <Maximize2 className="w-4 h-4" />
@@ -142,7 +143,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                     </div>
                   </>
                 ) : (
-                  <img src={item.url} alt={`${salonName} ${idx + 2}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <OptimizedImage src={item.url} alt={`${salonName} ${idx + 2}`} width={320} height={240} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" sizes="25vw" />
                 )}
                 {idx === 1 && media.length > 3 && (
                   <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
@@ -186,7 +187,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                {media[currentIndex].type === 'video' ? (
                  <video src={media[currentIndex].url} controls autoPlay className="max-w-full max-h-[85vh] rounded-md shadow-2xl bg-black" />
                ) : (
-                 <img src={media[currentIndex].url} alt={`${salonName} ${currentIndex + 1}`} className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} />
+                 <OptimizedImage src={media[currentIndex].url} alt={`${salonName} ${currentIndex + 1}`} width={1920} height={1080} className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} sizes="(max-width: 768px) 100vw, 80vw" />
                )}
              </div>
 
@@ -219,7 +220,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                         </div>
                       </>
                     ) : (
-                      <img src={item.url} alt={`${salonName} pregled ${idx + 1}`} className="w-full h-full object-cover" />
+                      <OptimizedImage src={item.url} alt={`${salonName} pregled ${idx + 1}`} width={80} height={80} className="w-full h-full object-cover" sizes="80px" />
                     )}
                   </button>
                 ))}

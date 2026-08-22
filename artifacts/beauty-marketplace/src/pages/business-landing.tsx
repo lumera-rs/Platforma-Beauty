@@ -2,6 +2,7 @@ import { BusinessLayout } from "@/components/business-layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { OptimizedImage } from "@/components/optimized-image";
 import { 
   CalendarDays, 
   ShoppingBag, 
@@ -167,7 +168,7 @@ export default function BusinessLanding() {
             </div>
             <div className="relative">
               <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl relative">
-                <img src="https://images.unsplash.com/photo-1552693673-1bf958298935?q=80&w=2673&auto=format&fit=crop" alt="Edukacija u salonu" className="object-cover w-full h-full" />
+                <OptimizedImage src="https://images.unsplash.com/photo-1552693673-1bf958298935?q=80&w=2673&auto=format&fit=crop" alt="Edukacija u salonu" width={800} height={1000} className="object-cover w-full h-full" sizes="(max-width: 1024px) 100vw, 40vw" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
                 <div className="absolute bottom-8 left-8 right-8 bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-2xl text-white">
                   <div className="flex items-center justify-between mb-2">

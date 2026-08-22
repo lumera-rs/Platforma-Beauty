@@ -46,6 +46,33 @@ export const smsMessageTypeEnum = pgEnum("sms_message_type", [
   "education_session_cancelled",
 ]);
 export const integrationKeyEnum = pgEnum("integration_key", ["sms", "brevo", "google_oauth", "facebook_oauth"]);
+export const imageAssetStatusEnum = pgEnum("image_asset_status", ["pending", "processing", "ready", "failed"]);
+
+export type ImageAssetVariant = {
+  objectPath: string;
+  contentType: "image/avif" | "image/webp" | "image/jpeg" | "image/png";
+  width: number;
+  height: number;
+  bytes: number;
+};
+
+export type ImageAssetVariantSet = {
+  thumbnail: {
+    avif: ImageAssetVariant;
+    webp: ImageAssetVariant;
+    fallback: ImageAssetVariant;
+  };
+  medium: {
+    avif: ImageAssetVariant;
+    webp: ImageAssetVariant;
+    fallback: ImageAssetVariant;
+  };
+  large: {
+    avif: ImageAssetVariant;
+    webp: ImageAssetVariant;
+    fallback: ImageAssetVariant;
+  };
+};
 
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -74,6 +101,31 @@ export const sessionsTable = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Image bytes live in App Storage. PostgreSQL keeps only immutable object
+ * paths and metadata needed to select the right responsive variant.
+ */
+export const imageAssetsTable = pgTable("image_assets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  uploadedByUserId: uuid("uploaded_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  originalFilename: text("original_filename").notNull(),
+  sourceContentType: text("source_content_type").notNull(),
+  sourceSize: integer("source_size").notNull(),
+  stagingObjectPath: text("staging_object_path").notNull().unique(),
+  originalObjectPath: text("original_object_path"),
+  originalWidth: integer("original_width"),
+  originalHeight: integer("original_height"),
+  variants: jsonb("variants").$type<ImageAssetVariantSet>(),
+  status: imageAssetStatusEnum("status").notNull().default("pending"),
+  failureReason: text("failure_reason"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("image_assets_uploader_created_idx").on(table.uploadedByUserId, table.createdAt),
+  index("image_assets_status_expires_idx").on(table.status, table.expiresAt),
+]);
 
 export const oauthIdentitiesTable = pgTable("oauth_identities", {
   id: uuid("id").defaultRandom().primaryKey(),

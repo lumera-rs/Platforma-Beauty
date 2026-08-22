@@ -1,6 +1,7 @@
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
+import { OptimizedImage } from "@/components/optimized-image";
 import {
   Search, MapPin, Star, CalendarDays, ArrowRight,
   Leaf, Sparkles, Users, CheckCircle2, ChevronRight, Clock, ShieldCheck, Heart
@@ -198,11 +199,13 @@ export default function Home() {
                     href={getCategoryHref(cat.categoryName)}
                     className="group relative flex min-h-48 h-full cursor-pointer flex-col justify-end overflow-hidden rounded-2xl border border-border bg-muted shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   >
-                    <img
+                    <OptimizedImage
                       src={cat.imageUrl}
                       alt=""
+                      width={400}
+                      height={300}
                       className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      loading="lazy"
+                      sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/5" />
                     <div className="relative z-10 w-full p-5 text-left text-white">

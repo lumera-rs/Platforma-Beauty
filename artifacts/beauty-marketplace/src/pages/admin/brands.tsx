@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AdminLayout } from "./layout";
+import { OptimizedImage } from "@/components/optimized-image";
 import {
   useAdminListBrands,
   useAdminCreateBrand,
@@ -115,7 +116,7 @@ export default function AdminBrands() {
                 <div key={brand.id} className={`bg-card p-5 flex flex-col gap-3 ${!brand.active ? "opacity-50" : ""}`} data-testid={`brand-card-${brand.id}`}>
                   <div className="flex items-center gap-3">
                     {brand.logoUrl ? (
-                      <img src={brand.logoUrl} alt="" className="w-12 h-12 rounded-xl object-cover border shrink-0" />
+                      <OptimizedImage src={brand.logoUrl} alt="" width={48} height={48} className="w-12 h-12 rounded-xl object-cover border shrink-0" />
                     ) : (
                       <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center font-bold text-muted-foreground shrink-0">
                         {brand.name.slice(0, 2).toUpperCase()}
@@ -169,7 +170,7 @@ export default function AdminBrands() {
             <div className="space-y-2">
               <Label>Logo (URL, opciono)</Label>
               <Input value={form.logoUrl ?? ""} onChange={(e) => setForm({ ...form, logoUrl: e.target.value || null })} placeholder="/lumera-media/..." />
-              {form.logoUrl && <img src={form.logoUrl} alt="" className="w-16 h-16 rounded-xl object-cover border mt-1" />}
+              {form.logoUrl && <OptimizedImage src={form.logoUrl} alt="" width={64} height={64} className="w-16 h-16 rounded-xl object-cover border mt-1" />}
             </div>
             <div className="flex items-center justify-between pt-2 border-t">
               <Label className="cursor-pointer">Brend je aktivan</Label>

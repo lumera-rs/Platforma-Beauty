@@ -19,6 +19,68 @@ tags:
   - name: education
   - name: admin
 paths:
+  /media/uploads/request-url:
+    post:
+      operationId: requestImageUpload
+      tags: [media]
+      summary: Request a direct App Storage upload URL for an image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageUploadInput" }
+      responses:
+        "200":
+          description: Direct upload information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageUploadIntent" }
+        "401": { description: Sign-in required }
+        "413": { description: Image exceeds the 8 MB limit }
+  /media/uploads/{assetId}/finalize:
+    post:
+      operationId: finalizeImageUpload
+      tags: [media]
+      summary: Validate an uploaded image and create responsive variants
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Optimized image asset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OptimizedImageUpload" }
+        "401": { description: Sign-in required }
+        "410": { description: Upload expired }
+        "422": { description: Invalid image bytes }
+  /media/images/{assetId}:
+    get:
+      operationId: getOptimizedImage
+      tags: [media]
+      summary: Serve an immutable optimized image variant
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        - name: size
+          in: query
+          schema: { type: string, enum: [thumbnail, medium, large], default: large }
+        - name: format
+          in: query
+          schema: { type: string, enum: [avif, webp, fallback] }
+      responses:
+        "200":
+          description: Optimized image bytes
+          content:
+            image/avif: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+        "404": { description: Image not found }
   /healthz:
     get:
       operationId: healthCheck
@@ -3451,6 +3513,11 @@ components:
         id: { type: string }
         name: { type: string }
         slug: { type: string }
+        imageUrl: { type: string }
+        gallery:
+          type: array
+          maxItems: 20
+          items: { type: string }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
@@ -3458,10 +3525,15 @@ components:
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
         openSunday: { type: boolean }
-      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday]
+      required: [id, name, slug, imageUrl, gallery, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday]
     SalonProfileMediaUpdate:
       type: object
       properties:
+        imageUrl: { type: string, minLength: 1 }
+        gallery:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1 }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
@@ -4567,6 +4639,28 @@ components:
         altText: { type: string }
         sortOrder: { type: number, multipleOf: 1 }
       required: [id, url, altText, sortOrder]
+    ImageUploadInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 240 }
+        size: { type: number, minimum: 1, maximum: 8388608 }
+        contentType: { type: string, minLength: 1, maxLength: 120 }
+      required: [name, size, contentType]
+    ImageUploadIntent:
+      type: object
+      properties:
+        assetId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        uploadUrl: { type: string }
+        finalizeUrl: { type: string }
+      required: [assetId, uploadUrl, finalizeUrl]
+    OptimizedImageUpload:
+      type: object
+      properties:
+        assetId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        imageUrl: { type: string }
+        width: { type: number, minimum: 1 }
+        height: { type: number, minimum: 1 }
+      required: [assetId, imageUrl, width, height]
     EducationGalleryUploadInput:
       type: object
       properties:

@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { BusinessLayout } from "@/components/business-layout";
+import { OptimizedImage } from "@/components/optimized-image";
 import { OwnerSidebar } from "./dashboard";
 import { 
   useListSalonServices, 
@@ -20,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { uploadOptimizedImage } from "@/lib/image-upload";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -260,6 +262,7 @@ export default function OwnerServices() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("my-services");
   const [deleteTarget, setDeleteTarget] = useState<NonNullable<typeof services>[number] | null>(null);
+  const [uploadingServiceImage, setUploadingServiceImage] = useState(false);
   
   const activeHomeServiceCount = services?.filter((service) => service.active && service.homeServiceAvailable).length ?? 0;
 
@@ -297,6 +300,19 @@ export default function OwnerServices() {
     };
     if (editingId) updateMutation.mutate({ serviceId: editingId, data: payload }, callbacks);
     else createMutation.mutate({ data: payload }, callbacks);
+  };
+
+  const uploadServiceImage = async (file: File) => {
+    setUploadingServiceImage(true);
+    try {
+      const uploaded = await uploadOptimizedImage(file);
+      setFormData((current) => ({ ...current, imageUrl: uploaded.imageUrl }));
+      toast.success("Fotografija usluge je optimizovana.");
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte sa drugom slikom." });
+    } finally {
+      setUploadingServiceImage(false);
+    }
   };
 
   const editService = (service: NonNullable<typeof services>[number]) => {
@@ -385,6 +401,20 @@ export default function OwnerServices() {
                         <Label>Kratak opis</Label>
                         <Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
                       </div>
+                      <div className="space-y-2">
+                        <Label>Fotografija usluge</Label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="button" variant="outline" asChild disabled={uploadingServiceImage}>
+                            <label className="cursor-pointer">
+                              {uploadingServiceImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
+                              {uploadingServiceImage ? "Optimizovanje..." : "Otpremi fotografiju"}
+                              <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif" disabled={uploadingServiceImage} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadServiceImage(file); }} />
+                            </label>
+                          </Button>
+                          <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ili GIF · do 8 MB</span>
+                        </div>
+                        <Input value={formData.imageUrl} onChange={(event) => setFormData({ ...formData, imageUrl: event.target.value })} placeholder="Legacy URL slike (opciono)" />
+                      </div>
                       <div className="flex items-center justify-between pt-2">
                         <Label className="cursor-pointer">Usluga je aktivna</Label>
                         <Switch checked={formData.active} onCheckedChange={(checked) => setFormData({ ...formData, active: checked })} />
@@ -436,7 +466,7 @@ export default function OwnerServices() {
                     <div key={service.id} className={`p-4 sm:p-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between hover:bg-muted/10 transition-colors ${!service.active ? 'opacity-60 grayscale-[30%]' : ''}`}>
                       <div className="flex items-center gap-4 min-w-0">
                         <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden border">
-                          {service.imageUrl ? <img src={service.imageUrl} className="w-full h-full object-cover" /> : <ImageIcon className="w-6 h-6 text-muted-foreground" />}
+                          {service.imageUrl ? <OptimizedImage src={service.imageUrl} alt={service.name} width={64} height={64} className="w-full h-full object-cover" /> : <ImageIcon className="w-6 h-6 text-muted-foreground" />}
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">

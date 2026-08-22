@@ -7,6 +7,13 @@
  */
 
 export interface SalonProfileMediaUpdate {
+  /** @minLength 1 */
+  imageUrl?: string;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     */
+  gallery?: string[];
   /** @nullable */
   videoUrl?: string | null;
   acceptsCards?: boolean;

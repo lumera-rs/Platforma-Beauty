@@ -13,6 +13,7 @@ import {
   MapPin, AlertCircle, Heart, X
 } from "lucide-react";
 import type { SalonProfile, TimeSlot, CurrentUserResponse, Employee } from "@workspace/api-client-react";
+import { OptimizedImage } from "@/components/optimized-image";
 
 export interface BookingWidgetProps {
   salon: SalonProfile;
@@ -133,7 +134,7 @@ export function BookingWidget(props: BookingWidgetProps) {
           </button>
         )}
         <div className="flex items-center gap-3 pr-8">
-          <img src={props.salon.imageUrl} alt={props.salon.name} className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-background shrink-0" />
+          <OptimizedImage src={props.salon.imageUrl} alt={props.salon.name} width={48} height={48} className="w-12 h-12 rounded-full object-cover shadow-sm border-2 border-background shrink-0" />
           <div className="min-w-0">
             <h3 className="font-serif font-bold text-lg leading-tight truncate text-foreground">{props.salon.name}</h3>
             <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
@@ -312,7 +313,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                       }`}
                     >
                       <div className="flex items-center gap-4 min-w-0 pr-2">
-                        <img src={e.avatarUrl || "https://i.pravatar.cc/150"} alt={e.name} className="w-12 h-12 rounded-full object-cover shadow-sm border border-border shrink-0" />
+                        <OptimizedImage src={e.avatarUrl || "https://i.pravatar.cc/150"} alt={e.name} width={48} height={48} className="w-12 h-12 rounded-full object-cover shadow-sm border border-border shrink-0" />
                         <div className="min-w-0">
                           <h5 className="font-bold text-foreground flex items-center gap-2 truncate">
                             {e.name}
@@ -498,7 +499,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                        <div className="text-sm text-muted-foreground font-medium">Zaposleni</div>
                         <div className="text-right text-foreground">
                           <div className="flex items-center justify-end gap-2 font-bold">
-                            {!props.isAnyEmployeeSelected && employee && <img src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} className="w-5 h-5 rounded-full object-cover border" />}
+                            {!props.isAnyEmployeeSelected && employee && <OptimizedImage src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} width={20} height={20} className="w-5 h-5 rounded-full object-cover border" />}
                             {props.isAnyEmployeeSelected ? 'Bilo koji zaposleni' : employee ? employee.name : 'Bilo koji dostupan'}
                           </div>
                           {props.isAnyEmployeeSelected && <p className="mt-1 text-xs font-medium text-muted-foreground">Sistem bira slobodnog člana tima.</p>}
