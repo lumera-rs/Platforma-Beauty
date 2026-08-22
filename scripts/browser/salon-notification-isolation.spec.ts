@@ -1,4 +1,9 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { fileURLToPath } from "node:url";
+import { createServer } from "node:net";
+import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -27,6 +32,102 @@ type NotificationFixture = {
   categoryId: string;
   orderId?: string;
 };
+
+const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+async function findAvailablePort(): Promise<number> {
+  const server = createServer();
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  if (!address || typeof address === "string") {
+    throw new Error("Could not reserve a port for the secondary notification API process.");
+  }
+  return address.port;
+}
+
+async function waitForHttp(url: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+      lastError = new Error(`received ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`Secondary notification API did not start${lastError instanceof Error ? `: ${lastError.message}` : "."}`);
+}
+
+async function startSecondaryApiProcess(): Promise<{ child: ChildProcess; baseUrl: string }> {
+  const port = await findAvailablePort();
+  const child = spawn(
+    path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
+    [path.join(workspaceRoot, "artifacts", "api-server", "src", "test-server.ts")],
+    {
+      cwd: workspaceRoot,
+      env: { ...process.env, NODE_ENV: "test", PORT: String(port) },
+      stdio: ["ignore", "ignore", "inherit"],
+    },
+  );
+  const baseUrl = `http://127.0.0.1:${port}`;
+  try {
+    await waitForHttp(`${baseUrl}/api/healthz`);
+    return { child, baseUrl };
+  } catch (error) {
+    await stopSecondaryApiProcess(child);
+    throw error;
+  }
+}
+
+async function stopSecondaryApiProcess(child: ChildProcess | undefined): Promise<void> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGTERM");
+  const exited = await Promise.race([
+    once(child, "exit").then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ]);
+  if (!exited && child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGKILL");
+    await once(child, "exit");
+  }
+}
+
+async function orderThroughApiProcess(baseUrl: string, page: Page, productId: string): Promise<string> {
+  const session = (await page.context().cookies()).find((cookie) => cookie.name === "lumera_session");
+  if (!session) throw new Error("The signed-in owner session cookie was not available.");
+  const headers = {
+    "content-type": "application/json",
+    cookie: `lumera_session=${session.value}`,
+  };
+  const addToCart = await fetch(`${baseUrl}/api/shop/cart/items`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ productId, quantity: 1 }),
+  });
+  expect(addToCart.ok, "The secondary API process must add the order item.").toBe(true);
+
+  const checkout = await fetch(`${baseUrl}/api/shop/checkout`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      useSalonAddress: true,
+      deliveryMethod: "courier",
+      paymentMethod: "BANK_TRANSFER",
+      termsAccepted: true,
+    }),
+  });
+  expect(checkout.status, "The secondary API process must create the order.").toBe(201);
+  const order: unknown = await checkout.json();
+  if (!order || typeof order !== "object" || !("id" in order) || typeof order.id !== "string") {
+    throw new Error("The secondary API checkout response did not include an order ID.");
+  }
+  return order.id;
+}
 
 async function createNotificationFixture(): Promise<NotificationFixture> {
   const suffix = randomUUID();
@@ -244,11 +345,11 @@ test("salon owners only see and update their own notifications", async ({ page }
   }
 });
 
-test("a new B2B order refreshes mobile and desktop notification badges", async ({ page, browser }) => {
+test("an order on another API process refreshes mobile and desktop notification badges", async ({ page, browser }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createNotificationFixture();
   let desktopContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
-  let orderingContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let secondaryApiProcess: ChildProcess | undefined;
 
   try {
     // Keep the fixture notification visible without letting it affect the
@@ -281,30 +382,13 @@ test("a new B2B order refreshes mobile and desktop notification badges", async (
     await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0);
     await desktopEventConnection;
 
-    orderingContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-    const orderingPage = await orderingContext.newPage();
-    await signIn(orderingPage, fixture.ownerA);
-    const addToCart = await orderingPage.request.post("/api/shop/cart/items", {
-      data: { productId: fixture.productId, quantity: 1 },
-    });
-    expect(addToCart, "The new order fixture must be addable to the active salon cart.").toBeOK();
+    const secondaryApi = await startSecondaryApiProcess();
+    secondaryApiProcess = secondaryApi.child;
+    fixture.orderId = await orderThroughApiProcess(secondaryApi.baseUrl, page, fixture.productId);
 
-    await orderingPage.goto("/vlasnik/prodavnica/korpa");
-    await orderingPage.getByRole("link", { name: /Nastavi na dostavu/ }).click();
-    await expect(orderingPage).toHaveURL(/\/vlasnik\/prodavnica\/dostava$/);
-    await orderingPage.getByRole("button", { name: /Nastavi na pregled i plaćanje/ }).click();
-    await expect(orderingPage).toHaveURL(/\/vlasnik\/prodavnica\/pregled$/);
-    await orderingPage.getByRole("checkbox").last().check();
-    const checkoutResponse = orderingPage.waitForResponse((response) =>
-      response.request().method() === "POST"
-      && new URL(response.url()).pathname === "/api/shop/checkout",
-    );
-    await orderingPage.getByRole("button", { name: "Potvrdi porudžbinu" }).click();
-    expect((await checkoutResponse).status(), "The checkout must create a new order and notification.").toBe(201);
-    fixture.orderId = (await orderingPage.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];
-    await expect(orderingPage.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible();
-
-    // This must arrive well before the five-second polling fallback.
+    // The order was accepted by the secondary API process, while both event
+    // streams remain connected to the primary API process. This must therefore
+    // cross the shared broadcast layer before the five-second polling fallback.
     await expect(page.getByTestId("status-unread-notification-count-mobile")).toHaveText("1", { timeout: 3000 });
     await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveText("1", { timeout: 3000 });
 
@@ -323,7 +407,7 @@ test("a new B2B order refreshes mobile and desktop notification badges", async (
     await desktopReconnect;
     await expect(desktopPage.getByTestId("status-unread-notification-count")).toHaveCount(0, { timeout: 3000 });
   } finally {
-    await orderingContext?.close();
+    await stopSecondaryApiProcess(secondaryApiProcess);
     await desktopContext?.close();
     await cleanUpNotificationFixture(fixture);
   }

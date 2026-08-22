@@ -1,4 +1,8 @@
 import app from "./app";
+import {
+  startSalonNotificationEventListener,
+  stopSalonNotificationEventListener,
+} from "./lib/salon-notification-events";
 
 const rawPort = process.env.PORT ?? "0";
 const port = Number(rawPort);
@@ -7,6 +11,7 @@ if (!Number.isInteger(port) || port < 0) {
   throw new Error(`Invalid test server PORT value: "${rawPort}".`);
 }
 
+await startSalonNotificationEventListener();
 const server = app.listen(port, "127.0.0.1");
 
 server.once("error", (error) => {
@@ -24,7 +29,9 @@ server.once("listening", () => {
 });
 
 function shutDown(signal: NodeJS.Signals) {
-  server.close(() => process.exit(0));
+  void stopSalonNotificationEventListener().finally(() => {
+    server.close(() => process.exit(0));
+  });
   setTimeout(() => process.exit(1), 5_000).unref();
   console.log(`Test API server received ${signal}; closing.`);
 }

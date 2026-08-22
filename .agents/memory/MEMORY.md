@@ -24,3 +24,4 @@
 - [Managed image attachment](managed-image-attachment.md) — claim leased image assets in the same transaction as the business reference, using only newly supplied fields.
 - [Shared end-to-end spec validation](shared-e2e-spec-validation.md) — after concurrent merges, run direct test discovery and the full affected suite; typechecks can miss scope drift.
 - [EventSource reconnect recovery](eventsource-reconnect-recovery.md) — explicitly reconnect browser streams and rehydrate state after network restoration.
+- [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.

@@ -2,6 +2,10 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
+import {
+  startSalonNotificationEventListener,
+  stopSalonNotificationEventListener,
+} from "./lib/salon-notification-events";
 import { runEducationGalleryCleanup } from "./routes/marketplace";
 import { cleanupExpiredImageAssets } from "./routes/media";
 
@@ -19,7 +23,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, "0.0.0.0", (err) => {
+void startSalonNotificationEventListener();
+
+const server = app.listen(port, "0.0.0.0", (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -62,3 +68,22 @@ imageAssetCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
   logger.warn({ err: error }, "Image asset cleanup scheduler failed");
 });
+
+let shuttingDown = false;
+function shutDown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "Server shutting down");
+  clearInterval(retryInterval);
+  clearInterval(educationMaintenanceInterval);
+  clearInterval(educationGalleryCleanupInterval);
+  clearInterval(imageAssetCleanupInterval);
+
+  void stopSalonNotificationEventListener().finally(() => {
+    server.close(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.once("SIGINT", () => shutDown("SIGINT"));
+process.once("SIGTERM", () => shutDown("SIGTERM"));

@@ -4649,6 +4649,7 @@ router.post("/employee/leave-requests", async (req, res): Promise<void> => {
     });
     return [created!];
   });
+  await publishSalonNotificationUpdate(access.salon.id);
   res.status(201).json(request);
 });
 
@@ -5468,7 +5469,7 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     res.status(conflictProductName ? 409 : 400).json({ error: conflictProductName ? `Zalihe za "${conflictProductName}" su se promenile tokom obrade. Osvežite korpu i pokušajte ponovo.` : "Vaša korpa je prazna." });
     return;
   }
-  publishSalonNotificationUpdate(salon.id);
+  await publishSalonNotificationUpdate(salon.id);
   await sendTransactionalEmail({
     eventKey: `b2b-order:${created.order.id}:created`,
     emailType: "b2b_order_created",
@@ -5616,7 +5617,7 @@ router.patch("/shop/notifications/:notificationId/read", async (req, res): Promi
     ))
     .returning();
   if (!notification) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
-  publishSalonNotificationUpdate(access.salon.id);
+  await publishSalonNotificationUpdate(access.salon.id);
   res.json(MarkSalonNotificationReadResponse.parse(notification));
 });
 
@@ -5961,7 +5962,7 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
     ...(body.data.adminNote !== undefined ? { adminNote: body.data.adminNote } : {}),
     updatedAt: new Date(),
   };
-  const [updated] = await db.transaction(async (tx) => {
+  const { updated, deliveryChanged } = await db.transaction(async (tx) => {
     const [saved] = await tx.update(ordersTable).set(update).where(eq(ordersTable.id, order.id)).returning();
     const changes = [
       ["status", order.status, body.data.status],
@@ -5990,24 +5991,25 @@ router.patch("/admin/orders/:orderId", async (req, res): Promise<void> => {
         href: `/vlasnik/porudzbine/${order.id}`,
       });
     }
-    return [saved!];
+    return { updated: saved!, deliveryChanged };
   });
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1);
+  if (deliveryChanged) await publishSalonNotificationUpdate(order.salonId);
+  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, updated.salonId)).limit(1);
   if (body.data.status && body.data.status !== order.status) {
     const [owner] = await db.select().from(usersTable).where(eq(usersTable.id, salon!.ownerId)).limit(1);
     if (owner) await sendTransactionalEmail({
-      eventKey: `b2b-order:${updated!.id}:status:${body.data.status}`,
+      eventKey: `b2b-order:${updated.id}:status:${body.data.status}`,
       emailType: "b2b_order_status",
       to: { email: owner.email, name: `${owner.firstName} ${owner.lastName}` },
       subject: `LUMERA Biznis — status porudžbine: ${body.data.status}`,
-      htmlContent: lumeraEmailHtml("Status porudžbine je ažuriran", `<p>Porudžbina za ${emailSafe(salon!.name)} sada ima status <strong>${emailSafe(body.data.status)}</strong>${updated!.trackingNumber ? `. Broj za praćenje: <strong>${emailSafe(updated!.trackingNumber)}</strong>.` : ""}</p>`),
-      metadata: { orderId: updated!.id, salonId: salon!.id, status: body.data.status },
+      htmlContent: lumeraEmailHtml("Status porudžbine je ažuriran", `<p>Porudžbina za ${emailSafe(salon!.name)} sada ima status <strong>${emailSafe(body.data.status)}</strong>${updated.trackingNumber ? `. Broj za praćenje: <strong>${emailSafe(updated.trackingNumber)}</strong>.` : ""}</p>`),
+      metadata: { orderId: updated.id, salonId: salon!.id, status: body.data.status },
     });
   }
-  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated!.id));
-  const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, updated!.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
-  const [courier] = updated!.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, updated!.courierServiceId)).limit(1) : [];
-  res.json(AdminUpdateOrderStatusResponse.parse(adminOrderDto(updated!, items, salon!, history, courier)));
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, updated.id));
+  const history = await db.select().from(orderStatusHistoryTable).where(eq(orderStatusHistoryTable.orderId, updated.id)).orderBy(desc(orderStatusHistoryTable.createdAt));
+  const [courier] = updated.courierServiceId ? await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, updated.courierServiceId)).limit(1) : [];
+  res.json(AdminUpdateOrderStatusResponse.parse(adminOrderDto(updated, items, salon!, history, courier)));
 });
 
 router.get("/education/courses", async (req, res): Promise<void> => {
