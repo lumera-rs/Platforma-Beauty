@@ -231,19 +231,33 @@ export function BusinessNavbar() {
 
             <div className="h-px bg-white/10 my-1" />
 
-            {navLinks.map((link) => (
-              <Link 
-                key={link.href} 
-                href={link.href}
-                className={cn(
-                  "block text-sm font-medium py-2",
-                  location === link.href ? "text-accent" : "text-background"
-                )}
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              const isNotificationsLink = link.href === "/vlasnik/obavestenja";
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "block text-sm font-medium py-2",
+                    isNotificationsLink && "flex items-center justify-between gap-3",
+                    location === link.href ? "text-accent" : "text-background"
+                  )}
+                  aria-label={isNotificationsLink ? `Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}` : undefined}
+                  data-testid={isNotificationsLink ? "link-notifications-mobile" : undefined}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <span>{link.label}</span>
+                  {isNotificationsLink && unreadNotificationCount > 0 && (
+                    <span
+                      data-testid="status-unread-notification-count-mobile"
+                      className="min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground"
+                    >
+                      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
             {user?.role === "SALON_OWNER" && (
               <Link
                 href="/vlasnik/prodavnica/korpa"
