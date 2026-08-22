@@ -19,6 +19,7 @@ import {
 } from "@workspace/api-client-react";
 
 import { BusinessLayout } from "@/components/business-layout";
+import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,9 +57,13 @@ const courseSchema = z.object({
 export default function BusinessEducation() {
   const [matchLms, paramsLms] = useRoute("/biznis/edukacije/lms/:enrollmentId");
   const [matchCustomerLms, customerLmsParams] = useRoute("/moj-nalog/edukacije/lms/:enrollmentId");
+  const [matchStudentLms, studentLmsParams] = useRoute("/student/edukacije/lms/:enrollmentId");
   const [matchCourse, paramsCourse] = useRoute("/biznis/edukacije/:courseId");
   const { data: userResponse } = useGetCurrentUser();
 
+  if (matchStudentLms && studentLmsParams) {
+    return <Layout hideCustomerNavigation><LmsView enrollmentId={studentLmsParams.enrollmentId} /></Layout>;
+  }
   if ((matchLms && paramsLms) || (matchCustomerLms && customerLmsParams)) {
     return (
       <BusinessLayout>
@@ -82,12 +87,28 @@ export default function BusinessEducation() {
       </BusinessLayout>
     );
   }
+  if (userResponse?.user?.role === "STUDENT") {
+    return <Layout hideCustomerNavigation><StudentLearningView /></Layout>;
+  }
 
   return (
     <BusinessLayout>
       <CatalogView />
     </BusinessLayout>
   );
+}
+
+function StudentLearningView() {
+  const { data: enrollments, isLoading, isError } = useListEnrollments();
+  return <div className="container mx-auto max-w-5xl px-4 py-10">
+    <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> STUDENT</Badge>
+    <h1 className="font-serif text-3xl font-bold">Moje edukacije</h1>
+    <p className="mt-2 text-muted-foreground">Vaši kupljeni programi, napredak i sertifikati.</p>
+    {isLoading ? <div className="mt-8 grid gap-4 md:grid-cols-2">{[1, 2].map((item) => <Skeleton key={item} className="h-44 rounded-xl" />)}</div>
+      : isError ? <Card className="mt-8"><CardContent className="py-10 text-center">Edukacije trenutno nisu dostupne.</CardContent></Card>
+        : enrollments?.length ? <div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={`/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div>
+          : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
+  </div>;
 }
 
 function EmployeeLearningView() {

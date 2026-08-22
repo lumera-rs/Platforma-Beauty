@@ -20,6 +20,7 @@ export const UserRole = {
   EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
 } as const;
 
 export interface User {
@@ -2237,6 +2238,7 @@ export const AdminUserRole = {
   EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
 } as const;
 
 export interface AdminUser {
@@ -2262,6 +2264,7 @@ export const AdminUserUpdateRole = {
   EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
 } as const;
 
 export interface AdminUserUpdate {
@@ -2946,6 +2949,7 @@ export const AdminListUsersRole = {
   EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  STUDENT: 'STUDENT',
 } as const;
 
 export type AdminListReviewsParams = {

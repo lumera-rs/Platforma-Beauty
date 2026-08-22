@@ -13,6 +13,8 @@ export function homeForRole(role: UserRole): string {
   switch (role) {
     case "CUSTOMER":
       return "/moj-nalog";
+    case "STUDENT":
+      return "/student/edukacije";
     case "SALON_OWNER":
       return "/vlasnik";
     case "EDUCATION_CENTER_OWNER":

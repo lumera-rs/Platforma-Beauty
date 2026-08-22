@@ -31,6 +31,7 @@ const registerSchema = z.object({
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const studentPortal = window.location.pathname.startsWith("/student/");
   const searchParams = new URLSearchParams(window.location.search);
   const tab = searchParams.get("tab") === "register" ? "register" : "login";
   
@@ -73,6 +74,17 @@ export default function Login() {
   };
 
   const onRegisterSubmit = (values: z.infer<typeof registerSchema>) => {
+    if (studentPortal) {
+      void fetch("/api/auth/student-register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) })
+        .then(async (response) => ({ response, data: await response.json() }))
+        .then(({ response, data }) => {
+          if (!response.ok) throw new Error(data.error ?? "Registracija nije uspela.");
+          toast.success("STUDENT nalog je kreiran", { description: "Dobrodošli u LUMERA Edukacije." });
+          setLocation("/student/edukacije");
+        })
+        .catch((error: Error) => toast.error("Greška", { description: error.message }));
+      return;
+    }
     registerMutation.mutate({ data: values }, {
       onSuccess: (res) => {
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
@@ -100,12 +112,12 @@ export default function Login() {
   if (isLoadingUser) return null; // or a spinner
 
   return (
-    <Layout>
+    <Layout hideCustomerNavigation={studentPortal}>
       <div className="flex-1 flex items-center justify-center p-4 py-12 bg-muted/30">
         <Card className="w-full max-w-md shadow-xl border-border/50">
           <CardHeader className="text-center pb-2">
-            <CardTitle className="font-serif text-3xl font-bold">Dobrodošli</CardTitle>
-            <CardDescription>Prijavite se ili kreirajte nalog</CardDescription>
+            <CardTitle className="font-serif text-3xl font-bold">{studentPortal ? "LUMERA Edukacije" : "Dobrodošli"}</CardTitle>
+            <CardDescription>{studentPortal ? "STUDENT prijava i registracija za edukacije" : "Prijavite se ili kreirajte nalog"}</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue={tab} className="w-full">

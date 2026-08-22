@@ -44,7 +44,7 @@ export const RegisterResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean()
 }),
@@ -94,7 +94,7 @@ export const RegisterBusinessResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean()
 }),
@@ -120,7 +120,7 @@ export const LoginResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean()
 }),
@@ -144,7 +144,7 @@ export const GetCurrentUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean()
 }),zod.null()])
@@ -4747,7 +4747,7 @@ export const AdminUpdateSalonResponse = zod.object({
  */
 export const AdminListUsersQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']).optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
   "active": zod.coerce.boolean().optional()
 })
 
@@ -4757,7 +4757,7 @@ export const AdminListUsersResponseItem = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -4775,7 +4775,7 @@ export const AdminUpdateUserParams = zod.object({
 })
 
 export const AdminUpdateUserBody = zod.object({
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']).optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
   "active": zod.boolean().optional()
 })
 
@@ -4785,7 +4785,7 @@ export const AdminUpdateUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })

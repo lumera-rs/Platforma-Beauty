@@ -38,7 +38,7 @@ export default function BusinessLanding() {
                 <Link href="/poslovna-registracija">Započnite besplatno</Link>
               </Button>
               <Button size="lg" variant="outline" className="h-14 px-8 text-base border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white transition-all" asChild>
-                <Link href="/poslovna-prijava">Prijavite se</Link>
+                <Link href="/student/prijava?tab=register">Prijava za edukacije</Link>
               </Button>
             </div>
           </div>
@@ -162,7 +162,7 @@ export default function BusinessLanding() {
                 </li>
               </ul>
               <Button size="lg" className="bg-white text-primary hover:bg-white/90 h-14 px-8 shadow-xl transition-transform hover:scale-105" asChild>
-                <Link href="/poslovna-registracija">Registrujte edukativni centar</Link>
+                <Link href="/edukacije">Pogledajte edukacije</Link>
               </Button>
             </div>
             <div className="relative">

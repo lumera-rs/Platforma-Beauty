@@ -24,6 +24,7 @@ export const educationLedgerEntryTypeEnum = pgEnum("education_ledger_entry_type"
 export const educationPayoutStatusEnum = pgEnum("education_payout_status", ["pending", "paid", "cancelled"]);
 export const educationDisputeStatusEnum = pgEnum("education_dispute_status", ["open", "under_review", "resolved_refund", "resolved_payout", "rejected", "cancelled"]);
 export const educationThreadStatusEnum = pgEnum("education_thread_status", ["open", "closed"]);
+export const educationWaitlistStatusEnum = pgEnum("education_waitlist_status", ["waiting", "offered", "expired", "enrolled", "cancelled"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -61,6 +62,7 @@ export const educationPlatformSettingsTable = pgTable("education_platform_settin
   reservePercent: integer("reserve_percent").notNull().default(10),
   onlineRefundDays: integer("online_refund_days").notNull().default(14),
   liveAppealDays: integer("live_appeal_days").notNull().default(7),
+  featuredCoursePrice: integer("featured_course_price").notNull().default(0),
   updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -90,6 +92,13 @@ export const coursesTable = pgTable("courses", {
   imageUrl: text("image_url").notNull(),
   published: boolean("published").notNull().default(true),
   archived: boolean("archived").notNull().default(false),
+  isFeatured: boolean("is_featured").notNull().default(false),
+  featuredUntil: timestamp("featured_until", { withTimezone: true }),
+  featuredActivatedAt: timestamp("featured_activated_at", { withTimezone: true }),
+  featuredFee: integer("featured_fee").notNull().default(0),
+  refundPolicy: text("refund_policy").notNull().default("Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti."),
+  groupDiscountMinimum: integer("group_discount_minimum"),
+  groupDiscountPercent: integer("group_discount_percent"),
   startDate: date("start_date", { mode: "string" }),
   endDate: date("end_date", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -104,6 +113,9 @@ export const courseSessionsTable = pgTable("course_sessions", {
   location: text("location"),
   capacity: integer("capacity").notNull().default(20),
   reservedSeats: integer("reserved_seats").notNull().default(0),
+  minimumEnrollments: integer("minimum_enrollments"),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -131,6 +143,7 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
   employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
+  sessionId: uuid("session_id").references(() => courseSessionsTable.id, { onDelete: "set null" }),
   purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   status: educationEnrollmentStatusEnum("status").notNull().default("pending"),
   paymentStatus: educationPaymentStatusEnum("payment_status").notNull().default("pending"),
@@ -139,6 +152,9 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
   accessGrantedAt: timestamp("access_granted_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  certificateIssuedAt: timestamp("certificate_issued_at", { withTimezone: true }),
+  certificateNumber: text("certificate_number"),
+  certificatePath: text("certificate_path"),
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key"),
   idempotencyFingerprint: text("idempotency_fingerprint"),
@@ -150,7 +166,57 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   uniqueIndex("course_enrollments_purchaser_idempotency_unique")
     .on(table.purchaserId, table.idempotencyKey)
     .where(sql`${table.idempotencyKey} is not null`),
+  index("course_enrollments_session_status_idx").on(table.sessionId, table.status),
 ]);
+
+export const educationWaitlistTable = pgTable("education_waitlist", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => courseSessionsTable.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
+  position: integer("position").notNull(),
+  status: educationWaitlistStatusEnum("status").notNull().default("waiting"),
+  offeredAt: timestamp("offered_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_waitlist_session_user_unique").on(table.sessionId, table.userId).where(sql`${table.status} in ('waiting', 'offered')`),
+  uniqueIndex("education_waitlist_session_position_unique").on(table.sessionId, table.position).where(sql`${table.status} in ('waiting', 'offered')`),
+  index("education_waitlist_session_status_idx").on(table.sessionId, table.status, table.position),
+]);
+
+export const educationInstructorsTable = pgTable("education_instructors", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  fullName: text("full_name").notNull(),
+  photoUrl: text("photo_url"),
+  biography: text("biography").notNull().default(""),
+  industryYears: integer("industry_years").notNull().default(0),
+  experienceYears: integer("experience_years").notNull().default(0),
+  specializations: jsonb("specializations").$type<string[]>().notNull().default([]),
+  qualifications: jsonb("qualifications").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const educationNotificationsTable = pgTable("education_notifications", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  enrollmentId: uuid("enrollment_id").references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  waitlistId: uuid("waitlist_id").references(() => educationWaitlistTable.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  actionUrl: text("action_url"),
+  eventKey: text("event_key").notNull().unique(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("education_notifications_user_created_idx").on(table.userId, table.createdAt)]);
 
 export const educationEscrowsTable = pgTable("education_escrows", {
   id: uuid("id").defaultRandom().primaryKey(),

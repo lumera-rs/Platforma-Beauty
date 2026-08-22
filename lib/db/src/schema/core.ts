@@ -22,6 +22,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "EDUCATION_CENTER_OWNER",
   "INSTRUCTOR",
   "CUSTOMER",
+  "STUDENT",
 ]);
 
 export const appointmentStatusEnum = pgEnum("appointment_status", [
@@ -37,7 +38,13 @@ export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]
 export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "processing", "sent", "failed", "skipped"]);
 export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
 export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "sent", "failed", "skipped"]);
-export const smsMessageTypeEnum = pgEnum("sms_message_type", ["appointment_confirmation", "appointment_reminder"]);
+export const smsMessageTypeEnum = pgEnum("sms_message_type", [
+  "appointment_confirmation",
+  "appointment_reminder",
+  "education_session_reminder",
+  "education_waitlist_offer",
+  "education_session_cancelled",
+]);
 export const integrationKeyEnum = pgEnum("integration_key", ["sms", "brevo", "google_oauth", "facebook_oauth"]);
 
 export const usersTable = pgTable("users", {

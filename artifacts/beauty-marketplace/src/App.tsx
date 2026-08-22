@@ -148,6 +148,7 @@ function Router() {
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/prijava" component={Auth} />
+        <Route path="/student/prijava" component={Auth} />
         <Route path="/za-biznise" component={BusinessLanding} />
         <Route path="/poslovna-prijava"><BusinessAuth initialTab="login" /></Route>
         <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
@@ -173,6 +174,16 @@ function Router() {
         </Route>
         <Route path="/moj-nalog/edukacije/lms/:enrollmentId">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
+        <Route path="/student/edukacije">
+          <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
+        <Route path="/student/edukacije/lms/:enrollmentId">
+          <RoleGuard allowedRoles={['STUDENT']} loginPath="/student/prijava">
             <BusinessEducation />
           </RoleGuard>
         </Route>

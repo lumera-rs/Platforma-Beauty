@@ -17,11 +17,14 @@ import {
   educationDisputesTable,
   educationEscrowsTable,
   educationFinancialEventsTable,
+  educationInstructorsTable,
   educationLedgerEntriesTable,
   educationMessagesTable,
+  educationNotificationsTable,
   educationPayoutsTable,
   educationPlatformSettingsTable,
   educationThreadsTable,
+  educationWaitlistTable,
   emailCampaignsTable,
   emailDeliveriesTable,
   employeesTable,
@@ -1194,7 +1197,7 @@ async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess 
     const access = await requireEducationAccess(req, res);
     return access ? { access, learnerEmployeeId: null } : null;
   }
-  if (user.role === "CUSTOMER") {
+  if (user.role === "CUSTOMER" || user.role === "STUDENT") {
     return { access: { user, salon: null, centers: [], admin: false }, learnerEmployeeId: null };
   }
   if (user.role !== "SALON_EMPLOYEE") {
@@ -1359,6 +1362,8 @@ async function sessionsForCourse(courseId: string, includeLocation = false) {
     capacity: session.capacity,
     reservedSeats: session.reservedSeats,
     availableSeats: Math.max(0, session.capacity - session.reservedSeats),
+    minimumEnrollments: session.minimumEnrollments,
+    cancelledAt: session.cancelledAt?.toISOString() ?? null,
   }));
 }
 
@@ -1396,6 +1401,11 @@ async function educationCourseView(
     duration: course.duration,
     rating: course.rating / 10,
     certification: course.certification,
+    featured: course.isFeatured && (!course.featuredUntil || course.featuredUntil > new Date()),
+    featuredUntil: course.featuredUntil?.toISOString() ?? null,
+    refundPolicy: course.refundPolicy,
+    groupDiscountMinimum: course.groupDiscountMinimum,
+    groupDiscountPercent: course.groupDiscountPercent,
     imageUrl: course.imageUrl,
     startDate: course.startDate,
     published: course.published,
@@ -1844,6 +1854,37 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const token = await createSession(user!.id);
   res.cookie(sessionCookieName, token, cookieOptions());
   res.status(201).json(RegisterResponse.parse({ user: publicUser(user!), message: "Dobro došli u Lumeru." }));
+});
+
+// This separate endpoint intentionally shares validation with customer
+// registration but never reads a role from the browser.
+router.post("/auth/student-register", async (req, res): Promise<void> => {
+  await ensureDemoData();
+  const parsed = RegisterBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const input = parsed.data;
+  const email = input.email.toLowerCase();
+  const phoneNormalized = normalizedPhone(input.phone ?? "");
+  const code = typeof req.body?.phoneVerificationCode === "string" ? req.body.phoneVerificationCode : "";
+  if (!phoneNormalized || !code) { res.status(400).json({ error: "Potvrdite broj telefona pre registracije." }); return; }
+  const [existingEmail, existingPhone, verification] = await Promise.all([
+    db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1),
+    db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1),
+    db.select().from(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.phoneNormalized, phoneNormalized)).limit(1),
+  ]);
+  if (existingEmail[0] || existingPhone[0]) { res.status(409).json({ error: "E-mail ili broj su već povezani sa nalogom." }); return; }
+  if (!verification[0] || verification[0].expiresAt < new Date() || verification[0].attempts >= 5 || verification[0].codeHash !== createHash("sha256").update(code).digest("hex")) {
+    if (verification[0]) await db.update(phoneVerificationCodesTable).set({ attempts: verification[0].attempts + 1 }).where(eq(phoneVerificationCodesTable.id, verification[0].id));
+    res.status(400).json({ error: "Kod za potvrdu broja nije ispravan ili je istekao." }); return;
+  }
+  const [student] = await db.insert(usersTable).values({
+    firstName: input.firstName, lastName: input.lastName, email, phone: input.phone, phoneNormalized,
+    passwordHash: await hashPassword(input.password), passwordSetAt: new Date(), role: "STUDENT",
+  }).returning();
+  await db.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification[0].id));
+  const token = await createSession(student!.id);
+  res.cookie(sessionCookieName, token, cookieOptions());
+  res.status(201).json(RegisterResponse.parse({ user: publicUser(student!), message: "STUDENT nalog je kreiran." }));
 });
 
 router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
@@ -5537,7 +5578,7 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
 
 router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["SALON_OWNER", "CUSTOMER"].includes(user.role)) {
+  if (!["SALON_OWNER", "CUSTOMER", "STUDENT"].includes(user.role)) {
     res.status(403).json({ error: "Kupovina edukacija je dostupna klijentima i vlasnicima salona." });
     return;
   }
@@ -5566,7 +5607,8 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   }
   const idempotencyKey = req.get("idempotency-key")?.trim() || null;
   if (idempotencyKey && idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency ključ je predugačak." }); return; }
-  const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}`;
+  const requestedSessionId = typeof req.body?.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(req.body.sessionId) ? req.body.sessionId : null;
+  const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}:${requestedSessionId ?? "auto"}`;
   if (idempotencyKey) {
     const [replayed] = await db.select().from(courseEnrollmentsTable)
       .where(and(eq(courseEnrollmentsTable.purchaserId, user.id), eq(courseEnrollmentsTable.idempotencyKey, idempotencyKey))).limit(1);
@@ -5656,6 +5698,14 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
           return null;
         }
       }
+      if (requestedSessionId) {
+        const [requestedSession] = await tx.select().from(courseSessionsTable)
+          .where(and(eq(courseSessionsTable.id, requestedSessionId), eq(courseSessionsTable.courseId, course.id)))
+          .for("update").limit(1);
+        if (!requestedSession || requestedSession.startsAt <= new Date() || requestedSession.cancelledAt) {
+          throw new Error("Izabrani termin nije dostupan za ovaj kurs.");
+        }
+      }
       const [created] = await tx.insert(courseEnrollmentsTable).values({
         courseId: course.id,
         userId: user.id,
@@ -5664,7 +5714,8 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
         purchaserId: user.id,
         status: "pending",
         paymentStatus: "pending",
-        auditData: { source: "education-marketplace", idempotencyKey },
+        sessionId: requestedSessionId,
+        auditData: { source: "education-marketplace", idempotencyKey, requestedSessionId },
         idempotencyKey,
         idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
       }).returning();
@@ -5701,6 +5752,71 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment)));
 });
 
+// Waitlists are deliberately session-scoped: a place on one date is never a
+// promise for another date.  The session row lock serializes both capacity
+// changes and the position allocation.
+router.post("/education/courses/:courseId/sessions/:sessionId/waitlist", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  if (!["CUSTOMER", "STUDENT", "SALON_OWNER"].includes(user.role)) {
+    res.status(403).json({ error: "Lista čekanja je dostupna samo polaznicima i salonima." }); return;
+  }
+  const courseId = String(req.params.courseId ?? "");
+  const sessionId = String(req.params.sessionId ?? "");
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, courseId)).limit(1);
+  if (!course || !(await isPublicEducationCourse(course)) || course.format === "online") {
+    res.status(404).json({ error: "Termin nije dostupan za listu čekanja." }); return;
+  }
+  try {
+    const waitlist = await db.transaction(async (tx) => {
+      if (!course.centerId) throw new Error("Kurs nije dostupan za listu čekanja.");
+      await lockEducationCenterFinancials(tx, course.centerId);
+      const [center] = await tx.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).for("update").limit(1);
+      const [subscription] = await tx.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).for("update").limit(1);
+      const [lockedCourse] = await tx.select().from(coursesTable).where(eq(coursesTable.id, course.id)).for("update").limit(1);
+      if (!lockedCourse?.published || lockedCourse.archived || center?.verificationStatus !== "verified" || !hasActiveEducationSubscription(subscription?.status)) {
+        throw new Error("Kurs više nije dostupan za listu čekanja.");
+      }
+      const [session] = await tx.select().from(courseSessionsTable)
+        .where(and(eq(courseSessionsTable.id, sessionId), eq(courseSessionsTable.courseId, course.id)))
+        .for("update").limit(1);
+      if (!session || session.startsAt <= new Date()) throw new Error("Termin nije dostupan.");
+      if (session.reservedSeats < session.capacity) throw new Error("Termin još ima slobodnih mesta. Pošaljite zahtev za kupovinu.");
+      const active = await tx.select().from(educationWaitlistTable)
+        .where(and(eq(educationWaitlistTable.sessionId, session.id), inArray(educationWaitlistTable.status, ["waiting", "offered"])))
+        .orderBy(asc(educationWaitlistTable.position)).for("update");
+      if (active.some((entry) => entry.userId === user.id)) throw new Error("Već ste na listi čekanja za ovaj termin.");
+      const [created] = await tx.insert(educationWaitlistTable).values({
+        sessionId: session.id, courseId: course.id, userId: user.id, purchaserId: user.id, position: (active.at(-1)?.position ?? 0) + 1,
+      }).returning();
+      await tx.insert(educationNotificationsTable).values({
+        userId: user.id, waitlistId: created!.id, type: "waitlist_joined", title: "Dodati ste na listu čekanja",
+        body: `Sačuvaćemo vam mesto u redu za kurs „${course.title}“.`, eventKey: `education-waitlist:${created!.id}:joined`,
+        actionUrl: `/edukacije/${course.id}`,
+      });
+      return created!;
+    });
+    res.status(201).json({ id: waitlist.id, status: waitlist.status, position: waitlist.position });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Dodavanje na listu čekanja nije uspelo." });
+  }
+});
+
+router.get("/education/notifications", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  if (user.role !== "STUDENT" && user.role !== "CUSTOMER") { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
+  const notifications = await db.select().from(educationNotificationsTable)
+    .where(eq(educationNotificationsTable.userId, user.id)).orderBy(desc(educationNotificationsTable.createdAt)).limit(100);
+  res.json({ notifications });
+});
+
+router.patch("/education/notifications/:notificationId/read", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const [updated] = await db.update(educationNotificationsTable).set({ readAt: new Date() })
+    .where(and(eq(educationNotificationsTable.id, String(req.params.notificationId ?? "")), eq(educationNotificationsTable.userId, user.id))).returning();
+  if (!updated) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
+  res.json({ ok: true });
+});
+
 router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res): Promise<void> => {
   const admin = await requireAdmin(req, res); if (!admin) return;
   const enrollmentId = String(req.params.enrollmentId);
@@ -5732,13 +5848,15 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
       let session: typeof courseSessionsTable.$inferSelect | null = null;
       if (course.format !== "online") {
         const sessions = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt)).for("update");
-        session = sessions.find((item) => item.reservedSeats < item.capacity && item.endsAt > new Date()) ?? null;
+        session = enrollment.sessionId
+          ? sessions.find((item) => item.id === enrollment.sessionId && item.reservedSeats < item.capacity && item.endsAt > new Date()) ?? null
+          : sessions.find((item) => item.reservedSeats < item.capacity && item.endsAt > new Date()) ?? null;
         if (!session) throw new Error("Nema slobodnih mesta u narednim terminima.");
         await tx.update(courseSessionsTable).set({ reservedSeats: session.reservedSeats + 1 }).where(eq(courseSessionsTable.id, session.id));
       }
       const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
       const [confirmed] = await tx.update(courseEnrollmentsTable).set({
-        status: "active", paymentStatus: "paid", accessGrantedAt: new Date(), nextLesson: firstLesson?.id ?? null,
+        status: "active", paymentStatus: "paid", accessGrantedAt: new Date(), nextLesson: firstLesson?.id ?? null, sessionId: session?.id ?? null,
         auditData: { ...enrollment.auditData, settlement: "admin_confirmed", settledBy: admin.id, sessionId: session?.id ?? null },
         updatedAt: new Date(),
       }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.status, "pending"), eq(courseEnrollmentsTable.paymentStatus, "pending"))).returning();
@@ -5887,6 +6005,68 @@ router.get("/education/public/courses", async (_req, res): Promise<void> => {
     visible: await isPublicEducationCourse(course),
   })))).filter((item) => item.visible).map((item) => item.course);
   res.json(await Promise.all(visible.map((course) => educationCourseView(course))));
+});
+
+router.get("/education/public/featured", async (_req, res): Promise<void> => {
+  const courses = await db.select().from(coursesTable)
+    .where(and(eq(coursesTable.isFeatured, true), or(sql`${coursesTable.featuredUntil} is null`, gte(coursesTable.featuredUntil, new Date()))))
+    .orderBy(desc(coursesTable.featuredActivatedAt));
+  const visible = (await Promise.all(courses.map(async (course) => ({
+    course, visible: await isPublicEducationCourse(course),
+  })))).filter((item) => item.visible).map((item) => item.course);
+  res.json(await Promise.all(visible.map((course) => educationCourseView(course))));
+});
+
+router.get("/education/instructors/:instructorId", async (req, res): Promise<void> => {
+  const instructorId = String(req.params.instructorId ?? "");
+  const [instructor] = await db.select().from(educationInstructorsTable).where(eq(educationInstructorsTable.id, instructorId)).limit(1);
+  if (!instructor) { res.status(404).json({ error: "Instruktor nije pronađen." }); return; }
+  const allCourses = await db.select().from(coursesTable).where(eq(coursesTable.centerId, instructor.centerId));
+  const courses = instructor.userId ? allCourses.filter((course) => course.instructorId === instructor.userId) : [];
+  const publicCourses = (await Promise.all(courses.map(async (course) => ({ course, visible: await isPublicEducationCourse(course) }))))
+    .filter((item) => item.visible).map((item) => item.course);
+  const enrollments = publicCourses.length
+    ? await db.select().from(courseEnrollmentsTable).where(and(inArray(courseEnrollmentsTable.courseId, publicCourses.map((course) => course.id)), eq(courseEnrollmentsTable.paymentStatus, "paid")))
+    : [];
+  const rating = publicCourses.length ? publicCourses.reduce((total, course) => total + course.rating, 0) / publicCourses.length / 10 : 0;
+  res.json({
+    id: instructor.id, name: instructor.fullName, photoUrl: instructor.photoUrl, biography: instructor.biography,
+    industryYears: instructor.industryYears, experienceYears: instructor.experienceYears, specializations: instructor.specializations,
+    qualifications: instructor.qualifications, rating, participantCount: enrollments.length,
+    courses: await Promise.all(publicCourses.map((course) => educationCourseView(course))),
+  });
+});
+
+router.get("/education/instructors", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const centerId = access.centers[0]?.id;
+  if (!centerId || access.admin) { res.status(403).json({ error: "Profilima instruktora upravlja njihov edukativni centar." }); return; }
+  res.json(await db.select().from(educationInstructorsTable).where(eq(educationInstructorsTable.centerId, centerId)).orderBy(desc(educationInstructorsTable.createdAt)));
+});
+
+router.post("/education/instructors", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const centerId = access.centers[0]?.id;
+  if (!centerId || access.admin) { res.status(403).json({ error: "Profilima instruktora upravlja njihov edukativni centar." }); return; }
+  const body = req.body as Record<string, unknown>;
+  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+  if (!fullName || fullName.length > 120) { res.status(400).json({ error: "Unesite ime instruktora." }); return; }
+  const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean).slice(0, 20) : [];
+  const userId = typeof body.userId === "string" && /^[0-9a-f-]{36}$/i.test(body.userId) ? body.userId : null;
+  if (userId) {
+    const [linkedUser] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (!linkedUser || !["INSTRUCTOR", "EDUCATION_CENTER_OWNER"].includes(linkedUser.role)) {
+      res.status(400).json({ error: "Izaberite važeći nalog instruktora." }); return;
+    }
+  }
+  const [created] = await db.insert(educationInstructorsTable).values({
+    centerId, userId, fullName, photoUrl: typeof body.photoUrl === "string" ? body.photoUrl : null,
+    biography: typeof body.biography === "string" ? body.biography.slice(0, 4000) : "",
+    industryYears: typeof body.industryYears === "number" && body.industryYears >= 0 ? Math.floor(body.industryYears) : 0,
+    experienceYears: typeof body.experienceYears === "number" && body.experienceYears >= 0 ? Math.floor(body.experienceYears) : 0,
+    specializations: strings(body.specializations), qualifications: strings(body.qualifications),
+  }).returning();
+  res.status(201).json(created);
 });
 
 router.get("/education/center/status", async (req, res): Promise<void> => {
