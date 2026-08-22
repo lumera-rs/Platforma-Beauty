@@ -1654,6 +1654,103 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationCourseDetail" }
         "403": { description: Business access required }
+  /education/courses/{courseId}/gallery/upload-url:
+    post:
+      operationId: requestEducationCourseGalleryUpload
+      tags: [education]
+      summary: Request a direct upload URL for an owned course gallery image
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGalleryUploadInput" }
+      responses:
+        "200":
+          description: Direct upload information
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationGalleryUpload" }
+        "403": { description: Education-center ownership required }
+  /education/courses/{courseId}/gallery:
+    post:
+      operationId: addEducationCourseGalleryMedia
+      tags: [education]
+      summary: Attach an uploaded image to an owned course gallery
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGalleryMediaInput" }
+      responses:
+        "200":
+          description: Gallery image was already attached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMedia" }
+        "201":
+          description: Gallery image attached
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMedia" }
+        "403": { description: Education-center ownership required }
+    put:
+      operationId: reorderEducationCourseGallery
+      tags: [education]
+      summary: Reorder and update captions in an owned course gallery
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationGalleryReorderInput" }
+      responses:
+        "200":
+          description: Updated gallery
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationMedia" }
+        "403": { description: Education-center ownership required }
+  /education/courses/{courseId}/gallery/{mediaId}:
+    delete:
+      operationId: deleteEducationCourseGalleryMedia
+      tags: [education]
+      summary: Remove an image from an owned course gallery
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+        - name: mediaId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "204": { description: Gallery image removed }
+        "403": { description: Education-center ownership required }
+  /education/media/{mediaId}:
+    get:
+      operationId: getEducationGalleryMedia
+      tags: [education]
+      summary: Serve a public course gallery image or an owner's unpublished image
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Image bytes
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        "403": { description: Owner access required for unpublished course media }
+        "404": { description: Gallery image not found }
   /education/courses/{courseId}/modules:
     get:
       operationId: listEducationModules
@@ -4469,6 +4566,40 @@ components:
         altText: { type: string }
         sortOrder: { type: number, multipleOf: 1 }
       required: [id, url, altText, sortOrder]
+    EducationGalleryUploadInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 240 }
+        size: { type: number, minimum: 1, maximum: 8388608 }
+        contentType: { type: string, minLength: 1, maxLength: 120 }
+      required: [name, size, contentType]
+    EducationGalleryUpload:
+      type: object
+      properties:
+        uploadUrl: { type: string }
+        mediaId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        imageUrl: { type: string }
+      required: [uploadUrl, mediaId, imageUrl]
+    EducationGalleryMediaInput:
+      type: object
+      properties:
+        mediaId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        altText: { type: string, maxLength: 240 }
+      required: [mediaId]
+    EducationGalleryReorderInput:
+      type: object
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              mediaId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+              altText: { type: string, maxLength: 240 }
+            required: [mediaId]
+      required: [items]
     EducationCourseReview:
       type: object
       properties:

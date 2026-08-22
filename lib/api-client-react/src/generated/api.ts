@@ -98,6 +98,10 @@ import type {
   EducationEnrollment,
   EducationEnrollmentInput,
   EducationFinanceOverview,
+  EducationGalleryMediaInput,
+  EducationGalleryReorderInput,
+  EducationGalleryUpload,
+  EducationGalleryUploadInput,
   EducationInstructorInput,
   EducationInstructorProfile,
   EducationInstructorPublicProfile,
@@ -106,6 +110,7 @@ import type {
   EducationLms,
   EducationMarketplaceSettings,
   EducationMarketplaceSettingsInput,
+  EducationMedia,
   EducationMessage,
   EducationMessageThread,
   EducationModule,
@@ -7426,6 +7431,372 @@ export const usePublishEducationCourse = <TError = ErrorType<void>,
       > => {
       return useMutation(getPublishEducationCourseMutationOptions(options));
     }
+
+export const getRequestEducationCourseGalleryUploadUrl = (courseId: string,) => {
+
+
+
+
+  return `/api/education/courses/${courseId}/gallery/upload-url`
+}
+
+/**
+ * @summary Request a direct upload URL for an owned course gallery image
+ */
+export const requestEducationCourseGalleryUpload = async (courseId: string,
+    educationGalleryUploadInput: EducationGalleryUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationGalleryUpload> => {
+
+  return customFetch<EducationGalleryUpload>(getRequestEducationCourseGalleryUploadUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGalleryUploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestEducationCourseGalleryUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>, TError,{courseId: string;data: BodyType<EducationGalleryUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>, TError,{courseId: string;data: BodyType<EducationGalleryUploadInput>}, TContext> => {
+
+const mutationKey = ['requestEducationCourseGalleryUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>, {courseId: string;data: BodyType<EducationGalleryUploadInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  requestEducationCourseGalleryUpload(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestEducationCourseGalleryUploadMutationResult = NonNullable<Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>>
+    export type RequestEducationCourseGalleryUploadMutationBody = BodyType<EducationGalleryUploadInput>
+    export type RequestEducationCourseGalleryUploadMutationError = ErrorType<void>
+
+    /**
+ * @summary Request a direct upload URL for an owned course gallery image
+ */
+export const useRequestEducationCourseGalleryUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>, TError,{courseId: string;data: BodyType<EducationGalleryUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestEducationCourseGalleryUpload>>,
+        TError,
+        {courseId: string;data: BodyType<EducationGalleryUploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestEducationCourseGalleryUploadMutationOptions(options));
+    }
+
+export const getAddEducationCourseGalleryMediaUrl = (courseId: string,) => {
+
+
+
+
+  return `/api/education/courses/${courseId}/gallery`
+}
+
+/**
+ * @summary Attach an uploaded image to an owned course gallery
+ */
+export const addEducationCourseGalleryMedia = async (courseId: string,
+    educationGalleryMediaInput: EducationGalleryMediaInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationMedia> => {
+
+  return customFetch<EducationMedia>(getAddEducationCourseGalleryMediaUrl(courseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGalleryMediaInput)
+  }
+);}
+
+
+
+
+
+export const getAddEducationCourseGalleryMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>, TError,{courseId: string;data: BodyType<EducationGalleryMediaInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>, TError,{courseId: string;data: BodyType<EducationGalleryMediaInput>}, TContext> => {
+
+const mutationKey = ['addEducationCourseGalleryMedia'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>, {courseId: string;data: BodyType<EducationGalleryMediaInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  addEducationCourseGalleryMedia(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddEducationCourseGalleryMediaMutationResult = NonNullable<Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>>
+    export type AddEducationCourseGalleryMediaMutationBody = BodyType<EducationGalleryMediaInput>
+    export type AddEducationCourseGalleryMediaMutationError = ErrorType<void>
+
+    /**
+ * @summary Attach an uploaded image to an owned course gallery
+ */
+export const useAddEducationCourseGalleryMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>, TError,{courseId: string;data: BodyType<EducationGalleryMediaInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addEducationCourseGalleryMedia>>,
+        TError,
+        {courseId: string;data: BodyType<EducationGalleryMediaInput>},
+        TContext
+      > => {
+      return useMutation(getAddEducationCourseGalleryMediaMutationOptions(options));
+    }
+
+export const getReorderEducationCourseGalleryUrl = (courseId: string,) => {
+
+
+
+
+  return `/api/education/courses/${courseId}/gallery`
+}
+
+/**
+ * @summary Reorder and update captions in an owned course gallery
+ */
+export const reorderEducationCourseGallery = async (courseId: string,
+    educationGalleryReorderInput: EducationGalleryReorderInput, options?: Parameters<typeof customFetch>[1]): Promise<EducationMedia[]> => {
+
+  return customFetch<EducationMedia[]>(getReorderEducationCourseGalleryUrl(courseId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(educationGalleryReorderInput)
+  }
+);}
+
+
+
+
+
+export const getReorderEducationCourseGalleryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderEducationCourseGallery>>, TError,{courseId: string;data: BodyType<EducationGalleryReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderEducationCourseGallery>>, TError,{courseId: string;data: BodyType<EducationGalleryReorderInput>}, TContext> => {
+
+const mutationKey = ['reorderEducationCourseGallery'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderEducationCourseGallery>>, {courseId: string;data: BodyType<EducationGalleryReorderInput>}> = (props) => {
+          const {courseId,data} = props ?? {};
+
+          return  reorderEducationCourseGallery(courseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderEducationCourseGalleryMutationResult = NonNullable<Awaited<ReturnType<typeof reorderEducationCourseGallery>>>
+    export type ReorderEducationCourseGalleryMutationBody = BodyType<EducationGalleryReorderInput>
+    export type ReorderEducationCourseGalleryMutationError = ErrorType<void>
+
+    /**
+ * @summary Reorder and update captions in an owned course gallery
+ */
+export const useReorderEducationCourseGallery = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderEducationCourseGallery>>, TError,{courseId: string;data: BodyType<EducationGalleryReorderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reorderEducationCourseGallery>>,
+        TError,
+        {courseId: string;data: BodyType<EducationGalleryReorderInput>},
+        TContext
+      > => {
+      return useMutation(getReorderEducationCourseGalleryMutationOptions(options));
+    }
+
+export const getDeleteEducationCourseGalleryMediaUrl = (courseId: string,
+    mediaId: string,) => {
+
+
+
+
+  return `/api/education/courses/${courseId}/gallery/${mediaId}`
+}
+
+/**
+ * @summary Remove an image from an owned course gallery
+ */
+export const deleteEducationCourseGalleryMedia = async (courseId: string,
+    mediaId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteEducationCourseGalleryMediaUrl(courseId,mediaId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteEducationCourseGalleryMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>, TError,{courseId: string;mediaId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>, TError,{courseId: string;mediaId: string}, TContext> => {
+
+const mutationKey = ['deleteEducationCourseGalleryMedia'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>, {courseId: string;mediaId: string}> = (props) => {
+          const {courseId,mediaId} = props ?? {};
+
+          return  deleteEducationCourseGalleryMedia(courseId,mediaId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteEducationCourseGalleryMediaMutationResult = NonNullable<Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>>
+
+    export type DeleteEducationCourseGalleryMediaMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove an image from an owned course gallery
+ */
+export const useDeleteEducationCourseGalleryMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>, TError,{courseId: string;mediaId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteEducationCourseGalleryMedia>>,
+        TError,
+        {courseId: string;mediaId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteEducationCourseGalleryMediaMutationOptions(options));
+    }
+
+export const getGetEducationGalleryMediaUrl = (mediaId: string,) => {
+
+
+
+
+  return `/api/education/media/${mediaId}`
+}
+
+/**
+ * @summary Serve a public course gallery image or an owner's unpublished image
+ */
+export const getEducationGalleryMedia = async (mediaId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetEducationGalleryMediaUrl(mediaId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEducationGalleryMediaQueryKey = (mediaId: string,) => {
+    return [
+    `/api/education/media/${mediaId}`
+    ] as const;
+    }
+
+
+export const getGetEducationGalleryMediaQueryOptions = <TData = Awaited<ReturnType<typeof getEducationGalleryMedia>>, TError = ErrorType<void>>(mediaId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationGalleryMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEducationGalleryMediaQueryKey(mediaId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEducationGalleryMedia>>> = ({ signal }) => getEducationGalleryMedia(mediaId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: mediaId !== null && mediaId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEducationGalleryMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEducationGalleryMediaQueryResult = NonNullable<Awaited<ReturnType<typeof getEducationGalleryMedia>>>
+export type GetEducationGalleryMediaQueryError = ErrorType<void>
+
+
+/**
+ * @summary Serve a public course gallery image or an owner's unpublished image
+ */
+
+export function useGetEducationGalleryMedia<TData = Awaited<ReturnType<typeof getEducationGalleryMedia>>, TError = ErrorType<void>>(
+ mediaId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEducationGalleryMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEducationGalleryMediaQueryOptions(mediaId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListEducationModulesUrl = (courseId: string,) => {
 

@@ -148,6 +148,25 @@ export const educationMediaTable = pgTable("education_media", {
   index("education_media_center_sort_idx").on(table.centerId, table.sortOrder),
 ]);
 
+/**
+ * A short-lived, owner-scoped authorization record for a direct App Storage
+ * upload. The browser receives its ID but never an object path.
+ */
+export const educationMediaUploadsTable = pgTable("education_media_uploads", {
+  id: uuid("id").primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  objectPath: text("object_path").notNull(),
+  contentType: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  attachedAt: timestamp("attached_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("education_media_uploads_object_path_unique").on(table.objectPath),
+  index("education_media_uploads_course_expires_idx").on(table.courseId, table.expiresAt),
+]);
+
 export const courseReviewsTable = pgTable("course_reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
   courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),

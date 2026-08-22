@@ -17,6 +17,8 @@ import {
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
   useReplaceEducationCourseDays,
+  useRequestEducationCourseGalleryUpload, useAddEducationCourseGalleryMedia,
+  useReorderEducationCourseGallery, useDeleteEducationCourseGalleryMedia,
   useGetPublicInstructorProfile,
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
   getListCoursesQueryKey, getGetEducationCourseQueryKey, 
@@ -27,6 +29,7 @@ import {
 
 import { BusinessLayout } from "@/components/business-layout";
 import { Layout } from "@/components/layout";
+import { SalonGallery } from "@/components/salon-gallery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,7 +50,7 @@ import {
   GraduationCap, Search, MapPin, Clock, Award, 
   PlayCircle, Users, CheckCircle2, ArrowLeft, 
   ArrowRight, Plus, Filter, Monitor, Video, Calendar, Star, Loader2,
-  Download, CalendarPlus, Info, ShieldCheck, UserCircle2, Zap, Trash2, Pencil, Link2, Bell
+  Download, CalendarPlus, Info, ShieldCheck, UserCircle2, Zap, Trash2, Pencil, Link2, Bell, ImagePlus, ArrowUp, ArrowDown
 } from "lucide-react";
 
 const DEFAULT_COURSE_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='400' viewBox='0 0 800 400'%3E%3Crect width='800' height='400' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle' font-family='sans-serif' font-size='24' fill='%239ca3af'%3EEdukacija%3C/text%3E%3C/svg%3E";
@@ -678,6 +681,19 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                     <p className="text-muted-foreground italic">Nema detaljnog opisa za ovu edukaciju.</p>
                   )}
                 </div>
+                {course.gallery?.length ? (
+                  <section className="space-y-3">
+                    <div>
+                      <h2 className="font-serif text-2xl font-semibold">Galerija edukacije</h2>
+                      <p className="text-sm text-muted-foreground">Pogledajte prostor, materijal i atmosferu sa prethodnih obuka.</p>
+                    </div>
+                    <SalonGallery
+                      media={course.gallery.map((item) => ({ type: "image" as const, url: item.url }))}
+                      salonName={course.title}
+                    />
+                  </section>
+                ) : null}
+                {isMyCourse && isEducationCenter ? <CourseGalleryEditor courseId={courseId} gallery={course.gallery ?? []} /> : null}
               </TabsContent>
               
               <TabsContent value="curriculum" className="space-y-6 animate-in fade-in duration-500">
@@ -1033,6 +1049,159 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       <CreateSessionDialog courseId={courseId} open={createSessionOpen} onOpenChange={setCreateSessionOpen} />
       <CreateCourseDialog open={editCourseOpen} onOpenChange={setEditCourseOpen} course={course} />
     </div>
+  );
+}
+
+type CourseGalleryItem = { id: string; url: string; altText: string; sortOrder: number };
+
+function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: string; gallery: CourseGalleryItem[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [gallery, setGallery] = useState<CourseGalleryItem[]>(initialGallery);
+  const [uploading, setUploading] = useState(false);
+  const requestUpload = useRequestEducationCourseGalleryUpload();
+  const addMedia = useAddEducationCourseGalleryMedia();
+  const reorder = useReorderEducationCourseGallery();
+  const removeMedia = useDeleteEducationCourseGalleryMedia();
+
+  useEffect(() => {
+    setGallery(initialGallery);
+  }, [initialGallery]);
+
+  const refreshCourse = () => queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
+
+  const saveOrder = async (nextGallery: CourseGalleryItem[]) => {
+    try {
+      await reorder.mutateAsync({
+        courseId,
+        data: { items: nextGallery.map((item) => ({ mediaId: item.id, altText: item.altText })) },
+      });
+      refreshCourse();
+    } catch {
+      toast.error("Redosled galerije nije sačuvan", { description: "Pokušajte ponovo." });
+      refreshCourse();
+    }
+  };
+
+  const uploadImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!supported.includes(file.type.toLowerCase()) || file.size > 8 * 1024 * 1024) {
+      toast.error("Neispravna slika", { description: "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB." });
+      return;
+    }
+    setUploading(true);
+    try {
+      const upload = await requestUpload.mutateAsync({
+        courseId,
+        data: { name: file.name, size: file.size, contentType: file.type },
+      });
+      const uploadResponse = await fetch(upload.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!uploadResponse.ok) throw new Error("Otpremanje slike nije uspelo.");
+      const media = await addMedia.mutateAsync({ courseId, data: { mediaId: upload.mediaId, altText: "" } });
+      setGallery((current) => [...current, media]);
+      refreshCourse();
+      toast.success("Fotografija je dodata u galeriju");
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo sa drugom slikom." });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const moveImage = (id: string, direction: -1 | 1) => {
+    const index = gallery.findIndex((item) => item.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= gallery.length) return;
+    const next = [...gallery];
+    [next[index], next[nextIndex]] = [next[nextIndex]!, next[index]!];
+    setGallery(next);
+    void saveOrder(next);
+  };
+
+  const updateAltText = (id: string, altText: string) => {
+    const next = gallery.map((item) => item.id === id ? { ...item, altText } : item);
+    setGallery(next);
+    void saveOrder(next);
+  };
+
+  const deleteImage = async (mediaId: string) => {
+    if (!window.confirm("Ukloniti ovu fotografiju iz galerije?")) return;
+    try {
+      await removeMedia.mutateAsync({ courseId, mediaId });
+      setGallery((current) => current.filter((item) => item.id !== mediaId));
+      refreshCourse();
+      toast.success("Fotografija je uklonjena iz galerije");
+    } catch {
+      toast.error("Fotografija nije uklonjena", { description: "Pokušajte ponovo." });
+    }
+  };
+
+  return (
+    <section className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 font-serif text-xl font-semibold"><ImagePlus className="h-5 w-5 text-primary" /> Fotografije galerije</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Dodajte do 20 fotografija. Možete promeniti redosled i opis svake slike.</p>
+        </div>
+        <Button asChild variant="outline" disabled={uploading || gallery.length >= 20}>
+          <label className="cursor-pointer">
+            {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+            {uploading ? "Otpremanje..." : "Dodaj fotografiju"}
+            <input
+              aria-label="Dodaj fotografiju u galeriju"
+              className="sr-only"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              disabled={uploading || gallery.length >= 20}
+              onChange={(event) => void uploadImage(event)}
+            />
+          </label>
+        </Button>
+      </div>
+
+      {gallery.length ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {gallery.map((media, index) => (
+            <div key={media.id} className="overflow-hidden rounded-lg border bg-muted/10">
+              <img src={media.url} alt={media.altText || `Fotografija ${index + 1} kursa`} className="h-40 w-full object-cover" />
+              <div className="space-y-3 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Fotografija {index + 1}</span>
+                  <div className="flex gap-1">
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8" aria-label="Pomeri fotografiju ranije" disabled={index === 0 || reorder.isPending} onClick={() => moveImage(media.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8" aria-label="Pomeri fotografiju kasnije" disabled={index === gallery.length - 1 || reorder.isPending} onClick={() => moveImage(media.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
+                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8" aria-label="Ukloni fotografiju" disabled={removeMedia.isPending} onClick={() => void deleteImage(media.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`gallery-alt-${media.id}`} className="text-xs">Opis slike (opciono)</Label>
+                  <Input
+                    id={`gallery-alt-${media.id}`}
+                    value={media.altText}
+                    maxLength={240}
+                    placeholder="Npr. Praktični rad na radionici"
+                    onChange={(event) => setGallery((current) => current.map((item) => item.id === media.id ? { ...item, altText: event.target.value } : item))}
+                    onBlur={(event) => updateAltText(media.id, event.target.value)}
+                    disabled={reorder.isPending}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+          Galerija je prazna. Dodajte fotografije prostora, materijala ili rada sa prethodnih edukacija.
+        </div>
+      )}
+    </section>
   );
 }
 

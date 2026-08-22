@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, gte, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import {
   appointmentSeriesTable,
   appointmentsTable,
@@ -24,6 +25,7 @@ import {
   educationInstructorsTable,
   educationLedgerEntriesTable,
   educationMediaTable,
+  educationMediaUploadsTable,
   educationMessagesTable,
   educationNotificationsTable,
   educationPayoutsTable,
@@ -194,6 +196,8 @@ import {
   CompleteEducationLessonResponse,
   CreateEducationCourseBody,
   CreateEducationCourseResponse,
+  AddEducationCourseGalleryMediaBody,
+  AddEducationCourseGalleryMediaResponse,
   CreateEducationLessonBody,
   CreateEducationLessonParams,
   CreateEducationLessonResponse,
@@ -208,6 +212,8 @@ import {
   EnrollInEducationCourseResponse,
   GetEducationCourseParams,
   GetEducationCourseResponse,
+  RequestEducationCourseGalleryUploadBody,
+  RequestEducationCourseGalleryUploadResponse,
   GetEducationLmsParams,
   GetEducationLmsResponse,
   GetPublicEducationCenterParams,
@@ -226,6 +232,8 @@ import {
   ListPublicEducationCoursesQueryParams,
   ListPublicEducationCoursesResponse,
   ListEnrollmentsResponse,
+  ReorderEducationCourseGalleryBody,
+  ReorderEducationCourseGalleryResponse,
   ListFavoritesResponse,
   ListMyAppointmentsQueryParams,
   ListMyAppointmentsResponse,
@@ -281,6 +289,7 @@ import {
   UpdateEducationSessionBody,
   UpdateEducationSessionParams,
   UpdateEducationSessionResponse,
+  DeleteEducationCourseGalleryMediaResponse,
   UpdateAppointmentBody,
   UpdateAppointmentParams,
   UpdateAppointmentResponse,
@@ -1361,6 +1370,16 @@ async function requireOwnedCourse(access: EducationAccess, courseId: string, res
   return course;
 }
 
+async function requireOwnedEducationCenterCourse(access: EducationAccess, courseId: string, res: Response) {
+  const course = await requireOwnedCourse(access, courseId, res);
+  if (!course) return null;
+  if (!course.centerId || !access.centers.some((center) => center.id === course.centerId)) {
+    res.status(403).json({ error: "Galerijom mogu upravljati samo vlasnici edukativnog centra." });
+    return null;
+  }
+  return course;
+}
+
 async function modulesForCourse(courseId: string, completedLessonIds = new Set<string>(), includeLessonContent = false) {
   const modules = await db.select().from(courseModulesTable).where(eq(courseModulesTable.courseId, courseId)).orderBy(asc(courseModulesTable.sortOrder));
   if (!modules.length) return [];
@@ -1399,11 +1418,106 @@ async function sessionsForCourse(courseId: string, includeLocation = false) {
   }));
 }
 
-function publicEducationMediaUrl(objectPath: string): string {
-  const normalized = objectPath.trim();
-  if (normalized.startsWith("/objects/")) return `/api/storage${normalized}`;
-  if (normalized.startsWith("/api/storage/objects/") || /^https?:\/\//.test(normalized) || normalized.startsWith("/")) return normalized;
-  return `/api/storage/objects/${normalized.replace(/^\/+/, "")}`;
+function educationMediaRouteUrl(mediaId: string): string {
+  return `/api/education/media/${mediaId}`;
+}
+
+function isManagedEducationGalleryObjectPath(media: typeof educationMediaTable.$inferSelect): boolean {
+  return Boolean(media.courseId && media.centerId
+    && media.objectPath.startsWith(`/objects/education-gallery/${media.centerId}/${media.courseId}/`));
+}
+
+function publicEducationMediaUrl(media: typeof educationMediaTable.$inferSelect): string {
+  if (isManagedEducationGalleryObjectPath(media)) return educationMediaRouteUrl(media.id);
+  const legacyUrl = media.objectPath.trim();
+  if (legacyUrl.startsWith("/objects/")) return `/api/storage${legacyUrl}`;
+  if (legacyUrl.startsWith("/api/storage/objects/") || /^https?:\/\//i.test(legacyUrl)) return legacyUrl;
+  return `/api/storage/objects/${legacyUrl.replace(/^\/+/, "")}`;
+}
+
+function educationMediaObjectPath(centerId: string, courseId: string, mediaId: string): string {
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return `${root.replace(/\/+$/, "")}/education-gallery/${centerId}/${courseId}/${mediaId}`;
+}
+
+function educationMediaStagingObjectPath(centerId: string, courseId: string, mediaId: string): string {
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return `${root.replace(/\/+$/, "")}/education-gallery-staging/${centerId}/${courseId}/${mediaId}`;
+}
+
+function educationMediaStoragePath(centerId: string, courseId: string, mediaId: string): string {
+  return `/objects/education-gallery/${centerId}/${courseId}/${mediaId}`;
+}
+
+function educationMediaStagingStoragePath(centerId: string, courseId: string, mediaId: string): string {
+  return `/objects/education-gallery-staging/${centerId}/${courseId}/${mediaId}`;
+}
+
+function privateObjectPathFromStoragePath(storagePath: string): string {
+  if (!storagePath.startsWith("/objects/")) throw new Error("Neispravna putanja objekta.");
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return `${root.replace(/\/+$/, "")}/${storagePath.slice("/objects/".length)}`;
+}
+
+function hasExpectedImageSignature(contentType: string, bytes: Buffer): boolean {
+  if (contentType === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (contentType === "image/png") return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (contentType === "image/webp") return bytes.length >= 12 && bytes.subarray(0, 4).equals(Buffer.from("RIFF")) && bytes.subarray(8, 12).equals(Buffer.from("WEBP"));
+  if (contentType === "image/gif") return bytes.length >= 6 && (bytes.subarray(0, 6).equals(Buffer.from("GIF87a")) || bytes.subarray(0, 6).equals(Buffer.from("GIF89a")));
+  return false;
+}
+
+async function signPrivateObject(rawPath: string, method: "GET" | "PUT", ttlSeconds: number): Promise<string> {
+  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
+  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bucket_name: bucketName,
+      object_name: objectParts.join("/"),
+      method,
+      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
+  const data = await response.json() as { signed_url?: string };
+  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
+  return data.signed_url;
+}
+
+async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect): Promise<Buffer | null> {
+  const downloadUrl = await signPrivateObject(privateObjectPathFromStoragePath(upload.objectPath), "GET", 60);
+  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) return null;
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
+  const contentLength = Number(response.headers.get("content-length"));
+  if (contentType !== upload.contentType || !Number.isInteger(contentLength) || contentLength !== upload.size || contentLength > 8 * 1024 * 1024) {
+    response.body?.cancel();
+    return null;
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return bytes.length === upload.size && hasExpectedImageSignature(upload.contentType, bytes) ? bytes : null;
+}
+
+async function promoteEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect, bytes: Buffer): Promise<string> {
+  const finalStoragePath = educationMediaStoragePath(upload.centerId, upload.courseId, upload.id);
+  const uploadUrl = await signPrivateObject(educationMediaObjectPath(upload.centerId, upload.courseId, upload.id), "PUT", 60);
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": upload.contentType },
+    body: bytes,
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije sačuvao proverenu sliku (${response.status}).`);
+  return finalStoragePath;
+}
+
+async function lockEducationCourseGallery(tx: any, courseId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-course-gallery:${courseId}`}))`);
 }
 
 async function courseDayProgram(courseId: string) {
@@ -1427,10 +1541,33 @@ async function educationMediaViews(scope: { courseId?: string; centerId?: string
     .orderBy(asc(educationMediaTable.sortOrder), asc(educationMediaTable.createdAt));
   return media.map((item) => ({
     id: item.id,
-    url: publicEducationMediaUrl(item.objectPath),
+    url: publicEducationMediaUrl(item),
     altText: item.altText,
     sortOrder: item.sortOrder,
   }));
+}
+
+async function centerEducationMediaViews(centerId: string) {
+  const centerCourses = await db.select().from(coursesTable).where(eq(coursesTable.centerId, centerId));
+  const publicCourseIds = (await Promise.all(centerCourses.map(async (course) => ({
+    id: course.id,
+    visible: await isPublicEducationCourse(course),
+  })))).filter((course) => course.visible).map((course) => course.id);
+  const directMedia = await db.select().from(educationMediaTable).where(and(
+    eq(educationMediaTable.centerId, centerId),
+    isNull(educationMediaTable.courseId),
+  ));
+  const courseMedia = publicCourseIds.length
+    ? await db.select().from(educationMediaTable).where(inArray(educationMediaTable.courseId, publicCourseIds))
+    : [];
+  return [...directMedia, ...courseMedia]
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime())
+    .map((item) => ({
+      id: item.id,
+      url: publicEducationMediaUrl(item),
+      altText: item.altText,
+      sortOrder: item.sortOrder,
+    }));
 }
 
 async function courseReviewViews(courseId: string) {
@@ -1472,7 +1609,7 @@ async function centerPublicView(
     rating,
     reviewCount: publishedReviews.length,
     courseCount: centerCourses.length,
-    gallery: await educationMediaViews({ centerId: center.id }),
+    gallery: await centerEducationMediaViews(center.id),
     courses,
   };
 }
@@ -5625,6 +5762,224 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
   }
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
   res.json(calendarDateCourseResponse(PublishEducationCourseResponse.parse(await educationCourseView(updated!, access))));
+});
+
+router.post("/education/courses/:courseId/gallery/upload-url", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const params = GetEducationCourseParams.safeParse(req.params);
+  const body = RequestEducationCourseGalleryUploadBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Podaci za fotografiju nisu ispravni." });
+    return;
+  }
+  const course = await requireOwnedEducationCenterCourse(access, params.data.courseId, res);
+  if (!course) return;
+  if (!CATEGORY_IMAGE_CONTENT_TYPES.has(body.data.contentType.toLowerCase())) {
+    res.status(400).json({ error: "Dozvoljene su JPG, PNG, WEBP i GIF slike." });
+    return;
+  }
+  const mediaId = randomUUID();
+  try {
+    const stagingStoragePath = educationMediaStagingStoragePath(course.centerId!, course.id, mediaId);
+    const uploadUrl = await signPrivateObject(educationMediaStagingObjectPath(course.centerId!, course.id, mediaId), "PUT", 900);
+    await db.insert(educationMediaUploadsTable).values({
+      id: mediaId,
+      courseId: course.id,
+      centerId: course.centerId!,
+      objectPath: stagingStoragePath,
+      contentType: body.data.contentType.toLowerCase(),
+      size: body.data.size,
+      expiresAt: new Date(Date.now() + 900_000),
+    });
+    res.json(RequestEducationCourseGalleryUploadResponse.parse({
+      uploadUrl,
+      mediaId,
+      imageUrl: educationMediaRouteUrl(mediaId),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not create education gallery upload URL");
+    res.status(500).json({ error: "Nije moguće pripremiti upload fotografije." });
+  }
+});
+
+router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
+  const mediaId = String(req.params.mediaId ?? "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(mediaId)) {
+    res.status(404).json({ error: "Fotografija nije pronađena." });
+    return;
+  }
+  const [media] = await db.select().from(educationMediaTable).where(eq(educationMediaTable.id, mediaId)).limit(1);
+  if (!media) {
+    res.status(404).json({ error: "Fotografija nije pronađena." });
+    return;
+  }
+  if (media.courseId) {
+    const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, media.courseId)).limit(1);
+    if (!course) {
+      res.status(404).json({ error: "Fotografija nije pronađena." });
+      return;
+    }
+    if (!isManagedEducationGalleryObjectPath(media)) {
+      res.status(404).json({ error: "Fotografija nije pronađena." });
+      return;
+    }
+    if (!await isPublicEducationCourse(course)) {
+      const access = await requireEducationAccess(req, res);
+      if (!access) return;
+      if (!isCourseOwner(access, course)) {
+        res.status(403).json({ error: "Nemate pristup ovoj fotografiji." });
+        return;
+      }
+    }
+  }
+  try {
+    const signedUrl = await signPrivateObject(privateObjectPathFromStoragePath(media.objectPath), "GET", 300);
+    const source = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!source.ok || !source.body) {
+      res.status(404).json({ error: "Fotografija nije pronađena." });
+      return;
+    }
+    const contentType = source.headers.get("content-type");
+    const contentLength = source.headers.get("content-length");
+    if (contentType) res.setHeader("Content-Type", contentType);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
+    Readable.fromWeb(source.body as ReadableStream<Uint8Array>).pipe(res);
+  } catch (error) {
+    req.log.error({ err: error, mediaId }, "Could not serve education gallery media");
+    res.status(500).json({ error: "Nije moguće prikazati fotografiju." });
+  }
+});
+
+router.post("/education/courses/:courseId/gallery", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const params = GetEducationCourseParams.safeParse(req.params);
+  const body = AddEducationCourseGalleryMediaBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Podaci galerije nisu ispravni." });
+    return;
+  }
+  const course = await requireOwnedEducationCenterCourse(access, params.data.courseId, res);
+  if (!course) return;
+  let result:
+    | { kind: "expired" }
+    | { kind: "full" }
+    | { kind: "invalid" }
+    | { kind: "existing" | "created"; media: typeof educationMediaTable.$inferSelect };
+  try {
+    result = await db.transaction(async (tx) => {
+      await lockEducationCourseGallery(tx, course.id);
+      const [lockedUpload] = await tx.select().from(educationMediaUploadsTable).where(and(
+        eq(educationMediaUploadsTable.id, body.data.mediaId),
+        eq(educationMediaUploadsTable.courseId, course.id),
+        eq(educationMediaUploadsTable.centerId, course.centerId!),
+      )).for("update").limit(1);
+      if (!lockedUpload || lockedUpload.expiresAt < new Date()) return { kind: "expired" as const };
+      const [existing] = await tx.select().from(educationMediaTable).where(eq(educationMediaTable.id, lockedUpload.id)).limit(1);
+      if (existing) return { kind: "existing" as const, media: existing };
+      const current = await tx.select({ id: educationMediaTable.id }).from(educationMediaTable)
+        .where(eq(educationMediaTable.courseId, course.id));
+      if (current.length >= 20) return { kind: "full" as const };
+      const bytes = await readVerifiedEducationMediaUpload(lockedUpload);
+      if (!bytes) return { kind: "invalid" as const };
+      const finalStoragePath = await promoteEducationMediaUpload(lockedUpload, bytes);
+      const [media] = await tx.insert(educationMediaTable).values({
+        id: lockedUpload.id,
+        courseId: course.id,
+        centerId: course.centerId!,
+        objectPath: finalStoragePath,
+        altText: body.data.altText?.trim() ?? "",
+        sortOrder: current.length,
+      }).returning();
+      await tx.update(educationMediaUploadsTable).set({ attachedAt: new Date() }).where(eq(educationMediaUploadsTable.id, lockedUpload.id));
+      return { kind: "created" as const, media: media! };
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "Could not verify or promote education gallery upload");
+    res.status(502).json({ error: "Nije moguće proveriti ili sačuvati otpremljenu fotografiju. Pokušajte ponovo." });
+    return;
+  }
+  if (result.kind === "expired") {
+    res.status(400).json({ error: "Upload fotografije je istekao. Izaberite sliku ponovo." });
+    return;
+  }
+  if (result.kind === "full") {
+    res.status(409).json({ error: "Galerija može imati najviše 20 fotografija." });
+    return;
+  }
+  if (result.kind === "invalid") {
+    res.status(400).json({ error: "Otpremljeni fajl nije ispravna slika ili ne odgovara odabranoj datoteci." });
+    return;
+  }
+  const status = result.kind === "created" ? 201 : 200;
+  res.status(status).json(AddEducationCourseGalleryMediaResponse.parse({
+    id: result.media.id,
+    url: publicEducationMediaUrl(result.media),
+    altText: result.media.altText,
+    sortOrder: result.media.sortOrder,
+  }));
+});
+
+router.put("/education/courses/:courseId/gallery", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const params = GetEducationCourseParams.safeParse(req.params);
+  const body = ReorderEducationCourseGalleryBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Redosled galerije nije ispravan." });
+    return;
+  }
+  const course = await requireOwnedEducationCenterCourse(access, params.data.courseId, res);
+  if (!course) return;
+  const reordered = await db.transaction(async (tx) => {
+    await lockEducationCourseGallery(tx, course.id);
+    const existing = await tx.select().from(educationMediaTable).where(eq(educationMediaTable.courseId, course.id));
+    const existingIds = new Set(existing.map((media) => media.id));
+    const requestedIds = body.data.items.map((item) => item.mediaId);
+    if (requestedIds.length !== existing.length || new Set(requestedIds).size !== requestedIds.length || requestedIds.some((id) => !existingIds.has(id))) return false;
+    for (const [sortOrder, item] of body.data.items.entries()) {
+      await tx.update(educationMediaTable).set({
+        sortOrder,
+        ...(item.altText === undefined ? {} : { altText: item.altText.trim() }),
+      }).where(and(eq(educationMediaTable.id, item.mediaId), eq(educationMediaTable.courseId, course.id)));
+    }
+    return true;
+  });
+  if (!reordered) {
+    res.status(400).json({ error: "Redosled mora sadržati sve fotografije kursa tačno jednom." });
+    return;
+  }
+  res.json(ReorderEducationCourseGalleryResponse.parse(await educationMediaViews({ courseId: course.id })));
+});
+
+router.delete("/education/courses/:courseId/gallery/:mediaId", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  const params = GetEducationCourseParams.safeParse({ courseId: req.params.courseId });
+  const mediaId = String(req.params.mediaId ?? "");
+  if (!params.success || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(mediaId)) {
+    res.status(400).json({ error: "Fotografija nije ispravna." });
+    return;
+  }
+  const course = await requireOwnedEducationCenterCourse(access, params.data.courseId, res);
+  if (!course) return;
+  const deleted = await db.transaction(async (tx) => {
+    await lockEducationCourseGallery(tx, course.id);
+    const [removed] = await tx.delete(educationMediaTable).where(and(
+      eq(educationMediaTable.id, mediaId),
+      eq(educationMediaTable.courseId, course.id),
+    )).returning();
+    if (!removed) return false;
+    const remaining = await tx.select().from(educationMediaTable).where(eq(educationMediaTable.courseId, course.id)).orderBy(asc(educationMediaTable.sortOrder));
+    for (const [sortOrder, media] of remaining.entries()) {
+      if (media.sortOrder !== sortOrder) await tx.update(educationMediaTable).set({ sortOrder }).where(eq(educationMediaTable.id, media.id));
+    }
+    return true;
+  });
+  if (!deleted) {
+    res.status(404).json({ error: "Fotografija nije pronađena." });
+    return;
+  }
+  res.status(204).send();
 });
 
 router.delete("/education/courses/:courseId", async (req, res): Promise<void> => {

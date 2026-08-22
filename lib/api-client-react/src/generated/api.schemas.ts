@@ -2035,6 +2035,53 @@ export interface EducationCourseDaysInput {
   days: EducationCourseDaysInputDaysItem[];
 }
 
+export interface EducationGalleryUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 8388608
+     */
+  size: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  contentType: string;
+}
+
+export interface EducationGalleryUpload {
+  uploadUrl: string;
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  mediaId: string;
+  imageUrl: string;
+}
+
+export interface EducationGalleryMediaInput {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  mediaId: string;
+  /** @maxLength 240 */
+  altText?: string;
+}
+
+export type EducationGalleryReorderInputItemsItem = {
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
+  mediaId: string;
+  /** @maxLength 240 */
+  altText?: string;
+};
+
+export interface EducationGalleryReorderInput {
+  /**
+     * @minItems 1
+     * @maxItems 20
+     */
+  items: EducationGalleryReorderInputItemsItem[];
+}
+
 export interface EducationCategory {
   id: string;
   name: string;

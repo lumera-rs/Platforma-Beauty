@@ -4627,6 +4627,127 @@ export const PublishEducationCourseResponse = zod.object({
 
 
 /**
+ * @summary Request a direct upload URL for an owned course gallery image
+ */
+export const RequestEducationCourseGalleryUploadParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const requestEducationCourseGalleryUploadBodyNameMax = 240;
+
+export const requestEducationCourseGalleryUploadBodySizeMax = 8388608;
+
+export const requestEducationCourseGalleryUploadBodyContentTypeMax = 120;
+
+
+
+export const RequestEducationCourseGalleryUploadBody = zod.object({
+  "name": zod.string().min(1).max(requestEducationCourseGalleryUploadBodyNameMax),
+  "size": zod.number().min(1).max(requestEducationCourseGalleryUploadBodySizeMax),
+  "contentType": zod.string().min(1).max(requestEducationCourseGalleryUploadBodyContentTypeMax)
+})
+
+export const requestEducationCourseGalleryUploadResponseMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const RequestEducationCourseGalleryUploadResponse = zod.object({
+  "uploadUrl": zod.string(),
+  "mediaId": zod.string().regex(requestEducationCourseGalleryUploadResponseMediaIdRegExp),
+  "imageUrl": zod.string()
+})
+
+
+/**
+ * @summary Attach an uploaded image to an owned course gallery
+ */
+export const AddEducationCourseGalleryMediaParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const addEducationCourseGalleryMediaBodyMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const addEducationCourseGalleryMediaBodyAltTextMax = 240;
+
+
+
+export const AddEducationCourseGalleryMediaBody = zod.object({
+  "mediaId": zod.string().regex(addEducationCourseGalleryMediaBodyMediaIdRegExp),
+  "altText": zod.string().max(addEducationCourseGalleryMediaBodyAltTextMax).optional()
+})
+
+export const addEducationCourseGalleryMediaResponseSortOrderMultipleOf = 1;
+
+
+
+export const AddEducationCourseGalleryMediaResponse = zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(addEducationCourseGalleryMediaResponseSortOrderMultipleOf)
+})
+
+
+/**
+ * @summary Reorder and update captions in an owned course gallery
+ */
+export const ReorderEducationCourseGalleryParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const reorderEducationCourseGalleryBodyItemsItemMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const reorderEducationCourseGalleryBodyItemsItemAltTextMax = 240;
+
+export const reorderEducationCourseGalleryBodyItemsMax = 20;
+
+
+
+export const ReorderEducationCourseGalleryBody = zod.object({
+  "items": zod.array(zod.object({
+  "mediaId": zod.string().regex(reorderEducationCourseGalleryBodyItemsItemMediaIdRegExp),
+  "altText": zod.string().max(reorderEducationCourseGalleryBodyItemsItemAltTextMax).optional()
+})).min(1).max(reorderEducationCourseGalleryBodyItemsMax)
+})
+
+export const reorderEducationCourseGalleryResponseSortOrderMultipleOf = 1;
+
+
+
+export const ReorderEducationCourseGalleryResponseItem = zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "altText": zod.string(),
+  "sortOrder": zod.number().multipleOf(reorderEducationCourseGalleryResponseSortOrderMultipleOf)
+})
+export const ReorderEducationCourseGalleryResponse = zod.array(ReorderEducationCourseGalleryResponseItem)
+
+
+/**
+ * @summary Remove an image from an owned course gallery
+ */
+export const deleteEducationCourseGalleryMediaPathMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const DeleteEducationCourseGalleryMediaParams = zod.object({
+  "courseId": zod.coerce.string(),
+  "mediaId": zod.coerce.string().regex(deleteEducationCourseGalleryMediaPathMediaIdRegExp)
+})
+
+export const DeleteEducationCourseGalleryMediaResponse = zod.void()
+
+
+/**
+ * @summary Serve a public course gallery image or an owner's unpublished image
+ */
+export const getEducationGalleryMediaPathMediaIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetEducationGalleryMediaParams = zod.object({
+  "mediaId": zod.coerce.string().regex(getEducationGalleryMediaPathMediaIdRegExp)
+})
+
+export const GetEducationGalleryMediaResponse = zod.unknown()
+
+
+/**
  * @summary List course modules and lessons
  */
 export const ListEducationModulesParams = zod.object({
