@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -30,10 +30,33 @@ type NotificationFixture = {
   notificationBId: string;
   productId: string;
   categoryId: string;
-  orderId?: string;
+  orderIds?: string[];
 };
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const notificationRequestPattern = /\/api\/shop\/notifications(?:\/events)?(?:\?.*)?$/;
+
+type SecondaryApiProcess = {
+  child: ChildProcess;
+  baseUrl: string;
+};
+
+type ListenerStatus = {
+  ready: boolean;
+  stopped: boolean;
+};
+
+type ListenerControlResponse = {
+  type: "salon-notification-listener-control-result";
+  requestId: string;
+  status?: ListenerStatus;
+  error?: string;
+};
+
+type NotificationEventSubscription = {
+  close: () => void;
+  waitForUpdate: (timeoutMs?: number) => Promise<void>;
+};
 
 async function findAvailablePort(): Promise<number> {
   const server = createServer();
@@ -63,15 +86,22 @@ async function waitForHttp(url: string): Promise<void> {
   throw new Error(`Secondary notification API did not start${lastError instanceof Error ? `: ${lastError.message}` : "."}`);
 }
 
-async function startSecondaryApiProcess(): Promise<{ child: ChildProcess; baseUrl: string }> {
+async function startSecondaryApiProcess(options?: { dropListenerDuringStartup?: boolean }): Promise<SecondaryApiProcess> {
   const port = await findAvailablePort();
   const child = spawn(
     path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
     [path.join(workspaceRoot, "artifacts", "api-server", "src", "test-server.ts")],
     {
       cwd: workspaceRoot,
-      env: { ...process.env, NODE_ENV: "test", PORT: String(port) },
-      stdio: ["ignore", "ignore", "inherit"],
+      env: {
+        ...process.env,
+        NODE_ENV: "test",
+        PORT: String(port),
+        ...(options?.dropListenerDuringStartup
+          ? { LUMERA_TEST_DROP_SALON_NOTIFICATION_LISTENER_ON_STARTUP: "1" }
+          : {}),
+      },
+      stdio: ["ignore", "ignore", "inherit", "ipc"],
     },
   );
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -82,6 +112,70 @@ async function startSecondaryApiProcess(): Promise<{ child: ChildProcess; baseUr
     await stopSecondaryApiProcess(child);
     throw error;
   }
+}
+
+function isListenerControlResponse(message: unknown): message is ListenerControlResponse {
+  return Boolean(
+    message
+    && typeof message === "object"
+    && "type" in message
+    && message.type === "salon-notification-listener-control-result"
+    && "requestId" in message
+    && typeof message.requestId === "string",
+  );
+}
+
+async function controlSecondaryListener(
+  child: ChildProcess,
+  command: "status" | "drop" | "stop-with-unlisten-fault",
+): Promise<ListenerStatus> {
+  if (!child.send || !child.connected) {
+    throw new Error("The secondary API process did not expose its test control channel.");
+  }
+
+  const requestId = randomUUID();
+  return new Promise<ListenerStatus>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanUp();
+      reject(new Error(`Timed out waiting for the secondary listener to ${command}.`));
+    }, 5_000);
+    const onMessage = (message: unknown) => {
+      if (!isListenerControlResponse(message) || message.requestId !== requestId) return;
+      cleanUp();
+      if (message.error) {
+        reject(new Error(message.error));
+      } else if (message.status) {
+        resolve(message.status);
+      } else {
+        reject(new Error("The secondary API process returned an invalid listener status."));
+      }
+    };
+    const cleanUp = () => {
+      clearTimeout(timeout);
+      child.off("message", onMessage);
+    };
+
+    child.on("message", onMessage);
+    child.send?.({
+      type: "salon-notification-listener-control",
+      requestId,
+      command,
+    }, (error) => {
+      if (!error) return;
+      cleanUp();
+      reject(error);
+    });
+  });
+}
+
+async function waitForSecondaryListenerState(
+  child: ChildProcess,
+  ready: boolean,
+): Promise<void> {
+  await expect.poll(
+    () => controlSecondaryListener(child, "status").then((status) => status.ready),
+    { timeout: 5_000, intervals: [25, 50, 100] },
+  ).toBe(ready);
 }
 
 async function stopSecondaryApiProcess(child: ChildProcess | undefined): Promise<void> {
@@ -95,6 +189,77 @@ async function stopSecondaryApiProcess(child: ChildProcess | undefined): Promise
     child.kill("SIGKILL");
     await once(child, "exit");
   }
+}
+
+async function routeNotificationPollingTo(
+  page: Page,
+  baseUrl: string,
+  onNotificationRequest?: () => void,
+): Promise<void> {
+  await page.route(notificationRequestPattern, async (route: Route) => {
+    const requestUrl = new URL(route.request().url());
+    if (requestUrl.pathname.endsWith("/events")) {
+      await route.abort();
+      return;
+    }
+
+    onNotificationRequest?.();
+    const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, baseUrl);
+    const response = await route.fetch({ url: targetUrl.toString() });
+    await route.fulfill({ response });
+  });
+}
+
+async function subscribeToNotificationEvents(
+  baseUrl: string,
+  page: Page,
+): Promise<NotificationEventSubscription> {
+  const session = (await page.context().cookies()).find((cookie) => cookie.name === "lumera_session");
+  if (!session) throw new Error("The signed-in owner session cookie was not available.");
+
+  const abortController = new AbortController();
+  const response = await fetch(`${baseUrl}/api/shop/notifications/events`, {
+    headers: { cookie: `lumera_session=${session.value}` },
+    signal: abortController.signal,
+  });
+  expect(response.status, "The secondary API event stream must authenticate the salon owner.").toBe(200);
+  if (!response.body) throw new Error("The secondary API event stream did not expose a response body.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  return {
+    close: () => {
+      abortController.abort();
+      void reader.cancel().catch(() => undefined);
+    },
+    waitForUpdate: async (timeoutMs = 3_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const remainingMs = deadline - Date.now();
+        const result = await new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Timed out waiting for a shared salon notification event.")),
+            remainingMs,
+          );
+          void reader.read().then(
+            (value) => {
+              clearTimeout(timeout);
+              resolve(value);
+            },
+            (error) => {
+              clearTimeout(timeout);
+              reject(error);
+            },
+          );
+        });
+        if (result.done) throw new Error("The secondary API event stream closed before an update arrived.");
+        buffered += decoder.decode(result.value, { stream: true });
+        if (buffered.includes('"type":"salon-notifications-updated"')) return;
+      }
+      throw new Error("Timed out waiting for a shared salon notification event.");
+    },
+  };
 }
 
 async function orderThroughApiProcess(baseUrl: string, page: Page, productId: string): Promise<string> {
@@ -253,9 +418,11 @@ async function createNotificationFixture(): Promise<NotificationFixture> {
 }
 
 async function cleanUpNotificationFixture(fixture: NotificationFixture): Promise<void> {
-  const orderIds = fixture.orderId
-    ? [fixture.orderId]
-    : (await db.select({ id: ordersTable.id }).from(ordersTable).where(inArray(ordersTable.salonId, [fixture.salonAId, fixture.salonBId]))).map((order) => order.id);
+  const orderIds = fixture.orderIds
+    ?? (await db.select({ id: ordersTable.id })
+      .from(ordersTable)
+      .where(inArray(ordersTable.salonId, [fixture.salonAId, fixture.salonBId])))
+      .map((order) => order.id);
   if (orderIds.length) {
     await db.delete(orderItemsTable).where(inArray(orderItemsTable.orderId, orderIds));
     await db.delete(ordersTable).where(inArray(ordersTable.id, orderIds));
@@ -335,7 +502,8 @@ test("salon owners only see and update their own notifications", async ({ page }
     expect((await checkoutResponse).status(), "The checkout must create a new order and notification.").toBe(201);
 
     await expect(page).toHaveURL(/\/vlasnik\/prodavnica\/porudzbina\/.+\/potvrda$/);
-    fixture.orderId = (await page.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];
+    const orderId = (await page.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];
+    if (orderId) fixture.orderIds = [orderId];
     await expect(page.getByRole("heading", { name: "Hvala vam na porudžbini!" })).toBeVisible();
 
     await page.goto("/vlasnik/obavestenja");
@@ -384,7 +552,7 @@ test("an order on another API process refreshes mobile and desktop notification 
 
     const secondaryApi = await startSecondaryApiProcess();
     secondaryApiProcess = secondaryApi.child;
-    fixture.orderId = await orderThroughApiProcess(secondaryApi.baseUrl, page, fixture.productId);
+    fixture.orderIds = [await orderThroughApiProcess(secondaryApi.baseUrl, page, fixture.productId)];
 
     // The order was accepted by the secondary API process, while both event
     // streams remain connected to the primary API process. This must therefore
@@ -409,6 +577,115 @@ test("an order on another API process refreshes mobile and desktop notification 
   } finally {
     await stopSecondaryApiProcess(secondaryApiProcess);
     await desktopContext?.close();
+    await cleanUpNotificationFixture(fixture);
+  }
+});
+
+test("a listener dropped during startup keeps the API available and resumes shared owner alerts", async ({ page }) => {
+  const fixture = await createNotificationFixture();
+  let secondaryApiProcess: ChildProcess | undefined;
+  let eventSubscription: NotificationEventSubscription | undefined;
+
+  try {
+    await db.update(salonNotificationsTable)
+      .set({ readAt: new Date() })
+      .where(eq(salonNotificationsTable.id, fixture.notificationAId));
+
+    const secondaryApi = await startSecondaryApiProcess({ dropListenerDuringStartup: true });
+    secondaryApiProcess = secondaryApi.child;
+
+    // The listener is deliberately terminated before this process starts
+    // serving requests. Its HTTP API must still answer during that outage.
+    await waitForSecondaryListenerState(secondaryApi.child, false);
+    await expect.poll(() => fetch(`${secondaryApi.baseUrl}/api/healthz`).then((response) => response.status)).toBe(200);
+    await waitForSecondaryListenerState(secondaryApi.child, true);
+
+    await signIn(page, fixture.ownerA);
+    await page.goto("/vlasnik");
+    eventSubscription = await subscribeToNotificationEvents(secondaryApi.baseUrl, page);
+
+    fixture.orderIds = [
+      await orderThroughApiProcess(new URL(page.url()).origin, page, fixture.productId),
+    ];
+    await eventSubscription.waitForUpdate();
+  } finally {
+    eventSubscription?.close();
+    await stopSecondaryApiProcess(secondaryApiProcess);
+    await cleanUpNotificationFixture(fixture);
+  }
+});
+
+test("a listener outage falls back to polling and reconnects without a post-stop retry", async ({ page }) => {
+  const fixture = await createNotificationFixture();
+  let secondaryApiProcess: ChildProcess | undefined;
+  let notificationRequestsRouted = false;
+  let missedEventSubscription: NotificationEventSubscription | undefined;
+  let eventSubscription: NotificationEventSubscription | undefined;
+  const notificationRequestTimes: number[] = [];
+
+  try {
+    await db.update(salonNotificationsTable)
+      .set({ readAt: new Date() })
+      .where(eq(salonNotificationsTable.id, fixture.notificationAId));
+
+    const secondaryApi = await startSecondaryApiProcess();
+    secondaryApiProcess = secondaryApi.child;
+    await waitForSecondaryListenerState(secondaryApi.child, true);
+
+    await routeNotificationPollingTo(
+      page,
+      secondaryApi.baseUrl,
+      () => notificationRequestTimes.push(Date.now()),
+    );
+    notificationRequestsRouted = true;
+    await signIn(page, fixture.ownerA);
+    await page.goto("/vlasnik");
+    await expect(page.getByTestId("status-unread-notification-count")).toHaveCount(0);
+    expect(notificationRequestTimes).toHaveLength(1);
+    const initialNotificationRequestAt = notificationRequestTimes[0]!;
+    const notificationRequestCountBeforeOutage = notificationRequestTimes.length;
+    missedEventSubscription = await subscribeToNotificationEvents(secondaryApi.baseUrl, page);
+
+    await controlSecondaryListener(secondaryApi.child, "drop");
+    await waitForSecondaryListenerState(secondaryApi.child, false);
+    fixture.orderIds = [
+      await orderThroughApiProcess(new URL(page.url()).origin, page, fixture.productId),
+    ];
+
+    // The message published while the PostgreSQL listener is down is not
+    // retained. The owner's browser must recover on its next five-second poll.
+    await expect(missedEventSubscription.waitForUpdate(750)).rejects.toThrow(
+      "Timed out waiting for a shared salon notification event.",
+    );
+    missedEventSubscription.close();
+    missedEventSubscription = undefined;
+    await expect.poll(
+      () => notificationRequestTimes.length,
+      { timeout: 7_000 },
+    ).toBeGreaterThan(notificationRequestCountBeforeOutage);
+    const fallbackPollDelayMs = notificationRequestTimes[notificationRequestCountBeforeOutage]!
+      - initialNotificationRequestAt;
+    expect(fallbackPollDelayMs).toBeGreaterThanOrEqual(4_500);
+    expect(fallbackPollDelayMs).toBeLessThan(6_500);
+    await expect(page.getByTestId("status-unread-notification-count")).toHaveText("1");
+
+    await waitForSecondaryListenerState(secondaryApi.child, true);
+    eventSubscription = await subscribeToNotificationEvents(secondaryApi.baseUrl, page);
+    fixture.orderIds.push(
+      await orderThroughApiProcess(new URL(page.url()).origin, page, fixture.productId),
+    );
+    await eventSubscription.waitForUpdate();
+
+    const stoppedStatus = await controlSecondaryListener(secondaryApi.child, "stop-with-unlisten-fault");
+    expect(stoppedStatus).toEqual({ ready: false, stopped: true });
+    await new Promise((resolve) => setTimeout(resolve, 1_250));
+    expect(await controlSecondaryListener(secondaryApi.child, "status")).toEqual({ ready: false, stopped: true });
+    expect((await fetch(`${secondaryApi.baseUrl}/api/healthz`)).status).toBe(200);
+  } finally {
+    missedEventSubscription?.close();
+    eventSubscription?.close();
+    if (notificationRequestsRouted && !page.isClosed()) await page.unroute(notificationRequestPattern);
+    await stopSecondaryApiProcess(secondaryApiProcess);
     await cleanUpNotificationFixture(fixture);
   }
 });

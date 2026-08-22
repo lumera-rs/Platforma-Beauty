@@ -1,5 +1,8 @@
 import app from "./app";
 import {
+  dropSalonNotificationListenerConnectionForTests,
+  failNextSalonNotificationListenerUnlistenForTests,
+  getSalonNotificationListenerTestStatus,
   startSalonNotificationEventListener,
   stopSalonNotificationEventListener,
 } from "./lib/salon-notification-events";
@@ -12,6 +15,9 @@ if (!Number.isInteger(port) || port < 0) {
 }
 
 await startSalonNotificationEventListener();
+if (process.env.LUMERA_TEST_DROP_SALON_NOTIFICATION_LISTENER_ON_STARTUP === "1") {
+  await dropSalonNotificationListenerConnectionForTests();
+}
 const server = app.listen(port, "127.0.0.1");
 
 server.once("error", (error) => {
@@ -38,3 +44,52 @@ function shutDown(signal: NodeJS.Signals) {
 
 process.once("SIGINT", () => shutDown("SIGINT"));
 process.once("SIGTERM", () => shutDown("SIGTERM"));
+
+type ListenerControlMessage = {
+  type: "salon-notification-listener-control";
+  requestId: string;
+  command: "status" | "drop" | "stop-with-unlisten-fault";
+};
+
+function isListenerControlMessage(message: unknown): message is ListenerControlMessage {
+  return Boolean(
+    message
+    && typeof message === "object"
+    && "type" in message
+    && message.type === "salon-notification-listener-control"
+    && "requestId" in message
+    && typeof message.requestId === "string"
+    && "command" in message
+    && (
+      message.command === "status"
+      || message.command === "drop"
+      || message.command === "stop-with-unlisten-fault"
+    ),
+  );
+}
+
+process.on("message", (message: unknown) => {
+  if (!isListenerControlMessage(message) || !process.send) return;
+
+  void (async () => {
+    try {
+      if (message.command === "drop") {
+        await dropSalonNotificationListenerConnectionForTests();
+      } else if (message.command === "stop-with-unlisten-fault") {
+        failNextSalonNotificationListenerUnlistenForTests();
+        await stopSalonNotificationEventListener();
+      }
+      process.send?.({
+        type: "salon-notification-listener-control-result",
+        requestId: message.requestId,
+        status: getSalonNotificationListenerTestStatus(),
+      });
+    } catch (error) {
+      process.send?.({
+        type: "salon-notification-listener-control-result",
+        requestId: message.requestId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+});

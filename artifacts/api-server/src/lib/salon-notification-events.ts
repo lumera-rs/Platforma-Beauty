@@ -18,6 +18,7 @@ async function connectListenerClient() {
 type SalonNotificationListenerClient = Awaited<ReturnType<typeof connectListenerClient>>;
 type SalonNotificationListenerConnection = {
   client: SalonNotificationListenerClient;
+  backendProcessId?: number;
   closed: boolean;
   ready: boolean;
   onEnd: () => void;
@@ -30,6 +31,7 @@ let listenerStartPromise: Promise<void> | undefined;
 let listenerReconnectTimer: NodeJS.Timeout | undefined;
 let listenerReconnectDelayMs = initialReconnectDelayMs;
 let listenerStopped = true;
+let failNextListenerUnlistenForTests = false;
 
 function ignoreTerminalListenerError(): void {
   // The connection is already being destroyed. Keeping one terminal error
@@ -119,6 +121,7 @@ async function connectSharedListener(): Promise<void> {
     client = await connectListenerClient();
     connection = {
       client,
+      backendProcessId: undefined,
       closed: false,
       ready: false,
       onError: () => undefined,
@@ -159,6 +162,8 @@ async function connectSharedListener(): Promise<void> {
     }
 
     listenerConnection = connection;
+    const backendProcess = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+    connection.backendProcessId = backendProcess.rows[0]?.pid;
     await client.query(`LISTEN ${salonNotificationChannel}`);
 
     if (listenerStopped) {
@@ -221,6 +226,10 @@ export async function stopSalonNotificationEventListener(): Promise<void> {
   let unlistenError: Error | undefined;
 
   try {
+    if (failNextListenerUnlistenForTests) {
+      failNextListenerUnlistenForTests = false;
+      throw new Error("Injected salon notification UNLISTEN failure.");
+    }
     await connection.client.query(`UNLISTEN ${salonNotificationChannel}`);
   } catch (error) {
     unlistenError = error instanceof Error ? error : new Error(String(error));
@@ -236,6 +245,57 @@ export async function stopSalonNotificationEventListener(): Promise<void> {
       connection.client.off("error", connection.onError);
       connection.client.off("end", connection.onEnd);
     }
+  }
+}
+
+type SalonNotificationListenerTestStatus = {
+  ready: boolean;
+  stopped: boolean;
+};
+
+function requireSalonNotificationListenerTestRuntime(): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Salon notification listener test controls are only available in test mode.");
+  }
+}
+
+/**
+ * Reports whether the dedicated PostgreSQL listener is connected. This is
+ * intentionally limited to the disposable test API server's IPC controls.
+ */
+export function getSalonNotificationListenerTestStatus(): SalonNotificationListenerTestStatus {
+  requireSalonNotificationListenerTestRuntime();
+  return {
+    ready: listenerConnection?.ready === true && !listenerConnection.closed,
+    stopped: listenerStopped,
+  };
+}
+
+export function failNextSalonNotificationListenerUnlistenForTests(): void {
+  requireSalonNotificationListenerTestRuntime();
+  failNextListenerUnlistenForTests = true;
+}
+
+/**
+ * Terminates the dedicated listener's PostgreSQL backend, rather than mocking
+ * its event handlers, so outage regressions exercise the real reconnect path.
+ */
+export async function dropSalonNotificationListenerConnectionForTests(): Promise<void> {
+  requireSalonNotificationListenerTestRuntime();
+  const connection = listenerConnection;
+  if (!connection?.ready || connection.closed) {
+    throw new Error("Salon notification listener is not connected.");
+  }
+  if (!connection.backendProcessId) {
+    throw new Error("Salon notification listener backend process is unknown.");
+  }
+
+  const result = await pool.query<{ terminated: boolean }>(
+    "SELECT pg_terminate_backend($1) AS terminated",
+    [connection.backendProcessId],
+  );
+  if (!result.rows[0]?.terminated) {
+    throw new Error("PostgreSQL did not terminate the salon notification listener backend.");
   }
 }
 
