@@ -189,6 +189,12 @@ export const educationLedgerEntriesTable = pgTable("education_ledger_entries", {
 }, (table) => [
   index("education_ledger_center_created_idx").on(table.centerId, table.createdAt),
   index("education_ledger_enrollment_created_idx").on(table.enrollmentId, table.createdAt),
+  uniqueIndex("education_ledger_release_per_escrow_unique")
+    .on(table.escrowId)
+    .where(sql`${table.type} = 'release'`),
+  uniqueIndex("education_ledger_refund_per_escrow_unique")
+    .on(table.escrowId)
+    .where(sql`${table.type} = 'refund'`),
 ]);
 
 export const educationPayoutsTable = pgTable("education_payouts", {
@@ -219,6 +225,9 @@ export const educationFinancialEventsTable = pgTable("education_financial_events
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_financial_events_escrow_created_idx").on(table.escrowId, table.createdAt),
+  uniqueIndex("education_financial_events_release_per_escrow_unique")
+    .on(table.escrowId)
+    .where(sql`${table.eventType} = 'escrow_released'`),
 ]);
 
 export const educationDisputesTable = pgTable("education_disputes", {
@@ -235,6 +244,9 @@ export const educationDisputesTable = pgTable("education_disputes", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("education_disputes_status_created_idx").on(table.status, table.createdAt),
+  uniqueIndex("education_disputes_one_active_per_enrollment_unique")
+    .on(table.enrollmentId)
+    .where(sql`${table.status} in ('open', 'under_review')`),
 ]);
 
 export const educationThreadsTable = pgTable("education_threads", {

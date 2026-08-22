@@ -9,6 +9,12 @@ All financial mutations for one education center must acquire the same transacti
 
 **How to apply:** Put center-level serialization around payout creation, dispute opening, and dispute resolution. Treat an escrow that has paid fields as ineligible for a refund transition; an explicit admin rejection can only record the decision and reconcile a legacy frozen status, never reverse a payment silently. Enrollment also needs a database-enforced participant identity and purchaser-scoped idempotency key so retries or concurrent requests cannot create a second escrow liability.
 
+Release and refund ledger writes, plus release audit writes, should also have database uniqueness backstops per escrow; active disputes need one partial unique key per enrollment.
+
+**Why:** Transaction guards protect the intended code path, but database constraints prevent a future retry or alternate writer from duplicating a financial transition.
+
+**How to apply:** Give each automatic release a stable ledger idempotency key and keep partial unique indexes for release/refund ledger rows, release events, and active disputes.
+
 Buyer requests are not settlements. A marketplace enrollment must remain pending, with no access, escrow, ledger liability, messages, or disputes, until an administrator records a trusted manual settlement inside one transaction.
 
 **Why:** In a marketplace without a payment-provider confirmation, treating the buyer's HTTP request as paid lets anyone mint course access and payout liabilities.

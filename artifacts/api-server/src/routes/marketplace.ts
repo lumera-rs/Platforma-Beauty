@@ -1230,6 +1230,10 @@ async function getEducationPlatformSettings() {
   return created!;
 }
 
+async function lockEducationCenterFinancials(tx: any, centerId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${centerId}`}))`);
+}
+
 async function educationCenterEligibility(centerId: string) {
   const [center, subscription] = await Promise.all([
     db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1),
@@ -1263,35 +1267,48 @@ async function releaseAtForEducationCourse(
 }
 
 async function refreshMatureEducationEscrows() {
-  const due = await db.select().from(educationEscrowsTable)
+  const candidates = await db.select({ centerId: educationEscrowsTable.centerId }).from(educationEscrowsTable)
     .where(and(eq(educationEscrowsTable.status, "held"), sql`${educationEscrowsTable.releaseAt} <= now()`));
-  if (!due.length) return;
-  await db.transaction(async (tx) => {
-    for (const escrow of due) {
-      const [updated] = await tx.update(educationEscrowsTable)
-        .set({ status: "ready_for_payout", releasedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "held")))
-        .returning();
-      if (updated) {
-        await tx.insert(educationLedgerEntriesTable).values({
-          escrowId: updated.id,
-          enrollmentId: updated.enrollmentId,
-          centerId: updated.centerId,
-          type: "release",
-          amount: updated.netAmount,
-          note: "Sredstva su postala spremna za ručnu isplatu.",
-        });
-        await tx.insert(educationFinancialEventsTable).values({
-          escrowId: updated.id,
-          enrollmentId: updated.enrollmentId,
-          eventType: "escrow_released",
-          previousStatus: "held",
-          nextStatus: "ready_for_payout",
-          amount: updated.netAmount,
-        });
+  const centerIds = [...new Set(candidates.map(({ centerId }) => centerId))].sort();
+  for (const centerId of centerIds) {
+    await db.transaction(async (tx) => {
+      // Maturity is a financial transition too. Re-check due rows after taking
+      // the center lock so a dispute can win the deadline boundary atomically.
+      await lockEducationCenterFinancials(tx, centerId);
+      const due = await tx.select().from(educationEscrowsTable)
+        .where(and(
+          eq(educationEscrowsTable.centerId, centerId),
+          eq(educationEscrowsTable.status, "held"),
+          sql`${educationEscrowsTable.releaseAt} <= now()`,
+        ))
+        .for("update");
+      for (const escrow of due) {
+        const [updated] = await tx.update(educationEscrowsTable)
+          .set({ status: "ready_for_payout", releasedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "held")))
+          .returning();
+        if (updated) {
+          await tx.insert(educationLedgerEntriesTable).values({
+            escrowId: updated.id,
+            enrollmentId: updated.enrollmentId,
+            centerId: updated.centerId,
+            type: "release",
+            amount: updated.netAmount,
+            note: "Sredstva su postala spremna za ručnu isplatu.",
+            idempotencyKey: `education-escrow:${updated.id}:release`,
+          });
+          await tx.insert(educationFinancialEventsTable).values({
+            escrowId: updated.id,
+            enrollmentId: updated.enrollmentId,
+            eventType: "escrow_released",
+            previousStatus: "held",
+            nextStatus: "ready_for_payout",
+            amount: updated.netAmount,
+          });
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function requireOwnedCourse(access: EducationAccess, courseId: string, res: Response) {
@@ -5828,7 +5845,7 @@ router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Pro
   let dispute: typeof educationDisputesTable.$inferSelect;
   try {
     dispute = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${escrowPreview.centerId}`}))`);
+    await lockEducationCenterFinancials(tx, escrowPreview.centerId);
     const [existing] = await tx.select().from(educationDisputesTable)
       .where(and(eq(educationDisputesTable.enrollmentId, access.enrollment!.id), inArray(educationDisputesTable.status, ["open", "under_review"]))).for("update").limit(1);
     if (existing) throw new Error("Za ovu kupovinu već postoji otvoren spor.");
@@ -6102,7 +6119,7 @@ router.post("/admin/education/payouts", async (req, res): Promise<void> => {
     payout = await db.transaction(async (tx) => {
       // All financial operations for a center acquire this advisory lock before reading escrow rows.
       // It serializes payout and dispute-resolution decisions even when they target different enrollments.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${centerId}`}))`);
+      await lockEducationCenterFinancials(tx, centerId);
       const openDisputes = await tx.select({ id: educationDisputesTable.id }).from(educationDisputesTable)
         .innerJoin(courseEnrollmentsTable, eq(educationDisputesTable.enrollmentId, courseEnrollmentsTable.id))
         .innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id))
@@ -6157,7 +6174,7 @@ router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<v
   let resolution: { result: typeof educationDisputesTable.$inferSelect; enrollment: typeof courseEnrollmentsTable.$inferSelect };
   try {
     resolution = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${escrowPreview.centerId}`}))`);
+    await lockEducationCenterFinancials(tx, escrowPreview.centerId);
     const [dispute] = await tx.select().from(educationDisputesTable).where(eq(educationDisputesTable.id, disputePreview.id)).for("update").limit(1);
     const [enrollment] = await tx.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, dispute!.enrollmentId)).for("update").limit(1);
     const [escrow] = await tx.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, dispute!.enrollmentId)).for("update").limit(1);
