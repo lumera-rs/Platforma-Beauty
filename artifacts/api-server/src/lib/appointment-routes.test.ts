@@ -35,6 +35,7 @@ const employeeSeriesDate = "2099-10-28";
 const homeServiceBookingDate = "2099-10-29";
 const educationCourseDate = "2099-11-02";
 const updatedEducationCourseDate = "2099-11-03";
+const concurrentBookingDate = "2099-11-04";
 
 type HttpResult = {
   status: number;
@@ -140,6 +141,7 @@ async function run(): Promise<void> {
   assert.equal(seededMenSalon!.servesMen, true, "a salon with seeded men's services must be discoverable as serving men");
   const passwordHash = await hashPassword("test-password");
   const createdUserIds: string[] = [];
+  const concurrentBookingAppointmentIds: string[] = [];
   let server: ReturnType<typeof app.listen> | undefined;
 
   try {
@@ -747,6 +749,70 @@ async function run(): Promise<void> {
     assert.equal(persistedCustomerAppointment!.customerId, customer!.id, "customer booking must persist its customer ownership");
     assert.equal(persistedCustomerAppointment!.status, "confirmed", "instantBooking=true must persist a confirmed appointment");
 
+    const concurrentBookingPayload = {
+      salonId: salon!.id,
+      serviceId: service!.id,
+      date: concurrentBookingDate,
+      startTime: "10:00",
+    };
+    const concurrentBookingResults = await Promise.all([
+      request(baseUrl, customerSession, "/appointments", "POST", concurrentBookingPayload),
+      request(baseUrl, otherCustomerSession, "/appointments", "POST", concurrentBookingPayload),
+    ].map(async (promise, index) => ({
+      session: index === 0 ? customerSession : otherCustomerSession,
+      response: await promise,
+    })));
+    assert.deepEqual(
+      concurrentBookingResults.map(({ response }) => response.status).sort((left, right) => left - right),
+      [201, 409],
+      "parallel customer booking requests must leave one overlapping slot unavailable",
+    );
+    const winningConcurrentBooking = concurrentBookingResults.find(({ response }) => response.status === 201);
+    const losingConcurrentBooking = concurrentBookingResults.find(({ response }) => response.status === 409);
+    assert.ok(winningConcurrentBooking, "one customer must win the concurrent booking race");
+    assert.ok(losingConcurrentBooking, "the other customer must receive a conflict response");
+    const winningAppointment = winningConcurrentBooking!.response.body as { id: string; date: string; startTime: string };
+    concurrentBookingAppointmentIds.push(winningAppointment.id);
+    assertCalendarDate(winningAppointment.date, concurrentBookingDate, "the winning concurrent booking date");
+    assert.equal(winningAppointment.startTime, "10:00", "the winning concurrent booking must claim the requested slot");
+    assert.match(
+      (losingConcurrentBooking!.response.body as { error: string }).error,
+      /Osvežite dostupnost i izaberite drugi termin/,
+      "the losing customer must receive a clear stale-availability retry message",
+    );
+
+    const refreshedAvailability = await getRequest(
+      baseUrl,
+      losingConcurrentBooking!.session,
+      `/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${concurrentBookingDate}`,
+    );
+    assert.equal(refreshedAvailability.status, 200, "the losing customer must be able to refresh availability");
+    const refreshedSlots = refreshedAvailability.body as Array<{ start: string }>;
+    assert.ok(!refreshedSlots.some((slot) => slot.start === "10:00"), "the refreshed availability must omit the claimed slot");
+    assert.ok(refreshedSlots.some((slot) => slot.start === "12:00"), "the refreshed availability must offer another slot");
+
+    const retryBooking = await request(baseUrl, losingConcurrentBooking!.session, "/appointments", "POST", {
+      ...concurrentBookingPayload,
+      startTime: "12:00",
+    });
+    assert.equal(retryBooking.status, 201, "the losing customer must be able to book another slot after refreshing");
+    const retryAppointment = retryBooking.body as { id: string; date: string; startTime: string };
+    concurrentBookingAppointmentIds.push(retryAppointment.id);
+    assertCalendarDate(retryAppointment.date, concurrentBookingDate, "the retry booking date");
+    assert.equal(retryAppointment.startTime, "12:00", "the retry booking must claim the newly selected slot");
+
+    const concurrentActiveAppointments = await db.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, salon!.id),
+      eq(appointmentsTable.date, concurrentBookingDate),
+      inArray(appointmentsTable.status, ["pending", "confirmed"]),
+    ));
+    assert.equal(concurrentActiveAppointments.length, 2, "the race and retry must create exactly two non-overlapping appointments");
+    assert.deepEqual(
+      concurrentActiveAppointments.map((appointment) => appointment.startTime).sort(),
+      ["10:00", "12:00"],
+      "the concurrent check must not create duplicate appointments for the original slot",
+    );
+
     await db.update(salonsTable).set({ instantBooking: false }).where(eq(salonsTable.id, salon!.id));
     const pendingBooking = await request(baseUrl, customerSession, "/appointments", "POST", {
       salonId: salon!.id,
@@ -1108,6 +1174,9 @@ async function run(): Promise<void> {
     console.log("Appointment HTTP route regression passed.");
   } finally {
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+    if (concurrentBookingAppointmentIds.length) {
+      await db.update(appointmentsTable).set({ status: "cancelled" }).where(inArray(appointmentsTable.id, concurrentBookingAppointmentIds));
+    }
     await db.delete(salonsTable).where(inArray(salonsTable.slug, [
       `http-appointment-salon-${suffix}`,
       `foreign-http-appointment-salon-${suffix}`,

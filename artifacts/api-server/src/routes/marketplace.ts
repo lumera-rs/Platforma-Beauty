@@ -3169,7 +3169,10 @@ router.post("/appointments", async (req, res): Promise<void> => {
     treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
     treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
   });
-  if (!allocation.employee || !allocation.appointment) { res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." }); return; }
+  if (!allocation.employee || !allocation.appointment) {
+    res.status(409).json({ error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin." });
+    return;
+  }
   const { employee, appointment } = allocation;
   await sendSms({
     eventKey: `appointment-created:${appointment.id}`, salonId: salon.id, appointmentId: appointment.id,
@@ -3665,7 +3668,7 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
     preferredEmployeeId: parsed.data.employeeId,
   });
   if (!allocation.appointment || !allocation.employee) {
-    res.status(409).json({ error: "Nema dostupnog zaposlenog za ovaj termin." });
+    res.status(409).json({ error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin." });
     return;
   }
   const { appointment, employee } = allocation;
