@@ -68,11 +68,14 @@ import {
   shoppingCartItemsTable,
   shoppingCartsTable,
   salonLoyaltyStatusesTable,
+  salonResourcesTable,
   salonsTable,
   salonCustomersTable,
   serviceCategoriesTable,
+  serviceResourceRequirementsTable,
   serviceTemplatesTable,
   servicesTable,
+  appointmentResourceAllocationsTable,
   subscriptionPlansTable,
   subscriptionsTable,
   smsDeliveriesTable,
@@ -324,6 +327,13 @@ import {
   UpdateShopCartItemBody,
   UpdateShopCartItemParams,
   UpdateShopCartItemResponse,
+  ListSalonResourcesResponse,
+  CreateSalonResourceBody,
+  CreateSalonResourceResponse,
+  UpdateSalonResourceBody,
+  UpdateSalonResourceParams,
+  UpdateSalonResourceResponse,
+  DeleteSalonResourceParams,
 } from "@workspace/api-zod";
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import {
@@ -732,8 +742,15 @@ async function availableEmployee(
   endTime: string,
   preferredEmployeeId?: string | null,
   reservedAppointments: ReservedAppointment[] = [],
+  batchResourceReservations: ResourceReservation[] = [],
 ) {
-  return availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId, reservedAppointments);
+  const employee = await availableEmployeeWithDb(db, salonId, serviceId, date, startTime, endTime, preferredEmployeeId, reservedAppointments);
+  if (!employee) return null;
+  // Also check resource availability (read-only, no locks).
+  const requirements = await fetchServiceResourceRequirements(db, serviceId);
+  if (!requirements.length) return employee;
+  const resourcesOk = await resourcesAvailableForSlot(db, requirements, date, startTime, endTime, batchResourceReservations);
+  return resourcesOk ? employee : null;
 }
 
 type FirstAvailableServiceSlot = {
@@ -773,6 +790,14 @@ async function firstAvailableByService(salonId: string): Promise<FirstAvailableR
   }
 }
 
+/**
+ * Pre-aggregated resource allocation counts per resource per date, keyed as
+ * `${resourceId}:${date}`.  Each entry is a list of { startTime, endTime,
+ * usedQty } so the in-memory slot scan can check overlap without more DB
+ * queries.
+ */
+type ResourceAllocationByDate = Map<string, Array<{ startTime: string; endTime: string; usedQty: number }>>;
+
 function computeFirstAvailableServiceSlots(input: {
   services: (typeof servicesTable.$inferSelect)[];
   employees: (typeof employeesTable.$inferSelect)[];
@@ -781,8 +806,12 @@ function computeFirstAvailableServiceSlots(input: {
   schedules: (typeof employeeSchedulesTable.$inferSelect)[];
   timeOff: (typeof employeeTimeOffTable.$inferSelect)[];
   now: Date;
+  /** Map from serviceId → ResourceRequirement[]. Only services with requirements need filtering. */
+  resourceRequirementsByService: Map<string, ResourceRequirement[]>;
+  /** Pre-aggregated allocations keyed by resourceId:date. */
+  resourceAllocations: ResourceAllocationByDate;
 }): FirstAvailableServiceSlot[] {
-  const { services, employees, appointments, employeeServices, schedules, timeOff, now } = input;
+  const { services, employees, appointments, employeeServices, schedules, timeOff, now, resourceRequirementsByService, resourceAllocations } = input;
   const today = now.toISOString().slice(0, 10);
   const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
 
@@ -791,6 +820,7 @@ function computeFirstAvailableServiceSlots(input: {
       employeeServices.filter((link) => link.serviceId === service.id).map((link) => link.employeeId),
     );
     const candidates = employees.filter((employee) => candidateIds.has(employee.id));
+    const serviceRequirements = resourceRequirementsByService.get(service.id) ?? [];
 
     for (let dayOffset = 0; dayOffset < FIRST_AVAILABLE_HORIZON_DAYS; dayOffset += 1) {
       const date = dateAtOffset(now, dayOffset);
@@ -809,6 +839,19 @@ function computeFirstAvailableServiceSlots(input: {
             && overlapsAppointment(startTime, endTime, appointment)),
         );
         if (!available.length) continue;
+        // Resource capacity check (in-memory, no DB).
+        if (serviceRequirements.length) {
+          const resourceOk = serviceRequirements.every((req) => {
+            if (!req.active) return false;
+            const key = `${req.resourceId}:${date}`;
+            const allocsForDay = resourceAllocations.get(key) ?? [];
+            const used = allocsForDay
+              .filter((a) => a.startTime < endTime && a.endTime > startTime)
+              .reduce((sum, a) => sum + a.usedQty, 0);
+            return used + req.quantity <= req.capacity;
+          });
+          if (!resourceOk) continue;
+        }
         const employee = [...available].sort((a, b) => {
           const dayA = sameDay.filter((appointment) => appointment.employeeId === a.id).length;
           const dayB = sameDay.filter((appointment) => appointment.employeeId === b.id).length;
@@ -846,17 +889,59 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
     )),
   ]);
   const employeeIds = employees.map((employee) => employee.id);
-  const [relevantLinks, relevantSchedules, relevantTimeOff] = employeeIds.length
-    ? await Promise.all([
-      db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)),
-      db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)),
-      db.select().from(employeeTimeOffTable).where(and(
-        inArray(employeeTimeOffTable.employeeId, employeeIds),
-        lte(employeeTimeOffTable.startDate, horizonEnd),
-        gte(employeeTimeOffTable.endDate, today),
+  const serviceIds = services.map((s) => s.id);
+  const [relevantLinks, relevantSchedules, relevantTimeOff, rawRequirements, rawAllocations] = await Promise.all([
+    employeeIds.length ? db.select().from(employeeServicesTable).where(inArray(employeeServicesTable.employeeId, employeeIds)) : Promise.resolve([]),
+    employeeIds.length ? db.select().from(employeeSchedulesTable).where(inArray(employeeSchedulesTable.employeeId, employeeIds)) : Promise.resolve([]),
+    employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
+      inArray(employeeTimeOffTable.employeeId, employeeIds),
+      lte(employeeTimeOffTable.startDate, horizonEnd),
+      gte(employeeTimeOffTable.endDate, today),
+    )) : Promise.resolve([]),
+    serviceIds.length ? db.select({
+      serviceId: serviceResourceRequirementsTable.serviceId,
+      resourceId: serviceResourceRequirementsTable.resourceId,
+      quantity: serviceResourceRequirementsTable.quantity,
+      capacity: salonResourcesTable.capacity,
+      resourceName: salonResourcesTable.name,
+      active: salonResourcesTable.active,
+    }).from(serviceResourceRequirementsTable)
+      .innerJoin(salonResourcesTable, eq(serviceResourceRequirementsTable.resourceId, salonResourcesTable.id))
+      .where(inArray(serviceResourceRequirementsTable.serviceId, serviceIds)) : Promise.resolve([]),
+    // Fetch existing allocation quantities, grouped by resource+date+timeslot.
+    db.select({
+      resourceId: appointmentResourceAllocationsTable.resourceId,
+      date: appointmentsTable.date,
+      startTime: appointmentsTable.startTime,
+      endTime: appointmentsTable.endTime,
+      usedQty: appointmentResourceAllocationsTable.quantity,
+    }).from(appointmentResourceAllocationsTable)
+      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+      .where(and(
+        eq(appointmentsTable.salonId, salonId),
+        gte(appointmentsTable.date, today),
+        lte(appointmentsTable.date, horizonEnd),
+        ne(appointmentsTable.status, "cancelled"),
       )),
-    ])
-    : [[], [], []];
+  ]);
+
+  // Build resourceRequirementsByService map.
+  const resourceRequirementsByService = new Map<string, ResourceRequirement[]>();
+  for (const req of rawRequirements as Array<ResourceRequirement & { serviceId: string }>) {
+    const existing = resourceRequirementsByService.get(req.serviceId) ?? [];
+    existing.push({ resourceId: req.resourceId, quantity: req.quantity, capacity: req.capacity, resourceName: req.resourceName, active: req.active });
+    resourceRequirementsByService.set(req.serviceId, existing);
+  }
+
+  // Build resourceAllocations map: key = resourceId:date, value = [{startTime, endTime, usedQty}]
+  const resourceAllocations: ResourceAllocationByDate = new Map();
+  for (const alloc of rawAllocations as Array<{ resourceId: string; date: string; startTime: string; endTime: string; usedQty: number }>) {
+    const key = `${alloc.resourceId}:${alloc.date}`;
+    const existing = resourceAllocations.get(key) ?? [];
+    existing.push({ startTime: alloc.startTime, endTime: alloc.endTime, usedQty: alloc.usedQty });
+    resourceAllocations.set(key, existing);
+  }
+
   const servicesWithFirstSlot = computeFirstAvailableServiceSlots({
     services,
     employees,
@@ -865,6 +950,8 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
     schedules: relevantSchedules,
     timeOff: relevantTimeOff,
     now,
+    resourceRequirementsByService,
+    resourceAllocations,
   });
 
   const response = {
@@ -875,16 +962,189 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
   return response;
 }
 
+/**
+ * Thrown inside a transaction when a resource capacity check fails, so the
+ * transaction rolls back before any rows are committed.  Caught by callers
+ * outside the transaction and converted to a 409 response.
+ */
+class ResourceCapacityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResourceCapacityError";
+  }
+}
+
+/**
+ * Fetch service resource requirements from DB once and return them as a typed
+ * array.  Used by both the write path (inside tx) and the read/preview path
+ * (against plain db).
+ */
+type ResourceRequirement = {
+  resourceId: string;
+  quantity: number;
+  capacity: number;
+  resourceName: string;
+  active: boolean;
+};
+
+async function fetchServiceResourceRequirements(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  store: any,
+  serviceId: string,
+): Promise<ResourceRequirement[]> {
+  return store.select({
+    resourceId: serviceResourceRequirementsTable.resourceId,
+    quantity: serviceResourceRequirementsTable.quantity,
+    capacity: salonResourcesTable.capacity,
+    resourceName: salonResourcesTable.name,
+    active: salonResourcesTable.active,
+  }).from(serviceResourceRequirementsTable)
+    .innerJoin(salonResourcesTable, eq(serviceResourceRequirementsTable.resourceId, salonResourcesTable.id))
+    .where(eq(serviceResourceRequirementsTable.serviceId, serviceId)) as Promise<ResourceRequirement[]>;
+}
+
+async function fetchAppointmentResourceRequirements(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  store: any,
+  appointmentId: string,
+): Promise<ResourceRequirement[]> {
+  return store.select({
+    resourceId: appointmentResourceAllocationsTable.resourceId,
+    quantity: appointmentResourceAllocationsTable.quantity,
+    capacity: salonResourcesTable.capacity,
+    resourceName: salonResourcesTable.name,
+    active: salonResourcesTable.active,
+  }).from(appointmentResourceAllocationsTable)
+    .innerJoin(salonResourcesTable, eq(appointmentResourceAllocationsTable.resourceId, salonResourcesTable.id))
+    .where(eq(appointmentResourceAllocationsTable.appointmentId, appointmentId)) as Promise<ResourceRequirement[]>;
+}
+
+/**
+ * In-memory resource reservation list used for preview/availability checks so
+ * that within a single batch (series preview, multi-slot booking) each slot
+ * accounts for units already reserved by earlier slots in the same batch.
+ */
+type ResourceReservation = {
+  resourceId: string;
+  quantity: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+/**
+ * Check whether all requirements for a service can be satisfied for the given
+ * slot.  Uses DB counts of already-allocated units plus in-memory reservations
+ * for the current batch.  Does NOT write anything.
+ *
+ * Pass `excludeAppointmentIds` when re-checking a reschedule so the current
+ * appointment's existing allocation isn't double-counted.
+ */
+async function resourcesAvailableForSlot(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  store: any,
+  requirements: ResourceRequirement[],
+  date: string,
+  startTime: string,
+  endTime: string,
+  batchReservations: ResourceReservation[] = [],
+  excludeAppointmentIds: string[] = [],
+): Promise<boolean> {
+  for (const req of requirements) {
+    if (!req.active) return false;
+    const overlapping = await store.select({
+      usedQty: sql<number>`coalesce(sum(${appointmentResourceAllocationsTable.quantity}), 0)::int`,
+    }).from(appointmentResourceAllocationsTable)
+      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+      .where(and(
+        eq(appointmentResourceAllocationsTable.resourceId, req.resourceId),
+        eq(appointmentsTable.date, date),
+        ne(appointmentsTable.status, "cancelled"),
+        lt(appointmentsTable.startTime, endTime),
+        gt(appointmentsTable.endTime, startTime),
+        excludeAppointmentIds.length ? notInArray(appointmentsTable.id, excludeAppointmentIds) : sql`true`,
+      )) as Array<{ usedQty: number }>;
+    const dbUsed = overlapping[0]?.usedQty ?? 0;
+    const batchUsed = batchReservations
+      .filter((r) => r.resourceId === req.resourceId && r.date === date && r.startTime < endTime && r.endTime > startTime)
+      .reduce((sum, r) => sum + r.quantity, 0);
+    if (dbUsed + batchUsed + req.quantity > req.capacity) return false;
+  }
+  return true;
+}
+
+/**
+ * Fetches and locks all resource requirements for a service within a
+ * transaction, checks capacity against concurrent appointments in [startTime,
+ * endTime), and inserts allocation rows for the new appointment.
+ *
+ * Must be called inside a transaction after employee locks have been acquired.
+ * Resource locks are appended after employee locks (salon -> day -> employee ->
+ * resource) to maintain deadlock-free deterministic ordering.
+ *
+ * Throws ResourceCapacityError so the surrounding transaction rolls back.
+ * Services with no requirements are a no-op.
+ * Cancelled appointments do not consume capacity.
+ */
+async function allocateResourcesInTx(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  salonId: string,
+  requirements: ResourceRequirement[],
+  appointmentId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  excludeAppointmentIds: string[] = [],
+): Promise<void> {
+  if (!requirements.length) return;
+
+  // Acquire resource/day advisory locks after employee locks.
+  await lockAppointmentResources(tx, salonId, requirements.map((r) => ({ date, resourceId: r.resourceId })));
+
+  for (const req of requirements) {
+    if (!req.active) {
+      throw new ResourceCapacityError(`Resurs "${req.resourceName}" nije aktivan.`);
+    }
+    const overlapping = await tx.select({
+      usedQty: sql<number>`coalesce(sum(${appointmentResourceAllocationsTable.quantity}), 0)::int`,
+    }).from(appointmentResourceAllocationsTable)
+      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+      .where(and(
+        eq(appointmentResourceAllocationsTable.resourceId, req.resourceId),
+        eq(appointmentsTable.date, date),
+        ne(appointmentsTable.status, "cancelled"),
+        lt(appointmentsTable.startTime, endTime),
+        gt(appointmentsTable.endTime, startTime),
+        excludeAppointmentIds.length ? notInArray(appointmentsTable.id, excludeAppointmentIds) : sql`true`,
+      )) as Array<{ usedQty: number }>;
+    const usedQty = overlapping[0]?.usedQty ?? 0;
+    if (usedQty + req.quantity > req.capacity) {
+      throw new ResourceCapacityError(`Nema dovoljno kapaciteta za resurs "${req.resourceName}".`);
+    }
+  }
+
+  // All checks passed – write allocation rows.
+  await tx.insert(appointmentResourceAllocationsTable).values(
+    requirements.map((req) => ({
+      appointmentId,
+      resourceId: req.resourceId,
+      quantity: req.quantity,
+    })),
+  ).onConflictDoNothing();
+}
+
 async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
-}) {
+}): Promise<{ employee: typeof employeesTable.$inferSelect; appointment: typeof appointmentsTable.$inferSelect } | { employee: null; appointment: null }> {
   return db.transaction(async (tx) => {
     await lockAppointmentResources(tx, input.salonId, [{ date: input.date }]);
     const employee = await availableEmployeeWithDb(tx, input.salonId, input.serviceId, input.date, input.startTime, input.endTime, input.preferredEmployeeId);
     if (!employee) return { employee: null, appointment: null };
     await lockAppointmentResources(tx, input.salonId, [{ date: input.date, employeeId: employee.id }]);
+    const requirements = await fetchServiceResourceRequirements(tx, input.serviceId);
     const [appointment] = await tx.insert(appointmentsTable).values({
       salonId: input.salonId, customerId: input.customerId, salonCustomerId: input.salonCustomerId ?? null, employeeId: employee.id, serviceId: input.serviceId,
       date: input.date, startTime: input.startTime, endTime: input.endTime, durationMinutes: input.durationMinutes, price: input.price, status: input.status, notes: input.notes ?? null,
@@ -892,6 +1152,8 @@ async function createAllocatedAppointment(input: {
       treatmentAddressLine1: input.treatmentAddress?.line1 ?? null, treatmentAddressCity: input.treatmentAddress?.city ?? null,
       treatmentAddressPostalCode: input.treatmentAddress?.postalCode ?? null, treatmentAddressDetails: input.treatmentAddress?.details ?? null,
     }).returning();
+    // allocateResourcesInTx throws ResourceCapacityError → transaction rolls back.
+    await allocateResourcesInTx(tx, input.salonId, requirements, appointment!.id, input.date, input.startTime, input.endTime);
     return { employee, appointment: appointment! };
   });
 }
@@ -935,16 +1197,22 @@ async function previewSeriesSlots(
 ) {
   const result: Array<{ date: string; startTime: string; available: boolean; reason: string | null }> = [];
   const reservedAppointments: ReservedAppointment[] = [];
+  const batchResourceReservations: ResourceReservation[] = [];
+  const requirements = await fetchServiceResourceRequirements(db, serviceId);
   for (const slot of slots) {
-    const employee = await availableEmployee(salonId, serviceId, slot.date, slot.startTime, slot.endTime, preferredEmployeeId, reservedAppointments);
+    const employee = await availableEmployee(salonId, serviceId, slot.date, slot.startTime, slot.endTime, preferredEmployeeId, reservedAppointments, batchResourceReservations);
+    const available = Boolean(employee);
     result.push({
       date: slot.date,
       startTime: slot.startTime,
-      available: Boolean(employee),
-      reason: employee ? null : "Nema slobodnog zaposlenog ili termin izlazi van radnog vremena.",
+      available,
+      reason: available ? null : "Nema slobodnog zaposlenog, termin izlazi van radnog vremena, ili nema dostupnih resursa.",
     });
     if (employee) {
       reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      for (const req of requirements) {
+        batchResourceReservations.push({ resourceId: req.resourceId, quantity: req.quantity, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      }
     }
   }
   return { slots: result, allAvailable: result.every((slot) => slot.available) };
@@ -964,7 +1232,11 @@ async function createAppointmentSeries(input: {
     await lockAppointmentResources(tx, input.salonId, input.slots);
     const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect }> = [];
     const reservedAppointments: ReservedAppointment[] = [];
+    const requirements = await fetchServiceResourceRequirements(tx, input.service.id);
+    const batchResourceReservations: ResourceReservation[] = [];
     for (const slot of input.slots) {
+      const resourceAvailable = await resourcesAvailableForSlot(tx, requirements, slot.date, slot.startTime, slot.endTime, batchResourceReservations);
+      if (!resourceAvailable) throw new AppointmentSeriesError(`Nema dovoljno kapaciteta resursa za termin ${slot.date} u ${slot.startTime}.`);
       const employee = await availableEmployeeWithDb(
         tx,
         input.salonId,
@@ -978,6 +1250,9 @@ async function createAppointmentSeries(input: {
       if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
       allocations.push({ slot, employee });
       reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      for (const req of requirements) {
+        batchResourceReservations.push({ resourceId: req.resourceId, quantity: req.quantity, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      }
     }
     await lockAppointmentResources(tx, input.salonId, allocations.map(({ slot, employee }) => ({
       date: slot.date,
@@ -1008,6 +1283,8 @@ async function createAppointmentSeries(input: {
         status: "confirmed",
         notes: input.notes ?? null,
       }).returning();
+      // allocateResourcesInTx throws ResourceCapacityError → rolls back.
+      await allocateResourcesInTx(tx, input.salonId, requirements, appointment!.id, slot.date, slot.startTime, slot.endTime);
       appointments.push(appointment!);
     }
     return { series: series!, appointments };
@@ -1064,7 +1341,11 @@ async function previewSeriesMove(
   slots: SeriesMoveSlot[],
 ) {
   const ignoredAppointmentIds = new Set(slots.map((slot) => slot.appointment.id));
+  const ignoredIdArray = [...ignoredAppointmentIds];
   const reservedAppointments: ReservedAppointment[] = [];
+  const batchResourceReservations: ResourceReservation[] = [];
+  // All appointments in a series share one service.
+  const requirements = slots.length ? await fetchServiceResourceRequirements(store, slots[0]!.appointment.serviceId) : [];
   const result: Array<{
     appointmentId: string;
     currentDate: string;
@@ -1087,6 +1368,11 @@ async function previewSeriesMove(
       reservedAppointments,
       ignoredAppointmentIds,
     );
+    let resourcesOk = true;
+    if (employee && requirements.length) {
+      resourcesOk = await resourcesAvailableForSlot(store, requirements, slot.date, slot.startTime, slot.endTime, batchResourceReservations, ignoredIdArray);
+    }
+    const available = Boolean(employee) && resourcesOk;
     result.push({
       appointmentId: slot.appointment.id,
       currentDate: slot.appointment.date,
@@ -1094,11 +1380,14 @@ async function previewSeriesMove(
       date: slot.date,
       startTime: slot.startTime,
       endTime: slot.endTime,
-      available: Boolean(employee),
-      reason: employee ? null : "Zaposleni nije slobodan u novom terminu ili tada ne radi.",
+      available,
+      reason: available ? null : (!employee ? "Zaposleni nije slobodan u novom terminu ili tada ne radi." : "Nema dovoljno kapaciteta resursa u novom terminu."),
     });
-    if (employee) {
-      reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+    if (available) {
+      reservedAppointments.push({ employeeId: employee!.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      for (const req of requirements) {
+        batchResourceReservations.push({ resourceId: req.resourceId, quantity: req.quantity, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      }
     }
   }
   return { slots: result, allAvailable: result.every((slot) => slot.available) };
@@ -1151,12 +1440,30 @@ export async function moveAppointmentSeries(input: {
       allocations.push({ slot, employee });
       reservedAppointments.push({ employeeId: employee.id, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
     }
+    // Pre-check resource capacity for all new slots before writing, accounting
+    // for in-batch reservations and ignoring the appointments being moved.
+    {
+      const ignoredIds = [...ignoredAppointmentIds];
+      const batchResourceReservations: ResourceReservation[] = [];
+      // Fetch requirements once – all appointments share the same service in a series.
+      const requirements = allocations.length
+        ? await fetchServiceResourceRequirements(tx, allocations[0]!.slot.appointment.serviceId)
+        : [];
+      for (const { slot } of allocations) {
+        const available = await resourcesAvailableForSlot(tx, requirements, slot.date, slot.startTime, slot.endTime, batchResourceReservations, ignoredIds);
+        if (!available) throw new AppointmentSeriesError(`Nema dovoljno kapaciteta resursa za termin ${slot.date} u ${slot.startTime}.`);
+        for (const req of requirements) {
+          batchResourceReservations.push({ resourceId: req.resourceId, quantity: req.quantity, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+        }
+      }
+    }
     await lockAppointmentResources(tx, input.salonId, allocations.map(({ slot, employee }) => ({
       date: slot.date,
       employeeId: employee.id,
     })));
     const moved: (typeof appointmentsTable.$inferSelect)[] = [];
     for (const { slot, employee } of allocations) {
+      const requirements = await fetchServiceResourceRequirements(tx, slot.appointment.serviceId);
       const [appointment] = await tx.update(appointmentsTable).set({
         date: slot.date,
         startTime: slot.startTime,
@@ -1167,7 +1474,12 @@ export async function moveAppointmentSeries(input: {
         inArray(appointmentsTable.status, ["pending", "confirmed"]),
       )).returning();
       if (!appointment) throw new AppointmentSeriesError("Jedan od termina serije je u međuvremenu promenjen. Ponovo pregledajte konflikte.");
-      moved.push(appointment!);
+      // Delete old allocations before re-allocating at new time.
+      await tx.delete(appointmentResourceAllocationsTable)
+        .where(eq(appointmentResourceAllocationsTable.appointmentId, appointment.id));
+      // allocateResourcesInTx throws ResourceCapacityError → rolls back.
+      await allocateResourcesInTx(tx, input.salonId, requirements, appointment.id, slot.date, slot.startTime, slot.endTime);
+      moved.push(appointment);
     }
     if (input.contact?.email) {
       await tx.insert(emailDeliveriesTable).values(moved.map((appointment) => ({
@@ -2349,6 +2661,7 @@ function appointmentView(
     sms: { status: typeof smsDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
     email: { status: typeof emailDeliveriesTable.$inferSelect["status"]; nextRetryAt: Date | null } | null;
   } | null = null,
+  allocatedResources: Array<{ resourceId: string; resourceName: string; quantity: number }> = [],
 ) {
   return {
     id: appointment.id,
@@ -2374,7 +2687,44 @@ function appointmentView(
     status: appointment.status,
     notes: appointment.notes,
     rescheduledConfirmation,
+    allocatedResources,
   };
+}
+
+async function getAllocationsForAppointment(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  store: any,
+  appointmentId: string,
+): Promise<Array<{ resourceId: string; resourceName: string; quantity: number }>> {
+  const rows = await store.select({
+    resourceId: appointmentResourceAllocationsTable.resourceId,
+    quantity: appointmentResourceAllocationsTable.quantity,
+    resourceName: salonResourcesTable.name,
+  }).from(appointmentResourceAllocationsTable)
+    .innerJoin(salonResourcesTable, eq(appointmentResourceAllocationsTable.resourceId, salonResourcesTable.id))
+    .where(eq(appointmentResourceAllocationsTable.appointmentId, appointmentId));
+  return rows;
+}
+
+async function getAllocationsForAppointments(
+  appointmentIds: string[],
+): Promise<Map<string, Array<{ resourceId: string; resourceName: string; quantity: number }>>> {
+  if (!appointmentIds.length) return new Map();
+  const rows = await db.select({
+    appointmentId: appointmentResourceAllocationsTable.appointmentId,
+    resourceId: appointmentResourceAllocationsTable.resourceId,
+    quantity: appointmentResourceAllocationsTable.quantity,
+    resourceName: salonResourcesTable.name,
+  }).from(appointmentResourceAllocationsTable)
+    .innerJoin(salonResourcesTable, eq(appointmentResourceAllocationsTable.resourceId, salonResourcesTable.id))
+    .where(inArray(appointmentResourceAllocationsTable.appointmentId, appointmentIds));
+  const result = new Map<string, Array<{ resourceId: string; resourceName: string; quantity: number }>>();
+  for (const row of rows) {
+    const existing = result.get(row.appointmentId) ?? [];
+    existing.push({ resourceId: row.resourceId, resourceName: row.resourceName, quantity: row.quantity });
+    result.set(row.appointmentId, existing);
+  }
+  return result;
 }
 
 type AppointmentListPage = { limit: number; offset: number };
@@ -2398,7 +2748,7 @@ async function appointmentList(
   const salonCustomerIds = [...new Set(appointments.flatMap((item) => item.salonCustomerId ? [item.salonCustomerId] : []))];
   const employeeIds = appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []);
   const appointmentIds = appointments.map((item) => item.id);
-  const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries] = await Promise.all([
+  const [salons, services, customers, salonCustomers, employees, smsDeliveries, emailDeliveries, allocations] = await Promise.all([
     db.select().from(salonsTable).where(inArray(salonsTable.id, salonIds)),
     db.select().from(servicesTable).where(inArray(servicesTable.id, serviceIds)),
     db.select().from(usersTable).where(customerIds.length ? inArray(usersTable.id, customerIds) : sql`false`),
@@ -2409,7 +2759,21 @@ async function appointmentList(
       inArray(emailDeliveriesTable.appointmentId, appointmentIds),
       eq(emailDeliveriesTable.emailType, "appointment_rescheduled"),
     )),
+    db.select({
+      appointmentId: appointmentResourceAllocationsTable.appointmentId,
+      resourceId: appointmentResourceAllocationsTable.resourceId,
+      quantity: appointmentResourceAllocationsTable.quantity,
+      resourceName: salonResourcesTable.name,
+    }).from(appointmentResourceAllocationsTable)
+      .innerJoin(salonResourcesTable, eq(appointmentResourceAllocationsTable.resourceId, salonResourcesTable.id))
+      .where(inArray(appointmentResourceAllocationsTable.appointmentId, appointmentIds)),
   ]);
+  const allocationsByAppointment = new Map<string, Array<{ resourceId: string; resourceName: string; quantity: number }>>();
+  for (const alloc of allocations) {
+    const existing = allocationsByAppointment.get(alloc.appointmentId) ?? [];
+    existing.push({ resourceId: alloc.resourceId, resourceName: alloc.resourceName, quantity: alloc.quantity });
+    allocationsByAppointment.set(alloc.appointmentId, existing);
+  }
   const latestByAppointment = <T extends { appointmentId: string | null; createdAt: Date }>(deliveries: T[]) => {
     const latest = new Map<string, T>();
     for (const delivery of deliveries) {
@@ -2438,6 +2802,7 @@ async function appointmentList(
           }
         : null;
     })(),
+    allocationsByAppointment.get(item.id) ?? [],
   ));
 }
 
@@ -3530,7 +3895,7 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   ]);
   const reviewCustomerIds = [...new Set(reviews.map((item) => item.customerId))];
   const serviceIds = services.map((service) => service.id);
-  const [reviewUsers, employeeLinks, completedPairs, completedCustomerSummary, serviceBookingRows, lastBookedRows] = await Promise.all([
+  const [reviewUsers, employeeLinks, completedPairs, completedCustomerSummary, serviceBookingRows, lastBookedRows, resourceRequirements] = await Promise.all([
     reviewCustomerIds.length
       ? db.select().from(usersTable).where(inArray(usersTable.id, reviewCustomerIds))
       : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
@@ -3571,6 +3936,14 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     db.select({ lastBookedAt: sql<Date | null>`max(${appointmentsTable.createdAt})` })
       .from(appointmentsTable)
       .where(and(eq(appointmentsTable.salonId, salon.id), ne(appointmentsTable.status, "cancelled"))),
+    serviceIds.length
+      ? db.select({
+          serviceId: serviceResourceRequirementsTable.serviceId,
+          resourceId: serviceResourceRequirementsTable.resourceId,
+          quantity: serviceResourceRequirementsTable.quantity,
+        }).from(serviceResourceRequirementsTable)
+          .where(inArray(serviceResourceRequirementsTable.serviceId, serviceIds))
+      : Promise.resolve([] as Array<{ serviceId: string; resourceId: string; quantity: number }>),
   ]);
   const reviewUsersById = new Map(reviewUsers.map((user) => [user.id, user]));
   const serviceByName = new Map(services.map((service) => [service.name, service]));
@@ -3587,6 +3960,12 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
     ? Math.round(repeatCustomerCount / completedCustomerCount * 100)
     : null;
   const bookingsByServiceId = new Map(serviceBookingRows.map((row) => [row.serviceId, Number(row.bookingCount)]));
+  const resourceRequirementsByServiceId = new Map<string, Array<{ resourceId: string; quantity: number }>>();
+  for (const requirement of resourceRequirements) {
+    const current = resourceRequirementsByServiceId.get(requirement.serviceId) ?? [];
+    current.push({ resourceId: requirement.resourceId, quantity: requirement.quantity });
+    resourceRequirementsByServiceId.set(requirement.serviceId, current);
+  }
   const topServices = services
     .map((service) => ({ ...service, bookingCount: bookingsByServiceId.get(service.id) ?? 0 }))
     .filter((service) => service.bookingCount > 0)
@@ -3619,7 +3998,23 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
       const serviceIds = employeeLinks.filter((link) => link.employeeId === item.id).map((link) => link.serviceId);
       return { id: item.id, name: item.name, role: item.role, bio: item.bio, avatarUrl: item.avatarUrl, specialties: item.specialties, serviceIds, serviceNames: services.filter((service) => serviceIds.includes(service.id)).map((service) => service.name) };
     }),
-    services: services.map((item) => ({ id: item.id, category: item.categoryName, name: item.name, description: item.description, durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice, tags: item.tags, packageTreatments: item.packageTreatments, imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable, homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder })),
+    services: services.map((item) => ({
+      id: item.id,
+      category: item.categoryName,
+      name: item.name,
+      description: item.description,
+      durationMinutes: item.durationMinutes,
+      price: item.price,
+      promoPrice: item.promoPrice,
+      tags: item.tags,
+      packageTreatments: item.packageTreatments,
+      imageUrl: item.imageUrl,
+      active: item.active,
+      homeServiceAvailable: item.homeServiceAvailable,
+      homeServiceFee: item.homeServiceFee,
+      homeServiceMinimumOrder: item.homeServiceMinimumOrder,
+      resourceRequirements: resourceRequirementsByServiceId.get(item.id) ?? [],
+    })),
     returnClientRate,
     reviews: reviews.map((item) => {
       const reviewer = reviewUsersById.get(item.customerId);
@@ -3791,15 +4186,24 @@ router.post("/appointments", async (req, res): Promise<void> => {
     salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
   }).onConflictDoNothing().returning();
   const crmContact = createdContact ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
-  const allocation = await createAllocatedAppointment({
-    salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
-    date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
-    price: basePrice + (treatmentLocation === "home" ? service.homeServiceFee : 0),
-    status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
-    preferredEmployeeId: parsed.data.employeeId,
-    treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
-    treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
-  });
+  let allocation: Awaited<ReturnType<typeof createAllocatedAppointment>>;
+  try {
+    allocation = await createAllocatedAppointment({
+      salonId: salon.id, customerId: user.id, salonCustomerId: crmContact?.id ?? null, serviceId: service.id,
+      date: appointmentDate, startTime: parsed.data.startTime, endTime, durationMinutes: service.durationMinutes,
+      price: basePrice + (treatmentLocation === "home" ? service.homeServiceFee : 0),
+      status: treatmentLocation === "home" ? "pending" : salon.instantBooking ? "confirmed" : "pending", notes: parsed.data.notes ?? null,
+      preferredEmployeeId: parsed.data.employeeId,
+      treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
+      treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
+    });
+  } catch (err: unknown) {
+    if (err instanceof ResourceCapacityError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   if (!allocation.employee || !allocation.appointment) {
     res.status(409).json({ error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin." });
     return;
@@ -3813,7 +4217,8 @@ router.post("/appointments", async (req, res): Promise<void> => {
       : `LUMERA: zahtev za ${appointment.treatmentLocation === "home" ? "dolazak na adresu" : "termin"} u salonu ${salon.name} je primljen za ${calendarDate(appointment.date)} u ${appointment.startTime}. Salon će ga potvrditi.`,
   });
   await sendAppointmentEmails({ event: "created", appointment, customer: user, salon, service });
-  const response = appointmentView(appointment, salon, service, user, employee, true);
+  const allocatedResources = await getAllocationsForAppointment(db, appointment.id);
+  const response = appointmentView(appointment, salon, service, user, employee, true, null, allocatedResources);
   CreateAppointmentResponse.parse(response);
   res.status(201).json(response);
 });
@@ -3822,38 +4227,53 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
   const user = await requireCustomer(req, res); if (!user) return;
   const [params, body] = [UpdateAppointmentParams.safeParse(req.params), UpdateAppointmentBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za izmenu termina nisu ispravni." }); return; }
-  const result = await db.transaction(async (tx) => {
-    const [initial] = await tx.select().from(appointmentsTable).where(and(
-      eq(appointmentsTable.id, params.data.appointmentId),
-      eq(appointmentsTable.customerId, user.id),
-    )).limit(1);
-    if (!initial) return { error: "not-found" as const };
+  let result: { appointment: typeof appointmentsTable.$inferSelect; service: typeof servicesTable.$inferSelect; employee: typeof employeesTable.$inferSelect } | { error: "not-found" | "changed" | "invalid-time" | "unavailable" };
+  try {
+    result = await db.transaction(async (tx) => {
+      const [initial] = await tx.select().from(appointmentsTable).where(and(
+        eq(appointmentsTable.id, params.data.appointmentId),
+        eq(appointmentsTable.customerId, user.id),
+      )).limit(1);
+      if (!initial) return { error: "not-found" as const };
 
-    const date = body.data.date ? calendarDate(body.data.date) : initial.date;
-    const startTime = body.data.startTime ?? initial.startTime;
-    const employeeId = body.data.employeeId ?? initial.employeeId;
-    await lockAppointmentResources(tx, initial.salonId, [
-      { date: initial.date, employeeId: initial.employeeId },
-      { date, employeeId },
-    ]);
-    const [appointment] = await tx.select().from(appointmentsTable).where(and(
-      eq(appointmentsTable.id, initial.id),
-      eq(appointmentsTable.customerId, user.id),
-    )).for("update").limit(1);
-    if (!appointment || !["pending", "confirmed"].includes(appointment.status)) return { error: "changed" as const };
-    const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
-    const endTime = service ? appointmentEndTime(startTime, service.durationMinutes) : null;
-    if (!service || !endTime) return { error: "invalid-time" as const };
-    const employee = await availableEmployeeWithDb(
-      tx, appointment.salonId, service.id, date, startTime, endTime, employeeId, [], new Set([appointment.id]),
-    );
-    if (!employee) return { error: "unavailable" as const };
-    await lockAppointmentResources(tx, appointment.salonId, [{ date, employeeId: employee.id }]);
-    const [updated] = await tx.update(appointmentsTable).set({
-      date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
-    }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
-    return updated ? { appointment: updated, service, employee } : { error: "changed" as const };
-  });
+      const date = body.data.date ? calendarDate(body.data.date) : initial.date;
+      const startTime = body.data.startTime ?? initial.startTime;
+      const employeeId = body.data.employeeId ?? initial.employeeId;
+      await lockAppointmentResources(tx, initial.salonId, [
+        { date: initial.date, employeeId: initial.employeeId },
+        { date, employeeId },
+      ]);
+      const [appointment] = await tx.select().from(appointmentsTable).where(and(
+        eq(appointmentsTable.id, initial.id),
+        eq(appointmentsTable.customerId, user.id),
+      )).for("update").limit(1);
+      if (!appointment || !["pending", "confirmed"].includes(appointment.status)) return { error: "changed" as const };
+      const [service] = await tx.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1);
+      const endTime = service ? appointmentEndTime(startTime, service.durationMinutes) : null;
+      if (!service || !endTime) return { error: "invalid-time" as const };
+      const employee = await availableEmployeeWithDb(
+        tx, appointment.salonId, service.id, date, startTime, endTime, employeeId, [], new Set([appointment.id]),
+      );
+      if (!employee) return { error: "unavailable" as const };
+      await lockAppointmentResources(tx, appointment.salonId, [{ date, employeeId: employee.id }]);
+      const [updated] = await tx.update(appointmentsTable).set({
+        date, startTime, endTime, employeeId: employee.id, notes: body.data.notes ?? appointment.notes,
+      }).where(and(eq(appointmentsTable.id, appointment.id), inArray(appointmentsTable.status, ["pending", "confirmed"]))).returning();
+      if (!updated) return { error: "changed" as const };
+      const requirements = await fetchServiceResourceRequirements(tx, service.id);
+      await tx.delete(appointmentResourceAllocationsTable)
+        .where(eq(appointmentResourceAllocationsTable.appointmentId, updated.id));
+      // Throws ResourceCapacityError → rolls back transaction.
+      await allocateResourcesInTx(tx, appointment.salonId, requirements, updated.id, date, startTime, endTime);
+      return { appointment: updated, service, employee };
+    });
+  } catch (err: unknown) {
+    if (err instanceof ResourceCapacityError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   if ("error" in result) {
     const error = result.error;
     res.status(error === "not-found" ? 404 : error === "invalid-time" ? 400 : 409).json({
@@ -3865,9 +4285,13 @@ router.patch("/appointments/:appointmentId", async (req, res): Promise<void> => 
     return;
   }
   const { appointment: updated, employee } = result;
-  const [salon, service] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1)]);
+  const [salon, service, allocatedResources] = await Promise.all([
+    db.select().from(salonsTable).where(eq(salonsTable.id, updated!.salonId)).limit(1),
+    db.select().from(servicesTable).where(eq(servicesTable.id, updated!.serviceId)).limit(1),
+    getAllocationsForAppointment(db, updated!.id),
+  ]);
   await sendAppointmentEmails({ event: "updated", appointment: updated, customer: user, salon: salon[0]!, service: service[0]! });
-  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true);
+  const response = appointmentView(updated, salon[0]!, service[0]!, user, employee, true, null, allocatedResources);
   UpdateAppointmentResponse.parse(response);
   res.json(response);
 });
@@ -3900,9 +4324,14 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
     return;
   }
   const { appointment } = result;
-  const [salon, service, employee] = await Promise.all([db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1), db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1), appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([])]);
+  const [salon, service, employee, allocatedResources] = await Promise.all([
+    db.select().from(salonsTable).where(eq(salonsTable.id, appointment.salonId)).limit(1),
+    db.select().from(servicesTable).where(eq(servicesTable.id, appointment.serviceId)).limit(1),
+    appointment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, appointment.employeeId)).limit(1) : Promise.resolve([]),
+    getAllocationsForAppointment(db, appointment.id),
+  ]);
   await sendAppointmentEmails({ event: "cancelled", appointment, customer: user, salon: salon[0]!, service: service[0]! });
-  const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true);
+  const response = appointmentView(appointment, salon[0]!, service[0]!, user, employee[0], true, null, allocatedResources);
   CancelAppointmentResponse.parse(response);
   res.json(response);
 });
@@ -4465,20 +4894,29 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
       await db.update(appointmentsTable).set({ customerId: registeredUser.id }).where(eq(appointmentsTable.salonCustomerId, contact!.id));
     }
   }
-  const allocation = await createAllocatedAppointment({
-    salonId: salon.id,
-    customerId: contact!.userId,
-    salonCustomerId: contact!.id,
-    serviceId: service.id,
-    date,
-    startTime: parsed.data.startTime,
-    endTime,
-    durationMinutes: service.durationMinutes,
-    price: service.promoPrice ?? service.price,
-    status: "confirmed",
-    notes: parsed.data.notes ?? null,
-    preferredEmployeeId: parsed.data.employeeId,
-  });
+  let allocation: Awaited<ReturnType<typeof createAllocatedAppointment>>;
+  try {
+    allocation = await createAllocatedAppointment({
+      salonId: salon.id,
+      customerId: contact!.userId,
+      salonCustomerId: contact!.id,
+      serviceId: service.id,
+      date,
+      startTime: parsed.data.startTime,
+      endTime,
+      durationMinutes: service.durationMinutes,
+      price: service.promoPrice ?? service.price,
+      status: "confirmed",
+      notes: parsed.data.notes ?? null,
+      preferredEmployeeId: parsed.data.employeeId,
+    });
+  } catch (err: unknown) {
+    if (err instanceof ResourceCapacityError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
   if (!allocation.appointment || !allocation.employee) {
     res.status(409).json({ error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin." });
     return;
@@ -4489,7 +4927,8 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
     type: "appointment_confirmation", phone: contact!.phone, smsOptOut: contact!.smsOptOut,
     text: `LUMERA: termin u salonu ${salon.name} je zakazan za ${date} u ${appointment.startTime}.`,
   });
-  const response = appointmentView(appointment, salon, service, contact!, employee, true);
+  const allocatedResources = await getAllocationsForAppointment(db, appointment.id);
+  const response = appointmentView(appointment, salon, service, contact!, employee, true, null, allocatedResources);
   CreateSalonAppointmentResponse.parse(response);
   res.status(201).json(response);
 });
@@ -4554,15 +4993,20 @@ router.post("/salon/appointment-series", async (req, res): Promise<void> => {
       createdByUserId: access.user.id, notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId,
     });
     const employeeIds = [...new Set(created.appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []))];
-    const employees = employeeIds.length ? await db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : [];
-    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId), true));
+    const [employees, allocsByAppt] = await Promise.all([
+      employeeIds.length ? db.select().from(employeesTable).where(inArray(employeesTable.id, employeeIds)) : Promise.resolve([] as (typeof employeesTable.$inferSelect)[]),
+      getAllocationsForAppointments(created.appointments.map((a) => a.id)),
+    ]);
+    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service, contact!, employees.find((employee) => employee.id === appointment.employeeId), true, null, allocsByAppt.get(appointment.id) ?? []));
     await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
     const response = { id: created.series.id, totalAppointments: created.appointments.length, appointments: views };
     CreateSalonAppointmentSeriesResponse.parse(response);
     res.status(201).json(response);
   } catch (error) {
-    const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
-    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+    const message = error instanceof ResourceCapacityError ? error.message
+      : error instanceof AppointmentSeriesError ? error.message
+        : "Serija termina nije sačuvana.";
+    res.status(error instanceof ResourceCapacityError ? 409 : error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
   }
 });
 
@@ -4664,8 +5108,10 @@ router.post("/salon/appointment-series/:seriesId/move", async (req, res): Promis
     MoveSalonAppointmentSeriesResponse.parse(response);
     res.json(response);
   } catch (error) {
-    const message = error instanceof AppointmentSeriesError ? error.message : "Pomeranje serije nije uspelo.";
-    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+    const message = error instanceof ResourceCapacityError ? error.message
+      : error instanceof AppointmentSeriesError ? error.message
+        : "Pomeranje serije nije uspelo.";
+    res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: message });
   }
 });
 
@@ -4702,6 +5148,22 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
       if (!employee) return { error: "unavailable" as const };
       await lockAppointmentResources(tx, salon.id, [{ date: target.date, employeeId: employee.id }]);
     }
+    if (target.status === "cancelled" && status !== "cancelled") {
+      const existingAllocations = await fetchAppointmentResourceRequirements(tx, target.id);
+      const requirements = existingAllocations.length
+        ? existingAllocations
+        : await fetchServiceResourceRequirements(tx, target.serviceId);
+      await allocateResourcesInTx(
+        tx,
+        salon.id,
+        requirements,
+        target.id,
+        target.date,
+        target.startTime,
+        target.endTime,
+        [target.id],
+      );
+    }
     const [updated] = await tx.update(appointmentsTable).set({
       status: body.data.status,
       employeeId: body.data.employeeId,
@@ -4711,12 +5173,16 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
       eq(appointmentsTable.salonId, salon.id),
     )).returning();
     return updated ? { updated } : { error: "changed" as const };
+  }).catch((error: unknown) => {
+    if (error instanceof ResourceCapacityError) return { error: "resource-unavailable" as const };
+    throw error;
   });
   if ("error" in result) {
     res.status(result.error === "not-found" ? 404 : result.error === "foreign-employee" ? 403 : 409).json({
       error: result.error === "not-found" ? "Termin nije pronađen."
         : result.error === "foreign-employee" ? "Zaposleni pripada drugom salonu."
           : result.error === "unavailable" ? "Izabrani zaposleni nije slobodan za ovaj termin."
+            : result.error === "resource-unavailable" ? "Potrebni resursi nisu slobodni za ovaj termin."
             : "Termin je u međuvremenu promenjen.",
     });
     return;
@@ -4725,6 +5191,205 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
   const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id)), true))[0];
   UpdateSalonAppointmentResponse.parse(view);
   res.json(view);
+});
+
+// ---------------------------------------------------------------------------
+// Salon resource CRUD routes
+// ---------------------------------------------------------------------------
+
+function salonResourceView(resource: typeof salonResourcesTable.$inferSelect) {
+  return {
+    id: resource.id,
+    salonId: resource.salonId,
+    name: resource.name,
+    type: resource.type,
+    capacity: resource.capacity,
+    active: resource.active,
+    createdAt: resource.createdAt,
+    updatedAt: resource.updatedAt,
+  };
+}
+
+function maximumConcurrentResourceQuantity(
+  allocations: Array<{ date: string; startTime: string; endTime: string; quantity: number }>,
+): number {
+  const allocationsByDate = new Map<string, typeof allocations>();
+  for (const allocation of allocations) {
+    const current = allocationsByDate.get(allocation.date) ?? [];
+    current.push(allocation);
+    allocationsByDate.set(allocation.date, current);
+  }
+  let maximum = 0;
+  for (const dayAllocations of allocationsByDate.values()) {
+    const events = dayAllocations.flatMap((allocation) => [
+      { time: allocation.startTime, quantity: allocation.quantity },
+      { time: allocation.endTime, quantity: -allocation.quantity },
+    ]).sort((a, b) => a.time.localeCompare(b.time) || a.quantity - b.quantity);
+    let concurrent = 0;
+    for (const event of events) {
+      concurrent += event.quantity;
+      maximum = Math.max(maximum, concurrent);
+    }
+  }
+  return maximum;
+}
+
+router.get("/salon/resources", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const resources = await db.select().from(salonResourcesTable)
+    .where(eq(salonResourcesTable.salonId, access.salon.id))
+    .orderBy(asc(salonResourcesTable.name));
+  res.json(ListSalonResourcesResponse.parse(resources.map(salonResourceView)));
+});
+
+router.post("/salon/resources", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonResourceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { name, type, capacity, active } = parsed.data;
+  if (!name.trim()) { res.status(400).json({ error: "Naziv resursa je obavezan." }); return; }
+  try {
+    const [resource] = await db.insert(salonResourcesTable).values({
+      salonId: access.salon.id,
+      name: name.trim(),
+      type,
+      capacity,
+      active: active ?? true,
+    }).returning();
+    res.status(201).json(CreateSalonResourceResponse.parse(salonResourceView(resource!)));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "";
+    if (message.includes("salon_resources_salon_name_unique")) {
+      res.status(409).json({ error: "Resurs sa ovim imenom već postoji u salonu." });
+      return;
+    }
+    throw err;
+  }
+});
+
+router.patch("/salon/resources/:resourceId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = UpdateSalonResourceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Resurs nije ispravno izabran." }); return; }
+  const parsed = UpdateSalonResourceBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { name, type, capacity, active } = parsed.data;
+  if (name !== undefined && !name.trim()) { res.status(400).json({ error: "Naziv resursa je obavezan." }); return; }
+  try {
+    const result = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, access.salon.id);
+      const [current] = await tx.select().from(salonResourcesTable).where(and(
+        eq(salonResourcesTable.id, params.data.resourceId),
+        eq(salonResourcesTable.salonId, access.salon.id),
+      )).for("update").limit(1);
+      if (!current) return { error: "not-found" as const };
+
+      const nextCapacity = capacity ?? current.capacity;
+      if (nextCapacity < current.capacity) {
+        const requirements = await tx.select({ quantity: serviceResourceRequirementsTable.quantity })
+          .from(serviceResourceRequirementsTable)
+          .innerJoin(servicesTable, eq(serviceResourceRequirementsTable.serviceId, servicesTable.id))
+          .where(and(
+            eq(serviceResourceRequirementsTable.resourceId, current.id),
+            eq(servicesTable.salonId, access.salon.id),
+          ));
+        if (requirements.some((requirement) => requirement.quantity > nextCapacity)) {
+          return { error: "below-requirements" as const };
+        }
+
+        const today = new Date().toISOString().slice(0, 10);
+        const allocations = await tx.select({
+          date: appointmentsTable.date,
+          startTime: appointmentsTable.startTime,
+          endTime: appointmentsTable.endTime,
+          quantity: appointmentResourceAllocationsTable.quantity,
+        }).from(appointmentResourceAllocationsTable)
+          .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+          .where(and(
+            eq(appointmentResourceAllocationsTable.resourceId, current.id),
+            eq(appointmentsTable.salonId, access.salon.id),
+            gte(appointmentsTable.date, today),
+            ne(appointmentsTable.status, "cancelled"),
+          ));
+        if (maximumConcurrentResourceQuantity(allocations) > nextCapacity) {
+          return { error: "below-allocations" as const };
+        }
+      }
+
+      const [resource] = await tx.update(salonResourcesTable).set({
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(type !== undefined ? { type } : {}),
+        ...(capacity !== undefined ? { capacity } : {}),
+        ...(active !== undefined ? { active } : {}),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(salonResourcesTable.id, current.id),
+        eq(salonResourcesTable.salonId, access.salon.id),
+      )).returning();
+      return { resource: resource! };
+    });
+    if ("error" in result) {
+      const message = result.error === "not-found"
+        ? "Resurs nije pronađen."
+        : result.error === "below-requirements"
+          ? "Kapacitet ne može biti manji od količine koju zahteva postojeća usluga."
+          : "Kapacitet ne može biti manji od već rezervisane količine u budućim terminima.";
+      res.status(result.error === "not-found" ? 404 : 409).json({ error: message });
+      return;
+    }
+    res.json(UpdateSalonResourceResponse.parse(salonResourceView(result.resource)));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "";
+    if (message.includes("salon_resources_salon_name_unique")) {
+      res.status(409).json({ error: "Resurs sa ovim imenom već postoji u salonu." });
+      return;
+    }
+    throw err;
+  }
+});
+
+router.delete("/salon/resources/:resourceId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = DeleteSalonResourceParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Resurs nije ispravno izabran." }); return; }
+  const result = await db.transaction(async (tx) => {
+    const [resource] = await tx.select({ id: salonResourcesTable.id }).from(salonResourcesTable)
+      .where(and(
+        eq(salonResourcesTable.id, params.data.resourceId),
+        eq(salonResourcesTable.salonId, access.salon.id),
+      )).for("update").limit(1);
+    if (!resource) return { error: "not-found" as const };
+    // Preserve both configured requirements and historical appointment allocations.
+    const [requirement] = await tx.select({ id: serviceResourceRequirementsTable.id })
+      .from(serviceResourceRequirementsTable)
+      .innerJoin(servicesTable, eq(serviceResourceRequirementsTable.serviceId, servicesTable.id))
+      .where(and(
+        eq(serviceResourceRequirementsTable.resourceId, resource.id),
+        eq(servicesTable.salonId, access.salon.id),
+      )).limit(1);
+    if (requirement) return { error: "has-requirements" as const };
+    const [allocation] = await tx.select({ id: appointmentResourceAllocationsTable.id })
+      .from(appointmentResourceAllocationsTable)
+      .where(eq(appointmentResourceAllocationsTable.resourceId, resource.id))
+      .limit(1);
+    if (allocation) return { error: "has-allocations" as const };
+    await tx.delete(salonResourcesTable).where(and(
+      eq(salonResourcesTable.id, resource.id),
+      eq(salonResourcesTable.salonId, access.salon.id),
+    ));
+    return { deleted: true as const };
+  });
+  if ("error" in result) {
+    res.status(result.error === "not-found" ? 404 : 409).json({
+      error: result.error === "not-found"
+        ? "Resurs nije pronađen."
+        : result.error === "has-requirements"
+          ? "Resurs ne može da se obriše jer je povezan sa zahtevima usluga."
+          : "Resurs ne može da se obriše jer postoji u istoriji termina. Umesto toga ga označite kao neaktivan.",
+    });
+    return;
+  }
+  res.status(204).end();
 });
 
 router.get("/salon/services", async (req, res): Promise<void> => {
@@ -4741,12 +5406,23 @@ router.get("/salon/services", async (req, res): Promise<void> => {
     ...appointmentServices.map((appointment) => appointment.serviceId),
     ...appointmentSeriesServices.map((series) => series.serviceId),
   ]);
+  const serviceIds = services.map((s) => s.id);
+  const requirements = serviceIds.length
+    ? await db.select().from(serviceResourceRequirementsTable).where(inArray(serviceResourceRequirementsTable.serviceId, serviceIds))
+    : [];
+  const requirementsByServiceId = new Map<string, Array<{ resourceId: string; quantity: number }>>();
+  for (const req of requirements) {
+    const existing = requirementsByServiceId.get(req.serviceId) ?? [];
+    existing.push({ resourceId: req.resourceId, quantity: req.quantity });
+    requirementsByServiceId.set(req.serviceId, existing);
+  }
   res.json(ListSalonServicesResponse.parse(services.map((item) => ({
     id: item.id, category: item.categoryName, name: item.name, description: item.description,
     durationMinutes: item.durationMinutes, price: item.price, promoPrice: item.promoPrice,
     imageUrl: item.imageUrl, active: item.active, homeServiceAvailable: item.homeServiceAvailable,
     homeServiceFee: item.homeServiceFee, homeServiceMinimumOrder: item.homeServiceMinimumOrder,
     canBePermanentlyDeleted: !protectedServiceIds.has(item.id),
+    resourceRequirements: requirementsByServiceId.get(item.id) ?? [],
   }))));
 });
 
@@ -4823,41 +5499,114 @@ router.post("/salon/services/from-templates", async (req, res): Promise<void> =>
   }));
 });
 
+class ServiceRequirementValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ServiceRequirementValidationError";
+  }
+}
+
+/**
+ * Validate and insert resource requirements for a service inside a transaction.
+ * Throws ServiceRequirementValidationError (400) for client errors:
+ *   - duplicate resourceId in the list
+ *   - quantity exceeds that resource's capacity
+ *   - resource does not belong to salonId
+ */
+async function upsertServiceResourceRequirements(
+  tx: any,
+  serviceId: string,
+  salonId: string,
+  reqData: Array<{ resourceId: string; quantity: number }>,
+): Promise<void> {
+  if (!reqData.length) return;
+  const uniqueIds = new Set(reqData.map((r) => r.resourceId));
+  if (uniqueIds.size !== reqData.length) {
+    throw new ServiceRequirementValidationError("Svaki resurs može biti naveden samo jednom.");
+  }
+  const resourceIds = reqData.map((r) => r.resourceId);
+  const ownedResources = await tx.select({
+    id: salonResourcesTable.id,
+    capacity: salonResourcesTable.capacity,
+  }).from(salonResourcesTable)
+    .where(and(inArray(salonResourcesTable.id, resourceIds), eq(salonResourcesTable.salonId, salonId))) as Array<{ id: string; capacity: number }>;
+  if (ownedResources.length !== resourceIds.length) {
+    throw new ServiceRequirementValidationError("Jedan ili više resursa ne pripada ovom salonu.");
+  }
+  const capacityById = new Map(ownedResources.map((r) => [r.id, r.capacity]));
+  for (const req of reqData) {
+    const cap = capacityById.get(req.resourceId)!;
+    if (req.quantity < 1 || req.quantity > cap) {
+      throw new ServiceRequirementValidationError(`Tražena količina resursa mora biti između 1 i ${cap} (kapacitet resursa).`);
+    }
+  }
+  await tx.insert(serviceResourceRequirementsTable).values(reqData.map((r) => ({ serviceId, resourceId: r.resourceId, quantity: r.quantity })));
+}
+
 router.post("/salon/services", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const { salon } = access;
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [category] = await db.select().from(serviceCategoriesTable).where(eq(serviceCategoriesTable.name, parsed.data.category)).limit(1);
-  const service = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
-    await attachReadyImageAssets(tx, access.user.id, parsed.data.imageUrl);
-    return row!;
-  });
+  let txResult: { service: typeof servicesTable.$inferSelect; resourceRequirements: Array<{ resourceId: string; quantity: number }> };
+  try {
+    txResult = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon.id);
+      const [row] = await tx.insert(servicesTable).values({ ...parsed.data, salonId: salon.id, categoryId: category?.id ?? null, categoryName: parsed.data.category, promoPrice: parsed.data.promoPrice ?? null, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null }).returning();
+      await attachReadyImageAssets(tx, access.user.id, parsed.data.imageUrl);
+      const reqData = parsed.data.resourceRequirements ?? [];
+      await upsertServiceResourceRequirements(tx, row!.id, salon.id, reqData);
+      const requirements = reqData.length
+        ? await tx.select({ resourceId: serviceResourceRequirementsTable.resourceId, quantity: serviceResourceRequirementsTable.quantity })
+          .from(serviceResourceRequirementsTable).where(eq(serviceResourceRequirementsTable.serviceId, row!.id))
+        : [];
+      return { service: row!, resourceRequirements: requirements };
+    });
+  } catch (err: unknown) {
+    if (err instanceof ServiceRequirementValidationError) { res.status(400).json({ error: err.message }); return; }
+    throw err;
+  }
+  const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(salon.id) }).where(eq(salonsTable.id, salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
+  res.status(201).json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.patch("/salon/services/:serviceId", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = CreateSalonServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const service = await db.transaction(async (tx) => {
-    const [row] = await tx.update(servicesTable).set({
-      categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
-      durationMinutes: parsed.data.durationMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
-      imageUrl: parsed.data.imageUrl, active: parsed.data.active,
-      homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
-    }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
-    if (!row) return null;
-    await attachReadyImageAssets(tx, access.user.id, parsed.data.imageUrl);
-    return row;
-  });
-  if (!service) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
+  let txResult: { service: typeof servicesTable.$inferSelect; resourceRequirements: Array<{ resourceId: string; quantity: number }> } | null;
+  try {
+    txResult = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, access.salon.id);
+      const [row] = await tx.update(servicesTable).set({
+        categoryName: parsed.data.category, name: parsed.data.name, description: parsed.data.description,
+        durationMinutes: parsed.data.durationMinutes, price: parsed.data.price, promoPrice: parsed.data.promoPrice ?? null,
+        imageUrl: parsed.data.imageUrl, active: parsed.data.active,
+        homeServiceAvailable: parsed.data.homeServiceAvailable, homeServiceFee: parsed.data.homeServiceFee, homeServiceMinimumOrder: parsed.data.homeServiceMinimumOrder ?? null,
+      }).where(and(eq(servicesTable.id, req.params.serviceId), eq(servicesTable.salonId, access.salon.id))).returning();
+      if (!row) return null;
+      await attachReadyImageAssets(tx, access.user.id, parsed.data.imageUrl);
+      // Replace resource requirements if provided.
+      if (parsed.data.resourceRequirements !== undefined) {
+        await tx.delete(serviceResourceRequirementsTable).where(eq(serviceResourceRequirementsTable.serviceId, row.id));
+        await upsertServiceResourceRequirements(tx, row.id, access.salon.id, parsed.data.resourceRequirements);
+      }
+      const requirements = await tx.select({ resourceId: serviceResourceRequirementsTable.resourceId, quantity: serviceResourceRequirementsTable.quantity })
+        .from(serviceResourceRequirementsTable).where(eq(serviceResourceRequirementsTable.serviceId, row.id));
+      return { service: row, resourceRequirements: requirements };
+    });
+  } catch (err: unknown) {
+    if (err instanceof ServiceRequirementValidationError) { res.status(400).json({ error: err.message }); return; }
+    throw err;
+  }
+  if (!txResult) { res.status(404).json({ error: "Usluga nije pronađena." }); return; }
+  const { service, resourceRequirements } = txResult;
   await db.update(salonsTable).set({ homeService: await salonHasActiveHomeService(access.salon.id) }).where(eq(salonsTable.id, access.salon.id));
   void publishCatalogInvalidation(["salons", "services"]);
-  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder }));
+  res.json(CreateSalonServiceResponse.parse({ id: service.id, category: service.categoryName, name: service.name, description: service.description, durationMinutes: service.durationMinutes, price: service.price, promoPrice: service.promoPrice, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder, resourceRequirements }));
 });
 
 router.delete("/salon/services/:serviceId", async (req, res): Promise<void> => {
@@ -5216,10 +5965,11 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
   // Resolve only the customers/contacts referenced by the bounded window.
   const salonCustomerIds = [...new Set(windowAppointments.map((appointment) => appointment.salonCustomerId).filter((id): id is string => Boolean(id)))];
   const customerUserIds = [...new Set(windowAppointments.map((appointment) => appointment.customerId).filter((id): id is string => Boolean(id)))];
-  const [services, contacts, customers] = await Promise.all([
+  const [services, contacts, customers, allocationsByAppointment] = await Promise.all([
     serviceLinks.length ? db.select().from(servicesTable).where(inArray(servicesTable.id, serviceLinks.map((link) => link.serviceId))) : Promise.resolve([] as (typeof servicesTable.$inferSelect)[]),
     salonCustomerIds.length ? db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), inArray(salonCustomersTable.id, salonCustomerIds))) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
     customerUserIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerUserIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
+    getAllocationsForAppointments(windowAppointments.map((appointment) => appointment.id)),
   ]);
   const serviceById = new Map(services.map((service) => [service.id, service]));
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -5236,6 +5986,7 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
       notes: appointment.notes, serviceName: serviceById.get(appointment.serviceId)?.name ?? "Usluga nije dostupna",
       customerName: person ? `${person.firstName} ${person.lastName}`.trim() : "Gost",
       customerPhone: person?.phone ?? null,
+      allocatedResources: allocationsByAppointment.get(appointment.id) ?? [],
     };
   });
   const notifications = [
@@ -5433,14 +6184,17 @@ router.post("/employee/appointment-series", async (req, res): Promise<void> => {
       salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service: service[0], slots,
       createdByUserId: access.user.id, preferredEmployeeId: access.employee.id,
     });
-    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service[0], contact!, access.employee));
+    const allocsByAppt = await getAllocationsForAppointments(created.appointments.map((a) => a.id));
+    const views = created.appointments.map((appointment) => appointmentView(appointment, access.salon, service[0], contact!, access.employee, false, null, allocsByAppt.get(appointment.id) ?? []));
     await sendSeriesConfirmations({ appointments: created.appointments, contact: contact!, salon: access.salon });
     const response = { id: created.series.id, totalAppointments: created.appointments.length, appointments: views };
     CreateEmployeeAppointmentSeriesResponse.parse(response);
     res.status(201).json(response);
   } catch (error) {
-    const message = error instanceof AppointmentSeriesError ? error.message : "Serija termina nije sačuvana.";
-    res.status(error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+    const message = error instanceof ResourceCapacityError ? error.message
+      : error instanceof AppointmentSeriesError ? error.message
+        : "Serija termina nije sačuvana.";
+    res.status(error instanceof ResourceCapacityError ? 409 : error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
   }
 });
 
@@ -5501,6 +6255,16 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
     if (!newlyCreatedContact && !previous) {
       throw new EmployeeBookingError("Možete izabrati samo klijenta kog ste već uslužili.", 403);
     }
+    const requirements = await fetchServiceResourceRequirements(tx, serviceId);
+    const batchResourceReservations: ResourceReservation[] = [];
+    // Check resource availability for all slots before inserting.
+    for (const slot of preparedSlots) {
+      const resourceAvailable = await resourcesAvailableForSlot(tx, requirements, slot.date, slot.startTime, slot.endTime, batchResourceReservations);
+      if (!resourceAvailable) throw new EmployeeBookingError(`Nema dovoljno kapaciteta resursa za termin ${slot.date} u ${slot.startTime}.`, 409);
+      for (const req of requirements) {
+        batchResourceReservations.push({ resourceId: req.resourceId, quantity: req.quantity, date: slot.date, startTime: slot.startTime, endTime: slot.endTime });
+      }
+    }
     const created: (typeof appointmentsTable.$inferSelect)[] = [];
     for (const slot of preparedSlots) {
       const employee = await availableEmployeeWithDb(tx, access.salon.id, serviceId, slot.date, slot.startTime, slot.endTime, access.employee.id);
@@ -5510,11 +6274,14 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
         date: slot.date, startTime: slot.startTime, endTime: slot.endTime, durationMinutes: service[0].durationMinutes,
         price: service[0].promoPrice ?? service[0].price, status: "confirmed",
       }).returning();
+      // allocateResourcesInTx throws ResourceCapacityError → rolls back.
+      await allocateResourcesInTx(tx, access.salon.id, requirements, appointment!.id, slot.date, slot.startTime, slot.endTime);
       created.push(appointment!);
     }
     return { contact, created };
   }).catch((error: unknown) => {
     if (error instanceof EmployeeBookingError) return { error: error.message, status: error.status };
+    if (error instanceof ResourceCapacityError) return { error: error.message, status: 409 };
     throw error;
   });
   if ("error" in batch) { res.status(batch.status).json({ error: batch.error }); return; }
@@ -5535,7 +6302,11 @@ router.post("/employee/appointments", async (req, res): Promise<void> => {
       });
     }
   }
-  res.status(201).json({ appointments: batch.created.map((item) => ({ id: item.id, date: item.date, startTime: item.startTime, status: item.status })) });
+  const allocsByAppt = await getAllocationsForAppointments(batch.created.map((a) => a.id));
+  res.status(201).json({ appointments: batch.created.map((item) => ({
+    id: item.id, date: item.date, startTime: item.startTime, status: item.status,
+    allocatedResources: allocsByAppt.get(item.id) ?? [],
+  })) });
 });
 
 async function loyaltyStatus(salonId: string) {

@@ -322,6 +322,12 @@ export interface Employee {
   serviceNames: string[];
 }
 
+export interface ServiceResourceRequirement {
+  resourceId: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
 export interface Service {
   id: string;
   category: string;
@@ -344,6 +350,7 @@ export interface Service {
      * @nullable
      */
   homeServiceMinimumOrder: number | null;
+  resourceRequirements: ServiceResourceRequirement[];
 }
 
 export interface Review {
@@ -503,6 +510,91 @@ export interface EmployeeDeactivationResult {
   loginAccountDeactivated: boolean;
 }
 
+export type SalonResourceType = typeof SalonResourceType[keyof typeof SalonResourceType];
+
+
+export const SalonResourceType = {
+  chair: 'chair',
+  booth: 'booth',
+  bed: 'bed',
+  room: 'room',
+  equipment: 'equipment',
+  other: 'other',
+} as const;
+
+export interface SalonResource {
+  id: string;
+  salonId: string;
+  name: string;
+  type: SalonResourceType;
+  /** @minimum 1 */
+  capacity: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SalonResourceInputType = typeof SalonResourceInputType[keyof typeof SalonResourceInputType];
+
+
+export const SalonResourceInputType = {
+  chair: 'chair',
+  booth: 'booth',
+  bed: 'bed',
+  room: 'room',
+  equipment: 'equipment',
+  other: 'other',
+} as const;
+
+export interface SalonResourceInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name: string;
+  type: SalonResourceInputType;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  capacity: number;
+  active?: boolean;
+}
+
+export type SalonResourceUpdateType = typeof SalonResourceUpdateType[keyof typeof SalonResourceUpdateType];
+
+
+export const SalonResourceUpdateType = {
+  chair: 'chair',
+  booth: 'booth',
+  bed: 'bed',
+  room: 'room',
+  equipment: 'equipment',
+  other: 'other',
+} as const;
+
+export interface SalonResourceUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  type?: SalonResourceUpdateType;
+  /**
+     * @minimum 1
+     * @maximum 1000
+     */
+  capacity?: number;
+  active?: boolean;
+}
+
+export interface AllocatedResource {
+  resourceId: string;
+  resourceName: string;
+  /** @minimum 1 */
+  quantity: number;
+}
+
 export interface SalonManagedService {
   id: string;
   category: string;
@@ -526,6 +618,7 @@ export interface SalonManagedService {
      */
   homeServiceMinimumOrder: number | null;
   canBePermanentlyDeleted: boolean;
+  resourceRequirements: ServiceResourceRequirement[];
 }
 
 export interface ServiceTemplate {
@@ -833,6 +926,7 @@ export interface Appointment {
   notes?: string | null;
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
+  allocatedResources: AllocatedResource[];
 }
 
 export interface AppointmentSalonContact {
@@ -1170,6 +1264,8 @@ export interface ServiceInput {
      * @nullable
      */
   homeServiceMinimumOrder?: number | null;
+  /** @maxItems 20 */
+  resourceRequirements?: ServiceResourceRequirement[];
 }
 
 export type ProductCategorySubcategoriesItem = {
@@ -3533,6 +3629,10 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type DeleteSalonResource409 = {
+  error: string;
 };
 
 export type ListServiceTemplatesParams = {

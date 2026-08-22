@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { ServiceResourceRequirement } from './serviceResourceRequirement';
 
 export interface Service {
   id: string;
@@ -28,4 +29,5 @@ export interface Service {
      * @nullable
      */
   homeServiceMinimumOrder: number | null;
+  resourceRequirements: ServiceResourceRequirement[];
 }

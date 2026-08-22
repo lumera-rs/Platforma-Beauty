@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { and, eq, inArray } from "drizzle-orm";
 import {
+  appointmentResourceAllocationsTable,
   appointmentSeriesTable,
   appointmentsTable,
   db,
@@ -13,6 +14,8 @@ import {
   pool,
   salonCustomersTable,
   salonHoursTable,
+  salonResourcesTable,
+  serviceResourceRequirementsTable,
   salonsTable,
   servicesTable,
   usersTable,
@@ -37,6 +40,8 @@ const homeServiceBookingDate = "2099-10-29";
 const educationCourseDate = "2099-11-02";
 const updatedEducationCourseDate = "2099-11-03";
 const concurrentBookingDate = "2099-11-04";
+const resourceTestDate = "2099-11-05";
+const resourceConflictDate = "2099-11-06";
 
 type HttpResult = {
   status: number;
@@ -82,7 +87,7 @@ async function request(
 
   return {
     status: response.status,
-    body: await response.json(),
+    body: response.status === 204 ? null : await response.json(),
   };
 }
 
@@ -1184,6 +1189,283 @@ async function run(): Promise<void> {
     const [stillCancelled] = await db.select().from(appointmentsTable).where(eq(appointmentsTable.id, cancelledAppointment!.id));
     assert.equal(stillCancelled!.status, "cancelled", "a rejected cross-salon assignment must not change appointment status");
     assert.equal(stillCancelled!.employeeId, employee!.id, "a rejected cross-salon assignment must preserve the original employee");
+
+    // -------------------------------------------------------------------------
+    // Resource CRUD tests
+    // -------------------------------------------------------------------------
+    const createResourceResult = await request(baseUrl, ownerSession, "/salon/resources", "POST", {
+      name: `Kabina za test ${suffix}`,
+      type: "room",
+      capacity: 2,
+    });
+    assert.equal(createResourceResult.status, 201, "salon owner must be able to create a resource");
+    const createdResource = createResourceResult.body as { id: string; name: string; type: string; capacity: number; active: boolean };
+    assert.equal(createdResource.name, `Kabina za test ${suffix}`, "created resource must have the given name");
+    assert.equal(createdResource.capacity, 2, "created resource must have the given capacity");
+
+    const listResourcesResult = await getRequest(baseUrl, ownerSession, "/salon/resources");
+    assert.equal(listResourcesResult.status, 200, "salon owner must be able to list resources");
+    const resourceList = listResourcesResult.body as Array<{ id: string; name: string }>;
+    assert.ok(resourceList.some((r) => r.id === createdResource.id), "created resource must appear in the list");
+
+    const patchResourceResult = await request(baseUrl, ownerSession, `/salon/resources/${createdResource.id}`, "PATCH", { capacity: 3 });
+    assert.equal(patchResourceResult.status, 200, "salon owner must be able to update a resource");
+    const patchedResource = patchResourceResult.body as { capacity: number };
+    assert.equal(patchedResource.capacity, 3, "patched resource must reflect the new capacity");
+
+    // Service requirement assignment
+    const patchServiceWithResource = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/services/${service!.id}`,
+      "PATCH",
+      {
+        category: "Test",
+        name: "HTTP zaključavanje termina",
+        description: "Usluga za proveru HTTP tokova termina.",
+        durationMinutes: 60,
+        price: 1000,
+        promoPrice: 800,
+        imageUrl: "/test.jpg",
+        active: true,
+        homeServiceAvailable: false,
+        homeServiceFee: 0,
+        resourceRequirements: [{ resourceId: createdResource.id, quantity: 1 }],
+      },
+    );
+    assert.equal(patchServiceWithResource.status, 200, "service patch with resource requirement must succeed");
+    const patchedService = patchServiceWithResource.body as { resourceRequirements: Array<{ resourceId: string; quantity: number }> };
+    assert.ok(Array.isArray(patchedService.resourceRequirements), "patched service must return resourceRequirements");
+    assert.equal(patchedService.resourceRequirements.length, 1, "patched service must have exactly one requirement");
+    assert.equal(patchedService.resourceRequirements[0]!.resourceId, createdResource.id, "requirement must reference the created resource");
+
+    // Duplicate resourceId validation
+    const duplicateReqResult = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/services/${service!.id}`,
+      "PATCH",
+      {
+        category: "Test",
+        name: "HTTP zaključavanje termina",
+        description: "Usluga za proveru HTTP tokova termina.",
+        durationMinutes: 60,
+        price: 1000,
+        promoPrice: 800,
+        imageUrl: "/test.jpg",
+        active: true,
+        homeServiceAvailable: false,
+        homeServiceFee: 0,
+        resourceRequirements: [
+          { resourceId: createdResource.id, quantity: 1 },
+          { resourceId: createdResource.id, quantity: 1 },
+        ],
+      },
+    );
+    assert.equal(duplicateReqResult.status, 400, "duplicate resourceId in requirements must return 400");
+
+    // Quantity > capacity validation
+    const overCapacityResult = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/services/${service!.id}`,
+      "PATCH",
+      {
+        category: "Test",
+        name: "HTTP zaključavanje termina",
+        description: "Usluga za proveru HTTP tokova termina.",
+        durationMinutes: 60,
+        price: 1000,
+        promoPrice: 800,
+        imageUrl: "/test.jpg",
+        active: true,
+        homeServiceAvailable: false,
+        homeServiceFee: 0,
+        resourceRequirements: [{ resourceId: createdResource.id, quantity: 99 }],
+      },
+    );
+    assert.equal(overCapacityResult.status, 400, "quantity > capacity must return 400");
+
+    // Cross-salon resource validation
+    const [foreignResource] = await db.insert(salonResourcesTable).values({
+      salonId: foreignSalon!.id,
+      name: `Foreign resource ${suffix}`,
+      type: "equipment",
+      capacity: 1,
+    }).returning();
+    const crossSalonReqResult = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/services/${service!.id}`,
+      "PATCH",
+      {
+        category: "Test",
+        name: "HTTP zaključavanje termina",
+        description: "Usluga za proveru HTTP tokova termina.",
+        durationMinutes: 60,
+        price: 1000,
+        promoPrice: 800,
+        imageUrl: "/test.jpg",
+        active: true,
+        homeServiceAvailable: false,
+        homeServiceFee: 0,
+        resourceRequirements: [{ resourceId: foreignResource!.id, quantity: 1 }],
+      },
+    );
+    assert.equal(crossSalonReqResult.status, 400, "cross-salon resource reference must return 400");
+    await db.delete(salonResourcesTable).where(eq(salonResourcesTable.id, foreignResource!.id));
+
+    // -------------------------------------------------------------------------
+    // Resource-aware booking: salon POST /salon/appointments
+    // -------------------------------------------------------------------------
+    // Set up the service with capacity-1 resource (reset to quantity 1 requirement).
+    await db.delete(serviceResourceRequirementsTable).where(eq(serviceResourceRequirementsTable.serviceId, service!.id));
+    // Patch resource back to capacity 1.
+    await request(baseUrl, ownerSession, `/salon/resources/${createdResource.id}`, "PATCH", { capacity: 1 });
+    await db.insert(serviceResourceRequirementsTable).values({ serviceId: service!.id, resourceId: createdResource.id, quantity: 1 });
+    const [resourceEmployee] = await db.insert(employeesTable).values({
+      salonId: salon!.id,
+      name: "Drugi zaposleni za resurs test",
+      role: "Terapeut",
+      bio: "",
+      avatarUrl: "",
+    }).returning();
+    await db.insert(employeeServicesTable).values({ employeeId: resourceEmployee!.id, serviceId: service!.id });
+
+    // First booking should succeed.
+    const firstResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      date: resourceTestDate,
+      startTime: "10:00",
+      employeeId: employee!.id,
+    });
+    assert.equal(firstResourceBooking.status, 201, "first booking with resource must succeed");
+    const firstBookingBody = firstResourceBooking.body as { id: string; allocatedResources: unknown[] };
+    assert.ok(Array.isArray(firstBookingBody.allocatedResources), "booking response must include allocatedResources");
+    assert.equal(firstBookingBody.allocatedResources.length, 1, "booking must have one allocated resource");
+    const employeePortalWithResources = await getRequest(baseUrl, employeeSession, "/employee/portal");
+    assert.equal(employeePortalWithResources.status, 200, "employee portal must remain available");
+    const employeePortalBody = employeePortalWithResources.body as {
+      appointments: Array<{ id: string; allocatedResources?: unknown[] }>;
+    };
+    const employeePortalAppointment = employeePortalBody.appointments.find((appointment) => appointment.id === firstBookingBody.id);
+    assert.equal(employeePortalAppointment?.allocatedResources?.length, 1, "employee portal must return allocated resources");
+
+    // Second booking at same time must fail (capacity-1 resource exhausted).
+    const conflictingResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      date: resourceTestDate,
+      startTime: "10:00",
+      employeeId: resourceEmployee!.id,
+    });
+    assert.equal(conflictingResourceBooking.status, 409, "second booking at same time with capacity-1 resource must return 409");
+
+    // Third booking at a different time slot should succeed.
+    const nonConflictBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      date: resourceTestDate,
+      startTime: "12:00",
+      employeeId: employee!.id,
+    });
+    assert.equal(nonConflictBooking.status, 201, "booking at a non-overlapping time must succeed even with exhausted earlier slot");
+
+    // -------------------------------------------------------------------------
+    // Availability endpoint must reflect resource exhaustion
+    // -------------------------------------------------------------------------
+    const availabilityResult = await fetch(
+      `${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&date=${resourceTestDate}`,
+    );
+    assert.equal(availabilityResult.status, 200, "availability endpoint must return 200");
+    const availabilitySlots = await availabilityResult.json() as Array<{ start: string; end: string }>;
+    // The 10:00 slot is exhausted; it must not appear.
+    assert.ok(
+      !availabilitySlots.some((s) => s.start === "10:00"),
+      "availability must not advertise the 10:00 slot when the resource is exhausted",
+    );
+    // The 12:00 slot is now taken by the nonConflictBooking employee, but other employees at other times may appear.
+
+    // -------------------------------------------------------------------------
+    // Cancellation releases resource for rebooking
+    // -------------------------------------------------------------------------
+    const ownerCancelBooking = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/appointments/${firstBookingBody.id}`,
+      "PATCH",
+      { status: "cancelled" },
+    );
+    assert.equal(ownerCancelBooking.status, 200, "owner cancellation must succeed");
+
+    // After cancellation, the same slot must become available again.
+    const retryResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      date: resourceTestDate,
+      startTime: "10:00",
+      employeeId: employee!.id,
+    });
+    assert.equal(retryResourceBooking.status, 201, "after cancellation, the resource slot must be reavailable");
+
+    const conflictingReactivation = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/appointments/${firstBookingBody.id}`,
+      "PATCH",
+      { status: "confirmed" },
+    );
+    assert.equal(conflictingReactivation.status, 409, "a cancelled booking must not reactivate over exhausted resource capacity");
+    const [stillCancelledResourceBooking] = await db.select({ status: appointmentsTable.status })
+      .from(appointmentsTable)
+      .where(eq(appointmentsTable.id, firstBookingBody.id));
+    assert.equal(stillCancelledResourceBooking!.status, "cancelled", "failed reactivation must roll back");
+
+    const increaseCapacityResult = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/resources/${createdResource.id}`,
+      "PATCH",
+      { capacity: 2 },
+    );
+    assert.equal(increaseCapacityResult.status, 200, "resource capacity must be safely increasable");
+    const secondConcurrentResourceBooking = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      serviceId: service!.id,
+      salonCustomerId: contact!.id,
+      date: resourceTestDate,
+      startTime: "10:00",
+      employeeId: resourceEmployee!.id,
+    });
+    assert.equal(secondConcurrentResourceBooking.status, 201, "capacity two must allow a second concurrent resource booking");
+    const unsafeCapacityReduction = await request(
+      baseUrl,
+      ownerSession,
+      `/salon/resources/${createdResource.id}`,
+      "PATCH",
+      { capacity: 1 },
+    );
+    assert.equal(unsafeCapacityReduction.status, 409, "capacity must not be reducible below active overlapping allocations");
+
+    // Clean up resources requirement to avoid polluting other tests.
+    await db.delete(serviceResourceRequirementsTable).where(eq(serviceResourceRequirementsTable.serviceId, service!.id));
+
+    // -------------------------------------------------------------------------
+    // DELETE resource
+    // -------------------------------------------------------------------------
+    const protectedDeleteResult = await request(baseUrl, ownerSession, `/salon/resources/${createdResource.id}`, "DELETE", {});
+    assert.equal(protectedDeleteResult.status, 409, "resource allocation history must prevent destructive deletion");
+    const temporaryResourceResult = await request(baseUrl, ownerSession, "/salon/resources", "POST", {
+      name: `Privremeni resurs ${suffix}`,
+      type: "other",
+      capacity: 1,
+    });
+    assert.equal(temporaryResourceResult.status, 201, "unused resource must be creatable for delete coverage");
+    const temporaryResource = temporaryResourceResult.body as { id: string };
+    const deleteResourceResult = await request(baseUrl, ownerSession, `/salon/resources/${temporaryResource.id}`, "DELETE", {});
+    assert.equal(deleteResourceResult.status, 204, "an unused resource must be deletable");
+
+    console.log("Resource CRUD and booking capacity tests passed.");
 
     console.log("Appointment HTTP route regression passed.");
   } finally {

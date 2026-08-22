@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AllocatedResource } from './allocatedResource';
 import type { AppointmentRescheduledConfirmation } from './appointmentRescheduledConfirmation';
 import type { AppointmentStatus } from './appointmentStatus';
 import type { AppointmentTreatmentAddress } from './appointmentTreatmentAddress';
@@ -38,4 +39,5 @@ export interface Appointment {
   notes?: string | null;
   /** @nullable */
   rescheduledConfirmation?: AppointmentRescheduledConfirmation;
+  allocatedResources: AllocatedResource[];
 }

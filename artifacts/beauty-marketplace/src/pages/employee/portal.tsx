@@ -41,6 +41,7 @@ type Appointment = {
   serviceName: string;
   customerName: string;
   customerPhone: string | null;
+  allocatedResources?: { resourceId: string; resourceName: string; quantity: number }[];
 };
 
 type Portal = {
@@ -498,6 +499,13 @@ export default function EmployeePortal() {
                           <p className="mt-1 text-sm text-muted-foreground">{appointment.customerPhone ?? "Telefon nije dostupan"}</p>
                           {appointment.seriesId && <Badge variant="secondary" className="mt-2 gap-1"><Repeat2 className="h-3 w-3" />Serija</Badge>}
                           {appointment.notes && <p className="mt-2 rounded-md bg-muted/50 px-2 py-1 text-xs text-muted-foreground">{appointment.notes}</p>}
+                          {appointment.allocatedResources && appointment.allocatedResources.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {appointment.allocatedResources.map((alloc, i) => (
+                                <Badge key={i} variant="secondary" className="text-[10px] font-medium opacity-80 bg-background">{alloc.resourceName} x{alloc.quantity}</Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">

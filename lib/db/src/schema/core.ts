@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   doublePrecision,
   index,
@@ -615,6 +616,81 @@ export const customerNotesTable = pgTable("customer_notes", {
   index("customer_notes_salon_customer_idx").on(table.salonId, table.customerId),
   // Leading FK coverage for customerId alone (customer history view).
   index("customer_notes_customer_idx").on(table.customerId),
+]);
+
+// ---------------------------------------------------------------------------
+// Salon resources (chairs, booths, beds, equipment, rooms, etc.)
+// A resource belongs to exactly one salon. capacity is the number of
+// simultaneous appointments that may use the resource at the same time.
+// ---------------------------------------------------------------------------
+export const salonResourceTypeEnum = pgEnum("salon_resource_type", [
+  "chair",
+  "booth",
+  "bed",
+  "room",
+  "equipment",
+  "other",
+]);
+
+export const salonResourcesTable = pgTable("salon_resources", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: salonResourceTypeEnum("type").notNull().default("other"),
+  capacity: integer("capacity").notNull().default(1),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // Enforce capacity >= 1 at DB level.
+  check("salon_resources_capacity_positive", sql`${table.capacity} >= 1`),
+  // Unique resource name per salon.
+  uniqueIndex("salon_resources_salon_name_unique").on(table.salonId, table.name),
+  // All resources for a salon, filtered by active.
+  index("salon_resources_salon_active_idx").on(table.salonId, table.active),
+]);
+
+// ---------------------------------------------------------------------------
+// Service → resource requirements.
+// Captures how many units of a given resource a service needs.
+// A service with no rows here has no resource requirements.
+// ---------------------------------------------------------------------------
+export const serviceResourceRequirementsTable = pgTable("service_resource_requirements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+  resourceId: uuid("resource_id").notNull().references(() => salonResourcesTable.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // Enforce quantity >= 1 at DB level.
+  check("service_resource_requirements_quantity_positive", sql`${table.quantity} >= 1`),
+  // One requirement row per (service, resource) pair.
+  uniqueIndex("service_resource_requirements_service_resource_unique").on(table.serviceId, table.resourceId),
+  // Reverse lookup: which services require a given resource.
+  index("service_resource_requirements_resource_idx").on(table.resourceId),
+]);
+
+// ---------------------------------------------------------------------------
+// Appointment → resource allocations.
+// Records which resources (and how many units) were consumed by each
+// appointment. Rows persist after cancellation for historical auditing;
+// capacity checks skip cancelled appointments via a status filter.
+// ---------------------------------------------------------------------------
+export const appointmentResourceAllocationsTable = pgTable("appointment_resource_allocations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "cascade" }),
+  resourceId: uuid("resource_id").notNull().references(() => salonResourcesTable.id, { onDelete: "cascade" }),
+  quantity: integer("quantity").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  // Enforce quantity >= 1 at DB level.
+  check("appointment_resource_allocations_quantity_positive", sql`${table.quantity} >= 1`),
+  // One allocation row per (appointment, resource) pair.
+  uniqueIndex("appointment_resource_allocations_appt_resource_unique").on(table.appointmentId, table.resourceId),
+  // Reverse lookup: all appointments for a resource (capacity check query).
+  index("appointment_resource_allocations_resource_idx").on(table.resourceId),
+  // Leading FK coverage for appointmentId.
+  index("appointment_resource_allocations_appointment_idx").on(table.appointmentId),
 ]);
 
 // ---------------------------------------------------------------------------

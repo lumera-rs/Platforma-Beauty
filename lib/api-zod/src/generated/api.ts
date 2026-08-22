@@ -555,6 +555,8 @@ export const getSalonResponseTwoServicesItemHomeServiceFeeMin = 0;
 
 export const getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin = 0;
 
+export const getSalonResponseTwoServicesItemResourceRequirementsItemQuantityMultipleOf = 1;
+
 export const getSalonResponseTwoReviewsItemRatingMax = 5;
 export const getSalonResponseTwoReviewsItemRatingMultipleOf = 1;
 
@@ -632,7 +634,11 @@ export const GetSalonResponse = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(getSalonResponseTwoServicesItemHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin).nullable()
+  "homeServiceMinimumOrder": zod.number().min(getSalonResponseTwoServicesItemHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(getSalonResponseTwoServicesItemResourceRequirementsItemQuantityMultipleOf)
+}))
 })),
   "reviews": zod.array(zod.object({
   "id": zod.string(),
@@ -723,6 +729,7 @@ export const listMyAppointmentsResponseTravelFeeMin = 0;
 
 
 
+
 export const ListMyAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -758,7 +765,12 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 export const ListMyAppointmentsResponse = zod.array(ListMyAppointmentsResponseItem)
 
@@ -799,6 +811,7 @@ export const createAppointmentResponseTravelFeeMin = 0;
 
 
 
+
 export const CreateAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -834,7 +847,12 @@ export const CreateAppointmentResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 
 
@@ -853,6 +871,7 @@ export const UpdateAppointmentBody = zod.object({
 })
 
 export const updateAppointmentResponseTravelFeeMin = 0;
+
 
 
 
@@ -891,7 +910,12 @@ export const UpdateAppointmentResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 
 
@@ -930,6 +954,7 @@ export const cancelAppointmentResponseTravelFeeMin = 0;
 
 
 
+
 export const CancelAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -965,7 +990,12 @@ export const CancelAppointmentResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 
 
@@ -973,6 +1003,7 @@ export const CancelAppointmentResponse = zod.object({
  * @summary Customer dashboard summary
  */
 export const getCustomerDashboardResponseUpcomingItemTravelFeeMin = 0;
+
 
 
 
@@ -1012,7 +1043,12 @@ export const GetCustomerDashboardResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })),
   "recentSalons": zod.array(zod.object({
   "id": zod.string(),
@@ -1202,6 +1238,7 @@ export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
 
 
+
 export const GetSalonDashboardResponse = zod.object({
   "salon": zod.object({
   "id": zod.string(),
@@ -1263,7 +1300,12 @@ export const GetSalonDashboardResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })),
   "revenueThisMonth": zod.number(),
   "bookingsThisMonth": zod.number(),
@@ -1443,6 +1485,7 @@ export const listSalonAppointmentsResponseTravelFeeMin = 0;
 
 
 
+
 export const ListSalonAppointmentsResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -1478,7 +1521,12 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 export const ListSalonAppointmentsResponse = zod.array(ListSalonAppointmentsResponseItem)
 
@@ -1509,6 +1557,7 @@ export const CreateSalonAppointmentBody = zod.object({
 })
 
 export const createSalonAppointmentResponseTravelFeeMin = 0;
+
 
 
 
@@ -1547,7 +1596,12 @@ export const CreateSalonAppointmentResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
 
 
@@ -1617,6 +1671,7 @@ export const createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 
 
 
 
+
 export const CreateSalonAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "totalAppointments": zod.number(),
@@ -1655,7 +1710,12 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 }))
 })
 
@@ -1735,6 +1795,7 @@ export const moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 
 
+
 export const MoveSalonAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "movedAppointments": zod.number(),
@@ -1773,7 +1834,12 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 }))
 })
 
@@ -1883,6 +1949,7 @@ export const createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin
 
 
 
+
 export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "id": zod.string(),
   "totalAppointments": zod.number(),
@@ -1921,7 +1988,12 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 }))
 })
 
@@ -1978,6 +2050,7 @@ export const updateSalonAppointmentResponseTravelFeeMin = 0;
 
 
 
+
 export const UpdateSalonAppointmentResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -2013,8 +2086,110 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
   "nextRetryAt": zod.coerce.date().nullish()
 }).nullable()
-}).nullish()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
 })
+
+
+/**
+ * @summary List salon resources
+ */
+
+
+
+export const ListSalonResourcesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['chair', 'booth', 'bed', 'room', 'equipment', 'other']),
+  "capacity": zod.number().min(1),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListSalonResourcesResponse = zod.array(ListSalonResourcesResponseItem)
+
+
+/**
+ * @summary Create a salon resource
+ */
+export const createSalonResourceBodyNameMax = 120;
+
+export const createSalonResourceBodyCapacityMax = 1000;
+export const createSalonResourceBodyCapacityMultipleOf = 1;
+
+
+
+export const CreateSalonResourceBody = zod.object({
+  "name": zod.string().min(1).max(createSalonResourceBodyNameMax),
+  "type": zod.enum(['chair', 'booth', 'bed', 'room', 'equipment', 'other']),
+  "capacity": zod.number().min(1).max(createSalonResourceBodyCapacityMax).multipleOf(createSalonResourceBodyCapacityMultipleOf),
+  "active": zod.boolean().optional()
+})
+
+
+
+
+export const CreateSalonResourceResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['chair', 'booth', 'bed', 'room', 'equipment', 'other']),
+  "capacity": zod.number().min(1),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a salon resource
+ */
+export const UpdateSalonResourceParams = zod.object({
+  "resourceId": zod.coerce.string()
+})
+
+export const updateSalonResourceBodyNameMax = 120;
+
+export const updateSalonResourceBodyCapacityMax = 1000;
+export const updateSalonResourceBodyCapacityMultipleOf = 1;
+
+
+
+export const UpdateSalonResourceBody = zod.object({
+  "name": zod.string().min(1).max(updateSalonResourceBodyNameMax).optional(),
+  "type": zod.enum(['chair', 'booth', 'bed', 'room', 'equipment', 'other']).optional(),
+  "capacity": zod.number().min(1).max(updateSalonResourceBodyCapacityMax).multipleOf(updateSalonResourceBodyCapacityMultipleOf).optional(),
+  "active": zod.boolean().optional()
+})
+
+
+
+
+export const UpdateSalonResourceResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['chair', 'booth', 'bed', 'room', 'equipment', 'other']),
+  "capacity": zod.number().min(1),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a salon resource (only if no active service requirements reference it)
+ */
+export const DeleteSalonResourceParams = zod.object({
+  "resourceId": zod.coerce.string()
+})
+
+export const DeleteSalonResourceResponse = zod.void()
 
 
 /**
@@ -2023,6 +2198,8 @@ export const UpdateSalonAppointmentResponse = zod.object({
 export const listSalonServicesResponseHomeServiceFeeMin = 0;
 
 export const listSalonServicesResponseHomeServiceMinimumOrderMin = 0;
+
+export const listSalonServicesResponseResourceRequirementsItemQuantityMultipleOf = 1;
 
 
 
@@ -2041,7 +2218,11 @@ export const ListSalonServicesResponseItem = zod.object({
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(listSalonServicesResponseHomeServiceFeeMin),
   "homeServiceMinimumOrder": zod.number().min(listSalonServicesResponseHomeServiceMinimumOrderMin).nullable(),
-  "canBePermanentlyDeleted": zod.boolean()
+  "canBePermanentlyDeleted": zod.boolean(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(listSalonServicesResponseResourceRequirementsItemQuantityMultipleOf)
+}))
 })
 export const ListSalonServicesResponse = zod.array(ListSalonServicesResponseItem)
 
@@ -2060,6 +2241,10 @@ export const createSalonServiceBodyHomeServiceFeeMin = 0;
 
 export const createSalonServiceBodyHomeServiceMinimumOrderMin = 0;
 
+export const createSalonServiceBodyResourceRequirementsItemQuantityMultipleOf = 1;
+
+export const createSalonServiceBodyResourceRequirementsMax = 20;
+
 
 
 export const CreateSalonServiceBody = zod.object({
@@ -2073,12 +2258,18 @@ export const CreateSalonServiceBody = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(createSalonServiceBodyHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(createSalonServiceBodyHomeServiceMinimumOrderMin).nullish()
+  "homeServiceMinimumOrder": zod.number().min(createSalonServiceBodyHomeServiceMinimumOrderMin).nullish(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(createSalonServiceBodyResourceRequirementsItemQuantityMultipleOf)
+})).max(createSalonServiceBodyResourceRequirementsMax).optional()
 })
 
 export const createSalonServiceResponseHomeServiceFeeMin = 0;
 
 export const createSalonServiceResponseHomeServiceMinimumOrderMin = 0;
+
+export const createSalonServiceResponseResourceRequirementsItemQuantityMultipleOf = 1;
 
 
 
@@ -2096,7 +2287,11 @@ export const CreateSalonServiceResponse = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(createSalonServiceResponseHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(createSalonServiceResponseHomeServiceMinimumOrderMin).nullable()
+  "homeServiceMinimumOrder": zod.number().min(createSalonServiceResponseHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(createSalonServiceResponseResourceRequirementsItemQuantityMultipleOf)
+}))
 })
 
 
@@ -2165,6 +2360,8 @@ export const createSalonServicesBatchResponseCreatedItemHomeServiceFeeMin = 0;
 
 export const createSalonServicesBatchResponseCreatedItemHomeServiceMinimumOrderMin = 0;
 
+export const createSalonServicesBatchResponseCreatedItemResourceRequirementsItemQuantityMultipleOf = 1;
+
 
 
 export const CreateSalonServicesBatchResponse = zod.object({
@@ -2182,7 +2379,11 @@ export const CreateSalonServicesBatchResponse = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(createSalonServicesBatchResponseCreatedItemHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(createSalonServicesBatchResponseCreatedItemHomeServiceMinimumOrderMin).nullable()
+  "homeServiceMinimumOrder": zod.number().min(createSalonServicesBatchResponseCreatedItemHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(createSalonServicesBatchResponseCreatedItemResourceRequirementsItemQuantityMultipleOf)
+}))
 })),
   "skipped": zod.array(zod.string())
 })
@@ -2206,6 +2407,10 @@ export const updateSalonServiceBodyHomeServiceFeeMin = 0;
 
 export const updateSalonServiceBodyHomeServiceMinimumOrderMin = 0;
 
+export const updateSalonServiceBodyResourceRequirementsItemQuantityMultipleOf = 1;
+
+export const updateSalonServiceBodyResourceRequirementsMax = 20;
+
 
 
 export const UpdateSalonServiceBody = zod.object({
@@ -2219,12 +2424,18 @@ export const UpdateSalonServiceBody = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(updateSalonServiceBodyHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceBodyHomeServiceMinimumOrderMin).nullish()
+  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceBodyHomeServiceMinimumOrderMin).nullish(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(updateSalonServiceBodyResourceRequirementsItemQuantityMultipleOf)
+})).max(updateSalonServiceBodyResourceRequirementsMax).optional()
 })
 
 export const updateSalonServiceResponseHomeServiceFeeMin = 0;
 
 export const updateSalonServiceResponseHomeServiceMinimumOrderMin = 0;
+
+export const updateSalonServiceResponseResourceRequirementsItemQuantityMultipleOf = 1;
 
 
 
@@ -2242,7 +2453,11 @@ export const UpdateSalonServiceResponse = zod.object({
   "active": zod.boolean(),
   "homeServiceAvailable": zod.boolean(),
   "homeServiceFee": zod.number().min(updateSalonServiceResponseHomeServiceFeeMin),
-  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceResponseHomeServiceMinimumOrderMin).nullable()
+  "homeServiceMinimumOrder": zod.number().min(updateSalonServiceResponseHomeServiceMinimumOrderMin).nullable(),
+  "resourceRequirements": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "quantity": zod.number().min(1).multipleOf(updateSalonServiceResponseResourceRequirementsItemQuantityMultipleOf)
+}))
 })
 
 

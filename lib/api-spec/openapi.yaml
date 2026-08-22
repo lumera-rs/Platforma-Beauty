@@ -885,6 +885,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+  /salon/resources:
+    get:
+      operationId: listSalonResources
+      tags: [salon-management]
+      summary: List salon resources
+      responses:
+        "200":
+          description: Resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonResource" }
+        "403": { description: Salon-owner access required }
+    post:
+      operationId: createSalonResource
+      tags: [salon-management]
+      summary: Create a salon resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonResourceInput" }
+      responses:
+        "201":
+          description: Created resource
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonResource" }
+        "400": { description: Invalid input }
+        "403": { description: Salon-owner access required }
+        "409": { description: A resource with this name already exists in the salon }
+  /salon/resources/{resourceId}:
+    patch:
+      operationId: updateSalonResource
+      tags: [salon-management]
+      summary: Update a salon resource
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonResourceUpdate" }
+      responses:
+        "200":
+          description: Updated resource
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonResource" }
+        "400": { description: Invalid input }
+        "403": { description: Salon-owner access required }
+        "404": { description: Resource not found }
+        "409": { description: A resource with this name already exists in the salon }
+    delete:
+      operationId: deleteSalonResource
+      tags: [salon-management]
+      summary: Delete a salon resource (only if no active service requirements reference it)
+      parameters:
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Resource deleted }
+        "403": { description: Salon-owner access required }
+        "404": { description: Resource not found }
+        "409":
+          description: Resource is referenced by active service requirements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                required: [error]
   /salon/services:
     get:
       operationId: listSalonServices
@@ -3772,6 +3851,53 @@ components:
         futureAppointmentCount: { type: number, minimum: 0 }
         loginAccountDeactivated: { type: boolean }
       required: [employeeId, deactivated, futureAppointmentCount, loginAccountDeactivated]
+    SalonResource:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        name: { type: string }
+        type:
+          type: string
+          enum: [chair, booth, bed, room, equipment, other]
+        capacity: { type: number, minimum: 1 }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, salonId, name, type, capacity, active, createdAt, updatedAt]
+    SalonResourceInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type:
+          type: string
+          enum: [chair, booth, bed, room, equipment, other]
+        capacity: { type: number, minimum: 1, maximum: 1000, multipleOf: 1 }
+        active: { type: boolean }
+      required: [name, type, capacity]
+    SalonResourceUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type:
+          type: string
+          enum: [chair, booth, bed, room, equipment, other]
+        capacity: { type: number, minimum: 1, maximum: 1000, multipleOf: 1 }
+        active: { type: boolean }
+    ServiceResourceRequirement:
+      type: object
+      properties:
+        resourceId: { type: string }
+        quantity: { type: number, minimum: 1, multipleOf: 1 }
+      required: [resourceId, quantity]
+    AllocatedResource:
+      type: object
+      properties:
+        resourceId: { type: string }
+        resourceName: { type: string }
+        quantity: { type: number, minimum: 1 }
+      required: [resourceId, resourceName, quantity]
     Service:
       type: object
       properties:
@@ -3789,7 +3915,10 @@ components:
         homeServiceAvailable: { type: boolean }
         homeServiceFee: { type: number, minimum: 0 }
         homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder]
+        resourceRequirements:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
+      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, resourceRequirements]
     SalonManagedService:
       type: object
       properties:
@@ -3808,7 +3937,10 @@ components:
         homeServiceFee: { type: number, minimum: 0 }
         homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
         canBePermanentlyDeleted: { type: boolean }
-      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted]
+        resourceRequirements:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
+      required: [id, category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee, homeServiceMinimumOrder, canBePermanentlyDeleted, resourceRequirements]
     ServiceTemplate:
       type: object
       properties:
@@ -3990,7 +4122,10 @@ components:
                 nextRetryAt: { type: ["string", "null"], format: date-time }
               required: [status]
           required: [sms, email]
-      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status]
+        allocatedResources:
+          type: array
+          items: { $ref: "#/components/schemas/AllocatedResource" }
+      required: [id, salonId, salonSlug, salonName, serviceId, customerName, serviceName, employeeId, employeeName, date, startTime, endTime, durationMinutes, price, treatmentLocation, travelFee, treatmentAddress, status, allocatedResources]
     AppointmentSalonContact:
       type: object
       properties:
@@ -4258,6 +4393,10 @@ components:
         homeServiceAvailable: { type: boolean }
         homeServiceFee: { type: number, minimum: 0 }
         homeServiceMinimumOrder: { type: ["number", "null"], minimum: 0 }
+        resourceRequirements:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
       required: [category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee]
     ProductCategory:
       type: object

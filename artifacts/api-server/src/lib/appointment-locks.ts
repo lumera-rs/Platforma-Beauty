@@ -3,11 +3,15 @@ import { sql } from "drizzle-orm";
 export type AppointmentLockResource = {
   date: string;
   employeeId?: string | null;
+  resourceId?: string | null;
 };
 
 /**
  * Appointment writes always lock in the same hierarchy:
- * salon -> calendar day -> employee/day.
+ * salon -> calendar day -> employee/day -> resource/day.
+ *
+ * Resource locks are acquired after employee locks to extend the deterministic
+ * ordering without breaking existing employee-level semantics.
  *
  * A series move can need to re-read its members after another request changes
  * one of them. The stable salon lock prevents deadlocks while it discovers and
@@ -24,5 +28,12 @@ export async function lockAppointmentResources(store: any, salonId: string, reso
     .map((resource) => `${resource.date}:${resource.employeeId}`))].sort();
   for (const employee of employees) {
     await store.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:appointments:employee:${salonId}:${employee}`}))`);
+  }
+  // Resource locks come after employee locks, stable-sorted to prevent deadlocks.
+  const resourceKeys = [...new Set(resources
+    .filter((resource): resource is AppointmentLockResource & { resourceId: string } => Boolean(resource.resourceId))
+    .map((resource) => `${resource.date}:${resource.resourceId}`))].sort();
+  for (const resourceKey of resourceKeys) {
+    await store.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:appointments:resource:${salonId}:${resourceKey}`}))`);
   }
 }

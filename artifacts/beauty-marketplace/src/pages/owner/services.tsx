@@ -11,6 +11,8 @@ import {
   getListSalonServicesQueryKey,
   useListServiceTemplates,
   useCreateSalonServicesBatch,
+  useListSalonResources,
+  getListSalonResourcesQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { Link } from "wouter";
 
 interface ServiceTemplate {
   id: string;
@@ -256,6 +259,7 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
 export default function OwnerServices() {
   const { data: userResp } = useGetCurrentUser();
   const { data: services, isLoading, refetch } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() }});
+  const { data: resources } = useListSalonResources({ query: { enabled: !!userResp?.user, queryKey: getListSalonResourcesQueryKey() } });
   const createMutation = useCreateSalonService();
   const updateMutation = useUpdateSalonService();
   const deleteMutation = useDeleteSalonService();
@@ -275,12 +279,13 @@ export default function OwnerServices() {
     price: 1500,
     description: "",
     imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200",
-    active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: ""
+    active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "",
+    resourceRequirements: [] as { resourceId: string; quantity: number }[]
   });
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "" });
+    setFormData({ name: "", category: "Frizura", durationMinutes: 30, price: 1500, description: "", imageUrl: "https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200", active: true, homeServiceAvailable: false, homeServiceFee: 0, homeServiceMinimumOrder: "", resourceRequirements: [] });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -291,6 +296,7 @@ export default function OwnerServices() {
       price: Number(formData.price),
       homeServiceFee: formData.homeServiceAvailable ? Number(formData.homeServiceFee) : 0,
       homeServiceMinimumOrder: formData.homeServiceAvailable && formData.homeServiceMinimumOrder !== "" ? Number(formData.homeServiceMinimumOrder) : null,
+      resourceRequirements: formData.resourceRequirements.filter(r => r.resourceId && r.quantity > 0)
     };
     const callbacks = {
       onSuccess: () => {
@@ -319,7 +325,7 @@ export default function OwnerServices() {
 
   const editService = (service: NonNullable<typeof services>[number]) => {
     setEditingId(service.id);
-    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "" });
+    setFormData({ name: service.name, category: service.category, durationMinutes: service.durationMinutes, price: service.price, description: service.description, imageUrl: service.imageUrl, active: service.active, homeServiceAvailable: service.homeServiceAvailable, homeServiceFee: service.homeServiceFee, homeServiceMinimumOrder: service.homeServiceMinimumOrder?.toString() ?? "", resourceRequirements: service.resourceRequirements ?? [] });
     setOpen(true);
   };
 
@@ -421,6 +427,66 @@ export default function OwnerServices() {
                         <Label className="cursor-pointer">Usluga je aktivna</Label>
                         <Switch checked={formData.active} onCheckedChange={(checked) => setFormData({ ...formData, active: checked })} />
                       </div>
+                      <div className="rounded-xl border bg-muted/20 p-4 space-y-3 mt-4">
+                        <Label className="flex items-center gap-2">Potrebni resursi (opciono)</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">Definišite koji resursi (stolice, sobe, aparati) su neophodni za ovu uslugu. Oni će se automatski rezervisati tokom termina.</p>
+                        <div className="space-y-2 pt-2">
+                          {formData.resourceRequirements.map((req, index) => {
+                            const resource = resources?.find(r => r.id === req.resourceId);
+                            return (
+                              <div key={index} className="flex items-center gap-2">
+                                <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" value={req.resourceId} onChange={e => {
+                                  const newResourceId = e.target.value;
+                                  const newResource = resources?.find(r => r.id === newResourceId);
+                                  const newReqs = [...formData.resourceRequirements];
+                                  newReqs[index].resourceId = newResourceId;
+                                  if (newResource && newReqs[index].quantity > newResource.capacity) {
+                                    newReqs[index].quantity = newResource.capacity;
+                                  }
+                                  setFormData({ ...formData, resourceRequirements: newReqs });
+                                }}>
+                                  <option value="">Izaberite resurs</option>
+                                  {resources?.map(r => {
+                                    const isSelectedElsewhere = formData.resourceRequirements.some((reqOther, i) => reqOther.resourceId === r.id && i !== index);
+                                    const isCurrentlySelected = req.resourceId === r.id;
+                                    const showOption = r.active || isCurrentlySelected;
+                                    if (!showOption) return null;
+                                    return <option key={r.id} value={r.id} disabled={isSelectedElsewhere}>{r.name} (Kapacitet: {r.capacity})</option>;
+                                  })}
+                                </select>
+                                <Input type="number" min="1" max={resource?.capacity || ""} className="w-24 h-9" value={req.quantity} onChange={e => {
+                                  const newReqs = [...formData.resourceRequirements];
+                                  let val = Number(e.target.value);
+                                  if (resource && val > resource.capacity) val = resource.capacity;
+                                  newReqs[index].quantity = val;
+                                  setFormData({ ...formData, resourceRequirements: newReqs });
+                                }} />
+                                <Button type="button" variant="ghost" size="icon" className="h-9 w-9 text-destructive" onClick={() => {
+                                  const newReqs = formData.resourceRequirements.filter((_, i) => i !== index);
+                                  setFormData({ ...formData, resourceRequirements: newReqs });
+                                }}><Trash2 className="h-4 w-4" /></Button>
+                              </div>
+                            );
+                          })}
+
+                          {(!resources || resources.filter(r => r.active).length === 0) && formData.resourceRequirements.length === 0 ? (
+                            <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                              Nemate definisane aktivne resurse. <Link href="/vlasnik/resursi" className="text-primary hover:underline">Dodajte resurse</Link> da biste ih povezali sa uslugom.
+                            </p>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="w-full mt-2"
+                              disabled={(resources?.filter(r => r.active && !formData.resourceRequirements.some(req => req.resourceId === r.id))?.length || 0) === 0}
+                              onClick={() => setFormData({ ...formData, resourceRequirements: [...formData.resourceRequirements, { resourceId: "", quantity: 1 }] })}
+                            >
+                              <Plus className="w-4 h-4 mr-2" /> Dodaj resurs
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                       <div className="rounded-xl border bg-muted/30 p-4 space-y-3 mt-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -484,6 +550,14 @@ export default function OwnerServices() {
                           </div>
                           {service.active && service.homeServiceAvailable && <p className="text-xs text-muted-foreground mt-1">Dolazak: {service.homeServiceFee} RSD{service.homeServiceMinimumOrder ? ` • min. ${service.homeServiceMinimumOrder} RSD` : ""}</p>}
                            {!service.canBePermanentlyDeleted && <p className="mt-1 text-xs text-muted-foreground">Ova usluga ostaje na cenovniku jer je povezana sa prethodnim terminima.</p>}
+                           {service.resourceRequirements && service.resourceRequirements.length > 0 && (
+                             <div className="flex flex-wrap gap-1 mt-2">
+                               {service.resourceRequirements.map((req, i) => {
+                                 const resName = resources?.find(r => r.id === req.resourceId)?.name || "Nepoznat resurs";
+                                 return <Badge key={i} variant="outline" className="text-[10px] text-muted-foreground bg-background">{resName} x{req.quantity}</Badge>;
+                               })}
+                             </div>
+                           )}
                         </div>
                       </div>
                       <div className="flex w-full shrink-0 gap-2 sm:w-auto">

@@ -82,6 +82,7 @@ import type {
   CustomerReview,
   CustomerReviewInput,
   CustomerSalonReviewContext,
+  DeleteSalonResource409,
   DeleteSalonService409,
   EducationAdminCenter,
   EducationAdminCenterUpdate,
@@ -178,6 +179,9 @@ import type {
   SalonProfile,
   SalonProfileMedia,
   SalonProfileMediaUpdate,
+  SalonResource,
+  SalonResourceInput,
+  SalonResourceUpdate,
   Service,
   ServiceCategoryImageUploadInput,
   ServiceInput,
@@ -3762,6 +3766,297 @@ export const useUpdateSalonAppointment = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateSalonAppointmentMutationOptions(options));
+    }
+
+export const getListSalonResourcesUrl = () => {
+
+
+
+
+  return `/api/salon/resources`
+}
+
+/**
+ * @summary List salon resources
+ */
+export const listSalonResources = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonResource[]> => {
+
+  return customFetch<SalonResource[]>(getListSalonResourcesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonResourcesQueryKey = () => {
+    return [
+    `/api/salon/resources`
+    ] as const;
+    }
+
+
+export const getListSalonResourcesQueryOptions = <TData = Awaited<ReturnType<typeof listSalonResources>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonResources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonResourcesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonResources>>> = ({ signal }) => listSalonResources({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonResources>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonResourcesQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonResources>>>
+export type ListSalonResourcesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List salon resources
+ */
+
+export function useListSalonResources<TData = Awaited<ReturnType<typeof listSalonResources>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonResources>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonResourcesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSalonResourceUrl = () => {
+
+
+
+
+  return `/api/salon/resources`
+}
+
+/**
+ * @summary Create a salon resource
+ */
+export const createSalonResource = async (salonResourceInput: SalonResourceInput, options?: Parameters<typeof customFetch>[1]): Promise<SalonResource> => {
+
+  return customFetch<SalonResource>(getCreateSalonResourceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonResourceInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonResourceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonResource>>, TError,{data: BodyType<SalonResourceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonResource>>, TError,{data: BodyType<SalonResourceInput>}, TContext> => {
+
+const mutationKey = ['createSalonResource'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonResource>>, {data: BodyType<SalonResourceInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonResource(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonResourceMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonResource>>>
+    export type CreateSalonResourceMutationBody = BodyType<SalonResourceInput>
+    export type CreateSalonResourceMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a salon resource
+ */
+export const useCreateSalonResource = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonResource>>, TError,{data: BodyType<SalonResourceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonResource>>,
+        TError,
+        {data: BodyType<SalonResourceInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonResourceMutationOptions(options));
+    }
+
+export const getUpdateSalonResourceUrl = (resourceId: string,) => {
+
+
+
+
+  return `/api/salon/resources/${resourceId}`
+}
+
+/**
+ * @summary Update a salon resource
+ */
+export const updateSalonResource = async (resourceId: string,
+    salonResourceUpdate: SalonResourceUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SalonResource> => {
+
+  return customFetch<SalonResource>(getUpdateSalonResourceUrl(resourceId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonResourceUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateSalonResourceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonResource>>, TError,{resourceId: string;data: BodyType<SalonResourceUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalonResource>>, TError,{resourceId: string;data: BodyType<SalonResourceUpdate>}, TContext> => {
+
+const mutationKey = ['updateSalonResource'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalonResource>>, {resourceId: string;data: BodyType<SalonResourceUpdate>}> = (props) => {
+          const {resourceId,data} = props ?? {};
+
+          return  updateSalonResource(resourceId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalonResourceMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonResource>>>
+    export type UpdateSalonResourceMutationBody = BodyType<SalonResourceUpdate>
+    export type UpdateSalonResourceMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a salon resource
+ */
+export const useUpdateSalonResource = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonResource>>, TError,{resourceId: string;data: BodyType<SalonResourceUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalonResource>>,
+        TError,
+        {resourceId: string;data: BodyType<SalonResourceUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalonResourceMutationOptions(options));
+    }
+
+export const getDeleteSalonResourceUrl = (resourceId: string,) => {
+
+
+
+
+  return `/api/salon/resources/${resourceId}`
+}
+
+/**
+ * @summary Delete a salon resource (only if no active service requirements reference it)
+ */
+export const deleteSalonResource = async (resourceId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSalonResourceUrl(resourceId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSalonResourceMutationOptions = <TError = ErrorType<void | DeleteSalonResource409>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonResource>>, TError,{resourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSalonResource>>, TError,{resourceId: string}, TContext> => {
+
+const mutationKey = ['deleteSalonResource'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSalonResource>>, {resourceId: string}> = (props) => {
+          const {resourceId} = props ?? {};
+
+          return  deleteSalonResource(resourceId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSalonResourceMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSalonResource>>>
+
+    export type DeleteSalonResourceMutationError = ErrorType<void | DeleteSalonResource409>
+
+    /**
+ * @summary Delete a salon resource (only if no active service requirements reference it)
+ */
+export const useDeleteSalonResource = <TError = ErrorType<void | DeleteSalonResource409>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonResource>>, TError,{resourceId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSalonResource>>,
+        TError,
+        {resourceId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSalonResourceMutationOptions(options));
     }
 
 export const getListSalonServicesUrl = () => {

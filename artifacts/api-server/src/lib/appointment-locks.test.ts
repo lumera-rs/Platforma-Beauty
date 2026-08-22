@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import {
+  appointmentResourceAllocationsTable,
   appointmentsTable,
   db,
   employeeServicesTable,
   employeesTable,
   pool,
+  salonResourcesTable,
   salonsTable,
   servicesTable,
   usersTable,
@@ -57,6 +59,9 @@ async function run(): Promise<void> {
   await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: service!.id });
 
   try {
+    // -------------------------------------------------------------------------
+    // Existing test: employee double-booking concurrency
+    // -------------------------------------------------------------------------
     const createAtSameTime = async () => db.transaction(async (tx) => {
       await lockAppointmentResources(tx, salon!.id, [{ date, employeeId: employee!.id }]);
       const existing = await tx.select().from(appointmentsTable).where(and(
@@ -125,6 +130,151 @@ async function run(): Promise<void> {
     assert.equal(finalMember!.status, "cancelled", "a concurrent cancellation must not be overwritten by a series move");
     assert.ok([date, movedDate].includes(finalMember!.date), "a series member must end in one complete schedule state");
     console.log("Appointment concurrency regression passed.");
+
+    // -------------------------------------------------------------------------
+    // New test: capacity-1 resource concurrency
+    // -------------------------------------------------------------------------
+    const [resource1] = await db.insert(salonResourcesTable).values({
+      salonId: salon!.id,
+      name: `Kabina 1 ${suffix}`,
+      type: "room",
+      capacity: 1,
+    }).returning();
+
+    // Two transactions race to allocate the same capacity-1 resource.
+    const bookWithResource = async (startTime: string, endTime: string) => db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon!.id, [{ date, resourceId: resource1!.id }]);
+      // Count already-allocated units in the window.
+      const [row] = await tx.select({
+        usedQty: count(appointmentResourceAllocationsTable.id),
+      }).from(appointmentResourceAllocationsTable)
+        .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+        .where(and(
+          eq(appointmentResourceAllocationsTable.resourceId, resource1!.id),
+          eq(appointmentsTable.date, date),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        ));
+      // capacity is 1, quantity required is 1
+      if ((row?.usedQty ?? 0) >= 1) return false;
+      await pause(40);
+      const [appt] = await tx.insert(appointmentsTable).values({
+        salonId: salon!.id,
+        employeeId: employee!.id,
+        serviceId: service!.id,
+        date,
+        startTime,
+        endTime,
+        durationMinutes: 60,
+        price: 1000,
+        status: "confirmed",
+      }).returning();
+      await tx.insert(appointmentResourceAllocationsTable).values({
+        appointmentId: appt!.id,
+        resourceId: resource1!.id,
+        quantity: 1,
+      });
+      return true;
+    });
+
+    const resourceCreated = await Promise.all([
+      bookWithResource("14:00", "15:00"),
+      bookWithResource("14:00", "15:00"),
+    ]);
+    assert.equal(
+      resourceCreated.filter(Boolean).length, 1,
+      "capacity-1 resource: only one overlapping booking may succeed",
+    );
+
+    // -------------------------------------------------------------------------
+    // New test: capacity-N resource allows N concurrent bookings
+    // -------------------------------------------------------------------------
+    const [resourceN] = await db.insert(salonResourcesTable).values({
+      salonId: salon!.id,
+      name: `Kabina N ${suffix}`,
+      type: "room",
+      capacity: 2,
+    }).returning();
+
+    const bookWithResourceN = async (startTime: string, endTime: string) => db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon!.id, [{ date, resourceId: resourceN!.id }]);
+      const [row] = await tx.select({
+        usedQty: count(appointmentResourceAllocationsTable.id),
+      }).from(appointmentResourceAllocationsTable)
+        .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+        .where(and(
+          eq(appointmentResourceAllocationsTable.resourceId, resourceN!.id),
+          eq(appointmentsTable.date, date),
+          inArray(appointmentsTable.status, ["pending", "confirmed"]),
+        ));
+      if ((row?.usedQty ?? 0) >= 2) return false;
+      await pause(20);
+      const [appt] = await tx.insert(appointmentsTable).values({
+        salonId: salon!.id,
+        employeeId: employee!.id,
+        serviceId: service!.id,
+        date,
+        startTime,
+        endTime,
+        durationMinutes: 60,
+        price: 1000,
+        status: "confirmed",
+      }).returning();
+      await tx.insert(appointmentResourceAllocationsTable).values({
+        appointmentId: appt!.id,
+        resourceId: resourceN!.id,
+        quantity: 1,
+      });
+      return true;
+    });
+
+    // Two bookings for same slot: both should succeed (capacity 2).
+    const nCreated = await Promise.all([
+      bookWithResourceN("16:00", "17:00"),
+      bookWithResourceN("16:00", "17:00"),
+    ]);
+    assert.equal(
+      nCreated.filter(Boolean).length, 2,
+      "capacity-2 resource: two concurrent overlapping bookings must both succeed",
+    );
+
+    // A third booking for same slot must fail.
+    const thirdCreated = await bookWithResourceN("16:00", "17:00");
+    assert.equal(thirdCreated, false, "capacity-2 resource: a third overlapping booking must be rejected");
+
+    // -------------------------------------------------------------------------
+    // New test: independent resources do not block each other
+    // -------------------------------------------------------------------------
+    const [resourceA, resourceB] = await db.insert(salonResourcesTable).values([
+      { salonId: salon!.id, name: `Kabina A ${suffix}`, type: "room", capacity: 1 },
+      { salonId: salon!.id, name: `Kabina B ${suffix}`, type: "room", capacity: 1 },
+    ]).returning();
+
+    const bookResourceA = db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon!.id, [{ date: movedDate, resourceId: resourceA!.id }]);
+      await pause(30);
+      const [appt] = await tx.insert(appointmentsTable).values({
+        salonId: salon!.id, employeeId: employee!.id, serviceId: service!.id,
+        date: movedDate, startTime: "09:00", endTime: "10:00", durationMinutes: 60, price: 1000, status: "confirmed",
+      }).returning();
+      await tx.insert(appointmentResourceAllocationsTable).values({ appointmentId: appt!.id, resourceId: resourceA!.id, quantity: 1 });
+      return true;
+    });
+    const bookResourceB = db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon!.id, [{ date: movedDate, resourceId: resourceB!.id }]);
+      await pause(30);
+      const [appt] = await tx.insert(appointmentsTable).values({
+        salonId: salon!.id, employeeId: employee!.id, serviceId: service!.id,
+        date: movedDate, startTime: "09:00", endTime: "10:00", durationMinutes: 60, price: 1000, status: "confirmed",
+      }).returning();
+      await tx.insert(appointmentResourceAllocationsTable).values({ appointmentId: appt!.id, resourceId: resourceB!.id, quantity: 1 });
+      return true;
+    });
+
+    const [resultA, resultB] = await Promise.all([bookResourceA, bookResourceB]);
+    assert.equal(resultA, true, "independent resource A booking must succeed");
+    assert.equal(resultB, true, "independent resource B booking must succeed without blocking A");
+
+    console.log("Resource capacity concurrency tests passed.");
   } finally {
     await db.delete(salonsTable).where(eq(salonsTable.id, salon!.id));
   }

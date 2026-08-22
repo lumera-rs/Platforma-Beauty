@@ -33,6 +33,7 @@ const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
 const CustomerDashboard = lazy(() => import('./pages/customer-dashboard'));
 const OwnerDashboard = lazy(() => import('./pages/owner/dashboard'));
+const OwnerResources = lazy(() => import('./pages/owner/resources'));
 const OwnerSalonProfile = lazy(() => import('./pages/owner/profile'));
 const OwnerServices = lazy(() => import('./pages/owner/services'));
 const OwnerShop = lazy(() => import('./pages/owner/shop'));
@@ -217,6 +218,7 @@ function Router() {
 
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
+        <Route path="/vlasnik/resursi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerResources /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
         <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
         <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
