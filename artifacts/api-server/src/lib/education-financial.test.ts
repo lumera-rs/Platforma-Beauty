@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { type AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   courseEnrollmentsTable,
   courseSessionsTable,
@@ -83,14 +83,34 @@ async function withQuarterEnd<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+async function waitForAdvisoryLockWaiters(lockKey: string, expectedWaiters: number): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const result = await db.execute(sql`
+      select count(*)::int as waiters
+      from pg_locks
+      where locktype = 'advisory'
+        and objid = hashtext(${lockKey})
+        and not granted
+    `);
+    const waiters = Number((result.rows[0] as { waiters?: number | string } | undefined)?.waiters ?? 0);
+    if (waiters >= expectedWaiters) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Expected ${expectedWaiters} requests to contend for the education financial lock.`);
+}
+
 async function run(): Promise<void> {
   await ensureDemoData();
 
   let server: ReturnType<typeof app.listen> | undefined;
   let centerId: string | undefined;
+  const raceCenterIds: string[] = [];
   const courseIds: string[] = [];
   const enrollmentIds: string[] = [];
   const createdUserIds: string[] = [];
+  let releaseRaceLock: (() => void) | undefined;
+  let raceLockHolder: Promise<void> | undefined;
 
   try {
     const fixturePasswordHash = await hashPassword(password);
@@ -160,6 +180,28 @@ async function run(): Promise<void> {
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
+    const [payoutRaceCenter] = await db.insert(educationCentersTable).values([
+      {
+        ownerId: centerOwner.id,
+        name: `Payout race center ${suffix}`,
+        city: "Beograd",
+        description: "Izolovani centar za proveru konkurentne isplate.",
+        imageUrl: "/test-education-finance.jpg",
+        verificationStatus: "verified",
+        verifiedAt: new Date(),
+        verifiedByUserId: admin.id,
+      },
+    ]).returning();
+    assert.ok(payoutRaceCenter);
+    raceCenterIds.push(payoutRaceCenter.id);
+    await db.insert(educationCenterSubscriptionsTable).values({
+      centerId: payoutRaceCenter.id,
+      planId: plan.id,
+      status: "active",
+      dueAmount: plan.price,
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
     const [onlineCourse, liveCourse, refundCourse, rejectCourse] = await db.insert(coursesTable).values([
       {
         centerId: center.id,
@@ -218,6 +260,37 @@ async function run(): Promise<void> {
       assert.ok(course);
       courseIds.push(course.id);
     }
+    const [payoutRaceCourse, disputeRaceCourse] = await db.insert(coursesTable).values([
+      {
+        centerId: payoutRaceCenter.id,
+        title: `Payout race course ${suffix}`,
+        description: "Kurs za proveru konkurentne isplate i spora.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 15000,
+        duration: "2 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+      {
+        centerId: payoutRaceCenter.id,
+        title: `Dispute race course ${suffix}`,
+        description: "Kurs za proveru konkurentnog spora i isplate.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 16000,
+        duration: "2 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+    ]).returning();
+    assert.ok(payoutRaceCourse);
+    assert.ok(disputeRaceCourse);
+    courseIds.push(payoutRaceCourse.id, disputeRaceCourse.id);
 
     const now = Date.now();
     const pastSessionEnd = new Date(now - 2 * 24 * 60 * 60 * 1000);
@@ -643,8 +716,94 @@ async function run(): Promise<void> {
     ));
     assert.equal(replayLedger.length, allPayoutLedger.length, "Reserve replay must not duplicate financial entries.");
 
-    console.log("Education financial release, dispute, payout, and authorization regression passed.");
+    const payoutRaceEnrollmentId = await enrollAndSettle(payoutRaceCourse.id, `payout-race-${suffix}`);
+    const disputeRaceEnrollmentId = await enrollAndSettle(disputeRaceCourse.id, `dispute-race-${suffix}`);
+    const [payoutRaceEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, payoutRaceEnrollmentId));
+    const [disputeRaceEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, disputeRaceEnrollmentId));
+    assert.ok(payoutRaceEscrow);
+    assert.ok(disputeRaceEscrow);
+    await db.update(educationEscrowsTable).set({
+      status: "ready_for_payout",
+      releaseAt: sql`now() - interval '1 minute'`,
+    }).where(eq(educationEscrowsTable.id, payoutRaceEscrow.id));
+    await db.update(educationEscrowsTable).set({
+      status: "held",
+      releaseAt: sql`now() + interval '1 day'`,
+    }).where(eq(educationEscrowsTable.id, disputeRaceEscrow.id));
+
+    const raceLockKey = `education-center:${payoutRaceCenter.id}`;
+    let raceLockAcquired!: () => void;
+    const raceLockAcquiredPromise = new Promise<void>((resolve) => { raceLockAcquired = resolve; });
+    const raceLockReleasedPromise = new Promise<void>((resolve) => { releaseRaceLock = resolve; });
+    raceLockHolder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${raceLockKey}))`);
+      raceLockAcquired();
+      await raceLockReleasedPromise;
+    });
+    await raceLockAcquiredPromise;
+
+    const disputeRaceRequest = request(baseUrl, `/education/purchases/${disputeRaceEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: buyerCookie,
+      body: { reason: "Konkurentni payout i dispute", details: "Provera redosleda operacija na granici roka." },
+    });
+    await waitForAdvisoryLockWaiters(raceLockKey, 1);
+    const payoutRaceRequest = request(baseUrl, "/admin/education/payouts", {
+      method: "POST",
+      cookie: adminCookie,
+      body: { centerId: payoutRaceCenter.id, reference: `race-payout-${suffix}` },
+    });
+    await waitForAdvisoryLockWaiters(raceLockKey, 2);
+    const releaseContendedLock = releaseRaceLock;
+    assert.ok(releaseContendedLock, "The test lock must be releasable after both requests are queued.");
+    releaseContendedLock();
+    await raceLockHolder;
+    raceLockHolder = undefined;
+    releaseRaceLock = undefined;
+
+    const [disputeRaceResponse, payoutRaceResponse] = await Promise.all([disputeRaceRequest, payoutRaceRequest]);
+    assert.equal(disputeRaceResponse.status, 201, "The dispute queued first at the financial lock must win the concurrent request race.");
+    assert.equal(payoutRaceResponse.status, 409, "The payout queued behind the dispute must fail after the center becomes disputed.");
+    assert.match((await json<{ error: string }>(payoutRaceResponse)).error, /otvoren spor/, "The losing payout must observe the concurrent dispute state.");
+    const [payoutResultEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.id, payoutRaceEscrow.id));
+    const [disputeResultEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.id, disputeRaceEscrow.id));
+    assert.equal(payoutResultEscrow?.status, "ready_for_payout", "The blocked payout must leave its escrow payable and unpaid.");
+    assert.equal(payoutResultEscrow?.netPaidAt, null);
+    assert.equal(payoutResultEscrow?.reservePaidAt, null);
+    assert.equal(disputeResultEscrow?.status, "frozen", "The winning dispute must freeze only its own escrow.");
+    assert.equal(disputeResultEscrow?.netPaidAt, null);
+    assert.equal(disputeResultEscrow?.reservePaidAt, null);
+    const racePayoutRows = await db.select().from(educationPayoutsTable)
+      .where(eq(educationPayoutsTable.centerId, payoutRaceCenter.id));
+    const racePayoutLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, payoutRaceCenter.id),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    const raceRefundLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, payoutRaceCenter.id),
+      eq(educationLedgerEntriesTable.type, "refund"),
+    ));
+    const raceDisputes = await db.select().from(educationDisputesTable)
+      .where(eq(educationDisputesTable.enrollmentId, disputeRaceEnrollmentId));
+    const raceEvents = await db.select().from(educationFinancialEventsTable)
+      .where(eq(educationFinancialEventsTable.escrowId, disputeRaceEscrow.id));
+    assert.equal(racePayoutRows.length, 0, "The losing payout must not create a payout record.");
+    assert.equal(racePayoutLedger.length, 0, "The losing payout must not create a payout ledger entry.");
+    assert.equal(raceRefundLedger.length, 0, "The race must not create a refund ledger entry.");
+    assert.equal(raceDisputes.length, 1, "The winning dispute must create exactly one dispute.");
+    assert.equal(raceDisputes[0]?.status, "open");
+    assert.equal(raceEvents.filter((event) => event.eventType === "dispute_opened").length, 1, "The winning dispute must create exactly one audit event.");
+    assert.equal(raceEvents.find((event) => event.eventType === "dispute_opened")?.previousStatus, "held");
+    assert.equal(raceEvents.find((event) => event.eventType === "dispute_opened")?.nextStatus, "frozen");
+
+    console.log("Education financial release, dispute, payout, and concurrent-race regression passed.");
   } finally {
+    releaseRaceLock?.();
+    await raceLockHolder?.catch(() => undefined);
     if (server) {
       await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     }
@@ -660,6 +819,10 @@ async function run(): Promise<void> {
     if (centerId) {
       await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
       await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    }
+    for (const raceCenterId of raceCenterIds) {
+      await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, raceCenterId));
+      await db.delete(educationCentersTable).where(eq(educationCentersTable.id, raceCenterId));
     }
     if (createdUserIds.length) {
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
