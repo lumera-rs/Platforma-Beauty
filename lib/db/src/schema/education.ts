@@ -165,6 +165,7 @@ export const educationMediaUploadsTable = pgTable("education_media_uploads", {
 }, (table) => [
   uniqueIndex("education_media_uploads_object_path_unique").on(table.objectPath),
   index("education_media_uploads_course_expires_idx").on(table.courseId, table.expiresAt),
+  index("education_media_uploads_cleanup_idx").on(table.expiresAt, table.attachedAt),
 ]);
 
 export const courseReviewsTable = pgTable("course_reviews", {

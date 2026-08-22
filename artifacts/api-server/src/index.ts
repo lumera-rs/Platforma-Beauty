@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
+import { runEducationGalleryCleanup } from "./routes/marketplace";
 
 const rawPort = process.env["PORT"];
 
@@ -40,3 +41,13 @@ const educationMaintenanceInterval = setInterval(() => {
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
 void runScheduledEducationSessionMaintenance();
+
+const educationGalleryCleanupInterval = setInterval(() => {
+  void runEducationGalleryCleanup().catch((error) => {
+    logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
+  });
+}, 5 * 60_000);
+educationGalleryCleanupInterval.unref();
+void runEducationGalleryCleanup().catch((error) => {
+  logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
+});

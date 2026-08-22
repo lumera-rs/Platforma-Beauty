@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -328,6 +328,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
+import { logger } from "../lib/logger";
 import { lockAppointmentResources } from "../lib/appointment-locks";
 import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
 
@@ -1470,7 +1471,7 @@ function hasExpectedImageSignature(contentType: string, bytes: Buffer): boolean 
   return false;
 }
 
-async function signPrivateObject(rawPath: string, method: "GET" | "PUT", ttlSeconds: number): Promise<string> {
+async function signPrivateObject(rawPath: string, method: "DELETE" | "GET" | "PUT", ttlSeconds: number): Promise<string> {
   const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
   const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
     method: "POST",
@@ -1487,6 +1488,24 @@ async function signPrivateObject(rawPath: string, method: "GET" | "PUT", ttlSeco
   const data = await response.json() as { signed_url?: string };
   if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
   return data.signed_url;
+}
+
+async function deletePrivateObject(storagePath: string): Promise<void> {
+  const deleteUrl = await signPrivateObject(privateObjectPathFromStoragePath(storagePath), "DELETE", 60);
+  const response = await fetch(deleteUrl, {
+    method: "DELETE",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (response.ok || response.status === 404) return;
+  throw new Error(`App Storage nije obrisao objekat (${response.status}).`);
+}
+
+function managedEducationMediaObjectPath(media: typeof educationMediaTable.$inferSelect): string {
+  return educationMediaStoragePath(media.centerId!, media.courseId!, media.id);
+}
+
+function isManagedEducationMediaObject(media: typeof educationMediaTable.$inferSelect): boolean {
+  return Boolean(media.courseId && media.centerId && media.objectPath === managedEducationMediaObjectPath(media));
 }
 
 async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect): Promise<Buffer | null> {
@@ -1518,6 +1537,94 @@ async function promoteEducationMediaUpload(upload: typeof educationMediaUploadsT
 
 async function lockEducationCourseGallery(tx: any, courseId: string) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-course-gallery:${courseId}`}))`);
+}
+
+async function lockEducationMediaObject(tx: any, objectPath: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-media-object:${objectPath}`}))`);
+}
+
+type EducationGalleryCleanupResult = {
+  scanned: number;
+  deletedTickets: number;
+  deletedStagingObjects: number;
+  failed: number;
+};
+
+async function cleanupEducationMediaUpload(
+  candidate: typeof educationMediaUploadsTable.$inferSelect,
+  now: Date,
+): Promise<"deleted" | "skipped"> {
+  return db.transaction(async (tx) => {
+    // Keep the same lock order as attach/delete operations. This makes an
+    // expired ticket unable to win a race with an in-flight attachment.
+    await lockEducationCourseGallery(tx, candidate.courseId);
+    const [upload] = await tx.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, candidate.id))
+      .for("update")
+      .limit(1);
+    if (!upload) return "skipped";
+
+    const [media] = await tx.select({ id: educationMediaTable.id })
+      .from(educationMediaTable)
+      .where(eq(educationMediaTable.id, upload.id))
+      .limit(1);
+    const expiredUnattached = !upload.attachedAt && upload.expiresAt < now;
+    const attached = Boolean(upload.attachedAt);
+    if ((!expiredUnattached && !attached) || (!upload.attachedAt && media)) return "skipped";
+
+    const expectedStagingPath = educationMediaStagingStoragePath(upload.centerId, upload.courseId, upload.id);
+    // Never let a database row with an unexpected path turn this maintenance
+    // job into a general-purpose object deletion mechanism.
+    if (upload.objectPath !== expectedStagingPath) {
+      throw new Error(`Neispravna staging putanja za upload ${upload.id}.`);
+    }
+    if (expiredUnattached) {
+      const finalStoragePath = educationMediaStoragePath(upload.centerId, upload.courseId, upload.id);
+      await lockEducationMediaObject(tx, finalStoragePath);
+      const finalReferences = await tx.select({ id: educationMediaTable.id })
+        .from(educationMediaTable)
+        .where(eq(educationMediaTable.objectPath, finalStoragePath))
+        .limit(1);
+      if (!finalReferences.length) {
+        // Promotion happens before the attachment row is committed. If that
+        // transaction ever rolls back, the expired ticket is the durable
+        // claim that makes this otherwise-unreachable final key safe to retry.
+        await deletePrivateObject(finalStoragePath);
+      }
+    }
+    await deletePrivateObject(upload.objectPath);
+    await tx.delete(educationMediaUploadsTable).where(eq(educationMediaUploadsTable.id, upload.id));
+    return "deleted";
+  });
+}
+
+export async function runEducationGalleryCleanup(): Promise<EducationGalleryCleanupResult> {
+  const now = new Date();
+  const candidates = await db.select().from(educationMediaUploadsTable)
+    .where(or(
+      isNotNull(educationMediaUploadsTable.attachedAt),
+      and(isNull(educationMediaUploadsTable.attachedAt), lt(educationMediaUploadsTable.expiresAt, now)),
+    ))
+    .orderBy(asc(educationMediaUploadsTable.createdAt))
+    .limit(100);
+  const result: EducationGalleryCleanupResult = {
+    scanned: candidates.length,
+    deletedTickets: 0,
+    deletedStagingObjects: 0,
+    failed: 0,
+  };
+  for (const candidate of candidates) {
+    try {
+      if (await cleanupEducationMediaUpload(candidate, now) === "deleted") {
+        result.deletedTickets += 1;
+        result.deletedStagingObjects += 1;
+      }
+    } catch (error) {
+      result.failed += 1;
+      logger.warn({ err: error, uploadId: candidate.id }, "Education gallery cleanup failed");
+    }
+  }
+  return result;
 }
 
 async function courseDayProgram(courseId: string) {
@@ -2484,6 +2591,17 @@ router.post("/internal/jobs/rescheduled-confirmation-retries", async (req, res):
   if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
   const result = await runRescheduledConfirmationRetries();
   res.json(result);
+});
+
+router.post("/internal/jobs/education-gallery-cleanup", async (req, res): Promise<void> => {
+  const expected = process.env["EDUCATION_GALLERY_CLEANUP_JOB_SECRET"];
+  if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }
+  try {
+    res.json(await runEducationGalleryCleanup());
+  } catch (error) {
+    req.log.error({ err: error }, "Education gallery cleanup job failed");
+    res.status(502).json({ error: "Čišćenje galerije nije uspelo. Pokušajte ponovo." });
+  }
 });
 
 router.post("/auth/business-register", async (req, res): Promise<void> => {
@@ -5953,6 +6071,7 @@ router.post("/education/courses/:courseId/gallery", async (req, res): Promise<vo
       const current = await tx.select({ id: educationMediaTable.id }).from(educationMediaTable)
         .where(eq(educationMediaTable.courseId, course.id));
       if (current.length >= 20) return { kind: "full" as const };
+      await lockEducationMediaObject(tx, educationMediaStoragePath(lockedUpload.centerId, lockedUpload.courseId, lockedUpload.id));
       const bytes = await readVerifiedEducationMediaUpload(lockedUpload);
       if (!bytes) return { kind: "invalid" as const };
       const finalStoragePath = await promoteEducationMediaUpload(lockedUpload, bytes);
@@ -6036,6 +6155,22 @@ router.delete("/education/courses/:courseId/gallery/:mediaId", async (req, res):
   if (!course) return;
   const deleted = await db.transaction(async (tx) => {
     await lockEducationCourseGallery(tx, course.id);
+    const [existing] = await tx.select().from(educationMediaTable).where(and(
+      eq(educationMediaTable.id, mediaId),
+      eq(educationMediaTable.courseId, course.id),
+    )).limit(1);
+    if (!existing) return false;
+    await lockEducationMediaObject(tx, existing.objectPath);
+    const references = await tx.select({ id: educationMediaTable.id }).from(educationMediaTable).where(and(
+      eq(educationMediaTable.objectPath, existing.objectPath),
+      ne(educationMediaTable.id, existing.id),
+    )).limit(1);
+    if (!references.length && isManagedEducationMediaObject(existing)) {
+      // Keep the row and object in place if storage is temporarily
+      // unavailable. A retry can safely treat a prior successful delete as
+      // success because deletePrivateObject accepts a 404.
+      await deletePrivateObject(existing.objectPath);
+    }
     const [removed] = await tx.delete(educationMediaTable).where(and(
       eq(educationMediaTable.id, mediaId),
       eq(educationMediaTable.courseId, course.id),
