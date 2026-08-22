@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetOptimizedImageFormat = typeof GetOptimizedImageFormat[keyof typeof GetOptimizedImageFormat];
+export type GetMediaAssetFormat = typeof GetMediaAssetFormat[keyof typeof GetMediaAssetFormat];
 
 
-export const GetOptimizedImageFormat = {
+export const GetMediaAssetFormat = {
   avif: 'avif',
   webp: 'webp',
   fallback: 'fallback',
+  original: 'original',
 } as const;

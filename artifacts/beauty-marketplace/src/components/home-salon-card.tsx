@@ -11,11 +11,11 @@ export function HomeSalonCard({ salon, className }: { salon: SalonCard; classNam
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
         <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
-          alt={salon.name}
-          width={640}
-          height={480}
+          alt={`${salon.name} — salon lepote`}
+          width={800}
+          height={600}
+          responsiveSizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 320px"
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 bg-muted"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         
@@ -65,11 +65,11 @@ export function HomeDiscountSalonCard({ salon, className }: { salon: DiscountedS
       <div className="relative mb-2 aspect-[4/3] w-full overflow-hidden rounded-2xl">
         <OptimizedImage
           src={salon.imageUrl || "/default-salon.jpg"}
-          alt={salon.name}
-          width={640}
-          height={480}
+          alt={`${salon.name} — salon lepote`}
+          width={800}
+          height={600}
+          responsiveSizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 320px"
           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 bg-muted"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         

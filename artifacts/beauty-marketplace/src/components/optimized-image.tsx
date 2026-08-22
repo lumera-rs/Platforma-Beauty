@@ -1,82 +1,31 @@
-/**
- * OptimizedImage – reusable image renderer for LUMERA.
- *
- * Contract:
- *  - Managed URLs  → /api/media/images/{uuid}
- *    Emits a <picture> with AVIF + WebP + fallback <source> using
- *    query params:  size=thumbnail|medium|large  &  format=avif|webp|fallback
- *    srcSet widths: 320w / 960w / 1920w
- *
- *  - All other URLs (legacy / external) → rendered as-is, no invented srcset.
- *
- * Every <img> has:
- *  - explicit numeric width & height (default 800×600, overrideable)
- *  - decoding="async"
- *  - loading="lazy" by default; pass eager={true} + fetchPriority="high" for
- *    genuinely above-the-fold primary images.
- */
+import type { ImgHTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
 
-import { ImgHTMLAttributes } from "react";
-
-// ── URL detection ─────────────────────────────────────────────────────────────
-
-const RESPONSIVE_MANAGED_RE = /^\/api\/(?:media\/images|education\/media)\/([0-9a-f-]{36})\/?$/i;
-
-function isManagedUrl(url: string): boolean {
-  return RESPONSIVE_MANAGED_RE.test(url.split("?")[0]);
-}
-
-// ── srcSet helpers ────────────────────────────────────────────────────────────
-
-type ImageSize = "thumbnail" | "medium" | "large";
-type ImageFormat = "avif" | "webp" | "fallback";
-
-interface SrcEntry {
-  size: ImageSize;
-  width: 320 | 960 | 1920;
-}
-
-const SIZES: SrcEntry[] = [
-  { size: "thumbnail", width: 320 },
-  { size: "medium",    width: 960 },
-  { size: "large",     width: 1920 },
-];
-
-function buildSrc(base: string, size: ImageSize, format: ImageFormat): string {
-  return `${base}?size=${size}&format=${format}`;
-}
-
-function buildSrcSet(base: string, format: ImageFormat): string {
-  return SIZES.map(({ size, width }) => `${buildSrc(base, size, format)} ${width}w`).join(", ");
-}
-
-// ── Component ─────────────────────────────────────────────────────────────────
-
-export interface OptimizedImageProps
-  extends Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "srcSet" | "loading" | "decoding"> {
-  /** Managed generic and Education media URLs get full srcset treatment. */
+type OptimizedImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "width" | "height" | "loading" | "decoding"> & {
   src: string;
-  /** Alt text — always required. */
-  alt: string;
-  /**
-   * Explicit pixel width for the rendered <img>.
-   * Kept as a number so the browser can calculate aspect ratio before layout.
-   * @default 800
-   */
   width?: number;
-  /**
-   * Explicit pixel height for the rendered <img>.
-   * @default 600
-   */
   height?: number;
-  /**
-   * Pass true only for genuinely above-the-fold primary images (e.g. hero).
-   * Disables lazy loading and sets fetchpriority="high".
-   * @default false
-   */
+  priority?: boolean;
   eager?: boolean;
-  /** Hint for the browser's sizes attribute on the <source> elements. */
-  sizes?: string;
+  responsiveSizes?: string;
+  preferredSize?: "thumbnail" | "medium" | "large" | "original";
+};
+
+function isManagedMediaUrl(src: string) {
+  return /^\/api\/media\/(?:images\/)?[0-9a-f-]{36}(?:\?|$)/i.test(src);
+}
+
+export function optimizedMediaUrl(
+  src: string,
+  size: "thumbnail" | "medium" | "large" | "original",
+  format?: "avif" | "webp" | "fallback" | "original",
+) {
+  if (!isManagedMediaUrl(src)) return src;
+  const [path, query = ""] = src.split("?", 2);
+  const params = new URLSearchParams(query);
+  params.set("size", size);
+  if (format) params.set("format", format);
+  return `${path}?${params.toString()}`;
 }
 
 export function OptimizedImage({
@@ -84,67 +33,60 @@ export function OptimizedImage({
   alt,
   width = 800,
   height = 600,
+  priority = false,
   eager = false,
-  sizes,
+  responsiveSizes,
+  preferredSize = "large",
   className,
-  style,
-  ...rest
+  sizes,
+  ...imgProps
 }: OptimizedImageProps) {
-  const loading: "eager" | "lazy" = eager ? "eager" : "lazy";
-
-  if (isManagedUrl(src)) {
-    // Strip any existing query string so we control all params
-    const base = src.split("?")[0];
-
-    const commonImgProps = {
-      alt,
-      width,
-      height,
-      decoding: "async" as const,
-      loading,
-      ...(eager ? { fetchPriority: "high" as const } : {}),
-      className,
-      style,
-      ...rest,
-    };
-
-    return (
-      <picture>
-        <source
-          type="image/avif"
-          srcSet={buildSrcSet(base, "avif")}
-          {...(sizes ? { sizes } : {})}
-        />
-        <source
-          type="image/webp"
-          srcSet={buildSrcSet(base, "webp")}
-          {...(sizes ? { sizes } : {})}
-        />
-        <source
-          srcSet={buildSrcSet(base, "fallback")}
-          {...(sizes ? { sizes } : {})}
-        />
-        <img
-          src={buildSrc(base, "large", "fallback")}
-          {...commonImgProps}
-        />
-      </picture>
-    );
-  }
-
-  // Legacy / external URL — render as-is
-  return (
+  const highPriority = priority || eager;
+  const sourceSizes = responsiveSizes ?? sizes;
+  const image = (
     <img
-      src={src}
+      {...imgProps}
+      src={optimizedMediaUrl(src, preferredSize)}
       alt={alt}
       width={width}
       height={height}
+      loading={highPriority ? "eager" : "lazy"}
       decoding="async"
-      loading={loading}
-      {...(eager ? { fetchPriority: "high" as const } : {})}
-      className={className}
-      style={style}
+      fetchPriority={highPriority ? "high" : "auto"}
+      sizes={sourceSizes}
+      className={cn(className)}
+    />
+  );
+
+  if (!isManagedMediaUrl(src)) return image;
+  const compatibilityWidths = /^\/api\/media\/images\//i.test(src)
+    ? { thumbnail: 320, medium: 960, large: 1920 }
+    : { thumbnail: 320, medium: 800, large: 1600 };
+  const srcSet = (format: "avif" | "webp") => [
+    `${optimizedMediaUrl(src, "thumbnail", format)} ${compatibilityWidths.thumbnail}w`,
+    `${optimizedMediaUrl(src, "medium", format)} ${compatibilityWidths.medium}w`,
+    `${optimizedMediaUrl(src, "large", format)} ${compatibilityWidths.large}w`,
+  ].join(", ");
+
+  return (
+    <picture>
+      <source type="image/avif" srcSet={srcSet("avif")} sizes={sourceSizes} />
+      <source type="image/webp" srcSet={srcSet("webp")} sizes={sourceSizes} />
+      {image}
+    </picture>
+  );
+}
+
+export function AvatarImage(props: Omit<OptimizedImageProps, "width" | "height" | "preferredSize"> & { size?: number }) {
+  const { size = 96, className, ...rest } = props;
+  return (
+    <OptimizedImage
       {...rest}
+      width={size}
+      height={size}
+      preferredSize="thumbnail"
+      responsiveSizes={`${size}px`}
+      className={cn("rounded-full object-cover", className)}
     />
   );
 }

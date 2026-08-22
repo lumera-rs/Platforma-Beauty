@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { AdminLayout } from "./layout";
-import { OptimizedImage } from "@/components/optimized-image";
 import {
   useAdminListProducts,
   useAdminCreateProduct,
@@ -39,7 +38,8 @@ import {
   ArrowUpDown, X, ImagePlus, Star, Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { uploadOptimizedImage } from "@/lib/image-upload";
+import { OptimizedImage } from "@/components/optimized-image";
+import { uploadOptimizedImage } from "@/lib/media-upload";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -117,8 +117,7 @@ function ProductFormDialog({
       : emptyForm
   );
   const [weightUnit, setWeightUnit] = useState<"g" | "kg">("g");
-  const [imageInput, setImageInput] = useState("");
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryParent, setNewCategoryParent] = useState<string>("");
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -146,31 +145,26 @@ function ProductFormDialog({
   const isPending = createProduct.isPending || updateProduct.isPending;
   const variantStockTotal = (form.variants ?? []).reduce((sum, variant) => sum + (variant.stock ?? 0), 0);
 
-  const addImage = () => {
-    const url = imageInput.trim();
-    if (!url) return;
-    setForm((f) => ({
-      ...f,
-      images: [...(f.images ?? []), url],
-      imageUrl: f.imageUrl || url,
-    }));
-    setImageInput("");
-  };
-
-  const uploadImage = async (file: File) => {
-    setUploadingImage(true);
+  const uploadImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, 12 - (form.images?.length ?? 0)));
+    event.target.value = "";
+    if (!files.length) return;
+    setUploadingImages(true);
     try {
-      const uploaded = await uploadOptimizedImage(file);
-      setForm((current) => ({
-        ...current,
-        images: [...(current.images ?? []), uploaded.imageUrl],
-        imageUrl: current.imageUrl || uploaded.imageUrl,
-      }));
-      toast.success("Slika je optimizovana", { description: "App Storage je sačuvao thumbnail, medium i large varijante." });
+      const uploaded: string[] = [];
+      for (const file of files) {
+        const asset = await uploadOptimizedImage(file, "product", editing?.id);
+        uploaded.push(asset.imageUrl);
+      }
+      setForm((current) => {
+        const images = [...(current.images ?? []), ...uploaded];
+        return { ...current, images, imageUrl: current.imageUrl || images[0] || "" };
+      });
+      toast.success(files.length === 1 ? "Fotografija proizvoda je obrađena." : `${files.length} fotografije proizvoda su obrađene.`);
     } catch (error) {
-      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte sa drugom slikom." });
+      toast.error(error instanceof Error ? error.message : "Upload fotografija nije uspeo.");
     } finally {
-      setUploadingImage(false);
+      setUploadingImages(false);
     }
   };
 
@@ -484,35 +478,21 @@ function ProductFormDialog({
           {/* ── Slike ── */}
           <section className="space-y-4 border rounded-xl p-4">
             <h4 className="text-sm font-semibold text-foreground">Slike proizvoda</h4>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="button" variant="outline" asChild disabled={uploadingImage}>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+              <p className="text-sm text-muted-foreground">JPG, PNG, WEBP ili AVIF do 12 MB. Slike se automatski optimizuju.</p>
+              <Button asChild type="button" variant="secondary" disabled={uploadingImages || (form.images?.length ?? 0) >= 12}>
                 <label className="cursor-pointer">
-                  {uploadingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-                  {uploadingImage ? "Optimizovanje..." : "Otpremi fotografiju"}
-                  <input
-                    type="file"
-                    className="sr-only"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    disabled={uploadingImage}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      event.target.value = "";
-                      if (file) void uploadImage(file);
-                    }}
-                  />
+                  {uploadingImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                  Dodaj fotografije
+                  <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingImages || (form.images?.length ?? 0) >= 12} onChange={(event) => void uploadImages(event)} />
                 </label>
               </Button>
-              <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ili GIF · do 8 MB</span>
-            </div>
-            <div className="flex gap-2">
-              <Input value={imageInput} onChange={(e) => setImageInput(e.target.value)} placeholder="Legacy URL slike (opciono)" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addImage())} />
-              <Button type="button" variant="secondary" onClick={addImage}><ImagePlus className="w-4 h-4 mr-1" /> Dodaj</Button>
             </div>
             {(form.images ?? []).length > 0 && (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                 {(form.images ?? []).map((url, idx) => (
                   <div key={`${url}-${idx}`} className={`relative rounded-lg border-2 overflow-hidden group ${form.imageUrl === url ? "border-primary" : "border-transparent"}`}>
-                    <OptimizedImage src={url} alt="" width={160} height={160} className="aspect-square object-cover w-full" sizes="(max-width: 640px) 33vw, 20vw" />
+                     <OptimizedImage src={url} alt={`Fotografija proizvoda ${idx + 1}`} width={320} height={320} preferredSize="thumbnail" responsiveSizes="160px" className="aspect-square object-cover w-full" />
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1">
                       <button type="button" onClick={() => setMainImage(url)} className="text-[10px] text-white flex items-center gap-1 hover:underline">
                         <Star className="w-3 h-3" /> Glavna
@@ -856,7 +836,7 @@ export default function AdminProducts() {
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-3 min-w-[200px]">
-                          <OptimizedImage src={p.imageUrl} alt="" width={40} height={40} className="w-10 h-10 rounded-lg object-cover border shrink-0" />
+                          <img src={p.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" />
                           <div className="min-w-0">
                             <p className="font-medium line-clamp-1">{p.name}</p>
                             <p className="text-xs text-muted-foreground line-clamp-1">{p.brand ?? "—"}{p.variants?.length ? ` · ${p.variants.length} varijanti` : ""}</p>

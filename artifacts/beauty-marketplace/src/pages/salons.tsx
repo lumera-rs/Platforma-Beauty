@@ -1,8 +1,8 @@
 import { Layout } from "@/components/layout";
 import { useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
-import { OptimizedImage } from "@/components/optimized-image";
 import { Link, useSearch } from "wouter";
 import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
+import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -244,11 +244,11 @@ export default function Salons() {
                     <div className="relative w-full h-48 overflow-hidden bg-muted">
                       <OptimizedImage
                         src={salon.imageUrl || "https://images.unsplash.com/photo-1521590832167-7bfc17484d20?q=80&w=800&auto=format&fit=crop"}
-                        alt={salon.name}
-                        width={640}
+                        alt={`${salon.name} — salon lepote`}
+                        width={800}
                         height={384}
+                        responsiveSizes="(max-width: 1024px) calc(100vw - 2rem), (max-width: 1280px) calc(50vw - 2rem), 400px"
                         className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-700 ease-out"
-                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                       <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">

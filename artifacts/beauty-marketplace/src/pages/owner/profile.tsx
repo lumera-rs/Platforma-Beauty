@@ -8,12 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { OptimizedImage } from "@/components/optimized-image";
+import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
 import {
   getGetManagedSalonProfileQueryKey,
   useGetManagedSalonProfile,
   useUpdateManagedSalonProfile,
 } from "@workspace/api-client-react";
-import { uploadOptimizedImage } from "@/lib/image-upload";
 
 export default function OwnerSalonProfile() {
   const queryClient = useQueryClient();
@@ -27,7 +28,7 @@ export default function OwnerSalonProfile() {
   const [servesMen, setServesMen] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const [gallery, setGallery] = useState<string[]>([]);
-  const [uploadingImage, setUploadingImage] = useState<"cover" | "gallery" | null>(null);
+  const [uploading, setUploading] = useState<"profile" | "gallery" | null>(null);
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
@@ -38,6 +39,39 @@ export default function OwnerSalonProfile() {
     setImageUrl(salon?.imageUrl ?? "");
     setGallery(salon?.gallery ?? []);
   }, [salon]);
+
+  const uploadProfileImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploading("profile");
+    try {
+      const asset = await uploadOptimizedImage(file, "salon-profile", salon?.id);
+      setImageUrl(asset.imageUrl);
+      toast.success("Naslovna fotografija je obrađena i spremna za čuvanje.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload fotografije nije uspeo.");
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const uploadGalleryImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, 20 - gallery.length));
+    event.target.value = "";
+    if (!files.length) return;
+    setUploading("gallery");
+    try {
+      const assets: FinalizedMediaAsset[] = [];
+      for (const file of files) assets.push(await uploadOptimizedImage(file, "salon-gallery", salon?.id));
+      setGallery((current) => [...current, ...assets.map((asset) => asset.imageUrl)].slice(0, 20));
+      toast.success(files.length === 1 ? "Fotografija je dodata u galeriju." : `${files.length} fotografije su dodate u galeriju.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload galerije nije uspeo.");
+    } finally {
+      setUploading(null);
+    }
+  };
 
   const save = (event: React.FormEvent) => {
     event.preventDefault();
@@ -50,12 +84,12 @@ export default function OwnerSalonProfile() {
       {
         data: {
           videoUrl: nextVideoUrl || null,
-          imageUrl,
-          gallery,
           acceptsCards,
           instantBooking,
           homeServiceRadiusKm: Number(homeServiceRadiusKm),
           servesMen,
+          imageUrl,
+          gallery,
         },
       },
       {
@@ -66,20 +100,6 @@ export default function OwnerSalonProfile() {
         onError: () => toast.error("Podešavanja javnog profila nisu sačuvana."),
       },
     );
-  };
-
-  const uploadImage = async (file: File, target: "cover" | "gallery") => {
-    setUploadingImage(target);
-    try {
-      const uploaded = await uploadOptimizedImage(file);
-      if (target === "cover") setImageUrl(uploaded.imageUrl);
-      else setGallery((current) => [...current, uploaded.imageUrl].slice(0, 20));
-      toast.success(target === "cover" ? "Naslovna slika je optimizovana." : "Fotografija je dodata u galeriju.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Upload slike nije uspeo.");
-    } finally {
-      setUploadingImage(null);
-    }
   };
 
   const setting = (
@@ -107,19 +127,10 @@ export default function OwnerSalonProfile() {
       <div className="container mx-auto flex flex-col items-start gap-8 px-4 py-8 md:flex-row">
         <OwnerSidebar current="/vlasnik/profil" />
         <main className="w-full max-w-2xl space-y-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-primary">Javni profil</p>
-              <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
-              <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
-            </div>
-            {salon && (
-              <Button type="button" variant="outline" className="shrink-0" asChild>
-                <a href={`/saloni/${salon.slug}`} target="_blank" rel="noreferrer">
-                  Otvori javni profil <ExternalLink className="ml-2 h-4 w-4" />
-                </a>
-              </Button>
-            )}
+          <div>
+            <p className="text-sm font-medium text-primary">Javni profil</p>
+            <h1 className="mt-1 font-serif text-3xl font-bold">Predstavljanje i dostupnost</h1>
+            <p className="mt-2 text-muted-foreground">Podesite šta klijenti vide na profilu i po čemu mogu da pronađu vaš salon.</p>
           </div>
 
           {isLoading ? (
@@ -131,32 +142,52 @@ export default function OwnerSalonProfile() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><ImagePlus className="h-5 w-5 text-primary" />Fotografije salona</CardTitle>
-                  <CardDescription>Fotografije se čuvaju u App Storage-u i automatski dobijaju AVIF, WebP i fallback varijante.</CardDescription>
+                  <CardDescription>Fotografije se bezbedno čuvaju u App Storage-u i automatski dobijaju veličine za telefon, kartice i veliki prikaz.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Naslovna fotografija</p>
-                    <Button type="button" variant="outline" asChild disabled={uploadingImage !== null}>
-                      <label className="cursor-pointer">
-                        {uploadingImage === "cover" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-                        {uploadingImage === "cover" ? "Optimizovanje..." : "Otpremi naslovnu fotografiju"}
-                        <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadImage(file, "cover"); }} />
-                      </label>
-                    </Button>
-                    <Input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} aria-label="URL naslovne fotografije" placeholder="Legacy URL (opciono)" />
-                  </div>
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div><p className="text-sm font-medium">Galerija</p><p className="text-xs text-muted-foreground">{gallery.length}/20 fotografija</p></div>
-                      <Button type="button" variant="outline" asChild disabled={uploadingImage !== null || gallery.length >= 20}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">Naslovna fotografija</p>
+                        <p className="text-sm text-muted-foreground">Prikazuje se u pretrazi i na vrhu profila.</p>
+                      </div>
+                      <Button asChild type="button" variant="outline" disabled={uploading !== null}>
                         <label className="cursor-pointer">
-                          {uploadingImage === "gallery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-                          Dodaj u galeriju
-                          <input type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadImage(file, "gallery"); }} />
+                          {uploading === "profile" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                          Izaberi fotografiju
+                          <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => void uploadProfileImage(event)} disabled={uploading !== null} />
                         </label>
                       </Button>
                     </div>
-                    {gallery.length ? <div className="grid gap-2 sm:grid-cols-2">{gallery.map((url, index) => <div key={`${url}-${index}`} className="flex items-center gap-2 rounded-lg border p-2"><span className="min-w-0 flex-1 truncate text-xs">{url}</span><Button type="button" size="icon" variant="ghost" aria-label={`Ukloni fotografiju ${index + 1}`} onClick={() => setGallery((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 className="h-4 w-4 text-destructive" /></Button></div>)}</div> : <p className="text-sm text-muted-foreground">Galerija je prazna.</p>}
+                    {imageUrl ? <OptimizedImage src={imageUrl} alt={`Naslovna fotografija salona ${salon.name}`} width={1200} height={800} priority responsiveSizes="(max-width: 768px) 100vw, 640px" className="aspect-[3/2] w-full rounded-xl object-cover" /> : null}
+                  </div>
+
+                  <div className="space-y-3 border-t pt-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">Galerija ({gallery.length}/20)</p>
+                        <p className="text-sm text-muted-foreground">Dodajte prostor, radove i atmosferu salona.</p>
+                      </div>
+                      <Button asChild type="button" variant="outline" disabled={uploading !== null || gallery.length >= 20}>
+                        <label className="cursor-pointer">
+                          {uploading === "gallery" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                          Dodaj u galeriju
+                          <input className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => void uploadGalleryImages(event)} disabled={uploading !== null || gallery.length >= 20} />
+                        </label>
+                      </Button>
+                    </div>
+                    {gallery.length ? (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        {gallery.map((url, index) => (
+                          <div className="group relative overflow-hidden rounded-lg border" key={`${url}-${index}`}>
+                            <OptimizedImage src={url} alt={`Fotografija ${index + 1} salona ${salon.name}`} width={480} height={360} responsiveSizes="(max-width: 640px) 50vw, 210px" preferredSize="medium" className="aspect-[4/3] w-full object-cover" />
+                            <Button type="button" size="icon" variant="destructive" className="absolute right-2 top-2 h-8 w-8 opacity-90" aria-label={`Ukloni fotografiju ${index + 1}`} onClick={() => setGallery((current) => current.filter((_, itemIndex) => itemIndex !== index))}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">Galerija je prazna.</div>}
                   </div>
                 </CardContent>
               </Card>

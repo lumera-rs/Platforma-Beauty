@@ -19,68 +19,6 @@ tags:
   - name: education
   - name: admin
 paths:
-  /media/uploads/request-url:
-    post:
-      operationId: requestImageUpload
-      tags: [media]
-      summary: Request a direct App Storage upload URL for an image
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ImageUploadInput" }
-      responses:
-        "200":
-          description: Direct upload information
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ImageUploadIntent" }
-        "401": { description: Sign-in required }
-        "413": { description: Image exceeds the 8 MB limit }
-  /media/uploads/{assetId}/finalize:
-    post:
-      operationId: finalizeImageUpload
-      tags: [media]
-      summary: Validate an uploaded image and create responsive variants
-      parameters:
-        - name: assetId
-          in: path
-          required: true
-          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
-      responses:
-        "200":
-          description: Optimized image asset
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OptimizedImageUpload" }
-        "401": { description: Sign-in required }
-        "410": { description: Upload expired }
-        "422": { description: Invalid image bytes }
-  /media/images/{assetId}:
-    get:
-      operationId: getOptimizedImage
-      tags: [media]
-      summary: Serve an immutable optimized image variant
-      parameters:
-        - name: assetId
-          in: path
-          required: true
-          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
-        - name: size
-          in: query
-          schema: { type: string, enum: [thumbnail, medium, large], default: large }
-        - name: format
-          in: query
-          schema: { type: string, enum: [avif, webp, fallback] }
-      responses:
-        "200":
-          description: Optimized image bytes
-          content:
-            image/avif: { schema: { type: string, format: binary } }
-            image/webp: { schema: { type: string, format: binary } }
-            image/jpeg: { schema: { type: string, format: binary } }
-            image/png: { schema: { type: string, format: binary } }
-        "404": { description: Image not found }
   /healthz:
     get:
       operationId: healthCheck
@@ -609,6 +547,84 @@ paths:
               schema: { $ref: "#/components/schemas/SalonProfileMedia" }
         "400": { description: Invalid profile media }
         "403": { description: Salon-owner access required }
+  /media/uploads:
+    post:
+      operationId: requestMediaUpload
+      tags: [media]
+      summary: Create an owner-scoped App Storage image upload ticket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MediaUploadInput" }
+      responses:
+        "200":
+          description: Short-lived direct upload ticket
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaUploadTicket" }
+        "400": { description: Invalid or unsupported image metadata }
+        "403": { description: The current user cannot upload for this scope }
+        "413": { description: Image exceeds the upload limit }
+  /media/uploads/{uploadId}/finalize:
+    post:
+      operationId: finalizeMediaUpload
+      tags: [media]
+      summary: Validate, transform and promote a staged image
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      responses:
+        "200":
+          description: Existing finalized asset (idempotent retry)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaAsset" }
+        "201":
+          description: Validated and finalized asset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaAsset" }
+        "400": { description: The staged object is not a valid supported image }
+        "403": { description: Upload ticket does not belong to the current user }
+        "404": { description: Upload ticket not found }
+        "410": { description: Upload ticket expired }
+  /media/{assetId}:
+    get:
+      operationId: getMediaAsset
+      tags: [media]
+      summary: Serve an optimized image variant using Accept negotiation
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+        - name: size
+          in: query
+          schema: { type: string, enum: [thumbnail, medium, large, original], default: large }
+        - name: format
+          in: query
+          schema: { type: string, enum: [avif, webp, fallback, original] }
+        - name: v
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Optimized image bytes
+          content:
+            image/avif:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        "304": { description: Not modified }
+        "403": { description: Private media access denied }
+        "404": { description: Image or requested variant not found }
   /salon/appointments:
     get:
       operationId: listSalonAppointments
@@ -2930,18 +2946,19 @@ paths:
     post:
       operationId: adminRequestServiceCategoryImageUpload
       tags: [admin]
-      summary: Request a direct upload URL for a service category fallback image
+      deprecated: true
+      summary: Deprecated unvalidated service-category upload flow
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ServiceCategoryImageUploadInput" }
       responses:
-        "200":
-          description: Direct upload information
+        "410":
+          description: Use the validated media upload and finalize endpoints
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ServiceCategoryImageUpload" }
+              schema: { $ref: "#/components/schemas/ApiError" }
   /admin/service-categories/{categoryId}:
     patch:
       operationId: adminUpdateServiceCategory
@@ -3513,11 +3530,6 @@ components:
         id: { type: string }
         name: { type: string }
         slug: { type: string }
-        imageUrl: { type: string }
-        gallery:
-          type: array
-          maxItems: 20
-          items: { type: string }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
@@ -3525,20 +3537,53 @@ components:
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
         openSunday: { type: boolean }
-      required: [id, name, slug, imageUrl, gallery, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday]
+        imageUrl: { type: string }
+        gallery:
+          type: array
+          items: { type: string }
+      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, gallery]
     SalonProfileMediaUpdate:
       type: object
       properties:
-        imageUrl: { type: string, minLength: 1 }
-        gallery:
-          type: array
-          maxItems: 20
-          items: { type: string, minLength: 1 }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
         homeServiceRadiusKm: { type: number, minimum: 1, maximum: 100 }
         servesMen: { type: boolean }
+        imageUrl: { type: string, minLength: 1 }
+        gallery:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1 }
+    MediaUploadInput:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category]
+        resourceId:
+          type: ["string", "null"]
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+        name: { type: string, minLength: 1, maxLength: 240 }
+        size: { type: number, minimum: 1, maximum: 12582912, multipleOf: 1 }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp, image/avif] }
+      required: [scope, name, size, contentType]
+    MediaUploadTicket:
+      type: object
+      properties:
+        uploadId: { type: string }
+        uploadUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+      required: [uploadId, uploadUrl, expiresAt]
+    MediaAsset:
+      type: object
+      properties:
+        id: { type: string }
+        imageUrl: { type: string }
+        width: { type: number, minimum: 1, multipleOf: 1 }
+        height: { type: number, minimum: 1, multipleOf: 1 }
+        contentHash: { type: string }
+      required: [id, imageUrl, width, height, contentHash]
     OpeningHour:
       type: object
       properties:
@@ -4639,28 +4684,6 @@ components:
         altText: { type: string }
         sortOrder: { type: number, multipleOf: 1 }
       required: [id, url, altText, sortOrder]
-    ImageUploadInput:
-      type: object
-      properties:
-        name: { type: string, minLength: 1, maxLength: 240 }
-        size: { type: number, minimum: 1, maximum: 8388608 }
-        contentType: { type: string, minLength: 1, maxLength: 120 }
-      required: [name, size, contentType]
-    ImageUploadIntent:
-      type: object
-      properties:
-        assetId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
-        uploadUrl: { type: string }
-        finalizeUrl: { type: string }
-      required: [assetId, uploadUrl, finalizeUrl]
-    OptimizedImageUpload:
-      type: object
-      properties:
-        assetId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
-        imageUrl: { type: string }
-        width: { type: number, minimum: 1 }
-        height: { type: number, minimum: 1 }
-      required: [assetId, imageUrl, width, height]
     EducationGalleryUploadInput:
       type: object
       properties:

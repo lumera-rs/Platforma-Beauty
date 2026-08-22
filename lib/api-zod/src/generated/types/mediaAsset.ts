@@ -6,12 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface OptimizedImageUpload {
-  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
-  assetId: string;
+export interface MediaAsset {
+  id: string;
   imageUrl: string;
   /** @minimum 1 */
   width: number;
   /** @minimum 1 */
   height: number;
+  contentHash: string;
 }

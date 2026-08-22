@@ -16,6 +16,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  ImagePlus,
   Loader2,
   Pencil,
   Plus,
@@ -26,6 +27,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
+import { AvatarImage } from "@/components/optimized-image";
+import { uploadOptimizedImage } from "@/lib/media-upload";
 
 type Appointment = {
   id: string;
@@ -235,6 +238,7 @@ export default function EmployeePortal() {
     allAvailable: boolean;
   } | null>(null);
   const [profile, setProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [leave, setLeave] = useState({ startDate: today(), endDate: today(), reason: "" });
 
   const load = async () => {
@@ -303,6 +307,21 @@ export default function EmployeePortal() {
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Profil nije sačuvan.");
+    }
+  };
+  const uploadAvatar = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !portal) return;
+    setUploadingAvatar(true);
+    try {
+      const asset = await uploadOptimizedImage(file, "employee-avatar", portal.employee.id);
+      setProfile((current) => ({ ...current, avatarUrl: asset.imageUrl }));
+      toast.success("Fotografija profila je obrađena.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload fotografije nije uspeo.");
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -612,10 +631,10 @@ export default function EmployeePortal() {
           <DialogContent>
             <DialogHeader><DialogTitle>Moj profil</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              <div><Label>URL fotografije</Label><Input className="mt-1" value={profile.avatarUrl} onChange={(event) => setProfile({ ...profile, avatarUrl: event.target.value })} /></div>
+              <div className="space-y-2"><Label>Fotografija profila</Label><div className="flex items-center gap-3">{profile.avatarUrl ? <AvatarImage src={profile.avatarUrl} alt="Pregled fotografije profila" size={128} responsiveSizes="64px" className="h-16 w-16" /> : null}<Button asChild type="button" variant="outline" disabled={uploadingAvatar}><label className="cursor-pointer">{uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}Izaberi fotografiju<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => void uploadAvatar(event)} disabled={uploadingAvatar} /></label></Button></div></div>
               <div><Label>Opis</Label><Textarea className="mt-1" value={profile.bio} onChange={(event) => setProfile({ ...profile, bio: event.target.value })} /></div>
               <div><Label>Kontakt telefon</Label><Input className="mt-1" value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} /></div>
-              <Button className="w-full" onClick={saveProfile}>Sačuvaj profil</Button>
+              <Button className="w-full" onClick={saveProfile} disabled={uploadingAvatar}>Sačuvaj profil</Button>
             </div>
           </DialogContent>
         </Dialog>

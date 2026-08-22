@@ -17,7 +17,7 @@ import {
   useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
   useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
   useReplaceEducationCourseDays,
-  useRequestEducationCourseGalleryUpload, useAddEducationCourseGalleryMedia,
+  useAddEducationCourseGalleryMedia,
   useReorderEducationCourseGallery, useDeleteEducationCourseGalleryMedia,
   useGetPublicInstructorProfile,
   useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
@@ -29,7 +29,6 @@ import {
 
 import { BusinessLayout } from "@/components/business-layout";
 import { Layout } from "@/components/layout";
-import { OptimizedImage } from "@/components/optimized-image";
 import { SalonGallery } from "@/components/salon-gallery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,10 +43,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { OptimizedImage } from "@/components/optimized-image";
+import { uploadOptimizedImage } from "@/lib/media-upload";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
-import { uploadOptimizedImage } from "@/lib/image-upload";
 import { 
   GraduationCap, Search, MapPin, Clock, Award, 
   PlayCircle, Users, CheckCircle2, ArrowLeft, 
@@ -432,7 +432,7 @@ function CatalogView() {
                   <Card className="overflow-hidden hover:shadow-md transition-all h-full flex flex-col cursor-pointer border-border/60 group">
                     <div className="aspect-video relative overflow-hidden bg-muted/30">
                       {course.imageUrl ? (
-                        <OptimizedImage src={course.imageUrl} alt={course.title} width={640} height={360} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw" />
+                        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <GraduationCap className="w-12 h-12 text-muted-foreground/30" />
@@ -654,7 +654,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
             </div>
             {course.imageUrl && (
               <div className="w-full md:w-1/3 aspect-video md:aspect-auto md:h-48 rounded-xl overflow-hidden shadow-sm border">
-                <OptimizedImage src={course.imageUrl} alt={course.title} width={480} height={192} eager className="w-full h-full object-cover" sizes="(max-width: 768px) 100vw, 33vw" />
+                <OptimizedImage src={course.imageUrl} alt={course.title} width={1200} height={675} priority responsiveSizes="(max-width: 768px) 100vw, 720px" className="w-full h-full object-cover" />
               </div>
             )}
           </div>
@@ -1073,7 +1073,6 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
   const [gallery, setGallery] = useState<CourseGalleryItem[]>(initialGallery);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const requestUpload = useRequestEducationCourseGalleryUpload();
   const addMedia = useAddEducationCourseGalleryMedia();
   const reorder = useReorderEducationCourseGallery();
   const removeMedia = useDeleteEducationCourseGalleryMedia();
@@ -1102,26 +1101,17 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
     event.target.value = "";
     if (!file) return;
     setUploadError(null);
-    const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!supported.includes(file.type.toLowerCase()) || file.size > 8 * 1024 * 1024) {
-      const message = "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB.";
+    const supported = ["image/jpeg", "image/png", "image/webp", "image/avif"];
+    if (!supported.includes(file.type.toLowerCase()) || file.size > 12 * 1024 * 1024) {
+      const message = "Izaberite JPG, PNG, WEBP ili AVIF sliku do 12 MB.";
       setUploadError(message);
       toast.error("Neispravna slika", { description: message });
       return;
     }
     setUploading(true);
     try {
-      const upload = await requestUpload.mutateAsync({
-        courseId,
-        data: { name: file.name, size: file.size, contentType: file.type },
-      });
-      const uploadResponse = await fetch(upload.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!uploadResponse.ok) throw new Error("Otpremanje slike nije uspelo.");
-      const media = await addMedia.mutateAsync({ courseId, data: { mediaId: upload.mediaId, altText: "" } });
+      const upload = await uploadOptimizedImage(file, "education-gallery", courseId);
+      const media = await addMedia.mutateAsync({ courseId, data: { mediaId: upload.id, altText: "" } });
       setGallery((current) => [...current, media]);
       refreshCourse();
       toast.success("Fotografija je dodata u galeriju");
@@ -1177,7 +1167,7 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
               aria-label="Dodaj fotografiju u galeriju"
               className="sr-only"
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/jpeg,image/png,image/webp,image/avif"
               disabled={uploading || gallery.length >= 20}
               onChange={(event) => void uploadImage(event)}
             />
@@ -1194,7 +1184,7 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
         <div className="grid gap-4 sm:grid-cols-2">
           {gallery.map((media, index) => (
             <div key={media.id} className="overflow-hidden rounded-lg border bg-muted/10">
-              <OptimizedImage src={media.url} alt={media.altText || `Fotografija ${index + 1} kursa`} width={640} height={160} className="h-40 w-full object-cover" sizes="(max-width: 640px) 100vw, 50vw" />
+               <OptimizedImage src={media.url} alt={media.altText || `Fotografija ${index + 1} kursa`} width={640} height={360} preferredSize="medium" responsiveSizes="(max-width: 640px) 100vw, 320px" className="h-40 w-full object-cover" />
               <div className="space-y-3 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-muted-foreground">Fotografija {index + 1}</span>
@@ -1488,22 +1478,26 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const [, setLocation] = useLocation();
   const create = useCreateEducationCourse();
   const update = useUpdateEducationCourse();
+  const [uploadingCover, setUploadingCover] = useState(false);
   
   const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
-  const { register, handleSubmit, control, formState: { errors }, reset, setValue } = useForm<any>({
+  const { register, handleSubmit, control, formState: { errors }, reset, setValue, watch } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
     defaultValues: { format: 'online', level: 'all-levels', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "", learningOutcomesText: "", includedItemsText: "", requirements: "" }
   });
-  const [uploadingCover, setUploadingCover] = useState(false);
+  const coverImageUrl = watch("imageUrl");
 
-  const uploadCover = async (file: File) => {
+  const uploadCover = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
     setUploadingCover(true);
     try {
-      const uploaded = await uploadOptimizedImage(file);
-      setValue("imageUrl", uploaded.imageUrl, { shouldDirty: true, shouldValidate: true });
-      toast.success("Naslovna slika je optimizovana", { description: "Sačuvane su tri responsive veličine u App Storage-u." });
+      const asset = await uploadOptimizedImage(file, "education-cover", course?.id);
+      setValue("imageUrl", asset.imageUrl, { shouldDirty: true, shouldValidate: true });
+      toast.success("Naslovna fotografija je obrađena.");
     } catch (error) {
-      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte sa drugom slikom." });
+      toast.error(error instanceof Error ? error.message : "Upload naslovne fotografije nije uspeo.");
     } finally {
       setUploadingCover(false);
     }
@@ -1646,29 +1640,19 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
               <Input type="date" {...register("startDate")} />
             </div>
 
-            <div className="space-y-2 md:col-span-2">
-              <Label>Naslovna slika *</Label>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" variant="outline" asChild disabled={uploadingCover}>
+            <div className="space-y-3 md:col-span-2">
+              <Label>Naslovna fotografija *</Label>
+              <input type="hidden" {...register("imageUrl")} />
+              <div className="flex flex-col gap-3 rounded-lg border border-dashed p-3 sm:flex-row sm:items-center">
+                {coverImageUrl ? <OptimizedImage src={coverImageUrl} alt="Pregled naslovne fotografije edukacije" width={480} height={270} preferredSize="medium" responsiveSizes="240px" className="aspect-video w-full rounded-md object-cover sm:w-60" /> : null}
+                <Button asChild type="button" variant="outline" disabled={uploadingCover}>
                   <label className="cursor-pointer">
                     {uploadingCover ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
-                    {uploadingCover ? "Optimizovanje..." : "Otpremi naslovnu sliku"}
-                    <input
-                      type="file"
-                      className="sr-only"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      disabled={uploadingCover}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        if (file) void uploadCover(file);
-                      }}
-                    />
+                    Izaberi fotografiju
+                    <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingCover} onChange={(event) => void uploadCover(event)} />
                   </label>
                 </Button>
-                <span className="text-xs text-muted-foreground">JPG, PNG, WEBP ili GIF · do 8 MB</span>
               </div>
-              <Input placeholder="Legacy URL slike (opciono)" {...register("imageUrl")} />
               {errors.imageUrl && <p className="text-sm text-destructive">{errors.imageUrl.message as string}</p>}
             </div>
 
@@ -2001,7 +1985,7 @@ function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <div className="space-y-2">
               {instructors?.map((inst) => (
                 <div key={inst.id} className="flex items-center gap-3 rounded-lg border p-3 bg-muted/20">
-                  {inst.photoUrl ? <OptimizedImage src={inst.photoUrl} alt={inst.fullName} width={40} height={40} className="w-10 h-10 rounded-full object-cover border" /> : <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><UserCircle2 className="w-6 h-6 text-muted-foreground" /></div>}
+                  {inst.photoUrl ? <OptimizedImage src={inst.photoUrl} alt={inst.fullName} width={80} height={80} preferredSize="thumbnail" responsiveSizes="40px" className="w-10 h-10 rounded-full object-cover border" /> : <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><UserCircle2 className="w-6 h-6 text-muted-foreground" /></div>}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{inst.fullName}</p>
                     <p className="text-xs text-muted-foreground">{inst.experienceYears} god. iskustva</p>
@@ -2094,7 +2078,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
           </Link>
           <div className="flex items-start gap-6">
             {profile.photoUrl ? (
-              <OptimizedImage src={profile.photoUrl} alt={profile.name} width={96} height={96} eager className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
+              <OptimizedImage src={profile.photoUrl} alt={profile.name} width={192} height={192} preferredSize="thumbnail" responsiveSizes="96px" className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
             ) : (
               <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center shrink-0"><UserCircle2 className="w-12 h-12 text-muted-foreground" /></div>
             )}
@@ -2148,7 +2132,7 @@ export function InstructorPublicProfilePage({ instructorId }: { instructorId: st
                   <Card className="overflow-hidden hover:shadow-md transition-all cursor-pointer border-border/60 group">
                     {course.imageUrl && (
                       <div className="aspect-video overflow-hidden bg-muted/30">
-                        <OptimizedImage src={course.imageUrl} alt={course.title} width={640} height={360} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" sizes="(max-width: 640px) 100vw, 50vw" />
+                        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 768px) 100vw, 420px" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                       </div>
                     )}
                     <CardContent className="p-4">

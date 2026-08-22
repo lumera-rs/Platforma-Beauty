@@ -1,6 +1,5 @@
 import { ChangeEvent, useState } from "react";
 import { AdminLayout } from "./layout";
-import { OptimizedImage } from "@/components/optimized-image";
 import {
   useAdminListProductCategories,
   useAdminCreateProductCategory,
@@ -25,9 +24,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Edit2, Trash2, FolderTree, ArrowUp, ArrowDown, CornerDownRight } from "lucide-react";
+import { Loader2, Plus, Edit2, Trash2, FolderTree, ArrowUp, ArrowDown, CornerDownRight, ImagePlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { uploadOptimizedImage } from "@/lib/image-upload";
+import { OptimizedImage } from "@/components/optimized-image";
+import { uploadOptimizedImage } from "@/lib/media-upload";
 
 const emptyForm: AdminProductCategoryInput = { name: "", parentId: null, sortOrder: 0, icon: null, imageUrl: null, active: true };
 
@@ -48,6 +48,7 @@ export default function AdminCategories() {
   const [serviceImageDrafts, setServiceImageDrafts] = useState<Record<string, string>>({});
   const [uploadingServiceCategoryId, setUploadingServiceCategoryId] = useState<string | null>(null);
   const [savingServiceCategoryId, setSavingServiceCategoryId] = useState<string | null>(null);
+  const [uploadingProductCategoryImage, setUploadingProductCategoryImage] = useState(false);
 
   const parents = categories.filter((c) => !c.parentId).sort((a, b) => a.sortOrder - b.sortOrder);
   const childrenOf = (id: string) => categories.filter((c) => c.parentId === id).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -85,19 +86,31 @@ export default function AdminCategories() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
-      toast.error("Neispravna slika", { description: "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB." });
-      return;
-    }
     setUploadingServiceCategoryId(category.id);
     try {
-      const upload = await uploadOptimizedImage(file);
+      const upload = await uploadOptimizedImage(file, "service-category", category.id);
       setServiceImageDrafts((drafts) => ({ ...drafts, [category.id]: upload.imageUrl }));
-      toast.success("Slika je optimizovana", { description: "Kreirane su thumbnail, medium i large AVIF/WebP varijante. Kliknite „Sačuvaj sliku“." });
+      toast.success("Slika je otpremljena", { description: "Kliknite „Sačuvaj sliku“ da je postavite za kategoriju." });
     } catch (error) {
       toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo sa drugom slikom." });
     } finally {
       setUploadingServiceCategoryId(null);
+    }
+  };
+
+  const uploadProductCategoryImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingProductCategoryImage(true);
+    try {
+      const asset = await uploadOptimizedImage(file, "product-category", editing?.id);
+      setForm((current) => ({ ...current, imageUrl: asset.imageUrl }));
+      toast.success("Fotografija kategorije je obrađena.");
+    } catch (error) {
+      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo." });
+    } finally {
+      setUploadingProductCategoryImage(false);
     }
   };
 
@@ -171,7 +184,7 @@ export default function AdminCategories() {
     <div className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/10 transition-colors ${!cat.active ? "opacity-50" : ""} ${isChild ? "pl-12" : ""}`} data-testid={`category-row-${cat.id}`}>
       {isChild && <CornerDownRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
       {cat.imageUrl ? (
-        <OptimizedImage src={cat.imageUrl} alt="" width={32} height={32} className="w-8 h-8 rounded-lg object-cover border shrink-0" />
+        <OptimizedImage src={cat.imageUrl} alt={`Fotografija kategorije ${cat.name}`} width={64} height={64} preferredSize="thumbnail" responsiveSizes="32px" className="w-8 h-8 rounded-lg object-cover border shrink-0" />
       ) : (
         <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs shrink-0">{cat.icon ?? (isChild ? "•" : "▣")}</div>
       )}
@@ -250,11 +263,13 @@ export default function AdminCategories() {
             <div className="divide-y divide-border/60">
               {serviceCategories.map((category) => (
                 <div key={category.id} className="grid gap-4 p-4 sm:grid-cols-[112px_minmax(0,1fr)_auto] sm:items-center">
-                  <OptimizedImage
+                   <OptimizedImage
                     src={serviceImageValue(category) || "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=480&q=80"}
                     alt={`Rezervna fotografija: ${category.name}`}
-                    width={112}
-                    height={96}
+                     width={448}
+                     height={384}
+                     preferredSize="medium"
+                     responsiveSizes="112px"
                     className="h-24 w-full rounded-lg border bg-muted object-cover sm:w-28"
                   />
                   <div className="min-w-0 space-y-2">
@@ -262,27 +277,23 @@ export default function AdminCategories() {
                       <p className="font-semibold">{category.name}</p>
                       <Badge variant="secondary" className="text-[10px]">{category.serviceCount} usluga</Badge>
                     </div>
-                    <Input
-                      value={serviceImageValue(category)}
-                      onChange={(event) => setServiceImageDrafts((drafts) => ({ ...drafts, [category.id]: event.target.value }))}
-                      placeholder="https://… ili otpremite sliku"
-                      aria-label={`Rezervna fotografija za ${category.name}`}
-                      data-testid={`service-category-fallback-url-${category.id}`}
-                    />
+                    <p className="truncate text-xs text-muted-foreground" data-testid={`service-category-fallback-url-${category.id}`}>
+                      {serviceImageValue(category) ? "Fotografija je spremna za čuvanje." : "Nije izabrana fotografija."}
+                    </p>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 font-medium text-foreground transition-colors hover:bg-muted">
                         {uploadingServiceCategoryId === category.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                         Otpremi fotografiju
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          accept="image/jpeg,image/png,image/webp,image/avif"
                           className="sr-only"
                           disabled={uploadingServiceCategoryId === category.id}
                           onChange={(event) => void uploadServiceImage(category, event)}
                           data-testid={`service-category-fallback-file-${category.id}`}
                         />
                       </label>
-                      <span>JPG, PNG, WEBP ili GIF · do 8 MB</span>
+                      <span>JPG, PNG, WEBP ili AVIF · do 12 MB</span>
                     </div>
                   </div>
                   <Button
@@ -342,8 +353,17 @@ export default function AdminCategories() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Slika (URL, opciono)</Label>
-              <Input value={form.imageUrl ?? ""} onChange={(e) => setForm({ ...form, imageUrl: e.target.value || null })} placeholder="/lumera-media/..." />
+              <Label>Fotografija (opciono)</Label>
+              <div className="flex items-center gap-3 rounded-lg border border-dashed p-3">
+                {form.imageUrl ? <OptimizedImage src={form.imageUrl} alt="Pregled fotografije kategorije" width={160} height={160} preferredSize="thumbnail" responsiveSizes="80px" className="h-20 w-20 rounded-lg object-cover" /> : null}
+                <Button asChild type="button" variant="outline" disabled={uploadingProductCategoryImage}>
+                  <label className="cursor-pointer">
+                    {uploadingProductCategoryImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 h-4 w-4" />}
+                    Izaberi fotografiju
+                    <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploadingProductCategoryImage} onChange={(event) => void uploadProductCategoryImage(event)} />
+                  </label>
+                </Button>
+              </div>
             </div>
             <div className="flex items-center justify-between pt-2 border-t">
               <Label className="cursor-pointer">Kategorija je aktivna</Label>
@@ -352,7 +372,7 @@ export default function AdminCategories() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={createCategory.isPending || updateCategory.isPending} data-testid="btn-save-category">
+             <Button onClick={handleSave} disabled={createCategory.isPending || updateCategory.isPending || uploadingProductCategoryImage} data-testid="btn-save-category">
               {(createCategory.isPending || updateCategory.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>

@@ -22,7 +22,6 @@ import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { OptimizedImage } from "@/components/optimized-image";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { OptimizedImage } from "@/components/optimized-image";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -79,6 +79,8 @@ function QuickView({
             alt={product.name}
             width={144}
             height={144}
+            preferredSize="medium"
+            responsiveSizes="144px"
             className="w-36 h-36 object-cover rounded-xl flex-shrink-0"
           />
           <div className="flex flex-col gap-2 flex-1">
@@ -184,8 +186,9 @@ function ProductCard({
           alt={product.name}
           width={400}
           height={400}
+          preferredSize="medium"
+          responsiveSizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 768px) 45vw, (max-width: 1280px) 30vw, 220px"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
         />
         {/* Quick View overlay */}
         <button

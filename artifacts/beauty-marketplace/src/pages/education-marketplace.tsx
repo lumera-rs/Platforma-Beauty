@@ -1,6 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { OptimizedImage } from "@/components/optimized-image";
 import {
   Award, BadgeCheck, BookOpen, Building2, CalendarDays, ChevronRight,
   Clock3, Filter, Loader2, MapPin, ShieldCheck, Sparkles, Star, Users, Zap,
@@ -16,6 +15,7 @@ import {
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { SalonGallery } from "@/components/salon-gallery";
+import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,7 +107,7 @@ export function EducationCourseCard({ course, onBuy, buying, compact = false }: 
   return (
     <Card className="group flex h-full flex-col overflow-hidden border-border/60 transition-shadow hover:shadow-lg">
       <Link href={`/edukacije/${course.id}`} className="block aspect-[16/9] overflow-hidden bg-muted">
-        <OptimizedImage src={course.imageUrl} alt={course.title} width={640} height={360} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+        <OptimizedImage src={course.imageUrl} alt={course.title} width={800} height={450} responsiveSizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 1024px) 45vw, 350px" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
       </Link>
       <CardContent className={`flex flex-1 flex-col ${compact ? "p-4" : "p-5"}`}>
         <div className="mb-2 flex flex-wrap gap-2">
@@ -249,7 +249,7 @@ export function EducationPublicCourseDetail() {
         {course.dayProgram.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Dnevni program</h2><div className="space-y-3">{course.dayProgram.map((day) => <Card key={day.id}><CardContent className="flex gap-4 p-4"><Badge className="h-7 shrink-0">Dan {day.dayNumber}</Badge><div><h3 className="font-semibold">{day.title}</h3><p className="mt-1 text-sm text-muted-foreground">{day.description}</p>{day.durationMinutes ? <p className="mt-2 text-xs text-muted-foreground">{day.durationMinutes} min</p> : null}</div></CardContent></Card>)}</div></section> : null}
         {course.learningOutcomes.length ? <section><h2 className="mb-3 font-serif text-2xl font-bold">Šta ćete naučiti</h2><div className="grid gap-2 sm:grid-cols-2">{course.learningOutcomes.map((outcome) => <div key={outcome} className="flex gap-2 rounded-lg bg-muted/50 p-3 text-sm"><BadgeCheck className="h-4 w-4 shrink-0 text-emerald-600" />{outcome}</div>)}</div></section> : null}
         {(course.includedItems.length || course.requirements) ? <section className="grid gap-4 sm:grid-cols-2">{course.includedItems.length ? <Card><CardHeader><CardTitle className="text-lg">Uključeno u cenu</CardTitle></CardHeader><CardContent className="space-y-2">{course.includedItems.map((item) => <p className="flex gap-2 text-sm" key={item}><BadgeCheck className="h-4 w-4 text-primary" />{item}</p>)}</CardContent></Card> : null}{course.requirements ? <Card><CardHeader><CardTitle className="text-lg">Preduslovi</CardTitle></CardHeader><CardContent className="text-sm text-muted-foreground">{course.requirements}</CardContent></Card> : null}</section> : null}
-        {course.center ? <Card><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><OptimizedImage src={course.center.imageUrl} alt="" width={64} height={64} className="h-16 w-16 rounded-xl object-cover" /><div className="flex-1"><p className="font-semibold">{course.center.name}</p><p className="mt-1 text-sm text-muted-foreground">{course.center.description}</p></div><Button variant="outline" asChild><Link href={`/edukacije/centri/${course.center.id}`}>Profil centra</Link></Button></CardContent></Card> : null}
+        {course.center ? <Card><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><OptimizedImage src={course.center.imageUrl} alt={course.center.name} width={64} height={64} preferredSize="thumbnail" responsiveSizes="64px" className="h-16 w-16 rounded-xl object-cover" /><div className="flex-1"><p className="font-semibold">{course.center.name}</p><p className="mt-1 text-sm text-muted-foreground">{course.center.description}</p></div><Button variant="outline" asChild><Link href={`/edukacije/centri/${course.center.id}`}>Profil centra</Link></Button></CardContent></Card> : null}
         {course.reviews.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Utisci polaznika</h2><div className="space-y-3">{course.reviews.map((review) => <Card key={review.id}><CardContent className="p-4"><p className="flex items-center gap-1 text-sm text-amber-600"><Star className="h-4 w-4 fill-amber-500" />{review.rating.toFixed(1)}</p><p className="mt-2 text-sm">{review.comment}</p></CardContent></Card>)}</div></section> : null}
       </div>
       <aside><Card className="sticky top-24 border-primary/25"><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p><p className="mt-1 text-sm text-muted-foreground">Jednokratna kupovina · potvrda uplate od administratora</p><Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div><Button className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>{buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Dodaj se na listu čekanja" : "Prijavi se na edukaciju"}</Button></CardContent></Card></aside>

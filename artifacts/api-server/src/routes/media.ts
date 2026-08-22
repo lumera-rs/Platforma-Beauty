@@ -1,334 +1,748 @@
-import { Router, type IRouter } from "express";
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
-import { imageAssetsTable, db, type ImageAssetVariantSet } from "@workspace/db";
-import { getCurrentUser } from "../lib/auth";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { Router, type IRouter, type Request, type Response } from "express";
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import sharp from "sharp";
 import {
-  ALLOWED_IMAGE_CONTENT_TYPES,
-  MAX_IMAGE_UPLOAD_BYTES,
-  deletePrivateObject,
-  generateOptimizedImageSet,
-  imageAssetOriginalStoragePath,
-  imageAssetStagingStoragePath,
-  imageAssetVariantStoragePath,
-  imageVariantMetadata,
-  rawPrivateObjectPath,
-  readPrivateObject,
-  signPrivateObject,
-  uploadPrivateObject,
-} from "../lib/image-storage";
+  coursesTable,
+  db,
+  educationCentersTable,
+  educationCenterSubscriptionsTable,
+  educationInstructorsTable,
+  educationMediaTable,
+  employeesTable,
+  mediaAssetsTable,
+  mediaUploadTicketsTable,
+  mediaVariantsTable,
+  productsTable,
+  salonsTable,
+  usersTable,
+} from "@workspace/db";
+import {
+  FinalizeMediaUploadParams,
+  FinalizeMediaUploadResponse,
+  GetMediaAssetParams,
+  GetMediaAssetQueryParams,
+  RequestMediaUploadBody,
+  RequestMediaUploadResponse,
+} from "@workspace/api-zod";
+import { getCurrentUser, isAdmin } from "../lib/auth";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const MANAGED_IMAGE_URL_PATTERN = /^\/api\/media\/images\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\?.*)?$/i;
-const IMAGE_UPLOAD_TTL_MS = 30 * 60 * 1000;
-const UNATTACHED_READY_TTL_MS = 24 * 60 * 60 * 1000;
-const PERMANENT_ASSET_EXPIRY = new Date("9999-12-31T23:59:59.999Z");
+const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 40_000_000;
+const UPLOAD_TTL_SECONDS = 15 * 60;
+const SUPPORTED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+const CONTENT_TYPE_BY_SHARP_FORMAT: Record<string, string> = {
+  avif: "image/avif",
+  heif: "image/avif",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
 
-function imageUrl(assetId: string): string {
-  return `/api/media/images/${assetId}`;
+type MediaScope =
+  | "salon-profile"
+  | "salon-gallery"
+  | "employee-avatar"
+  | "product"
+  | "education-cover"
+  | "education-gallery"
+  | "education-center"
+  | "instructor-avatar"
+  | "service-category"
+  | "product-category";
+
+type MediaVariantInsert = typeof mediaVariantsTable.$inferInsert;
+
+function privateObjectRoot(): string {
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("App Storage nije podešen.");
+  return root.replace(/\/+$/, "");
 }
 
-function cleanFilename(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const name = value.trim().slice(0, 240);
-  return name || null;
+function privateObjectPath(storagePath: string): string {
+  if (!storagePath.startsWith("/objects/")) throw new Error("Neispravna App Storage putanja.");
+  return `${privateObjectRoot()}/${storagePath.slice("/objects/".length)}`;
 }
 
-function managedImageAssetIds(value: unknown, ids = new Set<string>()): Set<string> {
-  if (ids.size >= 100) return ids;
-  if (typeof value === "string") {
-    const match = MANAGED_IMAGE_URL_PATTERN.exec(value.trim());
-    if (match?.[1]) ids.add(match[1]);
-    return ids;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) managedImageAssetIds(item, ids);
-    return ids;
-  }
-  if (value && typeof value === "object") {
-    for (const item of Object.values(value as Record<string, unknown>)) managedImageAssetIds(item, ids);
-  }
-  return ids;
+async function signPrivateObject(rawPath: string, method: "DELETE" | "GET" | "PUT", ttlSeconds: number): Promise<string> {
+  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
+  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bucket_name: bucketName,
+      object_name: objectParts.join("/"),
+      method,
+      expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije generisao URL (${response.status}).`);
+  const data = await response.json() as { signed_url?: string };
+  if (!data.signed_url) throw new Error("App Storage nije vratio potpisani URL.");
+  return data.signed_url;
 }
 
-type ImageAssetTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-export async function attachReadyImageAssets(
-  tx: ImageAssetTransaction,
-  uploadedByUserId: string,
-  persistedValues: unknown,
-): Promise<void> {
-  const assetIds = [...managedImageAssetIds(persistedValues)];
-  if (!assetIds.length) return;
-  const attached = await tx.update(imageAssetsTable)
-    .set({ expiresAt: PERMANENT_ASSET_EXPIRY, updatedAt: new Date() })
-    .where(and(
-      inArray(imageAssetsTable.id, assetIds),
-      eq(imageAssetsTable.uploadedByUserId, uploadedByUserId),
-      eq(imageAssetsTable.status, "ready"),
-      gt(imageAssetsTable.expiresAt, new Date()),
-    ))
-    .returning({ id: imageAssetsTable.id });
-  if (attached.length !== assetIds.length) {
-    throw new Error("One or more managed image assets are not ready or do not belong to this user.");
-  }
+async function putPrivateObject(storagePath: string, contentType: string, bytes: Buffer): Promise<void> {
+  const uploadUrl = await signPrivateObject(privateObjectPath(storagePath), "PUT", 120);
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: bytes,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije sačuvao sliku (${response.status}).`);
 }
 
-router.post("/media/uploads/request-url", async (req, res): Promise<void> => {
+export async function deletePrivateStorageObject(storagePath: string): Promise<void> {
+  const deleteUrl = await signPrivateObject(privateObjectPath(storagePath), "DELETE", 60);
+  const response = await fetch(deleteUrl, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
+  if (!response.ok && response.status !== 404) throw new Error(`App Storage nije obrisao objekat (${response.status}).`);
+}
+
+export async function readPrivateStorageObject(storagePath: string): Promise<Buffer | null> {
+  const downloadUrl = await signPrivateObject(privateObjectPath(storagePath), "GET", 60);
+  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  if (!response.ok) return null;
+  const length = Number(response.headers.get("content-length"));
+  if (Number.isFinite(length) && length > MAX_IMAGE_BYTES) {
+    response.body?.cancel();
+    return null;
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return bytes.length > 0 && bytes.length <= MAX_IMAGE_BYTES ? bytes : null;
+}
+
+async function requireMediaUser(req: Request, res: Response) {
   const user = await getCurrentUser(req);
   if (!user) {
-    res.status(401).json({ error: "Prijavite se da biste otpremili sliku." });
-    return;
+    res.status(401).json({ error: "Prijavite se da biste otpremili fotografiju." });
+    return null;
   }
-  const name = cleanFilename(req.body?.name);
-  const size = Number(req.body?.size);
-  const contentType = typeof req.body?.contentType === "string" ? req.body.contentType.toLowerCase() : "";
-  if (!name || !Number.isInteger(size) || size < 1 || size > MAX_IMAGE_UPLOAD_BYTES) {
-    res.status(size > MAX_IMAGE_UPLOAD_BYTES ? 413 : 400).json({ error: "Slika mora biti manja od 8 MB." });
-    return;
-  }
-  if (!ALLOWED_IMAGE_CONTENT_TYPES.has(contentType)) {
-    res.status(400).json({ error: "Dozvoljene su JPG, PNG, WEBP i GIF slike." });
-    return;
-  }
-
-  const [asset] = await db.insert(imageAssetsTable).values({
-    uploadedByUserId: user.id,
-    originalFilename: name,
-    sourceContentType: contentType,
-    sourceSize: size,
-    stagingObjectPath: imageAssetStagingStoragePath(user.id, crypto.randomUUID()),
-    expiresAt: new Date(Date.now() + IMAGE_UPLOAD_TTL_MS),
-  }).returning();
-  if (!asset) {
-    res.status(500).json({ error: "Nije moguće pripremiti upload slike." });
-    return;
-  }
-
-  // Keep the asset ID in the object path so upload records are auditable and
-  // cleanup cannot delete a path outside this asset's staging namespace.
-  const expectedPath = imageAssetStagingStoragePath(user.id, asset.id);
-  await db.update(imageAssetsTable)
-    .set({ stagingObjectPath: expectedPath, updatedAt: new Date() })
-    .where(eq(imageAssetsTable.id, asset.id));
-
-  try {
-    const uploadUrl = await signPrivateObject(rawPrivateObjectPath(expectedPath), "PUT", 900);
-    res.json({
-      assetId: asset.id,
-      uploadUrl,
-      finalizeUrl: `/api/media/uploads/${asset.id}/finalize`,
-    });
-  } catch (error) {
-    await db.update(imageAssetsTable)
-      .set({ status: "failed", failureReason: "storage-signing", updatedAt: new Date() })
-      .where(eq(imageAssetsTable.id, asset.id));
-    req.log.error({ err: error, assetId: asset.id }, "Could not sign image upload");
-    res.status(500).json({ error: "App Storage trenutno nije dostupan." });
-  }
-});
-
-router.post("/media/uploads/:assetId/finalize", async (req, res): Promise<void> => {
-  const user = await getCurrentUser(req);
-  if (!user) {
-    res.status(401).json({ error: "Prijavite se da biste završili upload slike." });
-    return;
-  }
-  const assetId = req.params.assetId;
-  if (!UUID_PATTERN.test(assetId)) {
-    res.status(404).json({ error: "Upload slike nije pronađen." });
-    return;
-  }
-
-  const [asset] = await db.select().from(imageAssetsTable)
-    .where(and(eq(imageAssetsTable.id, assetId), eq(imageAssetsTable.uploadedByUserId, user.id)))
-    .limit(1);
-  if (!asset) {
-    res.status(404).json({ error: "Upload slike nije pronađen." });
-    return;
-  }
-  if (asset.status === "ready" && asset.variants) {
-    res.json({ assetId, imageUrl: imageUrl(assetId), width: asset.originalWidth, height: asset.originalHeight });
-    return;
-  }
-  if (asset.expiresAt < new Date()) {
-    res.status(410).json({ error: "Upload je istekao. Izaberite sliku ponovo." });
-    return;
-  }
-  if (asset.stagingObjectPath !== imageAssetStagingStoragePath(user.id, asset.id)) {
-    res.status(409).json({ error: "Upload putanja nije validna." });
-    return;
-  }
-
-  const [claimed] = await db.update(imageAssetsTable)
-    .set({ status: "processing", failureReason: null, updatedAt: new Date() })
-    .where(and(
-      eq(imageAssetsTable.id, asset.id),
-      eq(imageAssetsTable.uploadedByUserId, user.id),
-      inArray(imageAssetsTable.status, ["pending", "failed"]),
-    ))
-    .returning();
-  if (!claimed) {
-    res.status(409).json({ error: "Obrada ovog uploada je već u toku." });
-    return;
-  }
-
-  const uploadedPaths: string[] = [];
-  try {
-    const staged = await readPrivateObject(claimed.stagingObjectPath);
-    if (staged.contentType !== claimed.sourceContentType || staged.bytes.length !== claimed.sourceSize) {
-      throw new Error("Otpremljeni fajl ne odgovara najavljenoj slici.");
-    }
-    const generated = await generateOptimizedImageSet(staged.bytes, claimed.sourceContentType);
-    const originalPath = imageAssetOriginalStoragePath(claimed.id, generated.original.extension);
-    await uploadPrivateObject(originalPath, generated.original.bytes, generated.original.contentType);
-    uploadedPaths.push(originalPath);
-
-    for (const size of ["thumbnail", "medium", "large"] as const) {
-      for (const format of ["avif", "webp", "fallback"] as const) {
-        const variant = generated.variants[size][format];
-        const objectPath = imageAssetVariantStoragePath(claimed.id, size, format, variant.extension);
-        await uploadPrivateObject(objectPath, variant.bytes, variant.contentType);
-        uploadedPaths.push(objectPath);
-      }
-    }
-
-    const variants = imageVariantMetadata(claimed.id, generated.variants);
-    await db.update(imageAssetsTable).set({
-      status: "ready",
-      originalObjectPath: originalPath,
-      originalWidth: generated.original.width,
-      originalHeight: generated.original.height,
-      variants,
-      expiresAt: new Date(Date.now() + UNATTACHED_READY_TTL_MS),
-      updatedAt: new Date(),
-    }).where(eq(imageAssetsTable.id, claimed.id));
-    await deletePrivateObject(claimed.stagingObjectPath).catch((error) => {
-      req.log.warn({ err: error, assetId: claimed.id }, "Could not remove finalized image staging object");
-    });
-    res.json({
-      assetId: claimed.id,
-      imageUrl: imageUrl(claimed.id),
-      width: generated.original.width,
-      height: generated.original.height,
-    });
-  } catch (error) {
-    await Promise.allSettled(uploadedPaths.map((path) => deletePrivateObject(path)));
-    const message = error instanceof Error ? error.message : "Obrada slike nije uspela.";
-    await db.update(imageAssetsTable)
-      .set({ status: "failed", failureReason: message.slice(0, 240), updatedAt: new Date() })
-      .where(eq(imageAssetsTable.id, claimed.id));
-    req.log.error({ err: error, assetId: claimed.id }, "Could not finalize optimized image");
-    res.status(422).json({ error: message });
-  }
-});
-
-function selectVariant(
-  variants: ImageAssetVariantSet,
-  rawSize: unknown,
-  rawFormat: unknown,
-  acceptHeader: string,
-) {
-  const size = rawSize === "thumbnail" || rawSize === "medium" || rawSize === "large" ? rawSize : "large";
-  const requestedFormat = rawFormat === "avif" || rawFormat === "webp" || rawFormat === "fallback" ? rawFormat : null;
-  const format = requestedFormat
-    ?? (acceptHeader.includes("image/avif") ? "avif" : acceptHeader.includes("image/webp") ? "webp" : "fallback");
-  return { size, format, variant: variants[size][format] };
+  return user;
 }
 
-router.get("/media/images/:assetId", async (req, res): Promise<void> => {
-  const assetId = req.params.assetId;
-  if (!UUID_PATTERN.test(assetId)) {
-    res.status(404).end();
-    return;
+async function ownedSalon(userId: string) {
+  const [owner] = await db.select({ activeSalonId: usersTable.activeSalonId }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const [salon] = owner?.activeSalonId
+    ? await db.select().from(salonsTable).where(and(eq(salonsTable.ownerId, userId), eq(salonsTable.id, owner.activeSalonId))).limit(1)
+    : await db.select().from(salonsTable).where(eq(salonsTable.ownerId, userId)).limit(1);
+  return salon ?? null;
+}
+
+/**
+ * Resolves a client scope to a resource the current user actually controls.
+ * The returned resource ID, not the untrusted request value, is persisted.
+ */
+async function authorizeUploadScope(
+  user: typeof usersTable.$inferSelect,
+  scope: MediaScope,
+  requestedResourceId: string | null | undefined,
+): Promise<{ resourceId: string | null; visibility: "public" | "private" | "education" } | null> {
+  if (scope === "employee-avatar" && user.role === "SALON_EMPLOYEE") {
+    const [employee] = await db.select({ id: employeesTable.id }).from(employeesTable)
+      .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
+    if (!employee || (requestedResourceId && requestedResourceId !== employee.id)) return null;
+    return { resourceId: employee.id, visibility: "public" };
   }
-  const [asset] = await db.select().from(imageAssetsTable)
-    .where(and(eq(imageAssetsTable.id, assetId), eq(imageAssetsTable.status, "ready")))
-    .limit(1);
-  if (!asset?.variants) {
-    res.status(404).end();
-    return;
+  if (scope === "salon-profile" || scope === "salon-gallery" || scope === "employee-avatar") {
+    if (user.role !== "SALON_OWNER") return null;
+    const salon = await ownedSalon(user.id);
+    if (!salon) return null;
+    if (scope === "employee-avatar" && requestedResourceId) {
+      const [employee] = await db.select({ id: employeesTable.id }).from(employeesTable)
+        .where(and(eq(employeesTable.id, requestedResourceId), eq(employeesTable.salonId, salon.id))).limit(1);
+      if (!employee) return null;
+      return { resourceId: employee.id, visibility: "public" };
+    }
+    return { resourceId: scope === "employee-avatar" ? null : salon.id, visibility: "public" };
   }
 
-  const { size, format, variant } = selectVariant(
-    asset.variants,
-    req.query.size,
-    req.query.format,
-    req.get("accept") ?? "",
+  if (scope === "product" || scope === "service-category" || scope === "product-category") {
+    if (!isAdmin(user)) return null;
+    if (scope === "product" && requestedResourceId) {
+      const [product] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.id, requestedResourceId)).limit(1);
+      if (!product) return null;
+    }
+    return { resourceId: requestedResourceId ?? null, visibility: "public" };
+  }
+
+  if (scope === "education-cover" || scope === "education-gallery") {
+    if (!["SALON_OWNER", "EDUCATION_CENTER_OWNER"].includes(user.role)) return null;
+    if (!requestedResourceId) {
+      if (scope === "education-gallery") return null;
+      const mayCreate = user.role === "SALON_OWNER"
+        ? Boolean(await ownedSalon(user.id))
+        : Boolean((await db.select({ id: educationCentersTable.id }).from(educationCentersTable).where(eq(educationCentersTable.ownerId, user.id)).limit(1))[0]);
+      return mayCreate ? { resourceId: null, visibility: "private" } : null;
+    }
+    const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, requestedResourceId)).limit(1);
+    if (!course) return null;
+    const ownsCourse = user.role === "SALON_OWNER"
+      ? Boolean((await ownedSalon(user.id))?.id === course.salonId)
+      : Boolean(course.centerId && (await db.select({ id: educationCentersTable.id }).from(educationCentersTable)
+        .where(and(eq(educationCentersTable.id, course.centerId), eq(educationCentersTable.ownerId, user.id))).limit(1))[0]);
+    return ownsCourse ? { resourceId: course.id, visibility: "education" } : null;
+  }
+
+  if (scope === "education-center") {
+    if (user.role !== "EDUCATION_CENTER_OWNER" || !requestedResourceId) return null;
+    const [center] = await db.select({ id: educationCentersTable.id }).from(educationCentersTable)
+      .where(and(eq(educationCentersTable.id, requestedResourceId), eq(educationCentersTable.ownerId, user.id))).limit(1);
+    return center ? { resourceId: center.id, visibility: "public" } : null;
+  }
+
+  if (scope === "instructor-avatar") {
+    if (user.role !== "EDUCATION_CENTER_OWNER" || !requestedResourceId) return null;
+    const [instructor] = await db.select({ id: educationInstructorsTable.id }).from(educationInstructorsTable)
+      .innerJoin(educationCentersTable, eq(educationInstructorsTable.centerId, educationCentersTable.id))
+      .where(and(eq(educationInstructorsTable.id, requestedResourceId), eq(educationCentersTable.ownerId, user.id))).limit(1);
+    return instructor ? { resourceId: instructor.id, visibility: "public" } : null;
+  }
+
+  return null;
+}
+
+export function stableMediaUrl(asset: Pick<typeof mediaAssetsTable.$inferSelect, "id" | "contentHash">): string {
+  return `/api/media/${asset.id}?v=${asset.contentHash.slice(0, 16)}`;
+}
+
+export function mediaAssetIdFromUrl(url: string): string | null {
+  const match = /^\/api\/media\/([0-9a-f-]{36})(?:\?|$)/i.exec(url.trim());
+  return match && UUID_PATTERN.test(match[1]!) ? match[1]! : null;
+}
+
+export async function canClaimMediaReference(input: {
+  userId: string;
+  url: string;
+  scope: MediaScope;
+  resourceId?: string;
+  existingUrls?: readonly (string | null | undefined)[];
+}): Promise<boolean> {
+  const assetId = mediaAssetIdFromUrl(input.url);
+  if (!assetId) {
+    const normalized = input.url.trim();
+    return input.existingUrls?.some((existing) => existing?.trim() === normalized) ?? false;
+  }
+  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+  return Boolean(
+    asset
+    && asset.ownerUserId === input.userId
+    && asset.scope === input.scope
+    && !asset.cleanupReservedAt
+    && (!asset.resourceId || !input.resourceId || asset.resourceId === input.resourceId),
   );
-  const etag = `"${asset.id}-${size}-${format}-${variant.bytes}"`;
-  const isAttached = asset.expiresAt.getUTCFullYear() >= 9999;
-  if (!isAttached) {
-    const user = await getCurrentUser(req);
-    if (!user || user.id !== asset.uploadedByUserId) {
-      res.set({ "Cache-Control": "private, no-store", "Vary": "Cookie" });
-      res.status(404).end();
-      return;
-    }
-  }
-  const cacheHeaders = {
-    "Cache-Control": isAttached ? "public, max-age=31536000, immutable" : "private, no-store",
-    "Cross-Origin-Resource-Policy": "same-site",
-    "ETag": etag,
-    "Vary": isAttached ? "Accept" : "Accept, Cookie",
-    "X-Content-Type-Options": "nosniff",
-  };
+}
+
+export async function claimMediaReference(input: {
+  userId: string;
+  url: string;
+  scope: MediaScope;
+  resourceId: string;
+  visibility?: "public" | "private" | "education";
+}, executor: Pick<typeof db, "update"> = db): Promise<boolean> {
+  const assetId = mediaAssetIdFromUrl(input.url);
+  if (!assetId) return false;
+  const [asset] = await executor.update(mediaAssetsTable).set({
+    resourceId: input.resourceId,
+    visibility: input.visibility ?? (input.scope.startsWith("education-") ? "education" : "public"),
+  }).where(and(
+    eq(mediaAssetsTable.id, assetId),
+    eq(mediaAssetsTable.ownerUserId, input.userId),
+    eq(mediaAssetsTable.scope, input.scope),
+    isNull(mediaAssetsTable.cleanupReservedAt),
+    or(isNull(mediaAssetsTable.resourceId), eq(mediaAssetsTable.resourceId, input.resourceId)),
+  )).returning();
+  return Boolean(asset);
+}
+
+export async function releaseMediaReferenceClaims(input: {
+  urls: readonly string[];
+  resourceId: string;
+  visibility?: "public" | "private" | "education";
+}, executor: Pick<typeof db, "update"> = db): Promise<void> {
+  const assetIds = input.urls
+    .map(mediaAssetIdFromUrl)
+    .filter((assetId): assetId is string => Boolean(assetId));
+  if (!assetIds.length) return;
+  await executor.update(mediaAssetsTable).set({
+    resourceId: null,
+    ...(input.visibility ? { visibility: input.visibility } : {}),
+  }).where(and(
+    inArray(mediaAssetsTable.id, assetIds),
+    eq(mediaAssetsTable.resourceId, input.resourceId),
+  ));
+}
+
+function extensionFor(contentType: string): string {
+  if (contentType === "image/avif") return "avif";
+  if (contentType === "image/webp") return "webp";
+  if (contentType === "image/png") return "png";
+  return "jpg";
+}
+
+function variantStoragePath(assetId: string, hash: string, sizeName: string, format: string, contentType: string): string {
+  return `/objects/media/${assetId}/${hash.slice(0, 20)}/${sizeName}-${format}.${extensionFor(contentType)}`;
+}
+
+async function addVariant(
+  assetId: string,
+  contentHash: string,
+  sizeName: string,
+  format: string,
+  contentType: string,
+  width: number,
+  height: number,
+  bytes: Buffer,
+): Promise<MediaVariantInsert> {
+  const objectPath = variantStoragePath(assetId, contentHash, sizeName, format, contentType);
   try {
-    const signedUrl = await signPrivateObject(rawPrivateObjectPath(variant.objectPath), "GET", 60);
-    const response = await fetch(signedUrl, { signal: AbortSignal.timeout(60_000) });
-    if (!response.ok || !response.body) throw new Error(`App Storage returned ${response.status}.`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length !== variant.bytes) throw new Error("App Storage returned an incomplete image.");
-    if (req.get("if-none-match") === etag) {
-      res.set(cacheHeaders);
-      res.status(304).end();
-      return;
-    }
-    res.set({
-      ...cacheHeaders,
-      "Content-Type": variant.contentType,
-      "Content-Length": String(variant.bytes),
-    });
-    res.end(bytes);
+    await putPrivateObject(objectPath, contentType, bytes);
   } catch (error) {
-    req.log.error({ err: error, assetId, size, format }, "Could not serve optimized image");
-    if (!res.headersSent) {
-      res.set("Cache-Control", "private, no-store");
-      res.status(503).end();
+    await deletePrivateStorageObject(objectPath).catch(() => undefined);
+    throw error;
+  }
+  return {
+    assetId,
+    sizeName,
+    format,
+    objectPath,
+    contentType,
+    width,
+    height,
+    byteSize: bytes.length,
+    etag: `"${createHash("sha256").update(bytes).digest("hex")}"`,
+  };
+}
+
+export async function cleanupPromotedMediaVariants(
+  variants: readonly Pick<MediaVariantInsert, "objectPath">[],
+): Promise<void> {
+  await Promise.allSettled(variants.map(({ objectPath }) => deletePrivateStorageObject(objectPath)));
+}
+
+export async function processImageBytes(input: {
+  assetId: string;
+  bytes: Buffer;
+  declaredContentType: string;
+}): Promise<{
+  width: number;
+  height: number;
+  contentType: string;
+  contentHash: string;
+  variants: MediaVariantInsert[];
+}> {
+  const metadata = await sharp(input.bytes, {
+    failOn: "warning",
+    limitInputPixels: MAX_IMAGE_PIXELS,
+  }).metadata();
+  const detectedContentType = metadata.format ? CONTENT_TYPE_BY_SHARP_FORMAT[metadata.format] : undefined;
+  if (!detectedContentType || detectedContentType !== input.declaredContentType || !SUPPORTED_CONTENT_TYPES.has(detectedContentType)) {
+    throw new Error("Sadržaj datoteke ne odgovara prijavljenom tipu slike.");
+  }
+  if (!metadata.width || !metadata.height || metadata.width * metadata.height > MAX_IMAGE_PIXELS) {
+    throw new Error("Dimenzije slike nisu ispravne ili su prevelike.");
+  }
+  if ((metadata.pages ?? 1) > 1) throw new Error("Animirane i višestranične slike nisu podržane.");
+
+  const contentHash = createHash("sha256").update(input.bytes).digest("hex");
+  const variants: MediaVariantInsert[] = [];
+  try {
+    variants.push(await addVariant(
+      input.assetId,
+      contentHash,
+      "original",
+      "original",
+      detectedContentType,
+      metadata.width,
+      metadata.height,
+      input.bytes,
+    ));
+
+    const normalized = sharp(input.bytes, { failOn: "warning", limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
+    const normalizedMetadata = await normalized.clone().metadata();
+    const fallbackContentType = normalizedMetadata.hasAlpha ? "image/png" : "image/jpeg";
+    const sizes = [
+      { name: "thumbnail", width: 320 },
+      { name: "medium", width: 800 },
+      { name: "large", width: 1600 },
+    ] as const;
+    const avifEnabled = Boolean(sharp.format.avif?.output || sharp.format.heif?.output);
+
+    for (const size of sizes) {
+      const resized = normalized.clone().resize({
+        width: size.width,
+        height: size.width,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+      const fallbackBytes = fallbackContentType === "image/png"
+        ? await resized.clone().png({ compressionLevel: 9, adaptiveFiltering: true }).toBuffer()
+        : await resized.clone().jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+      const fallbackMetadata = await sharp(fallbackBytes).metadata();
+      variants.push(await addVariant(
+        input.assetId,
+        contentHash,
+        size.name,
+        "fallback",
+        fallbackContentType,
+        fallbackMetadata.width!,
+        fallbackMetadata.height!,
+        fallbackBytes,
+      ));
+
+      const webpBytes = await resized.clone().webp({ quality: 82, effort: 4 }).toBuffer();
+      const webpMetadata = await sharp(webpBytes).metadata();
+      variants.push(await addVariant(
+        input.assetId,
+        contentHash,
+        size.name,
+        "webp",
+        "image/webp",
+        webpMetadata.width!,
+        webpMetadata.height!,
+        webpBytes,
+      ));
+
+      if (avifEnabled) {
+        try {
+          const avifBytes = await resized.clone().avif({ quality: 52, effort: 4 }).toBuffer();
+          const avifMetadata = await sharp(avifBytes).metadata();
+          variants.push(await addVariant(
+            input.assetId,
+            contentHash,
+            size.name,
+            "avif",
+            "image/avif",
+            avifMetadata.width!,
+            avifMetadata.height!,
+            avifBytes,
+          ));
+        } catch (error) {
+          logger.warn({ err: error, assetId: input.assetId, size: size.name }, "AVIF encoder unavailable; keeping WebP and fallback variants");
+        }
+      }
     }
-    else res.end();
+  } catch (error) {
+    await cleanupPromotedMediaVariants(variants);
+    throw error;
+  }
+
+  return {
+    width: metadata.width,
+    height: metadata.height,
+    contentType: detectedContentType,
+    contentHash,
+    variants,
+  };
+}
+
+async function readStagedUpload(ticket: typeof mediaUploadTicketsTable.$inferSelect): Promise<Buffer> {
+  const downloadUrl = await signPrivateObject(privateObjectPath(ticket.stagingObjectPath), "GET", 60);
+  const response = await fetch(downloadUrl, { signal: AbortSignal.timeout(45_000) });
+  if (!response.ok) throw new Error("Otpremanje nije pronađeno u App Storage-u.");
+  const responseType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
+  const responseLength = Number(response.headers.get("content-length"));
+  if (responseType !== ticket.contentType || !Number.isInteger(responseLength) || responseLength !== ticket.byteSize || responseLength > MAX_IMAGE_BYTES) {
+    response.body?.cancel();
+    throw new Error("Otpremanje ne odgovara najavljenoj datoteci.");
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length !== ticket.byteSize) throw new Error("Otpremanje nije kompletno.");
+  return bytes;
+}
+
+function mediaAssetResponse(asset: typeof mediaAssetsTable.$inferSelect) {
+  return FinalizeMediaUploadResponse.parse({
+    id: asset.id,
+    imageUrl: stableMediaUrl(asset),
+    width: asset.width,
+    height: asset.height,
+    contentHash: asset.contentHash,
+  });
+}
+
+router.post("/media/uploads", async (req, res): Promise<void> => {
+  const user = await requireMediaUser(req, res); if (!user) return;
+  const parsed = RequestMediaUploadBody.safeParse(req.body);
+  if (!parsed.success) {
+    const requestedSize = typeof req.body?.size === "number" ? req.body.size : 0;
+    res.status(requestedSize > MAX_IMAGE_BYTES ? 413 : 400).json({
+      error: requestedSize > MAX_IMAGE_BYTES
+        ? "Fotografija ne može biti veća od 12 MB."
+        : "Izaberite JPG, PNG, WEBP ili AVIF fotografiju.",
+    });
+    return;
+  }
+  const body = parsed.data;
+  const authorization = await authorizeUploadScope(user, body.scope as MediaScope, body.resourceId);
+  if (!authorization) {
+    res.status(403).json({ error: "Nemate pravo da postavite fotografiju za izabrani sadržaj." });
+    return;
+  }
+  const uploadId = randomUUID();
+  const stagingObjectPath = `/objects/media-staging/${user.id}/${uploadId}`;
+  const expiresAt = new Date(Date.now() + UPLOAD_TTL_SECONDS * 1000);
+  try {
+    const uploadUrl = await signPrivateObject(privateObjectPath(stagingObjectPath), "PUT", UPLOAD_TTL_SECONDS);
+    await db.insert(mediaUploadTicketsTable).values({
+      id: uploadId,
+      ownerUserId: user.id,
+      scope: body.scope,
+      resourceId: authorization.resourceId,
+      stagingObjectPath,
+      originalFileName: body.name,
+      contentType: body.contentType,
+      byteSize: body.size,
+      expiresAt,
+    });
+    res.json(RequestMediaUploadResponse.parse({ uploadId, uploadUrl, expiresAt: expiresAt.toISOString() }));
+  } catch (error) {
+    req.log.error({ err: error, scope: body.scope }, "Could not create media upload ticket");
+    res.status(502).json({ error: "Nije moguće pripremiti otpremanje fotografije." });
   }
 });
 
-export async function cleanupExpiredImageAssets(): Promise<number> {
-  const expired = await db.select().from(imageAssetsTable)
-    .where(lt(imageAssetsTable.expiresAt, new Date()))
-    .limit(100);
-  let deleted = 0;
-  for (const asset of expired) {
-    try {
-      const objectPaths = new Set<string>([asset.stagingObjectPath]);
-      if (asset.originalObjectPath) objectPaths.add(asset.originalObjectPath);
-      objectPaths.add(imageAssetOriginalStoragePath(asset.id, "jpg"));
-      objectPaths.add(imageAssetOriginalStoragePath(asset.id, "png"));
-      for (const size of ["thumbnail", "medium", "large"] as const) {
-        objectPaths.add(imageAssetVariantStoragePath(asset.id, size, "avif", "avif"));
-        objectPaths.add(imageAssetVariantStoragePath(asset.id, size, "webp", "webp"));
-        objectPaths.add(imageAssetVariantStoragePath(asset.id, size, "fallback", "jpg"));
-        objectPaths.add(imageAssetVariantStoragePath(asset.id, size, "fallback", "png"));
+router.post("/media/uploads/:uploadId/finalize", async (req, res): Promise<void> => {
+  const user = await requireMediaUser(req, res); if (!user) return;
+  const params = FinalizeMediaUploadParams.safeParse(req.params);
+  if (!params.success) { res.status(404).json({ error: "Upload nije pronađen." }); return; }
+  const [ticket] = await db.select().from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, params.data.uploadId)).limit(1);
+  if (!ticket) { res.status(404).json({ error: "Upload nije pronađen." }); return; }
+  if (ticket.ownerUserId !== user.id) { res.status(403).json({ error: "Ovaj upload pripada drugom nalogu." }); return; }
+  if (ticket.finalizedAssetId) {
+    const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ticket.finalizedAssetId)).limit(1);
+    if (asset) { res.json(mediaAssetResponse(asset)); return; }
+  }
+  if (ticket.expiresAt <= new Date()) { res.status(410).json({ error: "Upload je istekao. Izaberite fotografiju ponovo." }); return; }
+  const authorization = await authorizeUploadScope(user, ticket.scope as MediaScope, ticket.resourceId);
+  if (!authorization) { res.status(403).json({ error: "Više nemate pravo da postavite ovu fotografiju." }); return; }
+
+  let processed: Awaited<ReturnType<typeof processImageBytes>> | null = null;
+  try {
+    const bytes = await readStagedUpload(ticket);
+    const promoted = await processImageBytes({ assetId: ticket.id, bytes, declaredContentType: ticket.contentType });
+    processed = promoted;
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`media-upload:${ticket.id}`}))`);
+      const [lockedTicket] = await tx.select().from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, ticket.id)).for("update").limit(1);
+      if (!lockedTicket) throw new Error("Upload je nestao tokom obrade.");
+      if (lockedTicket.finalizedAssetId) {
+        const [existing] = await tx.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, lockedTicket.finalizedAssetId)).limit(1);
+        if (existing) return { asset: existing, created: false };
       }
-      const cleanupResults = await Promise.allSettled(
-        [...objectPaths].map((objectPath) => deletePrivateObject(objectPath)),
-      );
-      const failed = cleanupResults.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") throw failed.reason;
-      await db.delete(imageAssetsTable).where(eq(imageAssetsTable.id, asset.id));
-      deleted += 1;
-    } catch {
-      // The next scheduled pass will retry. The row is the durable cleanup claim.
+      const [existingAsset] = await tx.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, ticket.id)).limit(1);
+      if (existingAsset) {
+        await tx.update(mediaUploadTicketsTable).set({ finalizedAssetId: existingAsset.id, finalizedAt: new Date() }).where(eq(mediaUploadTicketsTable.id, ticket.id));
+        return { asset: existingAsset, created: false };
+      }
+      const [asset] = await tx.insert(mediaAssetsTable).values({
+        id: ticket.id,
+        ownerUserId: user.id,
+        scope: ticket.scope,
+        resourceId: null,
+        visibility: "private",
+        originalFileName: ticket.originalFileName,
+        originalContentType: promoted.contentType,
+        width: promoted.width,
+        height: promoted.height,
+        contentHash: promoted.contentHash,
+      }).returning();
+      await tx.insert(mediaVariantsTable).values(promoted.variants);
+      await tx.update(mediaUploadTicketsTable).set({ finalizedAssetId: asset!.id, finalizedAt: new Date() }).where(eq(mediaUploadTicketsTable.id, ticket.id));
+      return { asset: asset!, created: true };
+    });
+    try {
+      await deletePrivateStorageObject(ticket.stagingObjectPath);
+    } catch (cleanupError) {
+      req.log.warn({ err: cleanupError, uploadId: ticket.id }, "Finalized media staging cleanup will be retried");
+      await db.update(mediaUploadTicketsTable).set({
+        cleanupFailureCount: ticket.cleanupFailureCount + 1,
+        lastCleanupFailureAt: new Date(),
+      }).where(eq(mediaUploadTicketsTable.id, ticket.id));
+    }
+    res.status(result.created ? 201 : 200).json(mediaAssetResponse(result.asset));
+  } catch (error) {
+    if (processed) {
+      const [durableAsset] = await db.select({ id: mediaAssetsTable.id })
+        .from(mediaAssetsTable)
+        .where(eq(mediaAssetsTable.id, ticket.id))
+        .limit(1)
+        .catch(() => []);
+      if (!durableAsset) await cleanupPromotedMediaVariants(processed.variants);
+    }
+    req.log.warn({ err: error, uploadId: ticket.id }, "Could not validate or finalize media upload");
+    res.status(400).json({ error: error instanceof Error ? error.message : "Fotografija nije ispravna." });
+  }
+});
+
+async function mayReadAsset(req: Request, asset: typeof mediaAssetsTable.$inferSelect): Promise<boolean> {
+  if (asset.visibility === "public") return true;
+  if (asset.visibility === "education" && asset.resourceId) {
+    const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, asset.resourceId)).limit(1);
+    const isLiveCourseReference = asset.scope === "education-cover"
+      ? mediaAssetIdFromUrl(course?.imageUrl ?? "") === asset.id
+      : asset.scope === "education-gallery"
+        ? Boolean((await db.select({ id: educationMediaTable.id }).from(educationMediaTable).where(and(
+          eq(educationMediaTable.id, asset.id),
+          eq(educationMediaTable.courseId, asset.resourceId),
+        )).limit(1))[0])
+        : false;
+    if (isLiveCourseReference && course?.published && !course.archived && course.centerId) {
+      const [[center], [subscription]] = await Promise.all([
+        db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1),
+        db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, course.centerId)).limit(1),
+      ]);
+      if (center?.verificationStatus === "verified" && ["active", "free_via_loyalty"].includes(subscription?.status ?? "")) return true;
     }
   }
-  return deleted;
+  const user = await getCurrentUser(req);
+  if (!user) return false;
+  if (isAdmin(user)) return true;
+  if (asset.ownerUserId === user.id) return true;
+  return false;
+}
+
+function preferredFormats(explicitFormat: string | undefined, accept: string): string[] {
+  if (explicitFormat === "original") return ["original"];
+  if (explicitFormat === "fallback") return ["fallback", "original"];
+  if (explicitFormat === "webp") return ["webp", "fallback", "original"];
+  if (explicitFormat === "avif") return ["avif", "webp", "fallback", "original"];
+  return [
+    ...(accept.includes("image/avif") ? ["avif"] : []),
+    ...(accept.includes("image/webp") ? ["webp"] : []),
+    "fallback",
+    "original",
+  ];
+}
+
+export function selectMediaVariant(
+  variants: (typeof mediaVariantsTable.$inferSelect)[],
+  sizeName: "thumbnail" | "medium" | "large" | "original",
+  explicitFormat: "avif" | "webp" | "fallback" | "original" | undefined,
+  accept: string,
+) {
+  if (sizeName === "original") return variants.find((variant) => variant.sizeName === "original" && variant.format === "original") ?? null;
+  for (const format of preferredFormats(explicitFormat, accept)) {
+    const match = variants.find((variant) => variant.sizeName === sizeName && variant.format === format);
+    if (match) return match;
+  }
+  return null;
+}
+
+router.get("/media/:assetId", async (req, res): Promise<void> => {
+  const [params, query] = [GetMediaAssetParams.safeParse(req.params), GetMediaAssetQueryParams.safeParse(req.query)];
+  if (!params.success || !query.success) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
+  const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, params.data.assetId)).limit(1);
+  if (!asset) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
+  const canRead = await mayReadAsset(req, asset);
+  if (!canRead) { res.status(403).json({ error: "Nemate pristup ovoj fotografiji." }); return; }
+  const variants = await db.select().from(mediaVariantsTable).where(eq(mediaVariantsTable.assetId, asset.id));
+  const variant = selectMediaVariant(variants, query.data.size, query.data.format, String(req.headers.accept ?? ""));
+  if (!variant) { res.status(404).json({ error: "Tražena veličina fotografije nije dostupna." }); return; }
+
+  const isPublic = asset.visibility === "public";
+  const versionMatches = typeof req.query.v === "string" && req.query.v === asset.contentHash.slice(0, 16);
+  res.setHeader("Content-Type", variant.contentType);
+  res.setHeader("Content-Length", String(variant.byteSize));
+  res.setHeader("ETag", variant.etag);
+  res.setHeader("Vary", isPublic ? "Accept" : "Accept, Cookie");
+  res.setHeader(
+    "Cache-Control",
+    isPublic
+      ? versionMatches ? "public, max-age=31536000, immutable" : "public, max-age=300, s-maxage=3600"
+      : "private, no-store",
+  );
+  if (req.headers["if-none-match"] === variant.etag) { res.status(304).end(); return; }
+
+  try {
+    const downloadUrl = await signPrivateObject(privateObjectPath(variant.objectPath), "GET", 120);
+    const source = await fetch(downloadUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!source.ok || !source.body) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
+    Readable.fromWeb(source.body as ReadableStream<Uint8Array>).pipe(res);
+  } catch (error) {
+    req.log.error({ err: error, assetId: asset.id, variantId: variant.id }, "Could not serve media variant");
+    res.status(502).json({ error: "Fotografija trenutno nije dostupna." });
+  }
+});
+
+export async function runMediaUploadCleanup(options: {
+  afterAbandonedCandidate?: (assetId: string) => Promise<void>;
+} = {}): Promise<void> {
+  const candidates = await db.select().from(mediaUploadTicketsTable).where(and(
+    lt(mediaUploadTicketsTable.expiresAt, new Date()),
+    or(isNull(mediaUploadTicketsTable.finalizedAt), sql`${mediaUploadTicketsTable.cleanupFailureCount} > 0`),
+  )).limit(100);
+  for (const ticket of candidates) {
+    try {
+      await deletePrivateStorageObject(ticket.stagingObjectPath);
+      if (ticket.finalizedAt) {
+        await db.update(mediaUploadTicketsTable).set({ cleanupFailureCount: 0, lastCleanupFailureAt: null })
+          .where(eq(mediaUploadTicketsTable.id, ticket.id));
+      } else {
+        await db.delete(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, ticket.id));
+      }
+    } catch (error) {
+      await db.update(mediaUploadTicketsTable).set({
+        cleanupFailureCount: ticket.cleanupFailureCount + 1,
+        lastCleanupFailureAt: new Date(),
+      }).where(eq(mediaUploadTicketsTable.id, ticket.id));
+      logger.warn({ err: error, uploadId: ticket.id }, "Media staging cleanup failed");
+    }
+  }
+
+  const abandoned = await db.select({
+    ticketId: mediaUploadTicketsTable.id,
+    assetId: mediaAssetsTable.id,
+  }).from(mediaUploadTicketsTable)
+    .innerJoin(mediaAssetsTable, eq(mediaUploadTicketsTable.finalizedAssetId, mediaAssetsTable.id))
+    .where(and(
+      lt(mediaUploadTicketsTable.expiresAt, new Date()),
+      isNotNull(mediaUploadTicketsTable.finalizedAt),
+      isNull(mediaAssetsTable.resourceId),
+      or(
+        isNull(mediaAssetsTable.cleanupReservedAt),
+        lt(mediaAssetsTable.cleanupReservedAt, new Date(Date.now() - 5 * 60_000)),
+      ),
+    ))
+    .limit(100);
+  for (const item of abandoned) {
+    await options.afterAbandonedCandidate?.(item.assetId);
+    const reservationTime = new Date();
+    const [reserved] = await db.update(mediaAssetsTable)
+      .set({ cleanupReservedAt: reservationTime })
+      .where(and(
+        eq(mediaAssetsTable.id, item.assetId),
+        isNull(mediaAssetsTable.resourceId),
+        or(
+          isNull(mediaAssetsTable.cleanupReservedAt),
+          lt(mediaAssetsTable.cleanupReservedAt, new Date(Date.now() - 5 * 60_000)),
+        ),
+      ))
+      .returning({ id: mediaAssetsTable.id });
+    if (!reserved) continue;
+    const variants = await db.select({ objectPath: mediaVariantsTable.objectPath })
+      .from(mediaVariantsTable)
+      .where(eq(mediaVariantsTable.assetId, item.assetId));
+    try {
+      for (const variant of variants) await deletePrivateStorageObject(variant.objectPath);
+      await db.transaction(async (tx) => {
+        await tx.delete(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, item.ticketId));
+        await tx.delete(mediaAssetsTable).where(and(
+          eq(mediaAssetsTable.id, item.assetId),
+          isNull(mediaAssetsTable.resourceId),
+          eq(mediaAssetsTable.cleanupReservedAt, reservationTime),
+        ));
+      });
+    } catch (error) {
+      logger.warn({ err: error, assetId: item.assetId }, "Unattached finalized media cleanup failed");
+    }
+  }
 }
 
 export default router;

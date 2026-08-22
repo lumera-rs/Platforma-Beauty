@@ -6,11 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetOptimizedImageSize = typeof GetOptimizedImageSize[keyof typeof GetOptimizedImageSize];
+export type GetMediaAssetSize = typeof GetMediaAssetSize[keyof typeof GetMediaAssetSize];
 
 
-export const GetOptimizedImageSize = {
+export const GetMediaAssetSize = {
   thumbnail: 'thumbnail',
   medium: 'medium',
   large: 'large',
+  original: 'original',
 } as const;

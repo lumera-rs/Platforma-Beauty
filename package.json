@@ -26,7 +26,8 @@
     "test:salon-notifications": "pnpm --filter @workspace/scripts run test:salon-notifications",
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",
     "test:service-library": "pnpm --filter @workspace/scripts run test:service-library",
-    "test:service-availability": "pnpm --filter @workspace/scripts run test:service-availability"
+    "test:service-availability": "pnpm --filter @workspace/scripts run test:service-availability",
+    "test:media": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/media-routes.test.ts"
   },
   "private": true,
   "dependencies": {

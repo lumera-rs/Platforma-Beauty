@@ -370,9 +370,6 @@ export interface SalonProfileMedia {
   id: string;
   name: string;
   slug: string;
-  imageUrl: string;
-  /** @maxItems 20 */
-  gallery: string[];
   /** @nullable */
   videoUrl: string | null;
   acceptsCards: boolean;
@@ -385,16 +382,11 @@ export interface SalonProfileMedia {
   homeServiceRadiusKm: number;
   servesMen: boolean;
   openSunday: boolean;
+  imageUrl: string;
+  gallery: string[];
 }
 
 export interface SalonProfileMediaUpdate {
-  /** @minLength 1 */
-  imageUrl?: string;
-  /**
-     * @maxItems 20
-     * @items.minLength 1
-     */
-  gallery?: string[];
   /** @nullable */
   videoUrl?: string | null;
   acceptsCards?: boolean;
@@ -405,6 +397,75 @@ export interface SalonProfileMediaUpdate {
      */
   homeServiceRadiusKm?: number;
   servesMen?: boolean;
+  /** @minLength 1 */
+  imageUrl?: string;
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     */
+  gallery?: string[];
+}
+
+export type MediaUploadInputScope = typeof MediaUploadInputScope[keyof typeof MediaUploadInputScope];
+
+
+export const MediaUploadInputScope = {
+  'salon-profile': 'salon-profile',
+  'salon-gallery': 'salon-gallery',
+  'employee-avatar': 'employee-avatar',
+  product: 'product',
+  'education-cover': 'education-cover',
+  'education-gallery': 'education-gallery',
+  'education-center': 'education-center',
+  'instructor-avatar': 'instructor-avatar',
+  'service-category': 'service-category',
+  'product-category': 'product-category',
+} as const;
+
+export type MediaUploadInputContentType = typeof MediaUploadInputContentType[keyof typeof MediaUploadInputContentType];
+
+
+export const MediaUploadInputContentType = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+  'image/avif': 'image/avif',
+} as const;
+
+export interface MediaUploadInput {
+  scope: MediaUploadInputScope;
+  /**
+     * @nullable
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  resourceId?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 240
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 12582912
+     */
+  size: number;
+  contentType: MediaUploadInputContentType;
+}
+
+export interface MediaUploadTicket {
+  uploadId: string;
+  uploadUrl: string;
+  expiresAt: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  imageUrl: string;
+  /** @minimum 1 */
+  width: number;
+  /** @minimum 1 */
+  height: number;
+  contentHash: string;
 }
 
 export interface EmployeeDeactivationPreview {
@@ -2045,41 +2106,6 @@ export interface EducationCourseDaysInput {
   days: EducationCourseDaysInputDaysItem[];
 }
 
-export interface ImageUploadInput {
-  /**
-     * @minLength 1
-     * @maxLength 240
-     */
-  name: string;
-  /**
-     * @minimum 1
-     * @maximum 8388608
-     */
-  size: number;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     */
-  contentType: string;
-}
-
-export interface ImageUploadIntent {
-  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
-  assetId: string;
-  uploadUrl: string;
-  finalizeUrl: string;
-}
-
-export interface OptimizedImageUpload {
-  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
-  assetId: string;
-  imageUrl: string;
-  /** @minimum 1 */
-  width: number;
-  /** @minimum 1 */
-  height: number;
-}
-
 export interface EducationGalleryUploadInput {
   /**
      * @minLength 1
@@ -3161,29 +3187,6 @@ export const SortQueryParameter = {
   newest: 'newest',
 } as const;
 
-export type GetOptimizedImageParams = {
-size?: GetOptimizedImageSize;
-format?: GetOptimizedImageFormat;
-};
-
-export type GetOptimizedImageSize = typeof GetOptimizedImageSize[keyof typeof GetOptimizedImageSize];
-
-
-export const GetOptimizedImageSize = {
-  thumbnail: 'thumbnail',
-  medium: 'medium',
-  large: 'large',
-} as const;
-
-export type GetOptimizedImageFormat = typeof GetOptimizedImageFormat[keyof typeof GetOptimizedImageFormat];
-
-
-export const GetOptimizedImageFormat = {
-  avif: 'avif',
-  webp: 'webp',
-  fallback: 'fallback',
-} as const;
-
 export type ListSalonsParams = {
 city?: CityQueryParameter;
 category?: CategoryQueryParameter;
@@ -3266,6 +3269,32 @@ export const ListMyAppointmentsScope = {
   upcoming: 'upcoming',
   past: 'past',
   all: 'all',
+} as const;
+
+export type GetMediaAssetParams = {
+size?: GetMediaAssetSize;
+format?: GetMediaAssetFormat;
+v?: string;
+};
+
+export type GetMediaAssetSize = typeof GetMediaAssetSize[keyof typeof GetMediaAssetSize];
+
+
+export const GetMediaAssetSize = {
+  thumbnail: 'thumbnail',
+  medium: 'medium',
+  large: 'large',
+  original: 'original',
+} as const;
+
+export type GetMediaAssetFormat = typeof GetMediaAssetFormat[keyof typeof GetMediaAssetFormat];
+
+
+export const GetMediaAssetFormat = {
+  avif: 'avif',
+  webp: 'webp',
+  fallback: 'fallback',
+  original: 'original',
 } as const;
 
 export type ListSalonAppointmentsParams = {
@@ -3577,4 +3606,3 @@ mainCategory?: string;
  */
 subcategory?: string;
 };
-

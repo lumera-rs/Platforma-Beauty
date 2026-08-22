@@ -118,7 +118,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                </div>
              </>
           ) : (
-             <OptimizedImage src={mainMedia.url} alt={`${salonName} 1`} width={1280} height={960} eager className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 75vw" />
+             <OptimizedImage src={mainMedia.url} alt={`${salonName} — glavna fotografija`} width={1200} height={900} priority responsiveSizes="(max-width: 640px) 100vw, (max-width: 1024px) 55vw, 800px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
           )}
           <span className="absolute bottom-4 right-4 bg-black/60 text-white backdrop-blur-md p-2.5 flex items-center gap-2 rounded-lg text-sm font-medium border border-white/10">
             <Maximize2 className="w-4 h-4" />
@@ -143,7 +143,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                     </div>
                   </>
                 ) : (
-                  <OptimizedImage src={item.url} alt={`${salonName} ${idx + 2}`} width={320} height={240} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" sizes="25vw" />
+                  <OptimizedImage src={item.url} alt={`${salonName} — fotografija ${idx + 2}`} width={400} height={300} responsiveSizes="(max-width: 1024px) 0px, 200px" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                 )}
                 {idx === 1 && media.length > 3 && (
                   <div className="absolute inset-0 bg-black/50 hover:bg-black/60 transition-colors flex flex-col items-center justify-center text-white backdrop-blur-[2px]">
@@ -187,7 +187,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                {media[currentIndex].type === 'video' ? (
                  <video src={media[currentIndex].url} controls autoPlay className="max-w-full max-h-[85vh] rounded-md shadow-2xl bg-black" />
                ) : (
-                 <OptimizedImage src={media[currentIndex].url} alt={`${salonName} ${currentIndex + 1}`} width={1920} height={1080} className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} sizes="(max-width: 768px) 100vw, 80vw" />
+                 <OptimizedImage src={media[currentIndex].url} alt={`${salonName} — fotografija ${currentIndex + 1}`} width={1600} height={1200} priority responsiveSizes="100vw" className="max-w-full max-h-[85vh] rounded-md shadow-2xl object-contain select-none" draggable={false} />
                )}
              </div>
 
@@ -220,7 +220,7 @@ export function SalonGallery({ media, salonName }: SalonGalleryProps) {
                         </div>
                       </>
                     ) : (
-                      <OptimizedImage src={item.url} alt={`${salonName} pregled ${idx + 1}`} width={80} height={80} className="w-full h-full object-cover" sizes="80px" />
+                      <OptimizedImage src={item.url} alt={`${salonName} — minijatura ${idx + 1}`} width={80} height={80} preferredSize="thumbnail" responsiveSizes="80px" className="w-full h-full object-cover" />
                     )}
                   </button>
                 ))}

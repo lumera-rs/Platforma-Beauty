@@ -9,76 +9,6 @@ import * as zod from 'zod';
 
 
 /**
- * @summary Request a direct App Storage upload URL for an image
- */
-export const requestImageUploadBodyNameMax = 240;
-
-export const requestImageUploadBodySizeMax = 8388608;
-
-export const requestImageUploadBodyContentTypeMax = 120;
-
-
-
-export const RequestImageUploadBody = zod.object({
-  "name": zod.string().min(1).max(requestImageUploadBodyNameMax),
-  "size": zod.number().min(1).max(requestImageUploadBodySizeMax),
-  "contentType": zod.string().min(1).max(requestImageUploadBodyContentTypeMax)
-})
-
-export const requestImageUploadResponseAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
-
-
-export const RequestImageUploadResponse = zod.object({
-  "assetId": zod.string().regex(requestImageUploadResponseAssetIdRegExp),
-  "uploadUrl": zod.string(),
-  "finalizeUrl": zod.string()
-})
-
-
-/**
- * @summary Validate an uploaded image and create responsive variants
- */
-export const finalizeImageUploadPathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
-
-
-export const FinalizeImageUploadParams = zod.object({
-  "assetId": zod.coerce.string().regex(finalizeImageUploadPathAssetIdRegExp)
-})
-
-export const finalizeImageUploadResponseAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
-
-
-
-
-export const FinalizeImageUploadResponse = zod.object({
-  "assetId": zod.string().regex(finalizeImageUploadResponseAssetIdRegExp),
-  "imageUrl": zod.string(),
-  "width": zod.number().min(1),
-  "height": zod.number().min(1)
-})
-
-
-/**
- * @summary Serve an immutable optimized image variant
- */
-export const getOptimizedImagePathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
-
-
-export const GetOptimizedImageParams = zod.object({
-  "assetId": zod.coerce.string().regex(getOptimizedImagePathAssetIdRegExp)
-})
-
-export const getOptimizedImageQuerySizeDefault = `large`;
-
-export const GetOptimizedImageQueryParams = zod.object({
-  "size": zod.enum(['thumbnail', 'medium', 'large']).default(getOptimizedImageQuerySizeDefault),
-  "format": zod.enum(['avif', 'webp', 'fallback']).optional()
-})
-
-export const GetOptimizedImageResponse = zod.unknown()
-
-
-/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -1309,8 +1239,6 @@ export const GetSalonDashboardResponse = zod.object({
 /**
  * @summary Get editable public profile settings for the active owned salon
  */
-export const getManagedSalonProfileResponseGalleryMax = 20;
-
 export const getManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
 
 
@@ -1319,40 +1247,38 @@ export const GetManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
-  "imageUrl": zod.string(),
-  "gallery": zod.array(zod.string()).max(getManagedSalonProfileResponseGalleryMax),
   "videoUrl": zod.string().nullable(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
   "homeService": zod.boolean(),
   "homeServiceRadiusKm": zod.number().min(1).max(getManagedSalonProfileResponseHomeServiceRadiusKmMax),
   "servesMen": zod.boolean(),
-  "openSunday": zod.boolean()
+  "openSunday": zod.boolean(),
+  "imageUrl": zod.string(),
+  "gallery": zod.array(zod.string())
 })
 
 
 /**
  * @summary Update public profile settings for the active owned salon
  */
-
-
-export const updateManagedSalonProfileBodyGalleryMax = 20;
-
 export const updateManagedSalonProfileBodyHomeServiceRadiusKmMax = 100;
 
 
 
+export const updateManagedSalonProfileBodyGalleryMax = 20;
+
+
+
 export const UpdateManagedSalonProfileBody = zod.object({
-  "imageUrl": zod.string().min(1).optional(),
-  "gallery": zod.array(zod.string().min(1)).max(updateManagedSalonProfileBodyGalleryMax).optional(),
   "videoUrl": zod.string().nullish(),
   "acceptsCards": zod.boolean().optional(),
   "instantBooking": zod.boolean().optional(),
   "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileBodyHomeServiceRadiusKmMax).optional(),
-  "servesMen": zod.boolean().optional()
+  "servesMen": zod.boolean().optional(),
+  "imageUrl": zod.string().min(1).optional(),
+  "gallery": zod.array(zod.string().min(1)).max(updateManagedSalonProfileBodyGalleryMax).optional()
 })
-
-export const updateManagedSalonProfileResponseGalleryMax = 20;
 
 export const updateManagedSalonProfileResponseHomeServiceRadiusKmMax = 100;
 
@@ -1362,16 +1288,88 @@ export const UpdateManagedSalonProfileResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "slug": zod.string(),
-  "imageUrl": zod.string(),
-  "gallery": zod.array(zod.string()).max(updateManagedSalonProfileResponseGalleryMax),
   "videoUrl": zod.string().nullable(),
   "acceptsCards": zod.boolean(),
   "instantBooking": zod.boolean(),
   "homeService": zod.boolean(),
   "homeServiceRadiusKm": zod.number().min(1).max(updateManagedSalonProfileResponseHomeServiceRadiusKmMax),
   "servesMen": zod.boolean(),
-  "openSunday": zod.boolean()
+  "openSunday": zod.boolean(),
+  "imageUrl": zod.string(),
+  "gallery": zod.array(zod.string())
 })
+
+
+/**
+ * @summary Create an owner-scoped App Storage image upload ticket
+ */
+export const requestMediaUploadBodyResourceIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+export const requestMediaUploadBodyNameMax = 240;
+
+export const requestMediaUploadBodySizeMax = 12582912;
+export const requestMediaUploadBodySizeMultipleOf = 1;
+
+
+
+export const RequestMediaUploadBody = zod.object({
+  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category']),
+  "resourceId": zod.string().regex(requestMediaUploadBodyResourceIdRegExp).nullish(),
+  "name": zod.string().min(1).max(requestMediaUploadBodyNameMax),
+  "size": zod.number().min(1).max(requestMediaUploadBodySizeMax).multipleOf(requestMediaUploadBodySizeMultipleOf),
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+})
+
+export const RequestMediaUploadResponse = zod.object({
+  "uploadId": zod.string(),
+  "uploadUrl": zod.string(),
+  "expiresAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Validate, transform and promote a staged image
+ */
+export const finalizeMediaUploadPathUploadIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const FinalizeMediaUploadParams = zod.object({
+  "uploadId": zod.coerce.string().regex(finalizeMediaUploadPathUploadIdRegExp)
+})
+
+export const finalizeMediaUploadResponseWidthMultipleOf = 1;
+
+export const finalizeMediaUploadResponseHeightMultipleOf = 1;
+
+
+
+export const FinalizeMediaUploadResponse = zod.object({
+  "id": zod.string(),
+  "imageUrl": zod.string(),
+  "width": zod.number().min(1).multipleOf(finalizeMediaUploadResponseWidthMultipleOf),
+  "height": zod.number().min(1).multipleOf(finalizeMediaUploadResponseHeightMultipleOf),
+  "contentHash": zod.string()
+})
+
+
+/**
+ * @summary Serve an optimized image variant using Accept negotiation
+ */
+export const getMediaAssetPathAssetIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+
+
+export const GetMediaAssetParams = zod.object({
+  "assetId": zod.coerce.string().regex(getMediaAssetPathAssetIdRegExp)
+})
+
+export const getMediaAssetQuerySizeDefault = `large`;
+
+export const GetMediaAssetQueryParams = zod.object({
+  "size": zod.enum(['thumbnail', 'medium', 'large', 'original']).default(getMediaAssetQuerySizeDefault),
+  "format": zod.enum(['avif', 'webp', 'fallback', 'original']).optional(),
+  "v": zod.coerce.string().optional()
+})
+
+export const GetMediaAssetResponse = zod.unknown()
 
 
 /**
@@ -7805,7 +7803,8 @@ export const AdminListServiceCategoriesResponse = zod.array(AdminListServiceCate
 
 
 /**
- * @summary Request a direct upload URL for a service category fallback image
+ * @deprecated
+ * @summary Deprecated unvalidated service-category upload flow
  */
 export const adminRequestServiceCategoryImageUploadBodyNameMax = 240;
 
@@ -7821,10 +7820,7 @@ export const AdminRequestServiceCategoryImageUploadBody = zod.object({
   "contentType": zod.string().min(1).max(adminRequestServiceCategoryImageUploadBodyContentTypeMax)
 })
 
-export const AdminRequestServiceCategoryImageUploadResponse = zod.object({
-  "uploadUrl": zod.string(),
-  "imageUrl": zod.string()
-})
+export const AdminRequestServiceCategoryImageUploadResponse = zod.void()
 
 
 /**
@@ -8305,5 +8301,3 @@ export const AdminDeleteCourierServiceParams = zod.object({
 })
 
 export const AdminDeleteCourierServiceResponse = zod.void()
-
-

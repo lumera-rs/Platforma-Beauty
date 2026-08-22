@@ -28,7 +28,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
 import { SalonGallery, MediaItem } from "@/components/salon-gallery";
-import { OptimizedImage } from "@/components/optimized-image";
+import { AvatarImage as OptimizedAvatarImage, OptimizedImage } from "@/components/optimized-image";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
@@ -846,7 +846,7 @@ export default function SalonProfile() {
                   className={`p-6 rounded-2xl border transition-all cursor-pointer flex items-start gap-5 bg-card shadow-sm ${selectedEmployee === employee.id ? 'border-primary ring-2 ring-primary/20 bg-primary/5' : 'border-border/60 hover:border-primary/40 hover:shadow-md'}`}
                   onClick={() => selectEmployee(selectedEmployee === employee.id ? null : employee.id)}
                 >
-                  <OptimizedImage src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} width={80} height={80} className="w-20 h-20 rounded-full object-cover border-4 border-background shadow-md shrink-0" />
+                  <OptimizedAvatarImage src={employee.avatarUrl || "https://i.pravatar.cc/150"} alt={employee.name} size={80} className="border-4 border-background shadow-md shrink-0" />
                    <div className="min-w-0 flex-1 pt-1">
                     <h4 className="font-bold text-xl text-foreground">{employee.name}</h4>
                     <p className="text-sm font-medium text-primary mt-1">{employee.role}</p>
@@ -885,7 +885,7 @@ export default function SalonProfile() {
                   <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-4">
                       {review.avatarUrl ? (
-                        <OptimizedImage src={review.avatarUrl} alt="" width={48} height={48} className="h-12 w-12 rounded-full object-cover shadow-sm ring-2 ring-background" />
+                        <OptimizedAvatarImage src={review.avatarUrl} alt={review.authorName} size={48} className="shadow-sm ring-2 ring-background" />
                       ) : (
                         <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg ring-2 ring-background">
                           {review.authorName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
@@ -998,11 +998,11 @@ export default function SalonProfile() {
                       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
                         <OptimizedImage
                           src={nearbySalon.imageUrl || "https://images.unsplash.com/photo-1519014816548-bf5fe059c98b?q=80&w=800"}
-                          alt={nearbySalon.name}
-                          width={640}
-                          height={480}
+                          alt={`${nearbySalon.name} — salon lepote`}
+                          width={600}
+                          height={450}
+                          responsiveSizes="(max-width: 640px) calc(100vw - 2rem), (max-width: 768px) calc(50vw - 1.5rem), 300px"
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
                         <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-xs font-bold shadow-sm">

@@ -128,12 +128,10 @@ import type {
   FavoriteInput,
   FavoriteResult,
   GetMarketplaceHomeDiscoveryParams,
-  GetOptimizedImageParams,
+  GetMediaAssetParams,
   GetSalonAvailabilityParams,
   GetShippingQuoteParams,
   HealthStatus,
-  ImageUploadInput,
-  ImageUploadIntent,
   LinkEducationCourseInstructorBody,
   ListCoursesParams,
   ListMyAppointmentsParams,
@@ -149,7 +147,9 @@ import type {
   LoyaltyTierInput,
   MarkEducationNotificationReadResponse,
   MarketplaceHomeDiscovery,
-  OptimizedImageUpload,
+  MediaAsset,
+  MediaUploadInput,
+  MediaUploadTicket,
   Order,
   PlatformTrustStats,
   Product,
@@ -172,7 +172,6 @@ import type {
   SalonProfileMedia,
   SalonProfileMediaUpdate,
   Service,
-  ServiceCategoryImageUpload,
   ServiceCategoryImageUploadInput,
   ServiceInput,
   ServiceTemplate,
@@ -221,237 +220,6 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
-
-export const getRequestImageUploadUrl = () => {
-
-
-
-
-  return `/api/media/uploads/request-url`
-}
-
-/**
- * @summary Request a direct App Storage upload URL for an image
- */
-export const requestImageUpload = async (imageUploadInput: ImageUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<ImageUploadIntent> => {
-
-  return customFetch<ImageUploadIntent>(getRequestImageUploadUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(imageUploadInput)
-  }
-);}
-
-
-
-
-
-export const getRequestImageUploadMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestImageUpload>>, TError,{data: BodyType<ImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof requestImageUpload>>, TError,{data: BodyType<ImageUploadInput>}, TContext> => {
-
-const mutationKey = ['requestImageUpload'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestImageUpload>>, {data: BodyType<ImageUploadInput>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  requestImageUpload(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type RequestImageUploadMutationResult = NonNullable<Awaited<ReturnType<typeof requestImageUpload>>>
-    export type RequestImageUploadMutationBody = BodyType<ImageUploadInput>
-    export type RequestImageUploadMutationError = ErrorType<void>
-
-    /**
- * @summary Request a direct App Storage upload URL for an image
- */
-export const useRequestImageUpload = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestImageUpload>>, TError,{data: BodyType<ImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof requestImageUpload>>,
-        TError,
-        {data: BodyType<ImageUploadInput>},
-        TContext
-      > => {
-      return useMutation(getRequestImageUploadMutationOptions(options));
-    }
-
-export const getFinalizeImageUploadUrl = (assetId: string,) => {
-
-
-
-
-  return `/api/media/uploads/${assetId}/finalize`
-}
-
-/**
- * @summary Validate an uploaded image and create responsive variants
- */
-export const finalizeImageUpload = async (assetId: string, options?: Parameters<typeof customFetch>[1]): Promise<OptimizedImageUpload> => {
-
-  return customFetch<OptimizedImageUpload>(getFinalizeImageUploadUrl(assetId),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-);}
-
-
-
-
-
-export const getFinalizeImageUploadMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizeImageUpload>>, TError,{assetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof finalizeImageUpload>>, TError,{assetId: string}, TContext> => {
-
-const mutationKey = ['finalizeImageUpload'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizeImageUpload>>, {assetId: string}> = (props) => {
-          const {assetId} = props ?? {};
-
-          return  finalizeImageUpload(assetId,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type FinalizeImageUploadMutationResult = NonNullable<Awaited<ReturnType<typeof finalizeImageUpload>>>
-
-    export type FinalizeImageUploadMutationError = ErrorType<void>
-
-    /**
- * @summary Validate an uploaded image and create responsive variants
- */
-export const useFinalizeImageUpload = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizeImageUpload>>, TError,{assetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof finalizeImageUpload>>,
-        TError,
-        {assetId: string},
-        TContext
-      > => {
-      return useMutation(getFinalizeImageUploadMutationOptions(options));
-    }
-
-export const getGetOptimizedImageUrl = (assetId: string,
-    params?: GetOptimizedImageParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/media/images/${assetId}?${stringifiedParams}` : `/api/media/images/${assetId}`
-}
-
-/**
- * @summary Serve an immutable optimized image variant
- */
-export const getOptimizedImage = async (assetId: string,
-    params?: GetOptimizedImageParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
-
-  return customFetch<Blob>(getGetOptimizedImageUrl(assetId,params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetOptimizedImageQueryKey = (assetId: string,
-    params?: GetOptimizedImageParams,) => {
-    return [
-    `/api/media/images/${assetId}`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getGetOptimizedImageQueryOptions = <TData = Awaited<ReturnType<typeof getOptimizedImage>>, TError = ErrorType<void>>(assetId: string,
-    params?: GetOptimizedImageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOptimizedImage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetOptimizedImageQueryKey(assetId,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOptimizedImage>>> = ({ signal }) => getOptimizedImage(assetId,params, { signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: assetId !== null && assetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOptimizedImage>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetOptimizedImageQueryResult = NonNullable<Awaited<ReturnType<typeof getOptimizedImage>>>
-export type GetOptimizedImageQueryError = ErrorType<void>
-
-
-/**
- * @summary Serve an immutable optimized image variant
- */
-
-export function useGetOptimizedImage<TData = Awaited<ReturnType<typeof getOptimizedImage>>, TError = ErrorType<void>>(
- assetId: string,
-    params?: GetOptimizedImageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOptimizedImage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetOptimizedImageQueryOptions(assetId,params,options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
 
 export const getHealthCheckUrl = () => {
 
@@ -2797,6 +2565,237 @@ export const useUpdateManagedSalonProfile = <TError = ErrorType<void>,
       > => {
       return useMutation(getUpdateManagedSalonProfileMutationOptions(options));
     }
+
+export const getRequestMediaUploadUrl = () => {
+
+
+
+
+  return `/api/media/uploads`
+}
+
+/**
+ * @summary Create an owner-scoped App Storage image upload ticket
+ */
+export const requestMediaUpload = async (mediaUploadInput: MediaUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<MediaUploadTicket> => {
+
+  return customFetch<MediaUploadTicket>(getRequestMediaUploadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(mediaUploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestMediaUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext> => {
+
+const mutationKey = ['requestMediaUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestMediaUpload>>, {data: BodyType<MediaUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestMediaUpload(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestMediaUploadMutationResult = NonNullable<Awaited<ReturnType<typeof requestMediaUpload>>>
+    export type RequestMediaUploadMutationBody = BodyType<MediaUploadInput>
+    export type RequestMediaUploadMutationError = ErrorType<void>
+
+    /**
+ * @summary Create an owner-scoped App Storage image upload ticket
+ */
+export const useRequestMediaUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestMediaUpload>>, TError,{data: BodyType<MediaUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestMediaUpload>>,
+        TError,
+        {data: BodyType<MediaUploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestMediaUploadMutationOptions(options));
+    }
+
+export const getFinalizeMediaUploadUrl = (uploadId: string,) => {
+
+
+
+
+  return `/api/media/uploads/${uploadId}/finalize`
+}
+
+/**
+ * @summary Validate, transform and promote a staged image
+ */
+export const finalizeMediaUpload = async (uploadId: string, options?: Parameters<typeof customFetch>[1]): Promise<MediaAsset> => {
+
+  return customFetch<MediaAsset>(getFinalizeMediaUploadUrl(uploadId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getFinalizeMediaUploadMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizeMediaUpload>>, TError,{uploadId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof finalizeMediaUpload>>, TError,{uploadId: string}, TContext> => {
+
+const mutationKey = ['finalizeMediaUpload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizeMediaUpload>>, {uploadId: string}> = (props) => {
+          const {uploadId} = props ?? {};
+
+          return  finalizeMediaUpload(uploadId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FinalizeMediaUploadMutationResult = NonNullable<Awaited<ReturnType<typeof finalizeMediaUpload>>>
+
+    export type FinalizeMediaUploadMutationError = ErrorType<void>
+
+    /**
+ * @summary Validate, transform and promote a staged image
+ */
+export const useFinalizeMediaUpload = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizeMediaUpload>>, TError,{uploadId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof finalizeMediaUpload>>,
+        TError,
+        {uploadId: string},
+        TContext
+      > => {
+      return useMutation(getFinalizeMediaUploadMutationOptions(options));
+    }
+
+export const getGetMediaAssetUrl = (assetId: string,
+    params?: GetMediaAssetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/media/${assetId}?${stringifiedParams}` : `/api/media/${assetId}`
+}
+
+/**
+ * @summary Serve an optimized image variant using Accept negotiation
+ */
+export const getMediaAsset = async (assetId: string,
+    params?: GetMediaAssetParams, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetMediaAssetUrl(assetId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetMediaAssetQueryKey = (assetId: string,
+    params?: GetMediaAssetParams,) => {
+    return [
+    `/api/media/${assetId}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetMediaAssetQueryOptions = <TData = Awaited<ReturnType<typeof getMediaAsset>>, TError = ErrorType<void>>(assetId: string,
+    params?: GetMediaAssetParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMediaAssetQueryKey(assetId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMediaAsset>>> = ({ signal }) => getMediaAsset(assetId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: assetId !== null && assetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMediaAsset>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMediaAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getMediaAsset>>>
+export type GetMediaAssetQueryError = ErrorType<void>
+
+
+/**
+ * @summary Serve an optimized image variant using Accept negotiation
+ */
+
+export function useGetMediaAsset<TData = Awaited<ReturnType<typeof getMediaAsset>>, TError = ErrorType<void>>(
+ assetId: string,
+    params?: GetMediaAssetParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMediaAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMediaAssetQueryOptions(assetId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListSalonAppointmentsUrl = (params?: ListSalonAppointmentsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -12663,11 +12662,12 @@ export const getAdminRequestServiceCategoryImageUploadUrl = () => {
 }
 
 /**
- * @summary Request a direct upload URL for a service category fallback image
+ * @deprecated
+ * @summary Deprecated unvalidated service-category upload flow
  */
-export const adminRequestServiceCategoryImageUpload = async (serviceCategoryImageUploadInput: ServiceCategoryImageUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<ServiceCategoryImageUpload> => {
+export const adminRequestServiceCategoryImageUpload = async (serviceCategoryImageUploadInput: ServiceCategoryImageUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<unknown> => {
 
-  return customFetch<ServiceCategoryImageUpload>(getAdminRequestServiceCategoryImageUploadUrl(),
+  return customFetch<unknown>(getAdminRequestServiceCategoryImageUploadUrl(),
   {
     ...options,
     method: 'POST',
@@ -12680,7 +12680,7 @@ export const adminRequestServiceCategoryImageUpload = async (serviceCategoryImag
 
 
 
-export const getAdminRequestServiceCategoryImageUploadMutationOptions = <TError = ErrorType<unknown>,
+export const getAdminRequestServiceCategoryImageUploadMutationOptions = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext> => {
 
@@ -12709,12 +12709,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type AdminRequestServiceCategoryImageUploadMutationResult = NonNullable<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>>
     export type AdminRequestServiceCategoryImageUploadMutationBody = BodyType<ServiceCategoryImageUploadInput>
-    export type AdminRequestServiceCategoryImageUploadMutationError = ErrorType<unknown>
+    export type AdminRequestServiceCategoryImageUploadMutationError = ErrorType<ApiError>
 
     /**
- * @summary Request a direct upload URL for a service category fallback image
+ * @deprecated
+ * @summary Deprecated unvalidated service-category upload flow
  */
-export const useAdminRequestServiceCategoryImageUpload = <TError = ErrorType<unknown>,
+export const useAdminRequestServiceCategoryImageUpload = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>, TError,{data: BodyType<ServiceCategoryImageUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminRequestServiceCategoryImageUpload>>,

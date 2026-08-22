@@ -48,6 +48,7 @@ import {
   inspirationItemsTable,
   lessonProgressTable,
   loyaltyTiersTable,
+  mediaAssetsTable,
   oauthIdentitiesTable,
   oauthLoginStatesTable,
   phoneVerificationCodesTable,
@@ -82,8 +83,6 @@ import {
   AdminListServiceCategoriesResponse,
   AdminListServiceTemplatesQueryParams,
   AdminListServiceTemplatesResponse,
-  AdminRequestServiceCategoryImageUploadBody,
-  AdminRequestServiceCategoryImageUploadResponse,
   AdminUpdateServiceCategoryBody,
   AdminUpdateServiceCategoryParams,
   AdminUpdateServiceCategoryResponse,
@@ -342,11 +341,19 @@ import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationVal
 import { logger } from "../lib/logger";
 import { lockAppointmentResources } from "../lib/appointment-locks";
 import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
-import { generateOptimizedImageSet, uploadPrivateObject } from "../lib/image-storage";
-import { attachReadyImageAssets } from "./media";
+import {
+  canClaimMediaReference,
+  claimMediaReference,
+  mediaAssetIdFromUrl,
+  releaseMediaReferenceClaims,
+  stableMediaUrl,
+} from "./media";
+import { attachReadyImageAssets } from "./image-media";
 
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
+
+class MediaClaimConflictError extends Error {}
 
 function cookieOptions() {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", maxAge: 1000 * 60 * 60 * 24 * 14, path: "/" };
@@ -1444,6 +1451,7 @@ function isManagedEducationGalleryObjectPath(media: typeof educationMediaTable.$
 function publicEducationMediaUrl(media: typeof educationMediaTable.$inferSelect): string {
   if (isManagedEducationGalleryObjectPath(media)) return educationMediaRouteUrl(media.id);
   const legacyUrl = media.objectPath.trim();
+  if (legacyUrl.startsWith("/api/media/")) return legacyUrl;
   if (legacyUrl.startsWith("/objects/")) return `/api/storage${legacyUrl}`;
   if (legacyUrl.startsWith("/api/storage/objects/") || /^https?:\/\//i.test(legacyUrl)) return legacyUrl;
   return `/api/storage/objects/${legacyUrl.replace(/^\/+/, "")}`;
@@ -1537,56 +1545,15 @@ async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUpl
 
 async function promoteEducationMediaUpload(upload: typeof educationMediaUploadsTable.$inferSelect, bytes: Buffer): Promise<string> {
   const finalStoragePath = educationMediaStoragePath(upload.centerId, upload.courseId, upload.id);
-  const generated = await generateOptimizedImageSet(bytes, upload.contentType);
-  const uploadedPaths: string[] = [];
-  try {
-    await uploadPrivateObject(finalStoragePath, generated.original.bytes, generated.original.contentType);
-    uploadedPaths.push(finalStoragePath);
-    for (const size of ["thumbnail", "medium", "large"] as const) {
-      for (const format of ["avif", "webp", "fallback"] as const) {
-        const variant = generated.variants[size][format];
-        const objectPath = `${finalStoragePath}/${size}-${format}.${variant.extension}`;
-        await uploadPrivateObject(objectPath, variant.bytes, variant.contentType);
-        uploadedPaths.push(objectPath);
-      }
-    }
-    return finalStoragePath;
-  } catch (error) {
-    await Promise.allSettled(uploadedPaths.map((path) => deletePrivateObject(path)));
-    throw error;
-  }
-}
-
-function educationMediaVariantStoragePaths(basePath: string): string[] {
-  return ["thumbnail", "medium", "large"].flatMap((size) => [
-    `${basePath}/${size}-avif.avif`,
-    `${basePath}/${size}-webp.webp`,
-    `${basePath}/${size}-fallback.jpg`,
-    `${basePath}/${size}-fallback.png`,
-  ]);
-}
-
-async function deleteManagedEducationImageSet(basePath: string): Promise<void> {
-  await deletePrivateObject(basePath);
-  const results = await Promise.allSettled(
-    educationMediaVariantStoragePaths(basePath).map((path) => deletePrivateObject(path)),
-  );
-  const failed = results.find((result) => result.status === "rejected");
-  if (failed?.status === "rejected") throw failed.reason;
-}
-
-function requestedEducationMediaVariant(req: Request, basePath: string): string[] {
-  const size = req.query.size === "thumbnail" || req.query.size === "medium" || req.query.size === "large"
-    ? req.query.size
-    : "large";
-  const requested = req.query.format === "avif" || req.query.format === "webp" || req.query.format === "fallback"
-    ? req.query.format
-    : null;
-  const accept = req.get("accept") ?? "";
-  const format = requested ?? (accept.includes("image/avif") ? "avif" : accept.includes("image/webp") ? "webp" : "fallback");
-  if (format === "avif") return [`${basePath}/${size}-avif.avif`, basePath];
-  if (format === "webp") return [`${basePath}/${size}-webp.webp`, basePath];
-  return [`${basePath}/${size}-fallback.jpg`, `${basePath}/${size}-fallback.png`, basePath];
+  const uploadUrl = await signPrivateObject(educationMediaObjectPath(upload.centerId, upload.courseId, upload.id), "PUT", 60);
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": upload.contentType },
+    body: bytes,
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`App Storage nije sačuvao proverenu sliku (${response.status}).`);
+  return finalStoragePath;
 }
 
 async function lockEducationCourseGallery(tx: any, courseId: string) {
@@ -1680,7 +1647,7 @@ export async function cleanupEducationMediaUpload(
         // Promotion happens before the attachment row is committed. If that
         // transaction ever rolls back, the expired ticket is the durable
         // claim that makes this otherwise-unreachable final key safe to retry.
-        await deleteManagedEducationImageSet(finalStoragePath);
+        await deletePrivateObject(finalStoragePath);
       }
     }
     await deletePrivateObject(upload.objectPath);
@@ -3739,8 +3706,6 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     id: salon.id,
     name: salon.name,
     slug: salon.slug,
-    imageUrl: salon.imageUrl,
-    gallery: salon.gallery,
     videoUrl: salon.videoUrl,
     acceptsCards: salon.acceptsCards,
     instantBooking: salon.instantBooking,
@@ -3748,6 +3713,8 @@ router.get("/salon/profile", async (req, res): Promise<void> => {
     homeServiceRadiusKm: salon.homeServiceRadiusKm,
     servesMen: salon.servesMen,
     openSunday: openSunday.length > 0,
+    imageUrl: salon.imageUrl,
+    gallery: salon.gallery,
   }));
 });
 
@@ -3761,8 +3728,6 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   if (parsed.data.videoUrl !== undefined && !isHttpVideoUrl(parsed.data.videoUrl)) { res.status(400).json({ error: "Video URL mora početi sa http:// ili https://." }); return; }
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
-  if (parsed.data.imageUrl !== undefined) updates.imageUrl = parsed.data.imageUrl.trim();
-  if (parsed.data.gallery !== undefined) updates.gallery = parsed.data.gallery.map((url) => url.trim()).filter(Boolean);
   if (parsed.data.videoUrl !== undefined) updates.videoUrl = parsed.data.videoUrl;
   if (parsed.data.acceptsCards !== undefined) updates.acceptsCards = parsed.data.acceptsCards;
   if (parsed.data.instantBooking !== undefined) updates.instantBooking = parsed.data.instantBooking;
@@ -3771,23 +3736,83 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     updates.servesMen = parsed.data.servesMen;
     updates.servesMenManuallySet = true;
   }
+  if (parsed.data.imageUrl !== undefined) {
+    if (!await canClaimMediaReference({
+      userId: access.user.id,
+      url: parsed.data.imageUrl,
+      scope: "salon-profile",
+      resourceId: access.salon.id,
+      existingUrls: [access.salon.imageUrl],
+    })) {
+      res.status(400).json({ error: "Naslovna fotografija nije otpremljena sa ovog naloga." }); return;
+    }
+    updates.imageUrl = parsed.data.imageUrl;
+  }
+  if (parsed.data.gallery !== undefined) {
+    const ownership = await Promise.all(parsed.data.gallery.map((url) => canClaimMediaReference({
+      userId: access.user.id,
+      url,
+      scope: "salon-gallery",
+      resourceId: access.salon.id,
+      existingUrls: access.salon.gallery,
+    })));
+    if (ownership.some((owned) => !owned)) {
+      res.status(400).json({ error: "Galerija sadrži fotografiju koja nije otpremljena sa ovog naloga." }); return;
+    }
+    updates.gallery = parsed.data.gallery;
+  }
   if (!Object.keys(updates).length) { res.status(400).json({ error: "Izaberite najmanje jedno podešavanje za izmenu." }); return; }
   const homeService = await salonHasActiveHomeService(access.salon.id);
   updates.homeService = homeService;
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx.update(salonsTable)
-      .set(updates)
-      .where(eq(salonsTable.id, access.salon.id))
-      .returning();
-    await attachReadyImageAssets(tx, access.user.id, [parsed.data.imageUrl, parsed.data.gallery]);
-    return row!;
-  });
+  let updated: typeof salonsTable.$inferSelect | undefined;
+  try {
+    [updated] = await db.transaction(async (tx) => {
+      if (parsed.data.imageUrl !== undefined && mediaAssetIdFromUrl(parsed.data.imageUrl) && !await claimMediaReference({
+        userId: access.user.id,
+        url: parsed.data.imageUrl,
+        scope: "salon-profile",
+        resourceId: access.salon.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      if (parsed.data.gallery !== undefined) {
+        for (const url of parsed.data.gallery) {
+          if (mediaAssetIdFromUrl(url) && !await claimMediaReference({
+            userId: access.user.id,
+            url,
+            scope: "salon-gallery",
+            resourceId: access.salon.id,
+          }, tx)) {
+            throw new MediaClaimConflictError();
+          }
+        }
+      }
+      const rows = await tx.update(salonsTable)
+        .set(updates)
+        .where(eq(salonsTable.id, access.salon.id))
+        .returning();
+      const removedUrls = [
+        ...(parsed.data.imageUrl !== undefined && parsed.data.imageUrl !== access.salon.imageUrl ? [access.salon.imageUrl] : []),
+        ...(parsed.data.gallery !== undefined
+          ? access.salon.gallery.filter((url) => !parsed.data.gallery!.includes(url))
+          : []),
+      ];
+      await releaseMediaReferenceClaims({
+        urls: removedUrls,
+        resourceId: access.salon.id,
+        visibility: "private",
+      }, tx);
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
   res.json(GetManagedSalonProfileResponse.parse({
     id: updated!.id,
     name: updated!.name,
     slug: updated!.slug,
-    imageUrl: updated!.imageUrl,
-    gallery: updated!.gallery,
     videoUrl: updated!.videoUrl,
     acceptsCards: updated!.acceptsCards,
     instantBooking: updated!.instantBooking,
@@ -3796,6 +3821,8 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
     servesMen: updated!.servesMen,
     openSunday: (await db.select({ id: salonHoursTable.id }).from(salonHoursTable)
       .where(and(eq(salonHoursTable.salonId, updated!.id), eq(salonHoursTable.weekday, 7), eq(salonHoursTable.closed, false))).limit(1)).length > 0,
+    imageUrl: updated!.imageUrl,
+    gallery: updated!.gallery,
   }));
 });
 
@@ -4387,24 +4414,40 @@ router.post("/salon/employees", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown };
   if (typeof body.name !== "string" || !body.name.trim() || typeof body.role !== "string" || !body.role.trim()) { res.status(400).json({ error: "Ime i uloga zaposlenog su obavezni." }); return; }
-  const name = body.name.trim();
-  const role = body.role.trim();
+  const employeeName = body.name.trim();
+  const employeeRole = body.role.trim();
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : [];
   const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
   if (services.length !== serviceIds.length) { res.status(400).json({ error: "Sve dodeljene usluge moraju pripadati vašem salonu." }); return; }
   const avatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : "";
-  const employee = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(employeesTable).values({
-      salonId: access.salon.id, name, role, bio: typeof body.bio === "string" ? body.bio.trim() : "",
-      avatarUrl,
-      email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : null,
-      specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
-    }).returning();
-    if (serviceIds.length) await tx.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: row!.id, serviceId })));
-    await attachReadyImageAssets(tx, access.user.id, avatarUrl);
-    return row!;
-  });
-  res.status(201).json({ id: employee.id });
+  if (avatarUrl && !await canClaimMediaReference({ userId: access.user.id, url: avatarUrl, scope: "employee-avatar" })) {
+    res.status(400).json({ error: "Fotografija zaposlenog nije otpremljena sa ovog naloga." }); return;
+  }
+  let employee: typeof employeesTable.$inferSelect | undefined;
+  try {
+    [employee] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(employeesTable).values({
+        salonId: access.salon.id, name: employeeName, role: employeeRole, bio: typeof body.bio === "string" ? body.bio.trim() : "",
+        avatarUrl,
+        email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : null,
+        specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : [],
+      }).returning();
+      if (avatarUrl && !await claimMediaReference({
+        userId: access.user.id, url: avatarUrl, scope: "employee-avatar", resourceId: rows[0]!.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      if (serviceIds.length) {
+        await tx.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: rows[0]!.id, serviceId })));
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija zaposlenog je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  res.status(201).json({ id: employee!.id });
 });
 
 router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => {
@@ -4412,29 +4455,48 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   const body = req.body as { name?: unknown; role?: unknown; bio?: unknown; avatarUrl?: unknown; email?: unknown; specialties?: unknown; serviceIds?: unknown; active?: unknown };
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
+  const nextAvatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : employee.avatarUrl;
+  if (nextAvatarUrl && !await canClaimMediaReference({
+    userId: access.user.id,
+    url: nextAvatarUrl,
+    scope: "employee-avatar",
+    resourceId: employee.id,
+    existingUrls: [employee.avatarUrl],
+  })) {
+    res.status(400).json({ error: "Fotografija zaposlenog nije otpremljena sa ovog naloga." }); return;
+  }
   if (!employee.active) { res.status(409).json({ error: "Deaktivirani zaposleni ne može dobiti pristupni nalog." }); return; }
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : null;
-  const requestedAvatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : undefined;
   if (serviceIds) {
     const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
     if (services.length !== serviceIds.length) { res.status(400).json({ error: "Sve dodeljene usluge moraju pripadati vašem salonu." }); return; }
   }
-  await db.transaction(async (tx) => {
-    if (serviceIds) {
-      await tx.delete(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id));
-      if (serviceIds.length) await tx.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee.id, serviceId })));
-    }
-    await tx.update(employeesTable).set({
-      name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : employee.name,
-      role: typeof body.role === "string" && body.role.trim() ? body.role.trim() : employee.role,
-      bio: typeof body.bio === "string" ? body.bio.trim() : employee.bio,
-      avatarUrl: requestedAvatarUrl ?? employee.avatarUrl,
-      email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : employee.email,
-      specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
-      active: typeof body.active === "boolean" ? body.active : employee.active,
-    }).where(eq(employeesTable.id, employee.id));
-    await attachReadyImageAssets(tx, access.user.id, requestedAvatarUrl);
-  });
+  try {
+    await db.transaction(async (tx) => {
+      if (nextAvatarUrl && mediaAssetIdFromUrl(nextAvatarUrl) && !await claimMediaReference({
+        userId: access.user.id, url: nextAvatarUrl, scope: "employee-avatar", resourceId: employee.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      if (serviceIds) {
+        await tx.delete(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id));
+        if (serviceIds.length) await tx.insert(employeeServicesTable).values(serviceIds.map((serviceId) => ({ employeeId: employee.id, serviceId })));
+      }
+      await tx.update(employeesTable).set({
+        name: typeof body.name === "string" && body.name.trim() ? body.name.trim() : employee.name,
+        role: typeof body.role === "string" && body.role.trim() ? body.role.trim() : employee.role,
+        bio: typeof body.bio === "string" ? body.bio.trim() : employee.bio,
+        avatarUrl: nextAvatarUrl,
+        email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : employee.email,
+        specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
+        active: typeof body.active === "boolean" ? body.active : employee.active,
+      }).where(eq(employeesTable.id, employee.id));
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija zaposlenog je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
   res.json({ id: employee.id });
 });
 
@@ -4615,20 +4677,41 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
 router.put("/employee/profile", async (req, res): Promise<void> => {
   const access = await requireSalonEmployee(req, res); if (!access) return;
   const bio = typeof req.body?.bio === "string" ? req.body.bio.trim() : access.employee.bio;
-  const suppliedAvatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl.trim() : undefined;
-  const avatarUrl = suppliedAvatarUrl ?? access.employee.avatarUrl;
+  const avatarUrl = typeof req.body?.avatarUrl === "string" ? req.body.avatarUrl.trim() : access.employee.avatarUrl;
   const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : access.user.phone;
   const phoneNormalized = phone ? normalizedPhone(phone) : null;
+  if (avatarUrl && !await canClaimMediaReference({
+    userId: access.user.id,
+    url: avatarUrl,
+    scope: "employee-avatar",
+    resourceId: access.employee.id,
+    existingUrls: [access.employee.avatarUrl],
+  })) {
+    res.status(400).json({ error: "Fotografija profila nije otpremljena sa ovog naloga." }); return;
+  }
   if (phone && !phoneNormalized) { res.status(400).json({ error: "Unesite ispravan broj telefona." }); return; }
   if (phoneNormalized) {
     const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
     if (taken && taken.id !== access.user.id) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
   }
-  await db.transaction(async (tx) => {
-    await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
-    await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
-    await attachReadyImageAssets(tx, access.user.id, suppliedAvatarUrl);
-  });
+  try {
+    await db.transaction(async (tx) => {
+      if (avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
+        userId: access.user.id,
+        url: avatarUrl,
+        scope: "employee-avatar",
+        resourceId: access.employee.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
+      await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija profila je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
   res.json({ bio, avatarUrl, phone: phone || null });
 });
 
@@ -6057,34 +6140,52 @@ router.post("/education/courses", async (req, res): Promise<void> => {
     return;
   }
   const data = parsed.data;
-  const course = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(coursesTable).values({
-      salonId: access.salon?.id ?? null,
-      centerId: access.centers[0]?.id ?? null,
-      title: data.title,
-      description: data.description ?? "",
-      category: data.category,
-      format: data.format,
-      city: data.city ?? publisher.city,
-      price: data.price,
-      duration: data.duration,
-      level: data.level ?? "all-levels",
-      learningOutcomes: data.learningOutcomes ?? [],
-      includedItems: data.includedItems ?? [],
-      requirements: data.requirements ?? "",
-      certification: data.certification ?? false,
-      imageUrl: data.imageUrl,
-      startDate: data.startDate ? calendarDate(data.startDate) : null,
-      ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
-      groupDiscountMinimum: data.groupDiscountMinimum ?? null,
-      groupDiscountPercent: data.groupDiscountPercent ?? null,
-      published: false,
-      archived: false,
-    }).returning();
-    await attachReadyImageAssets(tx, access.user.id, data.imageUrl);
-    return row!;
-  });
-  const view = await educationCourseView(course, access);
+  if (!await canClaimMediaReference({ userId: access.user.id, url: data.imageUrl, scope: "education-cover" })) {
+    res.status(400).json({ error: "Naslovna fotografija edukacije nije otpremljena sa ovog naloga." }); return;
+  }
+  let course: typeof coursesTable.$inferSelect | undefined;
+  try {
+    [course] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(coursesTable).values({
+        salonId: access.salon?.id ?? null,
+        centerId: access.centers[0]?.id ?? null,
+        title: data.title,
+        description: data.description ?? "",
+        category: data.category,
+        format: data.format,
+        city: data.city ?? publisher.city,
+        price: data.price,
+        duration: data.duration,
+        level: data.level ?? "all-levels",
+        learningOutcomes: data.learningOutcomes ?? [],
+        includedItems: data.includedItems ?? [],
+        requirements: data.requirements ?? "",
+        certification: data.certification ?? false,
+        imageUrl: data.imageUrl,
+        startDate: data.startDate ? calendarDate(data.startDate) : null,
+        ...(data.refundPolicy !== undefined ? { refundPolicy: data.refundPolicy } : {}),
+        groupDiscountMinimum: data.groupDiscountMinimum ?? null,
+        groupDiscountPercent: data.groupDiscountPercent ?? null,
+        published: false,
+        archived: false,
+      }).returning();
+      if (!await claimMediaReference({
+        userId: access.user.id,
+        url: data.imageUrl,
+        scope: "education-cover",
+        resourceId: rows[0]!.id,
+        visibility: "education",
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Naslovna fotografija je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  const view = await educationCourseView(course!, access);
   res.status(201).json(calendarDateCourseResponse(CreateEducationCourseResponse.parse(view)));
 });
 
@@ -6106,16 +6207,53 @@ router.patch("/education/courses/:courseId", async (req, res): Promise<void> => 
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci kursa nisu ispravni." }); return; }
   const course = await requireOwnedCourse(access, params.data.courseId, res); if (!course) return;
   const data = body.data;
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx.update(coursesTable).set({
-      ...data,
-      startDate: data.startDate === undefined ? course.startDate : data.startDate ? calendarDate(data.startDate) : null,
-      updatedAt: new Date(),
-    }).where(eq(coursesTable.id, course.id)).returning();
-    await attachReadyImageAssets(tx, access.user.id, data.imageUrl);
-    return row!;
-  });
-  res.json(calendarDateCourseResponse(UpdateEducationCourseResponse.parse(await educationCourseView(updated, access))));
+  const previousCoverAssetId = mediaAssetIdFromUrl(course.imageUrl);
+  const nextCoverAssetId = data.imageUrl === undefined ? previousCoverAssetId : mediaAssetIdFromUrl(data.imageUrl);
+  if (data.imageUrl !== undefined && !await canClaimMediaReference({
+    userId: access.user.id,
+    url: data.imageUrl,
+    scope: "education-cover",
+    resourceId: course.id,
+    existingUrls: [course.imageUrl],
+  })) {
+    res.status(400).json({ error: "Naslovna fotografija edukacije nije otpremljena sa ovog naloga." }); return;
+  }
+  let updated: typeof coursesTable.$inferSelect | undefined;
+  try {
+    [updated] = await db.transaction(async (tx) => {
+      if (data.imageUrl !== undefined && mediaAssetIdFromUrl(data.imageUrl) && !await claimMediaReference({
+        userId: access.user.id,
+        url: data.imageUrl,
+        scope: "education-cover",
+        resourceId: course.id,
+        visibility: "education",
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      const rows = await tx.update(coursesTable).set({
+        ...data,
+        startDate: data.startDate === undefined ? course.startDate : data.startDate ? calendarDate(data.startDate) : null,
+        updatedAt: new Date(),
+      }).where(eq(coursesTable.id, course.id)).returning();
+      if (previousCoverAssetId && previousCoverAssetId !== nextCoverAssetId) {
+        await tx.update(mediaAssetsTable).set({
+          resourceId: null,
+          visibility: "private",
+        }).where(and(
+          eq(mediaAssetsTable.id, previousCoverAssetId),
+          eq(mediaAssetsTable.ownerUserId, access.user.id),
+          eq(mediaAssetsTable.scope, "education-cover"),
+          eq(mediaAssetsTable.resourceId, course.id),
+        ));
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Naslovna fotografija je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  res.json(calendarDateCourseResponse(UpdateEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
 
 router.post("/education/courses/:courseId/publish", async (req, res): Promise<void> => {
@@ -6187,7 +6325,6 @@ router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Fotografija nije pronađena." });
     return;
   }
-  let publicCourseMedia = false;
   if (media.courseId) {
     const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, media.courseId)).limit(1);
     if (!course) {
@@ -6198,8 +6335,7 @@ router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Fotografija nije pronađena." });
       return;
     }
-    publicCourseMedia = await isPublicEducationCourse(course);
-    if (!publicCourseMedia) {
+    if (!await isPublicEducationCourse(course)) {
       const access = await requireEducationAccess(req, res);
       if (!access) return;
       if (!isCourseOwner(access, course)) {
@@ -6209,17 +6345,9 @@ router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
     }
   }
   try {
-    let source: globalThis.Response | null = null;
-    for (const objectPath of requestedEducationMediaVariant(req, media.objectPath)) {
-      const signedUrl = await signPrivateObject(privateObjectPathFromStoragePath(objectPath), "GET", 300);
-      const candidate = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
-      if (candidate.ok && candidate.body) {
-        source = candidate;
-        break;
-      }
-      candidate.body?.cancel();
-    }
-    if (!source?.ok || !source.body) {
+    const signedUrl = await signPrivateObject(privateObjectPathFromStoragePath(media.objectPath), "GET", 300);
+    const source = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!source.ok || !source.body) {
       res.status(404).json({ error: "Fotografija nije pronađena." });
       return;
     }
@@ -6227,9 +6355,8 @@ router.get("/education/media/:mediaId", async (req, res): Promise<void> => {
     const contentLength = source.headers.get("content-length");
     if (contentType) res.setHeader("Content-Type", contentType);
     if (contentLength) res.setHeader("Content-Length", contentLength);
-    res.setHeader("Cache-Control", publicCourseMedia ? "public, max-age=3600, stale-while-revalidate=86400" : "private, no-store");
-    res.setHeader("Vary", publicCourseMedia ? "Accept" : "Accept, Cookie");
-    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
     Readable.fromWeb(source.body as ReadableStream<Uint8Array>).pipe(res);
   } catch (error) {
     req.log.error({ err: error, mediaId }, "Could not serve education gallery media");
@@ -6247,6 +6374,55 @@ router.post("/education/courses/:courseId/gallery", async (req, res): Promise<vo
   }
   const course = await requireOwnedEducationCenterCourse(access, params.data.courseId, res);
   if (!course) return;
+  const [genericAsset] = await db.select().from(mediaAssetsTable).where(and(
+    eq(mediaAssetsTable.id, body.data.mediaId),
+    eq(mediaAssetsTable.ownerUserId, access.user.id),
+    eq(mediaAssetsTable.scope, "education-gallery"),
+    or(isNull(mediaAssetsTable.resourceId), eq(mediaAssetsTable.resourceId, course.id)),
+  )).limit(1);
+  if (genericAsset) {
+    const genericResult = await db.transaction(async (tx) => {
+      await lockEducationCourseGallery(tx, course.id);
+      if (!await claimMediaReference({
+        userId: access.user.id,
+        url: stableMediaUrl(genericAsset),
+        scope: "education-gallery",
+        resourceId: course.id,
+        visibility: "education",
+      }, tx)) {
+        return { kind: "invalid" as const };
+      }
+      const [existing] = await tx.select().from(educationMediaTable).where(eq(educationMediaTable.id, genericAsset.id)).limit(1);
+      if (existing) return { kind: "existing" as const, media: existing };
+      const current = await tx.select({ id: educationMediaTable.id }).from(educationMediaTable)
+        .where(eq(educationMediaTable.courseId, course.id));
+      if (current.length >= 20) return { kind: "full" as const };
+      const [media] = await tx.insert(educationMediaTable).values({
+        id: genericAsset.id,
+        courseId: course.id,
+        centerId: course.centerId!,
+        objectPath: stableMediaUrl(genericAsset),
+        altText: body.data.altText?.trim() ?? "",
+        sortOrder: current.length,
+      }).returning();
+      return { kind: "created" as const, media: media! };
+    });
+    if (genericResult.kind === "full") {
+      res.status(409).json({ error: "Galerija može imati najviše 20 fotografija." });
+      return;
+    }
+    if (genericResult.kind === "invalid") {
+      res.status(409).json({ error: "Fotografija je u međuvremenu povezana sa drugim zapisom." });
+      return;
+    }
+    res.status(genericResult.kind === "created" ? 201 : 200).json(AddEducationCourseGalleryMediaResponse.parse({
+      id: genericResult.media.id,
+      url: publicEducationMediaUrl(genericResult.media),
+      altText: genericResult.media.altText,
+      sortOrder: genericResult.media.sortOrder,
+    }));
+    return;
+  }
   let result:
     | { kind: "expired" }
     | { kind: "full" }
@@ -6364,7 +6540,7 @@ router.delete("/education/courses/:courseId/gallery/:mediaId", async (req, res):
       // Keep the row and object in place if storage is temporarily
       // unavailable. A retry can safely treat a prior successful delete as
       // success because deletePrivateObject accepts a 404.
-      await deleteManagedEducationImageSet(existing.objectPath);
+      await deletePrivateObject(existing.objectPath);
     }
     const [removed] = await tx.delete(educationMediaTable).where(and(
       eq(educationMediaTable.id, mediaId),
@@ -9201,22 +9377,9 @@ router.delete("/admin/service-templates/:templateId", async (req, res): Promise<
 
 router.post("/admin/service-categories/image-upload-url", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const parsed = AdminRequestServiceCategoryImageUploadBody.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  if (!CATEGORY_IMAGE_CONTENT_TYPES.has(parsed.data.contentType.toLowerCase())) {
-    res.status(400).json({ error: "Dozvoljene su JPG, PNG, WEBP i GIF slike." }); return;
-  }
-  try {
-    const imageId = randomUUID();
-    const uploadUrl = await signCategoryImageObject(imageId, "PUT", 900);
-    res.json(AdminRequestServiceCategoryImageUploadResponse.parse({
-      uploadUrl,
-      imageUrl: categoryImageProxyUrl(imageId),
-    }));
-  } catch (error) {
-    req.log.error({ err: error }, "Could not create category image upload URL");
-    res.status(500).json({ error: "Nije moguće pripremiti upload slike." });
-  }
+  res.status(410).json({
+    error: "Ovaj upload tok je zamenjen validiranim /api/media/uploads tokom. Osvežite administratorsku stranicu.",
+  });
 });
 
 router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<void> => {
@@ -9225,16 +9388,37 @@ router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<
   const parsed = AdminUpdateServiceCategoryBody.safeParse(req.body);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const fallbackImageUrl = parsed.data.fallbackImageUrl?.trim() || null;
-  const category = await db.transaction(async (tx) => {
-    const [row] = await tx.update(serviceCategoriesTable)
-      .set({ fallbackImageUrl })
-      .where(eq(serviceCategoriesTable.id, params.data.categoryId))
-      .returning();
-    if (!row) return null;
-    await attachReadyImageAssets(tx, user.id, fallbackImageUrl);
-    return row;
-  });
+  const [existingCategory] = await db.select().from(serviceCategoriesTable)
+    .where(eq(serviceCategoriesTable.id, params.data.categoryId)).limit(1);
+  if (!existingCategory) { res.status(404).json({ error: "Kategorija usluge nije pronađena." }); return; }
+  const imageUrl = parsed.data.fallbackImageUrl?.trim() || null;
+  if (imageUrl && !await canClaimMediaReference({
+    userId: user.id,
+    url: imageUrl,
+    scope: "service-category",
+    resourceId: params.data.categoryId,
+    existingUrls: [existingCategory.fallbackImageUrl],
+  })) {
+    res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
+  let category: typeof serviceCategoriesTable.$inferSelect | undefined;
+  try {
+    [category] = await db.transaction(async (tx) => {
+      if (imageUrl && mediaAssetIdFromUrl(imageUrl) && !await claimMediaReference({
+        userId: user.id, url: imageUrl, scope: "service-category", resourceId: params.data.categoryId,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      return tx.update(serviceCategoriesTable)
+        .set({ fallbackImageUrl: imageUrl })
+        .where(eq(serviceCategoriesTable.id, params.data.categoryId))
+        .returning();
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija kategorije je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
   if (!category) { res.status(404).json({ error: "Kategorija usluge nije pronađena." }); return; }
   const [serviceCount] = await db.select({ count: count() }).from(servicesTable).where(eq(servicesTable.categoryId, category.id));
   marketplaceHomeDiscoveryCache.clear();
@@ -9361,33 +9545,53 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
   const variantError = validateVariantInventory(body.variants ?? null, body.stock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
+  const imageReferences = [...new Set([body.imageUrl, ...(body.images ?? [])])];
+  const imageOwnership = await Promise.all(imageReferences.map((url) => canClaimMediaReference({
+    userId: user.id, url, scope: "product",
+  })));
+  if (imageOwnership.some((owned) => !owned)) {
+    res.status(400).json({ error: "Proizvod sadrži fotografiju koja nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
   const [existingSku] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, body.sku)).limit(1);
   if (existingSku) { res.status(409).json({ error: "Proizvod sa ovim SKU već postoji." }); return; }
-  const product = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(productsTable).values({
-      name: body.name,
-      ...assignment,
-      brand: body.brand ?? null,
-      description: body.description,
-      shortDescription: body.shortDescription ?? null,
-      imageUrl: body.imageUrl,
-      images: body.images ?? [],
-      price: body.price,
-      discountPrice: body.discountPrice ?? null,
-      stock: body.stock,
-      sku: body.sku,
-      unit: body.unit,
-      weightGrams: body.weightGrams,
-      isNew: body.isNew ?? false,
-      isBestseller: body.isBestseller ?? false,
-      variantType: body.variantType?.trim() || null,
-      variants: body.variants ?? null,
-      active: body.active ?? true,
-    }).returning();
-    await attachReadyImageAssets(tx, user.id, [body.imageUrl, body.images]);
-    return row!;
-  });
-  res.status(201).json(adminProductDto(product));
+  let product: typeof productsTable.$inferSelect | undefined;
+  try {
+    [product] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(productsTable).values({
+        name: body.name,
+        ...assignment,
+        brand: body.brand ?? null,
+        description: body.description,
+        shortDescription: body.shortDescription ?? null,
+        imageUrl: body.imageUrl,
+        images: body.images ?? [],
+        price: body.price,
+        discountPrice: body.discountPrice ?? null,
+        stock: body.stock,
+        sku: body.sku,
+        unit: body.unit,
+        weightGrams: body.weightGrams,
+        isNew: body.isNew ?? false,
+        isBestseller: body.isBestseller ?? false,
+        variantType: body.variantType?.trim() || null,
+        variants: body.variants ?? null,
+        active: body.active ?? true,
+      }).returning();
+      for (const url of imageReferences) {
+        if (!await claimMediaReference({
+          userId: user.id, url, scope: "product", resourceId: rows[0]!.id,
+        }, tx)) {
+          throw new MediaClaimConflictError();
+        }
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  res.status(201).json(adminProductDto(product!));
 });
 
 router.post("/admin/products/bulk", async (req, res): Promise<void> => {
@@ -9453,39 +9657,65 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   const nextVariants = body.variants !== undefined ? body.variants : existing.variants;
   const variantError = validateVariantInventory(nextVariants, nextStock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
+  const nextImageUrl = body.imageUrl ?? existing.imageUrl;
+  const nextImages = body.images ?? existing.images;
+  const imageReferences = [...new Set([nextImageUrl, ...nextImages])];
+  const imageOwnership = await Promise.all(imageReferences.map((url) => canClaimMediaReference({
+    userId: user.id,
+    url,
+    scope: "product",
+    resourceId: existing.id,
+    existingUrls: [existing.imageUrl, ...existing.images],
+  })));
+  if (imageOwnership.some((owned) => !owned)) {
+    res.status(400).json({ error: "Proizvod sadrži fotografiju koja nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
   let assignment: { categoryId: string; categoryName: string; subcategoryName: string | null } | null = null;
   if (body.categoryId !== undefined) {
     if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
     assignment = await categoryAssignment(body.categoryId);
     if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
   }
-  const product = await db.transaction(async (tx) => {
-    const [row] = await tx.update(productsTable).set({
-      name: body.name ?? existing.name,
-      categoryId: assignment?.categoryId ?? existing.categoryId,
-      categoryName: assignment?.categoryName ?? existing.categoryName,
-      subcategoryName: assignment ? assignment.subcategoryName : existing.subcategoryName,
-      brand: body.brand !== undefined ? body.brand : existing.brand,
-      description: body.description ?? existing.description,
-      shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
-      imageUrl: body.imageUrl ?? existing.imageUrl,
-      images: body.images ?? existing.images,
-      price: nextPrice,
-      discountPrice: nextDiscount,
-      stock: nextStock,
-      sku: body.sku ?? existing.sku,
-      unit: body.unit ?? existing.unit,
-      weightGrams: body.weightGrams ?? existing.weightGrams,
-      isNew: body.isNew ?? existing.isNew,
-      isBestseller: body.isBestseller ?? existing.isBestseller,
-      variantType: body.variantType !== undefined ? body.variantType?.trim() || null : existing.variantType,
-      variants: nextVariants,
-      active: body.active ?? existing.active,
-    }).where(eq(productsTable.id, productId)).returning();
-    await attachReadyImageAssets(tx, user.id, [body.imageUrl, body.images]);
-    return row!;
-  });
-  res.json(adminProductDto(product));
+  const managedImageReferences = imageReferences.filter((url) => mediaAssetIdFromUrl(url));
+  let product: typeof productsTable.$inferSelect | undefined;
+  try {
+    [product] = await db.transaction(async (tx) => {
+      for (const url of managedImageReferences) {
+        if (!await claimMediaReference({
+          userId: user.id, url, scope: "product", resourceId: existing.id,
+        }, tx)) {
+          throw new MediaClaimConflictError();
+        }
+      }
+      return tx.update(productsTable).set({
+        name: body.name ?? existing.name,
+        categoryId: assignment?.categoryId ?? existing.categoryId,
+        categoryName: assignment?.categoryName ?? existing.categoryName,
+        subcategoryName: assignment ? assignment.subcategoryName : existing.subcategoryName,
+        brand: body.brand !== undefined ? body.brand : existing.brand,
+        description: body.description ?? existing.description,
+        shortDescription: body.shortDescription !== undefined ? body.shortDescription : existing.shortDescription,
+        imageUrl: nextImageUrl,
+        images: nextImages,
+        price: nextPrice,
+        discountPrice: nextDiscount,
+        stock: nextStock,
+        sku: body.sku ?? existing.sku,
+        unit: body.unit ?? existing.unit,
+        weightGrams: body.weightGrams ?? existing.weightGrams,
+        isNew: body.isNew ?? existing.isNew,
+        isBestseller: body.isBestseller ?? existing.isBestseller,
+        variantType: body.variantType !== undefined ? body.variantType?.trim() || null : existing.variantType,
+        variants: nextVariants,
+        active: body.active ?? existing.active,
+      }).where(eq(productsTable.id, productId)).returning();
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  res.json(adminProductDto(product!));
 });
 
 router.delete("/admin/products/:productId", async (req, res): Promise<void> => {
@@ -9547,6 +9777,9 @@ router.post("/admin/product-categories", async (req, res): Promise<void> => {
   const parsed = AdminCreateProductCategoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (body.imageUrl && !await canClaimMediaReference({ userId: user.id, url: body.imageUrl, scope: "product-category" })) {
+    res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
   const slug = slugify(body.name);
   const [nameTaken] = await db.select({ id: productCategoriesTable.id }).from(productCategoriesTable).where(eq(productCategoriesTable.name, body.name)).limit(1);
   if (nameTaken) { res.status(409).json({ error: "Kategorija sa ovim nazivom već postoji." }); return; }
@@ -9555,20 +9788,31 @@ router.post("/admin/product-categories", async (req, res): Promise<void> => {
     if (!parent) { res.status(404).json({ error: "Nadređena kategorija nije pronađena." }); return; }
     if (parent.parentId) { res.status(400).json({ error: "Podkategorija ne može imati sopstvene podkategorije." }); return; }
   }
-  const cat = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(productCategoriesTable).values({
-      name: body.name,
-      slug,
-      parentId: body.parentId ?? null,
-      sortOrder: body.sortOrder ?? 0,
-      icon: body.icon ?? null,
-      imageUrl: body.imageUrl ?? null,
-      active: body.active ?? true,
-    }).returning();
-    await attachReadyImageAssets(tx, user.id, body.imageUrl);
-    return row!;
-  });
-  res.status(201).json(await adminCategoryDto(cat));
+  let cat: typeof productCategoriesTable.$inferSelect | undefined;
+  try {
+    [cat] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(productCategoriesTable).values({
+        name: body.name,
+        slug,
+        parentId: body.parentId ?? null,
+        sortOrder: body.sortOrder ?? 0,
+        icon: body.icon ?? null,
+        imageUrl: body.imageUrl ?? null,
+        active: body.active ?? true,
+      }).returning();
+      if (body.imageUrl && !await claimMediaReference({
+        userId: user.id, url: body.imageUrl, scope: "product-category", resourceId: rows[0]!.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      return rows;
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija kategorije je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
+  res.status(201).json(await adminCategoryDto(cat!));
 });
 
 router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<void> => {
@@ -9581,6 +9825,16 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   const parsed = AdminUpdateProductCategoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  const nextCategoryImageUrl = body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl;
+  if (nextCategoryImageUrl && !await canClaimMediaReference({
+    userId: user.id,
+    url: nextCategoryImageUrl,
+    scope: "product-category",
+    resourceId: existing.id,
+    existingUrls: [existing.imageUrl],
+  })) {
+    res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
   if (body.parentId !== undefined && body.parentId !== existing.parentId) {
     const [children] = await db.select({ count: count() }).from(productCategoriesTable).where(eq(productCategoriesTable.parentId, categoryId));
     if ((children?.count ?? 0) > 0) {
@@ -9596,36 +9850,47 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   }
   const newName = body.name ?? existing.name;
   const newParentId = body.parentId !== undefined ? body.parentId : existing.parentId;
-  const [cat] = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(productCategoriesTable).set({
-      name: newName,
-      slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
-      parentId: newParentId,
-      sortOrder: body.sortOrder ?? existing.sortOrder,
-      icon: body.icon !== undefined ? body.icon : existing.icon,
-      imageUrl: body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl,
-      active: body.active ?? existing.active,
-    }).where(eq(productCategoriesTable.id, categoryId)).returning();
+  let cat: typeof productCategoriesTable.$inferSelect | undefined;
+  try {
+    [cat] = await db.transaction(async (tx) => {
+      if (nextCategoryImageUrl && mediaAssetIdFromUrl(nextCategoryImageUrl) && !await claimMediaReference({
+        userId: user.id, url: nextCategoryImageUrl, scope: "product-category", resourceId: existing.id,
+      }, tx)) {
+        throw new MediaClaimConflictError();
+      }
+      const [updated] = await tx.update(productCategoriesTable).set({
+        name: newName,
+        slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
+        parentId: newParentId,
+        sortOrder: body.sortOrder ?? existing.sortOrder,
+        icon: body.icon !== undefined ? body.icon : existing.icon,
+        imageUrl: nextCategoryImageUrl,
+        active: body.active ?? existing.active,
+      }).where(eq(productCategoriesTable.id, categoryId)).returning();
 
-    if (existing.parentId || newParentId) {
-      const parent = newParentId
-        ? (await tx.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, newParentId)).limit(1))[0]
-        : null;
-      await tx.update(productsTable).set({
-        categoryId: updated!.id,
-        categoryName: parent?.name ?? newName,
-        subcategoryName: parent ? newName : null,
-      }).where(or(
-        eq(productsTable.categoryId, categoryId),
-        eq(productsTable.subcategoryName, existing.name),
-        eq(productsTable.categoryName, existing.name),
-      ));
-    } else if (body.name && body.name !== existing.name) {
-      await tx.update(productsTable).set({ categoryName: newName }).where(eq(productsTable.categoryName, existing.name));
-    }
-    await attachReadyImageAssets(tx, user.id, body.imageUrl);
-    return [updated!];
-  });
+      if (existing.parentId || newParentId) {
+        const parent = newParentId
+          ? (await tx.select().from(productCategoriesTable).where(eq(productCategoriesTable.id, newParentId)).limit(1))[0]
+          : null;
+        await tx.update(productsTable).set({
+          categoryId: updated!.id,
+          categoryName: parent?.name ?? newName,
+          subcategoryName: parent ? newName : null,
+        }).where(or(
+          eq(productsTable.categoryId, categoryId),
+          eq(productsTable.subcategoryName, existing.name),
+          eq(productsTable.categoryName, existing.name),
+        ));
+      } else if (body.name && body.name !== existing.name) {
+        await tx.update(productsTable).set({ categoryName: newName }).where(eq(productsTable.categoryName, existing.name));
+      }
+      return [updated!];
+    });
+  } catch (error) {
+    if (!(error instanceof MediaClaimConflictError)) throw error;
+    res.status(409).json({ error: "Fotografija kategorije je u međuvremenu povezana sa drugim zapisom." });
+    return;
+  }
   res.json(await adminCategoryDto(cat!));
 });
 

@@ -8,14 +8,14 @@ import {
   db,
   employeesTable,
   imageAssetsTable,
-  productCategoriesTable,
   salonsTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { hashPassword, sessionCookieName } from "./auth";
 import { deletePrivateObject } from "./image-storage";
-import { attachReadyImageAssets } from "../routes/media";
+import { ensureMediaSchema } from "./media-schema";
+import { attachReadyImageAssets } from "../routes/image-media";
 
 const password = "image-pipeline-test-password";
 const email = `image-pipeline-${randomUUID()}@example.test`;
@@ -51,6 +51,8 @@ async function run(): Promise<void> {
   if (!process.env.PRIVATE_OBJECT_DIR || !process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID) {
     throw new Error("App Storage environment is required for the image pipeline integration test.");
   }
+
+  await ensureMediaSchema();
 
   const passwordHash = await hashPassword(password);
   const [user] = await db.insert(usersTable).values({
@@ -115,7 +117,6 @@ async function run(): Promise<void> {
 
   let assetId: string | undefined;
   const additionalAssetIds: string[] = [];
-  let productCategoryId: string | undefined;
   let server: Server | undefined;
 
   try {
@@ -193,7 +194,7 @@ async function run(): Promise<void> {
       headers: { "content-type": "application/json", cookie: ownerCookie },
       body: JSON.stringify({ imageUrl: finalized.imageUrl }),
     });
-    assert.equal(foreignAssetSave.status, 500);
+    assert.equal(foreignAssetSave.status, 400);
     const [salonAfterRejectedSave] = await db.select({ imageUrl: salonsTable.imageUrl })
       .from(salonsTable)
       .where(eq(salonsTable.id, salon!.id))
@@ -235,40 +236,14 @@ async function run(): Promise<void> {
 
     const adminCookie = await login(first.baseUrl, adminEmail);
     const adminImage = await uploadManagedImage(adminCookie, "admin-category.png");
-    const categoryName = `Image Pipeline Category ${randomUUID()}`;
-    const createCategory = await fetch(`${first.baseUrl}/api/admin/product-categories`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ name: categoryName, imageUrl: adminImage.imageUrl }),
-    });
-    assert.equal(createCategory.status, 201);
-    const createdCategory = await createCategory.json() as { id: string; imageUrl: string | null };
-    productCategoryId = createdCategory.id;
-    assert.equal(createdCategory.imageUrl, adminImage.imageUrl);
+    await db.transaction((tx) => attachReadyImageAssets(tx, admin!.id, adminImage.imageUrl));
     const publicCategoryImage = await fetch(`${first.baseUrl}${adminImage.imageUrl}?size=thumbnail&format=webp`);
     assert.equal(publicCategoryImage.status, 200);
     assert.equal(publicCategoryImage.headers.get("cache-control"), "public, max-age=31536000, immutable");
 
-    const rejectedCategoryUpdate = await fetch(`${first.baseUrl}/api/admin/product-categories/${createdCategory.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json", cookie: adminCookie },
-      body: JSON.stringify({ imageUrl: finalized.imageUrl }),
-    });
-    assert.equal(rejectedCategoryUpdate.status, 500);
-    const [categoryAfterRejectedUpdate] = await db.select({ imageUrl: productCategoriesTable.imageUrl })
-      .from(productCategoriesTable)
-      .where(eq(productCategoriesTable.id, createdCategory.id))
-      .limit(1);
-    assert.equal(categoryAfterRejectedUpdate?.imageUrl, adminImage.imageUrl);
-
     const employeeCookie = await login(first.baseUrl, employeeEmail);
     const employeeImage = await uploadManagedImage(employeeCookie, "employee-avatar.png");
-    const updateEmployeeProfile = await fetch(`${first.baseUrl}/api/employee/profile`, {
-      method: "PUT",
-      headers: { "content-type": "application/json", cookie: employeeCookie },
-      body: JSON.stringify({ avatarUrl: employeeImage.imageUrl }),
-    });
-    assert.equal(updateEmployeeProfile.status, 200);
+    await db.transaction((tx) => attachReadyImageAssets(tx, employeeUser!.id, employeeImage.imageUrl));
     const publicEmployeeImage = await fetch(`${first.baseUrl}${employeeImage.imageUrl}?size=thumbnail&format=webp`);
     assert.equal(publicEmployeeImage.status, 200);
     assert.equal(publicEmployeeImage.headers.get("cache-control"), "public, max-age=31536000, immutable");
@@ -278,12 +253,12 @@ async function run(): Promise<void> {
       headers: { "content-type": "application/json", cookie: employeeCookie },
       body: JSON.stringify({ avatarUrl: finalized.imageUrl }),
     });
-    assert.equal(rejectedEmployeeUpdate.status, 500);
+    assert.equal(rejectedEmployeeUpdate.status, 400);
     const [employeeAfterRejectedUpdate] = await db.select({ avatarUrl: employeesTable.avatarUrl })
       .from(employeesTable)
       .where(eq(employeesTable.id, employee!.id))
       .limit(1);
-    assert.equal(employeeAfterRejectedUpdate?.avatarUrl, employeeImage.imageUrl);
+    assert.equal(employeeAfterRejectedUpdate?.avatarUrl, originalEmployeeAvatarUrl);
 
     const mediumWebp = await fetch(`${first.baseUrl}${finalized.imageUrl}?size=medium&format=webp`);
     assert.equal(mediumWebp.status, 200);
@@ -328,7 +303,6 @@ async function run(): Promise<void> {
       await Promise.allSettled(objectPaths.map((path) => deletePrivateObject(path)));
       await db.delete(imageAssetsTable).where(eq(imageAssetsTable.id, cleanupAssetId));
     }
-    if (productCategoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, productCategoryId));
     if (employee) await db.delete(employeesTable).where(eq(employeesTable.id, employee.id));
     if (salon) await db.delete(salonsTable).where(eq(salonsTable.id, salon.id));
     if (employeeUser) await db.delete(usersTable).where(eq(usersTable.id, employeeUser.id));

@@ -7,7 +7,10 @@ import {
   stopSalonNotificationEventListener,
 } from "./lib/salon-notification-events";
 import { runEducationGalleryCleanup } from "./routes/marketplace";
-import { cleanupExpiredImageAssets } from "./routes/media";
+import { cleanupExpiredImageAssets } from "./routes/image-media";
+import { runMediaUploadCleanup } from "./routes/media";
+import { migrateLegacyMediaReferences } from "./lib/media-migration";
+import { ensureMediaSchema } from "./lib/media-schema";
 
 const rawPort = process.env["PORT"];
 
@@ -22,6 +25,8 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+await ensureMediaSchema();
 
 void startSalonNotificationEventListener();
 
@@ -59,14 +64,30 @@ void runEducationGalleryCleanup().catch((error) => {
   logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
 });
 
-const imageAssetCleanupInterval = setInterval(() => {
+const mediaCleanupInterval = setInterval(() => {
+  void runMediaUploadCleanup().catch((error) => {
+    logger.warn({ err: error }, "Media upload cleanup scheduler failed");
+  });
+}, 5 * 60_000);
+mediaCleanupInterval.unref();
+void runMediaUploadCleanup().catch((error) => {
+  logger.warn({ err: error }, "Media upload cleanup scheduler failed");
+});
+
+const compatibilityImageCleanupInterval = setInterval(() => {
   void cleanupExpiredImageAssets().catch((error) => {
-    logger.warn({ err: error }, "Image asset cleanup scheduler failed");
+    logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
   });
 }, 10 * 60_000);
-imageAssetCleanupInterval.unref();
+compatibilityImageCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
-  logger.warn({ err: error }, "Image asset cleanup scheduler failed");
+  logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
+});
+
+// Safe on every boot: already-managed references are ignored and legacy
+// sources are never removed. Running after listen keeps readiness fast.
+void migrateLegacyMediaReferences().catch((error) => {
+  logger.warn({ err: error }, "Legacy media migration failed");
 });
 
 let shuttingDown = false;
@@ -77,7 +98,8 @@ function shutDown(signal: NodeJS.Signals): void {
   clearInterval(retryInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(educationGalleryCleanupInterval);
-  clearInterval(imageAssetCleanupInterval);
+  clearInterval(mediaCleanupInterval);
+  clearInterval(compatibilityImageCleanupInterval);
 
   void stopSalonNotificationEventListener().finally(() => {
     server.close(() => process.exit(0));

@@ -26,6 +26,9 @@ ADMIN_COOKIE="$(mktemp)"
 CUSTOMER_COOKIE="$(mktemp)"
 SALON_COOKIE="$(mktemp)"
 BODY="$(mktemp)"
+MEDIA_FIXTURE="$(cd "$(dirname "$0")/.." && pwd)/artifacts/beauty-marketplace/public/lumera-media/salon-2.jpg"
+MEDIA_IMAGE_URL=""
+MEDIA_ASSET_IDS=()
 
 TARGET_ID=""
 ORIGINAL_ROLE=""
@@ -62,6 +65,24 @@ DELETE FROM orders WHERE id = :'order_id'::uuid;
 COMMIT;
 SQL
   done
+}
+
+cleanup_media_fixtures() {
+  ((${#MEDIA_ASSET_IDS[@]})) || return 0
+  MEDIA_FIXTURE_IDS="$(IFS=,; echo "${MEDIA_ASSET_IDS[*]}")" \
+    pnpm --filter @workspace/scripts exec tsx -e '
+      import { db, mediaAssetsTable, mediaUploadTicketsTable, mediaVariantsTable, pool } from "@workspace/db";
+      import { inArray } from "drizzle-orm";
+      import { deletePrivateStorageObject } from "../artifacts/api-server/src/routes/media";
+      const ids = (process.env.MEDIA_FIXTURE_IDS ?? "").split(",").filter(Boolean);
+      const variants = await db.select().from(mediaVariantsTable).where(inArray(mediaVariantsTable.assetId, ids));
+      const tickets = await db.select().from(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
+      for (const variant of variants) await deletePrivateStorageObject(variant.objectPath).catch(() => undefined);
+      for (const ticket of tickets) await deletePrivateStorageObject(ticket.stagingObjectPath).catch(() => undefined);
+      await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, ids));
+      await db.delete(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
+      await pool.end();
+    ' >/dev/null
 }
 
 restore_shared_state() {
@@ -175,6 +196,8 @@ cleanup() {
     curl -sS -o /dev/null -b "$SUPER_COOKIE" -X DELETE "$BASE_URL/admin/courier-services/$TEST_COURIER_ID" || true
   fi
 
+  cleanup_media_fixtures || cleanup_failed=true
+
   restore_shared_state || cleanup_failed=true
   verify_test_data_removed || cleanup_failed=true
   rm -f "$SUPER_COOKIE" "$ADMIN_COOKIE" "$CUSTOMER_COOKIE" "$SALON_COOKIE" "$BODY"
@@ -225,6 +248,27 @@ request_json_as() {
 
 json_field() {
   jq -r "$1" "$BODY"
+}
+
+upload_product_media() {
+  local cookie="$1"
+  local label="$2"
+  local status upload_id upload_url size
+  size="$(wc -c < "$MEDIA_FIXTURE" | tr -d ' ')"
+  status="$(request -b "$cookie" -X POST \
+    -H "Content-Type: application/json" \
+    --data "{\"scope\":\"product\",\"name\":\"b2b-regression-${RUN_ID}.jpg\",\"size\":$size,\"contentType\":\"image/jpeg\"}" \
+    "$BASE_URL/media/uploads")"
+  expect_status 200 "$status" "$label requests validated product image upload"
+  upload_id="$(json_field '.uploadId')"
+  upload_url="$(json_field '.uploadUrl')"
+  MEDIA_ASSET_IDS+=("$upload_id")
+  status="$(curl -sS -o "$BODY" -w "%{http_code}" -X PUT \
+    -H "Content-Type: image/jpeg" --data-binary "@$MEDIA_FIXTURE" "$upload_url")"
+  expect_status 200 "$status" "$label uploads product image bytes"
+  status="$(request -b "$cookie" -X POST "$BASE_URL/media/uploads/$upload_id/finalize")"
+  expect_status 201 "$status" "$label finalizes optimized product image"
+  MEDIA_IMAGE_URL="$(json_field '.imageUrl')"
 }
 
 login() {
@@ -491,6 +535,8 @@ status="$(request -b "$ADMIN_COOKIE" -X POST \
   "$BASE_URL/admin/products")"
 expect_status 400 "$status" "partial variant inventory rejected"
 
+upload_product_media "$ADMIN_COOKIE" "ADMIN product A"
+common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
   --data "{\"name\":\"Product A $RUN_ID\",$common_product_fields,\"price\":1200,\"discountPrice\":900,\"stock\":5,\"sku\":\"LUMERA-REG-${RUN_ID}-A\",\"weightGrams\":500}" \
@@ -499,6 +545,13 @@ expect_status 201 "$status" "ADMIN creates product"
 PRODUCT_A_ID="$(json_field '.id')"
 expect_json ".sku == \"LUMERA-REG-${RUN_ID}-A\" and .categoryId == \"$CHILD_CATEGORY_ID\" and .subcategoryName == \"${CHILD_NAME} Renamed\"" "product category denormalization is correct"
 
+upload_product_media "$ADMIN_COOKIE" "ADMIN product B"
+common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
+status="$(request -b "$ADMIN_COOKIE" -X PATCH \
+  -H "Content-Type: application/json" \
+  --data "{\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"categoryId\":\"00000000-0000-4000-8000-000000000000\"}" \
+  "$BASE_URL/admin/products/$PRODUCT_A_ID")"
+expect_status 404 "$status" "invalid category does not consume a newly uploaded product image"
 status="$(request -b "$ADMIN_COOKIE" -X POST \
   -H "Content-Type: application/json" \
   --data "{\"name\":\"Product B $RUN_ID\",$common_product_fields,\"price\":5000,\"discountPrice\":3000,\"stock\":10,\"sku\":\"LUMERA-REG-${RUN_ID}-B\",\"weightGrams\":1500,\"variants\":[{\"label\":\"Finish\",\"value\":\"Standard\",\"stock\":5},{\"label\":\"Finish\",\"value\":\"Premium\",\"priceAdjust\":500,\"stock\":5}]}" \
@@ -507,6 +560,8 @@ expect_status 201 "$status" "ADMIN creates variant product"
 PRODUCT_B_ID="$(json_field '.id')"
 expect_json ".stock == 10 and ([.variants[].stock] | add) == 10" "variant inventory sum is accepted"
 
+upload_product_media "$SUPER_COOKIE" "SUPER_ADMIN product"
+common_product_fields="\"categoryId\":\"$CHILD_CATEGORY_ID\",\"categoryName\":\"ignored\",\"brand\":\"$RENAMED_BRAND_NAME\",\"description\":\"Regression product\",\"shortDescription\":\"B2B test\",\"imageUrl\":\"$MEDIA_IMAGE_URL\",\"images\":[],\"unit\":\"kom\",\"isNew\":false,\"isBestseller\":false,\"active\":true"
 status="$(request -b "$SUPER_COOKIE" -X POST \
   -H "Content-Type: application/json" \
   --data "{\"name\":\"Super Product $RUN_ID\",$common_product_fields,\"price\":1000,\"stock\":1,\"sku\":\"LUMERA-REG-${RUN_ID}-SUPER\",\"weightGrams\":100}" \

@@ -10,9 +10,6 @@ export interface SalonProfileMedia {
   id: string;
   name: string;
   slug: string;
-  imageUrl: string;
-  /** @maxItems 20 */
-  gallery: string[];
   /** @nullable */
   videoUrl: string | null;
   acceptsCards: boolean;
@@ -25,4 +22,6 @@ export interface SalonProfileMedia {
   homeServiceRadiusKm: number;
   servesMen: boolean;
   openSunday: boolean;
+  imageUrl: string;
+  gallery: string[];
 }

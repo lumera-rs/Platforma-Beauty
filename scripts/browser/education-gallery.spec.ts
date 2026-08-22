@@ -29,6 +29,7 @@ const tinyPng = Buffer.from(
 );
 const maxGalleryImageBytes = 8 * 1024 * 1024;
 
+const maxOptimizedImageBytes = 12 * 1024 * 1024;
 function paddedPng(size: number): Buffer {
   const bytes = Buffer.alloc(size);
   tinyPng.copy(bytes);
@@ -296,25 +297,25 @@ test("education center owner uploads, manages, and removes a course gallery imag
     await expect(picker).toBeAttached();
     let oversizedUploadUrlRequests = 0;
     page.on("request", (request) => {
-      if (request.method() === "POST" && request.url().includes(`/api/education/courses/${fixture.courseId}/gallery/upload-url`)) {
+      if (request.method() === "POST" && request.url().includes("/api/media/uploads")) {
         oversizedUploadUrlRequests += 1;
       }
     });
     await picker.setInputFiles({
       name: "course-gallery-too-large.png",
       mimeType: "image/png",
-      buffer: paddedPng(maxGalleryImageBytes + 1),
+      buffer: paddedPng(maxOptimizedImageBytes + 1),
     });
-    await expect(page.getByRole("alert")).toContainText("do 8 MB");
+    await expect(page.getByRole("alert")).toContainText("do 12 MB");
     await expect(picker).toBeEnabled();
     expect(oversizedUploadUrlRequests).toBe(0);
     const firstUploadTicketResponse = page.waitForResponse((response) =>
       response.request().method() === "POST"
-      && response.url().includes(`/api/education/courses/${fixture.courseId}/gallery/upload-url`),
+      && response.url().includes("/api/media/uploads"),
     );
     await picker.setInputFiles({ name: "course-gallery.png", mimeType: "image/png", buffer: tinyPng });
     await expect(page.getByText("Fotografija 1", { exact: true })).toBeVisible({ timeout: 30_000 });
-    const firstUploadTicket = await (await firstUploadTicketResponse).json() as { uploadUrl: string; mediaId: string };
+    const firstUploadTicket = await (await firstUploadTicketResponse).json() as { uploadUrl: string; uploadId: string };
     await picker.setInputFiles({ name: "course-gallery-second.png", mimeType: "image/png", buffer: tinyPng });
     await expect(page.getByText("Fotografija 2", { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel(/Opis slike/).first()).toBeVisible();
@@ -323,15 +324,15 @@ test("education center owner uploads, manages, and removes a course gallery imag
     expect(ownerCourse).toBeOK();
     const ownerCourseJson = await ownerCourse.json() as { gallery: Array<{ url: string; altText: string }> };
     expect(ownerCourseJson.gallery).toHaveLength(2);
-    expect(ownerCourseJson.gallery[0]?.url).toMatch(/^\/api\/education\/media\//);
+    expect(ownerCourseJson.gallery[0]?.url).toMatch(/^\/api\/media\//);
     expect(JSON.stringify(ownerCourseJson)).not.toContain("objectPath");
     const storedMedia = await db.select().from(educationMediaTable).where(eq(educationMediaTable.id, ownerCourseJson.gallery[0]!.id)).limit(1);
-    expect(storedMedia[0]?.objectPath).toMatch(/^\/objects\/education-gallery\//);
+    expect(storedMedia[0]?.objectPath).toMatch(/^\/api\/media\//);
     expect(storedMedia[0]?.objectPath).not.toContain("staging");
     const servedImage = await page.request.get(ownerCourseJson.gallery[0]!.url);
     expect(servedImage).toBeOK();
     expect(servedImage.headers()["content-type"]).toContain("image/png");
-    expect(servedImage.headers()["cache-control"]).toBe("public, max-age=3600, stale-while-revalidate=86400");
+    expect(servedImage.headers()["cache-control"]).toBe("private, no-store");
     const originalImageBytes = await servedImage.body();
     const stagingOverwrite = await page.request.put(firstUploadTicket.uploadUrl, {
       headers: { "Content-Type": "image/png" },
@@ -339,7 +340,7 @@ test("education center owner uploads, manages, and removes a course gallery imag
     });
     expect(stagingOverwrite.ok()).toBeTruthy();
     const replayedAttach = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
-      data: { mediaId: firstUploadTicket.mediaId },
+      data: { mediaId: firstUploadTicket.uploadId },
     });
     expect(replayedAttach.status()).toBe(200);
     const immutableImage = await page.request.get(ownerCourseJson.gallery[0]!.url);
@@ -450,7 +451,7 @@ test("education gallery accepts the exact 8 MB limit and rejects invalid bytes b
 
     const uploadTicketResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
       data: {
-        name: "course-gallery-max-size.png",
+        name: "course-gallery-maximum.png",
         size: maxGalleryImageBytes,
         contentType: "image/png",
       },
