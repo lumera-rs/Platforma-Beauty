@@ -5,18 +5,24 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { SubscriptionPlanUpdateLimits } from './subscriptionPlanUpdateLimits';
 
-export interface CourierServiceUpdate {
+export interface SubscriptionPlanUpdate {
   /**
      * @minLength 1
      * @maxLength 120
      * @pattern ^\S.*\S$|^\S$
      */
   name?: string;
+  /** @minimum 0 */
+  price?: number;
   /**
-     * @maxLength 1000
-     * @nullable
+     * @minimum 0
+     * @maximum 365
      */
-  trackingUrlTemplate?: string | null;
+  trialDays?: number;
+  /** @items.minLength 1 */
+  features?: string[];
+  limits?: SubscriptionPlanUpdateLimits;
   active?: boolean;
 }

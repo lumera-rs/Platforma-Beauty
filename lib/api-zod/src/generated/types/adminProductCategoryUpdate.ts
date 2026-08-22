@@ -7,15 +7,28 @@
  */
 
 export interface AdminProductCategoryUpdate {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
   /** @nullable */
   parentId?: string | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 9999
+     */
   sortOrder?: number;
-  /** @nullable */
+  /**
+     * @maxLength 10
+     * @nullable
+     */
   icon?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
   imageUrl?: string | null;
   active?: boolean;
 }

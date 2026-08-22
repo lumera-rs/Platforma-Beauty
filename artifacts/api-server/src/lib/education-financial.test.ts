@@ -269,10 +269,11 @@ async function run(): Promise<void> {
         title: `Refund financial course ${suffix}`,
         description: "Kurs za proveru odluke o refundiranju.",
         category: "Finansijska pokrivenost",
-        format: "online",
+        format: "in-person",
         city: "Beograd",
         price: 13000,
         duration: "3 nedelje",
+        rating: 50,
         certification: true,
         imageUrl: "/test-education-finance.jpg",
         published: true,
@@ -372,7 +373,7 @@ async function run(): Promise<void> {
     const pastSessionEnd = new Date(now - 2 * 24 * 60 * 60 * 1000);
     const futureSessionStart = new Date(now + 4 * 24 * 60 * 60 * 1000);
     const futureSessionEnd = new Date(now + 5 * 24 * 60 * 60 * 1000);
-    const [pastSession, futureSession] = await db.insert(courseSessionsTable).values([
+    const [pastSession, futureSession, refundSession] = await db.insert(courseSessionsTable).values([
       {
         courseId: liveCourse!.id,
         startsAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
@@ -387,9 +388,17 @@ async function run(): Promise<void> {
         location: "Beograd",
         capacity: 10,
       },
+      {
+        courseId: refundCourse!.id,
+        startsAt: futureSessionStart,
+        endsAt: futureSessionEnd,
+        location: "Beograd",
+        capacity: 3,
+      },
     ]).returning();
     assert.ok(pastSession);
     assert.ok(futureSession);
+    assert.ok(refundSession);
 
     server = app.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -859,6 +868,11 @@ async function run(): Promise<void> {
     assert.equal(ownerResolution.status, 403);
 
     const refundDisputeId = await openDispute(refundEnrollmentId);
+    const popularBeforeRefund = await request(baseUrl, "/education/public/popular?limit=12");
+    assert.equal(popularBeforeRefund.status, 200);
+    const refundCourseBefore = (await json<Array<{ id: string; availableSeats: number | null }>>(popularBeforeRefund))
+      .find((course) => course.id === refundCourse!.id);
+    assert.equal(refundCourseBefore?.availableSeats, 2, "The warmed public catalog must expose the reserved seat before refund.");
     const refundDecision = await request(baseUrl, `/admin/education/disputes/${refundDisputeId}`, {
       method: "PATCH",
       cookie: adminCookie,
@@ -873,6 +887,11 @@ async function run(): Promise<void> {
     assert.equal(refundedEscrow?.status, "refunded");
     assert.equal(refundedEnrollment?.status, "cancelled");
     assert.equal(refundedEnrollment?.paymentStatus, "refunded");
+    const popularAfterRefund = await request(baseUrl, "/education/public/popular?limit=12");
+    assert.equal(popularAfterRefund.status, 200);
+    const refundCourseAfter = (await json<Array<{ id: string; availableSeats: number | null }>>(popularAfterRefund))
+      .find((course) => course.id === refundCourse!.id);
+    assert.equal(refundCourseAfter?.availableSeats, 3, "A refund must invalidate cached public capacity after releasing the seat.");
     const refundLedger = await db.select().from(educationLedgerEntriesTable).where(and(
       eq(educationLedgerEntriesTable.enrollmentId, refundEnrollmentId),
       eq(educationLedgerEntriesTable.type, "refund"),

@@ -558,15 +558,17 @@ export interface AdminServiceTemplateInput {
   /**
      * @minLength 1
      * @maxLength 160
+     * @pattern ^\S.*\S$|^\S$
      */
   name: string;
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   mainCategory: string;
   /**
-     * @minLength 1
+     * @minLength 0
      * @maxLength 120
      */
   subcategory: string;
@@ -597,15 +599,17 @@ export interface AdminServiceTemplateUpdate {
   /**
      * @minLength 1
      * @maxLength 160
+     * @pattern ^\S.*\S$|^\S$
      */
   name?: string;
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   mainCategory?: string;
   /**
-     * @minLength 1
+     * @minLength 0
      * @maxLength 120
      */
   subcategory?: string;
@@ -1698,6 +1702,7 @@ export interface CourierServiceInput {
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   name: string;
   /**
@@ -1712,6 +1717,7 @@ export interface CourierServiceUpdate {
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   name?: string;
   /**
@@ -2539,9 +2545,13 @@ export const EducationAdminCenterUpdateSubscriptionStatus = {
 
 export interface EducationAdminCenterUpdate {
   verificationStatus?: EducationAdminCenterUpdateVerificationStatus;
-  /** @nullable */
+  /**
+     * @maxLength 1000
+     * @nullable
+     */
   verificationNote?: string | null;
   subscriptionStatus?: EducationAdminCenterUpdateSubscriptionStatus;
+  /** @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ */
   planId?: string;
 }
 
@@ -2778,13 +2788,72 @@ export interface LoyaltyTier {
   active: boolean;
 }
 
+export type LoyaltyTierInputPeriod = typeof LoyaltyTierInputPeriod[keyof typeof LoyaltyTierInputPeriod];
+
+
+export const LoyaltyTierInputPeriod = {
+  monthly: 'monthly',
+  quarterly: 'quarterly',
+  yearly: 'yearly',
+} as const;
+
 export interface LoyaltyTierInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 999
+     */
+  sortOrder: number;
+  /** @minimum 0 */
+  spendThreshold: number;
+  period: LoyaltyTierInputPeriod;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  subscriptionDiscountPercent: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  productDiscountPercent: number;
+  freeSubscription: boolean;
+  premiumListing: boolean;
+  freeShipping: boolean;
+  /** @items.minLength 1 */
+  benefits?: string[];
+  active: boolean;
+}
+
+export type LoyaltyTierUpdatePeriod = typeof LoyaltyTierUpdatePeriod[keyof typeof LoyaltyTierUpdatePeriod];
+
+
+export const LoyaltyTierUpdatePeriod = {
+  monthly: 'monthly',
+  quarterly: 'quarterly',
+  yearly: 'yearly',
+} as const;
+
+export interface LoyaltyTierUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
+  /**
+     * @minimum 1
+     * @maximum 999
+     */
   sortOrder?: number;
   /** @minimum 0 */
   spendThreshold?: number;
-  period?: string;
+  period?: LoyaltyTierUpdatePeriod;
   /**
      * @minimum 0
      * @maximum 100
@@ -2798,6 +2867,7 @@ export interface LoyaltyTierInput {
   freeSubscription?: boolean;
   premiumListing?: boolean;
   freeShipping?: boolean;
+  /** @items.minLength 1 */
   benefits?: string[];
   active?: boolean;
 }
@@ -2817,14 +2887,44 @@ export interface SubscriptionPlan {
 export type SubscriptionPlanInputLimits = {[key: string]: number};
 
 export interface SubscriptionPlanInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
+  name: string;
+  /** @minimum 0 */
+  price: number;
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  trialDays: number;
+  /** @items.minLength 1 */
+  features?: string[];
+  limits?: SubscriptionPlanInputLimits;
+  active: boolean;
+}
+
+export type SubscriptionPlanUpdateLimits = {[key: string]: number};
+
+export interface SubscriptionPlanUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
   /** @minimum 0 */
   price?: number;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
   trialDays?: number;
+  /** @items.minLength 1 */
   features?: string[];
-  limits?: SubscriptionPlanInputLimits;
+  limits?: SubscriptionPlanUpdateLimits;
   active?: boolean;
 }
 
@@ -2846,7 +2946,7 @@ export interface AdminReview {
 }
 
 export interface AdminReviewUpdate {
-  visible?: boolean;
+  visible: boolean;
 }
 
 export interface ApiError {
@@ -2910,79 +3010,163 @@ export interface AdminProductList {
 }
 
 export interface AdminProductInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 240
+     * @pattern ^\S.*\S$|^\S$
+     */
   name: string;
   /** @nullable */
   categoryId?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   categoryName: string;
-  /** @nullable */
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   subcategoryName?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   brand?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 10000
+     * @pattern ^\S[\s\S]*\S$|^\S$
+     */
   description: string;
-  /** @nullable */
+  /**
+     * @maxLength 500
+     * @nullable
+     */
   shortDescription?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
   imageUrl: string;
+  /**
+     * @maxItems 12
+     * @items.minLength 1
+     * @items.maxLength 2000
+     */
   images?: string[];
-  /** @minimum 0 */
+  /** @minimum 1 */
   price: number;
-  /** @nullable */
+  /**
+     * @minimum 0
+     * @nullable
+     */
   discountPrice?: number | null;
   /** @minimum 0 */
   stock: number;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 100
+     * @pattern ^\S.*\S$|^\S$
+     */
   sku: string;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
   unit: string;
-  /** @minimum 0 */
+  /** @minimum 1 */
   weightGrams: number;
   isNew?: boolean;
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
-  /** @nullable */
+  /**
+     * @maxLength 80
+     * @nullable
+     */
   variantType?: string | null;
   active?: boolean;
 }
 
 export interface AdminProductUpdate {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 240
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
   /** @nullable */
   categoryId?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   categoryName?: string;
-  /** @nullable */
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   subcategoryName?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 120
+     * @nullable
+     */
   brand?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 10000
+     * @pattern ^\S[\s\S]*\S$|^\S$
+     */
   description?: string;
-  /** @nullable */
+  /**
+     * @maxLength 500
+     * @nullable
+     */
   shortDescription?: string | null;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
   imageUrl?: string;
+  /**
+     * @maxItems 12
+     * @items.minLength 1
+     * @items.maxLength 2000
+     */
   images?: string[];
-  /** @minimum 0 */
+  /** @minimum 1 */
   price?: number;
-  /** @nullable */
+  /**
+     * @minimum 0
+     * @nullable
+     */
   discountPrice?: number | null;
   /** @minimum 0 */
   stock?: number;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 100
+     * @pattern ^\S.*\S$|^\S$
+     */
   sku?: string;
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
   unit?: string;
-  /** @minimum 0 */
+  /** @minimum 1 */
   weightGrams?: number;
   isNew?: boolean;
   isBestseller?: boolean;
   /** @nullable */
   variants?: ProductVariant[] | null;
-  /** @nullable */
+  /**
+     * @maxLength 80
+     * @nullable
+     */
   variantType?: string | null;
   active?: boolean;
 }
@@ -3032,29 +3216,55 @@ export interface AdminProductCategory {
 }
 
 export interface AdminProductCategoryInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name: string;
   /** @nullable */
   parentId?: string | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 9999
+     */
   sortOrder?: number;
-  /** @nullable */
+  /**
+     * @maxLength 10
+     * @nullable
+     */
   icon?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
   imageUrl?: string | null;
   active?: boolean;
 }
 
 export interface AdminProductCategoryUpdate {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
   /** @nullable */
   parentId?: string | null;
-  /** @minimum 0 */
+  /**
+     * @minimum 0
+     * @maximum 9999
+     */
   sortOrder?: number;
-  /** @nullable */
+  /**
+     * @maxLength 10
+     * @nullable
+     */
   icon?: string | null;
-  /** @nullable */
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
   imageUrl?: string | null;
   active?: boolean;
 }
@@ -3114,19 +3324,35 @@ export interface AdminBrand {
 }
 
 export interface AdminBrandInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name: string;
+  /** @maxLength 2000 */
   description?: string;
-  /** @nullable */
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
   logoUrl?: string | null;
   active?: boolean;
 }
 
 export interface AdminBrandUpdate {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
   name?: string;
+  /** @maxLength 2000 */
   description?: string;
-  /** @nullable */
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
   logoUrl?: string | null;
   active?: boolean;
 }
@@ -3158,6 +3384,7 @@ export interface ShippingConfigInput {
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   personalDeliveryName: string;
   /** @minimum 0 */

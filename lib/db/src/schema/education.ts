@@ -112,7 +112,11 @@ export const coursesTable = pgTable("courses", {
   endDate: date("end_date", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("courses_center_idx").on(table.centerId),
+  index("courses_salon_idx").on(table.salonId),
+  index("courses_category_idx").on(table.categoryId),
+]);
 
 /**
  * Public course itinerary. The program deliberately contains no venue/address:
@@ -220,7 +224,9 @@ export const courseSessionsTable = pgTable("course_sessions", {
   cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("course_sessions_course_starts_idx").on(table.courseId, table.startsAt),
+]);
 
 export const courseModulesTable = pgTable("course_modules", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -228,7 +234,9 @@ export const courseModulesTable = pgTable("course_modules", {
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   sortOrder: integer("sort_order").notNull().default(0),
-});
+}, (table) => [
+  index("course_modules_course_sort_idx").on(table.courseId, table.sortOrder),
+]);
 
 export const courseLessonsTable = pgTable("course_lessons", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -238,7 +246,9 @@ export const courseLessonsTable = pgTable("course_lessons", {
   content: text("content").notNull().default(""),
   durationMinutes: integer("duration_minutes").notNull().default(30),
   sortOrder: integer("sort_order").notNull().default(0),
-});
+}, (table) => [
+  index("course_lessons_module_sort_idx").on(table.moduleId, table.sortOrder),
+]);
 
 export const courseEnrollmentsTable = pgTable("course_enrollments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -277,6 +287,8 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
     .on(table.purchaserId, table.idempotencyKey)
     .where(sql`${table.idempotencyKey} is not null`),
   index("course_enrollments_session_status_idx").on(table.sessionId, table.status),
+  index("course_enrollments_purchaser_idx").on(table.purchaserId),
+  index("course_enrollments_user_idx").on(table.userId),
 ]);
 
 export const educationWaitlistTable = pgTable("education_waitlist", {
@@ -326,7 +338,38 @@ export const educationNotificationsTable = pgTable("education_notifications", {
   eventKey: text("event_key").notNull().unique(),
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("education_notifications_user_created_idx").on(table.userId, table.createdAt)]);
+}, (table) => [
+  index("education_notifications_user_created_idx").on(table.userId, table.createdAt),
+  index("education_notifications_retention_idx")
+    .on(table.createdAt)
+    .where(sql`${table.readAt} is not null`),
+]);
+
+/**
+ * Cold storage for education notifications older than the live-retention window.
+ * Rows are copied here verbatim before deletion from
+ * {@link educationNotificationsTable}. No foreign keys and no request-path
+ * writes: the archive is populated only by the batch archiver. The original
+ * {@link eventKey} is preserved but intentionally NOT unique here so that
+ * re-runs after a partial move can never fail on a duplicate; the archiver's
+ * copy-then-delete is guarded by an advisory lock and keyed on the primary id.
+ */
+export const educationNotificationsArchiveTable = pgTable("education_notifications_archive", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull(),
+  enrollmentId: uuid("enrollment_id"),
+  waitlistId: uuid("waitlist_id"),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  actionUrl: text("action_url"),
+  eventKey: text("event_key").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_notifications_archive_user_created_idx").on(table.userId, table.createdAt),
+]);
 
 export const educationEscrowsTable = pgTable("education_escrows", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -452,4 +495,6 @@ export const lessonProgressTable = pgTable("lesson_progress", {
   lessonId: uuid("lesson_id").notNull().references(() => courseLessonsTable.id, { onDelete: "cascade" }),
   completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
   completedByUserId: uuid("completed_by_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  index("lesson_progress_enrollment_lesson_idx").on(table.enrollmentId, table.lessonId),
+]);

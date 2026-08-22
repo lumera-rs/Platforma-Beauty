@@ -31,13 +31,24 @@ interface ServiceTemplate {
   active: boolean;
 }
 
-const emptyForm = {
+interface ServiceTemplateFormDraft {
+  name: string;
+  mainCategory: string;
+  subcategory: string;
+  typicalDurationMinutes: string;
+  priceMin: string;
+  priceMax: string;
+  description: string;
+  active: boolean;
+}
+
+const emptyForm: ServiceTemplateFormDraft = {
   name: "",
   mainCategory: "",
   subcategory: "",
-  typicalDurationMinutes: 30,
-  priceMin: 0,
-  priceMax: 0,
+  typicalDurationMinutes: "",
+  priceMin: "",
+  priceMax: "",
   description: "",
   active: true,
 };
@@ -54,7 +65,7 @@ export default function AdminServiceTemplates() {
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceTemplate | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<ServiceTemplateFormDraft>(emptyForm);
   const [deleteTarget, setDeleteTarget] = useState<ServiceTemplate | null>(null);
 
   const invalidate = () => {
@@ -85,9 +96,9 @@ export default function AdminServiceTemplates() {
       name: t.name,
       mainCategory: t.mainCategory,
       subcategory: t.subcategory,
-      typicalDurationMinutes: t.typicalDurationMinutes,
-      priceMin: t.priceMin,
-      priceMax: t.priceMax,
+      typicalDurationMinutes: String(t.typicalDurationMinutes),
+      priceMin: String(t.priceMin),
+      priceMax: String(t.priceMax),
       description: t.description || "",
       active: t.active,
     });
@@ -95,15 +106,29 @@ export default function AdminServiceTemplates() {
   };
 
   const handleSave = () => {
-    if (!form.name.trim() || !form.mainCategory.trim()) {
-      toast.error("Greška", { description: "Naziv i glavna kategorija su obavezni." });
-      return;
+    const name = form.name.trim();
+    const mainCategory = form.mainCategory.trim();
+    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    if (!mainCategory) { toast.error("Greška", { description: "Glavna kategorija je obavezna." }); return; }
+    const duration = Number(form.typicalDurationMinutes);
+    if (form.typicalDurationMinutes === "" || !Number.isFinite(duration) || duration < 5) {
+      toast.error("Greška", { description: "Trajanje mora biti najmanje 5 minuta." }); return;
     }
+    const priceMin = form.priceMin === "" ? NaN : Number(form.priceMin);
+    const priceMax = form.priceMax === "" ? NaN : Number(form.priceMax);
+    if (!Number.isFinite(priceMin) || priceMin < 0) { toast.error("Greška", { description: "Minimalna cena nije validna (unesite 0 ili više)." }); return; }
+    if (!Number.isFinite(priceMax) || priceMax < 0) { toast.error("Greška", { description: "Maksimalna cena nije validna (unesite 0 ili više)." }); return; }
+    if (priceMax > 0 && priceMin > priceMax) { toast.error("Greška", { description: "Minimalna cena ne može biti veća od maksimalne." }); return; }
+
     const payload = {
-      ...form,
-      typicalDurationMinutes: Number(form.typicalDurationMinutes),
-      priceMin: Number(form.priceMin),
-      priceMax: Number(form.priceMax),
+      name,
+      mainCategory,
+      subcategory: form.subcategory.trim(),
+      typicalDurationMinutes: Math.round(duration),
+      priceMin: Math.round(priceMin),
+      priceMax: Math.round(priceMax),
+      description: form.description.trim() || null,
+      active: form.active,
     };
     
     const opts = {
@@ -112,8 +137,9 @@ export default function AdminServiceTemplates() {
         invalidate();
         setModalOpen(false);
       },
-      onError: () => {
-        toast.error("Greška", { description: "Pokušajte ponovo." });
+      onError: (err: unknown) => {
+        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        toast.error("Greška", { description: msg ?? "Pokušajte ponovo." });
       },
     };
 
@@ -243,16 +269,16 @@ export default function AdminServiceTemplates() {
             </div>
             <div className="space-y-2">
               <Label>Tipično trajanje (min)</Label>
-              <Input type="number" min="5" step="5" value={form.typicalDurationMinutes} onChange={(e) => setForm({ ...form, typicalDurationMinutes: Number(e.target.value) })} />
+              <Input type="number" min="5" step="5" value={form.typicalDurationMinutes} onChange={(e) => setForm({ ...form, typicalDurationMinutes: e.target.value })} placeholder="npr. 30" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Min. cena (RSD)</Label>
-                <Input type="number" min="0" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: Number(e.target.value) })} />
+                <Input type="number" min="0" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} placeholder="npr. 1000" />
               </div>
               <div className="space-y-2">
                 <Label>Max. cena (RSD)</Label>
-                <Input type="number" min="0" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: Number(e.target.value) })} />
+                <Input type="number" min="0" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} placeholder="npr. 2000" />
               </div>
             </div>
             <div className="space-y-2">

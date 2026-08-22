@@ -292,7 +292,9 @@ export const employeesTable = pgTable("employees", {
   email: text("email"),
   specialties: jsonb("specialties").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
-});
+}, (table) => [
+  index("employees_salon_idx").on(table.salonId),
+]);
 
 export const employeeSchedulesTable = pgTable("employee_schedules", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -302,7 +304,9 @@ export const employeeSchedulesTable = pgTable("employee_schedules", {
   endTime: text("end_time").notNull(),
   breakStart: text("break_start"),
   breakEnd: text("break_end"),
-});
+}, (table) => [
+  index("employee_schedules_employee_idx").on(table.employeeId),
+]);
 
 export const employeeTimeOffTable = pgTable("employee_time_off", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -340,7 +344,10 @@ export const servicesTable = pgTable("services", {
   homeServiceAvailable: boolean("home_service_available").notNull().default(false),
   homeServiceFee: integer("home_service_fee").notNull().default(0),
   homeServiceMinimumOrder: integer("home_service_minimum_order"),
-});
+}, (table) => [
+  index("services_salon_idx").on(table.salonId),
+  index("services_category_idx").on(table.categoryId),
+]);
 
 export const productBrandsTable = pgTable("product_brands", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -355,7 +362,10 @@ export const salonBrandsTable = pgTable("salon_brands", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
   brandId: uuid("brand_id").notNull().references(() => productBrandsTable.id, { onDelete: "cascade" }),
-});
+}, (table) => [
+  index("salon_brands_salon_idx").on(table.salonId),
+  index("salon_brands_brand_idx").on(table.brandId),
+]);
 
 export const inspirationItemsTable = pgTable("inspiration_items", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -365,7 +375,9 @@ export const inspirationItemsTable = pgTable("inspiration_items", {
   tags: jsonb("tags").$type<string[]>().notNull().default([]),
   imageUrl: text("image_url").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("inspiration_items_salon_idx").on(table.salonId),
+]);
 
 export const beautyGlossaryTable = pgTable("beauty_glossary", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -474,6 +486,38 @@ export const smsDeliveriesTable = pgTable("sms_deliveries", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("sms_deliveries_retry_index").on(table.status, table.nextRetryAt),
+  index("sms_deliveries_retention_idx")
+    .on(table.createdAt)
+    .where(sql`${table.status} <> 'queued' and ${table.nextRetryAt} is null`),
+]);
+
+/**
+ * Cold storage for SMS delivery logs older than the live-retention window.
+ * Rows are copied here verbatim before deletion from
+ * {@link smsDeliveriesTable}. No foreign keys and no request-path writes; only
+ * the batch archiver populates it. {@link eventKey} is preserved but not made
+ * unique so repeated/partial runs stay idempotent. Undelivered work (queued or
+ * failed logs still eligible for retry) is never archived — see the archiver's
+ * status/next-retry guard.
+ */
+export const smsDeliveriesArchiveTable = pgTable("sms_deliveries_archive", {
+  id: uuid("id").primaryKey(),
+  eventKey: text("event_key").notNull(),
+  salonId: uuid("salon_id"),
+  appointmentId: uuid("appointment_id"),
+  messageType: smsMessageTypeEnum("message_type").notNull(),
+  recipientPhone: text("recipient_phone").notNull(),
+  body: text("body").notNull(),
+  status: smsDeliveryStatusEnum("status").notNull(),
+  providerMessageId: text("provider_message_id"),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  retryCount: integer("retry_count").notNull(),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("sms_deliveries_archive_created_idx").on(table.createdAt),
 ]);
 
 export const appointmentStatusHistoryTable = pgTable("appointment_status_history", {
@@ -482,7 +526,9 @@ export const appointmentStatusHistoryTable = pgTable("appointment_status_history
   status: appointmentStatusEnum("status").notNull(),
   changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("appointment_status_history_appointment_idx").on(table.appointmentId, table.createdAt),
+]);
 
 export const reviewsTable = pgTable("reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -496,6 +542,7 @@ export const reviewsTable = pgTable("reviews", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("reviews_customer_salon_unique").on(table.customerId, table.salonId),
+  index("reviews_salon_created_idx").on(table.salonId, table.createdAt),
 ]);
 
 export const favoritesTable = pgTable("favorites", {

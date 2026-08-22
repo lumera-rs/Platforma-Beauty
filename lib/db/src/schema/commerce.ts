@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { salonsTable } from "./core";
 
 export const orderStatusEnum = pgEnum("order_status", [
@@ -153,7 +154,10 @@ export const subscriptionsTable = pgTable("subscriptions", {
   dueAmount: integer("due_amount").notNull(),
   paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
-});
+}, (table) => [
+  index("subscriptions_salon_idx").on(table.salonId),
+  index("subscriptions_plan_idx").on(table.planId),
+]);
 
 export const ordersTable = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -186,7 +190,10 @@ export const ordersTable = pgTable("orders", {
   adminNote: text("admin_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("orders_salon_created_idx").on(table.salonId, table.createdAt),
+  index("orders_courier_service_idx").on(table.courierServiceId),
+]);
 
 export const orderStatusHistoryTable = pgTable("order_status_history", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -198,7 +205,9 @@ export const orderStatusHistoryTable = pgTable("order_status_history", {
   nextValue: text("next_value"),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("order_status_history_order_created_idx").on(table.orderId, table.createdAt),
+]);
 
 export const shoppingCartsTable = pgTable("shopping_carts", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -220,7 +229,10 @@ export const shoppingCartItemsTable = pgTable("shopping_cart_items", {
   quantity: integer("quantity").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("shopping_cart_items_cart_idx").on(table.cartId),
+  index("shopping_cart_items_product_idx").on(table.productId),
+]);
 
 export const orderItemsTable = pgTable("order_items", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -232,7 +244,10 @@ export const orderItemsTable = pgTable("order_items", {
   productSku: text("product_sku"),
   quantity: integer("quantity").notNull(),
   price: integer("price").notNull(),
-});
+}, (table) => [
+  index("order_items_order_idx").on(table.orderId),
+  index("order_items_product_idx").on(table.productId),
+]);
 
 export const productReviewsTable = pgTable("product_reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -244,6 +259,7 @@ export const productReviewsTable = pgTable("product_reviews", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("product_reviews_product_salon_unique").on(table.productId, table.salonId),
+  index("product_reviews_salon_idx").on(table.salonId),
 ]);
 
 export const salonNotificationsTable = pgTable("salon_notifications", {
@@ -256,4 +272,28 @@ export const salonNotificationsTable = pgTable("salon_notifications", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("salon_notifications_salon_created_at_idx").on(table.salonId, table.createdAt),
+  index("salon_notifications_retention_idx")
+    .on(table.createdAt)
+    .where(sql`${table.readAt} is not null`),
+]);
+
+/**
+ * Cold storage for salon notifications older than the live-retention window.
+ * Rows are copied here verbatim (identity of the original row is preserved)
+ * before being deleted from {@link salonNotificationsTable}. No foreign keys:
+ * the archive must survive even if a source salon is later removed, and it is
+ * never written on the request path. {@link archivedAt} records when the row
+ * was moved so operators can audit and prune the archive independently.
+ */
+export const salonNotificationsArchiveTable = pgTable("salon_notifications_archive", {
+  id: uuid("id").primaryKey(),
+  salonId: uuid("salon_id").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  href: text("href"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("salon_notifications_archive_salon_created_idx").on(table.salonId, table.createdAt),
 ]);

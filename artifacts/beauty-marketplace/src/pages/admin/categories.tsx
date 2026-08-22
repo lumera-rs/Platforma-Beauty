@@ -31,6 +31,14 @@ import { uploadOptimizedImage } from "@/lib/media-upload";
 
 const emptyForm: AdminProductCategoryInput = { name: "", parentId: null, sortOrder: 0, icon: null, imageUrl: null, active: true };
 
+function trimCategoryForm(form: AdminProductCategoryInput): AdminProductCategoryInput {
+  return {
+    ...form,
+    name: form.name.trim(),
+    icon: form.icon?.trim() || null,
+  };
+}
+
 export default function AdminCategories() {
   const { data: categories = [], isLoading, error } = useAdminListProductCategories();
   const createCategory = useAdminCreateProductCategory();
@@ -135,7 +143,11 @@ export default function AdminCategories() {
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const trimmed = trimCategoryForm(form);
+    if (!trimmed.name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const sortOrder = Number(trimmed.sortOrder);
+    if (!Number.isFinite(sortOrder) || sortOrder < 0) { toast.error("Greška", { description: "Redosled mora biti nenegativan broj." }); return; }
+    const payload: AdminProductCategoryInput = { ...trimmed, sortOrder: Math.round(sortOrder) };
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Kategorija je uspešno ${editing ? "ažurirana" : "kreirana"}.` });
@@ -147,8 +159,8 @@ export default function AdminCategories() {
         toast.error("Greška", { description: msg ?? "Kategorija nije sačuvana." });
       },
     };
-    if (editing) updateCategory.mutate({ categoryId: editing.id, data: form }, opts);
-    else createCategory.mutate({ data: form }, opts);
+    if (editing) updateCategory.mutate({ categoryId: editing.id, data: payload }, opts);
+    else createCategory.mutate({ data: payload }, opts);
   };
 
   const handleDelete = () => {
@@ -345,7 +357,7 @@ export default function AdminCategories() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Redosled</Label>
-                <Input type="number" min="0" value={form.sortOrder ?? 0} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} />
+                <Input type="number" min="0" value={form.sortOrder ?? ""} onChange={(e) => setForm({ ...form, sortOrder: e.target.value === "" ? 0 : Number(e.target.value) })} placeholder="0" />
               </div>
               <div className="space-y-2">
                 <Label>Ikonica (emoji, opciono)</Label>

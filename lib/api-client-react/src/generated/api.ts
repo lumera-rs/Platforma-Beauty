@@ -145,6 +145,7 @@ import type {
   LoyaltyStatus,
   LoyaltyTier,
   LoyaltyTierInput,
+  LoyaltyTierUpdate,
   MarkEducationNotificationReadResponse,
   MarketplaceHomeDiscovery,
   MediaAsset,
@@ -191,6 +192,7 @@ import type {
   SmsDelivery,
   SubscriptionPlan,
   SubscriptionPlanInput,
+  SubscriptionPlanUpdate,
   TimeSlot
 } from './api.schemas';
 
@@ -11267,14 +11269,14 @@ export const getAdminUpdateLoyaltyTierUrl = (tierId: string,) => {
  * @summary Update or deactivate a loyalty tier
  */
 export const adminUpdateLoyaltyTier = async (tierId: string,
-    loyaltyTierInput: LoyaltyTierInput, options?: Parameters<typeof customFetch>[1]): Promise<LoyaltyTier> => {
+    loyaltyTierUpdate: LoyaltyTierUpdate, options?: Parameters<typeof customFetch>[1]): Promise<LoyaltyTier> => {
 
   return customFetch<LoyaltyTier>(getAdminUpdateLoyaltyTierUrl(tierId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(loyaltyTierInput)
+    body: JSON.stringify(loyaltyTierUpdate)
   }
 );}
 
@@ -11283,8 +11285,8 @@ export const adminUpdateLoyaltyTier = async (tierId: string,
 
 
 export const getAdminUpdateLoyaltyTierMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierUpdate>}, TContext> => {
 
 const mutationKey = ['adminUpdateLoyaltyTier'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -11296,7 +11298,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, {tierId: string;data: BodyType<LoyaltyTierInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, {tierId: string;data: BodyType<LoyaltyTierUpdate>}> = (props) => {
           const {tierId,data} = props ?? {};
 
           return  adminUpdateLoyaltyTier(tierId,data,requestOptions)
@@ -11310,18 +11312,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateLoyaltyTierMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>>
-    export type AdminUpdateLoyaltyTierMutationBody = BodyType<LoyaltyTierInput>
+    export type AdminUpdateLoyaltyTierMutationBody = BodyType<LoyaltyTierUpdate>
     export type AdminUpdateLoyaltyTierMutationError = ErrorType<unknown>
 
     /**
  * @summary Update or deactivate a loyalty tier
  */
 export const useAdminUpdateLoyaltyTier = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>, TError,{tierId: string;data: BodyType<LoyaltyTierUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateLoyaltyTier>>,
         TError,
-        {tierId: string;data: BodyType<LoyaltyTierInput>},
+        {tierId: string;data: BodyType<LoyaltyTierUpdate>},
         TContext
       > => {
       return useMutation(getAdminUpdateLoyaltyTierMutationOptions(options));
@@ -11558,14 +11560,14 @@ export const getAdminUpdateSubscriptionPlanUrl = (planId: string,) => {
  * @summary Update or deactivate a subscription plan
  */
 export const adminUpdateSubscriptionPlan = async (planId: string,
-    subscriptionPlanInput: SubscriptionPlanInput, options?: Parameters<typeof customFetch>[1]): Promise<SubscriptionPlan> => {
+    subscriptionPlanUpdate: SubscriptionPlanUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SubscriptionPlan> => {
 
   return customFetch<SubscriptionPlan>(getAdminUpdateSubscriptionPlanUrl(planId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(subscriptionPlanInput)
+    body: JSON.stringify(subscriptionPlanUpdate)
   }
 );}
 
@@ -11574,8 +11576,8 @@ export const adminUpdateSubscriptionPlan = async (planId: string,
 
 
 export const getAdminUpdateSubscriptionPlanMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanUpdate>}, TContext> => {
 
 const mutationKey = ['adminUpdateSubscriptionPlan'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -11587,7 +11589,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, {planId: string;data: BodyType<SubscriptionPlanInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, {planId: string;data: BodyType<SubscriptionPlanUpdate>}> = (props) => {
           const {planId,data} = props ?? {};
 
           return  adminUpdateSubscriptionPlan(planId,data,requestOptions)
@@ -11601,18 +11603,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateSubscriptionPlanMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>>
-    export type AdminUpdateSubscriptionPlanMutationBody = BodyType<SubscriptionPlanInput>
+    export type AdminUpdateSubscriptionPlanMutationBody = BodyType<SubscriptionPlanUpdate>
     export type AdminUpdateSubscriptionPlanMutationError = ErrorType<unknown>
 
     /**
  * @summary Update or deactivate a subscription plan
  */
 export const useAdminUpdateSubscriptionPlan = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>, TError,{planId: string;data: BodyType<SubscriptionPlanUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateSubscriptionPlan>>,
         TError,
-        {planId: string;data: BodyType<SubscriptionPlanInput>},
+        {planId: string;data: BodyType<SubscriptionPlanUpdate>},
         TContext
       > => {
       return useMutation(getAdminUpdateSubscriptionPlanMutationOptions(options));

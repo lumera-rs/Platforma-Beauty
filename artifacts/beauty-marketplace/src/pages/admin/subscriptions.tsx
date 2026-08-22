@@ -77,28 +77,44 @@ export default function AdminSubscriptions() {
 
   const handleSave = () => {
     if (!canManagePlans) return;
-    if (!formData.name) {
-      toast.error("Greška", { description: "Ime je obavezno." });
-      return;
-    }
+    const name = formData.name.trim();
+    if (!name) { toast.error("Greška", { description: "Naziv plana je obavezan." }); return; }
+    const price = Number(formData.price);
+    if (!Number.isFinite(price) || price < 0) { toast.error("Greška", { description: "Cena mora biti 0 ili više." }); return; }
+    const trialDays = Number(formData.trialDays);
+    if (!Number.isFinite(trialDays) || trialDays < 0) { toast.error("Greška", { description: "Probni period ne može biti negativan." }); return; }
+
+    const payload: SubscriptionPlanInput = {
+      ...formData,
+      name,
+      price: Math.round(price),
+      trialDays: Math.round(trialDays),
+      features: (formData.features || []).filter(f => f.trim()),
+    };
     
     if (editingPlan) {
-      updatePlan.mutate({ planId: editingPlan.id, data: formData }, {
+      updatePlan.mutate({ planId: editingPlan.id, data: payload }, {
         onSuccess: () => {
           toast.success("Sačuvano", { description: "Pretplatnički plan je ažuriran." });
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
         },
-        onError: () => toast.error("Greška", { description: "Pretplatnički plan nije sačuvan." }),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          toast.error("Greška", { description: msg ?? "Pretplatnički plan nije sačuvan." });
+        },
       });
     } else {
-      createPlan.mutate({ data: formData }, {
+      createPlan.mutate({ data: payload }, {
         onSuccess: () => {
           toast.success("Kreirano", { description: "Novi plan je uspešno kreiran." });
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
         },
-        onError: () => toast.error("Greška", { description: "Pretplatnički plan nije kreiran." }),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          toast.error("Greška", { description: msg ?? "Pretplatnički plan nije kreiran." });
+        },
       });
     }
   };

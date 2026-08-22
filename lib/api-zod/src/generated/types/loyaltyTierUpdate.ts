@@ -5,37 +5,37 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { LoyaltyTierInputPeriod } from './loyaltyTierInputPeriod';
+import type { LoyaltyTierUpdatePeriod } from './loyaltyTierUpdatePeriod';
 
-export interface LoyaltyTierInput {
+export interface LoyaltyTierUpdate {
   /**
      * @minLength 1
      * @maxLength 120
      * @pattern ^\S.*\S$|^\S$
      */
-  name: string;
+  name?: string;
   /**
      * @minimum 1
      * @maximum 999
      */
-  sortOrder: number;
+  sortOrder?: number;
   /** @minimum 0 */
-  spendThreshold: number;
-  period: LoyaltyTierInputPeriod;
+  spendThreshold?: number;
+  period?: LoyaltyTierUpdatePeriod;
   /**
      * @minimum 0
      * @maximum 100
      */
-  subscriptionDiscountPercent: number;
+  subscriptionDiscountPercent?: number;
   /**
      * @minimum 0
      * @maximum 100
      */
-  productDiscountPercent: number;
-  freeSubscription: boolean;
-  premiumListing: boolean;
-  freeShipping: boolean;
+  productDiscountPercent?: number;
+  freeSubscription?: boolean;
+  premiumListing?: boolean;
+  freeShipping?: boolean;
   /** @items.minLength 1 */
   benefits?: string[];
-  active: boolean;
+  active?: boolean;
 }

@@ -10,15 +10,17 @@ export interface AdminServiceTemplateUpdate {
   /**
      * @minLength 1
      * @maxLength 160
+     * @pattern ^\S.*\S$|^\S$
      */
   name?: string;
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   mainCategory?: string;
   /**
-     * @minLength 1
+     * @minLength 0
      * @maxLength 120
      */
   subcategory?: string;

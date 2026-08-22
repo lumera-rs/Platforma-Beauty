@@ -2384,7 +2384,7 @@ paths:
       parameters:
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 12 }
+          schema: { type: number, minimum: 1, maximum: 12, multipleOf: 1 }
       responses:
         "200":
           description: Popular courses
@@ -2587,7 +2587,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/LoyaltyTierInput"
+              $ref: "#/components/schemas/LoyaltyTierUpdate"
       responses:
         "200":
           description: Updated loyalty tier
@@ -2656,7 +2656,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SubscriptionPlanInput"
+              $ref: "#/components/schemas/SubscriptionPlanUpdate"
       responses:
         "200":
           description: Updated subscription plan
@@ -3705,24 +3705,24 @@ components:
     AdminServiceTemplateInput:
       type: object
       properties:
-        name: { type: string, minLength: 1, maxLength: 160 }
-        mainCategory: { type: string, minLength: 1, maxLength: 120 }
-        subcategory: { type: string, minLength: 1, maxLength: 120 }
-        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720 }
-        priceMin: { type: number, minimum: 0, maximum: 1000000 }
-        priceMax: { type: number, minimum: 0, maximum: 1000000 }
+        name: { type: string, minLength: 1, maxLength: 160, pattern: '^\S.*\S$|^\S$' }
+        mainCategory: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        subcategory: { type: string, minLength: 0, maxLength: 120 }
+        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720, multipleOf: 1 }
+        priceMin: { type: number, minimum: 0, maximum: 1000000, multipleOf: 1 }
+        priceMax: { type: number, minimum: 0, maximum: 1000000, multipleOf: 1 }
         description: { type: ["string", "null"], maxLength: 1000 }
         active: { type: boolean }
       required: [name, mainCategory, subcategory, typicalDurationMinutes, priceMin, priceMax, active]
     AdminServiceTemplateUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1, maxLength: 160 }
-        mainCategory: { type: string, minLength: 1, maxLength: 120 }
-        subcategory: { type: string, minLength: 1, maxLength: 120 }
-        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720 }
-        priceMin: { type: number, minimum: 0, maximum: 1000000 }
-        priceMax: { type: number, minimum: 0, maximum: 1000000 }
+        name: { type: string, minLength: 1, maxLength: 160, pattern: '^\S.*\S$|^\S$' }
+        mainCategory: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        subcategory: { type: string, minLength: 0, maxLength: 120 }
+        typicalDurationMinutes: { type: number, minimum: 5, maximum: 720, multipleOf: 1 }
+        priceMin: { type: number, minimum: 0, maximum: 1000000, multipleOf: 1 }
+        priceMax: { type: number, minimum: 0, maximum: 1000000, multipleOf: 1 }
         description: { type: ["string", "null"], maxLength: 1000 }
         active: { type: boolean }
       minProperties: 1
@@ -4431,6 +4431,7 @@ components:
         courierServiceId: { type: ["string", "null"] }
         trackingNumber: { type: ["string", "null"], maxLength: 120 }
         adminNote: { type: ["string", "null"], maxLength: 2000 }
+      minProperties: 1
     AdminOrderBulkUpdate:
       type: object
       properties:
@@ -4452,14 +4453,14 @@ components:
     CourierServiceInput:
       type: object
       properties:
-        name: { type: string, minLength: 1, maxLength: 120 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
         trackingUrlTemplate: { type: ["string", "null"], maxLength: 1000 }
         active: { type: boolean }
       required: [name]
     CourierServiceUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1, maxLength: 120 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
         trackingUrlTemplate: { type: ["string", "null"], maxLength: 1000 }
         active: { type: boolean }
     OrderHistoryEvent:
@@ -4870,11 +4871,11 @@ components:
     EducationMarketplaceSettingsInput:
       type: object
       properties:
-        commissionPercent: { type: number, minimum: 0, maximum: 100 }
-        reservePercent: { type: number, minimum: 0, maximum: 100 }
-        onlineRefundDays: { type: number, minimum: 0, maximum: 365 }
-        liveAppealDays: { type: number, minimum: 0, maximum: 365 }
-        featuredCoursePrice: { type: number, minimum: 0 }
+        commissionPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        reservePercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        onlineRefundDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
+        liveAppealDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
+        featuredCoursePrice: { type: number, minimum: 0, multipleOf: 1 }
       required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays, featuredCoursePrice]
     EducationMarketplaceSettings:
       allOf:
@@ -4975,9 +4976,11 @@ components:
       type: object
       properties:
         verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
-        verificationNote: { type: ["string", "null"] }
+        verificationNote: { type: ["string", "null"], maxLength: 1000 }
         subscriptionStatus: { type: string, enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty] }
-        planId: { type: string }
+        planId: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$' }
+      additionalProperties: false
+      minProperties: 1
     EducationFinanceEscrow:
       type: object
       properties:
@@ -5099,6 +5102,7 @@ components:
         isVerified: { type: boolean }
         topSalon: { type: boolean }
         videoUrl: { type: ["string", "null"] }
+      minProperties: 1
     AdminSalonOrderSummary:
       type: object
       properties:
@@ -5149,6 +5153,7 @@ components:
           type: string
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER, STUDENT]
         active: { type: boolean }
+      minProperties: 1
     LoyaltyTier:
       type: object
       properties:
@@ -5170,19 +5175,37 @@ components:
     LoyaltyTierInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        sortOrder: { type: number }
-        spendThreshold: { type: number, minimum: 0 }
-        period: { type: string }
-        subscriptionDiscountPercent: { type: number, minimum: 0, maximum: 100 }
-        productDiscountPercent: { type: number, minimum: 0, maximum: 100 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        sortOrder: { type: number, minimum: 1, maximum: 999, multipleOf: 1 }
+        spendThreshold: { type: number, minimum: 0, multipleOf: 1 }
+        period: { type: string, enum: [monthly, quarterly, yearly] }
+        subscriptionDiscountPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        productDiscountPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
         freeSubscription: { type: boolean }
         premiumListing: { type: boolean }
         freeShipping: { type: boolean }
         benefits:
           type: array
-          items: { type: string }
+          items: { type: string, minLength: 1 }
         active: { type: boolean }
+      required: [name, sortOrder, spendThreshold, period, subscriptionDiscountPercent, productDiscountPercent, freeSubscription, premiumListing, freeShipping, active]
+    LoyaltyTierUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        sortOrder: { type: number, minimum: 1, maximum: 999, multipleOf: 1 }
+        spendThreshold: { type: number, minimum: 0, multipleOf: 1 }
+        period: { type: string, enum: [monthly, quarterly, yearly] }
+        subscriptionDiscountPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        productDiscountPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        freeSubscription: { type: boolean }
+        premiumListing: { type: boolean }
+        freeShipping: { type: boolean }
+        benefits:
+          type: array
+          items: { type: string, minLength: 1 }
+        active: { type: boolean }
+      minProperties: 1
     SubscriptionPlan:
       type: object
       properties:
@@ -5201,16 +5224,31 @@ components:
     SubscriptionPlanInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        price: { type: number, minimum: 0 }
-        trialDays: { type: number, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        price: { type: number, minimum: 0, multipleOf: 1 }
+        trialDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
         features:
           type: array
-          items: { type: string }
+          items: { type: string, minLength: 1 }
         limits:
           type: object
-          additionalProperties: { type: number }
+          additionalProperties: { type: number, minimum: -1, multipleOf: 1 }
         active: { type: boolean }
+      required: [name, price, trialDays, active]
+    SubscriptionPlanUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        price: { type: number, minimum: 0, multipleOf: 1 }
+        trialDays: { type: number, minimum: 0, maximum: 365, multipleOf: 1 }
+        features:
+          type: array
+          items: { type: string, minLength: 1 }
+        limits:
+          type: object
+          additionalProperties: { type: number, minimum: -1, multipleOf: 1 }
+        active: { type: boolean }
+      minProperties: 1
     AdminReview:
       type: object
       properties:
@@ -5229,6 +5267,7 @@ components:
       type: object
       properties:
         visible: { type: boolean }
+      required: [visible]
     ApiError:
       type: object
       properties:
@@ -5289,57 +5328,59 @@ components:
     AdminProductInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 240, pattern: '^\S.*\S$|^\S$' }
         categoryId: { type: ["string", "null"] }
-        categoryName: { type: string, minLength: 1 }
-        subcategoryName: { type: ["string", "null"] }
-        brand: { type: ["string", "null"] }
-        description: { type: string, minLength: 1 }
-        shortDescription: { type: ["string", "null"] }
-        imageUrl: { type: string, minLength: 1 }
+        categoryName: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        subcategoryName: { type: ["string", "null"], maxLength: 120 }
+        brand: { type: ["string", "null"], maxLength: 120 }
+        description: { type: string, minLength: 1, maxLength: 10000, pattern: '^\S[\s\S]*\S$|^\S$' }
+        shortDescription: { type: ["string", "null"], maxLength: 500 }
+        imageUrl: { type: string, minLength: 1, maxLength: 2000 }
         images:
           type: array
-          items: { type: string }
-        price: { type: number, minimum: 0, multipleOf: 1 }
-        discountPrice: { type: ["number", "null"], multipleOf: 1 }
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 2000 }
+        price: { type: number, minimum: 1, multipleOf: 1 }
+        discountPrice: { type: ["number", "null"], minimum: 0, multipleOf: 1 }
         stock: { type: number, minimum: 0, multipleOf: 1 }
-        sku: { type: string, minLength: 1 }
-        unit: { type: string, minLength: 1 }
-        weightGrams: { type: number, minimum: 0, multipleOf: 1 }
+        sku: { type: string, minLength: 1, maxLength: 100, pattern: '^\S.*\S$|^\S$' }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        weightGrams: { type: number, minimum: 1, multipleOf: 1 }
         isNew: { type: boolean }
         isBestseller: { type: boolean }
         variants:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
-        variantType: { type: ["string", "null"] }
+        variantType: { type: ["string", "null"], maxLength: 80 }
         active: { type: boolean }
       required: [name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 240, pattern: '^\S.*\S$|^\S$' }
         categoryId: { type: ["string", "null"] }
-        categoryName: { type: string, minLength: 1 }
-        subcategoryName: { type: ["string", "null"] }
-        brand: { type: ["string", "null"] }
-        description: { type: string, minLength: 1 }
-        shortDescription: { type: ["string", "null"] }
-        imageUrl: { type: string, minLength: 1 }
+        categoryName: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        subcategoryName: { type: ["string", "null"], maxLength: 120 }
+        brand: { type: ["string", "null"], maxLength: 120 }
+        description: { type: string, minLength: 1, maxLength: 10000, pattern: '^\S[\s\S]*\S$|^\S$' }
+        shortDescription: { type: ["string", "null"], maxLength: 500 }
+        imageUrl: { type: string, minLength: 1, maxLength: 2000 }
         images:
           type: array
-          items: { type: string }
-        price: { type: number, minimum: 0, multipleOf: 1 }
-        discountPrice: { type: ["number", "null"], multipleOf: 1 }
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 2000 }
+        price: { type: number, minimum: 1, multipleOf: 1 }
+        discountPrice: { type: ["number", "null"], minimum: 0, multipleOf: 1 }
         stock: { type: number, minimum: 0, multipleOf: 1 }
-        sku: { type: string, minLength: 1 }
-        unit: { type: string, minLength: 1 }
-        weightGrams: { type: number, minimum: 0, multipleOf: 1 }
+        sku: { type: string, minLength: 1, maxLength: 100, pattern: '^\S.*\S$|^\S$' }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        weightGrams: { type: number, minimum: 1, multipleOf: 1 }
         isNew: { type: boolean }
         isBestseller: { type: boolean }
         variants:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
-        variantType: { type: ["string", "null"] }
+        variantType: { type: ["string", "null"], maxLength: 80 }
         active: { type: boolean }
     AdminProductBulkUpdate:
       type: object
@@ -5375,21 +5416,21 @@ components:
     AdminProductCategoryInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
         parentId: { type: ["string", "null"] }
-        sortOrder: { type: number, minimum: 0 }
-        icon: { type: ["string", "null"] }
-        imageUrl: { type: ["string", "null"] }
+        sortOrder: { type: number, minimum: 0, maximum: 9999, multipleOf: 1 }
+        icon: { type: ["string", "null"], maxLength: 10 }
+        imageUrl: { type: ["string", "null"], maxLength: 2000 }
         active: { type: boolean }
       required: [name]
     AdminProductCategoryUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
         parentId: { type: ["string", "null"] }
-        sortOrder: { type: number, minimum: 0 }
-        icon: { type: ["string", "null"] }
-        imageUrl: { type: ["string", "null"] }
+        sortOrder: { type: number, minimum: 0, maximum: 9999, multipleOf: 1 }
+        icon: { type: ["string", "null"], maxLength: 10 }
+        imageUrl: { type: ["string", "null"], maxLength: 2000 }
         active: { type: boolean }
     AdminServiceCategory:
       type: object
@@ -5434,17 +5475,17 @@ components:
     AdminBrandInput:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        description: { type: string }
-        logoUrl: { type: ["string", "null"] }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        description: { type: string, maxLength: 2000 }
+        logoUrl: { type: ["string", "null"], maxLength: 2000 }
         active: { type: boolean }
       required: [name]
     AdminBrandUpdate:
       type: object
       properties:
-        name: { type: string, minLength: 1 }
-        description: { type: string }
-        logoUrl: { type: ["string", "null"] }
+        name: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
+        description: { type: string, maxLength: 2000 }
+        logoUrl: { type: ["string", "null"], maxLength: 2000 }
         active: { type: boolean }
     ShippingTier:
       type: object
@@ -5474,7 +5515,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ShippingTier" }
         personalDeliveryEnabled: { type: boolean }
-        personalDeliveryName: { type: string, minLength: 1, maxLength: 120 }
+        personalDeliveryName: { type: string, minLength: 1, maxLength: 120, pattern: '^\S.*\S$|^\S$' }
         personalDeliveryPrice: { type: number, minimum: 0, multipleOf: 1 }
         personalDeliveryDescription: { type: string, maxLength: 500 }
       required: [freeShippingThreshold, tiers, personalDeliveryEnabled, personalDeliveryName, personalDeliveryPrice, personalDeliveryDescription]

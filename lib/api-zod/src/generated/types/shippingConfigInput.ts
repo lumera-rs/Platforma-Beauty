@@ -15,6 +15,7 @@ export interface ShippingConfigInput {
   /**
      * @minLength 1
      * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
      */
   personalDeliveryName: string;
   /** @minimum 0 */

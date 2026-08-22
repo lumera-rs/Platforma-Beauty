@@ -261,18 +261,25 @@ function ProductFormDialog({
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const name = form.name.trim();
+    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
     if (!form.categoryName) { toast.error("Greška", { description: "Kategorija je obavezna." }); return; }
-    if (!form.sku.trim()) { toast.error("Greška", { description: "SKU je obavezan." }); return; }
-    if (!form.description.trim()) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
+    const sku = form.sku.trim();
+    if (!sku) { toast.error("Greška", { description: "SKU je obavezan." }); return; }
+    const description = form.description.trim();
+    if (!description) { toast.error("Greška", { description: "Opis je obavezan." }); return; }
     if (!form.imageUrl) { toast.error("Greška", { description: "Bar jedna slika je obavezna." }); return; }
-    if (form.price <= 0) { toast.error("Greška", { description: "Cena mora biti veća od 0." }); return; }
-    if (!form.weightGrams || form.weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
+    if (!Number.isFinite(form.price) || form.price <= 0) { toast.error("Greška", { description: "Cena mora biti veća od 0." }); return; }
+    if (!Number.isFinite(form.weightGrams) || !form.weightGrams || form.weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
+    if (!Number.isFinite(form.stock) || form.stock < 0) { toast.error("Greška", { description: "Stanje zaliha ne može biti negativno." }); return; }
+    if (form.discountPrice != null && (!Number.isFinite(form.discountPrice) || form.discountPrice < 0)) {
+      toast.error("Greška", { description: "Akcijska cena mora biti 0 ili više." }); return;
+    }
     if (form.discountPrice != null && form.discountPrice >= form.price) {
       toast.error("Greška", { description: "Akcijska cena mora biti niža od redovne." }); return;
     }
 
-    const payload = { ...form, images: form.images?.length ? form.images : [form.imageUrl] };
+    const payload = { ...form, name, sku, description, images: form.images?.length ? form.images : [form.imageUrl] };
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Proizvod je uspešno ${editing ? "ažuriran" : "kreiran"}.` });

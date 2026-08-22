@@ -9,6 +9,7 @@ import {
   db,
   employeeServicesTable,
   employeesTable,
+  mediaAssetsTable,
   pool,
   salonCustomersTable,
   salonHoursTable,
@@ -878,6 +879,19 @@ async function run(): Promise<void> {
       "the customer appointment list must immediately include the newly created appointment",
     );
 
+    const courseCoverId = randomUUID();
+    const courseCoverHash = suffix.replaceAll("-", "").padEnd(64, "0");
+    await db.insert(mediaAssetsTable).values({
+      id: courseCoverId,
+      ownerUserId: owner!.id,
+      scope: "education-cover",
+      originalFileName: "test-course.jpg",
+      originalContentType: "image/jpeg",
+      width: 1200,
+      height: 800,
+      contentHash: courseCoverHash,
+      testCleanupKey: suffix,
+    });
     const courseCreate = await request(baseUrl, ownerSession, "/education/courses", "POST", {
       title: "HTTP kalendarski datum kursa",
       description: "Kurs za proveru formata kalendarskog datuma u API odgovorima.",
@@ -886,7 +900,7 @@ async function run(): Promise<void> {
       price: 1000,
       duration: "1 dan",
       certification: false,
-      imageUrl: "/test-course.jpg",
+      imageUrl: `/api/media/${courseCoverId}?v=${courseCoverHash.slice(0, 16)}`,
       startDate: educationCourseDate,
     });
     assert.equal(courseCreate.status, 201, "a salon owner must be able to create a course");
@@ -1181,6 +1195,7 @@ async function run(): Promise<void> {
       `http-appointment-salon-${suffix}`,
       `foreign-http-appointment-salon-${suffix}`,
     ]));
+    await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.testCleanupKey, suffix));
     if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   }
 }

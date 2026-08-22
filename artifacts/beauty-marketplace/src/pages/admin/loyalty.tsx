@@ -9,6 +9,7 @@ import {
   useGetCurrentUser
 } from "@workspace/api-client-react";
 import type { LoyaltyTier, LoyaltyTierInput } from "@workspace/api-client-react";
+import { LoyaltyTierInputPeriod } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ export default function AdminLoyalty() {
     name: "",
     sortOrder: 1,
     spendThreshold: 0,
-    period: "monthly",
+    period: LoyaltyTierInputPeriod.monthly,
     subscriptionDiscountPercent: 0,
     productDiscountPercent: 0,
     freeSubscription: false,
@@ -49,7 +50,7 @@ export default function AdminLoyalty() {
     if (!canManageLoyalty) return;
     setEditingTier(null);
     setFormData({
-      name: "", sortOrder: tiers ? tiers.length + 1 : 1, spendThreshold: 0, period: "monthly",
+      name: "", sortOrder: tiers ? tiers.length + 1 : 1, spendThreshold: 0, period: LoyaltyTierInputPeriod.monthly,
       subscriptionDiscountPercent: 0, productDiscountPercent: 0, freeSubscription: false,
       premiumListing: false, freeShipping: false, benefits: [], active: true
     });
@@ -61,7 +62,7 @@ export default function AdminLoyalty() {
     if (!canManageLoyalty) return;
     setEditingTier(tier);
     setFormData({
-      name: tier.name, sortOrder: tier.sortOrder, spendThreshold: tier.spendThreshold, period: tier.period,
+      name: tier.name, sortOrder: tier.sortOrder, spendThreshold: tier.spendThreshold, period: tier.period as LoyaltyTierInputPeriod,
       subscriptionDiscountPercent: tier.subscriptionDiscountPercent, productDiscountPercent: tier.productDiscountPercent,
       freeSubscription: tier.freeSubscription, premiumListing: tier.premiumListing, freeShipping: tier.freeShipping,
       benefits: tier.benefits || [], active: tier.active
@@ -82,28 +83,50 @@ export default function AdminLoyalty() {
 
   const handleSave = () => {
     if (!canManageLoyalty) return;
-    if (!formData.name) {
-      toast.error("Greška", { description: "Ime je obavezno." });
-      return;
-    }
+    const name = formData.name.trim();
+    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const sortOrder = Number(formData.sortOrder);
+    if (!Number.isFinite(sortOrder) || sortOrder < 1) { toast.error("Greška", { description: "Redosled mora biti pozitivan broj." }); return; }
+    const spendThreshold = Number(formData.spendThreshold);
+    if (!Number.isFinite(spendThreshold) || spendThreshold < 0) { toast.error("Greška", { description: "Prag potrošnje ne može biti negativan." }); return; }
+    const subDisc = Number(formData.subscriptionDiscountPercent);
+    if (!Number.isFinite(subDisc) || subDisc < 0 || subDisc > 100) { toast.error("Greška", { description: "Popust na pretplatu mora biti između 0 i 100." }); return; }
+    const prodDisc = Number(formData.productDiscountPercent);
+    if (!Number.isFinite(prodDisc) || prodDisc < 0 || prodDisc > 100) { toast.error("Greška", { description: "Popust na opremu mora biti između 0 i 100." }); return; }
+
+    const payload: LoyaltyTierInput = {
+      ...formData,
+      name,
+      sortOrder: Math.round(sortOrder),
+      spendThreshold: Math.round(spendThreshold),
+      subscriptionDiscountPercent: Math.round(subDisc),
+      productDiscountPercent: Math.round(prodDisc),
+      benefits: (formData.benefits || []).filter(b => b.trim()),
+    };
     
     if (editingTier) {
-      updateTier.mutate({ tierId: editingTier.id, data: formData }, {
+      updateTier.mutate({ tierId: editingTier.id, data: payload }, {
         onSuccess: () => {
           toast.success("Sačuvano", { description: "Loyalty nivo je uspešno ažuriran." });
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
         },
-        onError: () => toast.error("Greška", { description: "Loyalty nivo nije sačuvan." }),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          toast.error("Greška", { description: msg ?? "Loyalty nivo nije sačuvan." });
+        },
       });
     } else {
-      createTier.mutate({ data: formData }, {
+      createTier.mutate({ data: payload }, {
         onSuccess: () => {
           toast.success("Kreirano", { description: "Novi loyalty nivo je uspešno kreiran." });
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
         },
-        onError: () => toast.error("Greška", { description: "Loyalty nivo nije kreiran." }),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          toast.error("Greška", { description: msg ?? "Loyalty nivo nije kreiran." });
+        },
       });
     }
   };
@@ -230,7 +253,7 @@ export default function AdminLoyalty() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="period">Period obračuna</Label>
-                <select id="period" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" value={formData.period} onChange={e => setFormData({...formData, period: e.target.value})}>
+                <select id="period" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" value={formData.period} onChange={e => setFormData({...formData, period: e.target.value as LoyaltyTierInputPeriod})}>
                   <option value="monthly">Mesečno</option>
                   <option value="quarterly">Kvartalno</option>
                   <option value="yearly">Godišnje</option>

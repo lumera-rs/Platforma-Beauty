@@ -8,13 +8,21 @@
 import type { SubscriptionPlanInputLimits } from './subscriptionPlanInputLimits';
 
 export interface SubscriptionPlanInput {
-  /** @minLength 1 */
-  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @pattern ^\S.*\S$|^\S$
+     */
+  name: string;
   /** @minimum 0 */
-  price?: number;
-  /** @minimum 0 */
-  trialDays?: number;
+  price: number;
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  trialDays: number;
+  /** @items.minLength 1 */
   features?: string[];
   limits?: SubscriptionPlanInputLimits;
-  active?: boolean;
+  active: boolean;
 }

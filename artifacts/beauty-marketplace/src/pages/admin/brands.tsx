@@ -49,7 +49,10 @@ export default function AdminBrands() {
   };
 
   const handleSave = () => {
-    if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const name = form.name.trim();
+    if (!name) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
+    const logoUrl = form.logoUrl?.trim() || null;
+    const payload: AdminBrandInput = { ...form, name, logoUrl };
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Brend je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
@@ -61,8 +64,8 @@ export default function AdminBrands() {
         toast.error("Greška", { description: msg ?? "Brend nije sačuvan." });
       },
     };
-    if (editing) updateBrand.mutate({ brandId: editing.id, data: form }, opts);
-    else createBrand.mutate({ data: form }, opts);
+    if (editing) updateBrand.mutate({ brandId: editing.id, data: payload }, opts);
+    else createBrand.mutate({ data: payload }, opts);
   };
 
   const handleDelete = () => {

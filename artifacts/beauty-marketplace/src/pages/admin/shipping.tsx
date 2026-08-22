@@ -122,13 +122,13 @@ export default function AdminShipping() {
   const addTier = () => {
     const maxKg = Number(draftWeight);
     const price = Number(draftPrice);
-    if (!maxKg || maxKg <= 0) { toast.error("Greška", { description: "Unesite maksimalnu težinu ranga u kilogramima." }); return; }
-    if (price < 0 || draftPrice === "") { toast.error("Greška", { description: "Unesite cenu dostave za ovaj rang." }); return; }
+    if (draftWeight === "" || !Number.isFinite(maxKg) || maxKg <= 0) { toast.error("Greška", { description: "Unesite maksimalnu težinu ranga u kilogramima (mora biti > 0)." }); return; }
+    if (draftPrice === "" || !Number.isFinite(price) || price < 0) { toast.error("Greška", { description: "Unesite cenu dostave za ovaj rang (0 ili više)." }); return; }
     const maxWeightGrams = Math.round(maxKg * 1000);
     if (tiers.some((t) => t.maxWeightGrams === maxWeightGrams)) {
       toast.error("Greška", { description: "Rang sa ovom težinom već postoji." }); return;
     }
-    const next = [...tiers, { maxWeightGrams, price, label: `do ${formatWeight(maxWeightGrams)}` }]
+    const next = [...tiers, { maxWeightGrams, price: Math.round(price), label: `do ${formatWeight(maxWeightGrams)}` }]
       .sort((a, b) => a.maxWeightGrams - b.maxWeightGrams);
     setTiers(next);
     setDraftWeight("");
@@ -142,8 +142,14 @@ export default function AdminShipping() {
   };
 
   const handleSave = () => {
+    const trimmedName = personalName.trim();
+    if (!trimmedName) { toast.error("Greška", { description: "Naziv metode lične dostave je obavezan." }); return; }
+    const thresholdVal = Number(threshold);
+    if (!Number.isFinite(thresholdVal) || thresholdVal < 0) { toast.error("Greška", { description: "Prag besplatne dostave ne može biti negativan." }); return; }
+    const personalPriceVal = Number(personalPrice);
+    if (!Number.isFinite(personalPriceVal) || personalPriceVal < 0) { toast.error("Greška", { description: "Cena lične dostave ne može biti negativna." }); return; }
     updateConfig.mutate(
-      { data: { freeShippingThreshold: threshold, tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: personalName, personalDeliveryPrice: personalPrice, personalDeliveryDescription: personalDescription } },
+      { data: { freeShippingThreshold: Math.round(thresholdVal), tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: trimmedName, personalDeliveryPrice: Math.round(personalPriceVal), personalDeliveryDescription: personalDescription.trim() } },
       {
         onSuccess: () => {
           toast.success("Sačuvano", { description: "Podešavanja dostave su ažurirana." });

@@ -47,7 +47,29 @@ export default function AdminEducationMarketplace() {
 
   const saveSettings = async () => {
     if (!settings) return;
-    try { setSettings(await api<Settings>("/api/admin/education/settings", { method: "PATCH", body: JSON.stringify(settings) })); toast.success("Pravila obračuna su sačuvana."); }
+    if (!Number.isFinite(settings.commissionPercent) || settings.commissionPercent < 0 || settings.commissionPercent > 100) {
+      toast.error("Validacija", { description: "Provizija mora biti između 0 i 100." }); return;
+    }
+    if (!Number.isFinite(settings.reservePercent) || settings.reservePercent < 0 || settings.reservePercent > 100) {
+      toast.error("Validacija", { description: "Rezerva mora biti između 0 i 100." }); return;
+    }
+    if (!Number.isFinite(settings.onlineRefundDays) || settings.onlineRefundDays < 0 || settings.onlineRefundDays > 365) {
+      toast.error("Validacija", { description: "Dani za povraćaj moraju biti između 0 i 365." }); return;
+    }
+    if (!Number.isFinite(settings.liveAppealDays) || settings.liveAppealDays < 0 || settings.liveAppealDays > 365) {
+      toast.error("Validacija", { description: "Dani za žalbu moraju biti između 0 i 365." }); return;
+    }
+    if (!Number.isFinite(settings.featuredCoursePrice) || settings.featuredCoursePrice < 0) {
+      toast.error("Validacija", { description: "Cena isticanja ne može biti negativna." }); return;
+    }
+    const payload: Settings = {
+      commissionPercent: settings.commissionPercent,
+      reservePercent: settings.reservePercent,
+      onlineRefundDays: Math.round(settings.onlineRefundDays),
+      liveAppealDays: Math.round(settings.liveAppealDays),
+      featuredCoursePrice: Math.round(settings.featuredCoursePrice),
+    };
+    try { setSettings(await api<Settings>("/api/admin/education/settings", { method: "PATCH", body: JSON.stringify(payload) })); toast.success("Pravila obračuna su sačuvana."); }
     catch (error) { toast.error("Promena nije sačuvana", { description: error instanceof Error ? error.message : undefined }); }
   };
   const changeCenter = async (center: Center, verificationStatus: string) => {

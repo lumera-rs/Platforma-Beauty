@@ -31,7 +31,11 @@ export default function AdminIntegrations() {
   useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
   const save = async (integration: Integration) => {
-    const response = await fetch(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, values: form[integration] }) });
+    const trimmedValues: Record<string, string> = {};
+    for (const [k, v] of Object.entries(form[integration])) {
+      if (v.trim()) trimmedValues[k] = v.trim();
+    }
+    const response = await fetch(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, values: trimmedValues }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? "Čuvanje nije uspelo.");
     setData({ ...data!, integrations: { ...data!.integrations, [integration]: result } });
@@ -39,7 +43,9 @@ export default function AdminIntegrations() {
     toast.success("Podešavanja su sačuvana i odmah aktivna.");
   };
   const test = async (integration: Integration) => {
-    const response = await fetch(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient: testRecipient[integration] }) });
+    const recipient = testRecipient[integration].trim();
+    if (!recipient) { toast.error("Unesite primaoca za test poruku."); return; }
+    const response = await fetch(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? "Test nije uspeo.");
     toast.success(result.message);

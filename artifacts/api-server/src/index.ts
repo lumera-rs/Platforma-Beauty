@@ -1,4 +1,5 @@
 import app from "./app";
+import { databasePoolStats, pool } from "@workspace/db";
 import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
@@ -11,6 +12,12 @@ import { cleanupExpiredImageAssets } from "./routes/image-media";
 import { runMediaUploadCleanup } from "./routes/media";
 import { migrateLegacyMediaReferences } from "./lib/media-migration";
 import { ensureMediaSchema } from "./lib/media-schema";
+import {
+  catalogCacheStats,
+  startCatalogCacheInvalidationListener,
+  stopCatalogCacheInvalidationListener,
+} from "./lib/catalog-cache";
+import { runDataRetentionArchive } from "./lib/data-retention-archive";
 
 const rawPort = process.env["PORT"];
 
@@ -28,7 +35,12 @@ if (Number.isNaN(port) || port <= 0) {
 
 await ensureMediaSchema();
 
+pool.on("error", (error) => {
+  logger.error({ err: error }, "Idle PostgreSQL pool client failed");
+});
+
 void startSalonNotificationEventListener();
+void startCatalogCacheInvalidationListener();
 
 const server = app.listen(port, "0.0.0.0", (err) => {
   if (err) {
@@ -84,6 +96,27 @@ void cleanupExpiredImageAssets().catch((error) => {
   logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
 });
 
+const databaseMetricsInterval = setInterval(() => {
+  logger.debug(
+    {
+      databasePool: databasePoolStats(),
+      catalogCache: catalogCacheStats(),
+    },
+    "Database and catalog cache metrics",
+  );
+}, 60_000);
+databaseMetricsInterval.unref();
+
+const runScheduledDataRetentionArchive = () => {
+  void runDataRetentionArchive().catch((error) => {
+    logger.error({ err: error }, "Data-retention archive scheduler failed");
+  });
+};
+const initialDataRetentionArchiveTimeout = setTimeout(runScheduledDataRetentionArchive, 30_000);
+initialDataRetentionArchiveTimeout.unref();
+const dataRetentionArchiveInterval = setInterval(runScheduledDataRetentionArchive, 24 * 60 * 60_000);
+dataRetentionArchiveInterval.unref();
+
 // Safe on every boot: already-managed references are ignored and legacy
 // sources are never removed. Running after listen keeps readiness fast.
 void migrateLegacyMediaReferences().catch((error) => {
@@ -100,9 +133,17 @@ function shutDown(signal: NodeJS.Signals): void {
   clearInterval(educationGalleryCleanupInterval);
   clearInterval(mediaCleanupInterval);
   clearInterval(compatibilityImageCleanupInterval);
+  clearInterval(databaseMetricsInterval);
+  clearTimeout(initialDataRetentionArchiveTimeout);
+  clearInterval(dataRetentionArchiveInterval);
 
-  void stopSalonNotificationEventListener().finally(() => {
-    server.close(() => process.exit(0));
+  void Promise.allSettled([
+    stopSalonNotificationEventListener(),
+    stopCatalogCacheInvalidationListener(),
+  ]).finally(() => {
+    server.close(() => {
+      void pool.end().finally(() => process.exit(0));
+    });
   });
   setTimeout(() => process.exit(1), 10_000).unref();
 }
