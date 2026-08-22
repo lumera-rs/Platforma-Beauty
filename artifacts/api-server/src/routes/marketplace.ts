@@ -5544,9 +5544,20 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
   const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, params.data.courseId)).limit(1);
-  if (!course || !(await isPublicEducationCourse(course))) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
   const access = user.role === "SALON_OWNER" ? await requireEducationAccess(req, res) : null;
   if (user.role === "SALON_OWNER" && !access) return;
+  if (!course) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
+  const isSalonInternalEnrollment = Boolean(
+    access?.salon
+    && course.salonId === access.salon.id
+    && !course.centerId
+    && course.published
+    && !course.archived,
+  );
+  if (!isSalonInternalEnrollment && !(await isPublicEducationCourse(course))) {
+    res.status(404).json({ error: "Kurs nije dostupan za prijavu." });
+    return;
+  }
   let employee: typeof employeesTable.$inferSelect | null = null;
   if (body.data.employeeId) {
     if (!access?.salon) { res.status(403).json({ error: "Zaposlenog možete prijaviti samo preko salona." }); return; }
@@ -5567,6 +5578,63 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
       res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(replayed)));
       return;
     }
+  }
+  if (isSalonInternalEnrollment) {
+    const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
+    let enrollment: typeof courseEnrollmentsTable.$inferSelect | null;
+    try {
+      enrollment = await db.transaction(async (tx) => {
+        const sessions = await tx.select().from(courseSessionsTable)
+          .where(eq(courseSessionsTable.courseId, course.id))
+          .orderBy(asc(courseSessionsTable.startsAt))
+          .for("update");
+        const session = sessions.find((item) => item.reservedSeats < item.capacity);
+        if (course.format !== "online" && !session) return null;
+        const [created] = await tx.insert(courseEnrollmentsTable).values({
+          courseId: course.id,
+          userId: user.id,
+          salonId: access!.salon!.id,
+          employeeId: employee?.id ?? null,
+          purchaserId: user.id,
+          status: "active",
+          paymentStatus: "paid",
+          nextLesson: firstLesson?.id ?? null,
+          accessGrantedAt: new Date(),
+          auditData: { source: "business-workspace", sessionId: session?.id ?? null, idempotencyKey },
+          idempotencyKey,
+          idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
+        }).returning();
+        if (session) {
+          await tx.update(courseSessionsTable)
+            .set({ reservedSeats: session.reservedSeats + 1 })
+            .where(eq(courseSessionsTable.id, session.id));
+        }
+        return created!;
+      });
+    } catch (error) {
+      const errorCode = typeof error === "object" && error
+        ? (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code
+        : undefined;
+      if (errorCode === "23505") {
+        res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." });
+        return;
+      }
+      throw error;
+    }
+    if (!enrollment) {
+      res.status(409).json({ error: "Nema slobodnih mesta u narednim terminima." });
+      return;
+    }
+    await sendTransactionalEmail({
+      eventKey: `course-enrollment:${enrollment.id}:confirmed`,
+      emailType: "course_enrollment_confirmed",
+      to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
+      subject: "LUMERA Edukacije — prijava je potvrđena",
+      htmlContent: lumeraEmailHtml("Prijava na edukaciju je potvrđena", `<p>Uspešno ste prijavljeni na kurs <strong>${emailSafe(course.title)}</strong>.</p>`),
+      metadata: { enrollmentId: enrollment.id, courseId: course.id },
+    });
+    res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment)));
+    return;
   }
   let enrollment: typeof courseEnrollmentsTable.$inferSelect;
   try {
