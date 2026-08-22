@@ -3512,6 +3512,381 @@ export const ListLoyaltyTiersResponse = zod.array(ListLoyaltyTiersResponseItem)
 
 
 /**
+ * @summary List courses available for public purchase
+ */
+export const ListPublicEducationCoursesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number()
+}))
+}))
+export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationCoursesResponseItem)
+
+
+/**
+ * @summary Get verification and subscription status for the current education center
+ */
+export const GetEducationCenterStatusResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.union([zod.literal('trial'),zod.literal('active'),zod.literal('past_due'),zod.literal('cancelled'),zod.literal('suspended'),zod.literal('free_via_loyalty'),zod.literal(null)]).nullish(),
+  "currentPeriodEnd": zod.coerce.date().nullish(),
+  "eligible": zod.boolean()
+})
+export const GetEducationCenterStatusResponse = zod.array(GetEducationCenterStatusResponseItem)
+
+
+/**
+ * @summary List the current buyer's education purchases
+ */
+export const ListEducationPurchasesResponseItem = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
+})
+export const ListEducationPurchasesResponse = zod.array(ListEducationPurchasesResponseItem)
+
+
+export const ListEducationPurchaseMessagesParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const ListEducationPurchaseMessagesResponse = zod.object({
+  "thread": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['open', 'closed']),
+  "enrollmentId": zod.string()
+})]),
+  "messages": zod.array(zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "readAt": zod.coerce.date().nullish()
+}))
+})
+
+
+export const CreateEducationPurchaseMessageParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const createEducationPurchaseMessageBodyBodyMax = 4000;
+
+
+
+export const CreateEducationPurchaseMessageBody = zod.object({
+  "body": zod.string().min(1).max(createEducationPurchaseMessageBodyBodyMax)
+})
+
+export const CreateEducationPurchaseMessageResponse = zod.object({
+  "id": zod.string(),
+  "body": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "readAt": zod.coerce.date().nullish()
+})
+
+
+export const CreateEducationDisputeParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const createEducationDisputeBodyReasonMax = 160;
+
+export const createEducationDisputeBodyDetailsMax = 4000;
+
+
+
+export const CreateEducationDisputeBody = zod.object({
+  "reason": zod.string().min(1).max(createEducationDisputeBodyReasonMax),
+  "details": zod.string().min(1).max(createEducationDisputeBodyDetailsMax)
+})
+
+export const CreateEducationDisputeResponse = zod.object({
+  "id": zod.string(),
+  "enrollmentId": zod.string(),
+  "courseTitle": zod.string().optional(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
+  "resolutionNote": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "resolvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List disputes visible to the current buyer, center or administrator
+ */
+export const ListEducationDisputesResponseItem = zod.object({
+  "id": zod.string(),
+  "enrollmentId": zod.string(),
+  "courseTitle": zod.string().optional(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
+  "resolutionNote": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "resolvedAt": zod.coerce.date().nullish()
+})
+export const ListEducationDisputesResponse = zod.array(ListEducationDisputesResponseItem)
+
+
+export const getAdminEducationSettingsResponseOneCommissionPercentMin = 0;
+export const getAdminEducationSettingsResponseOneCommissionPercentMax = 100;
+
+export const getAdminEducationSettingsResponseOneReservePercentMin = 0;
+export const getAdminEducationSettingsResponseOneReservePercentMax = 100;
+
+export const getAdminEducationSettingsResponseOneOnlineRefundDaysMin = 0;
+export const getAdminEducationSettingsResponseOneOnlineRefundDaysMax = 365;
+
+export const getAdminEducationSettingsResponseOneLiveAppealDaysMin = 0;
+export const getAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
+
+
+
+export const GetAdminEducationSettingsResponse = zod.object({
+  "commissionPercent": zod.number().min(getAdminEducationSettingsResponseOneCommissionPercentMin).max(getAdminEducationSettingsResponseOneCommissionPercentMax),
+  "reservePercent": zod.number().min(getAdminEducationSettingsResponseOneReservePercentMin).max(getAdminEducationSettingsResponseOneReservePercentMax),
+  "onlineRefundDays": zod.number().min(getAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(getAdminEducationSettingsResponseOneOnlineRefundDaysMax),
+  "liveAppealDays": zod.number().min(getAdminEducationSettingsResponseOneLiveAppealDaysMin).max(getAdminEducationSettingsResponseOneLiveAppealDaysMax)
+}).and(zod.object({
+  "id": zod.string(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+export const updateAdminEducationSettingsBodyCommissionPercentMin = 0;
+export const updateAdminEducationSettingsBodyCommissionPercentMax = 100;
+
+export const updateAdminEducationSettingsBodyReservePercentMin = 0;
+export const updateAdminEducationSettingsBodyReservePercentMax = 100;
+
+export const updateAdminEducationSettingsBodyOnlineRefundDaysMin = 0;
+export const updateAdminEducationSettingsBodyOnlineRefundDaysMax = 365;
+
+export const updateAdminEducationSettingsBodyLiveAppealDaysMin = 0;
+export const updateAdminEducationSettingsBodyLiveAppealDaysMax = 365;
+
+
+
+export const UpdateAdminEducationSettingsBody = zod.object({
+  "commissionPercent": zod.number().min(updateAdminEducationSettingsBodyCommissionPercentMin).max(updateAdminEducationSettingsBodyCommissionPercentMax),
+  "reservePercent": zod.number().min(updateAdminEducationSettingsBodyReservePercentMin).max(updateAdminEducationSettingsBodyReservePercentMax),
+  "onlineRefundDays": zod.number().min(updateAdminEducationSettingsBodyOnlineRefundDaysMin).max(updateAdminEducationSettingsBodyOnlineRefundDaysMax),
+  "liveAppealDays": zod.number().min(updateAdminEducationSettingsBodyLiveAppealDaysMin).max(updateAdminEducationSettingsBodyLiveAppealDaysMax)
+})
+
+export const updateAdminEducationSettingsResponseOneCommissionPercentMin = 0;
+export const updateAdminEducationSettingsResponseOneCommissionPercentMax = 100;
+
+export const updateAdminEducationSettingsResponseOneReservePercentMin = 0;
+export const updateAdminEducationSettingsResponseOneReservePercentMax = 100;
+
+export const updateAdminEducationSettingsResponseOneOnlineRefundDaysMin = 0;
+export const updateAdminEducationSettingsResponseOneOnlineRefundDaysMax = 365;
+
+export const updateAdminEducationSettingsResponseOneLiveAppealDaysMin = 0;
+export const updateAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
+
+
+
+export const UpdateAdminEducationSettingsResponse = zod.object({
+  "commissionPercent": zod.number().min(updateAdminEducationSettingsResponseOneCommissionPercentMin).max(updateAdminEducationSettingsResponseOneCommissionPercentMax),
+  "reservePercent": zod.number().min(updateAdminEducationSettingsResponseOneReservePercentMin).max(updateAdminEducationSettingsResponseOneReservePercentMax),
+  "onlineRefundDays": zod.number().min(updateAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(updateAdminEducationSettingsResponseOneOnlineRefundDaysMax),
+  "liveAppealDays": zod.number().min(updateAdminEducationSettingsResponseOneLiveAppealDaysMin).max(updateAdminEducationSettingsResponseOneLiveAppealDaysMax)
+}).and(zod.object({
+  "id": zod.string(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+export const ListAdminEducationCentersResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlanId": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "heldAmount": zod.number()
+})
+export const ListAdminEducationCentersResponse = zod.array(ListAdminEducationCentersResponseItem)
+
+
+export const UpdateAdminEducationCenterParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const UpdateAdminEducationCenterBody = zod.object({
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']).optional(),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.enum(['trial', 'active', 'past_due', 'cancelled', 'suspended', 'free_via_loyalty']).optional(),
+  "planId": zod.string().optional()
+})
+
+export const UpdateAdminEducationCenterResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlanId": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "heldAmount": zod.number()
+})
+
+
+export const GetAdminEducationFinanceResponse = zod.object({
+  "summary": zod.record(zod.string(), zod.number()),
+  "escrows": zod.array(zod.object({
+  "id": zod.string(),
+  "enrollmentId": zod.string(),
+  "centerId": zod.string(),
+  "centerName": zod.string().optional(),
+  "courseTitle": zod.string().optional(),
+  "grossAmount": zod.number(),
+  "platformFee": zod.number(),
+  "reserveAmount": zod.number(),
+  "netAmount": zod.number(),
+  "status": zod.enum(['held', 'ready_for_payout', 'frozen', 'paid_out', 'refunded', 'partially_refunded']),
+  "releaseAt": zod.coerce.date(),
+  "disputeOpen": zod.boolean()
+})),
+  "payouts": zod.array(zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "amount": zod.number(),
+  "status": zod.enum(['pending', 'paid', 'cancelled']),
+  "paidAt": zod.coerce.date().nullish()
+}))
+})
+
+
+/**
+ * @summary Confirm a manually settled education purchase and create its escrow
+ */
+export const SettleAdminEducationEnrollmentParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const SettleAdminEducationEnrollmentResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
+})
+
+
+export const CreateAdminEducationPayoutBody = zod.object({
+  "centerId": zod.string(),
+  "includeReserve": zod.boolean().optional(),
+  "reference": zod.string().optional(),
+  "note": zod.string().optional()
+})
+
+export const CreateAdminEducationPayoutResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "amount": zod.number(),
+  "status": zod.enum(['pending', 'paid', 'cancelled']),
+  "paidAt": zod.coerce.date().nullish()
+})
+
+
+export const ResolveAdminEducationDisputeParams = zod.object({
+  "disputeId": zod.coerce.string()
+})
+
+export const resolveAdminEducationDisputeBodyResolutionNoteMax = 4000;
+
+
+
+export const ResolveAdminEducationDisputeBody = zod.object({
+  "action": zod.enum(['refund', 'release', 'reject']),
+  "resolutionNote": zod.string().min(1).max(resolveAdminEducationDisputeBodyResolutionNoteMax)
+})
+
+export const ResolveAdminEducationDisputeResponse = zod.object({
+  "id": zod.string(),
+  "enrollmentId": zod.string(),
+  "courseTitle": zod.string().optional(),
+  "reason": zod.string(),
+  "details": zod.string(),
+  "status": zod.enum(['open', 'under_review', 'resolved_refund', 'resolved_payout', 'rejected', 'cancelled']),
+  "resolutionNote": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "resolvedAt": zod.coerce.date().nullish()
+})
+
+
+/**
  * @summary Browse business education courses
  */
 export const listCoursesQueryMinPriceMin = 0;
@@ -4060,7 +4435,7 @@ export const CreateEducationSessionResponse = zod.object({
 
 
 /**
- * @summary Reserve or purchase a course place for the owner or an employee
+ * @summary Request a course purchase; access and escrow begin only after manual settlement
  */
 export const EnrollInEducationCourseParams = zod.object({
   "courseId": zod.coerce.string()
@@ -4080,7 +4455,9 @@ export const EnrollInEducationCourseResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date()
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
 })
 
 
@@ -4135,7 +4512,9 @@ export const ListEnrollmentsResponseItem = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date()
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
 })
 export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
 
@@ -4158,7 +4537,9 @@ export const GetEducationLmsResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date()
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
 }),
   "course": zod.object({
   "id": zod.string(),
@@ -4227,7 +4608,9 @@ export const CompleteEducationLessonResponse = zod.object({
   "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
   "progress": zod.number(),
   "nextLesson": zod.string().nullish(),
-  "purchasedAt": zod.coerce.date()
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
 })
 
 

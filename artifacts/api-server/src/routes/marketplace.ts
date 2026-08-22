@@ -13,6 +13,15 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  educationCenterSubscriptionsTable,
+  educationDisputesTable,
+  educationEscrowsTable,
+  educationFinancialEventsTable,
+  educationLedgerEntriesTable,
+  educationMessagesTable,
+  educationPayoutsTable,
+  educationPlatformSettingsTable,
+  educationThreadsTable,
   emailCampaignsTable,
   emailDeliveriesTable,
   employeesTable,
@@ -1183,6 +1192,9 @@ async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess 
     const access = await requireEducationAccess(req, res);
     return access ? { access, learnerEmployeeId: null } : null;
   }
+  if (user.role === "CUSTOMER") {
+    return { access: { user, salon: null, centers: [], admin: false }, learnerEmployeeId: null };
+  }
   if (user.role !== "SALON_EMPLOYEE") {
     res.status(403).json({ error: "LMS je dostupan samo upisanim poslovnim korisnicima." });
     return null;
@@ -1205,6 +1217,81 @@ function isCourseOwner(access: EducationAccess, course: typeof coursesTable.$inf
     (access.salon && course.salonId === access.salon.id)
     || access.centers.some((center) => center.id === course.centerId),
   );
+}
+
+function hasActiveEducationSubscription(status: string | null | undefined) {
+  return status === "active" || status === "free_via_loyalty";
+}
+
+async function getEducationPlatformSettings() {
+  const [existing] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
+  if (existing) return existing;
+  const [created] = await db.insert(educationPlatformSettingsTable).values({}).returning();
+  return created!;
+}
+
+async function educationCenterEligibility(centerId: string) {
+  const [center, subscription] = await Promise.all([
+    db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1),
+    db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId)).limit(1),
+  ]);
+  return {
+    center: center[0] ?? null,
+    subscription: subscription[0] ?? null,
+    eligible: center[0]?.verificationStatus === "verified" && hasActiveEducationSubscription(subscription[0]?.status),
+  };
+}
+
+async function isPublicEducationCourse(course: typeof coursesTable.$inferSelect) {
+  if (!course.published || course.archived) return false;
+  // Salon-internal courses stay in the business LMS. Only subscribed, verified
+  // education centers can sell through the protected public marketplace.
+  if (!course.centerId) return false;
+  return (await educationCenterEligibility(course.centerId)).eligible;
+}
+
+async function releaseAtForEducationCourse(
+  course: typeof coursesTable.$inferSelect,
+  settings: typeof educationPlatformSettingsTable.$inferSelect,
+  assignedSession?: Pick<typeof courseSessionsTable.$inferSelect, "id" | "endsAt"> | null,
+) {
+  if (course.format === "online") {
+    return new Date(Date.now() + settings.onlineRefundDays * 24 * 60 * 60 * 1000);
+  }
+  if (!assignedSession?.endsAt || assignedSession.endsAt <= new Date()) throw new Error("Nije moguće potvrditi kupovinu za termin koji je već završen.");
+  return new Date(assignedSession.endsAt.getTime() + settings.liveAppealDays * 24 * 60 * 60 * 1000);
+}
+
+async function refreshMatureEducationEscrows() {
+  const due = await db.select().from(educationEscrowsTable)
+    .where(and(eq(educationEscrowsTable.status, "held"), sql`${educationEscrowsTable.releaseAt} <= now()`));
+  if (!due.length) return;
+  await db.transaction(async (tx) => {
+    for (const escrow of due) {
+      const [updated] = await tx.update(educationEscrowsTable)
+        .set({ status: "ready_for_payout", releasedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "held")))
+        .returning();
+      if (updated) {
+        await tx.insert(educationLedgerEntriesTable).values({
+          escrowId: updated.id,
+          enrollmentId: updated.enrollmentId,
+          centerId: updated.centerId,
+          type: "release",
+          amount: updated.netAmount,
+          note: "Sredstva su postala spremna za ručnu isplatu.",
+        });
+        await tx.insert(educationFinancialEventsTable).values({
+          escrowId: updated.id,
+          enrollmentId: updated.enrollmentId,
+          eventType: "escrow_released",
+          previousStatus: "held",
+          nextStatus: "ready_for_payout",
+          amount: updated.netAmount,
+        });
+      }
+    }
+  });
 }
 
 async function requireOwnedCourse(access: EducationAccess, courseId: string, res: Response) {
@@ -1243,13 +1330,13 @@ async function modulesForCourse(courseId: string, completedLessonIds = new Set<s
   }));
 }
 
-async function sessionsForCourse(courseId: string) {
+async function sessionsForCourse(courseId: string, includeLocation = false) {
   const sessions = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, courseId)).orderBy(asc(courseSessionsTable.startsAt));
   return sessions.map((session) => ({
     id: session.id,
     startsAt: session.startsAt.toISOString(),
     endsAt: session.endsAt.toISOString(),
-    location: session.location,
+    location: includeLocation ? session.location : null,
     capacity: session.capacity,
     reservedSeats: session.reservedSeats,
     availableSeats: Math.max(0, session.capacity - session.reservedSeats),
@@ -1262,17 +1349,19 @@ async function educationCourseView(
   completedLessonIds = new Set<string>(),
   includeLessonContent = false,
 ) {
-  const mayReadLessonContent = includeLessonContent || Boolean(access && (access.admin || isCourseOwner(access, course)));
-  const [center, salon, sessions, modules] = await Promise.all([
-    course.centerId ? db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1) : Promise.resolve([]),
-    course.salonId ? db.select().from(salonsTable).where(eq(salonsTable.id, course.salonId)).limit(1) : Promise.resolve([]),
-    sessionsForCourse(course.id),
-    modulesForCourse(course.id, completedLessonIds, mayReadLessonContent),
-  ]);
-  const publisher = salon[0] ?? center[0];
+  const owned = Boolean(access && isCourseOwner(access, course));
   const enrollment = access
     ? (await db.select().from(courseEnrollmentsTable).where(and(eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, access.user.id))).limit(1))[0]
     : undefined;
+  const mayReadLessonContent = includeLessonContent || Boolean(access && (access.admin || owned));
+  const mayReadLogistics = Boolean(access && (access.admin || owned || enrollment?.paymentStatus === "paid"));
+  const [center, salon, sessions, modules] = await Promise.all([
+    course.centerId ? db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1) : Promise.resolve([]),
+    course.salonId ? db.select().from(salonsTable).where(eq(salonsTable.id, course.salonId)).limit(1) : Promise.resolve([]),
+    sessionsForCourse(course.id, mayReadLogistics),
+    modulesForCourse(course.id, completedLessonIds, mayReadLessonContent),
+  ]);
+  const publisher = salon[0] ?? center[0];
   return {
     id: course.id,
     title: course.title,
@@ -1280,6 +1369,7 @@ async function educationCourseView(
     instructor: course.instructorId ? "LUMERA mentor" : "Stručni tim",
     publisher: publisher?.name ?? "LUMERA partner",
     publisherType: course.salonId ? "SALON" as const : "EDUCATION_CENTER" as const,
+    publisherVerified: center[0]?.verificationStatus === "verified",
     category: course.category,
     format: course.format,
     city: course.city,
@@ -1299,11 +1389,12 @@ async function educationCourseView(
 }
 
 async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable.$inferSelect) {
-  const [course, employee, purchaser, modules] = await Promise.all([
+  const [course, employee, purchaser, modules, escrow] = await Promise.all([
     db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1),
     enrollment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, enrollment.employeeId)).limit(1) : Promise.resolve([]),
     db.select().from(usersTable).where(eq(usersTable.id, enrollment.purchaserId)).limit(1),
     modulesForCourse(enrollment.courseId),
+    db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, enrollment.id)).limit(1),
   ]);
   // `nextLesson` used to contain a title in early demo data. Normalize that
   // legacy value at the boundary so the protected LMS can always select by ID.
@@ -1321,6 +1412,8 @@ async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable
     progress: enrollment.progress,
     nextLesson,
     purchasedAt: enrollment.purchasedAt.toISOString(),
+    escrowStatus: escrow[0]?.status ?? null,
+    escrowReleaseAt: escrow[0]?.releaseAt?.toISOString() ?? null,
   };
 }
 
@@ -5190,11 +5283,15 @@ router.get("/education/courses", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const query = parsed.data;
   let courses = await db.select().from(coursesTable);
-  courses = courses.filter((course) => {
-    const owned = isCourseOwner(access, course);
+  const visibility = await Promise.all(courses.map(async (course) => ({
+    course,
+    owned: isCourseOwner(access, course),
+    public: await isPublicEducationCourse(course),
+  })));
+  courses = visibility.filter(({ owned, public: isPublic }) => {
     if (query.mine) return access.admin || owned;
-    return !course.archived && (course.published || owned || access.admin);
-  });
+    return access.admin || owned || isPublic;
+  }).map(({ course }) => course);
   if (query.format) courses = courses.filter((course) => course.format === query.format);
   if (query.city) courses = courses.filter((course) => course.city?.toLowerCase() === query.city!.toLowerCase());
   if (query.category) courses = courses.filter((course) => course.category.toLowerCase().includes(query.category!.toLowerCase()));
@@ -5220,6 +5317,10 @@ router.post("/education/courses", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const publisher = access.salon ?? access.centers[0];
   if (!publisher || access.admin) { res.status(403).json({ error: "Administrator ne može da objavi kurs u ime drugog izdavača." }); return; }
+  if (access.centers[0] && !(await educationCenterEligibility(access.centers[0].id)).eligible) {
+    res.status(403).json({ error: "Centar mora biti verifikovan i imati aktivnu pretplatu pre objave ili prodaje edukacija." });
+    return;
+  }
   const data = parsed.data;
   const [course] = await db.insert(coursesTable).values({
     salonId: access.salon?.id ?? null,
@@ -5247,7 +5348,7 @@ router.get("/education/courses/:courseId", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
   if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
-  if ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin) {
+  if (!(await isPublicEducationCourse(course)) && !isCourseOwner(access, course) && !access.admin) {
     res.status(403).json({ error: "Ovaj kurs nije dostupan u katalogu." }); return;
   }
   res.json(calendarDateCourseResponse(GetEducationCourseResponse.parse(await educationCourseView(course, access))));
@@ -5272,6 +5373,10 @@ router.post("/education/courses/:courseId/publish", async (req, res): Promise<vo
   const parsed = PublishEducationCourseParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const course = await requireOwnedCourse(access, parsed.data.courseId, res); if (!course) return;
+  if (course.centerId && !(await educationCenterEligibility(course.centerId)).eligible) {
+    res.status(403).json({ error: "Kurs ne može biti objavljen dok centar nije verifikovan i pretplata aktivna." });
+    return;
+  }
   const [updated] = await db.update(coursesTable).set({ published: true, archived: false, updatedAt: new Date() }).where(eq(coursesTable.id, course.id)).returning();
   res.json(calendarDateCourseResponse(PublishEducationCourseResponse.parse(await educationCourseView(updated!, access))));
 });
@@ -5377,44 +5482,147 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
 });
 
 router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
-  const access = await requireEducationAccess(req, res); if (!access) return;
+  const user = await current(req, res); if (!user) return;
+  if (!["SALON_OWNER", "CUSTOMER"].includes(user.role)) {
+    res.status(403).json({ error: "Kupovina edukacija je dostupna klijentima i vlasnicima salona." });
+    return;
+  }
   const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci prijave nisu ispravni." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, params.data.courseId)).limit(1);
-  if (!course || !course.published || course.archived) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
+  if (!course || !(await isPublicEducationCourse(course))) { res.status(404).json({ error: "Kurs nije dostupan za prijavu." }); return; }
+  const access = user.role === "SALON_OWNER" ? await requireEducationAccess(req, res) : null;
+  if (user.role === "SALON_OWNER" && !access) return;
   let employee: typeof employeesTable.$inferSelect | null = null;
   if (body.data.employeeId) {
-    if (!access.salon) { res.status(403).json({ error: "Zaposlenog možete prijaviti samo preko salona." }); return; }
+    if (!access?.salon) { res.status(403).json({ error: "Zaposlenog možete prijaviti samo preko salona." }); return; }
     employee = await employeeInSalon(body.data.employeeId, access.salon.id);
     if (!employee) { res.status(403).json({ error: "Izabrani zaposleni ne pripada vašem salonu." }); return; }
   }
-  const existing = await db.select().from(courseEnrollmentsTable).where(and(eq(courseEnrollmentsTable.courseId, course.id), eq(courseEnrollmentsTable.purchaserId, access.user.id)));
-  if (existing.some((item) => (item.employeeId ?? null) === (employee?.id ?? null) && item.status !== "cancelled")) { res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." }); return; }
-  const sessions = await db.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt));
-  const session = sessions.find((item) => item.reservedSeats < item.capacity);
-  if (course.format !== "online" && !session) { res.status(409).json({ error: "Nema slobodnih mesta u narednim terminima." }); return; }
-  if (session) await db.update(courseSessionsTable).set({ reservedSeats: session.reservedSeats + 1 }).where(eq(courseSessionsTable.id, session.id));
-  const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
-  const [enrollment] = await db.insert(courseEnrollmentsTable).values({
-    courseId: course.id,
-    userId: access.user.id,
-    salonId: access.salon?.id ?? null,
-    employeeId: employee?.id ?? null,
-    purchaserId: access.user.id,
-    status: "active",
-    paymentStatus: "paid",
-    nextLesson: firstLesson?.id ?? null,
-    auditData: { source: "business-workspace", sessionId: session?.id ?? null },
-  }).returning();
+  const idempotencyKey = req.get("idempotency-key")?.trim() || null;
+  if (idempotencyKey && idempotencyKey.length > 200) { res.status(400).json({ error: "Idempotency ključ je predugačak." }); return; }
+  const idempotencyFingerprint = `${course.id}:${employee?.id ?? "purchaser"}:${access?.salon?.id ?? "direct"}`;
+  if (idempotencyKey) {
+    const [replayed] = await db.select().from(courseEnrollmentsTable)
+      .where(and(eq(courseEnrollmentsTable.purchaserId, user.id), eq(courseEnrollmentsTable.idempotencyKey, idempotencyKey))).limit(1);
+    if (replayed) {
+      if (replayed.courseId !== course.id || replayed.idempotencyFingerprint !== idempotencyFingerprint) {
+        res.status(409).json({ error: "Idempotency ključ je već upotrebljen za drugu kupovinu." });
+        return;
+      }
+      res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(replayed)));
+      return;
+    }
+  }
+  let enrollment: typeof courseEnrollmentsTable.$inferSelect;
+  try {
+    enrollment = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(courseEnrollmentsTable).values({
+      courseId: course.id,
+      userId: user.id,
+      salonId: access?.salon?.id ?? null,
+      employeeId: employee?.id ?? null,
+      purchaserId: user.id,
+      status: "pending",
+      paymentStatus: "pending",
+      auditData: { source: "education-marketplace", idempotencyKey },
+      idempotencyKey,
+      idempotencyFingerprint: idempotencyKey ? idempotencyFingerprint : null,
+    }).returning();
+    return created!;
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Kupovina nije uspela.";
+    const errorCode = typeof error === "object" && error
+      ? (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code
+      : undefined;
+    if (errorCode === "23505" && idempotencyKey) {
+      const [replayed] = await db.select().from(courseEnrollmentsTable)
+        .where(and(eq(courseEnrollmentsTable.purchaserId, user.id), eq(courseEnrollmentsTable.idempotencyKey, idempotencyKey))).limit(1);
+      if (replayed && replayed.courseId === course.id && replayed.idempotencyFingerprint === idempotencyFingerprint) {
+        res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(replayed)));
+        return;
+      }
+    }
+    if (errorCode === "23505") { res.status(409).json({ error: "Ovaj polaznik je već prijavljen na kurs." }); return; }
+    throw error;
+  }
   await sendTransactionalEmail({
-    eventKey: `course-enrollment:${enrollment!.id}:confirmed`,
-    emailType: "course_enrollment_confirmed",
-    to: { email: access.user.email, name: `${access.user.firstName} ${access.user.lastName}` },
-    subject: "LUMERA Edukacije — prijava je potvrđena",
-    htmlContent: lumeraEmailHtml("Prijava na edukaciju je potvrđena", `<p>Uspešno ste prijavljeni na kurs <strong>${emailSafe(course.title)}</strong>.</p>`),
-    metadata: { enrollmentId: enrollment!.id, courseId: course.id },
+    eventKey: `course-enrollment:${enrollment.id}:requested`,
+    emailType: "course_enrollment_requested",
+    to: { email: user.email, name: `${user.firstName} ${user.lastName}` },
+    subject: "LUMERA Edukacije — zahtev je primljen",
+    htmlContent: lumeraEmailHtml("Zahtev za edukaciju je primljen", `<p>Primili smo zahtev za kurs <strong>${emailSafe(course.title)}</strong>.</p><p>Pristup sadržaju i detaljima termina aktivira se tek nakon ručne potvrde uplate.</p>`),
+    metadata: { enrollmentId: enrollment.id, courseId: course.id },
   });
-  res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment!)));
+  res.status(201).json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(enrollment)));
+});
+
+router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res): Promise<void> => {
+  const admin = await requireAdmin(req, res); if (!admin) return;
+  const enrollmentId = String(req.params.enrollmentId);
+  const [preview] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
+  if (!preview) { res.status(404).json({ error: "Zahtev za kupovinu nije pronađen." }); return; }
+  const [coursePreview] = await db.select().from(coursesTable).where(eq(coursesTable.id, preview.courseId)).limit(1);
+  if (!coursePreview?.centerId || !(await isPublicEducationCourse(coursePreview))) {
+    res.status(409).json({ error: "Kurs više nije podoban za zaštićenu potvrdu kupovine." }); return;
+  }
+  let settled: typeof courseEnrollmentsTable.$inferSelect;
+  try {
+    settled = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${coursePreview.centerId}`}))`);
+      const [enrollment] = await tx.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).for("update").limit(1);
+      if (!enrollment || enrollment.status !== "pending" || enrollment.paymentStatus !== "pending") throw new Error("Ovaj zahtev je već obrađen.");
+      const [course] = await tx.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).for("update").limit(1);
+      if (!course?.centerId) throw new Error("Kurs nema verifikovanog izdavača.");
+      let session: typeof courseSessionsTable.$inferSelect | null = null;
+      if (course.format !== "online") {
+        const sessions = await tx.select().from(courseSessionsTable).where(eq(courseSessionsTable.courseId, course.id)).orderBy(asc(courseSessionsTable.startsAt)).for("update");
+        session = sessions.find((item) => item.reservedSeats < item.capacity && item.endsAt > new Date()) ?? null;
+        if (!session) throw new Error("Nema slobodnih mesta u narednim terminima.");
+        await tx.update(courseSessionsTable).set({ reservedSeats: session.reservedSeats + 1 }).where(eq(courseSessionsTable.id, session.id));
+      }
+      const firstLesson = (await modulesForCourse(course.id)).flatMap((module) => module.lessons)[0];
+      const [confirmed] = await tx.update(courseEnrollmentsTable).set({
+        status: "active", paymentStatus: "paid", accessGrantedAt: new Date(), nextLesson: firstLesson?.id ?? null,
+        auditData: { ...enrollment.auditData, settlement: "admin_confirmed", settledBy: admin.id, sessionId: session?.id ?? null },
+        updatedAt: new Date(),
+      }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.status, "pending"), eq(courseEnrollmentsTable.paymentStatus, "pending"))).returning();
+      if (!confirmed) throw new Error("Zahtev je izmenjen u drugoj operaciji.");
+      const settings = await getEducationPlatformSettings();
+      const platformFee = Math.floor(course.price * settings.commissionPercent / 100);
+      const reserveAmount = Math.floor(course.price * settings.reservePercent / 100);
+      const netAmount = course.price - platformFee - reserveAmount;
+      const releaseAt = await releaseAtForEducationCourse(course, settings, session);
+      const [escrow] = await tx.insert(educationEscrowsTable).values({
+        enrollmentId: confirmed.id, centerId: course.centerId, grossAmount: course.price, platformFee, reserveAmount, netAmount, releaseAt,
+        paymentReference: `manual-settlement:${confirmed.id}`,
+      }).returning();
+      await tx.insert(educationLedgerEntriesTable).values([
+        { escrowId: escrow!.id, enrollmentId: confirmed.id, centerId: course.centerId, type: "charge", amount: course.price, note: "Ručno potvrđena kupovina edukacije.", actorUserId: admin.id, idempotencyKey: confirmed.idempotencyKey },
+        { escrowId: escrow!.id, enrollmentId: confirmed.id, centerId: course.centerId, type: "platform_fee", amount: -platformFee, note: "Platformska provizija.", actorUserId: admin.id },
+        { escrowId: escrow!.id, enrollmentId: confirmed.id, centerId: course.centerId, type: "reserve_hold", amount: -reserveAmount, note: "Zadržana rezerva.", actorUserId: admin.id },
+      ]);
+      await tx.insert(educationFinancialEventsTable).values({
+        escrowId: escrow!.id, enrollmentId: confirmed.id, actorUserId: admin.id, eventType: "purchase_settled_manual", nextStatus: "held", amount: course.price,
+        metadata: { releaseAt: releaseAt.toISOString(), commissionPercent: settings.commissionPercent, reservePercent: settings.reservePercent },
+      });
+      await tx.insert(educationThreadsTable).values({ enrollmentId: confirmed.id, purchaserId: confirmed.purchaserId, centerId: course.centerId });
+      return confirmed;
+    });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Potvrda uplate nije uspela." });
+    return;
+  }
+  const [purchaser] = await db.select().from(usersTable).where(eq(usersTable.id, settled.purchaserId)).limit(1);
+  await sendTransactionalEmail({
+    eventKey: `course-enrollment:${settled.id}:settled`, emailType: "course_enrollment_confirmed",
+    to: { email: purchaser?.email ?? "", name: `${purchaser?.firstName ?? "LUMERA"} ${purchaser?.lastName ?? "korisnik"}` },
+    subject: "LUMERA Edukacije — kupovina je potvrđena",
+    htmlContent: lumeraEmailHtml("Kupovina edukacije je potvrđena", `<p>Uplata je ručno potvrđena. Sada imate pristup sadržaju kursa i zaštićenim detaljima termina.</p>`),
+    metadata: { enrollmentId: settled.id, courseId: settled.courseId },
+  });
+  res.json(EnrollInEducationCourseResponse.parse(await educationEnrollmentView(settled)));
 });
 
 router.patch("/education/sessions/:sessionId", async (req, res): Promise<void> => {
@@ -5475,6 +5683,10 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
     res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." });
     return;
   }
+  if (!lmsAccess.access.admin && (enrollment.status !== "active" && enrollment.status !== "completed" || enrollment.paymentStatus !== "paid")) {
+    res.status(403).json({ error: "Pristup kursu se aktivira tek nakon potvrđene uplate." });
+    return;
+  }
   const progress = await db.select().from(lessonProgressTable).where(eq(lessonProgressTable.enrollmentId, enrollment.id));
   const response = GetEducationLmsResponse.parse({
     enrollment: await educationEnrollmentView(enrollment),
@@ -5512,6 +5724,150 @@ router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", a
     updatedAt: new Date(),
   }).where(eq(courseEnrollmentsTable.id, enrollment[0].id)).returning();
   res.json(CompleteEducationLessonResponse.parse(await educationEnrollmentView(updated!)));
+});
+
+router.get("/education/public/courses", async (_req, res): Promise<void> => {
+  const courses = await db.select().from(coursesTable);
+  const visible = (await Promise.all(courses.map(async (course) => ({
+    course,
+    visible: await isPublicEducationCourse(course),
+  })))).filter((item) => item.visible).map((item) => item.course);
+  res.json(await Promise.all(visible.map((course) => educationCourseView(course))));
+});
+
+router.get("/education/center/status", async (req, res): Promise<void> => {
+  const access = await requireEducationAccess(req, res); if (!access) return;
+  if (access.admin) { res.status(403).json({ error: "Ovaj status je rezervisan za vlasnika edukativnog centra." }); return; }
+  const centers = await Promise.all(access.centers.map(async (center) => {
+    const { subscription, eligible } = await educationCenterEligibility(center.id);
+    return {
+      id: center.id, name: center.name, verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
+      subscriptionStatus: subscription?.status ?? null, currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null, eligible,
+    };
+  }));
+  res.json(centers);
+});
+
+router.get("/education/purchases", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const enrollments = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.purchaserId, user.id)).orderBy(desc(courseEnrollmentsTable.purchasedAt));
+  res.json(await Promise.all(enrollments.map(educationEnrollmentView)));
+});
+
+async function enrollmentAccessForUser(user: typeof usersTable.$inferSelect, enrollmentId: string) {
+  const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
+  if (!enrollment) return { enrollment: null, course: null, center: null, canParticipate: false, admin: false };
+  const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
+  const [center] = course?.centerId
+    ? await db.select().from(educationCentersTable).where(eq(educationCentersTable.id, course.centerId)).limit(1)
+    : [];
+  const admin = isAdmin(user);
+  return {
+    enrollment,
+    course: course ?? null,
+    center: center ?? null,
+    canParticipate: admin || enrollment.purchaserId === user.id || (Boolean(center) && center!.ownerId === user.id),
+    admin,
+  };
+}
+
+router.get("/education/purchases/:enrollmentId/messages", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const access = await enrollmentAccessForUser(user, String(req.params.enrollmentId));
+  if (!access.enrollment || !access.canParticipate) { res.status(403).json({ error: "Nemate pristup porukama ove kupovine." }); return; }
+  if (access.enrollment.paymentStatus !== "paid") { res.status(409).json({ error: "Poruke postaju dostupne nakon potvrđene uplate." }); return; }
+  const [thread] = await db.select().from(educationThreadsTable).where(eq(educationThreadsTable.enrollmentId, access.enrollment.id)).limit(1);
+  if (!thread) { res.json({ thread: null, messages: [] }); return; }
+  const messages = await db.select().from(educationMessagesTable).where(eq(educationMessagesTable.threadId, thread.id)).orderBy(asc(educationMessagesTable.createdAt));
+  const senderIds = [...new Set(messages.map((message) => message.senderId))];
+  const senders = senderIds.length ? await db.select({ id: usersTable.id, firstName: usersTable.firstName, lastName: usersTable.lastName }).from(usersTable).where(inArray(usersTable.id, senderIds)) : [];
+  if (!access.admin) {
+    await db.update(educationMessagesTable).set({ readAt: new Date() })
+      .where(and(eq(educationMessagesTable.threadId, thread.id), ne(educationMessagesTable.senderId, user.id), sql`${educationMessagesTable.readAt} is null`));
+  }
+  res.json({
+    thread: { id: thread.id, status: thread.status, enrollmentId: thread.enrollmentId },
+    messages: messages.map((message) => {
+      const sender = senders.find((item) => item.id === message.senderId);
+      return { id: message.id, body: message.body, senderId: message.senderId, senderName: sender ? `${sender.firstName} ${sender.lastName}` : "LUMERA korisnik", createdAt: message.createdAt.toISOString(), readAt: message.readAt?.toISOString() ?? null };
+    }),
+  });
+});
+
+router.post("/education/purchases/:enrollmentId/messages", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
+  if (!body || body.length > 4000) { res.status(400).json({ error: "Poruka mora imati između 1 i 4000 karaktera." }); return; }
+  const access = await enrollmentAccessForUser(user, String(req.params.enrollmentId));
+  if (!access.enrollment || !access.canParticipate || access.admin || !access.center) { res.status(403).json({ error: "Samo kupac i vlasnik centra mogu slati poruke u ovoj kupovini." }); return; }
+  if (access.enrollment.paymentStatus !== "paid") { res.status(409).json({ error: "Poruke postaju dostupne nakon potvrđene uplate." }); return; }
+  let [thread] = await db.select().from(educationThreadsTable).where(eq(educationThreadsTable.enrollmentId, access.enrollment.id)).limit(1);
+  if (!thread) {
+    [thread] = await db.insert(educationThreadsTable).values({
+      enrollmentId: access.enrollment.id,
+      purchaserId: access.enrollment.purchaserId,
+      centerId: access.center.id,
+    }).returning();
+  }
+  if (thread!.status !== "open") { res.status(409).json({ error: "Ova konverzacija je zatvorena." }); return; }
+  const [message] = await db.insert(educationMessagesTable).values({ threadId: thread!.id, senderId: user.id, body }).returning();
+  await db.update(educationThreadsTable).set({ updatedAt: new Date() }).where(eq(educationThreadsTable.id, thread!.id));
+  res.status(201).json({ id: message!.id, body: message!.body, senderId: message!.senderId, senderName: `${user.firstName} ${user.lastName}`, createdAt: message!.createdAt.toISOString(), readAt: null });
+});
+
+router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  const details = typeof req.body?.details === "string" ? req.body.details.trim() : "";
+  if (!reason || !details || reason.length > 160 || details.length > 4000) { res.status(400).json({ error: "Unesite razlog i opis problema." }); return; }
+  const access = await enrollmentAccessForUser(user, String(req.params.enrollmentId));
+  if (!access.enrollment || access.enrollment.purchaserId !== user.id) { res.status(403).json({ error: "Samo kupac može prijaviti problem za svoju kupovinu." }); return; }
+  if (access.enrollment.paymentStatus !== "paid") { res.status(409).json({ error: "Spor se može otvoriti tek nakon potvrđene uplate." }); return; }
+  const [escrowPreview] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, access.enrollment.id)).limit(1);
+  if (!escrowPreview) { res.status(409).json({ error: "Kupovina nema escrow zaštitu koju možemo zamrznuti." }); return; }
+  let dispute: typeof educationDisputesTable.$inferSelect;
+  try {
+    dispute = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${escrowPreview.centerId}`}))`);
+    const [existing] = await tx.select().from(educationDisputesTable)
+      .where(and(eq(educationDisputesTable.enrollmentId, access.enrollment!.id), inArray(educationDisputesTable.status, ["open", "under_review"]))).for("update").limit(1);
+    if (existing) throw new Error("Za ovu kupovinu već postoji otvoren spor.");
+    const [escrow] = await tx.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, escrowPreview.id)).for("update").limit(1);
+    if (!escrow || !["held", "ready_for_payout"].includes(escrow.status) || escrow.netPaidAt || escrow.reservePaidAt) {
+      throw new Error("Ova kupovina više nije podobna za otvaranje spora.");
+    }
+    if (escrow.releaseAt <= new Date()) throw new Error("Rok za prijavu problema je istekao.");
+    const [created] = await tx.insert(educationDisputesTable).values({ enrollmentId: access.enrollment!.id, openedByUserId: user.id, reason, details }).returning();
+      const [frozen] = await tx.update(educationEscrowsTable).set({ status: "frozen", frozenAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(educationEscrowsTable.id, escrow.id), inArray(educationEscrowsTable.status, ["held", "ready_for_payout"]), sql`${educationEscrowsTable.releaseAt} > now()`, sql`${educationEscrowsTable.netPaidAt} is null`, sql`${educationEscrowsTable.reservePaidAt} is null`)).returning();
+      if (!frozen) throw new Error("Escrow je izmenjen u drugoj finansijskoj operaciji.");
+      await tx.insert(educationFinancialEventsTable).values({
+        escrowId: escrow.id, enrollmentId: access.enrollment!.id, actorUserId: user.id,
+        eventType: "dispute_opened", previousStatus: escrow.status, nextStatus: "frozen", note: reason,
+      });
+    return created!;
+    });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Spor nije mogao biti otvoren." });
+    return;
+  }
+  res.status(201).json({ id: dispute.id, enrollmentId: dispute.enrollmentId, reason: dispute.reason, details: dispute.details, status: dispute.status, createdAt: dispute.createdAt.toISOString() });
+});
+
+router.get("/education/disputes", async (req, res): Promise<void> => {
+  const user = await current(req, res); if (!user) return;
+  const disputes = await db.select().from(educationDisputesTable).orderBy(desc(educationDisputesTable.createdAt));
+  const visible = [];
+  for (const dispute of disputes) {
+    const access = await enrollmentAccessForUser(user, dispute.enrollmentId);
+    if (!access.enrollment || !access.canParticipate) continue;
+    visible.push({
+      id: dispute.id, enrollmentId: dispute.enrollmentId, courseTitle: access.course?.title ?? "Edukacija",
+      reason: dispute.reason, details: dispute.details, status: dispute.status, resolutionNote: dispute.resolutionNote,
+      createdAt: dispute.createdAt.toISOString(), resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
+    });
+  }
+  res.json(visible);
 });
 
 router.get("/admin/summary", async (req, res): Promise<void> => {
@@ -5584,6 +5940,280 @@ async function requireSuperAdmin(req: Request, res: Response) {
   }
   return user;
 }
+
+router.get("/admin/education/settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const settings = await getEducationPlatformSettings();
+  res.json({
+    id: settings.id,
+    commissionPercent: settings.commissionPercent,
+    reservePercent: settings.reservePercent,
+    onlineRefundDays: settings.onlineRefundDays,
+    liveAppealDays: settings.liveAppealDays,
+    updatedAt: settings.updatedAt.toISOString(),
+  });
+});
+
+router.patch("/admin/education/settings", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const candidate = {
+    commissionPercent: Number(req.body?.commissionPercent),
+    reservePercent: Number(req.body?.reservePercent),
+    onlineRefundDays: Number(req.body?.onlineRefundDays),
+    liveAppealDays: Number(req.body?.liveAppealDays),
+  };
+  if (!Object.values(candidate).every((value) => Number.isInteger(value) && value >= 0)
+    || candidate.commissionPercent + candidate.reservePercent > 100
+    || candidate.onlineRefundDays > 365 || candidate.liveAppealDays > 365) {
+    res.status(400).json({ error: "Proverite procente i rokove. Zbir provizije i rezerve ne može preći 100%." });
+    return;
+  }
+  const currentSettings = await getEducationPlatformSettings();
+  const [settings] = await db.update(educationPlatformSettingsTable).set({
+    ...candidate, updatedByUserId: user.id, updatedAt: new Date(),
+  }).where(eq(educationPlatformSettingsTable.id, currentSettings.id)).returning();
+  res.json({
+    id: settings!.id, commissionPercent: settings!.commissionPercent, reservePercent: settings!.reservePercent,
+    onlineRefundDays: settings!.onlineRefundDays, liveAppealDays: settings!.liveAppealDays, updatedAt: settings!.updatedAt.toISOString(),
+  });
+});
+
+router.get("/admin/education/centers", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [centers, subscriptions, plans, escrows] = await Promise.all([
+    db.select().from(educationCentersTable).orderBy(desc(educationCentersTable.createdAt)),
+    db.select().from(educationCenterSubscriptionsTable),
+    db.select().from(subscriptionPlansTable),
+    db.select().from(educationEscrowsTable),
+  ]);
+  const status = typeof req.query.status === "string" ? req.query.status : null;
+  res.json(centers.filter((center) => !status || center.verificationStatus === status).map((center) => {
+    const subscription = subscriptions.find((item) => item.centerId === center.id);
+    const plan = plans.find((item) => item.id === subscription?.planId);
+    const held = escrows.filter((item) => item.centerId === center.id && ["held", "frozen"].includes(item.status)).reduce((sum, item) => sum + item.netAmount, 0);
+    return {
+      id: center.id, name: center.name, city: center.city, description: center.description, imageUrl: center.imageUrl,
+      verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
+      verifiedAt: center.verifiedAt?.toISOString() ?? null, subscriptionStatus: subscription?.status ?? null,
+      subscriptionPlanId: subscription?.planId ?? null, subscriptionPlan: plan?.name ?? null, heldAmount: held,
+      createdAt: center.createdAt.toISOString(),
+    };
+  }));
+});
+
+router.patch("/admin/education/centers/:centerId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const centerId = String(req.params.centerId);
+  const [center] = await db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1);
+  if (!center) { res.status(404).json({ error: "Edukativni centar nije pronađen." }); return; }
+  const verificationStatus = typeof req.body?.verificationStatus === "string" ? req.body.verificationStatus : center.verificationStatus;
+  const allowedVerification = ["pending", "verified", "rejected", "suspended"];
+  const subscriptionStatus = typeof req.body?.subscriptionStatus === "string" ? req.body.subscriptionStatus : undefined;
+  const allowedSubscription = ["trial", "active", "past_due", "cancelled", "suspended", "free_via_loyalty"];
+  if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
+    res.status(400).json({ error: "Status nije ispravan." }); return;
+  }
+  const [updated] = await db.update(educationCentersTable).set({
+    verificationStatus: verificationStatus as typeof center.verificationStatus,
+    verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : center.verificationNote,
+    verifiedAt: verificationStatus === "verified" ? new Date() : null,
+    verifiedByUserId: verificationStatus === "verified" ? user.id : null,
+    updatedAt: new Date(),
+  }).where(eq(educationCentersTable.id, center.id)).returning();
+  if (subscriptionStatus) {
+    const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
+    const [existing] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, center.id)).limit(1);
+    if (existing) {
+      await db.update(educationCenterSubscriptionsTable).set({
+        status: subscriptionStatus as typeof existing.status,
+        ...(planId ? { planId } : {}),
+        currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : existing.currentPeriodEnd,
+        updatedAt: new Date(),
+      }).where(eq(educationCenterSubscriptionsTable.id, existing.id));
+    } else {
+      const [fallbackPlan] = planId
+        ? await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planId)).limit(1)
+        : await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
+      if (!fallbackPlan) { res.status(409).json({ error: "Pre aktivacije pretplate mora postojati aktivan plan." }); return; }
+      await db.insert(educationCenterSubscriptionsTable).values({
+        centerId: center.id, planId: fallbackPlan.id, status: subscriptionStatus as "trial" | "active" | "past_due" | "cancelled" | "suspended" | "free_via_loyalty",
+        dueAmount: fallbackPlan.price, currentPeriodEnd: subscriptionStatus === "active" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
+      });
+    }
+  }
+  res.json({ id: updated!.id, verificationStatus: updated!.verificationStatus, verificationNote: updated!.verificationNote, verifiedAt: updated!.verifiedAt?.toISOString() ?? null });
+});
+
+router.get("/admin/education/finance", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  await refreshMatureEducationEscrows();
+  const centerId = typeof req.query.centerId === "string" ? req.query.centerId : null;
+  const status = typeof req.query.status === "string" ? req.query.status : null;
+  const [escrows, centers, enrollments, courses, disputes, payouts] = await Promise.all([
+    db.select().from(educationEscrowsTable).orderBy(desc(educationEscrowsTable.createdAt)),
+    db.select().from(educationCentersTable),
+    db.select().from(courseEnrollmentsTable),
+    db.select().from(coursesTable),
+    db.select().from(educationDisputesTable),
+    db.select().from(educationPayoutsTable).orderBy(desc(educationPayoutsTable.createdAt)),
+  ]);
+  const filtered = escrows.filter((escrow) => (!centerId || escrow.centerId === centerId) && (!status || escrow.status === status));
+  const rows = filtered.map((escrow) => {
+    const enrollment = enrollments.find((item) => item.id === escrow.enrollmentId);
+    const course = courses.find((item) => item.id === enrollment?.courseId);
+    const center = centers.find((item) => item.id === escrow.centerId);
+    const dispute = disputes.find((item) => item.enrollmentId === escrow.enrollmentId && ["open", "under_review"].includes(item.status));
+    return {
+      id: escrow.id, enrollmentId: escrow.enrollmentId, centerId: escrow.centerId, centerName: center?.name ?? "Obrisan centar",
+      courseTitle: course?.title ?? "Arhivirana edukacija", grossAmount: escrow.grossAmount, platformFee: escrow.platformFee,
+      reserveAmount: escrow.reserveAmount, netAmount: escrow.netAmount, status: escrow.status,
+      releaseAt: escrow.releaseAt.toISOString(), netPaidAt: escrow.netPaidAt?.toISOString() ?? null,
+      reservePaidAt: escrow.reservePaidAt?.toISOString() ?? null, disputeOpen: Boolean(dispute), createdAt: escrow.createdAt.toISOString(),
+    };
+  });
+  res.json({
+    summary: {
+      held: rows.filter((row) => row.status === "held").reduce((sum, row) => sum + row.netAmount, 0),
+      ready: rows.filter((row) => row.status === "ready_for_payout").reduce((sum, row) => sum + row.netAmount, 0),
+      frozen: rows.filter((row) => row.status === "frozen").reduce((sum, row) => sum + row.netAmount, 0),
+      paidOut: rows.filter((row) => row.status === "paid_out").reduce((sum, row) => sum + row.netAmount, 0),
+    },
+    escrows: rows,
+    pendingEnrollments: enrollments.filter((enrollment) => enrollment.status === "pending" && enrollment.paymentStatus === "pending").map((enrollment) => {
+      const course = courses.find((item) => item.id === enrollment.courseId);
+      return { id: enrollment.id, courseTitle: course?.title ?? "Arhivirana edukacija", purchaserId: enrollment.purchaserId, amount: course?.price ?? 0, createdAt: enrollment.purchasedAt.toISOString() };
+    }),
+    payouts: payouts.map((payout) => ({ ...payout, paidAt: payout.paidAt?.toISOString() ?? null, createdAt: payout.createdAt.toISOString() })),
+  });
+});
+
+router.post("/admin/education/payouts", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  await refreshMatureEducationEscrows();
+  const centerId = typeof req.body?.centerId === "string" ? req.body.centerId : "";
+  const includeReserve = req.body?.includeReserve === true;
+  if (!centerId) { res.status(400).json({ error: "Izaberite edukativni centar." }); return; }
+  if (includeReserve && (new Date().getUTCMonth() + 1) % 3 !== 0) {
+    res.status(409).json({ error: "Rezerva se može evidentirati samo tokom poslednjeg meseca kvartala." }); return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  let payout: typeof educationPayoutsTable.$inferSelect;
+  try {
+    payout = await db.transaction(async (tx) => {
+      // All financial operations for a center acquire this advisory lock before reading escrow rows.
+      // It serializes payout and dispute-resolution decisions even when they target different enrollments.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${centerId}`}))`);
+      const openDisputes = await tx.select({ id: educationDisputesTable.id }).from(educationDisputesTable)
+        .innerJoin(courseEnrollmentsTable, eq(educationDisputesTable.enrollmentId, courseEnrollmentsTable.id))
+        .innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id))
+        .where(and(eq(coursesTable.centerId, centerId), inArray(educationDisputesTable.status, ["open", "under_review"])));
+      if (openDisputes.length) throw new Error("Isplata nije moguća dok centar ima otvoren spor.");
+      const ready = await tx.select().from(educationEscrowsTable)
+        .where(and(eq(educationEscrowsTable.centerId, centerId), eq(educationEscrowsTable.status, "ready_for_payout"), sql`${educationEscrowsTable.releaseAt} <= now()`))
+        .for("update");
+      const netEscrows = ready.filter((escrow) => !escrow.netPaidAt);
+      const reserveEscrows = includeReserve ? ready.filter((escrow) => !escrow.reservePaidAt) : [];
+      const amount = netEscrows.reduce((sum, escrow) => sum + escrow.netAmount, 0) + reserveEscrows.reduce((sum, escrow) => sum + escrow.reserveAmount, 0);
+      if (!amount) throw new Error("Nema sredstava podobnih za isplatu.");
+    const [created] = await tx.insert(educationPayoutsTable).values({
+      centerId, amount, periodStart: today, periodEnd: today, status: "paid",
+      reference: typeof req.body?.reference === "string" ? req.body.reference.trim().slice(0, 120) || null : null,
+      note: typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 2000) || null : null,
+      createdByUserId: user.id, paidAt: new Date(),
+    }).returning();
+    for (const escrow of netEscrows) {
+      const payReserve = reserveEscrows.some((item) => item.id === escrow.id);
+      const [claimed] = await tx.update(educationEscrowsTable).set({
+        netPaidAt: new Date(), ...(payReserve ? { reservePaidAt: new Date(), status: "paid_out" as const } : { status: "ready_for_payout" as const }), updatedAt: new Date(),
+      }).where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "ready_for_payout"), sql`${educationEscrowsTable.netPaidAt} is null`, ...(payReserve ? [sql`${educationEscrowsTable.reservePaidAt} is null`] : []))).returning();
+      if (!claimed) throw new Error("Escrow više nije podoban za isplatu.");
+      await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: escrow.enrollmentId, centerId, type: "payout", amount: -escrow.netAmount, note: "Ručna isplata neto iznosa.", actorUserId: user.id, metadata: { payoutId: created!.id } });
+      if (payReserve) await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: escrow.enrollmentId, centerId, type: "payout", amount: -escrow.reserveAmount, note: "Kvartalna isplata rezerve.", actorUserId: user.id, metadata: { payoutId: created!.id, reserve: true } });
+    }
+    for (const escrow of reserveEscrows.filter((item) => item.netPaidAt)) {
+      const [claimed] = await tx.update(educationEscrowsTable).set({ reservePaidAt: new Date(), status: "paid_out", updatedAt: new Date() })
+        .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "ready_for_payout"), sql`${educationEscrowsTable.netPaidAt} is not null`, sql`${educationEscrowsTable.reservePaidAt} is null`)).returning();
+      if (!claimed) throw new Error("Rezerva više nije podobna za isplatu.");
+      await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: escrow.enrollmentId, centerId, type: "payout", amount: -escrow.reserveAmount, note: "Kvartalna isplata rezerve.", actorUserId: user.id, metadata: { payoutId: created!.id, reserve: true } });
+    }
+    return created!;
+    });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Isplata nije moguća." });
+    return;
+  }
+  res.status(201).json({ id: payout.id, centerId: payout.centerId, amount: payout.amount, status: payout.status, paidAt: payout.paidAt?.toISOString() ?? null });
+});
+
+router.patch("/admin/education/disputes/:disputeId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const action = typeof req.body?.action === "string" ? req.body.action : "";
+  const resolutionNote = typeof req.body?.resolutionNote === "string" ? req.body.resolutionNote.trim().slice(0, 4000) : "";
+  if (!["refund", "release", "reject"].includes(action) || !resolutionNote) { res.status(400).json({ error: "Izaberite odluku i unesite obrazloženje." }); return; }
+  const [disputePreview] = await db.select().from(educationDisputesTable).where(eq(educationDisputesTable.id, String(req.params.disputeId))).limit(1);
+  if (!disputePreview) { res.status(404).json({ error: "Spor nije pronađen." }); return; }
+  const [escrowPreview] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, disputePreview.enrollmentId)).limit(1);
+  if (!escrowPreview) { res.status(409).json({ error: "Spor nema escrow zapis za rešavanje." }); return; }
+  let resolution: { result: typeof educationDisputesTable.$inferSelect; enrollment: typeof courseEnrollmentsTable.$inferSelect };
+  try {
+    resolution = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${escrowPreview.centerId}`}))`);
+    const [dispute] = await tx.select().from(educationDisputesTable).where(eq(educationDisputesTable.id, disputePreview.id)).for("update").limit(1);
+    const [enrollment] = await tx.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, dispute!.enrollmentId)).for("update").limit(1);
+    const [escrow] = await tx.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, dispute!.enrollmentId)).for("update").limit(1);
+    if (!dispute || !enrollment || !escrow || !["open", "under_review"].includes(dispute.status)) throw new Error("Spor nije otvoren ili je već rešen.");
+    if ((escrow.netPaidAt || escrow.reservePaidAt) && action === "reject") {
+      const [rejected] = await tx.update(educationDisputesTable).set({
+        status: "rejected", resolutionNote, resolvedByUserId: user.id, resolvedAt: new Date(), updatedAt: new Date(),
+      }).where(and(eq(educationDisputesTable.id, dispute.id), inArray(educationDisputesTable.status, ["open", "under_review"]))).returning();
+      if (!rejected) throw new Error("Spor je već izmenjen u drugoj operaciji.");
+      const reconciledStatus = escrow.reservePaidAt ? "paid_out" : escrow.releaseAt <= new Date() ? "ready_for_payout" : "held";
+      if (escrow.status === "frozen") {
+        await tx.update(educationEscrowsTable).set({ status: reconciledStatus, updatedAt: new Date() })
+          .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "frozen"))).returning();
+      }
+      await tx.insert(educationFinancialEventsTable).values({
+        escrowId: escrow.id, enrollmentId: dispute.enrollmentId, actorUserId: user.id,
+        eventType: "dispute_rejected_after_payout", previousStatus: escrow.status, nextStatus: reconciledStatus, note: resolutionNote,
+      });
+      return { result: rejected, enrollment };
+    }
+    if (escrow.status !== "frozen" || escrow.netPaidAt || escrow.reservePaidAt) throw new Error("Ovaj escrow više nije u zamrznutom stanju i ne može se rešiti ovom odlukom.");
+    const disputeStatus = action === "refund" ? "resolved_refund" : action === "release" ? "resolved_payout" : "rejected";
+    const [updatedDispute] = await tx.update(educationDisputesTable).set({
+      status: disputeStatus, resolutionNote, resolvedByUserId: user.id, resolvedAt: new Date(), updatedAt: new Date(),
+    }).where(and(eq(educationDisputesTable.id, dispute.id), inArray(educationDisputesTable.status, ["open", "under_review"]))).returning();
+    if (!updatedDispute) throw new Error("Spor je već izmenjen u drugoj operaciji.");
+      const nextStatus = action === "refund" ? "refunded" : escrow.releaseAt <= new Date() ? "ready_for_payout" : "held";
+      const [updatedEscrow] = await tx.update(educationEscrowsTable).set({ status: nextStatus, updatedAt: new Date() })
+        .where(and(eq(educationEscrowsTable.id, escrow.id), eq(educationEscrowsTable.status, "frozen"), sql`${educationEscrowsTable.netPaidAt} is null`, sql`${educationEscrowsTable.reservePaidAt} is null`)).returning();
+      if (!updatedEscrow) throw new Error("Escrow je izmenjen u drugoj finansijskoj operaciji.");
+      await tx.insert(educationFinancialEventsTable).values({
+        escrowId: escrow.id, enrollmentId: dispute.enrollmentId, actorUserId: user.id,
+        eventType: `dispute_${action}`, previousStatus: escrow.status, nextStatus, amount: action === "refund" ? -escrow.grossAmount : null, note: resolutionNote,
+      });
+      if (action === "refund") {
+        await tx.insert(educationLedgerEntriesTable).values({ escrowId: escrow.id, enrollmentId: dispute.enrollmentId, centerId: escrow.centerId, type: "refund", amount: -escrow.grossAmount, note: resolutionNote, actorUserId: user.id });
+        await tx.update(courseEnrollmentsTable).set({ paymentStatus: "refunded", status: "cancelled", updatedAt: new Date() }).where(eq(courseEnrollmentsTable.id, enrollment.id));
+      }
+    return { result: updatedDispute, enrollment };
+    });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Odluka o sporu nije moguća." });
+    return;
+  }
+  if (resolution.enrollment) {
+    await sendTransactionalEmail({
+      eventKey: `education-dispute:${resolution.result.id}:resolution`,
+      emailType: "education_dispute_resolution",
+      to: { email: (await db.select().from(usersTable).where(eq(usersTable.id, resolution.enrollment.purchaserId)).limit(1))[0]?.email ?? "", name: "LUMERA korisnik" },
+      subject: "LUMERA Edukacije — odluka o prijavljenom problemu",
+      htmlContent: lumeraEmailHtml("Odluka o prijavljenom problemu", `<p>${emailSafe(resolutionNote)}</p>`),
+      metadata: { disputeId: resolution.result.id, enrollmentId: resolution.result.enrollmentId, action },
+    });
+  }
+  res.json({ id: resolution.result.id, status: resolution.result.status, resolutionNote: resolution.result.resolutionNote, resolvedAt: resolution.result.resolvedAt?.toISOString() ?? null });
+});
 
 // ── Admin Salons ──────────────────────────────────────────────────────────────
 

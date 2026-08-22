@@ -1849,6 +1849,21 @@ export const EducationEnrollmentPaymentStatus = {
   refunded: 'refunded',
 } as const;
 
+/**
+ * @nullable
+ */
+export type EducationEnrollmentEscrowStatus = typeof EducationEnrollmentEscrowStatus[keyof typeof EducationEnrollmentEscrowStatus] | null;
+
+
+export const EducationEnrollmentEscrowStatus = {
+  held: 'held',
+  ready_for_payout: 'ready_for_payout',
+  frozen: 'frozen',
+  paid_out: 'paid_out',
+  refunded: 'refunded',
+  partially_refunded: 'partially_refunded',
+} as const;
+
 export interface EducationEnrollment {
   id: string;
   courseId: string;
@@ -1862,6 +1877,265 @@ export interface EducationEnrollment {
   /** @nullable */
   nextLesson?: string | null;
   purchasedAt: string;
+  /** @nullable */
+  escrowStatus?: EducationEnrollmentEscrowStatus;
+  /** @nullable */
+  escrowReleaseAt?: string | null;
+}
+
+export type EducationCenterStatusVerificationStatus = typeof EducationCenterStatusVerificationStatus[keyof typeof EducationCenterStatusVerificationStatus];
+
+
+export const EducationCenterStatusVerificationStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  rejected: 'rejected',
+  suspended: 'suspended',
+} as const;
+
+/**
+ * @nullable
+ */
+export type EducationCenterStatusSubscriptionStatus = typeof EducationCenterStatusSubscriptionStatus[keyof typeof EducationCenterStatusSubscriptionStatus] | null;
+
+
+export const EducationCenterStatusSubscriptionStatus = {
+  trial: 'trial',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  suspended: 'suspended',
+  free_via_loyalty: 'free_via_loyalty',
+} as const;
+
+export interface EducationCenterStatus {
+  id: string;
+  name: string;
+  verificationStatus: EducationCenterStatusVerificationStatus;
+  /** @nullable */
+  verificationNote?: string | null;
+  /** @nullable */
+  subscriptionStatus?: EducationCenterStatusSubscriptionStatus;
+  /** @nullable */
+  currentPeriodEnd?: string | null;
+  eligible: boolean;
+}
+
+export interface EducationMessage {
+  id: string;
+  body: string;
+  senderId: string;
+  senderName: string;
+  createdAt: string;
+  /** @nullable */
+  readAt?: string | null;
+}
+
+export type EducationMessageThreadThreadStatus = typeof EducationMessageThreadThreadStatus[keyof typeof EducationMessageThreadThreadStatus];
+
+
+export const EducationMessageThreadThreadStatus = {
+  open: 'open',
+  closed: 'closed',
+} as const;
+
+export type EducationMessageThreadThread = {
+  id: string;
+  status: EducationMessageThreadThreadStatus;
+  enrollmentId: string;
+} | null;
+
+export interface EducationMessageThread {
+  thread: EducationMessageThreadThread;
+  messages: EducationMessage[];
+}
+
+export type EducationDisputeStatus = typeof EducationDisputeStatus[keyof typeof EducationDisputeStatus];
+
+
+export const EducationDisputeStatus = {
+  open: 'open',
+  under_review: 'under_review',
+  resolved_refund: 'resolved_refund',
+  resolved_payout: 'resolved_payout',
+  rejected: 'rejected',
+  cancelled: 'cancelled',
+} as const;
+
+export interface EducationDispute {
+  id: string;
+  enrollmentId: string;
+  courseTitle?: string;
+  reason: string;
+  details: string;
+  status: EducationDisputeStatus;
+  /** @nullable */
+  resolutionNote?: string | null;
+  createdAt: string;
+  /** @nullable */
+  resolvedAt?: string | null;
+}
+
+export interface EducationMarketplaceSettingsInput {
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  commissionPercent: number;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  reservePercent: number;
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  onlineRefundDays: number;
+  /**
+     * @minimum 0
+     * @maximum 365
+     */
+  liveAppealDays: number;
+}
+
+export type EducationMarketplaceSettings = EducationMarketplaceSettingsInput & {
+  id: string;
+  updatedAt: string;
+};
+
+export type EducationAdminCenterVerificationStatus = typeof EducationAdminCenterVerificationStatus[keyof typeof EducationAdminCenterVerificationStatus];
+
+
+export const EducationAdminCenterVerificationStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  rejected: 'rejected',
+  suspended: 'suspended',
+} as const;
+
+export interface EducationAdminCenter {
+  id: string;
+  name: string;
+  city: string;
+  verificationStatus: EducationAdminCenterVerificationStatus;
+  /** @nullable */
+  verificationNote?: string | null;
+  /** @nullable */
+  subscriptionStatus?: string | null;
+  /** @nullable */
+  subscriptionPlanId?: string | null;
+  /** @nullable */
+  subscriptionPlan?: string | null;
+  heldAmount: number;
+}
+
+export type EducationAdminCenterUpdateVerificationStatus = typeof EducationAdminCenterUpdateVerificationStatus[keyof typeof EducationAdminCenterUpdateVerificationStatus];
+
+
+export const EducationAdminCenterUpdateVerificationStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  rejected: 'rejected',
+  suspended: 'suspended',
+} as const;
+
+export type EducationAdminCenterUpdateSubscriptionStatus = typeof EducationAdminCenterUpdateSubscriptionStatus[keyof typeof EducationAdminCenterUpdateSubscriptionStatus];
+
+
+export const EducationAdminCenterUpdateSubscriptionStatus = {
+  trial: 'trial',
+  active: 'active',
+  past_due: 'past_due',
+  cancelled: 'cancelled',
+  suspended: 'suspended',
+  free_via_loyalty: 'free_via_loyalty',
+} as const;
+
+export interface EducationAdminCenterUpdate {
+  verificationStatus?: EducationAdminCenterUpdateVerificationStatus;
+  /** @nullable */
+  verificationNote?: string | null;
+  subscriptionStatus?: EducationAdminCenterUpdateSubscriptionStatus;
+  planId?: string;
+}
+
+export type EducationFinanceEscrowStatus = typeof EducationFinanceEscrowStatus[keyof typeof EducationFinanceEscrowStatus];
+
+
+export const EducationFinanceEscrowStatus = {
+  held: 'held',
+  ready_for_payout: 'ready_for_payout',
+  frozen: 'frozen',
+  paid_out: 'paid_out',
+  refunded: 'refunded',
+  partially_refunded: 'partially_refunded',
+} as const;
+
+export interface EducationFinanceEscrow {
+  id: string;
+  enrollmentId: string;
+  centerId: string;
+  centerName?: string;
+  courseTitle?: string;
+  grossAmount: number;
+  platformFee: number;
+  reserveAmount: number;
+  netAmount: number;
+  status: EducationFinanceEscrowStatus;
+  releaseAt: string;
+  disputeOpen: boolean;
+}
+
+export type EducationFinanceOverviewSummary = {[key: string]: number};
+
+export type EducationPayoutStatus = typeof EducationPayoutStatus[keyof typeof EducationPayoutStatus];
+
+
+export const EducationPayoutStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  cancelled: 'cancelled',
+} as const;
+
+export interface EducationPayout {
+  id: string;
+  centerId: string;
+  amount: number;
+  status: EducationPayoutStatus;
+  /** @nullable */
+  paidAt?: string | null;
+}
+
+export interface EducationFinanceOverview {
+  summary: EducationFinanceOverviewSummary;
+  escrows: EducationFinanceEscrow[];
+  payouts: EducationPayout[];
+}
+
+export interface EducationPayoutInput {
+  centerId: string;
+  includeReserve?: boolean;
+  reference?: string;
+  note?: string;
+}
+
+export type EducationDisputeResolutionInputAction = typeof EducationDisputeResolutionInputAction[keyof typeof EducationDisputeResolutionInputAction];
+
+
+export const EducationDisputeResolutionInputAction = {
+  refund: 'refund',
+  release: 'release',
+  reject: 'reject',
+} as const;
+
+export interface EducationDisputeResolutionInput {
+  action: EducationDisputeResolutionInputAction;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  resolutionNote: string;
 }
 
 export interface EducationLms {
@@ -2586,6 +2860,27 @@ export const AdminListOrdersDeliveryMethod = {
   courier: 'courier',
   personal_belgrade: 'personal_belgrade',
 } as const;
+
+export type CreateEducationPurchaseMessageBody = {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  body: string;
+};
+
+export type CreateEducationDisputeBody = {
+  /**
+     * @minLength 1
+     * @maxLength 160
+     */
+  reason: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  details: string;
+};
 
 export type ListCoursesParams = {
 format?: ListCoursesFormat;

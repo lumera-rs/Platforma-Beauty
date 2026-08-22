@@ -19,6 +19,7 @@ import BusinessAuth from './pages/business-auth';
 import BusinessLanding from './pages/business-landing';
 import BusinessHub from './pages/business-hub';
 import BusinessEducation from './pages/business-education';
+import EducationMarketplace from './pages/education-marketplace';
 import MarketplaceGuides from './pages/marketplace-guides';
 import Salons from './pages/salons';
 import SalonProfile from './pages/salon-profile';
@@ -47,6 +48,7 @@ import AdminOrders from './pages/admin/orders';
 import AdminEmailMarketing from './pages/admin/email-marketing';
 import AdminSmsDeliveries from './pages/admin/sms-deliveries';
 import AdminIntegrations from './pages/admin/integrations';
+import AdminEducationMarketplace from './pages/admin/education-marketplace';
 import { OwnerCartPage, OwnerCheckoutDeliveryPage, OwnerCheckoutReviewPage, OwnerOrderConfirmationPage } from './pages/owner/checkout';
 import { Layout } from './components/layout';
 import { homeForRole } from './lib/role-routing';
@@ -169,6 +171,11 @@ function Router() {
             <BusinessEducation />
           </RoleGuard>
         </Route>
+        <Route path="/moj-nalog/edukacije/lms/:enrollmentId">
+          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+            <BusinessEducation />
+          </RoleGuard>
+        </Route>
         <Route path="/biznis/edukacije/:courseId">
           <RoleGuard allowedRoles={['SALON_OWNER', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
             <BusinessEducation />
@@ -198,7 +205,7 @@ function Router() {
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
-        <Route path="/edukacije"><LegacyEducationRedirect /></Route>
+        <Route path="/edukacije"><EducationMarketplace /></Route>
 
         <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
         <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>
@@ -216,6 +223,7 @@ function Router() {
         <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
+        <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
         
         <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>

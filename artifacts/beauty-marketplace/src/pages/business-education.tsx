@@ -55,13 +55,14 @@ const courseSchema = z.object({
 
 export default function BusinessEducation() {
   const [matchLms, paramsLms] = useRoute("/biznis/edukacije/lms/:enrollmentId");
+  const [matchCustomerLms, customerLmsParams] = useRoute("/moj-nalog/edukacije/lms/:enrollmentId");
   const [matchCourse, paramsCourse] = useRoute("/biznis/edukacije/:courseId");
   const { data: userResponse } = useGetCurrentUser();
 
-  if (matchLms && paramsLms) {
+  if ((matchLms && paramsLms) || (matchCustomerLms && customerLmsParams)) {
     return (
       <BusinessLayout>
-        <LmsView enrollmentId={paramsLms.enrollmentId} />
+        <LmsView enrollmentId={(paramsLms ?? customerLmsParams)!.enrollmentId} />
       </BusinessLayout>
     );
   }

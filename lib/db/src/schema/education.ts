@@ -1,19 +1,29 @@
 import {
   boolean,
   date,
+  index,
   jsonb,
   integer,
   pgEnum,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { employeesTable, salonsTable, usersTable } from "./core";
+import { paymentMethodEnum, subscriptionStatusEnum, subscriptionPlansTable } from "./commerce";
 
 export const courseFormatEnum = pgEnum("course_format", ["online", "in-person", "hybrid"]);
 export const educationEnrollmentStatusEnum = pgEnum("education_enrollment_status", ["pending", "active", "completed", "cancelled"]);
 export const educationPaymentStatusEnum = pgEnum("education_payment_status", ["pending", "paid", "failed", "refunded"]);
+export const educationCenterVerificationStatusEnum = pgEnum("education_center_verification_status", ["pending", "verified", "rejected", "suspended"]);
+export const educationEscrowStatusEnum = pgEnum("education_escrow_status", ["held", "ready_for_payout", "frozen", "paid_out", "refunded", "partially_refunded"]);
+export const educationLedgerEntryTypeEnum = pgEnum("education_ledger_entry_type", ["charge", "platform_fee", "reserve_hold", "release", "payout", "refund", "adjustment"]);
+export const educationPayoutStatusEnum = pgEnum("education_payout_status", ["pending", "paid", "cancelled"]);
+export const educationDisputeStatusEnum = pgEnum("education_dispute_status", ["open", "under_review", "resolved_refund", "resolved_payout", "rejected", "cancelled"]);
+export const educationThreadStatusEnum = pgEnum("education_thread_status", ["open", "closed"]);
 
 export const educationCentersTable = pgTable("education_centers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -22,6 +32,38 @@ export const educationCentersTable = pgTable("education_centers", {
   city: text("city").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url").notNull(),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  contactAddress: text("contact_address"),
+  verificationStatus: educationCenterVerificationStatusEnum("verification_status").notNull().default("pending"),
+  verificationNote: text("verification_note"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedByUserId: uuid("verified_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const educationCenterSubscriptionsTable = pgTable("education_center_subscriptions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().unique().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  planId: uuid("plan_id").notNull().references(() => subscriptionPlansTable.id),
+  status: subscriptionStatusEnum("status").notNull().default("trial"),
+  dueAmount: integer("due_amount").notNull().default(0),
+  paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const educationPlatformSettingsTable = pgTable("education_platform_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  commissionPercent: integer("commission_percent").notNull().default(15),
+  reservePercent: integer("reserve_percent").notNull().default(10),
+  onlineRefundDays: integer("online_refund_days").notNull().default(14),
+  liveAppealDays: integer("live_appeal_days").notNull().default(7),
+  updatedByUserId: uuid("updated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const courseCategoriesTable = pgTable("course_categories", {
@@ -95,10 +137,126 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   progress: integer("progress").notNull().default(0),
   nextLesson: text("next_lesson"),
   purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),
+  accessGrantedAt: timestamp("access_granted_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
+  idempotencyKey: text("idempotency_key"),
+  idempotencyFingerprint: text("idempotency_fingerprint"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("course_enrollments_course_purchaser_participant_unique")
+    .on(table.courseId, table.purchaserId, sql`coalesce(${table.employeeId}, '00000000-0000-0000-0000-000000000000'::uuid)`)
+    .where(sql`${table.status} <> 'cancelled'`),
+  uniqueIndex("course_enrollments_purchaser_idempotency_unique")
+    .on(table.purchaserId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} is not null`),
+]);
+
+export const educationEscrowsTable = pgTable("education_escrows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enrollmentId: uuid("enrollment_id").notNull().unique().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  grossAmount: integer("gross_amount").notNull(),
+  platformFee: integer("platform_fee").notNull(),
+  reserveAmount: integer("reserve_amount").notNull(),
+  netAmount: integer("net_amount").notNull(),
+  releaseAt: timestamp("release_at", { withTimezone: true }).notNull(),
+  status: educationEscrowStatusEnum("status").notNull().default("held"),
+  paymentReference: text("payment_reference"),
+  frozenAt: timestamp("frozen_at", { withTimezone: true }),
+  releasedAt: timestamp("released_at", { withTimezone: true }),
+  netPaidAt: timestamp("net_paid_at", { withTimezone: true }),
+  reservePaidAt: timestamp("reserve_paid_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_escrows_center_status_idx").on(table.centerId, table.status),
+  index("education_escrows_release_idx").on(table.status, table.releaseAt),
+]);
+
+export const educationLedgerEntriesTable = pgTable("education_ledger_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  escrowId: uuid("escrow_id").notNull().references(() => educationEscrowsTable.id, { onDelete: "cascade" }),
+  enrollmentId: uuid("enrollment_id").notNull().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  type: educationLedgerEntryTypeEnum("type").notNull(),
+  amount: integer("amount").notNull(),
+  note: text("note"),
+  actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  idempotencyKey: text("idempotency_key").unique(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_ledger_center_created_idx").on(table.centerId, table.createdAt),
+  index("education_ledger_enrollment_created_idx").on(table.enrollmentId, table.createdAt),
+]);
+
+export const educationPayoutsTable = pgTable("education_payouts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  periodStart: date("period_start", { mode: "string" }).notNull(),
+  periodEnd: date("period_end", { mode: "string" }).notNull(),
+  status: educationPayoutStatusEnum("status").notNull().default("pending"),
+  reference: text("reference"),
+  note: text("note"),
+  createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const educationFinancialEventsTable = pgTable("education_financial_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  escrowId: uuid("escrow_id").references(() => educationEscrowsTable.id, { onDelete: "cascade" }),
+  enrollmentId: uuid("enrollment_id").references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull(),
+  previousStatus: text("previous_status"),
+  nextStatus: text("next_status"),
+  amount: integer("amount"),
+  note: text("note"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_financial_events_escrow_created_idx").on(table.escrowId, table.createdAt),
+]);
+
+export const educationDisputesTable = pgTable("education_disputes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enrollmentId: uuid("enrollment_id").notNull().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  openedByUserId: uuid("opened_by_user_id").notNull().references(() => usersTable.id),
+  reason: text("reason").notNull(),
+  details: text("details").notNull(),
+  status: educationDisputeStatusEnum("status").notNull().default("open"),
+  resolutionNote: text("resolution_note"),
+  resolvedByUserId: uuid("resolved_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_disputes_status_created_idx").on(table.status, table.createdAt),
+]);
+
+export const educationThreadsTable = pgTable("education_threads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enrollmentId: uuid("enrollment_id").notNull().unique().references(() => courseEnrollmentsTable.id, { onDelete: "cascade" }),
+  purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").notNull().references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  status: educationThreadStatusEnum("status").notNull().default("open"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const educationMessagesTable = pgTable("education_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  threadId: uuid("thread_id").notNull().references(() => educationThreadsTable.id, { onDelete: "cascade" }),
+  senderId: uuid("sender_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_messages_thread_created_idx").on(table.threadId, table.createdAt),
+]);
 
 export const lessonProgressTable = pgTable("lesson_progress", {
   id: uuid("id").defaultRandom().primaryKey(),

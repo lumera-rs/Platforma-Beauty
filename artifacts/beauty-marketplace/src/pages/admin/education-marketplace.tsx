@@ -1,0 +1,117 @@
+import { useEffect, useState } from "react";
+import { AlertTriangle, BadgeCheck, Banknote, Building2, Loader2, Save, ShieldAlert } from "lucide-react";
+import { AdminLayout } from "./layout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+
+type Center = { id: string; name: string; city: string; verificationStatus: string; verificationNote: string | null; subscriptionStatus: string | null; subscriptionPlan: string | null; heldAmount: number };
+type Escrow = { id: string; centerId: string; centerName: string; courseTitle: string; grossAmount: number; platformFee: number; reserveAmount: number; netAmount: number; status: string; releaseAt: string; disputeOpen: boolean; netPaidAt: string | null; reservePaidAt: string | null };
+type Dispute = { id: string; enrollmentId: string; courseTitle: string; reason: string; details: string; status: string; resolutionNote: string | null; createdAt: string };
+type Settings = { commissionPercent: number; reservePercent: number; onlineRefundDays: number; liveAppealDays: number };
+type PendingEnrollment = { id: string; courseTitle: string; amount: number; createdAt: string };
+
+const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
+const api = async <T,>(url: string, options?: RequestInit) => {
+  const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...(options?.headers ?? {}) } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error ?? "Zahtev nije uspeo.");
+  return body as T;
+};
+
+export default function AdminEducationMarketplace() {
+  const { toast } = useToast();
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [finance, setFinance] = useState<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[] }>({ summary: {}, escrows: [], pendingEnrollments: [] });
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [nextSettings, nextCenters, nextFinance, nextDisputes] = await Promise.all([
+        api<Settings>("/api/admin/education/settings"),
+        api<Center[]>("/api/admin/education/centers"),
+        api<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[] }>("/api/admin/education/finance"),
+        api<Dispute[]>("/api/education/disputes"),
+      ]);
+      setSettings(nextSettings); setCenters(nextCenters); setFinance(nextFinance); setDisputes(nextDisputes);
+    } catch (error) { toast.error("Edukacije nisu učitane", { description: error instanceof Error ? error.message : undefined }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const saveSettings = async () => {
+    if (!settings) return;
+    try { setSettings(await api<Settings>("/api/admin/education/settings", { method: "PATCH", body: JSON.stringify(settings) })); toast.success("Pravila obračuna su sačuvana."); }
+    catch (error) { toast.error("Promena nije sačuvana", { description: error instanceof Error ? error.message : undefined }); }
+  };
+  const changeCenter = async (center: Center, verificationStatus: string) => {
+    try {
+      await api(`/api/admin/education/centers/${center.id}`, { method: "PATCH", body: JSON.stringify({ verificationStatus, subscriptionStatus: verificationStatus === "verified" ? "active" : undefined }) });
+      toast.success("Status centra je ažuriran."); await load();
+    } catch (error) { toast.error("Status nije promenjen", { description: error instanceof Error ? error.message : undefined }); }
+  };
+  const settle = async (enrollment: PendingEnrollment) => {
+    if (!window.confirm(`Potvrditi ručnu uplatu za “${enrollment.courseTitle}”? Tek tada se kreiraju escrow i pristup kursu.`)) return;
+    try { await api(`/api/admin/education/enrollments/${enrollment.id}/settle`, { method: "POST" }); toast.success("Uplata je potvrđena i pristup je aktiviran."); await load(); }
+    catch (error) { toast.error("Uplata nije potvrđena", { description: error instanceof Error ? error.message : undefined }); }
+  };
+  const resolveDispute = async (dispute: Dispute, action: "refund" | "release" | "reject") => {
+    const resolutionNote = window.prompt("Unesite obrazloženje odluke:");
+    if (!resolutionNote?.trim()) return;
+    try {
+      await api(`/api/admin/education/disputes/${dispute.id}`, { method: "PATCH", body: JSON.stringify({ action, resolutionNote }) });
+      toast.success("Odluka o sporu je evidentirana."); await load();
+    } catch (error) { toast.error("Odluka nije sačuvana", { description: error instanceof Error ? error.message : undefined }); }
+  };
+  const payout = async (centerId: string) => {
+    try { await api("/api/admin/education/payouts", { method: "POST", body: JSON.stringify({ centerId }) }); toast.success("Ručna isplata neto iznosa je evidentirana."); await load(); }
+    catch (error) { toast.error("Isplata nije moguća", { description: error instanceof Error ? error.message : undefined }); }
+  };
+
+  return <AdminLayout>
+    <div className="space-y-7">
+      <div><p className="text-sm font-semibold uppercase tracking-[.16em] text-primary">LUMERA Edukacije</p><h1 className="mt-1 font-serif text-3xl font-bold">Zaštita kupovina i obračun</h1><p className="mt-2 text-muted-foreground">Interna escrow evidencija — bez automatskog procesiranja kartica ili bankovnih transfera.</p></div>
+      {loading || !settings ? <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div> : <>
+        <section className="grid gap-4 md:grid-cols-4">
+          {[["Na čekanju", finance.summary.held ?? 0, "amber"], ["Spremno za isplatu", finance.summary.ready ?? 0, "emerald"], ["Zamrznuto", finance.summary.frozen ?? 0, "rose"], ["Isplaćeno", finance.summary.paidOut ?? 0, "slate"]].map(([label, amount]) =>
+            <Card key={String(label)}><CardContent className="p-5"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-bold">{money(Number(amount))}</p></CardContent></Card>
+          )}
+        </section>
+        <Card>
+          <CardHeader><CardTitle>Čeka potvrdu uplate</CardTitle><CardDescription>Ovi zahtevi ne stvaraju escrow niti pristup kursu dok administrator ručno ne potvrdi uplatu.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{finance.pendingEnrollments.length ? finance.pendingEnrollments.map((enrollment) => <div key={enrollment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><div><p className="font-semibold">{enrollment.courseTitle}</p><p className="text-sm text-muted-foreground">{money(enrollment.amount)} · zahtev {new Date(enrollment.createdAt).toLocaleDateString("sr-RS")}</p></div><Button size="sm" onClick={() => settle(enrollment)}>Potvrdi uplatu</Button></div>) : <p className="py-4 text-sm text-muted-foreground">Nema zahteva koji čekaju potvrdu.</p>}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Pravila obračuna</CardTitle><CardDescription>Ova pravila se primenjuju na sledeće potvrđene kupovine.</CardDescription></CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {[["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"]].map(([label, key]) => <label key={key} className="space-y-2 text-sm font-medium">{label}<Input type="number" min="0" value={settings[key as keyof Settings]} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}
+            <div className="flex items-end"><Button onClick={saveSettings} className="w-full"><Save className="mr-2 h-4 w-4" />Sačuvaj</Button></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex gap-2"><Building2 className="h-5 w-5 text-primary" />Edukativni centri</CardTitle><CardDescription>Kurs je javno vidljiv i dostupan za kupovinu samo kada je centar verifikovan i pretplata aktivna.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{centers.map((center) => <div key={center.id} className="flex flex-col gap-3 rounded-xl border p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{center.name}</p><Badge variant={center.verificationStatus === "verified" ? "default" : "secondary"}>{center.verificationStatus}</Badge><Badge variant={center.subscriptionStatus === "active" ? "outline" : "secondary"}>{center.subscriptionStatus ?? "bez pretplate"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{center.city} · zadržano: {money(center.heldAmount)}</p>{center.verificationNote ? <p className="mt-1 text-xs text-muted-foreground">{center.verificationNote}</p> : null}</div>
+            <div className="flex gap-2">{center.verificationStatus !== "verified" ? <Button size="sm" onClick={() => changeCenter(center, "verified")}><BadgeCheck className="mr-2 h-4 w-4" />Verifikuj i aktiviraj</Button> : <Button size="sm" variant="outline" onClick={() => changeCenter(center, "suspended")}>Obustavi</Button>}</div>
+          </div>)}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Escrow i ručne isplate</CardTitle><CardDescription>Net iznos postaje podoban po isteku roka; rezerva ostaje odvojena do kvartalne isplate.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{finance.escrows.map((escrow) => <div key={escrow.id} className="flex flex-col gap-3 rounded-xl border p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div><div className="flex gap-2"><p className="font-semibold">{escrow.courseTitle}</p><Badge variant={escrow.status === "frozen" ? "destructive" : "secondary"}>{escrow.status}</Badge>{escrow.disputeOpen && <Badge variant="destructive">spor</Badge>}</div><p className="mt-1 text-sm text-muted-foreground">{escrow.centerName} · neto {money(escrow.netAmount)} · rezerva {money(escrow.reserveAmount)} · oslobađanje {new Date(escrow.releaseAt).toLocaleDateString("sr-RS")}</p></div>
+            {escrow.status === "ready_for_payout" && !escrow.netPaidAt ? <Button size="sm" onClick={() => payout(escrow.centerId)}>Evidentiraj isplatu</Button> : null}
+          </div>)}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="flex gap-2"><ShieldAlert className="h-5 w-5 text-destructive" />Sporovi</CardTitle><CardDescription>Otvoren spor automatski zamrzava povezani escrow. Admin odluka ostaje u finansijskom auditu.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{disputes.length ? disputes.map((dispute) => <div key={dispute.id} className="rounded-xl border p-4"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{dispute.courseTitle}</p><Badge variant="destructive">{dispute.status}</Badge></div><p className="mt-2 text-sm"><b>{dispute.reason}:</b> {dispute.details}</p><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="destructive" onClick={() => resolveDispute(dispute, "refund")}>Odobri povraćaj</Button><Button size="sm" onClick={() => resolveDispute(dispute, "release")}>Oslobodi isplatu</Button><Button size="sm" variant="outline" onClick={() => resolveDispute(dispute, "reject")}>Odbij spor</Button></div></div>) : <p className="py-6 text-center text-sm text-muted-foreground"><AlertTriangle className="mx-auto mb-2 h-5 w-5" />Nema otvorenih sporova.</p>}</CardContent>
+        </Card>
+      </>}
+    </div>
+  </AdminLayout>;
+}

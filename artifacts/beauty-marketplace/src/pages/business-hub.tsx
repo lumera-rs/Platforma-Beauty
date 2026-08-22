@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
@@ -10,6 +10,7 @@ export default function BusinessHub() {
   const [, setLocation] = useLocation();
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
+  const [centerStatus, setCenterStatus] = useState<{ verificationStatus: string; subscriptionStatus: string | null; eligible: boolean; verificationNote: string | null } | null>(null);
 
   useEffect(() => {
     if (isLoading) return;
@@ -25,6 +26,10 @@ export default function BusinessHub() {
       setLocation("/moj-nalog");
     }
   }, [user, isLoading, setLocation]);
+  useEffect(() => {
+    if (user?.role !== "EDUCATION_CENTER_OWNER") return;
+    fetch("/api/education/center/status").then((response) => response.ok ? response.json() : []).then((centers) => setCenterStatus(centers[0] ?? null)).catch(() => setCenterStatus(null));
+  }, [user?.role]);
 
   if (isLoading || !user || user.role !== "EDUCATION_CENTER_OWNER") {
     return (
@@ -51,10 +56,10 @@ export default function BusinessHub() {
         <div className="container mx-auto px-4 max-w-6xl -mt-12 relative z-10">
           <Card className="border-none shadow-md mb-12">
             <CardHeader>
-              <CardDescription>Status poslovnog naloga</CardDescription>
+              <CardDescription>Status poslovnog naloga i prodaje</CardDescription>
               <CardTitle className="flex items-center gap-3 text-2xl font-serif">
-                <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-                Edukativni centar je povezan sa LUMERA platformom
+                <CheckCircle2 className={`h-6 w-6 ${centerStatus?.eligible ? "text-emerald-600" : "text-amber-600"}`} />
+                {centerStatus?.eligible ? "Centar može da objavljuje i prodaje edukacije" : "Verifikacija ili pretplata je na čekanju"}
               </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2 text-sm">
@@ -66,7 +71,16 @@ export default function BusinessHub() {
                 <p className="text-muted-foreground mb-1">Kontakt</p>
                 <p className="font-semibold">{user.email}</p>
               </div>
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-muted-foreground mb-1">Verifikacija centra</p>
+                <p className="font-semibold capitalize">{centerStatus?.verificationStatus ?? "Učitavanje..."}</p>
+              </div>
+              <div className="rounded-xl border bg-muted/20 p-4">
+                <p className="text-muted-foreground mb-1">Pretplata</p>
+                <p className="font-semibold capitalize">{centerStatus?.subscriptionStatus ?? "Nije aktivirana"}</p>
+              </div>
             </CardContent>
+            {centerStatus && !centerStatus.eligible ? <CardContent className="pt-0 text-sm text-muted-foreground">Kursevi ostaju sačuvani kao nacrt dok LUMERA administrator ne verifikuje centar i ne aktivira pretplatu.{centerStatus.verificationNote ? ` Napomena: ${centerStatus.verificationNote}` : ""}</CardContent> : null}
           </Card>
 
           <div className="grid md:grid-cols-2 gap-8 mb-12">

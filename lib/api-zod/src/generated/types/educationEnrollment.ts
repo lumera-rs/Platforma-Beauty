@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { EducationEnrollmentEscrowStatus } from './educationEnrollmentEscrowStatus';
 import type { EducationEnrollmentPaymentStatus } from './educationEnrollmentPaymentStatus';
 import type { EducationEnrollmentStatus } from './educationEnrollmentStatus';
 
@@ -21,4 +22,8 @@ export interface EducationEnrollment {
   /** @nullable */
   nextLesson?: string | null;
   purchasedAt: Date;
+  /** @nullable */
+  escrowStatus?: EducationEnrollmentEscrowStatus;
+  /** @nullable */
+  escrowReleaseAt?: Date | null;
 }

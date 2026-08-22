@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles } from "lucide-react";
+import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,6 +38,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
+import { EducationPurchases } from "@/components/education-purchases";
 
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
@@ -68,8 +69,10 @@ export default function CustomerDashboard() {
   
   const cancelMutation = useCancelAppointment();
   const disconnectMutation = useDisconnectAuthSignInMethod();
-  const requestedTab = new URLSearchParams(window.location.search).get("tab");
-  const activeTab = requestedTab === "favorites" || requestedTab === "settings" ? requestedTab : "appointments";
+  // Wouter navigation can update its location before the browser search string
+  // is observed by a render, so accept the query from either source.
+  const requestedTab = new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search).get("tab");
+  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" ? requestedTab : "appointments";
 
   const handleCancel = (id: string) => {
     cancelMutation.mutate(
@@ -237,6 +240,9 @@ export default function CustomerDashboard() {
             <TabsTrigger value="favorites" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Omiljeni Saloni ({dashboard?.favoriteCount || 0})
             </TabsTrigger>
+            <TabsTrigger value="education" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+              <GraduationCap className="mr-2 h-4 w-4" />Moje edukacije
+            </TabsTrigger>
             <TabsTrigger value="settings" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Podešavanja Naloga
             </TabsTrigger>
@@ -318,6 +324,9 @@ export default function CustomerDashboard() {
                   )}
                 </div>
               )}
+          </TabsContent>
+          <TabsContent value="education" className="mt-0">
+            <EducationPurchases />
           </TabsContent>
 
           <TabsContent value="settings" className="mt-0">

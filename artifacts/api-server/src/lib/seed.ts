@@ -11,6 +11,12 @@ import {
   coursesTable,
   db,
   educationCentersTable,
+  educationCenterSubscriptionsTable,
+  educationEscrowsTable,
+  educationFinancialEventsTable,
+  educationLedgerEntriesTable,
+  educationPlatformSettingsTable,
+  educationThreadsTable,
   employeeServicesTable,
   employeesTable,
   inspirationItemsTable,
@@ -235,6 +241,7 @@ async function seed(): Promise<void> {
       await db.update(salonsTable).set({ postalCode }).where(sql`${salonsTable.postalCode} is null and ${salonsTable.city} = ${city}`);
     }
     await seedEducationContent();
+    await seedEducationMonetization();
     await seedMarketplaceTaxonomy();
     await synchronizeInferredServesMen();
     await seedCourierServices();
@@ -420,10 +427,15 @@ async function seed(): Promise<void> {
 
   const [courseCategory] = await db.insert(courseCategoriesTable).values({ name: "Stručne tehnike", slug: "strucne-tehnike" }).returning();
   const centers = await db.insert(educationCentersTable).values([
-    { ownerId: demoUsers[2]!.id, name: "Akademija Ritual", city: "Beograd", description: "Edukacije za savremene wellness profesionalce.", imageUrl: "/lumera-media/course-1.jpg" },
-    { ownerId: demoUsers[2]!.id, name: "Studio Forma Edu", city: "Novi Sad", description: "Znanje kroz praksu i mentorske radionice.", imageUrl: "/lumera-media/course-1.jpg" },
-    { ownerId: demoUsers[2]!.id, name: "Wellbeing Institut", city: "Niš", description: "Usavršavanje za terapeute nove generacije.", imageUrl: "/lumera-media/course-1.jpg" },
+    { ownerId: demoUsers[2]!.id, name: "Akademija Ritual", city: "Beograd", description: "Edukacije za savremene wellness profesionalce.", imageUrl: "/lumera-media/course-1.jpg", verificationStatus: "verified", verifiedAt: new Date(), verifiedByUserId: demoUsers[0]!.id },
+    { ownerId: demoUsers[2]!.id, name: "Studio Forma Edu", city: "Novi Sad", description: "Znanje kroz praksu i mentorske radionice.", imageUrl: "/lumera-media/course-1.jpg", verificationStatus: "verified", verifiedAt: new Date(), verifiedByUserId: demoUsers[0]!.id },
+    { ownerId: demoUsers[2]!.id, name: "Wellbeing Institut", city: "Niš", description: "Usavršavanje za terapeute nove generacije.", imageUrl: "/lumera-media/course-1.jpg", verificationStatus: "verified", verifiedAt: new Date(), verifiedByUserId: demoUsers[0]!.id },
   ]).returning();
+  await db.insert(educationCenterSubscriptionsTable).values(centers.map((center) => ({
+    centerId: center.id, planId: plan!.id, status: "active" as const, dueAmount: plan!.price,
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  })));
+  await db.insert(educationPlatformSettingsTable).values({}).onConflictDoNothing();
   const educationCourses = await db.insert(coursesTable).values(Array.from({ length: 8 }, (_, index) => ({
     centerId: centers[index % centers.length]!.id,
     categoryId: courseCategory!.id,
@@ -1016,4 +1028,60 @@ async function seedEducationContent(): Promise<void> {
   if (lessons[0]) {
     await db.insert(lessonProgressTable).values({ enrollmentId: enrollment!.id, lessonId: lessons[0].id, completedByUserId: owner.id });
   }
+}
+
+async function seedEducationMonetization(): Promise<void> {
+  const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
+  const activeSettings = settings ?? (await db.insert(educationPlatformSettingsTable).values({}).returning())[0]!;
+  const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
+  const demoCenterNames = ["Akademija Ritual", "Studio Forma Edu", "Wellbeing Institut"];
+  const centers = await db.select().from(educationCentersTable).where(inArray(educationCentersTable.name, demoCenterNames));
+  for (const center of centers) {
+    if (center.verificationStatus !== "verified") {
+      await db.update(educationCentersTable).set({ verificationStatus: "verified", verifiedAt: new Date(), updatedAt: new Date() }).where(eq(educationCentersTable.id, center.id));
+    }
+    if (plan) {
+      const [subscription] = await db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, center.id)).limit(1);
+      if (!subscription) {
+        await db.insert(educationCenterSubscriptionsTable).values({
+          centerId: center.id, planId: plan.id, status: "active", dueAmount: plan.price,
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        });
+      }
+    }
+  }
+  const [enrollment] = await db.select().from(courseEnrollmentsTable)
+    .innerJoin(coursesTable, eq(courseEnrollmentsTable.courseId, coursesTable.id))
+    .where(inArray(coursesTable.centerId, centers.map((center) => center.id)))
+    .limit(1);
+  if (!enrollment || !enrollment.courses.centerId) return;
+  const [existingEscrow] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, enrollment.course_enrollments.id)).limit(1);
+  if (existingEscrow) return;
+  const price = enrollment.courses.price;
+  const platformFee = Math.floor(price * activeSettings.commissionPercent / 100);
+  const reserveAmount = Math.floor(price * activeSettings.reservePercent / 100);
+  const [escrow] = await db.insert(educationEscrowsTable).values({
+    enrollmentId: enrollment.course_enrollments.id,
+    centerId: enrollment.courses.centerId,
+    grossAmount: price,
+    platformFee,
+    reserveAmount,
+    netAmount: price - platformFee - reserveAmount,
+    releaseAt: new Date(Date.now() + activeSettings.onlineRefundDays * 24 * 60 * 60 * 1000),
+    paymentReference: `seed:${enrollment.course_enrollments.id}`,
+  }).returning();
+  await db.insert(educationLedgerEntriesTable).values([
+    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "charge", amount: price, note: "Demo potvrđena kupovina." },
+    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "platform_fee", amount: -platformFee, note: "Demo platformská provizija." },
+    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "reserve_hold", amount: -reserveAmount, note: "Demo zadržana rezerva." },
+  ]);
+  await db.insert(educationFinancialEventsTable).values({
+    escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id,
+    eventType: "purchase_confirmed", nextStatus: "held", amount: price, note: "Demo monetizaciona evidencija.",
+  });
+  await db.insert(educationThreadsTable).values({
+    enrollmentId: enrollment.course_enrollments.id,
+    purchaserId: enrollment.course_enrollments.purchaserId,
+    centerId: enrollment.courses.centerId,
+  }).onConflictDoNothing();
 }

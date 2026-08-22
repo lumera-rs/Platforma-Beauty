@@ -1323,6 +1323,214 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/LoyaltyTier" }
+  /education/public/courses:
+    get:
+      operationId: listPublicEducationCourses
+      tags: [education]
+      summary: List courses available for public purchase
+      responses:
+        "200":
+          description: Public courses with redacted logistics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseDetail" }
+  /education/center/status:
+    get:
+      operationId: getEducationCenterStatus
+      tags: [education]
+      summary: Get verification and subscription status for the current education center
+      responses:
+        "200":
+          description: Center operational status
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCenterStatus" }
+  /education/purchases:
+    get:
+      operationId: listEducationPurchases
+      tags: [education]
+      summary: List the current buyer's education purchases
+      responses:
+        "200":
+          description: Buyer purchases
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationEnrollment" }
+  /education/purchases/{enrollmentId}/messages:
+    get:
+      operationId: listEducationPurchaseMessages
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      responses:
+        "200":
+          description: Purchase thread messages
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMessageThread" }
+    post:
+      operationId: createEducationPurchaseMessage
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { body: { type: string, minLength: 1, maxLength: 4000 } }
+              required: [body]
+      responses:
+        "201":
+          description: Message created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMessage" }
+  /education/purchases/{enrollmentId}/disputes:
+    post:
+      operationId: createEducationDispute
+      tags: [education]
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 160 }
+                details: { type: string, minLength: 1, maxLength: 4000 }
+              required: [reason, details]
+      responses:
+        "201":
+          description: Dispute opened and escrow frozen
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationDispute" }
+  /education/disputes:
+    get:
+      operationId: listEducationDisputes
+      tags: [education]
+      summary: List disputes visible to the current buyer, center or administrator
+      responses:
+        "200":
+          description: Disputes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationDispute" }
+  /admin/education/settings:
+    get:
+      operationId: getAdminEducationSettings
+      tags: [admin, education]
+      responses:
+        "200":
+          description: Education marketplace settlement settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMarketplaceSettings" }
+    patch:
+      operationId: updateAdminEducationSettings
+      tags: [admin, education]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationMarketplaceSettingsInput" }
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationMarketplaceSettings" }
+  /admin/education/centers:
+    get:
+      operationId: listAdminEducationCenters
+      tags: [admin, education]
+      responses:
+        "200":
+          description: Education centers and their operational status
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationAdminCenter" }
+  /admin/education/centers/{centerId}:
+    patch:
+      operationId: updateAdminEducationCenter
+      tags: [admin, education]
+      parameters: [{ $ref: "#/components/parameters/EducationCenterId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationAdminCenterUpdate" }
+      responses:
+        "200":
+          description: Center status updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationAdminCenter" }
+  /admin/education/finance:
+    get:
+      operationId: getAdminEducationFinance
+      tags: [admin, education]
+      responses:
+        "200":
+          description: Escrow, payout and settlement overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationFinanceOverview" }
+  /admin/education/enrollments/{enrollmentId}/settle:
+    post:
+      operationId: settleAdminEducationEnrollment
+      tags: [admin, education]
+      summary: Confirm a manually settled education purchase and create its escrow
+      parameters: [{ $ref: "#/components/parameters/EnrollmentId" }]
+      responses:
+        "200":
+          description: Confirmed enrollment with active course access
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationEnrollment" }
+        "409": { description: Enrollment is not pending or course can no longer be settled }
+  /admin/education/payouts:
+    post:
+      operationId: createAdminEducationPayout
+      tags: [admin, education]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationPayoutInput" }
+      responses:
+        "201":
+          description: Manual payout recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationPayout" }
+  /admin/education/disputes/{disputeId}:
+    patch:
+      operationId: resolveAdminEducationDispute
+      tags: [admin, education]
+      parameters: [{ $ref: "#/components/parameters/EducationDisputeId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationDisputeResolutionInput" }
+      responses:
+        "200":
+          description: Dispute resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationDispute" }
   /education/courses:
     get:
       operationId: listCourses
@@ -1590,7 +1798,7 @@ paths:
     post:
       operationId: enrollInEducationCourse
       tags: [education]
-      summary: Reserve or purchase a course place for the owner or an employee
+      summary: Request a course purchase; access and escrow begin only after manual settlement
       parameters:
         - $ref: "#/components/parameters/CourseId"
       requestBody:
@@ -1600,7 +1808,7 @@ paths:
             schema: { $ref: "#/components/schemas/EducationEnrollmentInput" }
       responses:
         "201":
-          description: Enrollment created
+          description: Pending enrollment request created
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationEnrollment" }
@@ -2519,6 +2727,16 @@ components:
       schema: { type: string }
     EnrollmentId:
       name: enrollmentId
+      in: path
+      required: true
+      schema: { type: string }
+    EducationCenterId:
+      name: centerId
+      in: path
+      required: true
+      schema: { type: string }
+    EducationDisputeId:
+      name: disputeId
       in: path
       required: true
       schema: { type: string }
@@ -3823,7 +4041,147 @@ components:
         progress: { type: number }
         nextLesson: { type: ["string", "null"] }
         purchasedAt: { type: string, format: date-time }
+        escrowStatus: { type: ["string", "null"], enum: [held, ready_for_payout, frozen, paid_out, refunded, partially_refunded, null] }
+        escrowReleaseAt: { type: ["string", "null"], format: date-time }
       required: [id, courseId, courseTitle, learnerName, status, paymentStatus, progress, purchasedAt]
+    EducationCenterStatus:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
+        verificationNote: { type: ["string", "null"] }
+        subscriptionStatus: { type: ["string", "null"], enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty, null] }
+        currentPeriodEnd: { type: ["string", "null"], format: date-time }
+        eligible: { type: boolean }
+      required: [id, name, verificationStatus, eligible]
+    EducationMessage:
+      type: object
+      properties:
+        id: { type: string }
+        body: { type: string }
+        senderId: { type: string }
+        senderName: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+      required: [id, body, senderId, senderName, createdAt]
+    EducationMessageThread:
+      type: object
+      properties:
+        thread:
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                id: { type: string }
+                status: { type: string, enum: [open, closed] }
+                enrollmentId: { type: string }
+              required: [id, status, enrollmentId]
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/EducationMessage" }
+      required: [thread, messages]
+    EducationDispute:
+      type: object
+      properties:
+        id: { type: string }
+        enrollmentId: { type: string }
+        courseTitle: { type: string }
+        reason: { type: string }
+        details: { type: string }
+        status: { type: string, enum: [open, under_review, resolved_refund, resolved_payout, rejected, cancelled] }
+        resolutionNote: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+      required: [id, enrollmentId, reason, details, status, createdAt]
+    EducationMarketplaceSettingsInput:
+      type: object
+      properties:
+        commissionPercent: { type: number, minimum: 0, maximum: 100 }
+        reservePercent: { type: number, minimum: 0, maximum: 100 }
+        onlineRefundDays: { type: number, minimum: 0, maximum: 365 }
+        liveAppealDays: { type: number, minimum: 0, maximum: 365 }
+      required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays]
+    EducationMarketplaceSettings:
+      allOf:
+        - $ref: "#/components/schemas/EducationMarketplaceSettingsInput"
+        - type: object
+          properties:
+            id: { type: string }
+            updatedAt: { type: string, format: date-time }
+          required: [id, updatedAt]
+    EducationAdminCenter:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        city: { type: string }
+        verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
+        verificationNote: { type: ["string", "null"] }
+        subscriptionStatus: { type: ["string", "null"] }
+        subscriptionPlanId: { type: ["string", "null"] }
+        subscriptionPlan: { type: ["string", "null"] }
+        heldAmount: { type: number }
+      required: [id, name, city, verificationStatus, heldAmount]
+    EducationAdminCenterUpdate:
+      type: object
+      properties:
+        verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
+        verificationNote: { type: ["string", "null"] }
+        subscriptionStatus: { type: string, enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty] }
+        planId: { type: string }
+    EducationFinanceEscrow:
+      type: object
+      properties:
+        id: { type: string }
+        enrollmentId: { type: string }
+        centerId: { type: string }
+        centerName: { type: string }
+        courseTitle: { type: string }
+        grossAmount: { type: number }
+        platformFee: { type: number }
+        reserveAmount: { type: number }
+        netAmount: { type: number }
+        status: { type: string, enum: [held, ready_for_payout, frozen, paid_out, refunded, partially_refunded] }
+        releaseAt: { type: string, format: date-time }
+        disputeOpen: { type: boolean }
+      required: [id, enrollmentId, centerId, grossAmount, platformFee, reserveAmount, netAmount, status, releaseAt, disputeOpen]
+    EducationFinanceOverview:
+      type: object
+      properties:
+        summary:
+          type: object
+          additionalProperties: { type: number }
+        escrows:
+          type: array
+          items: { $ref: "#/components/schemas/EducationFinanceEscrow" }
+        payouts:
+          type: array
+          items: { $ref: "#/components/schemas/EducationPayout" }
+      required: [summary, escrows, payouts]
+    EducationPayoutInput:
+      type: object
+      properties:
+        centerId: { type: string }
+        includeReserve: { type: boolean }
+        reference: { type: string }
+        note: { type: string }
+      required: [centerId]
+    EducationPayout:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        amount: { type: number }
+        status: { type: string, enum: [pending, paid, cancelled] }
+        paidAt: { type: ["string", "null"], format: date-time }
+      required: [id, centerId, amount, status]
+    EducationDisputeResolutionInput:
+      type: object
+      properties:
+        action: { type: string, enum: [refund, release, reject] }
+        resolutionNote: { type: string, minLength: 1, maxLength: 4000 }
+      required: [action, resolutionNote]
     EducationLms:
       type: object
       properties:
