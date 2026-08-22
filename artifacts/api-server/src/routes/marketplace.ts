@@ -1406,12 +1406,15 @@ async function educationCourseView(
 }
 
 async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable.$inferSelect) {
-  const [course, employee, purchaser, modules, escrow] = await Promise.all([
+  const [course, employee, purchaser, modules, escrow, disputes] = await Promise.all([
     db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1),
     enrollment.employeeId ? db.select().from(employeesTable).where(eq(employeesTable.id, enrollment.employeeId)).limit(1) : Promise.resolve([]),
     db.select().from(usersTable).where(eq(usersTable.id, enrollment.purchaserId)).limit(1),
     modulesForCourse(enrollment.courseId),
     db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, enrollment.id)).limit(1),
+    db.select().from(educationDisputesTable)
+      .where(and(eq(educationDisputesTable.enrollmentId, enrollment.id), inArray(educationDisputesTable.status, ["open", "under_review"])))
+      .orderBy(desc(educationDisputesTable.createdAt)).limit(1),
   ]);
   // `nextLesson` used to contain a title in early demo data. Normalize that
   // legacy value at the boundary so the protected LMS can always select by ID.
@@ -1431,6 +1434,13 @@ async function educationEnrollmentView(enrollment: typeof courseEnrollmentsTable
     purchasedAt: enrollment.purchasedAt.toISOString(),
     escrowStatus: escrow[0]?.status ?? null,
     escrowReleaseAt: escrow[0]?.releaseAt?.toISOString() ?? null,
+    dispute: disputes[0] ? {
+      id: disputes[0].id,
+      reason: disputes[0].reason,
+      details: disputes[0].details,
+      status: disputes[0].status,
+      createdAt: disputes[0].createdAt.toISOString(),
+    } : null,
   };
 }
 
@@ -5842,13 +5852,13 @@ router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Pro
   if (access.enrollment.paymentStatus !== "paid") { res.status(409).json({ error: "Spor se može otvoriti tek nakon potvrđene uplate." }); return; }
   const [escrowPreview] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, access.enrollment.id)).limit(1);
   if (!escrowPreview) { res.status(409).json({ error: "Kupovina nema escrow zaštitu koju možemo zamrznuti." }); return; }
-  let dispute: typeof educationDisputesTable.$inferSelect;
+  let result: { dispute: typeof educationDisputesTable.$inferSelect; duplicate: boolean };
   try {
-    dispute = await db.transaction(async (tx) => {
+    result = await db.transaction(async (tx) => {
     await lockEducationCenterFinancials(tx, escrowPreview.centerId);
     const [existing] = await tx.select().from(educationDisputesTable)
       .where(and(eq(educationDisputesTable.enrollmentId, access.enrollment!.id), inArray(educationDisputesTable.status, ["open", "under_review"]))).for("update").limit(1);
-    if (existing) throw new Error("Za ovu kupovinu već postoji otvoren spor.");
+    if (existing) return { dispute: existing, duplicate: true };
     const [escrow] = await tx.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.id, escrowPreview.id)).for("update").limit(1);
     if (!escrow || !["held", "ready_for_payout"].includes(escrow.status) || escrow.netPaidAt || escrow.reservePaidAt) {
       throw new Error("Ova kupovina više nije podobna za otvaranje spora.");
@@ -5862,13 +5872,25 @@ router.post("/education/purchases/:enrollmentId/disputes", async (req, res): Pro
         escrowId: escrow.id, enrollmentId: access.enrollment!.id, actorUserId: user.id,
         eventType: "dispute_opened", previousStatus: escrow.status, nextStatus: "frozen", note: reason,
       });
-    return created!;
+    return { dispute: created!, duplicate: false };
     });
   } catch (error) {
     res.status(409).json({ error: error instanceof Error ? error.message : "Spor nije mogao biti otvoren." });
     return;
   }
-  res.status(201).json({ id: dispute.id, enrollmentId: dispute.enrollmentId, reason: dispute.reason, details: dispute.details, status: dispute.status, createdAt: dispute.createdAt.toISOString() });
+  const dispute = {
+    id: result.dispute.id,
+    enrollmentId: result.dispute.enrollmentId,
+    reason: result.dispute.reason,
+    details: result.dispute.details,
+    status: result.dispute.status,
+    createdAt: result.dispute.createdAt.toISOString(),
+  };
+  if (result.duplicate) {
+    res.status(409).json({ error: "Za ovu kupovinu već postoji otvoren spor.", dispute });
+    return;
+  }
+  res.status(201).json(dispute);
 });
 
 router.get("/education/disputes", async (req, res): Promise<void> => {

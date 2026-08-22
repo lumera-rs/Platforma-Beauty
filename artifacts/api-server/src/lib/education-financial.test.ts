@@ -943,10 +943,40 @@ async function run(): Promise<void> {
     ]);
     assert.equal(firstDuplicateDisputeResponse.status, 201, "The first concurrent dispute submission must succeed.");
     assert.equal(secondDuplicateDisputeResponse.status, 409, "The duplicate concurrent dispute submission must return a conflict.");
-    const secondDuplicateDisputeError = await json<{ error: string }>(secondDuplicateDisputeResponse);
+    const secondDuplicateDisputeError = await json<{
+      error: string;
+      dispute: { id: string; enrollmentId: string; reason: string; details: string; status: string; createdAt: string };
+    }>(secondDuplicateDisputeResponse);
     assert.match(secondDuplicateDisputeError.error, /već postoji otvoren spor/, "The losing submission must explain that the dispute already exists.");
     const firstDuplicateDispute = await json<{ id: string; status: string }>(firstDuplicateDisputeResponse);
     assert.equal(firstDuplicateDispute.status, "open");
+    assert.equal(secondDuplicateDisputeError.dispute.id, firstDuplicateDispute.id, "The duplicate response must identify the existing dispute.");
+    assert.equal(secondDuplicateDisputeError.dispute.enrollmentId, duplicateDisputeEnrollmentId);
+    assert.equal(secondDuplicateDisputeError.dispute.reason, duplicateDisputeBody.reason);
+    assert.equal(secondDuplicateDisputeError.dispute.details, duplicateDisputeBody.details);
+    assert.equal(secondDuplicateDisputeError.dispute.status, "open");
+    assert.ok(secondDuplicateDisputeError.dispute.createdAt);
+
+    const repeatedDuplicateDisputeResponse = await request(baseUrl, `/education/purchases/${duplicateDisputeEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: buyerCookie,
+      body: duplicateDisputeBody,
+    });
+    assert.equal(repeatedDuplicateDisputeResponse.status, 409, "A later retry must remain a conflict.");
+    const repeatedDuplicateDispute = await json<{ dispute: { id: string; status: string } }>(repeatedDuplicateDisputeResponse);
+    assert.equal(repeatedDuplicateDispute.dispute.id, firstDuplicateDispute.id, "Every retry must return the same dispute.");
+    assert.equal(repeatedDuplicateDispute.dispute.status, "open");
+
+    const duplicatePurchaseView = await request(baseUrl, "/education/purchases", { cookie: buyerCookie });
+    assert.equal(duplicatePurchaseView.status, 200);
+    const duplicatePurchase = (await json<Array<{
+      id: string;
+      dispute: { id: string; reason: string; details: string; status: string } | null;
+    }>>(duplicatePurchaseView)).find((purchase) => purchase.id === duplicateDisputeEnrollmentId);
+    assert.equal(duplicatePurchase?.dispute?.id, firstDuplicateDispute.id, "The purchase view must expose the active dispute after refresh.");
+    assert.equal(duplicatePurchase?.dispute?.reason, duplicateDisputeBody.reason);
+    assert.equal(duplicatePurchase?.dispute?.details, duplicateDisputeBody.details);
+    assert.equal(duplicatePurchase?.dispute?.status, "open");
 
     const duplicateDisputes = await db.select().from(educationDisputesTable)
       .where(eq(educationDisputesTable.enrollmentId, duplicateDisputeEnrollmentId));
