@@ -186,10 +186,13 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   auditData: jsonb("audit_data").$type<Record<string, unknown>>().notNull().default({}),
   idempotencyKey: text("idempotency_key"),
   idempotencyFingerprint: text("idempotency_fingerprint"),
+  participantKey: text("participant_key").generatedAlwaysAs(
+    sql`coalesce(employee_id::text, '00000000-0000-0000-0000-000000000000')`,
+  ),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("course_enrollments_course_purchaser_participant_unique")
-    .on(table.courseId, table.purchaserId, sql`coalesce(${table.employeeId}, '00000000-0000-0000-0000-000000000000'::uuid)`)
+    .on(table.courseId, table.purchaserId, table.participantKey)
     .where(sql`${table.status} <> 'cancelled'`),
   uniqueIndex("course_enrollments_purchaser_idempotency_unique")
     .on(table.purchaserId, table.idempotencyKey)
