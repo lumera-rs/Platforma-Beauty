@@ -17,7 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 function recomputeCart(cart: ShopCart): ShopCart {
   const itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  return { ...cart, itemCount, subtotal };
+  const totalWeightGrams = cart.items.reduce(
+    (sum, item) => sum + item.weightGrams * item.quantity,
+    0,
+  );
+  return { ...cart, itemCount, subtotal, totalWeightGrams };
 }
 
 type CartMutationContext = {
@@ -126,6 +130,7 @@ export function useShopCartMutations() {
                 quantity,
                 lineTotal: unitPrice * quantity,
                 availableStock: variant?.stock ?? optimisticProduct.stock,
+                weightGrams: optimisticProduct.weightGrams ?? 0,
               },
             ];
             return recomputeCart({ ...current, items });

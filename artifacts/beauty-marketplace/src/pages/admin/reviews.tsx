@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Search, MessageSquare, Star, Trash2, EyeOff, FilterX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 export default function AdminReviews() {
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   
   const [visibleFilter, setVisibleFilter] = useState<string>("all");
   const [minRatingFilter, setMinRatingFilter] = useState<string>("all");

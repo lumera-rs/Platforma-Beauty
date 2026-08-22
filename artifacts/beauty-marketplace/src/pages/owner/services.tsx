@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { BusinessLayout } from "@/components/business-layout";
-import { useDebounce } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
 import { OwnerSidebar } from "./dashboard";
 import { 
@@ -34,6 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 interface ServiceTemplate {
   id: string;
@@ -53,8 +53,7 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
-  // Debounce the value driving the client-side filter; the input stays immediate.
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   const [category, setCategory] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [configOpen, setConfigOpen] = useState(false);
@@ -66,12 +65,11 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
   }, [templates]);
 
   const filteredTemplates = useMemo(() => {
-    const term = debouncedSearch.toLowerCase();
     return activeTemplates.filter(t => 
       (category === "all" || t.mainCategory === category) && (
-        t.name.toLowerCase().includes(term) ||
-        t.mainCategory.toLowerCase().includes(term) ||
-        (t.subcategory && t.subcategory.toLowerCase().includes(term))
+        t.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        t.mainCategory.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (t.subcategory && t.subcategory.toLowerCase().includes(debouncedSearch.toLowerCase()))
       )
     );
   }, [activeTemplates, debouncedSearch, category]);

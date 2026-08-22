@@ -1,6 +1,6 @@
 import app from "./app";
 import { closePool, databasePoolStats } from "@workspace/db";
-import { logger, registerProcessSafetyHandlers } from "./lib/logger";
+import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
 import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
 import {
@@ -18,10 +18,7 @@ import {
   stopCatalogCacheInvalidationListener,
 } from "./lib/catalog-cache";
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
-
-// Register early so failures during startup are captured by the shared logger
-// and fatal uncaught exceptions flush/log before exiting in real runtime.
-registerProcessSafetyHandlers();
+import { registerFatalHandlers } from "./lib/process-lifecycle";
 
 const rawPort = process.env["PORT"];
 
@@ -139,10 +136,8 @@ void migrateLegacyMediaReferences().catch((error) => {
 });
 
 let shuttingDown = false;
-function shutDown(signal: NodeJS.Signals): void {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info({ signal }, "Server shutting down");
+
+function clearScheduledTasks(): void {
   clearInterval(retryInterval);
   clearInterval(educationMaintenanceInterval);
   clearInterval(educationGalleryCleanupInterval);
@@ -150,23 +145,42 @@ function shutDown(signal: NodeJS.Signals): void {
   clearInterval(compatibilityImageCleanupInterval);
   clearInterval(communicationArchiveInterval);
   clearInterval(databaseMetricsInterval);
-
-  void Promise.allSettled([
-    stopSalonNotificationEventListener(),
-    stopCatalogCacheInvalidationListener(),
-  ]).finally(() => {
-    server.close(() => {
-      void closePool().then(
-        () => { process.exit(0); },
-        (error: unknown) => {
-          logger.warn({ err: error }, "Pool close failed during shutdown");
-          process.exit(0);
-        },
-      );
-    });
-  });
+}
+function shutDown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, "Server shutting down");
+  clearScheduledTasks();
+  void performCleanup().finally(() => flushAndExit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 
 process.once("SIGINT", () => shutDown("SIGINT"));
 process.once("SIGTERM", () => shutDown("SIGTERM"));
+
+registerFatalHandlers({
+  logger,
+  cleanup: () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearScheduledTasks();
+    return performCleanup();
+  },
+});
+
+function flushAndExit(exitCode: number): void {
+  logger.flush(() => process.exit(exitCode));
+}
+
+async function performCleanup(): Promise<void> {
+  await Promise.allSettled([
+    stopSalonNotificationEventListener(),
+    stopCatalogCacheInvalidationListener(),
+  ]);
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  try {
+    await closePool();
+  } catch (error) {
+    logger.warn({ err: error }, "Pool close failed during shutdown");
+  }
+}

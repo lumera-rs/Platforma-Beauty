@@ -6,7 +6,9 @@ import {
   useListProductBrands,
   useListProductCategories,
   useGetShopSummary,
+  useAddShopCartItem,
   useGetCurrentUser,
+  getGetShopCartQueryKey,
   getGetShopSummaryQueryKey,
 } from "@workspace/api-client-react";
 import type { Product, ProductCategory, ProductCategorySubcategoriesItem, ListProductsParams } from "@workspace/api-client-react";
@@ -19,8 +21,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo, useEffect } from "react";
-import { useDebounce } from "@/hooks/use-debounce";
-import { useShopCartMutations } from "@/hooks/use-shop-cart-mutations";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +37,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { OptimizedImage } from "@/components/optimized-image";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { addOptimisticCartItem, updateCartAndSummaryOptimistically } from "@/lib/optimistic-cart";
+import { rollbackQueries } from "@/lib/optimistic-query";
+import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -55,12 +61,12 @@ function QuickView({
   product,
   onClose,
   onAdd,
-  isAdding,
+  cartBusy,
 }: {
   product: Product;
   onClose: () => void;
-  onAdd: (product: Product, variant?: string) => void;
-  isAdding: boolean;
+  onAdd: (id: string, variant?: string) => void;
+  cartBusy: boolean;
 }) {
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.find((variant) => variant.stock === undefined || variant.stock > 0)?.value ?? ""
@@ -132,10 +138,10 @@ function QuickView({
           <div className="flex gap-2">
             <Button variant="outline" asChild><Link href={`/vlasnik/shop/proizvodi/${product.id}`}>Detalji</Link></Button>
             <Button
-              disabled={isAdding || ((product.variants?.length ?? 0) > 0 && !selectedVariant)}
-              data-pending={isAdding}
+              data-testid={`button-quick-add-cart-${product.id}`}
+              disabled={cartBusy || ((product.variants?.length ?? 0) > 0 && !selectedVariant)}
               onClick={() => {
-                onAdd(product, selectedVariant || undefined);
+                onAdd(product.id, selectedVariant || undefined);
                 onClose();
               }}
               className="gap-2"
@@ -155,13 +161,12 @@ function ProductCard({
   product,
   onAdd,
   onQuickView,
-  isAdding,
 }: {
   product: Product;
-  onAdd: (product: Product, variant?: string) => void;
+  onAdd: (id: string, variant?: string) => void;
   onQuickView: (p: Product) => void;
-  isAdding: boolean;
 }) {
+  const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
   return (
     <Card className="overflow-hidden group flex flex-col relative">
       {/* Badges */}
@@ -247,6 +252,7 @@ function ProductCard({
 
       <CardFooter className="p-4 pt-0 gap-2">
         <Button
+          data-testid={`button-quick-view-${product.id}`}
           size="sm"
           variant="outline"
           className="flex-shrink-0"
@@ -255,16 +261,15 @@ function ProductCard({
           <Eye className="w-3.5 h-3.5" />
         </Button>
         <Button
+          data-testid={`button-add-cart-${product.id}`}
           size="sm"
           className="flex-1 gap-1"
-          disabled={isAdding || product.stock <= 0}
-          data-pending={isAdding}
-          data-testid={`button-add-cart-${product.id}`}
+          disabled={cartBusy}
           onClick={() => {
             if (product.variants && product.variants.length > 0) {
               onQuickView(product);
             } else {
-              onAdd(product);
+              onAdd(product.id);
             }
           }}
         >
@@ -372,7 +377,9 @@ export default function OwnerShop() {
     query: { enabled: !!userResp?.user, queryKey: getGetShopSummaryQueryKey() },
   });
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  const { addItem: addCartItem } = useShopCartMutations();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
 
   const [filters, setFilters] = useState<FilterState>({
     category: "",
@@ -386,10 +393,7 @@ export default function OwnerShop() {
   });
   const [page, setPage] = useState(1);
   const pageSize = 24;
-
-  // The search box is server-bound; keep the input immediate but debounce the
-  // value that reaches the query so we don't fire a request per keystroke.
-  const debouncedSearch = useDebounce(filters.search, 300);
+  const debouncedSearch = useDebouncedSearch(filters.search);
 
   // Filtering, ordering and pagination now happen server-side so every product
   // stays reachable via the Previous/Next controls regardless of catalog size.
@@ -403,12 +407,50 @@ export default function OwnerShop() {
     if (filters.isNew) params.isNew = true;
     if (filters.isBestseller || filters.tab === "bestsellers") params.isBestseller = true;
     return params;
-  }, [filters.category, filters.subcategory, filters.brand, debouncedSearch, filters.onSale, filters.isNew, filters.isBestseller, filters.tab, page]);
+  }, [debouncedSearch, filters.category, filters.subcategory, filters.brand, filters.onSale, filters.isNew, filters.isBestseller, filters.tab, page]);
 
   const { data: productList, isLoading: isLoadingProd } = useListProducts(productParams);
   const products = productList?.items ?? [];
   const total = productList?.total ?? 0;
   const totalPages = productList?.totalPages ?? 1;
+  const addCartItem = useAddShopCartItem({
+    mutation: {
+      mutationKey: SHOP_CART_MUTATION_KEY,
+      onMutate: async ({ data }) => {
+        const product = products.find((item) => item.id === data.productId);
+        if (!product) return {};
+        const release = await shopCartMutationQueue.acquire();
+        try {
+          const snapshots = await updateCartAndSummaryOptimistically(
+            queryClient,
+            (current) => addOptimisticCartItem(current, product, data.variantValue),
+          );
+          return { snapshots, release };
+        } catch (error) {
+          release();
+          throw error;
+        }
+      },
+      onSuccess: (cart) => {
+        queryClient.setQueryData(getGetShopCartQueryKey(), cart);
+        toast.success("Dodato u korpu");
+      },
+      onError: (error, _variables, context) => {
+        rollbackQueries(queryClient, context?.snapshots);
+        toast.error(error instanceof Error ? error.message : "Dodavanje u korpu nije uspelo.");
+      },
+      onSettled: async (_data, _error, _variables, context) => {
+        try {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() }),
+          ]);
+        } finally {
+          context?.release?.();
+        }
+      },
+    },
+  });
 
   // Brands are loaded from their own endpoint so the dropdown is not limited to
   // the products on the current page.
@@ -433,13 +475,9 @@ export default function OwnerShop() {
     filters.tab,
   ]);
 
-  const addToCart = (product: Product, variantValue?: string) => {
-    // Guard against rapid repeated clicks while an add is in flight.
-    if (addCartItem.isPending) return;
-    addCartItem.mutate({
-      data: { productId: product.id, ...(variantValue ? { variantValue } : {}) },
-      optimisticProduct: product,
-    });
+  const addToCart = (id: string, variantValue?: string) => {
+    if (shopCartMutationQueue.isBusy()) return;
+    addCartItem.mutate({ data: { productId: id, ...(variantValue ? { variantValue } : {}) } });
   };
 
   const activeFilterCount = [
@@ -452,7 +490,7 @@ export default function OwnerShop() {
 
   return (
     <BusinessLayout>
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8" data-testid="owner-shop" data-cart-busy={cartBusy ? "true" : "false"}>
         <div className="flex flex-col md:flex-row gap-8 items-start">
           {/* ── Sidebar ─────────────────────────── */}
           <OwnerSidebar current="/vlasnik/shop" />
@@ -599,7 +637,6 @@ export default function OwnerShop() {
                           product={product}
                           onAdd={addToCart}
                           onQuickView={setQuickViewProduct}
-                          isAdding={addCartItem.isPending}
                         />
                       ))}
                     </div>
@@ -643,7 +680,7 @@ export default function OwnerShop() {
           product={quickViewProduct}
           onClose={() => setQuickViewProduct(null)}
           onAdd={addToCart}
-          isAdding={addCartItem.isPending}
+          cartBusy={cartBusy}
         />
       )}
     </BusinessLayout>

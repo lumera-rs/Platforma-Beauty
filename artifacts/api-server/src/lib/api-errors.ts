@@ -185,7 +185,3 @@ export const apiErrorHandler: ErrorRequestHandler = (
     code: "INTERNAL_ERROR",
   } satisfies ApiErrorBody);
 };
-
-process.on("uncaughtExceptionMonitor", (error) => {
-  logger.fatal({ err: error }, "Uncaught process exception");
-});

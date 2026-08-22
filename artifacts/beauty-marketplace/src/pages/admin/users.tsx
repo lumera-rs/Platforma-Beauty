@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, Users as UsersIcon, Mail, FilterX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [activeFilter, setActiveFilter] = useState<string>("all");

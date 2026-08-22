@@ -7,11 +7,14 @@ import { Loader2, ArrowLeft, Check, Package, AlertTriangle, Truck, CreditCard, R
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetShopCart,
+  useUpdateShopCartItem,
+  useRemoveShopCartItem,
   useGetShopCheckoutProfile,
   useGetShopCheckoutPreview,
   useCheckoutShopCart,
   useGetOrder,
   getGetShopCartQueryKey,
+  getGetShopSummaryQueryKey,
   getGetShopCheckoutPreviewQueryKey,
   getListSalonNotificationsQueryKey,
   getGetOrderQueryKey,
@@ -31,8 +34,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { OptimizedImage } from "@/components/optimized-image";
+import { removeOptimisticCartItem, updateCartAndSummaryOptimistically, updateOptimisticCartQuantity } from "@/lib/optimistic-cart";
+import { rollbackQueries } from "@/lib/optimistic-query";
+import { SHOP_CART_MUTATION_KEY, shopCartMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 import { Separator } from "@/components/ui/separator";
-import { useShopCartMutations } from "@/hooks/use-shop-cart-mutations";
 
 const SESSION_STORAGE_KEY = "lumera_checkout_draft";
 
@@ -66,24 +71,92 @@ function CheckoutStepper({ step }: { step: 1 | 2 | 3 }) {
 }
 
 export function OwnerCartPage() {
+  const queryClient = useQueryClient();
   const { data: cart, isLoading, isError } = useGetShopCart();
-  const { updateItem, removeItem } = useShopCartMutations();
   const { toast } = useToast();
+  const cartBusy = useMutationQueueBusy(shopCartMutationQueue);
+  const updateItem = useUpdateShopCartItem({
+    mutation: {
+      mutationKey: SHOP_CART_MUTATION_KEY,
+      onMutate: async ({ cartItemId, data }) => {
+        const release = await shopCartMutationQueue.acquire();
+        try {
+          const snapshots = await updateCartAndSummaryOptimistically(
+            queryClient,
+            (current) => updateOptimisticCartQuantity(current, cartItemId, data.quantity),
+          );
+          return { snapshots, release };
+        } catch (error) {
+          release();
+          throw error;
+        }
+      },
+      onSuccess: (serverCart) => queryClient.setQueryData(getGetShopCartQueryKey(), serverCart),
+      onError: (_error, _variables, context) => {
+        rollbackQueries(queryClient, context?.snapshots);
+        toast.error("Nije uspelo ažuriranje količine.");
+      },
+      onSettled: async (_data, _error, _variables, context) => {
+        try {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() }),
+          ]);
+        } finally {
+          context?.release();
+        }
+      },
+    },
+  });
+  const removeItem = useRemoveShopCartItem({
+    mutation: {
+      mutationKey: SHOP_CART_MUTATION_KEY,
+      onMutate: async ({ cartItemId }) => {
+        const release = await shopCartMutationQueue.acquire();
+        try {
+          const snapshots = await updateCartAndSummaryOptimistically(
+            queryClient,
+            (current) => removeOptimisticCartItem(current, cartItemId),
+          );
+          return { snapshots, release };
+        } catch (error) {
+          release();
+          throw error;
+        }
+      },
+      onSuccess: (serverCart) => queryClient.setQueryData(getGetShopCartQueryKey(), serverCart),
+      onError: (_error, _variables, context) => {
+        rollbackQueries(queryClient, context?.snapshots);
+        toast.error("Nije uspelo uklanjanje stavke.");
+      },
+      onSettled: async (_data, _error, _variables, context) => {
+        try {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getGetShopCartQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetShopSummaryQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetShopCheckoutPreviewQueryKey() }),
+          ]);
+        } finally {
+          context?.release();
+        }
+      },
+    },
+  });
 
   const handleUpdateQuantity = (cartItemId: string, currentQty: number, delta: number, stock: number) => {
+    if (shopCartMutationQueue.isBusy()) return;
     const newQty = currentQty + delta;
     if (newQty < 1) return;
     if (newQty > stock) {
       toast.error(`Nedovoljno na stanju. Dostupno je samo ${stock} komada.`);
       return;
     }
-    // Guard against rapid repeated clicks while a mutation is in flight.
-    if (updateItem.isPending) return;
     updateItem.mutate({ cartItemId, data: { quantity: newQty } });
   };
 
   const handleRemove = (cartItemId: string) => {
-    if (removeItem.isPending) return;
+    if (shopCartMutationQueue.isBusy()) return;
     removeItem.mutate({ cartItemId });
   };
 
@@ -152,31 +225,34 @@ export function OwnerCartPage() {
                           <div className="flex justify-between items-end mt-4">
                             <div className="flex items-center space-x-1 bg-muted/20 border border-border/50 rounded-lg p-1">
                               <Button 
+                                data-testid={`button-cart-decrement-${item.id}`}
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 onClick={() => handleUpdateQuantity(item.id, item.quantity, -1, item.availableStock)}
-                                disabled={item.quantity <= 1 || updateItem.isPending}
+                                disabled={item.quantity <= 1 || cartBusy}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
                               <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                               <Button 
+                                data-testid={`button-cart-increment-${item.id}`}
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 text-muted-foreground hover:text-foreground"
                                 onClick={() => handleUpdateQuantity(item.id, item.quantity, 1, item.availableStock)}
-                                disabled={item.quantity >= item.availableStock || updateItem.isPending}
+                                disabled={item.quantity >= item.availableStock || cartBusy}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
                             </div>
                             <Button 
+                              data-testid={`button-cart-remove-${item.id}`}
                               variant="ghost" 
                               size="sm" 
                               className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mr-2"
                               onClick={() => handleRemove(item.id)}
-                              disabled={removeItem.isPending}
+                              disabled={cartBusy}
                             >
                               <Trash2 className="h-4 w-4 mr-2" /> Ukloni
                             </Button>

@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Download, Loader2, Printer, Truck, PackageCheck, StickyNote } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 const statuses = ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"] as const;
 const paymentStatuses = ["unpaid", "pending", "paid", "refunded", "failed"] as const;
@@ -103,8 +103,7 @@ export default function AdminOrders() {
   const [, routeParams] = useRoute("/admin/porudzbine/:orderId");
   const qc = useQueryClient(); const { toast } = useToast();
   const [search, setSearch] = useState(""); const [status, setStatus] = useState("all"); const [paymentStatus, setPaymentStatus] = useState("all"); const [deliveryMethod, setDeliveryMethod] = useState("all"); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [selected, setSelected] = useState<string[]>([]); const [bulkPrintMode, setBulkPrintMode] = useState<"packing" | "invoice">("packing");
-  // Debounce the server-bound search text; the input stays immediate.
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   const [page, setPage] = useState(1);
   const pageSize = 50;
   // Reset to the first page whenever any filter changes so results stay reachable.

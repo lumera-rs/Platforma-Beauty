@@ -6012,7 +6012,7 @@ async function shopCartDto(salonId: string) {
   });
   return {
     id: cart.id,
-    items: views.map(({ weightGrams: _weightGrams, ...item }) => item),
+    items: views,
     itemCount: views.reduce((sum, item) => sum + item.quantity, 0),
     subtotal: views.reduce((sum, item) => sum + item.lineTotal, 0),
     totalWeightGrams: views.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),

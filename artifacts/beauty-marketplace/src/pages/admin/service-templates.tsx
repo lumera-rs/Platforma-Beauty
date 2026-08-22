@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { AdminLayout } from "./layout";
-import { useDebounce } from "@/hooks/use-debounce";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +18,7 @@ import {
   useAdminDeleteServiceTemplate,
   getAdminListServiceTemplatesQueryKey,
 } from "@workspace/api-client-react";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 // Local types until the client is updated
 interface ServiceTemplate {
@@ -53,8 +53,7 @@ export default function AdminServiceTemplates() {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
-  // Debounce the value driving the client-side filter; the input stays immediate.
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   const [category, setCategory] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceTemplate | null>(null);
@@ -67,11 +66,10 @@ export default function AdminServiceTemplates() {
 
   const filteredTemplates = useMemo(() => {
     if (!Array.isArray(templates)) return [];
-    const term = debouncedSearch.toLowerCase();
     return templates.filter((t: ServiceTemplate) => 
       (category === "all" || t.mainCategory === category) && (
-        t.name.toLowerCase().includes(term) ||
-        t.mainCategory.toLowerCase().includes(term)
+        t.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        t.mainCategory.toLowerCase().includes(debouncedSearch.toLowerCase())
       )
     );
   }, [templates, debouncedSearch, category]);

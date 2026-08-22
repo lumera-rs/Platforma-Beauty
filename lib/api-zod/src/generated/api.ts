@@ -2627,6 +2627,9 @@ export const getShopCartResponseItemsItemLineTotalMultipleOf = 1;
 export const getShopCartResponseItemsItemAvailableStockMin = 0;
 export const getShopCartResponseItemsItemAvailableStockMultipleOf = 1;
 
+export const getShopCartResponseItemsItemWeightGramsMin = 0;
+export const getShopCartResponseItemsItemWeightGramsMultipleOf = 1;
+
 export const getShopCartResponseItemCountMin = 0;
 export const getShopCartResponseItemCountMultipleOf = 1;
 
@@ -2651,7 +2654,8 @@ export const GetShopCartResponse = zod.object({
   "unitPrice": zod.number().min(getShopCartResponseItemsItemUnitPriceMin).multipleOf(getShopCartResponseItemsItemUnitPriceMultipleOf),
   "quantity": zod.number().min(1).multipleOf(getShopCartResponseItemsItemQuantityMultipleOf),
   "lineTotal": zod.number().min(getShopCartResponseItemsItemLineTotalMin).multipleOf(getShopCartResponseItemsItemLineTotalMultipleOf),
-  "availableStock": zod.number().min(getShopCartResponseItemsItemAvailableStockMin).multipleOf(getShopCartResponseItemsItemAvailableStockMultipleOf)
+  "availableStock": zod.number().min(getShopCartResponseItemsItemAvailableStockMin).multipleOf(getShopCartResponseItemsItemAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(getShopCartResponseItemsItemWeightGramsMin).multipleOf(getShopCartResponseItemsItemWeightGramsMultipleOf)
 })),
   "itemCount": zod.number().min(getShopCartResponseItemCountMin).multipleOf(getShopCartResponseItemCountMultipleOf),
   "subtotal": zod.number().min(getShopCartResponseSubtotalMin).multipleOf(getShopCartResponseSubtotalMultipleOf),
@@ -2685,6 +2689,9 @@ export const addShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
 export const addShopCartItemResponseItemsItemAvailableStockMin = 0;
 export const addShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
 
+export const addShopCartItemResponseItemsItemWeightGramsMin = 0;
+export const addShopCartItemResponseItemsItemWeightGramsMultipleOf = 1;
+
 export const addShopCartItemResponseItemCountMin = 0;
 export const addShopCartItemResponseItemCountMultipleOf = 1;
 
@@ -2709,7 +2716,8 @@ export const AddShopCartItemResponse = zod.object({
   "unitPrice": zod.number().min(addShopCartItemResponseItemsItemUnitPriceMin).multipleOf(addShopCartItemResponseItemsItemUnitPriceMultipleOf),
   "quantity": zod.number().min(1).multipleOf(addShopCartItemResponseItemsItemQuantityMultipleOf),
   "lineTotal": zod.number().min(addShopCartItemResponseItemsItemLineTotalMin).multipleOf(addShopCartItemResponseItemsItemLineTotalMultipleOf),
-  "availableStock": zod.number().min(addShopCartItemResponseItemsItemAvailableStockMin).multipleOf(addShopCartItemResponseItemsItemAvailableStockMultipleOf)
+  "availableStock": zod.number().min(addShopCartItemResponseItemsItemAvailableStockMin).multipleOf(addShopCartItemResponseItemsItemAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(addShopCartItemResponseItemsItemWeightGramsMin).multipleOf(addShopCartItemResponseItemsItemWeightGramsMultipleOf)
 })),
   "itemCount": zod.number().min(addShopCartItemResponseItemCountMin).multipleOf(addShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(addShopCartItemResponseSubtotalMin).multipleOf(addShopCartItemResponseSubtotalMultipleOf),
@@ -2743,6 +2751,9 @@ export const updateShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
 export const updateShopCartItemResponseItemsItemAvailableStockMin = 0;
 export const updateShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
 
+export const updateShopCartItemResponseItemsItemWeightGramsMin = 0;
+export const updateShopCartItemResponseItemsItemWeightGramsMultipleOf = 1;
+
 export const updateShopCartItemResponseItemCountMin = 0;
 export const updateShopCartItemResponseItemCountMultipleOf = 1;
 
@@ -2767,7 +2778,8 @@ export const UpdateShopCartItemResponse = zod.object({
   "unitPrice": zod.number().min(updateShopCartItemResponseItemsItemUnitPriceMin).multipleOf(updateShopCartItemResponseItemsItemUnitPriceMultipleOf),
   "quantity": zod.number().min(1).multipleOf(updateShopCartItemResponseItemsItemQuantityMultipleOf),
   "lineTotal": zod.number().min(updateShopCartItemResponseItemsItemLineTotalMin).multipleOf(updateShopCartItemResponseItemsItemLineTotalMultipleOf),
-  "availableStock": zod.number().min(updateShopCartItemResponseItemsItemAvailableStockMin).multipleOf(updateShopCartItemResponseItemsItemAvailableStockMultipleOf)
+  "availableStock": zod.number().min(updateShopCartItemResponseItemsItemAvailableStockMin).multipleOf(updateShopCartItemResponseItemsItemAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(updateShopCartItemResponseItemsItemWeightGramsMin).multipleOf(updateShopCartItemResponseItemsItemWeightGramsMultipleOf)
 })),
   "itemCount": zod.number().min(updateShopCartItemResponseItemCountMin).multipleOf(updateShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(updateShopCartItemResponseSubtotalMin).multipleOf(updateShopCartItemResponseSubtotalMultipleOf),
@@ -2793,6 +2805,9 @@ export const removeShopCartItemResponseItemsItemLineTotalMultipleOf = 1;
 export const removeShopCartItemResponseItemsItemAvailableStockMin = 0;
 export const removeShopCartItemResponseItemsItemAvailableStockMultipleOf = 1;
 
+export const removeShopCartItemResponseItemsItemWeightGramsMin = 0;
+export const removeShopCartItemResponseItemsItemWeightGramsMultipleOf = 1;
+
 export const removeShopCartItemResponseItemCountMin = 0;
 export const removeShopCartItemResponseItemCountMultipleOf = 1;
 
@@ -2817,7 +2832,8 @@ export const RemoveShopCartItemResponse = zod.object({
   "unitPrice": zod.number().min(removeShopCartItemResponseItemsItemUnitPriceMin).multipleOf(removeShopCartItemResponseItemsItemUnitPriceMultipleOf),
   "quantity": zod.number().min(1).multipleOf(removeShopCartItemResponseItemsItemQuantityMultipleOf),
   "lineTotal": zod.number().min(removeShopCartItemResponseItemsItemLineTotalMin).multipleOf(removeShopCartItemResponseItemsItemLineTotalMultipleOf),
-  "availableStock": zod.number().min(removeShopCartItemResponseItemsItemAvailableStockMin).multipleOf(removeShopCartItemResponseItemsItemAvailableStockMultipleOf)
+  "availableStock": zod.number().min(removeShopCartItemResponseItemsItemAvailableStockMin).multipleOf(removeShopCartItemResponseItemsItemAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(removeShopCartItemResponseItemsItemWeightGramsMin).multipleOf(removeShopCartItemResponseItemsItemWeightGramsMultipleOf)
 })),
   "itemCount": zod.number().min(removeShopCartItemResponseItemCountMin).multipleOf(removeShopCartItemResponseItemCountMultipleOf),
   "subtotal": zod.number().min(removeShopCartItemResponseSubtotalMin).multipleOf(removeShopCartItemResponseSubtotalMultipleOf),
@@ -2878,6 +2894,9 @@ export const getShopCheckoutPreviewResponseCartItemsItemLineTotalMultipleOf = 1;
 export const getShopCheckoutPreviewResponseCartItemsItemAvailableStockMin = 0;
 export const getShopCheckoutPreviewResponseCartItemsItemAvailableStockMultipleOf = 1;
 
+export const getShopCheckoutPreviewResponseCartItemsItemWeightGramsMin = 0;
+export const getShopCheckoutPreviewResponseCartItemsItemWeightGramsMultipleOf = 1;
+
 export const getShopCheckoutPreviewResponseCartItemCountMin = 0;
 export const getShopCheckoutPreviewResponseCartItemCountMultipleOf = 1;
 
@@ -2909,7 +2928,8 @@ export const GetShopCheckoutPreviewResponse = zod.object({
   "unitPrice": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemUnitPriceMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemUnitPriceMultipleOf),
   "quantity": zod.number().min(1).multipleOf(getShopCheckoutPreviewResponseCartItemsItemQuantityMultipleOf),
   "lineTotal": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemLineTotalMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemLineTotalMultipleOf),
-  "availableStock": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMultipleOf)
+  "availableStock": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemAvailableStockMultipleOf),
+  "weightGrams": zod.number().min(getShopCheckoutPreviewResponseCartItemsItemWeightGramsMin).multipleOf(getShopCheckoutPreviewResponseCartItemsItemWeightGramsMultipleOf)
 })),
   "itemCount": zod.number().min(getShopCheckoutPreviewResponseCartItemCountMin).multipleOf(getShopCheckoutPreviewResponseCartItemCountMultipleOf),
   "subtotal": zod.number().min(getShopCheckoutPreviewResponseCartSubtotalMin).multipleOf(getShopCheckoutPreviewResponseCartSubtotalMultipleOf),

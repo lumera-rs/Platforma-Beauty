@@ -1302,6 +1302,8 @@ export interface ShopCartItem {
   lineTotal: number;
   /** @minimum 0 */
   availableStock: number;
+  /** @minimum 0 */
+  weightGrams: number;
 }
 
 export interface ShopCart {

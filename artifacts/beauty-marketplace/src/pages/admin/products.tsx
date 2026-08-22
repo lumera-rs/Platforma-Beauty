@@ -38,7 +38,7 @@ import {
   ArrowUpDown, X, ImagePlus, Star, Layers,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
@@ -650,9 +650,7 @@ export default function AdminProducts() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  // Keep the input value immediate for the user but debounce the server-bound
-  // query value so we don't fire a request per keystroke.
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   const [category, setCategory] = useState("");
   const [subcategory, setSubcategory] = useState("");
   const [brand, setBrand] = useState("");
@@ -662,8 +660,9 @@ export default function AdminProducts() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  // Reset to the first page when the debounced (server-bound) search settles.
-  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
   const params: AdminListProductsParams = useMemo(() => ({
     ...(debouncedSearch ? { search: debouncedSearch } : {}),

@@ -1,94 +1,96 @@
 import {
   getGetCustomerDashboardQueryKey,
   getListFavoritesQueryKey,
+  type CustomerDashboard,
+  type SalonCard,
   useGetCurrentUser,
   useListFavorites,
   useToggleFavorite,
 } from "@workspace/api-client-react";
-import type { CustomerDashboard, SalonCard } from "@workspace/api-client-react";
 import { Heart } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+import { rollbackQueries, updateQueryOptimistically } from "@/lib/optimistic-query";
+import { FAVORITE_MUTATION_KEY, favoriteMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
+import { updateOptimisticFavorites } from "@/lib/optimistic-favorite";
 
-export function SalonFavoriteButton({ salon, className }: { salon: SalonCard; className?: string }) {
+export function SalonFavoriteButton({
+  salon,
+  className,
+}: {
+  salon: SalonCard;
+  className?: string;
+}) {
   const salonId = salon.id;
   const queryClient = useQueryClient();
+  const favoriteMutationPending = useMutationQueueBusy(favoriteMutationQueue);
   const { toast } = useToast();
-  const [optimisticFavorited, setOptimisticFavorited] = useState<boolean | null>(null);
-  const [isInteractionPending, setIsInteractionPending] = useState(false);
   const { data: userResp } = useGetCurrentUser();
   const isCustomer = userResp?.user?.role === "CUSTOMER";
-  const showFavoriteError = () => {
-    toast.error("Favorit nije sačuvan", {
-      id: `favorite-error-${salonId}`,
-      description: "Pokušajte ponovo za trenutak.",
-    });
-  };
-  const { data: favorites, isSuccess: areFavoritesReady } = useListFavorites({
+  const { data: favorites = [] } = useListFavorites({
     query: {
       enabled: isCustomer,
       queryKey: getListFavoritesQueryKey(),
     },
   });
-  const favoritesKey = getListFavoritesQueryKey();
-  const dashboardKey = getGetCustomerDashboardQueryKey();
+  const serverIsFavorited = favorites.some((salon) => salon.id === salonId);
+  const [optimisticFavorited, setOptimisticFavorited] = useState<boolean | null>(null);
+  const isFavorited = optimisticFavorited ?? serverIsFavorited;
   const toggleFavorite = useToggleFavorite({
     mutation: {
-      // Optimistically flip favorited state before the server responds, keeping
-      // a snapshot for rollback and reconciling with the server on settle.
+      mutationKey: FAVORITE_MUTATION_KEY,
       onMutate: async () => {
-        await Promise.all([
-          queryClient.cancelQueries({ queryKey: favoritesKey }),
-          queryClient.cancelQueries({ queryKey: dashboardKey }),
-        ]);
-        const previousFavorites = queryClient.getQueryData<SalonCard[]>(favoritesKey);
-        const previousDashboard = queryClient.getQueryData<CustomerDashboard>(dashboardKey);
-        const currentFavorites = previousFavorites ?? favorites;
-        if (!currentFavorites) {
-          throw new Error("Favorites cache is not ready.");
+        const release = await favoriteMutationQueue.acquire();
+        const snapshots = [];
+        try {
+          const cachedFavorites = queryClient.getQueryData<SalonCard[]>(getListFavoritesQueryKey()) ?? favorites;
+          const nextFavorited = !cachedFavorites.some((item) => item.id === salonId);
+          setOptimisticFavorited(nextFavorited);
+          snapshots.push(await updateQueryOptimistically<SalonCard[]>(
+            queryClient,
+            getListFavoritesQueryKey(),
+            (current) => updateOptimisticFavorites(current, salon, nextFavorited),
+          ));
+          snapshots.push(await updateQueryOptimistically<CustomerDashboard>(
+            queryClient,
+            getGetCustomerDashboardQueryKey(),
+            (current) => current ? {
+              ...current,
+              favoriteCount: Math.max(0, current.favoriteCount + (nextFavorited ? 1 : -1)),
+            } : current,
+          ));
+          return { snapshots, release };
+        } catch (error) {
+          rollbackQueries(queryClient, snapshots);
+          release();
+          throw error;
         }
-        const currentlyFavorited = currentFavorites.some((favorite) => favorite.id === salonId);
-
-        queryClient.setQueryData<SalonCard[]>(favoritesKey, (current = currentFavorites) =>
-          currentlyFavorited
-            ? current.filter((favorite) => favorite.id !== salonId)
-            : current.some((favorite) => favorite.id === salonId)
-              ? current
-              : [...current, salon],
-        );
-        queryClient.setQueryData<CustomerDashboard>(dashboardKey, (current) =>
-          current
-            ? { ...current, favoriteCount: Math.max(0, current.favoriteCount + (currentlyFavorited ? -1 : 1)) }
-            : current,
-        );
-
-        return { previousFavorites, previousDashboard };
-      },
-      onError: (_error, _variables, context) => {
-        if (context?.previousFavorites !== undefined) queryClient.setQueryData(favoritesKey, context.previousFavorites);
-        if (context?.previousDashboard !== undefined) queryClient.setQueryData(dashboardKey, context.previousDashboard);
-        setOptimisticFavorited(null);
-        showFavoriteError();
       },
       onSuccess: (result) => {
         setOptimisticFavorited(result.favorited);
         toast.success(result.favorited ? "Salon je dodat u omiljene." : "Salon je uklonjen iz omiljenih.");
       },
-      // Reconcile the local optimistic state with authoritative server data.
-      onSettled: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: favoritesKey }),
-          queryClient.invalidateQueries({ queryKey: dashboardKey }),
-        ]);
+      onError: (_error, _variables, context) => {
+        rollbackQueries(queryClient, context?.snapshots);
         setOptimisticFavorited(null);
-        setIsInteractionPending(false);
+        toast.error("Favorit nije sačuvan", { description: "Pokušajte ponovo za trenutak." });
+      },
+      onSettled: async (_data, _error, _variables, context) => {
+        try {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: getListFavoritesQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() }),
+          ]);
+          setOptimisticFavorited(null);
+        } finally {
+          context?.release();
+        }
       },
     },
   });
-  const isFavorited = optimisticFavorited ?? (favorites ?? []).some((favorite) => favorite.id === salonId);
 
   if (!isCustomer) return null;
 
@@ -99,9 +101,9 @@ export function SalonFavoriteButton({ salon, className }: { salon: SalonCard; cl
       variant="secondary"
       aria-label={isFavorited ? "Ukloni iz omiljenih salona" : "Dodaj u omiljene salone"}
       aria-pressed={isFavorited}
-      disabled={!areFavoritesReady || favorites === undefined || isInteractionPending}
-      data-pending={!areFavoritesReady || favorites === undefined || isInteractionPending}
-      data-testid={`button-favorite-salon-${salonId}`}
+      data-testid={`button-favorite-${salonId}`}
+      data-favorited={isFavorited ? "true" : "false"}
+      disabled={favoriteMutationPending}
       className={cn(
         "rounded-full bg-background/95 shadow-sm backdrop-blur hover:bg-background",
         isFavorited && "text-primary",
@@ -110,13 +112,9 @@ export function SalonFavoriteButton({ salon, className }: { salon: SalonCard; cl
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        // Guard against rapid repeated clicks while a toggle is in flight.
-        if (!areFavoritesReady || favorites === undefined || isInteractionPending) return;
-        setIsInteractionPending(true);
+        if (favoriteMutationQueue.isBusy()) return;
         setOptimisticFavorited(!isFavorited);
-        void toggleFavorite
-          .mutateAsync({ data: { salonId } })
-          .catch(() => showFavoriteError());
+        toggleFavorite.mutate({ data: { salonId } });
       }}
     >
       <Heart className={cn("h-4 w-4", isFavorited && "fill-current")} />

@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
-export function useDebounce<T>(value: T, delay: number): T {
+export const SEARCH_DEBOUNCE_MS = 300;
+
+export function useDebounce<T>(value: T, delay = SEARCH_DEBOUNCE_MS): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
   useEffect(() => {
@@ -14,4 +16,9 @@ export function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay]);
 
   return debouncedValue;
+}
+
+/** The only debounce timing used by server-bound text search controls. */
+export function useDebouncedSearch(value: string): string {
+  return useDebounce(value, SEARCH_DEBOUNCE_MS);
 }

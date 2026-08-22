@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { useState, useEffect, useMemo } from "react";
 import { HomeSalonCard, HomeDiscountSalonCard } from "@/components/home-salon-card";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -38,7 +38,7 @@ export default function Home() {
   const [searchCategory, setSearchCategory] = useState("");
   const [sessionCity, setSessionCity] = useState("");
   const [heroCityInput, setHeroCityInput] = useState("");
-  const debouncedHeroCityInput = useDebounce(heroCityInput, 300);
+  const debouncedHeroCityInput = useDebouncedSearch(heroCityInput);
 
   // Hydrate city from session storage on mount
   useEffect(() => {

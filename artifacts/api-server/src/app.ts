@@ -1,9 +1,9 @@
-import express, { type Express, type RequestHandler } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
-import { logger, SLOW_API_THRESHOLD_MS } from "./lib/logger";
+import { logger } from "./lib/logger";
 import { apiErrorHandler, normalizeAdminErrorResponses } from "./lib/api-errors";
 
 const app: Express = express();
@@ -29,36 +29,58 @@ app.use(
   }),
 );
 
+export const slowRequestThresholdMs: number = (() => {
+  const raw = process.env["SLOW_REQUEST_THRESHOLD_MS"];
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 1000;
+})();
+
 /**
- * Emits a structured `slow-api` event for completed requests whose duration is
- * at or above the configured threshold. The payload is deliberately minimal:
- * request id, method, sanitized pathname (query stripped), response status and
- * duration. No request/response body, raw query string, cookies, authorization
- * headers, client IP, or provider/database error detail is ever included.
+ * Strips the query string from a URL and returns only the pathname portion.
+ * Used to ensure no query parameter values (which may contain sensitive data)
+ * are ever emitted in logs.
  */
-export const slowApiMonitor: RequestHandler = (req, res, next) => {
-  const start = process.hrtime.bigint();
-  res.on("finish", () => {
-    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
-    if (durationMs < SLOW_API_THRESHOLD_MS) return;
+export function safePathname(url: string | undefined): string {
+  if (!url) return "/";
+  const qIndex = url.indexOf("?");
+  return qIndex === -1 ? url : url.slice(0, qIndex);
+}
 
-    const pathname = req.originalUrl.split("?")[0] ?? req.path;
-    req.log.warn(
-      {
-        event: "slow-api",
-        reqId: req.id,
-        method: req.method,
-        pathname,
-        statusCode: res.statusCode,
-        durationMs: Math.round(durationMs),
-      },
-      "slow-api",
-    );
-  });
-  next();
-};
+/**
+ * Express middleware that measures request duration and emits a single
+ * structured `slow_request` warning log when the response takes longer than
+ * `slowRequestThresholdMs`. The log entry contains:
+ *   event, requestId, method, pathname (no query), statusCode, durationMs.
+ */
+export function makeSlowRequestMiddleware(
+  thresholdMs: number,
+  log: typeof logger,
+): (req: Request, res: Response, next: NextFunction) => void {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const startedAt = Date.now();
 
-app.use(slowApiMonitor);
+    res.once("finish", () => {
+      const durationMs = Date.now() - startedAt;
+      if (durationMs >= thresholdMs) {
+        log.warn({
+          event: "slow_request",
+          requestId: String(req.id ?? ""),
+          method: req.method,
+          pathname: safePathname(req.url),
+          statusCode: res.statusCode,
+          durationMs,
+        }, "slow_request");
+      }
+    });
+
+    next();
+  };
+}
+
+app.use(makeSlowRequestMiddleware(slowRequestThresholdMs, logger));
 app.use(cors());
 app.use(cookieParser());
 app.use(express.json());

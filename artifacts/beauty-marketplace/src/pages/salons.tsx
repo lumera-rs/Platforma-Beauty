@@ -1,5 +1,4 @@
 import { Layout } from "@/components/layout";
-import { useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
 import { Link, useSearch } from "wouter";
 import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { OptimizedImage } from "@/components/optimized-image";
@@ -10,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
-import { useDebounce } from "@/hooks/use-debounce";
+import { getListSalonsQueryKey, useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 const PAGE_SIZE = 6;
 const salonSortValues = ["recommended", "top-rated", "cheapest", "largest-discount", "nearest", "first-available", "most-popular", "most-booked-recently", "newest"] as const;
@@ -43,13 +43,10 @@ export default function Salons() {
   const [page, setPage] = useState(1);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
-  // Free-text location filters are server-bound, so debounce the values that
-  // reach the query while the inputs themselves stay immediate.
-  const debouncedCity = useDebounce(city, 300);
-  const debouncedMunicipality = useDebounce(municipality, 300);
-  const debouncedBrand = useDebounce(brand, 300);
-
   const listRef = useRef<HTMLDivElement>(null);
+  const debouncedCity = useDebouncedSearch(city);
+  const debouncedMunicipality = useDebouncedSearch(municipality);
+  const debouncedBrand = useDebouncedSearch(brand);
 
   useEffect(() => {
     if (sort !== "nearest") return;
@@ -100,7 +97,9 @@ export default function Salons() {
     pageSize: PAGE_SIZE,
   }), [filterParams, page]);
 
-  const { data: pageSalons, isLoading, isFetching } = useListSalons(params);
+  const { data: pageSalons, isLoading, isFetching } = useListSalons(params, {
+    query: { queryKey: getListSalonsQueryKey(params) },
+  });
   const isResultsLoading = isLoading || isFetching;
 
   const categories = ["Frizerski saloni", "Muški frizeri", "Kozmetički saloni", "Depilacija", "Lice", "Nokti", "Masaža", "Telo", "Wellness", "Lux tretmani", "Paketi usluga", "Ordinacije i poliklinike"];

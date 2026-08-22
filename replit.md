@@ -3,9 +3,11 @@
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm run bundle:check` — production frontend build plus manifest-based bundle budget validation
-- `pnpm run test:monitoring` — slow-API sanitization/threshold and safe-error response regressions
-- `pnpm run validate:release` — full release gate, including bundle, monitoring, DB/query/cache/archive/admin regressions
+- `pnpm run validate:release` — full release gate: build + bundle budget + DB/query/cache/archive/admin validation regressions
+- `pnpm run bundle:check` — compatibility command for a production frontend build plus the legacy manifest report
+- `pnpm run test:bundle-budget` — run the frontend bundle budget gate in isolation (requires a prior build)
+- `pnpm run test:frontend-standards && pnpm run test:frontend-interactions` — enforce lazy routes, shared debounce, serialized optimistic updates, and rollback behavior
+- `pnpm run test:monitoring` — verify slow-request privacy, safe 500 responses, and fatal-process shutdown handling
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm run test:query-budgets` — guard set-based marketplace list endpoints against N+1 regressions
@@ -39,9 +41,31 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 - Retention jobs archive eligible read/terminal records before deleting live rows, using bounded batches, an advisory lock, row locking, and one transaction per batch.
 - Frontend route pages stay behind `React.lazy` + `Suspense`; keep only global providers, the router, guards, and the route fallback in the eager entry graph.
 - Text inputs that trigger server requests or expensive filtering use the shared 300 ms debounce. Reset pagination when a debounced criterion changes; selects, checkboxes, and other discrete filters remain immediate.
-- Favorites, B2B cart changes, and read-notification actions use TanStack Query optimistic updates: cancel matching reads, snapshot and patch every affected cache, roll back on error, then reconcile with precise invalidation. Checkout, payment, escrow, and other financial actions remain server-authoritative.
+- Reversible favorites, B2B cart changes, and read-notification actions use serialized optimistic cache updates with exact rollback and server reconciliation. Checkout, payment, escrow, and other financial actions remain server-authoritative.
 - Slow API events contain only request ID, method, query-free pathname, status, and duration. Process-level failures use the shared logger without request bodies, query values, auth/cookies, raw provider responses, database details, or arbitrary error payloads.
-- Frontend bundle budgets are enforced from the Vite manifest: entry ≤200 KB gzip, largest lazy chunk ≤100 KB gzip, total JS ≤750 KB gzip, and at least 25 chunks. Deliberate budget changes require a measured review.
+
+## Frontend performance rules
+
+These rules are enforced by `pnpm run test:bundle-budget` (part of `validate:release`).  Any change that breaks them is a release blocker.
+
+### Bundle budget
+- **Initial-entry JS (gzip) ≤ 150 kB.** The pre-split monolith was ~1.52 MB raw; with full route lazy-loading the current baseline is ~120 kB gzip. Budgets were set from an actual production build; do not lower them speculatively.
+- **No single JS chunk may exceed 300 kB gzip.** Route lazy-loading distributes the load: the largest lazy chunk today is `salon-profile` at ~62 kB gzip.
+- Vite emits a manifest (`dist/public/.vite/manifest.json`) so tooling can identify entry chunks by logical name rather than content hash. Do not disable `build.manifest`.
+- `resolve.dedupe: ['react', 'react-dom']` is required in `vite.config.ts`. The budget gate detects React runtime duplication and fails if more than one chunk contains the React internals sentinel.
+
+### New routes
+- Every new page added to `App.tsx` **must** use `React.lazy(() => import('./pages/…'))`. Never import a page module eagerly from App.tsx. Route-level code splitting is what keeps the initial entry budget viable.
+
+### Search / filter debounce
+- Any text-input that triggers a server query (search boxes, filter fields) **must** debounce at **300 ms** before firing the API call. Do not call live search on every keystroke.
+
+### Optimistic mutations
+- Reversible fast actions must update the React Query cache in `onMutate`, retain the exact prior snapshot, restore it in `onError`, and reconcile affected query keys in `onSettled`. Do not optimistically apply financial or otherwise irreversible actions.
+- Mutations that can touch the same cache must acquire their shared FIFO mutation queue before taking a snapshot and release it only after reconciliation. Use a shared mutation key to disable related controls while an operation is pending.
+
+### Pino / structured logging
+- Slow-path Pino log calls (`logger.warn`, `logger.error`) that include user-provided or row-level data **must** omit sensitive fields (passwords, tokens, PII). Use `redact` in the Pino config or destructure to an explicit allowlist before logging. Never log raw request bodies or full DB row objects at warn/error level.
 
 ## Product
 
@@ -56,7 +80,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Keep generated API schemas compatible with Zod v3: represent whole numbers as `type: number` plus `multipleOf: 1`, then run codegen and its duplicate-export/EOF normalization checks.
 - Catalog mutations must invalidate every affected cache namespace; PostgreSQL notifications are cross-process wakeups, while the database remains the source of truth.
 - Any schema/query/cache/admin mutation change must keep `pnpm run test:backend-standards` and `pnpm run validate:release` passing.
-- New frontend routes, text filters, optimistic mutations, or monitoring changes must keep `pnpm run bundle:check`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
+- New frontend routes, text filters, optimistic mutations, or monitoring changes must keep `pnpm run test:frontend-standards`, `pnpm run test:frontend-interactions`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details

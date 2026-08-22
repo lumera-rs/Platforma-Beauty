@@ -9,14 +9,14 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Search, Store, Building2, MapPin, CheckCircle, Crown, FilterX, BadgeCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 export default function AdminSalons() {
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   
   const [city, setCity] = useState("");
-  const debouncedCity = useDebounce(city, 300);
+  const debouncedCity = useDebouncedSearch(city);
   
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [featuredFilter, setFeaturedFilter] = useState<string>("all");

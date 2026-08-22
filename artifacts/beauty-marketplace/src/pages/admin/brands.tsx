@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { AdminLayout } from "./layout";
-import { useDebounce } from "@/hooks/use-debounce";
 import { extractApiError } from "@/lib/admin-form-utils";
 import { OptimizedImage } from "@/components/optimized-image";
 import {
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Loader2, Plus, Edit2, Trash2, Tags, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedSearch } from "@/hooks/use-debounce";
 
 const emptyForm: AdminBrandInput = { name: "", description: "", logoUrl: null, active: true };
 
@@ -34,9 +34,7 @@ export default function AdminBrands() {
   const { toast } = useToast();
 
   const [search, setSearch] = useState("");
-  // Debounce the value driving the client-side filter so typing stays smooth
-  // while the input itself updates immediately.
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebouncedSearch(search);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminBrand | null>(null);
   const [form, setForm] = useState<AdminBrandInput>(emptyForm);

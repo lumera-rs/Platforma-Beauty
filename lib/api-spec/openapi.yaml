@@ -4384,7 +4384,8 @@ components:
         quantity: { type: number, minimum: 1, multipleOf: 1 }
         lineTotal: { type: number, minimum: 0, multipleOf: 1 }
         availableStock: { type: number, minimum: 0, multipleOf: 1 }
-      required: [id, productId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock]
+        weightGrams: { type: number, minimum: 0, multipleOf: 1 }
+      required: [id, productId, productName, productImageUrl, variantValue, variantLabel, productSku, unitPrice, quantity, lineTotal, availableStock, weightGrams]
     ShopCart:
       type: object
       properties:

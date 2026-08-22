@@ -5,15 +5,17 @@ import {
   useGetCurrentUser,
   useListSalonNotifications,
   useMarkSalonNotificationRead,
+  type SalonNotification,
 } from "@workspace/api-client-react";
-import type { SalonNotification } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
-import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Bell, Check, ExternalLink } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { rollbackQueries, updateMatchingQueriesOptimistically } from "@/lib/optimistic-query";
+import { OWNER_NOTIFICATION_MUTATION_KEY, ownerNotificationMutationQueue, useMutationQueueBusy } from "@/lib/optimistic-mutation-queue";
 
 function notificationDate(value: string) {
   return new Date(value).toLocaleString("sr-RS", {
@@ -25,6 +27,7 @@ function notificationDate(value: string) {
 export default function OwnerNotifications() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const notificationMutationPending = useMutationQueueBusy(ownerNotificationMutationQueue);
   const { data: userResponse, isLoading: isUserLoading } = useGetCurrentUser();
   const user = userResponse?.user;
   const [page, setPage] = useState(1);
@@ -38,30 +41,36 @@ export default function OwnerNotifications() {
     query: { enabled: user?.role === "SALON_OWNER", queryKey: notificationsQueryKey },
   });
   const hasNextPage = notifications.length === pageSize;
-  const ownerNotificationsKey = salonNotificationsQueryKey(user?.id);
   const markAsRead = useMarkSalonNotificationRead({
     mutation: {
-      // Optimistically flag the notification as read across every cached page
-      // (and the navbar badge, which shares the same key prefix), snapshotting
-      // for rollback and reconciling with the server on settle.
+      mutationKey: OWNER_NOTIFICATION_MUTATION_KEY,
       onMutate: async ({ notificationId }) => {
-        await queryClient.cancelQueries({ queryKey: ownerNotificationsKey });
-        const readAt = new Date().toISOString();
-        const previous = queryClient.getQueriesData<SalonNotification[]>({ queryKey: ownerNotificationsKey });
-        previous.forEach(([key, list]) => {
-          if (!list) return;
-          queryClient.setQueryData<SalonNotification[]>(
-            key,
-            list.map((item) => (item.id === notificationId && !item.readAt ? { ...item, readAt } : item)),
+        const release = await ownerNotificationMutationQueue.acquire();
+        try {
+          const snapshots = await updateMatchingQueriesOptimistically<SalonNotification[]>(
+            queryClient,
+            { queryKey: salonNotificationsQueryKey(user?.id) },
+            (current) => current?.map((item) => item.id === notificationId
+              ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
+              : item),
           );
-        });
-        return { previous };
+          return { snapshots, release };
+        } catch (error) {
+          release();
+          throw error;
+        }
       },
       onError: (_error, _variables, context) => {
-        context?.previous?.forEach(([key, list]) => queryClient.setQueryData(key, list));
-        toast.error("Nije uspelo označavanje kao pročitano.");
+        rollbackQueries(queryClient, context?.snapshots);
+        toast.error("Obaveštenje nije ažurirano", { description: "Vraćeno je prethodno stanje. Pokušajte ponovo." });
       },
-      onSettled: () => queryClient.invalidateQueries({ queryKey: ownerNotificationsKey }),
+      onSettled: async (_data, _error, _variables, context) => {
+        try {
+          await queryClient.invalidateQueries({ queryKey: salonNotificationsQueryKey(user?.id) });
+        } finally {
+          context?.release();
+        }
+      },
     },
   });
 
@@ -106,10 +115,10 @@ export default function OwnerNotifications() {
                           <Button
                             size="sm"
                             onClick={() => markAsRead.mutate({ notificationId: notification.id })}
-                            disabled={markAsRead.isPending}
+                            disabled={notificationMutationPending}
                             data-testid={`button-mark-notification-read-${notification.id}`}
                           >
-                            {markAsRead.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                            {notificationMutationPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
                             Označi kao pročitano
                           </Button>
                         )}
