@@ -1514,7 +1514,7 @@ async function readVerifiedEducationMediaUpload(upload: typeof educationMediaUpl
   if (!response.ok) return null;
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.toLowerCase();
   const contentLength = Number(response.headers.get("content-length"));
-  if (contentType !== upload.contentType || !Number.isInteger(contentLength) || contentLength !== upload.size || contentLength > 8 * 1024 * 1024) {
+  if (contentType !== upload.contentType || !Number.isInteger(contentLength) || contentLength !== upload.size || contentLength > MAX_EDUCATION_GALLERY_IMAGE_BYTES) {
     response.body?.cancel();
     return null;
   }
@@ -2039,6 +2039,7 @@ const DEFAULT_POPULAR_CATEGORY_ORDER = [
   "Ordinacije i poliklinike",
 ];
 const CATEGORY_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const MAX_EDUCATION_GALLERY_IMAGE_BYTES = 8 * 1024 * 1024;
 
 function isRealSalonGalleryImage(url: string): boolean {
   const normalized = url.trim().toLowerCase();
@@ -5959,6 +5960,13 @@ router.post("/education/courses/:courseId/gallery/upload-url", async (req, res):
   const params = GetEducationCourseParams.safeParse(req.params);
   const body = RequestEducationCourseGalleryUploadBody.safeParse(req.body);
   if (!params.success || !body.success) {
+    const requestedSize = req.body && typeof req.body === "object" && "size" in req.body
+      ? (req.body as { size?: unknown }).size
+      : undefined;
+    if (typeof requestedSize === "number" && requestedSize > MAX_EDUCATION_GALLERY_IMAGE_BYTES) {
+      res.status(413).json({ error: "Fotografija ne može biti veća od 8 MB." });
+      return;
+    }
     res.status(400).json({ error: "Podaci za fotografiju nisu ispravni." });
     return;
   }

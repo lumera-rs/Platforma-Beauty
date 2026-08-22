@@ -6,16 +6,25 @@ import {
   educationCentersTable,
   educationCenterSubscriptionsTable,
   educationMediaTable,
+  educationMediaUploadsTable,
   subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import { runEducationGalleryCleanup } from "../../artifacts/api-server/src/routes/marketplace";
 import { eq, inArray } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLq7wAAAABJRU5ErkJggg==",
   "base64",
 );
+const maxGalleryImageBytes = 8 * 1024 * 1024;
+
+function paddedPng(size: number): Buffer {
+  const bytes = Buffer.alloc(size);
+  tinyPng.copy(bytes);
+  return bytes;
+}
 
 type GalleryFixture = {
   ownerEmail: string;
@@ -143,6 +152,20 @@ test("education center owner uploads, manages, and removes a course gallery imag
     await expect(page.getByText("Fotografije galerije", { exact: true })).toBeVisible();
     const picker = page.getByLabel("Dodaj fotografiju u galeriju");
     await expect(picker).toBeAttached();
+    let oversizedUploadUrlRequests = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.url().includes(`/api/education/courses/${fixture.courseId}/gallery/upload-url`)) {
+        oversizedUploadUrlRequests += 1;
+      }
+    });
+    await picker.setInputFiles({
+      name: "course-gallery-too-large.png",
+      mimeType: "image/png",
+      buffer: paddedPng(maxGalleryImageBytes + 1),
+    });
+    await expect(page.getByRole("alert")).toContainText("do 8 MB");
+    await expect(picker).toBeEnabled();
+    expect(oversizedUploadUrlRequests).toBe(0);
     const firstUploadTicketResponse = page.waitForResponse((response) =>
       response.request().method() === "POST"
       && response.url().includes(`/api/education/courses/${fixture.courseId}/gallery/upload-url`),
@@ -268,6 +291,86 @@ test("education center owner uploads, manages, and removes a course gallery imag
       data: { name: "forbidden.png", size: tinyPng.length, contentType: "image/png" },
     });
     expect(forbidden.status()).toBe(403);
+  } finally {
+    await cleanUpGalleryFixture(fixture);
+  }
+});
+
+
+test("education gallery accepts the exact 8 MB limit and rejects invalid bytes before attachment", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await createGalleryFixture();
+  try {
+    const ownerLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    });
+    expect(ownerLogin).toBeOK();
+
+    const uploadTicketResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
+      data: {
+        name: "course-gallery-maximum.png",
+        size: maxGalleryImageBytes,
+        contentType: "image/png",
+      },
+    });
+    expect(uploadTicketResponse).toBeOK();
+    const uploadTicket = await uploadTicketResponse.json() as { uploadUrl: string; mediaId: string };
+    const maximumUpload = await page.request.put(uploadTicket.uploadUrl, {
+      headers: { "Content-Type": "image/png" },
+      data: paddedPng(maxGalleryImageBytes),
+    });
+    expect(maximumUpload).toBeOK();
+    const attachedMaximum = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
+      data: { mediaId: uploadTicket.mediaId, altText: "" },
+    });
+    expect(attachedMaximum.status()).toBe(201);
+    const attachedMaximumJson = await attachedMaximum.json() as { id: string };
+
+    const malformedTicketResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
+      data: {
+        name: "course-gallery-malformed.png",
+        size: tinyPng.length,
+        contentType: "image/png",
+      },
+    });
+    expect(malformedTicketResponse).toBeOK();
+    const malformedTicket = await malformedTicketResponse.json() as { uploadUrl: string; mediaId: string };
+    const malformedUpload = await page.request.put(malformedTicket.uploadUrl, {
+      headers: { "Content-Type": "image/png" },
+      data: Buffer.from("not a PNG"),
+    });
+    expect(malformedUpload).toBeOK();
+    const malformedAttach = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
+      data: { mediaId: malformedTicket.mediaId },
+    });
+    expect(malformedAttach.status()).toBe(400);
+    expect(await malformedAttach.json()).toEqual({ error: "Otpremljeni fajl nije ispravna slika ili ne odgovara odabranoj datoteci." });
+
+    const oversizedTicket = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
+      data: {
+        name: "course-gallery-oversized.png",
+        size: maxGalleryImageBytes + 1,
+        contentType: "image/png",
+      },
+    });
+    expect(oversizedTicket.status()).toBe(413);
+    expect(await oversizedTicket.json()).toEqual({ error: "Fotografija ne može biti veća od 8 MB." });
+
+    const courseResponse = await page.request.get(`/api/education/courses/${fixture.courseId}`);
+    expect(courseResponse).toBeOK();
+    const courseJson = await courseResponse.json() as { gallery: Array<{ id: string }> };
+    expect(courseJson.gallery.map((media) => media.id)).toEqual([attachedMaximumJson.id]);
+    const uploadRows = await db.select().from(educationMediaUploadsTable).where(eq(educationMediaUploadsTable.courseId, fixture.courseId));
+    expect(uploadRows).toHaveLength(2);
+    expect(uploadRows.find((upload) => upload.id === uploadTicket.mediaId)?.attachedAt).not.toBeNull();
+    expect(uploadRows.find((upload) => upload.id === malformedTicket.mediaId)?.attachedAt).toBeNull();
+
+    const removedMaximum = await page.request.delete(`/api/education/courses/${fixture.courseId}/gallery/${attachedMaximumJson.id}`);
+    expect(removedMaximum).toBeOK();
+    await db.update(educationMediaUploadsTable)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(educationMediaUploadsTable.id, malformedTicket.mediaId));
+    await runEducationGalleryCleanup();
   } finally {
     await cleanUpGalleryFixture(fixture);
   }

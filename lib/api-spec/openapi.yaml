@@ -1672,6 +1672,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EducationGalleryUpload" }
+        "413": { description: Image exceeds the 8 MB limit }
         "403": { description: Education-center ownership required }
   /education/courses/{courseId}/gallery:
     post:

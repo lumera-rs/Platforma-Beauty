@@ -1054,11 +1054,23 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 
 type CourseGalleryItem = { id: string; url: string; altText: string; sortOrder: number };
 
+function galleryUploadErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "data" in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === "object" && "error" in data && typeof (data as { error?: unknown }).error === "string") {
+      return (data as { error: string }).error;
+    }
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return "Pokušajte ponovo sa drugom slikom.";
+}
+
 function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: string; gallery: CourseGalleryItem[] }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [gallery, setGallery] = useState<CourseGalleryItem[]>(initialGallery);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const requestUpload = useRequestEducationCourseGalleryUpload();
   const addMedia = useAddEducationCourseGalleryMedia();
   const reorder = useReorderEducationCourseGallery();
@@ -1087,9 +1099,12 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setUploadError(null);
     const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!supported.includes(file.type.toLowerCase()) || file.size > 8 * 1024 * 1024) {
-      toast.error("Neispravna slika", { description: "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB." });
+      const message = "Izaberite JPG, PNG, WEBP ili GIF sliku do 8 MB.";
+      setUploadError(message);
+      toast.error("Neispravna slika", { description: message });
       return;
     }
     setUploading(true);
@@ -1109,7 +1124,9 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
       refreshCourse();
       toast.success("Fotografija je dodata u galeriju");
     } catch (error) {
-      toast.error("Upload nije uspeo", { description: error instanceof Error ? error.message : "Pokušajte ponovo sa drugom slikom." });
+      const message = galleryUploadErrorMessage(error);
+      setUploadError(message);
+      toast.error("Upload nije uspeo", { description: message });
     } finally {
       setUploading(false);
     }
@@ -1165,6 +1182,11 @@ function CourseGalleryEditor({ courseId, gallery: initialGallery }: { courseId: 
           </label>
         </Button>
       </div>
+      {uploadError ? (
+        <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {uploadError} Izaberite fotografiju i pokušajte ponovo.
+        </p>
+      ) : null}
 
       {gallery.length ? (
         <div className="grid gap-4 sm:grid-cols-2">
