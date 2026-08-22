@@ -260,7 +260,7 @@ async function run(): Promise<void> {
       assert.ok(course);
       courseIds.push(course.id);
     }
-    const [payoutRaceCourse, disputeRaceCourse, maturityRaceCourse] = await db.insert(coursesTable).values([
+    const [payoutRaceCourse, disputeRaceCourse, maturityRaceCourse, duplicateDisputeCourse] = await db.insert(coursesTable).values([
       {
         centerId: payoutRaceCenter.id,
         title: `Payout race course ${suffix}`,
@@ -300,11 +300,25 @@ async function run(): Promise<void> {
         imageUrl: "/test-education-finance.jpg",
         published: true,
       },
+      {
+        centerId: payoutRaceCenter.id,
+        title: `Duplicate dispute course ${suffix}`,
+        description: "Kurs za proveru ponovljenog spora pri isteku roka.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 18000,
+        duration: "2 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
     ]).returning();
     assert.ok(payoutRaceCourse);
     assert.ok(disputeRaceCourse);
     assert.ok(maturityRaceCourse);
-    courseIds.push(payoutRaceCourse.id, disputeRaceCourse.id, maturityRaceCourse.id);
+    assert.ok(duplicateDisputeCourse);
+    courseIds.push(payoutRaceCourse.id, disputeRaceCourse.id, maturityRaceCourse.id, duplicateDisputeCourse.id);
 
     const now = Date.now();
     const pastSessionEnd = new Date(now - 2 * 24 * 60 * 60 * 1000);
@@ -880,6 +894,78 @@ async function run(): Promise<void> {
     assert.equal(raceEvents.filter((event) => event.eventType === "dispute_opened").length, 1, "The winning dispute must create exactly one audit event.");
     assert.equal(raceEvents.find((event) => event.eventType === "dispute_opened")?.previousStatus, "held");
     assert.equal(raceEvents.find((event) => event.eventType === "dispute_opened")?.nextStatus, "frozen");
+
+    const duplicateDisputeEnrollmentId = await enrollAndSettle(duplicateDisputeCourse.id, `duplicate-dispute-${suffix}`);
+    const [duplicateDisputeEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, duplicateDisputeEnrollmentId));
+    assert.ok(duplicateDisputeEscrow);
+    await db.update(educationEscrowsTable).set({
+      status: "held",
+      releaseAt: sql`now() + interval '1 minute'`,
+    }).where(eq(educationEscrowsTable.id, duplicateDisputeEscrow.id));
+
+    let duplicateDisputeLockAcquired!: () => void;
+    const duplicateDisputeLockAcquiredPromise = new Promise<void>((resolve) => { duplicateDisputeLockAcquired = resolve; });
+    const duplicateDisputeLockReleasedPromise = new Promise<void>((resolve) => { releaseRaceLock = resolve; });
+    raceLockHolder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${raceLockKey}))`);
+      duplicateDisputeLockAcquired();
+      await duplicateDisputeLockReleasedPromise;
+    });
+    await duplicateDisputeLockAcquiredPromise;
+
+    const duplicateDisputeBody = {
+      reason: "Ponovljen zahtev pri isteku roka",
+      details: "Kupac je slučajno poslao zahtev dva puta.",
+    };
+    const firstDuplicateDisputeRequest = request(baseUrl, `/education/purchases/${duplicateDisputeEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: buyerCookie,
+      body: duplicateDisputeBody,
+    });
+    await waitForAdvisoryLockWaiters(raceLockKey, 1);
+    const secondDuplicateDisputeRequest = request(baseUrl, `/education/purchases/${duplicateDisputeEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: buyerCookie,
+      body: duplicateDisputeBody,
+    });
+    await waitForAdvisoryLockWaiters(raceLockKey, 2);
+    const releaseDuplicateDisputeLock = releaseRaceLock as (() => void) | undefined;
+    if (!releaseDuplicateDisputeLock) throw new Error("The duplicate-dispute lock must be releasable after both requests are queued.");
+    releaseDuplicateDisputeLock();
+    await raceLockHolder;
+    raceLockHolder = undefined;
+    releaseRaceLock = undefined;
+
+    const [firstDuplicateDisputeResponse, secondDuplicateDisputeResponse] = await Promise.all([
+      firstDuplicateDisputeRequest,
+      secondDuplicateDisputeRequest,
+    ]);
+    assert.equal(firstDuplicateDisputeResponse.status, 201, "The first concurrent dispute submission must succeed.");
+    assert.equal(secondDuplicateDisputeResponse.status, 409, "The duplicate concurrent dispute submission must return a conflict.");
+    const secondDuplicateDisputeError = await json<{ error: string }>(secondDuplicateDisputeResponse);
+    assert.match(secondDuplicateDisputeError.error, /već postoji otvoren spor/, "The losing submission must explain that the dispute already exists.");
+    const firstDuplicateDispute = await json<{ id: string; status: string }>(firstDuplicateDisputeResponse);
+    assert.equal(firstDuplicateDispute.status, "open");
+
+    const duplicateDisputes = await db.select().from(educationDisputesTable)
+      .where(eq(educationDisputesTable.enrollmentId, duplicateDisputeEnrollmentId));
+    assert.equal(duplicateDisputes.length, 1, "Concurrent submissions must create exactly one dispute.");
+    assert.equal(duplicateDisputes[0]?.id, firstDuplicateDispute.id);
+    assert.equal(duplicateDisputes[0]?.status, "open");
+    const [duplicateDisputeResultEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.id, duplicateDisputeEscrow.id));
+    assert.equal(duplicateDisputeResultEscrow?.status, "frozen", "The winning dispute must freeze escrow.");
+    assert.ok(duplicateDisputeResultEscrow?.frozenAt);
+    assert.equal(duplicateDisputeResultEscrow?.netPaidAt, null);
+    assert.equal(duplicateDisputeResultEscrow?.reservePaidAt, null);
+    const duplicateDisputeEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.escrowId, duplicateDisputeEscrow.id),
+      eq(educationFinancialEventsTable.eventType, "dispute_opened"),
+    ));
+    assert.equal(duplicateDisputeEvents.length, 1, "Concurrent submissions must create exactly one dispute-opened audit event.");
+    assert.equal(duplicateDisputeEvents[0]?.previousStatus, "held");
+    assert.equal(duplicateDisputeEvents[0]?.nextStatus, "frozen");
 
     console.log("Education financial release, dispute, payout, and concurrent-race regression passed.");
   } finally {
