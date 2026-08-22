@@ -27,6 +27,8 @@ if (!basePath) {
   );
 }
 
+const apiBaseUrl = process.env.LUMERA_API_BASE_URL;
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -69,6 +71,14 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: apiBaseUrl
+      ? {
+          '/api': {
+            target: apiBaseUrl,
+            changeOrigin: true,
+          },
+        }
+      : undefined,
     fs: {
       strict: true,
     },

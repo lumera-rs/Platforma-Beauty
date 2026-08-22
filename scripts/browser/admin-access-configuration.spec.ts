@@ -440,6 +440,8 @@ type UserFixture = {
   password: string;
 };
 
+const runsAgainstDisposableDatabase = process.env.LUMERA_ISOLATED_ADMIN_BROWSER_TEST === "1";
+
 async function createUser(role: "SUPER_ADMIN" | "CUSTOMER", suffix: string): Promise<UserFixture> {
   const password = `admin-regression-${suffix}-password`;
   const [user] = await db.insert(usersTable).values({
@@ -480,92 +482,93 @@ test("a customer cannot retrieve admin API data", async ({ page }) => {
   }
 });
 
-test("the last active super administrator cannot be removed", async ({ page }) => {
-  const existingActiveSuperAdmins = await db.select({ id: usersTable.id })
-    .from(usersTable)
-    .where(eq(usersTable.role, "SUPER_ADMIN"));
-  const first = await createUser("SUPER_ADMIN", "first");
-  const second = await createUser("SUPER_ADMIN", "second");
-  try {
-    // Isolate the invariant from demo data or another test-created admin.
-    await db.update(usersTable).set({ active: false }).where(eq(usersTable.role, "SUPER_ADMIN"));
-    await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, first.id));
-    await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, second.id));
-    await login(page, first);
-    const deactivateSecond = await page.request.patch(`/api/admin/users/${second.id}`, { data: { active: false } });
-    expect(deactivateSecond.status()).toBe(200);
+test.describe("admin checks requiring disposable data", () => {
+  test.skip(!runsAgainstDisposableDatabase, "This safety check must only run through the isolated admin browser test harness.");
 
-    const deactivateLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { active: false } });
-    expect(deactivateLast.status()).toBe(409);
-    await expect(deactivateLast.json()).resolves.toMatchObject({
-      error: "Nije moguće ukloniti ili deaktivirati poslednjeg aktivnog super administratora.",
-    });
+  test("the last active super administrator cannot be removed", async ({ page }) => {
+    let first: UserFixture | undefined;
+    let second: UserFixture | undefined;
 
-    const demoteLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { role: "ADMIN" } });
-    expect(demoteLast.status()).toBe(409);
-  } finally {
-    for (const existing of existingActiveSuperAdmins) {
-      await db.update(usersTable).set({ active: true }).where(eq(usersTable.id, existing.id));
+    try {
+      first = await createUser("SUPER_ADMIN", "first");
+      second = await createUser("SUPER_ADMIN", "second");
+
+      await login(page, first);
+      const deactivateSecond = await page.request.patch(`/api/admin/users/${second.id}`, { data: { active: false } });
+      expect(deactivateSecond.status()).toBe(200);
+
+      const deactivateLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { active: false } });
+      expect(deactivateLast.status()).toBe(409);
+      await expect(deactivateLast.json()).resolves.toMatchObject({
+        error: "Nije moguće ukloniti ili deaktivirati poslednjeg aktivnog super administratora.",
+      });
+
+      const demoteLast = await page.request.patch(`/api/admin/users/${first.id}`, { data: { role: "ADMIN" } });
+      expect(demoteLast.status()).toBe(409);
+    } finally {
+      if (second) await db.delete(usersTable).where(eq(usersTable.id, second.id));
+      if (first) await db.delete(usersTable).where(eq(usersTable.id, first.id));
     }
-    await db.delete(usersTable).where(eq(usersTable.id, second.id));
-    await db.delete(usersTable).where(eq(usersTable.id, first.id));
-  }
-});
+  });
 
-test("referenced subscription plans are archived instead of deleted", async ({ page }) => {
-  const adminFixture = await createUser("SUPER_ADMIN", "plan-owner");
-  const owner = await createUser("CUSTOMER", "salon-owner");
-  let salonIdForTest: string | undefined;
-  let planIdForTest: string | undefined;
-  try {
-    const [salon] = await db.insert(salonsTable).values({
-      ownerId: owner.id,
-      name: `Admin plan regression ${randomUUID()}`,
-      slug: `admin-plan-regression-${randomUUID()}`,
-      city: "Beograd",
-      municipality: "Vračar",
-      address: "Test 1",
-      phone: "+381110000001",
-      email: `admin-plan-salon-${randomUUID()}@example.test`,
-      shortDescription: "Test salon.",
-      description: "Test salon for plan archival.",
-      imageUrl: "/test.jpg",
-    }).returning();
-    if (!salon) throw new Error("Could not create salon fixture.");
-    salonIdForTest = salon.id;
+  test("referenced subscription plans are archived instead of deleted", async ({ page }) => {
+    let adminFixture: UserFixture | undefined;
+    let owner: UserFixture | undefined;
+    let salonIdForTest: string | undefined;
+    let planIdForTest: string | undefined;
+    try {
+      adminFixture = await createUser("SUPER_ADMIN", "plan-owner");
+      owner = await createUser("CUSTOMER", "salon-owner");
 
-    const [plan] = await db.insert(subscriptionPlansTable).values({
-      name: `Admin plan ${randomUUID()}`,
-      price: 2500,
-      trialDays: 7,
-      features: ["Istorija"],
-      limits: { employees: 3 },
-    }).returning();
-    if (!plan) throw new Error("Could not create plan fixture.");
-    planIdForTest = plan.id;
+      const [salon] = await db.insert(salonsTable).values({
+        ownerId: owner.id,
+        name: `Admin plan regression ${randomUUID()}`,
+        slug: `admin-plan-regression-${randomUUID()}`,
+        city: "Beograd",
+        municipality: "Vračar",
+        address: "Test 1",
+        phone: "+381110000001",
+        email: `admin-plan-salon-${randomUUID()}@example.test`,
+        shortDescription: "Test salon.",
+        description: "Test salon for plan archival.",
+        imageUrl: "/test.jpg",
+      }).returning();
+      if (!salon) throw new Error("Could not create salon fixture.");
+      salonIdForTest = salon.id;
 
-    await db.insert(subscriptionsTable).values({
-      salonId: salon.id,
-      planId: plan.id,
-      status: "active",
-      dueAmount: 2500,
-      paymentMethod: "BANK_TRANSFER",
-    });
+      const [plan] = await db.insert(subscriptionPlansTable).values({
+        name: `Admin plan ${randomUUID()}`,
+        price: 2500,
+        trialDays: 7,
+        features: ["Istorija"],
+        limits: { employees: 3 },
+      }).returning();
+      if (!plan) throw new Error("Could not create plan fixture.");
+      planIdForTest = plan.id;
 
-    await login(page, adminFixture);
-    const response = await page.request.delete(`/api/admin/subscription-plans/${plan.id}`);
-    expect(response.status()).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ id: plan.id, active: false });
+      await db.insert(subscriptionsTable).values({
+        salonId: salon.id,
+        planId: plan.id,
+        status: "active",
+        dueAmount: 2500,
+        paymentMethod: "BANK_TRANSFER",
+      });
 
-    const [persisted] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, plan.id));
-    expect(persisted?.active).toBe(false);
-    const [history] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.planId, plan.id));
-    expect(history?.id).toBeDefined();
-  } finally {
-    if (salonIdForTest) await db.delete(subscriptionsTable).where(eq(subscriptionsTable.salonId, salonIdForTest));
-    if (planIdForTest) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planIdForTest));
-    if (salonIdForTest) await db.delete(salonsTable).where(eq(salonsTable.id, salonIdForTest));
-    await db.delete(usersTable).where(eq(usersTable.id, owner.id));
-    await db.delete(usersTable).where(eq(usersTable.id, adminFixture.id));
-  }
+      await login(page, adminFixture);
+      const response = await page.request.delete(`/api/admin/subscription-plans/${plan.id}`);
+      expect(response.status()).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ id: plan.id, active: false });
+
+      const [persisted] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, plan.id));
+      expect(persisted?.active).toBe(false);
+      const [history] = await db.select().from(subscriptionsTable).where(eq(subscriptionsTable.planId, plan.id));
+      expect(history?.id).toBeDefined();
+    } finally {
+      if (salonIdForTest) await db.delete(subscriptionsTable).where(eq(subscriptionsTable.salonId, salonIdForTest));
+      if (planIdForTest) await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, planIdForTest));
+      if (salonIdForTest) await db.delete(salonsTable).where(eq(salonsTable.id, salonIdForTest));
+      if (owner) await db.delete(usersTable).where(eq(usersTable.id, owner.id));
+      if (adminFixture) await db.delete(usersTable).where(eq(usersTable.id, adminFixture.id));
+    }
+  });
 });
