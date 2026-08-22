@@ -3495,58 +3495,6 @@ export const ListLoyaltyTiersResponse = zod.array(ListLoyaltyTiersResponseItem)
 
 
 /**
- * @summary List courses available for public purchase
- */
-export const ListPublicEducationCoursesResponseItem = zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "instructor": zod.string(),
-  "publisher": zod.string(),
-  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
-  "category": zod.string(),
-  "format": zod.enum(['online', 'in-person', 'hybrid']),
-  "city": zod.string().nullish(),
-  "price": zod.number(),
-  "duration": zod.string(),
-  "rating": zod.number(),
-  "certification": zod.boolean(),
-  "imageUrl": zod.string(),
-  "startDate": zod.coerce.date().nullish(),
-  "published": zod.boolean(),
-  "archived": zod.boolean(),
-  "availableSeats": zod.number().nullish(),
-  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
-}).and(zod.object({
-  "modules": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "sortOrder": zod.number(),
-  "lessons": zod.array(zod.object({
-  "id": zod.string(),
-  "title": zod.string(),
-  "description": zod.string(),
-  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
-  "durationMinutes": zod.number(),
-  "sortOrder": zod.number(),
-  "completed": zod.boolean()
-}))
-})),
-  "sessions": zod.array(zod.object({
-  "id": zod.string(),
-  "startsAt": zod.coerce.date(),
-  "endsAt": zod.coerce.date(),
-  "location": zod.string().nullish(),
-  "capacity": zod.number(),
-  "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
-}))
-}))
-export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationCoursesResponseItem)
-
-
-/**
  * @summary Get verification and subscription status for the current education center
  */
 export const GetEducationCenterStatusResponseItem = zod.object({
@@ -3681,13 +3629,16 @@ export const getAdminEducationSettingsResponseOneOnlineRefundDaysMax = 365;
 export const getAdminEducationSettingsResponseOneLiveAppealDaysMin = 0;
 export const getAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
 
+export const getAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
+
 
 
 export const GetAdminEducationSettingsResponse = zod.object({
   "commissionPercent": zod.number().min(getAdminEducationSettingsResponseOneCommissionPercentMin).max(getAdminEducationSettingsResponseOneCommissionPercentMax),
   "reservePercent": zod.number().min(getAdminEducationSettingsResponseOneReservePercentMin).max(getAdminEducationSettingsResponseOneReservePercentMax),
   "onlineRefundDays": zod.number().min(getAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(getAdminEducationSettingsResponseOneOnlineRefundDaysMax),
-  "liveAppealDays": zod.number().min(getAdminEducationSettingsResponseOneLiveAppealDaysMin).max(getAdminEducationSettingsResponseOneLiveAppealDaysMax)
+  "liveAppealDays": zod.number().min(getAdminEducationSettingsResponseOneLiveAppealDaysMin).max(getAdminEducationSettingsResponseOneLiveAppealDaysMax),
+  "featuredCoursePrice": zod.number().min(getAdminEducationSettingsResponseOneFeaturedCoursePriceMin)
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -3706,13 +3657,16 @@ export const updateAdminEducationSettingsBodyOnlineRefundDaysMax = 365;
 export const updateAdminEducationSettingsBodyLiveAppealDaysMin = 0;
 export const updateAdminEducationSettingsBodyLiveAppealDaysMax = 365;
 
+export const updateAdminEducationSettingsBodyFeaturedCoursePriceMin = 0;
+
 
 
 export const UpdateAdminEducationSettingsBody = zod.object({
   "commissionPercent": zod.number().min(updateAdminEducationSettingsBodyCommissionPercentMin).max(updateAdminEducationSettingsBodyCommissionPercentMax),
   "reservePercent": zod.number().min(updateAdminEducationSettingsBodyReservePercentMin).max(updateAdminEducationSettingsBodyReservePercentMax),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsBodyOnlineRefundDaysMin).max(updateAdminEducationSettingsBodyOnlineRefundDaysMax),
-  "liveAppealDays": zod.number().min(updateAdminEducationSettingsBodyLiveAppealDaysMin).max(updateAdminEducationSettingsBodyLiveAppealDaysMax)
+  "liveAppealDays": zod.number().min(updateAdminEducationSettingsBodyLiveAppealDaysMin).max(updateAdminEducationSettingsBodyLiveAppealDaysMax),
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsBodyFeaturedCoursePriceMin)
 })
 
 export const updateAdminEducationSettingsResponseOneCommissionPercentMin = 0;
@@ -3727,13 +3681,16 @@ export const updateAdminEducationSettingsResponseOneOnlineRefundDaysMax = 365;
 export const updateAdminEducationSettingsResponseOneLiveAppealDaysMin = 0;
 export const updateAdminEducationSettingsResponseOneLiveAppealDaysMax = 365;
 
+export const updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin = 0;
+
 
 
 export const UpdateAdminEducationSettingsResponse = zod.object({
   "commissionPercent": zod.number().min(updateAdminEducationSettingsResponseOneCommissionPercentMin).max(updateAdminEducationSettingsResponseOneCommissionPercentMax),
   "reservePercent": zod.number().min(updateAdminEducationSettingsResponseOneReservePercentMin).max(updateAdminEducationSettingsResponseOneReservePercentMax),
   "onlineRefundDays": zod.number().min(updateAdminEducationSettingsResponseOneOnlineRefundDaysMin).max(updateAdminEducationSettingsResponseOneOnlineRefundDaysMax),
-  "liveAppealDays": zod.number().min(updateAdminEducationSettingsResponseOneLiveAppealDaysMin).max(updateAdminEducationSettingsResponseOneLiveAppealDaysMax)
+  "liveAppealDays": zod.number().min(updateAdminEducationSettingsResponseOneLiveAppealDaysMin).max(updateAdminEducationSettingsResponseOneLiveAppealDaysMax),
+  "featuredCoursePrice": zod.number().min(updateAdminEducationSettingsResponseOneFeaturedCoursePriceMin)
 }).and(zod.object({
   "id": zod.string(),
   "updatedAt": zod.coerce.date()
@@ -3899,6 +3856,7 @@ export const ListCoursesResponseItem = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -3912,6 +3870,12 @@ export const ListCoursesResponseItem = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 })
@@ -3929,6 +3893,14 @@ export const createEducationCourseBodyPriceMin = 0;
 
 
 
+export const createEducationCourseBodyRefundPolicyMax = 2000;
+
+export const createEducationCourseBodyGroupDiscountMinimumMin = 2;
+export const createEducationCourseBodyGroupDiscountMinimumMax = 999;
+
+export const createEducationCourseBodyGroupDiscountPercentMin = 0;
+export const createEducationCourseBodyGroupDiscountPercentMax = 100;
+
 
 
 export const CreateEducationCourseBody = zod.object({
@@ -3941,7 +3913,10 @@ export const CreateEducationCourseBody = zod.object({
   "duration": zod.string().min(1),
   "certification": zod.boolean().optional(),
   "imageUrl": zod.string().min(1),
-  "startDate": zod.coerce.date().nullish()
+  "startDate": zod.coerce.date().nullish(),
+  "refundPolicy": zod.string().min(1).max(createEducationCourseBodyRefundPolicyMax).optional(),
+  "groupDiscountMinimum": zod.number().min(createEducationCourseBodyGroupDiscountMinimumMin).max(createEducationCourseBodyGroupDiscountMinimumMax).nullish(),
+  "groupDiscountPercent": zod.number().min(createEducationCourseBodyGroupDiscountPercentMin).max(createEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
 
 export const CreateEducationCourseResponse = zod.object({
@@ -3949,6 +3924,7 @@ export const CreateEducationCourseResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -3962,6 +3938,12 @@ export const CreateEducationCourseResponse = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -3987,7 +3969,9 @@ export const CreateEducationCourseResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 }))
 }))
 
@@ -4004,6 +3988,7 @@ export const GetEducationCourseResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -4017,6 +4002,12 @@ export const GetEducationCourseResponse = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4042,7 +4033,9 @@ export const GetEducationCourseResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 }))
 }))
 
@@ -4062,6 +4055,14 @@ export const updateEducationCourseBodyPriceMin = 0;
 
 
 
+export const updateEducationCourseBodyRefundPolicyMax = 2000;
+
+export const updateEducationCourseBodyGroupDiscountMinimumMin = 2;
+export const updateEducationCourseBodyGroupDiscountMinimumMax = 999;
+
+export const updateEducationCourseBodyGroupDiscountPercentMin = 0;
+export const updateEducationCourseBodyGroupDiscountPercentMax = 100;
+
 
 
 export const UpdateEducationCourseBody = zod.object({
@@ -4075,7 +4076,10 @@ export const UpdateEducationCourseBody = zod.object({
   "certification": zod.boolean().optional(),
   "imageUrl": zod.string().min(1).optional(),
   "startDate": zod.coerce.date().nullish(),
-  "published": zod.boolean().optional()
+  "published": zod.boolean().optional(),
+  "refundPolicy": zod.string().min(1).max(updateEducationCourseBodyRefundPolicyMax).optional(),
+  "groupDiscountMinimum": zod.number().min(updateEducationCourseBodyGroupDiscountMinimumMin).max(updateEducationCourseBodyGroupDiscountMinimumMax).nullish(),
+  "groupDiscountPercent": zod.number().min(updateEducationCourseBodyGroupDiscountPercentMin).max(updateEducationCourseBodyGroupDiscountPercentMax).nullish()
 })
 
 export const UpdateEducationCourseResponse = zod.object({
@@ -4083,6 +4087,7 @@ export const UpdateEducationCourseResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -4096,6 +4101,12 @@ export const UpdateEducationCourseResponse = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4121,7 +4132,9 @@ export const UpdateEducationCourseResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 }))
 }))
 
@@ -4148,6 +4161,7 @@ export const PublishEducationCourseResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -4161,6 +4175,12 @@ export const PublishEducationCourseResponse = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4186,7 +4206,9 @@ export const PublishEducationCourseResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 }))
 }))
 
@@ -4384,7 +4406,9 @@ export const ListEducationSessionsResponseItem = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 })
 export const ListEducationSessionsResponse = zod.array(ListEducationSessionsResponseItem)
 
@@ -4397,13 +4421,17 @@ export const CreateEducationSessionParams = zod.object({
 })
 
 
+export const createEducationSessionBodyMinimumEnrollmentsMin = 0;
+export const createEducationSessionBodyMinimumEnrollmentsMax = 9999;
+
 
 
 export const CreateEducationSessionBody = zod.object({
   "startsAt": zod.coerce.date(),
   "endsAt": zod.coerce.date(),
   "location": zod.string().nullish(),
-  "capacity": zod.number().min(1)
+  "capacity": zod.number().min(1),
+  "minimumEnrollments": zod.number().min(createEducationSessionBodyMinimumEnrollmentsMin).max(createEducationSessionBodyMinimumEnrollmentsMax).nullish()
 })
 
 export const CreateEducationSessionResponse = zod.object({
@@ -4413,7 +4441,9 @@ export const CreateEducationSessionResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 })
 
 
@@ -4452,13 +4482,17 @@ export const UpdateEducationSessionParams = zod.object({
 })
 
 
+export const updateEducationSessionBodyMinimumEnrollmentsMin = 0;
+export const updateEducationSessionBodyMinimumEnrollmentsMax = 9999;
+
 
 
 export const UpdateEducationSessionBody = zod.object({
   "startsAt": zod.coerce.date(),
   "endsAt": zod.coerce.date(),
   "location": zod.string().nullish(),
-  "capacity": zod.number().min(1)
+  "capacity": zod.number().min(1),
+  "minimumEnrollments": zod.number().min(updateEducationSessionBodyMinimumEnrollmentsMin).max(updateEducationSessionBodyMinimumEnrollmentsMax).nullish()
 })
 
 export const UpdateEducationSessionResponse = zod.object({
@@ -4468,7 +4502,9 @@ export const UpdateEducationSessionResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 })
 
 
@@ -4503,6 +4539,75 @@ export const ListEnrollmentsResponse = zod.array(ListEnrollmentsResponseItem)
 
 
 /**
+ * A promoted "offered" waitlist entry holds one reserved seat on the session for a 24-hour window. Accepting the offer transfers that held seat to a pending enrollment; access begins only after manual settlement. Fails if the offer has expired or is no longer active.
+ * @summary Accept an active waitlist offer, reserving the held seat and creating a pending enrollment
+ */
+export const AcceptEducationWaitlistOfferParams = zod.object({
+  "waitlistId": zod.coerce.string()
+})
+
+export const AcceptEducationWaitlistOfferResponse = zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "learnerName": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'active', 'completed', 'cancelled']),
+  "paymentStatus": zod.enum(['pending', 'paid', 'failed', 'refunded']),
+  "progress": zod.number(),
+  "nextLesson": zod.string().nullish(),
+  "purchasedAt": zod.coerce.date(),
+  "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
+  "escrowReleaseAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List the current learner's education notifications and waitlist offers
+ */
+export const listEducationNotificationsResponseOffersItemPositionMultipleOf = 1;
+
+
+
+export const ListEducationNotificationsResponse = zod.object({
+  "notifications": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "actionUrl": zod.string().nullable(),
+  "enrollmentId": zod.string().nullable(),
+  "waitlistId": zod.string().nullable(),
+  "readAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "offers": zod.array(zod.object({
+  "id": zod.string(),
+  "courseId": zod.string(),
+  "courseTitle": zod.string(),
+  "sessionId": zod.string(),
+  "sessionStartsAt": zod.coerce.date().nullish(),
+  "status": zod.enum(['waiting', 'offered', 'enrolled', 'expired', 'cancelled']),
+  "position": zod.number().multipleOf(listEducationNotificationsResponseOffersItemPositionMultipleOf),
+  "offeredAt": zod.coerce.date().nullable(),
+  "expiresAt": zod.coerce.date().nullable()
+}).describe('An active (offered, unexpired) waitlist offer that holds a reserved seat for the learner'))
+})
+
+
+/**
+ * @summary Mark an education notification as read
+ */
+export const MarkEducationNotificationReadParams = zod.object({
+  "notificationId": zod.coerce.string()
+})
+
+export const MarkEducationNotificationReadResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
  * @summary Open the enrolled learner LMS
  */
 export const GetEducationLmsParams = zod.object({
@@ -4529,6 +4634,7 @@ export const GetEducationLmsResponse = zod.object({
   "title": zod.string(),
   "description": zod.string(),
   "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
   "publisher": zod.string(),
   "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
   "category": zod.string(),
@@ -4542,6 +4648,12 @@ export const GetEducationLmsResponse = zod.object({
   "startDate": zod.coerce.date().nullish(),
   "published": zod.boolean(),
   "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
   "availableSeats": zod.number().nullish(),
   "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
 }).and(zod.object({
@@ -4567,10 +4679,32 @@ export const GetEducationLmsResponse = zod.object({
   "location": zod.string().nullish(),
   "capacity": zod.number(),
   "reservedSeats": zod.number(),
-  "availableSeats": zod.number()
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
 }))
 }))
 })
+
+
+/**
+ * @summary Download the PDF completion certificate for a paid, completed enrollment
+ */
+export const DownloadEducationCertificateParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const DownloadEducationCertificateResponse = zod.unknown()
+
+
+/**
+ * @summary Download the RFC 5545 calendar (.ics) file for a paid live-session enrollment
+ */
+export const DownloadEducationSessionCalendarParams = zod.object({
+  "enrollmentId": zod.coerce.string()
+})
+
+export const DownloadEducationSessionCalendarResponse = zod.unknown()
 
 
 /**
@@ -4595,6 +4729,416 @@ export const CompleteEducationLessonResponse = zod.object({
   "escrowStatus": zod.union([zod.literal('held'),zod.literal('ready_for_payout'),zod.literal('frozen'),zod.literal('paid_out'),zod.literal('refunded'),zod.literal('partially_refunded'),zod.literal(null)]).nullish(),
   "escrowReleaseAt": zod.coerce.date().nullish()
 })
+
+
+/**
+ * @summary List instructor profiles for the current education center
+ */
+export const ListEducationInstructorsResponseItem = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string().nullish(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string(),
+  "industryYears": zod.number(),
+  "experienceYears": zod.number(),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListEducationInstructorsResponse = zod.array(ListEducationInstructorsResponseItem)
+
+
+/**
+ * @summary Create an instructor profile for the current education center
+ */
+export const createEducationInstructorBodyFullNameMax = 120;
+
+export const createEducationInstructorBodyBiographyMax = 4000;
+
+export const createEducationInstructorBodyIndustryYearsMin = 0;
+
+export const createEducationInstructorBodyExperienceYearsMin = 0;
+
+
+
+export const CreateEducationInstructorBody = zod.object({
+  "fullName": zod.string().min(1).max(createEducationInstructorBodyFullNameMax),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string().max(createEducationInstructorBodyBiographyMax).optional(),
+  "industryYears": zod.number().min(createEducationInstructorBodyIndustryYearsMin).optional(),
+  "experienceYears": zod.number().min(createEducationInstructorBodyExperienceYearsMin).optional(),
+  "specializations": zod.array(zod.string()).optional(),
+  "qualifications": zod.array(zod.string()).optional(),
+  "userId": zod.string().nullish()
+})
+
+export const CreateEducationInstructorResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string().nullish(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string(),
+  "industryYears": zod.number(),
+  "experienceYears": zod.number(),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update an instructor profile owned by the current education center
+ */
+export const UpdateEducationInstructorParams = zod.object({
+  "instructorId": zod.coerce.string()
+})
+
+export const updateEducationInstructorBodyFullNameMax = 120;
+
+export const updateEducationInstructorBodyBiographyMax = 4000;
+
+export const updateEducationInstructorBodyIndustryYearsMin = 0;
+
+export const updateEducationInstructorBodyExperienceYearsMin = 0;
+
+
+
+export const UpdateEducationInstructorBody = zod.object({
+  "fullName": zod.string().min(1).max(updateEducationInstructorBodyFullNameMax),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string().max(updateEducationInstructorBodyBiographyMax).optional(),
+  "industryYears": zod.number().min(updateEducationInstructorBodyIndustryYearsMin).optional(),
+  "experienceYears": zod.number().min(updateEducationInstructorBodyExperienceYearsMin).optional(),
+  "specializations": zod.array(zod.string()).optional(),
+  "qualifications": zod.array(zod.string()).optional(),
+  "userId": zod.string().nullish()
+})
+
+export const UpdateEducationInstructorResponse = zod.object({
+  "id": zod.string(),
+  "centerId": zod.string(),
+  "userId": zod.string().nullish(),
+  "fullName": zod.string(),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string(),
+  "industryYears": zod.number(),
+  "experienceYears": zod.number(),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete an instructor profile owned by the current education center
+ */
+export const DeleteEducationInstructorParams = zod.object({
+  "instructorId": zod.coerce.string()
+})
+
+export const DeleteEducationInstructorResponse = zod.void()
+
+
+/**
+ * @summary Get public instructor profile with bio, qualifications, rating and courses
+ */
+export const GetPublicInstructorProfileParams = zod.object({
+  "instructorId": zod.coerce.string()
+})
+
+export const GetPublicInstructorProfileResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "photoUrl": zod.string().nullish(),
+  "biography": zod.string(),
+  "industryYears": zod.number(),
+  "experienceYears": zod.number(),
+  "specializations": zod.array(zod.string()),
+  "qualifications": zod.array(zod.string()),
+  "rating": zod.number(),
+  "participantCount": zod.number(),
+  "courses": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}))
+})
+
+
+/**
+ * @summary Get featured status and current platform price for a course
+ */
+export const GetEducationCourseFeaturedStatusParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const GetEducationCourseFeaturedStatusResponse = zod.object({
+  "courseId": zod.string(),
+  "isFeatured": zod.boolean(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "featuredFee": zod.number(),
+  "featuredCoursePrice": zod.number(),
+  "charge": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "amount": zod.number(),
+  "status": zod.enum(['pending', 'paid', 'cancelled', 'refunded']),
+  "paymentReference": zod.string().nullish(),
+  "activatedAt": zod.coerce.date(),
+  "settledAt": zod.coerce.date().nullish()
+})]).optional()
+})
+
+
+/**
+ * @summary Activate or deactivate featured placement for an owned course
+ */
+export const UpdateEducationCourseFeaturedParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const updateEducationCourseFeaturedBodyPaymentReferenceMax = 200;
+
+
+
+export const UpdateEducationCourseFeaturedBody = zod.object({
+  "active": zod.boolean(),
+  "paymentReference": zod.string().max(updateEducationCourseFeaturedBodyPaymentReferenceMax).nullish()
+})
+
+export const UpdateEducationCourseFeaturedResponse = zod.object({
+  "courseId": zod.string(),
+  "isFeatured": zod.boolean(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "featuredFee": zod.number(),
+  "featuredCoursePrice": zod.number(),
+  "charge": zod.union([zod.null(),zod.object({
+  "id": zod.string(),
+  "amount": zod.number(),
+  "status": zod.enum(['pending', 'paid', 'cancelled', 'refunded']),
+  "paymentReference": zod.string().nullish(),
+  "activatedAt": zod.coerce.date(),
+  "settledAt": zod.coerce.date().nullish()
+})]).optional()
+})
+
+
+/**
+ * @summary Link or unlink an instructor profile to an owned course
+ */
+export const LinkEducationCourseInstructorParams = zod.object({
+  "courseId": zod.coerce.string()
+})
+
+export const LinkEducationCourseInstructorBody = zod.object({
+  "instructorId": zod.string().nullish()
+})
+
+export const LinkEducationCourseInstructorResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+}))
+}))
+
+
+/**
+ * @summary List courses available for public purchase
+ */
+export const ListPublicEducationCoursesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+}))
+}))
+export const ListPublicEducationCoursesResponse = zod.array(ListPublicEducationCoursesResponseItem)
+
+
+/**
+ * @summary List currently featured education courses for the public catalog shelf
+ */
+export const ListFeaturedEducationCoursesResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "instructor": zod.string(),
+  "instructorProfileId": zod.string().nullish(),
+  "publisher": zod.string(),
+  "publisherType": zod.enum(['SALON', 'EDUCATION_CENTER']),
+  "category": zod.string(),
+  "format": zod.enum(['online', 'in-person', 'hybrid']),
+  "city": zod.string().nullish(),
+  "price": zod.number(),
+  "duration": zod.string(),
+  "rating": zod.number(),
+  "certification": zod.boolean(),
+  "imageUrl": zod.string(),
+  "startDate": zod.coerce.date().nullish(),
+  "published": zod.boolean(),
+  "archived": zod.boolean(),
+  "featured": zod.boolean().optional(),
+  "featuredUntil": zod.coerce.date().nullish(),
+  "publisherVerified": zod.boolean().optional(),
+  "refundPolicy": zod.string().nullish(),
+  "groupDiscountMinimum": zod.number().nullish(),
+  "groupDiscountPercent": zod.number().nullish(),
+  "availableSeats": zod.number().nullish(),
+  "enrollmentStatus": zod.union([zod.literal('pending'),zod.literal('active'),zod.literal('completed'),zod.literal('cancelled'),zod.literal(null)]).nullish()
+}).and(zod.object({
+  "modules": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "sortOrder": zod.number(),
+  "lessons": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "content": zod.string().optional().describe('Full lesson content. Returned only to the publisher, an administrator, or an authorized LMS enrollment.'),
+  "durationMinutes": zod.number(),
+  "sortOrder": zod.number(),
+  "completed": zod.boolean()
+}))
+})),
+  "sessions": zod.array(zod.object({
+  "id": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "location": zod.string().nullish(),
+  "capacity": zod.number(),
+  "reservedSeats": zod.number(),
+  "availableSeats": zod.number(),
+  "minimumEnrollments": zod.number().nullish(),
+  "cancelledAt": zod.coerce.date().nullish()
+}))
+}))
+export const ListFeaturedEducationCoursesResponse = zod.array(ListFeaturedEducationCoursesResponseItem)
 
 
 /**

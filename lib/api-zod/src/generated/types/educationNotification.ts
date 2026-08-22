@@ -6,17 +6,18 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface EducationSession {
+export interface EducationNotification {
   id: string;
-  startsAt: Date;
-  endsAt: Date;
+  type: string;
+  title: string;
+  body: string;
   /** @nullable */
-  location?: string | null;
-  capacity: number;
-  reservedSeats: number;
-  availableSeats: number;
+  actionUrl: string | null;
   /** @nullable */
-  minimumEnrollments?: number | null;
+  enrollmentId: string | null;
   /** @nullable */
-  cancelledAt?: Date | null;
+  waitlistId: string | null;
+  /** @nullable */
+  readAt: Date | null;
+  createdAt: Date;
 }

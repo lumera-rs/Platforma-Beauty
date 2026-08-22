@@ -14,8 +14,14 @@ import {
   useCreateEducationModule, useCreateEducationLesson, 
   useCreateEducationSession, useEnrollInEducationCourse, 
   useCompleteEducationLesson,
+  useListEducationInstructors, useCreateEducationInstructor, useUpdateEducationInstructor, useDeleteEducationInstructor,
+  useGetEducationCourseFeaturedStatus, useUpdateEducationCourseFeatured, useLinkEducationCourseInstructor,
+  useGetPublicInstructorProfile,
+  useListEducationNotifications, useAcceptEducationWaitlistOffer, useMarkEducationNotificationRead,
   getListCoursesQueryKey, getGetEducationCourseQueryKey, 
-  getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey
+  getListEnrollmentsQueryKey, getGetEducationLmsQueryKey, getListSalonEmployeesQueryKey,
+  getListEducationInstructorsQueryKey, getGetEducationCourseFeaturedStatusQueryKey,
+  getListEducationNotificationsQueryKey,
 } from "@workspace/api-client-react";
 
 import { BusinessLayout } from "@/components/business-layout";
@@ -33,10 +39,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { 
   GraduationCap, Search, MapPin, Clock, Award, 
   PlayCircle, Users, CheckCircle2, ArrowLeft, 
-  ArrowRight, Plus, Filter, Monitor, Video, Calendar, Star, Loader2 
+  ArrowRight, Plus, Filter, Monitor, Video, Calendar, Star, Loader2,
+  Download, CalendarPlus, Info, ShieldCheck, UserCircle2, Zap, Trash2, Pencil, Link2, Bell
 } from "lucide-react";
 
 const DEFAULT_COURSE_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='400' viewBox='0 0 800 400'%3E%3Crect width='800' height='400' fill='%23f3f4f6'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='middle' font-family='sans-serif' font-size='24' fill='%239ca3af'%3EEdukacija%3C/text%3E%3C/svg%3E";
@@ -51,8 +61,14 @@ const courseSchema = z.object({
   duration: z.string().min(1, "Trajanje je obavezno"),
   certification: z.boolean().optional(),
   imageUrl: z.string().min(1, "Slika je obavezna"),
-  startDate: z.string().optional()
-});
+  startDate: z.string().optional(),
+  refundPolicy: z.string().min(1, "Politika povraćaja je obavezna").max(2000),
+  groupDiscountMinimum: z.coerce.number().int().min(2).max(999).optional().nullable(),
+  groupDiscountPercent: z.coerce.number().int().min(0).max(100).optional().nullable(),
+}).refine(
+  (data) => (data.groupDiscountMinimum == null) === (data.groupDiscountPercent == null),
+  { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] },
+);
 
 export default function BusinessEducation() {
   const [matchLms, paramsLms] = useRoute("/biznis/edukacije/lms/:enrollmentId");
@@ -98,12 +114,115 @@ export default function BusinessEducation() {
   );
 }
 
+function OfferCountdown({ expiresAt }: { expiresAt: string | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!expiresAt) return null;
+  const remainingMs = new Date(expiresAt).getTime() - now;
+  if (remainingMs <= 0) return <span className="text-destructive">Ponuda ističe</span>;
+  const hours = Math.floor(remainingMs / (60 * 60 * 1000));
+  const minutes = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+  return <span>{hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`} do isteka ponude</span>;
+}
+
+function StudentEducationInbox() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: inbox, isLoading } = useListEducationNotifications();
+  const acceptOffer = useAcceptEducationWaitlistOffer();
+  const markRead = useMarkEducationNotificationRead();
+
+  const offers = inbox?.offers ?? [];
+  const notifications = inbox?.notifications ?? [];
+  const unread = notifications.filter((item) => !item.readAt);
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: getListEducationNotificationsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
+  };
+
+  const handleAccept = (waitlistId: string) => {
+    acceptOffer.mutate({ waitlistId }, {
+      onSuccess: () => { toast.success("Prihvatili ste ponudu", { description: "Mesto je rezervisano. Pristup se aktivira nakon potvrde uplate." }); refresh(); },
+      onError: (error: any) => toast.error("Prihvatanje ponude nije uspelo", { description: error?.message }),
+    });
+  };
+
+  if (isLoading) return <Skeleton className="mt-8 h-32 rounded-xl" />;
+  if (offers.length === 0 && notifications.length === 0) return null;
+
+  return (
+    <div className="mt-8 space-y-4">
+      {offers.length > 0 && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg"><Zap className="h-5 w-5 text-amber-500" /> Ponude sa liste čekanja</CardTitle>
+            <p className="text-sm text-muted-foreground">Mesto je rezervisano za vas. Prihvatite ponudu pre isteka roka od 24 sata.</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {offers.map((offer) => (
+              <div key={offer.id} className="flex flex-col gap-3 rounded-lg border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium">{offer.courseTitle}</p>
+                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" /> <OfferCountdown expiresAt={offer.expiresAt} />
+                  </p>
+                </div>
+                <Button
+                  disabled={acceptOffer.isPending}
+                  onClick={() => handleAccept(offer.id)}
+                >
+                  {acceptOffer.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                  Prihvati mesto
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {notifications.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Bell className="h-5 w-5" /> Obaveštenja
+              {unread.length > 0 && <Badge variant="secondary">{unread.length} novo</Badge>}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {notifications.slice(0, 10).map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-lg border p-3 ${item.readAt ? "bg-background" : "bg-muted/40 border-primary/30"}`}
+                onClick={() => {
+                  if (item.readAt) return;
+                  markRead.mutate({ notificationId: item.id }, { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListEducationNotificationsQueryKey() }) });
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <p className="text-sm font-medium">{item.title}</p>
+                <p className="text-sm text-muted-foreground">{item.body}</p>
+                <p className="mt-1 text-xs text-muted-foreground/70">{new Date(item.createdAt).toLocaleString("sr-RS")}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function StudentLearningView() {
   const { data: enrollments, isLoading, isError } = useListEnrollments();
   return <div className="container mx-auto max-w-5xl px-4 py-10">
     <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> STUDENT</Badge>
     <h1 className="font-serif text-3xl font-bold">Moje edukacije</h1>
     <p className="mt-2 text-muted-foreground">Vaši kupljeni programi, napredak i sertifikati.</p>
+    <StudentEducationInbox />
     {isLoading ? <div className="mt-8 grid gap-4 md:grid-cols-2">{[1, 2].map((item) => <Skeleton key={item} className="h-44 rounded-xl" />)}</div>
       : isError ? <Card className="mt-8"><CardContent className="py-10 text-center">Edukacije trenutno nisu dostupne.</CardContent></Card>
         : enrollments?.length ? <div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={`/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div>
@@ -160,10 +279,12 @@ function CatalogView() {
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
   const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUCATION_CENTER_OWNER';
+  const isEducationCenter = user?.role === 'EDUCATION_CENTER_OWNER';
 
   const [filters, setFilters] = useState<any>({});
   const { data: courses, isLoading } = useListCourses(filters);
   const [createOpen, setCreateOpen] = useState(false);
+  const [instructorsOpen, setInstructorsOpen] = useState(false);
 
   const handleFilterChange = (key: string, value: any) => {
     setFilters((prev: any) => {
@@ -267,11 +388,18 @@ function CatalogView() {
             <h2 className="text-2xl font-serif font-bold text-foreground">
               {filters.mine ? 'Moje edukacije' : 'Katalog edukacija'}
             </h2>
-            {canCreate && (
-              <Button onClick={() => setCreateOpen(true)} className="gap-2 shadow-sm">
-                <Plus className="w-4 h-4" /> Nova edukacija
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {isEducationCenter && (
+                <Button variant="outline" onClick={() => setInstructorsOpen(true)} className="gap-2">
+                  <UserCircle2 className="w-4 h-4" /> Instruktori
+                </Button>
+              )}
+              {canCreate && (
+                <Button onClick={() => setCreateOpen(true)} className="gap-2 shadow-sm">
+                  <Plus className="w-4 h-4" /> Nova edukacija
+                </Button>
+              )}
+            </div>
           </div>
           
           {isLoading ? (
@@ -360,6 +488,7 @@ function CatalogView() {
       </div>
 
       <CreateCourseDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {isEducationCenter && <InstructorsDialog open={instructorsOpen} onOpenChange={setInstructorsOpen} />}
     </div>
   );
 }
@@ -379,6 +508,8 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     return myCourses?.some((c: any) => c.id === courseId) ?? false;
   }, [myCourses, courseId]);
 
+  const isEducationCenter = user?.role === "EDUCATION_CENTER_OWNER";
+
   const { data: enrollments } = useListEnrollments({ query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
   const { data: employees } = useListSalonEmployees({
     query: {
@@ -386,12 +517,20 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       queryKey: getListSalonEmployeesQueryKey(),
     },
   });
+  const { data: instructors } = useListEducationInstructors({
+    query: { enabled: isMyCourse && isEducationCenter, queryKey: getListEducationInstructorsQueryKey() },
+  });
+  const { data: featuredStatus, refetch: refetchFeatured } = useGetEducationCourseFeaturedStatus(courseId, {
+    query: { enabled: isMyCourse, queryKey: getGetEducationCourseFeaturedStatusQueryKey(courseId) },
+  });
   const myEnrollment = enrollments?.find((e: any) => e.courseId === courseId);
 
   const enroll = useEnrollInEducationCourse();
   const update = useUpdateEducationCourse();
   const publish = usePublishEducationCourse();
   const archive = useArchiveEducationCourse();
+  const updateFeatured = useUpdateEducationCourseFeatured();
+  const linkInstructor = useLinkEducationCourseInstructor();
 
   const [createModuleOpen, setCreateModuleOpen] = useState(false);
   const [createLessonOpen, setCreateLessonOpen] = useState(false);
@@ -400,6 +539,11 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [priceEdit, setPriceEdit] = useState("");
   const [learnerId, setLearnerId] = useState("");
+  // Group enrollment state
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupSelectedIds, setGroupSelectedIds] = useState<string[]>([]);
+  const [groupEnrolling, setGroupEnrolling] = useState(false);
+  const [groupSessionId, setGroupSessionId] = useState("");
 
   useEffect(() => {
     if (course) setPriceEdit(String(course.price));
@@ -416,6 +560,37 @@ function CourseDetailView({ courseId }: { courseId: string }) {
       onError: () => toast.error("Greška pri rezervaciji")
     });
   };
+
+  const handleGroupEnroll = async () => {
+    if (groupSelectedIds.length === 0) { toast.error("Izaberite bar jednog zaposlenog."); return; }
+    setGroupEnrolling(true);
+    try {
+      const body: Record<string, unknown> = { employeeIds: groupSelectedIds };
+      if (groupSessionId) body.sessionId = groupSessionId;
+      const response = await fetch(`/api/education/courses/${courseId}/group-enrollments`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json() as { error?: string; discountPercent?: number; unitPrice?: number; totalPrice?: number; enrollments?: unknown[] };
+      if (!response.ok) throw new Error(data.error ?? "Grupna prijava nije uspela.");
+      const discountMsg = (data.discountPercent ?? 0) > 0
+        ? ` Primenjen je popust od ${data.discountPercent}%. Cena po polazniku: ${data.unitPrice?.toLocaleString("sr-RS")} RSD.`
+        : "";
+      toast.success(`Grupna prijava za ${data.enrollments?.length ?? 0} polaznika je primljena.${discountMsg}`);
+      queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
+      queryClient.invalidateQueries({ queryKey: getListEnrollmentsQueryKey() });
+      setGroupMode(false);
+      setGroupSelectedIds([]);
+    } catch (err) {
+      toast.error("Grupna prijava nije uspela", { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setGroupEnrolling(false);
+    }
+  };
+
+  const toggleGroupEmployee = (id: string) =>
+    setGroupSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   if (isLoading) {
     return (
@@ -604,6 +779,12 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                                   {session.availableSeats} / {session.capacity} slobodno
                                 </span>
                               </div>
+                              {isMyCourse && (session.minimumEnrollments ?? 0) > 0 && (
+                                <div className="flex justify-between items-center text-xs text-muted-foreground">
+                                  <span>Minimalan broj prijava:</span>
+                                  <span className="font-medium">{session.minimumEnrollments}</span>
+                                </div>
+                              )}
                             </div>
                           </CardContent>
                         </Card>
@@ -642,7 +823,25 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       <span className="font-medium text-foreground">Neograničen broj mesta</span>
                     )}
                   </div>
+                  {(course.groupDiscountMinimum ?? 0) > 0 && (
+                    <div className="flex items-start text-sm gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md p-2.5">
+                      <Users className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span className="text-emerald-700 dark:text-emerald-400">
+                        <strong>Grupni popust {course.groupDiscountPercent}%</strong> za {course.groupDiscountMinimum}+ polaznika
+                      </span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Cancellation / Refund Policy — visible before purchase */}
+                {(course.refundPolicy) && !isMyCourse && course.enrollmentStatus !== 'active' && course.enrollmentStatus !== 'completed' && (
+                  <div className="border border-border/60 rounded-lg p-3 bg-muted/20 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Politika povraćaja
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{course.refundPolicy}</p>
+                  </div>
+                )}
                 
                 {isMyCourse ? (
                   <div className="space-y-3 bg-muted/30 p-4 rounded-lg border border-border/50">
@@ -653,6 +852,66 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                         Sačuvaj cenu
                       </Button>
                     </div>
+                    {isEducationCenter && instructors && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Instruktor kursa</Label>
+                        <Select
+                          value={(course as any).instructorProfileId ?? "none"}
+                          onValueChange={(val) => linkInstructor.mutate({ courseId, data: { instructorId: val === "none" ? null : val } }, {
+                            onSuccess: () => { toast.success("Instruktor je ažuriran"); queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) }); },
+                            onError: () => toast.error("Instruktor nije ažuriran"),
+                          })}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Bez instruktora" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Bez instruktora</SelectItem>
+                            {instructors.map((inst) => <SelectItem key={inst.id} value={inst.id}>{inst.fullName}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {featuredStatus && (
+                      <div className="rounded-md border border-border/60 bg-background px-3 py-2 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-medium flex items-center gap-1"><Zap className="w-3.5 h-3.5 text-amber-500" /> Istaknuta edukacija</p>
+                            <p className="text-xs text-muted-foreground">
+                              {featuredStatus.featuredCoursePrice > 0 ? `Naknada: ${featuredStatus.featuredCoursePrice.toLocaleString("sr-RS")} RSD` : "Besplatno"}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={featuredStatus.isFeatured}
+                            onCheckedChange={(checked) => updateFeatured.mutate({ courseId, data: { active: checked } }, {
+                              onSuccess: () => {
+                                toast.success(checked
+                                  ? (featuredStatus.featuredCoursePrice > 0 ? "Zahtev za isticanje je poslat" : "Edukacija je istaknuta")
+                                  : "Isticanje je deaktivirano");
+                                refetchFeatured();
+                              },
+                              onError: () => toast.error("Izmena nije uspela"),
+                            })}
+                            disabled={updateFeatured.isPending}
+                          />
+                        </div>
+                        {/* Honest charge status — the toggle records an auditable platform charge, it does NOT process a payment. */}
+                        {featuredStatus.charge && featuredStatus.featuredCoursePrice > 0 && (
+                          <div className="rounded bg-muted/40 px-2 py-1.5 text-xs">
+                            {featuredStatus.charge.status === "pending" && (
+                              <span className="text-amber-600 dark:text-amber-400">Naknada za isticanje ({featuredStatus.charge.amount.toLocaleString("sr-RS")} RSD) čeka potvrdu uplate od strane LUMERA administracije.</span>
+                            )}
+                            {featuredStatus.charge.status === "paid" && (
+                              <span className="text-emerald-600 dark:text-emerald-400">Naknada za isticanje je evidentirana kao plaćena.</span>
+                            )}
+                            {featuredStatus.charge.status === "cancelled" && (
+                              <span className="text-muted-foreground">Prethodni zahtev za isticanje je otkazan.</span>
+                            )}
+                            {featuredStatus.charge.status === "refunded" && (
+                              <span className="text-muted-foreground">Naknada za isticanje je refundirana.</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <Button variant="outline" className="w-full" onClick={() => setEditCourseOpen(true)}>
                       Izmeni podatke kursa
                     </Button>
@@ -677,22 +936,84 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   )
                 ) : (
                   <div className="space-y-3">
-                    {user?.role === "SALON_OWNER" && employees?.length ? (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="education-learner">Polaznik</Label>
-                        <Select value={learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
-                          <SelectTrigger id="education-learner"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="self">Ja lično</SelectItem>
-                            {employees.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima.</p>
+                    {/* Group enrollment toggle for SALON_OWNER with employees */}
+                    {user?.role === "SALON_OWNER" && employees && employees.length >= 2 && (course.groupDiscountMinimum ?? 0) > 0 && !groupMode && (
+                      <Button variant="outline" className="w-full gap-2" onClick={() => setGroupMode(true)}>
+                        <Users className="w-4 h-4" /> Grupna prijava ({employees.length} zaposlenih)
+                      </Button>
+                    )}
+
+                    {groupMode ? (
+                      <div className="space-y-3 border rounded-lg p-4 bg-muted/10">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-sm">Izaberite polaznike</h4>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setGroupMode(false); setGroupSelectedIds([]); }}>Odustani</Button>
+                        </div>
+                        {(course.groupDiscountMinimum ?? 0) > 0 && (
+                          <Alert className="py-2 px-3">
+                            <Info className="w-4 h-4" />
+                            <AlertDescription className="text-xs ml-1">
+                              Odaberite najmanje {course.groupDiscountMinimum} polaznika za popust od {course.groupDiscountPercent}%.
+                              {groupSelectedIds.length >= (course.groupDiscountMinimum ?? 0) && (
+                                <span className="text-emerald-600 font-medium"> Popust će biti primenjen!</span>
+                              )}
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {employees?.map((emp) => (
+                            <div key={emp.id} className="flex items-center gap-2 p-2 rounded hover:bg-muted/40 cursor-pointer" onClick={() => toggleGroupEmployee(emp.id)}>
+                              <Checkbox checked={groupSelectedIds.includes(emp.id)} onCheckedChange={() => toggleGroupEmployee(emp.id)} id={`emp-${emp.id}`} />
+                              <label htmlFor={`emp-${emp.id}`} className="text-sm cursor-pointer flex-1">{emp.name}</label>
+                            </div>
+                          ))}
+                        </div>
+                        {(course.format === "in-person" || course.format === "hybrid") && course.sessions?.length > 0 && (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Termin (opciono)</Label>
+                            <Select value={groupSessionId || "auto"} onValueChange={(v) => setGroupSessionId(v === "auto" ? "" : v)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Automatski" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">Automatski</SelectItem>
+                                {course.sessions.filter((s: any) => s.availableSeats > 0).map((s: any) => (
+                                  <SelectItem key={s.id} value={s.id}>
+                                    {new Date(s.startsAt).toLocaleDateString("sr-RS")} — {s.availableSeats} mesta
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground">
+                          {groupSelectedIds.length} odabrano
+                          {groupSelectedIds.length >= (course.groupDiscountMinimum ?? 999) && (
+                            <span className="text-emerald-600 font-medium"> · Cena po polazniku: {Math.round(course.price * (1 - (course.groupDiscountPercent ?? 0) / 100)).toLocaleString("sr-RS")} RSD</span>
+                          )}
+                        </div>
+                        <Button className="w-full" onClick={() => void handleGroupEnroll()} disabled={groupEnrolling || groupSelectedIds.length === 0}>
+                          {groupEnrolling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Prijavljujem...</> : `Prijavi ${groupSelectedIds.length} polaznika`}
+                        </Button>
                       </div>
-                    ) : null}
-                    <Button className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending}>
-                      {enroll.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rezervacija...</> : 'Rezerviši mesto'}
-                    </Button>
+                    ) : (
+                      <>
+                        {user?.role === "SALON_OWNER" && employees?.length ? (
+                          <div className="space-y-1.5">
+                            <Label htmlFor="education-learner">Polaznik</Label>
+                            <Select value={learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
+                              <SelectTrigger id="education-learner"><SelectValue placeholder="Izaberite polaznika" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="self">Ja lično</SelectItem>
+                                {employees.map((employee) => <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Izabrani zaposleni koristi svoj poslovni nalog za LMS; vlasnik u ovom prostoru prati prijavu i napredak tima.</p>
+                          </div>
+                        ) : null}
+                        <Button className="w-full text-base h-12 shadow-md hover:shadow-lg transition-shadow" size="lg" onClick={handleEnroll} disabled={enroll.isPending}>
+                          {enroll.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Rezervacija...</> : 'Rezerviši mesto'}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -710,10 +1031,13 @@ function CourseDetailView({ courseId }: { courseId: string }) {
 }
 
 function LmsView({ enrollmentId }: { enrollmentId: string }) {
+  const { data: userResponse } = useGetCurrentUser();
   const { data: lms, isLoading } = useGetEducationLms(enrollmentId);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const complete = useCompleteEducationLesson();
+  const [certDownloading, setCertDownloading] = useState(false);
+  const [icsDownloading, setIcsDownloading] = useState(false);
   
   const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
   
@@ -754,12 +1078,68 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
       onError: () => toast.error("Lekcija nije označena kao završena")
     });
   };
-  
+
+  const handleDownloadCertificate = async () => {
+    setCertDownloading(true);
+    try {
+      const response = await fetch(`/api/education/enrollments/${enrollmentId}/certificate`);
+      if (!response.ok) {
+        const data = await response.json() as { error?: string };
+        throw new Error(data.error ?? "Preuzimanje sertifikata nije uspelo.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sertifikat-${enrollmentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Sertifikat nije preuzet", { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setCertDownloading(false);
+    }
+  };
+
+  const handleDownloadIcs = async () => {
+    setIcsDownloading(true);
+    try {
+      const response = await fetch(`/api/education/enrollments/${enrollmentId}/session.ics`);
+      if (!response.ok) {
+        const data = await response.json() as { error?: string };
+        throw new Error(data.error ?? "Preuzimanje termina nije uspelo.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `termin-${enrollmentId}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("ICS nije preuzet", { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setIcsDownloading(false);
+    }
+  };
+
+  const isCompleted = lms.enrollment.status === "completed";
+  const isPaid = lms.enrollment.paymentStatus === "paid";
+  const hasCertification = (lms.course as any).certification as boolean;
+  // Sessions are live for in-person/hybrid courses that have at least one session.
+  // The ICS endpoint needs a sessionId on the enrollment — if sessions exist, the button
+  // is shown and the server validates whether this specific enrollment has one.
+  const hasSession = (lms.course as any).format !== "online" && Array.isArray((lms.course as any).sessions) && ((lms.course as any).sessions as unknown[]).length > 0;
+
   return (
     <div className="flex flex-col md:flex-row min-h-[100dvh]">
       <div className="w-full md:w-80 shrink-0 border-r border-border bg-sidebar flex flex-col md:h-[100dvh] md:sticky md:top-0">
         <div className="p-5 border-b bg-sidebar shadow-sm z-10 relative">
-          <Link href={`/biznis/edukacije/${lms.course.id}`} className="text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground flex items-center mb-5 transition-colors">
+          <Link href={userResponse?.user?.role === "STUDENT" ? "/student/edukacije" : `/biznis/edukacije/${lms.course.id}`} className="text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground flex items-center mb-5 transition-colors">
             <ArrowLeft className="w-4 h-4 mr-2" /> Izlaz
           </Link>
           <h2 className="font-serif font-bold text-lg leading-tight mb-4 text-sidebar-foreground line-clamp-2" title={lms.course.title}>{lms.course.title}</h2>
@@ -770,6 +1150,23 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
             </div>
             <Progress value={lms.enrollment.progress} className="h-2 bg-sidebar-accent [&>div]:bg-primary" />
           </div>
+          {/* Certificate and ICS download buttons */}
+          {isPaid && (
+            <div className="mt-4 space-y-2">
+              {isCompleted && hasCertification && (
+                <Button variant="outline" size="sm" className="w-full gap-2 text-xs bg-sidebar-accent/30 border-sidebar-border hover:bg-sidebar-accent" onClick={() => void handleDownloadCertificate()} disabled={certDownloading}>
+                  {certDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  Preuzmi sertifikat (PDF)
+                </Button>
+              )}
+              {hasSession && (
+                <Button variant="outline" size="sm" className="w-full gap-2 text-xs bg-sidebar-accent/30 border-sidebar-border hover:bg-sidebar-accent" onClick={() => void handleDownloadIcs()} disabled={icsDownloading}>
+                  {icsDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+                  Dodaj termin u kalendar (.ics)
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {lms.course.modules.map((mod: any) => (
@@ -848,15 +1245,16 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
   const create = useCreateEducationCourse();
   const update = useUpdateEducationCourse();
   
+  const DEFAULT_REFUND_POLICY = "Povraćaj je moguć do isteka roka zaštite kupovine. Ako centar otkaže termin, kupovina se refundira u celosti.";
   const { register, handleSubmit, control, formState: { errors }, reset } = useForm<any>({
     resolver: zodResolver(courseSchema) as any,
-    defaultValues: { format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE }
+    defaultValues: { format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "" }
   });
   
   useEffect(() => {
     if (!open) return;
     if (!course) {
-      reset({ format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE });
+      reset({ format: 'online', certification: false, price: 0, imageUrl: DEFAULT_COURSE_IMAGE, refundPolicy: DEFAULT_REFUND_POLICY, groupDiscountMinimum: "", groupDiscountPercent: "" });
       return;
     }
     reset({
@@ -870,10 +1268,20 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
       certification: course.certification,
       imageUrl: course.imageUrl,
       startDate: course.startDate ? new Date(course.startDate).toISOString().slice(0, 10) : "",
+      refundPolicy: course.refundPolicy ?? DEFAULT_REFUND_POLICY,
+      groupDiscountMinimum: course.groupDiscountMinimum ?? "",
+      groupDiscountPercent: course.groupDiscountPercent ?? "",
     });
   }, [open, reset, course]);
 
-  const onSubmit = (data: any) => {
+  const onSubmit = (raw: any) => {
+    // Normalize the optional group-discount pair: empty inputs become null so the
+    // server clears the configuration; both must be provided together (enforced by zod).
+    const data = {
+      ...raw,
+      groupDiscountMinimum: raw.groupDiscountMinimum === "" || raw.groupDiscountMinimum == null ? null : Number(raw.groupDiscountMinimum),
+      groupDiscountPercent: raw.groupDiscountPercent === "" || raw.groupDiscountPercent == null ? null : Number(raw.groupDiscountPercent),
+    };
     const mutation = course
       ? update.mutate({ courseId: course.id, data }, {
           onSuccess: () => {
@@ -976,6 +1384,31 @@ function CreateCourseDialog({ open, onOpenChange, course }: { open: boolean; onO
                 <Switch checked={field.value} onCheckedChange={field.onChange} />
               )}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Politika povraćaja *</Label>
+            <Textarea rows={3} placeholder="Uslovi za povraćaj i otkazivanje..." {...register("refundPolicy")} />
+            <p className="text-xs text-muted-foreground">Prikazuje se polaznicima pre kupovine.</p>
+            {errors.refundPolicy && <p className="text-sm text-destructive">{errors.refundPolicy.message as string}</p>}
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
+            <div>
+              <Label className="text-base">Grupni popust (opciono)</Label>
+              <p className="text-sm text-muted-foreground">Automatski popust kada salon prijavi više polaznika odjednom. Ostavite prazno da isključite.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Minimalan broj polaznika</Label>
+                <Input type="number" min="2" max="999" placeholder="Npr. 3" {...register("groupDiscountMinimum")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Procenat popusta (%)</Label>
+                <Input type="number" min="0" max="100" placeholder="Npr. 15" {...register("groupDiscountPercent")} />
+              </div>
+            </div>
+            {errors.groupDiscountPercent && <p className="text-sm text-destructive">{errors.groupDiscountPercent.message as string}</p>}
           </div>
 
           <DialogFooter className="pt-2">
@@ -1106,15 +1539,22 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
       startsAt: z.string().min(1, "Početak je obavezan"),
       endsAt: z.string().min(1, "Kraj je obavezan"),
       location: z.string().optional(),
-      capacity: z.coerce.number().min(1, "Kapacitet mora biti > 0")
+      capacity: z.coerce.number().min(1, "Kapacitet mora biti > 0"),
+      minimumEnrollments: z.coerce.number().int().min(0).max(9999).optional().nullable(),
     })) as any,
-    defaultValues: { capacity: 10 }
+    defaultValues: { capacity: 10, minimumEnrollments: "" }
   });
   
   useEffect(() => { if (open) reset(); }, [open, reset]);
 
-  const onSubmit = (data: any) => {
-    create.mutate({ courseId, data: { ...data, startsAt: new Date(data.startsAt).toISOString(), endsAt: new Date(data.endsAt).toISOString() } }, {
+  const onSubmit = (raw: any) => {
+    const data = {
+      ...raw,
+      startsAt: new Date(raw.startsAt).toISOString(),
+      endsAt: new Date(raw.endsAt).toISOString(),
+      minimumEnrollments: raw.minimumEnrollments === "" || raw.minimumEnrollments == null ? null : Number(raw.minimumEnrollments),
+    };
+    create.mutate({ courseId, data }, {
       onSuccess: () => {
         toast.success("Termin uspešno dodat");
         queryClient.invalidateQueries({ queryKey: getGetEducationCourseQueryKey(courseId) });
@@ -1145,9 +1585,16 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
             <Label>Tačna lokacija (adresa ili link)</Label>
             <Input placeholder="Npr. Resavska 10, Novi Sad" {...register("location")} />
           </div>
-          <div className="space-y-2">
-            <Label>Kapacitet polaznika *</Label>
-            <Input type="number" min="1" {...register("capacity")} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Kapacitet polaznika *</Label>
+              <Input type="number" min="1" {...register("capacity")} />
+            </div>
+            <div className="space-y-2">
+              <Label>Minimalan broj prijava</Label>
+              <Input type="number" min="0" max="9999" placeholder="Opciono" {...register("minimumEnrollments")} />
+              <p className="text-xs text-muted-foreground">Prag ispod kojeg se termin može otkazati.</p>
+            </div>
           </div>
           <DialogFooter className="pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
@@ -1156,5 +1603,252 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Instructor management dialog (EDUCATION_CENTER_OWNER) ───────────────────
+
+const instructorSchema = z.object({
+  fullName: z.string().min(1, "Ime je obavezno").max(120),
+  photoUrl: z.string().optional(),
+  biography: z.string().max(4000).optional(),
+  industryYears: z.coerce.number().int().min(0).optional(),
+  experienceYears: z.coerce.number().int().min(0).optional(),
+  specializations: z.string().optional(),
+  qualifications: z.string().optional(),
+});
+type InstructorForm = z.infer<typeof instructorSchema>;
+
+function InstructorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: instructors, isLoading } = useListEducationInstructors({ query: { enabled: open, queryKey: getListEducationInstructorsQueryKey() } });
+  const createMut = useCreateEducationInstructor();
+  const updateMut = useUpdateEducationInstructor();
+  const delMut = useDeleteEducationInstructor();
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<InstructorForm>({ resolver: zodResolver(instructorSchema) });
+
+  const openEdit = (inst: any) => {
+    setEditingId(inst.id);
+    reset({
+      fullName: inst.fullName,
+      photoUrl: inst.photoUrl ?? "",
+      biography: inst.biography ?? "",
+      industryYears: inst.industryYears,
+      experienceYears: inst.experienceYears,
+      specializations: (inst.specializations ?? []).join(", "),
+      qualifications: (inst.qualifications ?? []).join(", "),
+    });
+  };
+
+  const parseList = (val?: string) => (val ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+  const onSubmit = (data: InstructorForm) => {
+    const payload = {
+      fullName: data.fullName,
+      photoUrl: data.photoUrl || undefined,
+      biography: data.biography,
+      industryYears: data.industryYears ?? 0,
+      experienceYears: data.experienceYears ?? 0,
+      specializations: parseList(data.specializations),
+      qualifications: parseList(data.qualifications),
+    };
+    if (editingId) {
+      updateMut.mutate({ instructorId: editingId, data: payload }, {
+        onSuccess: () => { toast.success("Instruktor je ažuriran"); queryClient.invalidateQueries({ queryKey: getListEducationInstructorsQueryKey() }); setEditingId(null); reset({}); },
+        onError: () => toast.error("Greška pri ažuriranju"),
+      });
+    } else {
+      createMut.mutate({ data: payload }, {
+        onSuccess: () => { toast.success("Instruktor je dodat"); queryClient.invalidateQueries({ queryKey: getListEducationInstructorsQueryKey() }); reset({}); },
+        onError: () => toast.error("Greška pri kreiranju"),
+      });
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (!window.confirm("Da li ste sigurni da želite da obrišete ovog instruktora?")) return;
+    delMut.mutate({ instructorId: id }, {
+      onSuccess: () => { toast.success("Instruktor je obrisan"); queryClient.invalidateQueries({ queryKey: getListEducationInstructorsQueryKey() }); if (editingId === id) { setEditingId(null); reset({}); } },
+      onError: () => toast.error("Greška pri brisanju"),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle className="font-serif text-xl flex items-center gap-2"><UserCircle2 className="w-5 h-5" /> Profili instruktora</DialogTitle></DialogHeader>
+        <div className="space-y-6 pt-2">
+          {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : (
+            <div className="space-y-2">
+              {instructors?.map((inst) => (
+                <div key={inst.id} className="flex items-center gap-3 rounded-lg border p-3 bg-muted/20">
+                  {inst.photoUrl ? <img src={inst.photoUrl} alt={inst.fullName} className="w-10 h-10 rounded-full object-cover border" /> : <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><UserCircle2 className="w-6 h-6 text-muted-foreground" /></div>}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{inst.fullName}</p>
+                    <p className="text-xs text-muted-foreground">{inst.experienceYears} god. iskustva</p>
+                  </div>
+                  <Button size="icon" variant="ghost" onClick={() => openEdit(inst)}><Pencil className="w-4 h-4" /></Button>
+                  <Button size="icon" variant="ghost" onClick={() => handleDelete(inst.id)} disabled={delMut.isPending}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                </div>
+              ))}
+              {!instructors?.length && <p className="text-sm text-muted-foreground text-center py-4">Nema instruktora. Dodajte prvog ispod.</p>}
+            </div>
+          )}
+
+          <div className="border-t pt-4">
+            <h4 className="font-medium text-sm mb-3">{editingId ? "Izmeni instruktora" : "Dodaj instruktora"}</h4>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Puno ime *</Label>
+                  <Input placeholder="Ime i prezime" {...register("fullName")} />
+                  {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">URL fotografije</Label>
+                  <Input placeholder="https://..." {...register("photoUrl")} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Biografija</Label>
+                <Textarea placeholder="Kratka biografija instruktora..." rows={3} {...register("biography")} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Godine u industriji</Label>
+                  <Input type="number" min="0" {...register("industryYears")} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Godine poučavanja</Label>
+                  <Input type="number" min="0" {...register("experienceYears")} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Specijalizacije (zarezom odvojeno)</Label>
+                <Input placeholder="Npr. Manikir, Gelovi, Akrilne nokte" {...register("specializations")} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Kvalifikacije i sertifikati (zarezom odvojeno)</Label>
+                <Input placeholder="Npr. OPI sertifikat, Ombre majstor" {...register("qualifications")} />
+              </div>
+              <div className="flex gap-2 pt-1">
+                {editingId && <Button type="button" variant="ghost" size="sm" onClick={() => { setEditingId(null); reset({}); }}>Odustani</Button>}
+                <Button type="submit" size="sm" disabled={createMut.isPending || updateMut.isPending}>
+                  {(createMut.isPending || updateMut.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {editingId ? "Sačuvaj izmene" : "Dodaj instruktora"}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Public instructor profile page ──────────────────────────────────────────
+
+export function InstructorPublicProfilePage({ instructorId }: { instructorId: string }) {
+  const { data: profile, isLoading, isError } = useGetPublicInstructorProfile(instructorId);
+
+  if (isLoading) return (
+    <div className="container mx-auto max-w-4xl px-4 py-16 space-y-6">
+      <Skeleton className="h-32 w-full rounded-xl" />
+      <Skeleton className="h-48 w-full rounded-xl" />
+    </div>
+  );
+
+  if (isError || !profile) return (
+    <div className="container mx-auto max-w-4xl px-4 py-24 text-center">
+      <UserCircle2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground/40" />
+      <h2 className="text-2xl font-bold mb-2">Instruktor nije pronađen</h2>
+      <Button asChild variant="outline"><Link href="/edukacije">Nazad na katalog</Link></Button>
+    </div>
+  );
+
+  return (
+    <div className="bg-background min-h-screen">
+      <div className="bg-secondary/20 border-b">
+        <div className="container mx-auto max-w-4xl px-4 py-10">
+          <Link href="/edukacije" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-6">
+            <ArrowLeft className="w-4 h-4 mr-2" /> Nazad
+          </Link>
+          <div className="flex items-start gap-6">
+            {profile.photoUrl ? (
+              <img src={profile.photoUrl} alt={profile.name} className="w-24 h-24 rounded-full object-cover border-2 border-border shadow-md shrink-0" />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center shrink-0"><UserCircle2 className="w-12 h-12 text-muted-foreground" /></div>
+            )}
+            <div className="flex-1 min-w-0">
+              <h1 className="font-serif text-3xl font-bold mb-2">{profile.name}</h1>
+              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-500 fill-amber-500" /> {profile.rating.toFixed(1)} prosečna ocena</span>
+                <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {profile.participantCount} polaznika</span>
+                <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {profile.industryYears} god. u industriji</span>
+                <span className="flex items-center gap-1"><GraduationCap className="w-4 h-4" /> {profile.experienceYears} god. poučavanja</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto max-w-4xl px-4 py-8 space-y-8">
+        {profile.biography && (
+          <section>
+            <h2 className="font-serif text-xl font-semibold mb-3">O instruktoru</h2>
+            <div className="prose prose-slate dark:prose-invert max-w-none text-foreground/90 leading-relaxed">
+              {profile.biography.split("\n").map((para, i) => <p key={i} className="mb-3">{para}</p>)}
+            </div>
+          </section>
+        )}
+
+        {profile.qualifications.length > 0 && (
+          <section>
+            <h2 className="font-serif text-xl font-semibold mb-3">Kvalifikacije i sertifikati</h2>
+            <div className="flex flex-wrap gap-2">
+              {profile.qualifications.map((q) => <Badge key={q} variant="secondary" className="gap-1"><Award className="w-3.5 h-3.5" />{q}</Badge>)}
+            </div>
+          </section>
+        )}
+
+        {profile.specializations.length > 0 && (
+          <section>
+            <h2 className="font-serif text-xl font-semibold mb-3">Specijalizacije</h2>
+            <div className="flex flex-wrap gap-2">
+              {profile.specializations.map((s) => <Badge key={s} variant="outline">{s}</Badge>)}
+            </div>
+          </section>
+        )}
+
+        {profile.courses.length > 0 && (
+          <section>
+            <h2 className="font-serif text-xl font-semibold mb-4">Kursevi instruktora</h2>
+            <div className="grid gap-5 md:grid-cols-2">
+              {profile.courses.map((course: any) => (
+                <Link key={course.id} href={`/edukacije/${course.id}`}>
+                  <Card className="overflow-hidden hover:shadow-md transition-all cursor-pointer border-border/60 group">
+                    {course.imageUrl && (
+                      <div className="aspect-video overflow-hidden bg-muted/30">
+                        <img src={course.imageUrl} alt={course.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      </div>
+                    )}
+                    <CardContent className="p-4">
+                      <h3 className="font-serif font-bold text-lg mb-1 group-hover:text-primary transition-colors line-clamp-2">{course.title}</h3>
+                      <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1"><Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />{course.rating.toFixed(1)}</span>
+                        <span className="font-bold text-foreground">{course.price.toLocaleString("sr-RS")} RSD</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
   );
 }

@@ -18,7 +18,7 @@ import Auth from './pages/auth';
 import BusinessAuth from './pages/business-auth';
 import BusinessLanding from './pages/business-landing';
 import BusinessHub from './pages/business-hub';
-import BusinessEducation from './pages/business-education';
+import BusinessEducation, { InstructorPublicProfilePage } from './pages/business-education';
 import EducationMarketplace from './pages/education-marketplace';
 import MarketplaceGuides from './pages/marketplace-guides';
 import Salons from './pages/salons';
@@ -82,6 +82,10 @@ function PlaceholderPage({ title }: { title: string }) {
       </div>
     </Layout>
   )
+}
+
+function InstructorPublicPage(props: any) {
+  return <InstructorPublicProfilePage instructorId={props.params?.instructorId ?? ""} />;
 }
 
 function LegacyEducationRedirect() {
@@ -217,6 +221,7 @@ function Router() {
         <Route path="/vlasnik/loyalty"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerLoyalty /></RoleGuard></Route>
         
         <Route path="/edukacije"><EducationMarketplace /></Route>
+        <Route path="/edukacije/instruktori/:instructorId" component={InstructorPublicPage} />
 
         <Route path="/admin"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminDashboard /></RoleGuard></Route>
         <Route path="/admin/saloni/:salonId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalonDetail /></RoleGuard></Route>

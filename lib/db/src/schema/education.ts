@@ -79,6 +79,7 @@ export const coursesTable = pgTable("courses", {
   centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "cascade" }),
   salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
   instructorId: uuid("instructor_id").references(() => usersTable.id, { onDelete: "set null" }),
+  instructorProfileId: uuid("instructor_profile_id").references((): any => educationInstructorsTable.id, { onDelete: "set null" }),
   categoryId: uuid("category_id").references(() => courseCategoriesTable.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
@@ -104,6 +105,29 @@ export const coursesTable = pgTable("courses", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const educationFeaturedChargeStatusEnum = pgEnum("education_featured_charge_status", ["pending", "paid", "cancelled", "refunded"]);
+
+export const educationFeaturedChargesTable = pgTable("education_featured_charges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseId: uuid("course_id").notNull().references(() => coursesTable.id, { onDelete: "cascade" }),
+  centerId: uuid("center_id").references(() => educationCentersTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").references(() => salonsTable.id, { onDelete: "cascade" }),
+  amount: integer("amount").notNull(),
+  status: educationFeaturedChargeStatusEnum("status").notNull().default("pending"),
+  paymentMethod: paymentMethodEnum("payment_method").notNull().default("BANK_TRANSFER"),
+  paymentReference: text("payment_reference"),
+  activatedByUserId: uuid("activated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  settledByUserId: uuid("settled_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  note: text("note"),
+  activatedAt: timestamp("activated_at", { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("education_featured_charges_course_created_idx").on(table.courseId, table.createdAt),
+  index("education_featured_charges_status_idx").on(table.status, table.createdAt),
+]);
 
 export const courseSessionsTable = pgTable("course_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -147,6 +171,10 @@ export const courseEnrollmentsTable = pgTable("course_enrollments", {
   purchaserId: uuid("purchaser_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
   status: educationEnrollmentStatusEnum("status").notNull().default("pending"),
   paymentStatus: educationPaymentStatusEnum("payment_status").notNull().default("pending"),
+  // Amount actually charged to the purchaser for this seat, in minor units.
+  // Captured at request time so group discounts survive into settlement,
+  // escrow, ledger and refunds. Null means "fall back to the course price".
+  chargedAmount: integer("charged_amount"),
   progress: integer("progress").notNull().default(0),
   nextLesson: text("next_lesson"),
   purchasedAt: timestamp("purchased_at", { withTimezone: true }).notNull().defaultNow(),

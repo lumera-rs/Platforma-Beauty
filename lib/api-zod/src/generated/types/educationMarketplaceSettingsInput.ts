@@ -27,4 +27,6 @@ export interface EducationMarketplaceSettingsInput {
      * @maximum 365
      */
   liveAppealDays: number;
+  /** @minimum 0 */
+  featuredCoursePrice: number;
 }

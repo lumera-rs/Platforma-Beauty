@@ -14,6 +14,8 @@ export interface Course {
   title: string;
   description: string;
   instructor: string;
+  /** @nullable */
+  instructorProfileId?: string | null;
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
@@ -29,6 +31,16 @@ export interface Course {
   startDate?: Date | null;
   published: boolean;
   archived: boolean;
+  featured?: boolean;
+  /** @nullable */
+  featuredUntil?: Date | null;
+  publisherVerified?: boolean;
+  /** @nullable */
+  refundPolicy?: string | null;
+  /** @nullable */
+  groupDiscountMinimum?: number | null;
+  /** @nullable */
+  groupDiscountPercent?: number | null;
   /** @nullable */
   availableSeats?: number | null;
   /** @nullable */

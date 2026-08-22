@@ -25,4 +25,21 @@ export interface EducationCourseInput {
   imageUrl: string;
   /** @nullable */
   startDate?: Date | null;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  refundPolicy?: string;
+  /**
+     * @minimum 2
+     * @maximum 999
+     * @nullable
+     */
+  groupDiscountMinimum?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  groupDiscountPercent?: number | null;
 }

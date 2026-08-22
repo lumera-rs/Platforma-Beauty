@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
+import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -30,3 +31,12 @@ const retryInterval = setInterval(() => {
 }, 60_000);
 retryInterval.unref();
 void runScheduledRescheduledConfirmationRetries();
+
+// Education session lifecycle: drain expired waitlist offers and auto-cancel
+// under-enrolled sessions. Runs every 5 minutes on a self-unreferencing timer
+// so it never keeps the process alive on its own.
+const educationMaintenanceInterval = setInterval(() => {
+  void runScheduledEducationSessionMaintenance();
+}, 5 * 60_000);
+educationMaintenanceInterval.unref();
+void runScheduledEducationSessionMaintenance();

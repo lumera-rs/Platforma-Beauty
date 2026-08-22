@@ -1339,19 +1339,6 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/LoyaltyTier" }
-  /education/public/courses:
-    get:
-      operationId: listPublicEducationCourses
-      tags: [education]
-      summary: List courses available for public purchase
-      responses:
-        "200":
-          description: Public courses with redacted logistics
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/EducationCourseDetail" }
   /education/center/status:
     get:
       operationId: getEducationCenterStatus
@@ -1872,6 +1859,56 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/EducationEnrollment" }
         "403": { description: Business access required }
+  /education/waitlist/{waitlistId}/accept:
+    post:
+      operationId: acceptEducationWaitlistOffer
+      tags: [education]
+      summary: Accept an active waitlist offer, reserving the held seat and creating a pending enrollment
+      description: >-
+        A promoted "offered" waitlist entry holds one reserved seat on the
+        session for a 24-hour window. Accepting the offer transfers that held
+        seat to a pending enrollment; access begins only after manual
+        settlement. Fails if the offer has expired or is no longer active.
+      parameters:
+        - $ref: "#/components/parameters/WaitlistId"
+      responses:
+        "201":
+          description: Pending enrollment created from the accepted offer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationEnrollment" }
+        "403": { description: Waitlist access required }
+        "404": { description: Waitlist offer not found }
+        "409": { description: "Offer expired, already used, or session filled" }
+  /education/notifications:
+    get:
+      operationId: listEducationNotifications
+      tags: [education]
+      summary: List the current learner's education notifications and waitlist offers
+      responses:
+        "200":
+          description: Education notifications for the signed-in learner
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationNotificationList" }
+        "403": { description: Learner access required }
+  /education/notifications/{notificationId}/read:
+    patch:
+      operationId: markEducationNotificationRead
+      tags: [education]
+      summary: Mark an education notification as read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Notification marked as read
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MarkEducationNotificationReadResponse" }
+        "404": { description: Notification not found }
   /education/enrollments/{enrollmentId}/lms:
     get:
       operationId: getEducationLms
@@ -1886,6 +1923,41 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationLms" }
         "403": { description: Enrollment access required }
+  /education/enrollments/{enrollmentId}/certificate:
+    get:
+      operationId: downloadEducationCertificate
+      tags: [education]
+      summary: Download the PDF completion certificate for a paid, completed enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      responses:
+        "200":
+          description: Certificate PDF document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "403": { description: Enrollment access required }
+        "404": { description: "Enrollment or course not found" }
+        "409": { description: "Certificate is unavailable until the course is completed, paid, and offers certification" }
+  /education/enrollments/{enrollmentId}/session.ics:
+    get:
+      operationId: downloadEducationSessionCalendar
+      tags: [education]
+      summary: Download the RFC 5545 calendar (.ics) file for a paid live-session enrollment
+      parameters:
+        - $ref: "#/components/parameters/EnrollmentId"
+      responses:
+        "200":
+          description: iCalendar (RFC 5545) event file
+          content:
+            text/calendar:
+              schema:
+                type: string
+        "403": { description: Enrollment access required }
+        "404": { description: "Enrollment, session, or course not found" }
+        "409": { description: "Calendar is unavailable until payment is confirmed and a session is assigned" }
   /education/enrollments/{enrollmentId}/lessons/{lessonId}/complete:
     post:
       operationId: completeEducationLesson
@@ -1901,6 +1973,172 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EducationEnrollment" }
         "403": { description: Enrollment access required }
+  /education/instructors:
+    get:
+      operationId: listEducationInstructors
+      tags: [education]
+      summary: List instructor profiles for the current education center
+      responses:
+        "200":
+          description: Center instructor profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationInstructorProfile" }
+        "403": { description: Education center owner access required }
+    post:
+      operationId: createEducationInstructor
+      tags: [education]
+      summary: Create an instructor profile for the current education center
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationInstructorInput" }
+      responses:
+        "201":
+          description: Created instructor profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationInstructorProfile" }
+        "403": { description: Education center owner access required }
+  /education/instructors/{instructorId}:
+    patch:
+      operationId: updateEducationInstructor
+      tags: [education]
+      summary: Update an instructor profile owned by the current education center
+      parameters:
+        - name: instructorId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationInstructorInput" }
+      responses:
+        "200":
+          description: Updated instructor profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationInstructorProfile" }
+        "403": { description: Education center owner access required }
+        "404": { description: Instructor not found }
+    delete:
+      operationId: deleteEducationInstructor
+      tags: [education]
+      summary: Delete an instructor profile owned by the current education center
+      parameters:
+        - name: instructorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Instructor deleted }
+        "403": { description: Education center owner access required }
+        "404": { description: Instructor not found }
+  /education/instructors/{instructorId}/public:
+    get:
+      operationId: getPublicInstructorProfile
+      tags: [education]
+      summary: Get public instructor profile with bio, qualifications, rating and courses
+      parameters:
+        - name: instructorId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Public instructor profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationInstructorPublicProfile" }
+        "404": { description: Instructor not found }
+  /education/courses/{courseId}/featured:
+    get:
+      operationId: getEducationCourseFeaturedStatus
+      tags: [education]
+      summary: Get featured status and current platform price for a course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      responses:
+        "200":
+          description: Featured status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseFeaturedStatus" }
+        "403": { description: Course owner access required }
+        "404": { description: Course not found }
+    patch:
+      operationId: updateEducationCourseFeatured
+      tags: [education]
+      summary: Activate or deactivate featured placement for an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EducationCourseFeaturedInput" }
+      responses:
+        "200":
+          description: Updated featured status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseFeaturedStatus" }
+        "403": { description: Course owner access required }
+        "404": { description: Course not found }
+  /education/courses/{courseId}/instructor:
+    patch:
+      operationId: linkEducationCourseInstructor
+      tags: [education]
+      summary: Link or unlink an instructor profile to an owned course
+      parameters:
+        - $ref: "#/components/parameters/CourseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instructorId: { type: ["string", "null"] }
+      responses:
+        "200":
+          description: Updated course
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationCourseDetail" }
+        "403": { description: Course owner access required }
+        "404": { description: Course or instructor not found }
+  /education/public/courses:
+    get:
+      operationId: listPublicEducationCourses
+      tags: [education]
+      summary: List courses available for public purchase
+      responses:
+        "200":
+          description: Public courses with redacted logistics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseDetail" }
+  /education/public/featured:
+    get:
+      operationId: listFeaturedEducationCourses
+      tags: [education]
+      summary: List currently featured education courses for the public catalog shelf
+      responses:
+        "200":
+          description: Featured courses ordered by activation time
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EducationCourseDetail" }
   /admin/summary:
     get:
       operationId: getAdminSummary
@@ -2758,6 +2996,11 @@ components:
       schema: { type: string }
     SessionId:
       name: sessionId
+      in: path
+      required: true
+      schema: { type: string }
+    WaitlistId:
+      name: waitlistId
       in: path
       required: true
       schema: { type: string }
@@ -3931,6 +4174,7 @@ components:
         title: { type: string }
         description: { type: string }
         instructor: { type: string }
+        instructorProfileId: { type: ["string", "null"] }
         publisher: { type: string }
         publisherType: { type: string, enum: [SALON, EDUCATION_CENTER] }
         category: { type: string }
@@ -3944,6 +4188,12 @@ components:
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
         archived: { type: boolean }
+        featured: { type: boolean }
+        featuredUntil: { type: ["string", "null"], format: date-time }
+        publisherVerified: { type: boolean }
+        refundPolicy: { type: ["string", "null"] }
+        groupDiscountMinimum: { type: ["number", "null"] }
+        groupDiscountPercent: { type: ["number", "null"] }
         availableSeats: { type: ["number", "null"] }
         enrollmentStatus: { type: ["string", "null"], enum: [pending, active, completed, cancelled, null] }
       required: [id, title, description, instructor, publisher, publisherType, category, format, price, duration, rating, certification, imageUrl, published, archived]
@@ -3960,6 +4210,9 @@ components:
         certification: { type: boolean }
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
+        refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
+        groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
+        groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
       required: [title, category, format, price, duration, imageUrl]
     EducationCourseUpdate:
       type: object
@@ -3975,6 +4228,9 @@ components:
         imageUrl: { type: string, minLength: 1 }
         startDate: { type: ["string", "null"], format: date }
         published: { type: boolean }
+        refundPolicy: { type: string, minLength: 1, maxLength: 2000 }
+        groupDiscountMinimum: { type: ["number", "null"], minimum: 2, maximum: 999 }
+        groupDiscountPercent: { type: ["number", "null"], minimum: 0, maximum: 100 }
     EducationSession:
       type: object
       properties:
@@ -3985,6 +4241,8 @@ components:
         capacity: { type: number }
         reservedSeats: { type: number }
         availableSeats: { type: number }
+        minimumEnrollments: { type: ["number", "null"] }
+        cancelledAt: { type: ["string", "null"], format: date-time }
       required: [id, startsAt, endsAt, capacity, reservedSeats, availableSeats]
     EducationSessionInput:
       type: object
@@ -3993,6 +4251,7 @@ components:
         endsAt: { type: string, format: date-time }
         location: { type: ["string", "null"] }
         capacity: { type: number, minimum: 1 }
+        minimumEnrollments: { type: ["number", "null"], minimum: 0, maximum: 9999 }
       required: [startsAt, endsAt, capacity]
     EducationLesson:
       type: object
@@ -4066,6 +4325,48 @@ components:
         escrowStatus: { type: ["string", "null"], enum: [held, ready_for_payout, frozen, paid_out, refunded, partially_refunded, null] }
         escrowReleaseAt: { type: ["string", "null"], format: date-time }
       required: [id, courseId, courseTitle, learnerName, status, paymentStatus, progress, purchasedAt]
+    EducationNotification:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        actionUrl: { type: ["string", "null"] }
+        enrollmentId: { type: ["string", "null"] }
+        waitlistId: { type: ["string", "null"] }
+        readAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, type, title, body, actionUrl, enrollmentId, waitlistId, readAt, createdAt]
+    EducationWaitlistOffer:
+      type: object
+      description: An active (offered, unexpired) waitlist offer that holds a reserved seat for the learner
+      properties:
+        id: { type: string }
+        courseId: { type: string }
+        courseTitle: { type: string }
+        sessionId: { type: string }
+        sessionStartsAt: { type: ["string", "null"], format: date-time }
+        status: { type: string, enum: [waiting, offered, enrolled, expired, cancelled] }
+        position: { type: number, multipleOf: 1 }
+        offeredAt: { type: ["string", "null"], format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+      required: [id, courseId, courseTitle, sessionId, status, position, offeredAt, expiresAt]
+    EducationNotificationList:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/EducationNotification" }
+        offers:
+          type: array
+          items: { $ref: "#/components/schemas/EducationWaitlistOffer" }
+      required: [notifications, offers]
+    MarkEducationNotificationReadResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
     EducationCenterStatus:
       type: object
       properties:
@@ -4123,7 +4424,8 @@ components:
         reservePercent: { type: number, minimum: 0, maximum: 100 }
         onlineRefundDays: { type: number, minimum: 0, maximum: 365 }
         liveAppealDays: { type: number, minimum: 0, maximum: 365 }
-      required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays]
+        featuredCoursePrice: { type: number, minimum: 0 }
+      required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays, featuredCoursePrice]
     EducationMarketplaceSettings:
       allOf:
         - $ref: "#/components/schemas/EducationMarketplaceSettingsInput"
@@ -4132,6 +4434,80 @@ components:
             id: { type: string }
             updatedAt: { type: string, format: date-time }
           required: [id, updatedAt]
+    EducationInstructorProfile:
+      type: object
+      properties:
+        id: { type: string }
+        centerId: { type: string }
+        userId: { type: ["string", "null"] }
+        fullName: { type: string }
+        photoUrl: { type: ["string", "null"] }
+        biography: { type: string }
+        industryYears: { type: number }
+        experienceYears: { type: number }
+        specializations: { type: array, items: { type: string } }
+        qualifications: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, centerId, fullName, biography, industryYears, experienceYears, specializations, qualifications, createdAt, updatedAt]
+    EducationInstructorInput:
+      type: object
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 120 }
+        photoUrl: { type: ["string", "null"] }
+        biography: { type: string, maxLength: 4000 }
+        industryYears: { type: number, minimum: 0 }
+        experienceYears: { type: number, minimum: 0 }
+        specializations: { type: array, items: { type: string } }
+        qualifications: { type: array, items: { type: string } }
+        userId: { type: ["string", "null"] }
+      required: [fullName]
+    EducationInstructorPublicProfile:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        photoUrl: { type: ["string", "null"] }
+        biography: { type: string }
+        industryYears: { type: number }
+        experienceYears: { type: number }
+        specializations: { type: array, items: { type: string } }
+        qualifications: { type: array, items: { type: string } }
+        rating: { type: number }
+        participantCount: { type: number }
+        courses:
+          type: array
+          items: { $ref: "#/components/schemas/Course" }
+      required: [id, name, biography, industryYears, experienceYears, specializations, qualifications, rating, participantCount, courses]
+    EducationCourseFeaturedInput:
+      type: object
+      properties:
+        active: { type: boolean }
+        paymentReference: { type: ["string", "null"], maxLength: 200 }
+      required: [active]
+    EducationCourseFeaturedCharge:
+      type: object
+      properties:
+        id: { type: string }
+        amount: { type: number }
+        status: { type: string, enum: [pending, paid, cancelled, refunded] }
+        paymentReference: { type: ["string", "null"] }
+        activatedAt: { type: string, format: date-time }
+        settledAt: { type: ["string", "null"], format: date-time }
+      required: [id, amount, status, activatedAt]
+    EducationCourseFeaturedStatus:
+      type: object
+      properties:
+        courseId: { type: string }
+        isFeatured: { type: boolean }
+        featuredUntil: { type: ["string", "null"], format: date-time }
+        featuredFee: { type: number }
+        featuredCoursePrice: { type: number }
+        charge:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/EducationCourseFeaturedCharge"
+      required: [courseId, isFeatured, featuredFee, featuredCoursePrice]
     EducationAdminCenter:
       type: object
       properties:

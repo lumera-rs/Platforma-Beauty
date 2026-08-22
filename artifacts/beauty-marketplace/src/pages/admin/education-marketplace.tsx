@@ -10,8 +10,9 @@ import { useToast } from "@/hooks/use-toast";
 type Center = { id: string; name: string; city: string; verificationStatus: string; verificationNote: string | null; subscriptionStatus: string | null; subscriptionPlan: string | null; heldAmount: number };
 type Escrow = { id: string; centerId: string; centerName: string; courseTitle: string; grossAmount: number; platformFee: number; reserveAmount: number; netAmount: number; status: string; releaseAt: string; disputeOpen: boolean; netPaidAt: string | null; reservePaidAt: string | null };
 type Dispute = { id: string; enrollmentId: string; courseTitle: string; reason: string; details: string; status: string; resolutionNote: string | null; createdAt: string };
-type Settings = { commissionPercent: number; reservePercent: number; onlineRefundDays: number; liveAppealDays: number };
+type Settings = { commissionPercent: number; reservePercent: number; onlineRefundDays: number; liveAppealDays: number; featuredCoursePrice: number };
 type PendingEnrollment = { id: string; courseTitle: string; amount: number; createdAt: string };
+type FeaturedCharge = { id: string; courseId: string; courseTitle: string; centerName: string | null; amount: number; status: string; paymentReference: string | null; activatedAt: string; settledAt: string | null };
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
 const api = async <T,>(url: string, options?: RequestInit) => {
@@ -25,7 +26,7 @@ export default function AdminEducationMarketplace() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [centers, setCenters] = useState<Center[]>([]);
-  const [finance, setFinance] = useState<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[] }>({ summary: {}, escrows: [], pendingEnrollments: [] });
+  const [finance, setFinance] = useState<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[]; featuredCharges: FeaturedCharge[] }>({ summary: {}, escrows: [], pendingEnrollments: [], featuredCharges: [] });
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +36,7 @@ export default function AdminEducationMarketplace() {
       const [nextSettings, nextCenters, nextFinance, nextDisputes] = await Promise.all([
         api<Settings>("/api/admin/education/settings"),
         api<Center[]>("/api/admin/education/centers"),
-        api<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[] }>("/api/admin/education/finance"),
+        api<{ summary: Record<string, number>; escrows: Escrow[]; pendingEnrollments: PendingEnrollment[]; featuredCharges: FeaturedCharge[] }>("/api/admin/education/finance"),
         api<Dispute[]>("/api/education/disputes"),
       ]);
       setSettings(nextSettings); setCenters(nextCenters); setFinance(nextFinance); setDisputes(nextDisputes);
@@ -59,6 +60,12 @@ export default function AdminEducationMarketplace() {
     if (!window.confirm(`Potvrditi ručnu uplatu za “${enrollment.courseTitle}”? Tek tada se kreiraju escrow i pristup kursu.`)) return;
     try { await api(`/api/admin/education/enrollments/${enrollment.id}/settle`, { method: "POST" }); toast.success("Uplata je potvrđena i pristup je aktiviran."); await load(); }
     catch (error) { toast.error("Uplata nije potvrđena", { description: error instanceof Error ? error.message : undefined }); }
+  };
+  const settleFeatured = async (charge: FeaturedCharge) => {
+    const paymentReference = window.prompt(`Potvrditi uplatu naknade za isticanje “${charge.courseTitle}” (${money(charge.amount)})? Unesite referencu uplate (opciono):`);
+    if (paymentReference === null) return;
+    try { await api(`/api/admin/education/featured-charges/${charge.id}/settle`, { method: "POST", body: JSON.stringify({ paymentReference: paymentReference.trim() || undefined }) }); toast.success("Naknada za isticanje je evidentirana kao plaćena."); await load(); }
+    catch (error) { toast.error("Naknada nije potvrđena", { description: error instanceof Error ? error.message : undefined }); }
   };
   const resolveDispute = async (dispute: Dispute, action: "refund" | "release" | "reject") => {
     const resolutionNote = window.prompt("Unesite obrazloženje odluke:");
@@ -87,9 +94,16 @@ export default function AdminEducationMarketplace() {
           <CardContent className="space-y-3">{finance.pendingEnrollments.length ? finance.pendingEnrollments.map((enrollment) => <div key={enrollment.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4"><div><p className="font-semibold">{enrollment.courseTitle}</p><p className="text-sm text-muted-foreground">{money(enrollment.amount)} · zahtev {new Date(enrollment.createdAt).toLocaleDateString("sr-RS")}</p></div><Button size="sm" onClick={() => settle(enrollment)}>Potvrdi uplatu</Button></div>) : <p className="py-4 text-sm text-muted-foreground">Nema zahteva koji čekaju potvrdu.</p>}</CardContent>
         </Card>
         <Card>
+          <CardHeader><CardTitle>Naknade za isticanje edukacija</CardTitle><CardDescription>Aktiviranje isticanja stvara evidentiranu naknadu platforme. Isticanje je naplaćeno tek kada administrator potvrdi uplatu.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{finance.featuredCharges.length ? finance.featuredCharges.map((charge) => <div key={charge.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+            <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{charge.courseTitle}</p><Badge variant={charge.status === "paid" ? "default" : charge.status === "pending" ? "secondary" : "outline"}>{charge.status}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{money(charge.amount)}{charge.centerName ? ` · ${charge.centerName}` : ""} · zahtev {new Date(charge.activatedAt).toLocaleDateString("sr-RS")}{charge.paymentReference ? ` · ref: ${charge.paymentReference}` : ""}</p></div>
+            {charge.status === "pending" ? <Button size="sm" onClick={() => settleFeatured(charge)}>Potvrdi uplatu</Button> : null}
+          </div>) : <p className="py-4 text-sm text-muted-foreground">Nema evidentiranih naknada za isticanje.</p>}</CardContent>
+        </Card>
+        <Card>
           <CardHeader><CardTitle className="flex gap-2"><Banknote className="h-5 w-5 text-primary" />Pravila obračuna</CardTitle><CardDescription>Ova pravila se primenjuju na sledeće potvrđene kupovine.</CardDescription></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            {[["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"]].map(([label, key]) => <label key={key} className="space-y-2 text-sm font-medium">{label}<Input type="number" min="0" value={settings[key as keyof Settings]} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}
+            {([["Provizija %", "commissionPercent"], ["Rezerva %", "reservePercent"], ["Online povraćaj (dani)", "onlineRefundDays"], ["Live žalba (dani)", "liveAppealDays"], ["Istaknuti kurs (RSD)", "featuredCoursePrice"]] as [string, keyof Settings][]).map(([label, key]) => <label key={key} className="space-y-2 text-sm font-medium">{label}<Input type="number" min="0" value={settings[key]} onChange={(event) => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}
             <div className="flex items-end"><Button onClick={saveSettings} className="w-full"><Save className="mr-2 h-4 w-4" />Sačuvaj</Button></div>
           </CardContent>
         </Card>

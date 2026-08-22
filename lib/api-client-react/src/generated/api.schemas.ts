@@ -1686,6 +1686,8 @@ export interface Course {
   title: string;
   description: string;
   instructor: string;
+  /** @nullable */
+  instructorProfileId?: string | null;
   publisher: string;
   publisherType: CoursePublisherType;
   category: string;
@@ -1701,6 +1703,16 @@ export interface Course {
   startDate?: string | null;
   published: boolean;
   archived: boolean;
+  featured?: boolean;
+  /** @nullable */
+  featuredUntil?: string | null;
+  publisherVerified?: boolean;
+  /** @nullable */
+  refundPolicy?: string | null;
+  /** @nullable */
+  groupDiscountMinimum?: number | null;
+  /** @nullable */
+  groupDiscountPercent?: number | null;
   /** @nullable */
   availableSeats?: number | null;
   /** @nullable */
@@ -1734,6 +1746,23 @@ export interface EducationCourseInput {
   imageUrl: string;
   /** @nullable */
   startDate?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  refundPolicy?: string;
+  /**
+     * @minimum 2
+     * @maximum 999
+     * @nullable
+     */
+  groupDiscountMinimum?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  groupDiscountPercent?: number | null;
 }
 
 export type EducationCourseUpdateFormat = typeof EducationCourseUpdateFormat[keyof typeof EducationCourseUpdateFormat];
@@ -1764,6 +1793,23 @@ export interface EducationCourseUpdate {
   /** @nullable */
   startDate?: string | null;
   published?: boolean;
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  refundPolicy?: string;
+  /**
+     * @minimum 2
+     * @maximum 999
+     * @nullable
+     */
+  groupDiscountMinimum?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  groupDiscountPercent?: number | null;
 }
 
 export interface EducationSession {
@@ -1775,6 +1821,10 @@ export interface EducationSession {
   capacity: number;
   reservedSeats: number;
   availableSeats: number;
+  /** @nullable */
+  minimumEnrollments?: number | null;
+  /** @nullable */
+  cancelledAt?: string | null;
 }
 
 export interface EducationSessionInput {
@@ -1784,6 +1834,12 @@ export interface EducationSessionInput {
   location?: string | null;
   /** @minimum 1 */
   capacity: number;
+  /**
+     * @minimum 0
+     * @maximum 9999
+     * @nullable
+     */
+  minimumEnrollments?: number | null;
 }
 
 export interface EducationLesson {
@@ -1886,6 +1942,60 @@ export interface EducationEnrollment {
   escrowStatus?: EducationEnrollmentEscrowStatus;
   /** @nullable */
   escrowReleaseAt?: string | null;
+}
+
+export interface EducationNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  /** @nullable */
+  actionUrl: string | null;
+  /** @nullable */
+  enrollmentId: string | null;
+  /** @nullable */
+  waitlistId: string | null;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
+}
+
+export type EducationWaitlistOfferStatus = typeof EducationWaitlistOfferStatus[keyof typeof EducationWaitlistOfferStatus];
+
+
+export const EducationWaitlistOfferStatus = {
+  waiting: 'waiting',
+  offered: 'offered',
+  enrolled: 'enrolled',
+  expired: 'expired',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * An active (offered, unexpired) waitlist offer that holds a reserved seat for the learner
+ */
+export interface EducationWaitlistOffer {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  sessionId: string;
+  /** @nullable */
+  sessionStartsAt?: string | null;
+  status: EducationWaitlistOfferStatus;
+  position: number;
+  /** @nullable */
+  offeredAt: string | null;
+  /** @nullable */
+  expiresAt: string | null;
+}
+
+export interface EducationNotificationList {
+  notifications: EducationNotification[];
+  offers: EducationWaitlistOffer[];
+}
+
+export interface MarkEducationNotificationReadResponse {
+  ok: boolean;
 }
 
 export type EducationCenterStatusVerificationStatus = typeof EducationCenterStatusVerificationStatus[keyof typeof EducationCenterStatusVerificationStatus];
@@ -2002,12 +2112,106 @@ export interface EducationMarketplaceSettingsInput {
      * @maximum 365
      */
   liveAppealDays: number;
+  /** @minimum 0 */
+  featuredCoursePrice: number;
 }
 
 export type EducationMarketplaceSettings = EducationMarketplaceSettingsInput & {
   id: string;
   updatedAt: string;
 };
+
+export interface EducationInstructorProfile {
+  id: string;
+  centerId: string;
+  /** @nullable */
+  userId?: string | null;
+  fullName: string;
+  /** @nullable */
+  photoUrl?: string | null;
+  biography: string;
+  industryYears: number;
+  experienceYears: number;
+  specializations: string[];
+  qualifications: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EducationInstructorInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  fullName: string;
+  /** @nullable */
+  photoUrl?: string | null;
+  /** @maxLength 4000 */
+  biography?: string;
+  /** @minimum 0 */
+  industryYears?: number;
+  /** @minimum 0 */
+  experienceYears?: number;
+  specializations?: string[];
+  qualifications?: string[];
+  /** @nullable */
+  userId?: string | null;
+}
+
+export interface EducationInstructorPublicProfile {
+  id: string;
+  name: string;
+  /** @nullable */
+  photoUrl?: string | null;
+  biography: string;
+  industryYears: number;
+  experienceYears: number;
+  specializations: string[];
+  qualifications: string[];
+  rating: number;
+  participantCount: number;
+  courses: Course[];
+}
+
+export interface EducationCourseFeaturedInput {
+  active: boolean;
+  /**
+     * @maxLength 200
+     * @nullable
+     */
+  paymentReference?: string | null;
+}
+
+export type EducationCourseFeaturedChargeStatus = typeof EducationCourseFeaturedChargeStatus[keyof typeof EducationCourseFeaturedChargeStatus];
+
+
+export const EducationCourseFeaturedChargeStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  cancelled: 'cancelled',
+  refunded: 'refunded',
+} as const;
+
+export interface EducationCourseFeaturedCharge {
+  id: string;
+  amount: number;
+  status: EducationCourseFeaturedChargeStatus;
+  /** @nullable */
+  paymentReference?: string | null;
+  activatedAt: string;
+  /** @nullable */
+  settledAt?: string | null;
+}
+
+export interface EducationCourseFeaturedStatus {
+  courseId: string;
+  isFeatured: boolean;
+  /** @nullable */
+  featuredUntil?: string | null;
+  featuredFee: number;
+  featuredCoursePrice: number;
+  charge?: null | EducationCourseFeaturedCharge;
+}
 
 export type EducationAdminCenterVerificationStatus = typeof EducationAdminCenterVerificationStatus[keyof typeof EducationAdminCenterVerificationStatus];
 
@@ -2923,6 +3127,11 @@ export const ListCoursesFormat = {
   'in-person': 'in-person',
   hybrid: 'hybrid',
 } as const;
+
+export type LinkEducationCourseInstructorBody = {
+  /** @nullable */
+  instructorId?: string | null;
+};
 
 export type AdminListSalonsParams = {
 search?: string;

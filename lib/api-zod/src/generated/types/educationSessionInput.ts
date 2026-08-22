@@ -13,4 +13,10 @@ export interface EducationSessionInput {
   location?: string | null;
   /** @minimum 1 */
   capacity: number;
+  /**
+     * @minimum 0
+     * @maximum 9999
+     * @nullable
+     */
+  minimumEnrollments?: number | null;
 }
