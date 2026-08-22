@@ -1550,7 +1550,7 @@ type EducationGalleryCleanupResult = {
   failed: number;
 };
 
-async function cleanupEducationMediaUpload(
+export async function cleanupEducationMediaUpload(
   candidate: typeof educationMediaUploadsTable.$inferSelect,
   now: Date,
 ): Promise<"deleted" | "skipped"> {

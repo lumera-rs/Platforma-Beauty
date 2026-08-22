@@ -1,7 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import {
   db,
+  pool,
   coursesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
@@ -11,8 +12,8 @@ import {
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
-import { runEducationGalleryCleanup } from "../../artifacts/api-server/src/routes/marketplace";
-import { eq, inArray } from "drizzle-orm";
+import { cleanupEducationMediaUpload } from "../../artifacts/api-server/src/routes/marketplace";
+import { eq, inArray, sql } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLq7wAAAABJRU5ErkJggg==",
@@ -137,6 +138,119 @@ async function cleanUpGalleryFixture(fixture: GalleryFixture) {
   await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, fixture.planId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.outsiderId));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
+}
+
+async function uploadGalleryImage(
+  request: APIRequestContext,
+  fixture: GalleryFixture,
+  name: string,
+): Promise<{ mediaId: string; uploadUrl: string }> {
+  const ticketResponse = await request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
+    data: {
+      name,
+      size: tinyPng.length,
+      contentType: "image/png",
+    },
+  });
+  expect(ticketResponse).toBeOK();
+  const ticket = await ticketResponse.json() as { mediaId: string; uploadUrl: string };
+  const upload = await request.put(ticket.uploadUrl, {
+    headers: { "Content-Type": "image/png" },
+    data: tinyPng,
+  });
+  expect(upload).toBeOK();
+  return ticket;
+}
+
+function privateObjectPathFromStoragePath(storagePath: string): string {
+  if (!storagePath.startsWith("/objects/")) throw new Error("Expected a private storage path.");
+  const root = process.env.PRIVATE_OBJECT_DIR;
+  if (!root) throw new Error("PRIVATE_OBJECT_DIR is required for gallery storage checks.");
+  return `${root.replace(/\/+$/, "")}/${storagePath.slice("/objects/".length)}`;
+}
+
+async function signedStorageUrl(storagePath: string, method: "DELETE" | "GET"): Promise<string> {
+  const rawPath = privateObjectPathFromStoragePath(storagePath);
+  const [, bucketName, ...objectParts] = rawPath.startsWith("/") ? rawPath.split("/") : `/${rawPath}`.split("/");
+  const response = await fetch("http://127.0.0.1:1106/object-storage/signed-object-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bucket_name: bucketName,
+      object_name: objectParts.join("/"),
+      method,
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    }),
+  });
+  expect(response.ok).toBe(true);
+  const data = await response.json() as { signed_url?: string };
+  if (!data.signed_url) throw new Error("App Storage did not return a signed URL.");
+  return data.signed_url;
+}
+
+async function storageObjectStatus(storagePath: string): Promise<number> {
+  const response = await fetch(await signedStorageUrl(storagePath, "GET"));
+  response.body?.cancel();
+  return response.status;
+}
+
+async function deleteStorageObject(storagePath: string): Promise<void> {
+  const response = await fetch(await signedStorageUrl(storagePath, "DELETE"), { method: "DELETE" });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Could not clean up gallery test object (${response.status}).`);
+  }
+}
+
+function galleryDeleteRollbackFaultNames(mediaId: string) {
+  const suffix = mediaId.replaceAll("-", "");
+  return {
+    triggerName: `gallery_delete_rollback_${suffix}`,
+    functionName: `gallery_delete_rollback_${suffix}_fn`,
+  };
+}
+
+async function installGalleryDeleteRollbackFault(mediaId: string): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/i.test(mediaId)) throw new Error("Expected a gallery media UUID.");
+  const { triggerName, functionName } = galleryDeleteRollbackFaultNames(mediaId);
+  await pool.query(`
+    CREATE FUNCTION public.${functionName}() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+      IF OLD.id = '${mediaId}'::uuid THEN
+        RAISE EXCEPTION 'forced gallery delete rollback';
+      END IF;
+      RETURN OLD;
+    END;
+    $$;
+  `);
+  await pool.query(`
+    CREATE TRIGGER ${triggerName}
+    BEFORE DELETE ON public.education_media
+    FOR EACH ROW EXECUTE FUNCTION public.${functionName}();
+  `);
+}
+
+async function removeGalleryDeleteRollbackFault(mediaId: string): Promise<void> {
+  const { triggerName, functionName } = galleryDeleteRollbackFaultNames(mediaId);
+  await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON public.education_media;`);
+  await pool.query(`DROP FUNCTION IF EXISTS public.${functionName}();`);
+}
+
+async function waitForGalleryLockWaiters(courseId: string, expectedWaiters: number): Promise<void> {
+  const lockKey = `education-course-gallery:${courseId}`;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const result = await pool.query<{ waiterCount: number }>(`
+      SELECT count(*)::int AS "waiterCount"
+      FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND objid = hashtext($1)::oid
+        AND NOT granted
+    `, [lockKey]);
+    if ((result.rows[0]?.waiterCount ?? 0) >= expectedWaiters) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Expected ${expectedWaiters} gallery operations to wait on the course lock.`);
 }
 
 test("education center owner uploads, manages, and removes a course gallery image", async ({ page }) => {
@@ -367,11 +481,230 @@ test("education gallery accepts the exact 8 MB limit and rejects invalid bytes b
 
     const removedMaximum = await page.request.delete(`/api/education/courses/${fixture.courseId}/gallery/${attachedMaximumJson.id}`);
     expect(removedMaximum).toBeOK();
-    await db.update(educationMediaUploadsTable)
+    const [expiredMalformedUpload] = await db.update(educationMediaUploadsTable)
       .set({ expiresAt: new Date(0) })
-      .where(eq(educationMediaUploadsTable.id, malformedTicket.mediaId));
-    await runEducationGalleryCleanup();
+      .where(eq(educationMediaUploadsTable.id, malformedTicket.mediaId))
+      .returning();
+    expect(expiredMalformedUpload).toBeDefined();
+    await expect(cleanupEducationMediaUpload(expiredMalformedUpload!, new Date())).resolves.toBe("deleted");
   } finally {
+    await cleanUpGalleryFixture(fixture);
+  }
+});
+
+test("education gallery cleanup keeps an upload ticket when storage deletion fails", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await createGalleryFixture();
+  let stagingPath: string | undefined;
+  try {
+    const ownerLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    });
+    expect(ownerLogin).toBeOK();
+
+    const ticket = await uploadGalleryImage(page.request, fixture, "cleanup-delete-failure.png");
+    const [expiredUpload] = await db.update(educationMediaUploadsTable)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(educationMediaUploadsTable.id, ticket.mediaId))
+      .returning();
+    expect(expiredUpload).toBeDefined();
+    stagingPath = expiredUpload!.objectPath;
+
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = async (input, init) => {
+        if (init?.method === "DELETE") return new Response(null, { status: 503 });
+        return originalFetch(input, init);
+      };
+      await expect(cleanupEducationMediaUpload(expiredUpload!, new Date()))
+        .rejects.toThrow("App Storage nije obrisao objekat (503).");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    const retainedTickets = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, ticket.mediaId));
+    expect(retainedTickets).toHaveLength(1);
+    expect(await storageObjectStatus(expiredUpload!.objectPath)).toBe(200);
+
+    await expect(cleanupEducationMediaUpload(expiredUpload!, new Date())).resolves.toBe("deleted");
+    const removedTickets = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, ticket.mediaId));
+    expect(removedTickets).toHaveLength(0);
+    expect(await storageObjectStatus(expiredUpload!.objectPath)).toBe(404);
+    stagingPath = undefined;
+  } finally {
+    if (stagingPath) await deleteStorageObject(stagingPath);
+    await cleanUpGalleryFixture(fixture);
+  }
+});
+
+test("education gallery deletion retries safely after storage succeeds and the database rolls back", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await createGalleryFixture();
+  let mediaId: string | undefined;
+  let finalPath: string | undefined;
+  let rollbackFaultInstalled = false;
+  try {
+    const ownerLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    });
+    expect(ownerLogin).toBeOK();
+
+    const ticket = await uploadGalleryImage(page.request, fixture, "delete-rollback-retry.png");
+    const attached = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
+      data: { mediaId: ticket.mediaId },
+    });
+    expect(attached.status()).toBe(201);
+    mediaId = ticket.mediaId;
+    const [storedMedia] = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, mediaId));
+    expect(storedMedia).toBeDefined();
+    finalPath = storedMedia!.objectPath;
+
+    await installGalleryDeleteRollbackFault(mediaId);
+    rollbackFaultInstalled = true;
+    const rolledBackDelete = await page.request.delete(`/api/education/courses/${fixture.courseId}/gallery/${mediaId}`);
+    expect(rolledBackDelete.status()).toBe(500);
+
+    const retainedMedia = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, mediaId));
+    expect(retainedMedia).toHaveLength(1);
+    expect(await storageObjectStatus(finalPath)).toBe(404);
+
+    await removeGalleryDeleteRollbackFault(mediaId);
+    rollbackFaultInstalled = false;
+    const retriedDelete = await page.request.delete(`/api/education/courses/${fixture.courseId}/gallery/${mediaId}`);
+    expect(retriedDelete.status()).toBe(204);
+    const removedMedia = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, mediaId));
+    expect(removedMedia).toHaveLength(0);
+
+    const [upload] = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, mediaId));
+    expect(upload).toBeDefined();
+    await expect(cleanupEducationMediaUpload(upload!, new Date())).resolves.toBe("deleted");
+    finalPath = undefined;
+  } finally {
+    if (rollbackFaultInstalled && mediaId) await removeGalleryDeleteRollbackFault(mediaId);
+    if (finalPath) await deleteStorageObject(finalPath);
+    await cleanUpGalleryFixture(fixture);
+  }
+});
+
+test("concurrent gallery attach, cleanup, and deletion preserve a referenced final object", async ({ page }) => {
+  test.setTimeout(90_000);
+  const fixture = await createGalleryFixture();
+  let releaseGalleryLock: (() => void) | undefined;
+  let galleryLockHolder: Promise<void> | undefined;
+  const storagePaths = new Set<string>();
+  try {
+    const ownerLogin = await page.request.post("/api/auth/login", {
+      data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+    });
+    expect(ownerLogin).toBeOK();
+
+    const referencedTicket = await uploadGalleryImage(page.request, fixture, "referenced-race.png");
+    const referencedAttach = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
+      data: { mediaId: referencedTicket.mediaId },
+    });
+    expect(referencedAttach.status()).toBe(201);
+    const [referencedMedia] = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, referencedTicket.mediaId));
+    const [referencedUpload] = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, referencedTicket.mediaId));
+    expect(referencedMedia).toBeDefined();
+    expect(referencedUpload).toBeDefined();
+    storagePaths.add(referencedMedia!.objectPath);
+    storagePaths.add(referencedUpload!.objectPath);
+
+    const [duplicateReference] = await db.insert(educationMediaTable).values({
+      courseId: fixture.courseId,
+      centerId: fixture.centerId,
+      objectPath: referencedMedia!.objectPath,
+      altText: "Concurrent reference",
+      sortOrder: 1,
+    }).returning();
+    expect(duplicateReference).toBeDefined();
+
+    const attachingTicket = await uploadGalleryImage(page.request, fixture, "attaching-race.png");
+    const [attachingUpload] = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, attachingTicket.mediaId));
+    expect(attachingUpload).toBeDefined();
+    const attachingFinalPath = `/objects/education-gallery/${fixture.centerId}/${fixture.courseId}/${attachingTicket.mediaId}`;
+    storagePaths.add(attachingUpload!.objectPath);
+    storagePaths.add(attachingFinalPath);
+
+    let galleryLockAcquired!: () => void;
+    const galleryLockAcquiredPromise = new Promise<void>((resolve) => {
+      galleryLockAcquired = resolve;
+    });
+    const galleryLockReleasedPromise = new Promise<void>((resolve) => {
+      releaseGalleryLock = resolve;
+    });
+    galleryLockHolder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-course-gallery:${fixture.courseId}`}))`);
+      galleryLockAcquired();
+      await galleryLockReleasedPromise;
+    });
+    await galleryLockAcquiredPromise;
+
+    const attachPromise = page.request.post(`/api/education/courses/${fixture.courseId}/gallery`, {
+      data: { mediaId: attachingTicket.mediaId },
+    });
+    await waitForGalleryLockWaiters(fixture.courseId, 1);
+
+    // Cleanup selected this ticket as expired immediately before attachment.
+    // Once it gets the lock, it must re-read the ticket and preserve the final
+    // object that attachment committed while cleanup was waiting.
+    const cleanupPromise = cleanupEducationMediaUpload(
+      attachingUpload!,
+      new Date(attachingUpload!.expiresAt.getTime() + 1),
+    );
+    await waitForGalleryLockWaiters(fixture.courseId, 2);
+
+    const deletePromise = page.request.delete(
+      `/api/education/courses/${fixture.courseId}/gallery/${referencedTicket.mediaId}`,
+    );
+    await waitForGalleryLockWaiters(fixture.courseId, 3);
+
+    releaseGalleryLock();
+    releaseGalleryLock = undefined;
+
+    const [attachResult, cleanupResult, deleteResult] = await Promise.all([
+      attachPromise,
+      cleanupPromise,
+      deletePromise,
+    ]);
+    await galleryLockHolder;
+    galleryLockHolder = undefined;
+    expect(attachResult.status()).toBe(201);
+    expect(cleanupResult).toBe("deleted");
+    expect(deleteResult.status()).toBe(204);
+
+    const attachingTickets = await db.select().from(educationMediaUploadsTable)
+      .where(eq(educationMediaUploadsTable.id, attachingTicket.mediaId));
+    expect(attachingTickets).toHaveLength(0);
+    const [attachedMedia] = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, attachingTicket.mediaId));
+    expect(attachedMedia?.objectPath).toBe(attachingFinalPath);
+    expect(await storageObjectStatus(attachingFinalPath)).toBe(200);
+    const attachedImage = await page.request.get(`/api/education/media/${attachingTicket.mediaId}`);
+    expect(attachedImage).toBeOK();
+
+    const referencedRows = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, referencedTicket.mediaId));
+    expect(referencedRows).toHaveLength(0);
+    const [remainingReference] = await db.select().from(educationMediaTable)
+      .where(eq(educationMediaTable.id, duplicateReference!.id));
+    expect(remainingReference?.objectPath).toBe(referencedMedia!.objectPath);
+    expect(await storageObjectStatus(referencedMedia!.objectPath)).toBe(200);
+    const referencedImage = await page.request.get(`/api/education/media/${duplicateReference!.id}`);
+    expect(referencedImage).toBeOK();
+  } finally {
+    releaseGalleryLock?.();
+    if (galleryLockHolder) await galleryLockHolder;
+    for (const storagePath of storagePaths) await deleteStorageObject(storagePath);
     await cleanUpGalleryFixture(fixture);
   }
 });
