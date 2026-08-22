@@ -1,0 +1,673 @@
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { type AddressInfo } from "node:net";
+import { randomUUID } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  courseEnrollmentsTable,
+  courseSessionsTable,
+  coursesTable,
+  db,
+  educationCentersTable,
+  educationCenterSubscriptionsTable,
+  educationDisputesTable,
+  educationEscrowsTable,
+  educationFinancialEventsTable,
+  educationLedgerEntriesTable,
+  educationPayoutsTable,
+  educationPlatformSettingsTable,
+  subscriptionPlansTable,
+  usersTable,
+} from "@workspace/db";
+import app from "../app";
+import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureDemoData } from "./seed";
+
+const suffix = randomUUID();
+const password = "education-finance-test-password";
+
+type RequestOptions = {
+  method?: "GET" | "POST" | "PATCH";
+  body?: Record<string, unknown>;
+  cookie?: string;
+  headers?: Record<string, string>;
+};
+
+async function request(baseUrl: string, path: string, options: RequestOptions = {}) {
+  return fetch(`${baseUrl}/api${path}`, {
+    method: options.method ?? "GET",
+    headers: {
+      ...(options.body ? { "content-type": "application/json" } : {}),
+      ...(options.cookie ? { cookie: options.cookie } : {}),
+      ...options.headers,
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+  });
+}
+
+async function json<T>(response: Response): Promise<T> {
+  return await response.json() as T;
+}
+
+async function login(baseUrl: string, email: string): Promise<string> {
+  const response = await request(baseUrl, "/auth/login", {
+    method: "POST",
+    body: { email, password },
+  });
+  assert.equal(response.status, 200, `Fixture user ${email} must be able to sign in.`);
+  const cookie = response.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie?.startsWith(`${sessionCookieName}=`), `Login for ${email} must establish a session.`);
+  if (!cookie) throw new Error(`Login for ${email} did not return a session cookie.`);
+  return cookie;
+}
+
+async function withQuarterEnd<T>(operation: () => Promise<T>): Promise<T> {
+  const originalDate = globalThis.Date;
+  const frozenTime = originalDate.parse("2026-09-30T12:00:00.000Z");
+
+  class QuarterEndDate extends originalDate {
+    constructor(value?: string | number | Date) {
+      super(value === undefined ? frozenTime : value instanceof originalDate ? value.getTime() : value);
+    }
+
+    static now(): number {
+      return frozenTime;
+    }
+  }
+
+  globalThis.Date = QuarterEndDate as unknown as DateConstructor;
+  try {
+    return await operation();
+  } finally {
+    globalThis.Date = originalDate;
+  }
+}
+
+async function run(): Promise<void> {
+  await ensureDemoData();
+
+  let server: ReturnType<typeof app.listen> | undefined;
+  let centerId: string | undefined;
+  const courseIds: string[] = [];
+  const enrollmentIds: string[] = [];
+  const createdUserIds: string[] = [];
+
+  try {
+    const fixturePasswordHash = await hashPassword(password);
+    const fixtureUsers = await db.insert(usersTable).values([
+      {
+        firstName: "Test",
+        lastName: "Administrator",
+        email: `education-admin-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "SUPER_ADMIN",
+      },
+      {
+        firstName: "Centar",
+        lastName: "Vlasnik",
+        email: `education-center-owner-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "EDUCATION_CENTER_OWNER",
+      },
+      {
+        firstName: "Kupac",
+        lastName: "Edukacije",
+        email: `education-buyer-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "CUSTOMER",
+      },
+      {
+        firstName: "Drugi",
+        lastName: "Kupac",
+        email: `education-outsider-${suffix}@example.test`,
+        passwordHash: fixturePasswordHash,
+        passwordSetAt: new Date(),
+        role: "CUSTOMER",
+      },
+    ]).returning();
+    createdUserIds.push(...fixtureUsers.map((user) => user.id));
+    const admin = fixtureUsers[0]!;
+    const centerOwner = fixtureUsers[1]!;
+    const buyer = fixtureUsers[2]!;
+    const outsider = fixtureUsers[3]!;
+
+    const [plan] = await db.select().from(subscriptionPlansTable)
+      .where(eq(subscriptionPlansTable.active, true))
+      .limit(1);
+    assert.ok(plan, "Education finance coverage requires an active subscription plan.");
+
+    const [center] = await db.insert(educationCentersTable).values({
+      ownerId: centerOwner.id,
+      name: `Finance coverage center ${suffix}`,
+      city: "Beograd",
+      description: "Izolovani centar za proveru edukativnih finansija.",
+      imageUrl: "/test-education-finance.jpg",
+      verificationStatus: "verified",
+      verifiedAt: new Date(),
+      verifiedByUserId: admin.id,
+    }).returning();
+    assert.ok(center);
+    centerId = center.id;
+
+    await db.insert(educationCenterSubscriptionsTable).values({
+      centerId: center.id,
+      planId: plan.id,
+      status: "active",
+      dueAmount: plan.price,
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const [onlineCourse, liveCourse, refundCourse, rejectCourse] = await db.insert(coursesTable).values([
+      {
+        centerId: center.id,
+        title: `Online financial course ${suffix}`,
+        description: "Online kurs za proveru refund roka.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 10000,
+        duration: "4 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+      {
+        centerId: center.id,
+        title: `Live financial course ${suffix}`,
+        description: "Kurs uživo za proveru roka žalbe.",
+        category: "Finansijska pokrivenost",
+        format: "in-person",
+        city: "Beograd",
+        price: 12000,
+        duration: "2 dana",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+      {
+        centerId: center.id,
+        title: `Refund financial course ${suffix}`,
+        description: "Kurs za proveru odluke o refundiranju.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 13000,
+        duration: "3 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+      {
+        centerId: center.id,
+        title: `Reject financial course ${suffix}`,
+        description: "Kurs za proveru odbijanja spora.",
+        category: "Finansijska pokrivenost",
+        format: "online",
+        city: "Beograd",
+        price: 14000,
+        duration: "3 nedelje",
+        certification: true,
+        imageUrl: "/test-education-finance.jpg",
+        published: true,
+      },
+    ]).returning();
+    for (const course of [onlineCourse, liveCourse, refundCourse, rejectCourse]) {
+      assert.ok(course);
+      courseIds.push(course.id);
+    }
+
+    const now = Date.now();
+    const pastSessionEnd = new Date(now - 2 * 24 * 60 * 60 * 1000);
+    const futureSessionStart = new Date(now + 4 * 24 * 60 * 60 * 1000);
+    const futureSessionEnd = new Date(now + 5 * 24 * 60 * 60 * 1000);
+    const [pastSession, futureSession] = await db.insert(courseSessionsTable).values([
+      {
+        courseId: liveCourse!.id,
+        startsAt: new Date(now - 3 * 24 * 60 * 60 * 1000),
+        endsAt: pastSessionEnd,
+        location: "Beograd",
+        capacity: 10,
+      },
+      {
+        courseId: liveCourse!.id,
+        startsAt: futureSessionStart,
+        endsAt: futureSessionEnd,
+        location: "Beograd",
+        capacity: 10,
+      },
+    ]).returning();
+    assert.ok(pastSession);
+    assert.ok(futureSession);
+
+    server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const adminCookie = await login(baseUrl, admin.email);
+    const centerOwnerCookie = await login(baseUrl, centerOwner.email);
+    const buyerCookie = await login(baseUrl, buyer.email);
+    const outsiderCookie = await login(baseUrl, outsider.email);
+
+    const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
+    assert.ok(settings);
+
+    async function enrollAndSettle(courseId: string, key: string) {
+      const enrollmentResponse = await request(baseUrl, `/education/courses/${courseId}/enrollments`, {
+        method: "POST",
+        cookie: buyerCookie,
+        headers: { "idempotency-key": key },
+        body: {},
+      });
+      assert.equal(enrollmentResponse.status, 201, "Buyer enrollment must be recorded as pending.");
+      const pending = await json<{ id: string; status: string; paymentStatus: string }>(enrollmentResponse);
+      assert.equal(pending.status, "pending");
+      assert.equal(pending.paymentStatus, "pending");
+      enrollmentIds.push(pending.id);
+
+      const settlementResponse = await request(baseUrl, `/admin/education/enrollments/${pending.id}/settle`, {
+        method: "POST",
+        cookie: adminCookie,
+      });
+      assert.equal(settlementResponse.status, 200, "Admin settlement must activate the enrollment.");
+      const settled = await json<{ status: string; paymentStatus: string }>(settlementResponse);
+      assert.equal(settled.status, "active");
+      assert.equal(settled.paymentStatus, "paid");
+      return pending.id;
+    }
+
+    const onlineEnrollmentId = await enrollAndSettle(onlineCourse!.id, `online-${suffix}`);
+    const liveEnrollmentId = await enrollAndSettle(liveCourse!.id, `live-${suffix}`);
+    const refundEnrollmentId = await enrollAndSettle(refundCourse!.id, `refund-${suffix}`);
+    const rejectEnrollmentId = await enrollAndSettle(rejectCourse!.id, `reject-${suffix}`);
+
+    const onlineEscrowBeforeDispute = (await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId)))[0];
+    const liveEscrowBeforeDispute = (await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, liveEnrollmentId)))[0];
+    assert.ok(onlineEscrowBeforeDispute);
+    assert.ok(liveEscrowBeforeDispute);
+    assert.ok(onlineEscrowBeforeDispute.releaseAt.getTime() > now);
+    assert.ok(
+      onlineEscrowBeforeDispute.releaseAt.getTime() <= now + (settings.onlineRefundDays + 1) * 24 * 60 * 60 * 1000,
+      "Online escrow must use the configured refund window.",
+    );
+    assert.equal(
+      liveEscrowBeforeDispute.releaseAt.getTime(),
+      futureSessionEnd.getTime() + settings.liveAppealDays * 24 * 60 * 60 * 1000,
+      "Live escrow must use the assigned future session end, not the course's earliest session.",
+    );
+    const [storedFutureSession] = await db.select().from(courseSessionsTable)
+      .where(eq(courseSessionsTable.id, futureSession!.id));
+    assert.equal(storedFutureSession?.reservedSeats, 1, "Settlement must reserve the selected future live-course seat.");
+    const [storedPastSession] = await db.select().from(courseSessionsTable)
+      .where(eq(courseSessionsTable.id, pastSession!.id));
+    assert.equal(storedPastSession?.reservedSeats, 0, "Settlement must not reserve an already-ended live session.");
+
+    const pendingResponse = await request(baseUrl, "/education/courses/" + rejectCourse!.id + "/enrollments", {
+      method: "POST",
+      cookie: outsiderCookie,
+      headers: { "idempotency-key": `pending-outsider-${suffix}` },
+      body: {},
+    });
+    assert.equal(pendingResponse.status, 201);
+    const pendingEnrollment = await json<{ id: string }>(pendingResponse);
+    enrollmentIds.push(pendingEnrollment.id);
+    const pendingMessageResponse = await request(baseUrl, `/education/purchases/${pendingEnrollment.id}/messages`, {
+      method: "POST",
+      cookie: outsiderCookie,
+      body: { body: "Poruka pre potvrde" },
+    });
+    assert.equal(pendingMessageResponse.status, 409, "Unsettled purchases must not open messaging access.");
+
+    const buyerPurchases = await request(baseUrl, "/education/purchases", { cookie: buyerCookie });
+    assert.equal(buyerPurchases.status, 200);
+    const buyerPurchaseRows = await json<Array<{ id: string }>>(buyerPurchases);
+    assert.ok(buyerPurchaseRows.some((purchase) => purchase.id === onlineEnrollmentId), "Buyer must see their own purchase.");
+
+    const ownerPurchases = await request(baseUrl, "/education/purchases", { cookie: centerOwnerCookie });
+    assert.equal(ownerPurchases.status, 200);
+    assert.equal(
+      (await json<Array<{ id: string }>>(ownerPurchases)).some((purchase) => purchase.id === onlineEnrollmentId),
+      false,
+      "Center owner must not see a buyer's purchase through the buyer-scoped endpoint.",
+    );
+    const outsiderPurchases = await request(baseUrl, "/education/purchases", { cookie: outsiderCookie });
+    assert.equal(outsiderPurchases.status, 200);
+    assert.equal(
+      (await json<Array<{ id: string }>>(outsiderPurchases)).some((purchase) => purchase.id === onlineEnrollmentId),
+      false,
+      "Another buyer must not see someone else's purchase.",
+    );
+    const adminPurchases = await request(baseUrl, "/education/purchases", { cookie: adminCookie });
+    assert.equal(adminPurchases.status, 200);
+    assert.equal(
+      (await json<Array<{ id: string }>>(adminPurchases)).some((purchase) => purchase.id === onlineEnrollmentId),
+      false,
+      "Admin access to finance must not turn the buyer-scoped purchases endpoint into a data dump.",
+    );
+
+    const buyerMessages = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, { cookie: buyerCookie });
+    assert.equal(buyerMessages.status, 200, "Buyer must read their paid purchase thread.");
+    const ownerMessages = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, { cookie: centerOwnerCookie });
+    assert.equal(ownerMessages.status, 200, "Center owner must read the center's paid purchase thread.");
+    const outsiderMessages = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, { cookie: outsiderCookie });
+    assert.equal(outsiderMessages.status, 403, "Unrelated users must not read a purchase thread.");
+    const adminMessages = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, { cookie: adminCookie });
+    assert.equal(adminMessages.status, 200, "Admin must be able to inspect a purchase thread.");
+
+    const buyerMessage = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, {
+      method: "POST",
+      cookie: buyerCookie,
+      body: { body: "Kupac pita za termin." },
+    });
+    assert.equal(buyerMessage.status, 201);
+    const ownerMessage = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, {
+      method: "POST",
+      cookie: centerOwnerCookie,
+      body: { body: "Centar odgovara kupcu." },
+    });
+    assert.equal(ownerMessage.status, 201);
+    const outsiderMessage = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, {
+      method: "POST",
+      cookie: outsiderCookie,
+      body: { body: "Tuđa poruka." },
+    });
+    assert.equal(outsiderMessage.status, 403);
+    const adminMessage = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, {
+      method: "POST",
+      cookie: adminCookie,
+      body: { body: "Admin poruka." },
+    });
+    assert.equal(adminMessage.status, 403, "Admin inspection must not grant participant messaging rights.");
+
+    const buyerDisputes = await request(baseUrl, "/education/disputes", { cookie: buyerCookie });
+    assert.equal(buyerDisputes.status, 200);
+    const ownerDisputes = await request(baseUrl, "/education/disputes", { cookie: centerOwnerCookie });
+    assert.equal(ownerDisputes.status, 200);
+    const adminDisputes = await request(baseUrl, "/education/disputes", { cookie: adminCookie });
+    assert.equal(adminDisputes.status, 200);
+    const outsiderDisputes = await request(baseUrl, "/education/disputes", { cookie: outsiderCookie });
+    assert.equal(outsiderDisputes.status, 200);
+    assert.equal((await json<unknown[]>(outsiderDisputes)).length, 0, "Unrelated users must not see disputes.");
+
+    async function openDispute(enrollmentId: string): Promise<string> {
+      const response = await request(baseUrl, `/education/purchases/${enrollmentId}/disputes`, {
+        method: "POST",
+        cookie: buyerCookie,
+        body: { reason: "Test razlog", details: "Test detaljan opis problema." },
+      });
+      assert.equal(response.status, 201, "Buyer must be able to open a dispute during the protection window.");
+      const dispute = await json<{ id: string; status: string }>(response);
+      assert.equal(dispute.status, "open");
+      return dispute.id;
+    }
+
+    const ownerDisputeAttempt = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: centerOwnerCookie,
+      body: { reason: "Nedozvoljeno", details: "Vlasnik ne sme otvoriti spor." },
+    });
+    assert.equal(ownerDisputeAttempt.status, 403);
+    const adminDisputeAttempt = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: adminCookie,
+      body: { reason: "Nedozvoljeno", details: "Admin ne sme otvoriti spor u ime kupca." },
+    });
+    assert.equal(adminDisputeAttempt.status, 403);
+    const outsiderDisputeAttempt = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/disputes`, {
+      method: "POST",
+      cookie: outsiderCookie,
+      body: { reason: "Nedozvoljeno", details: "Drugi kupac ne sme otvoriti spor." },
+    });
+    assert.equal(outsiderDisputeAttempt.status, 403);
+
+    const onlineDisputeId = await openDispute(onlineEnrollmentId);
+    const [frozenOnlineEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId));
+    assert.equal(frozenOnlineEscrow?.status, "frozen", "Opening a dispute must freeze escrow.");
+    const openedEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.enrollmentId, onlineEnrollmentId),
+      eq(educationFinancialEventsTable.eventType, "dispute_opened"),
+    ));
+    assert.equal(openedEvents.length, 1, "Opening a dispute must create one audit event.");
+    for (const [label, cookie] of [
+      ["buyer", buyerCookie],
+      ["center owner", centerOwnerCookie],
+      ["administrator", adminCookie],
+    ] as const) {
+      const response = await request(baseUrl, "/education/disputes", { cookie });
+      assert.equal(response.status, 200);
+      assert.equal(
+        (await json<Array<{ id: string }>>(response)).some((dispute) => dispute.id === onlineDisputeId),
+        true,
+        `${label} must see the dispute they are allowed to participate in or inspect.`,
+      );
+    }
+    const hiddenDisputeList = await request(baseUrl, "/education/disputes", { cookie: outsiderCookie });
+    assert.equal(hiddenDisputeList.status, 200);
+    assert.equal(
+      (await json<Array<{ id: string }>>(hiddenDisputeList)).some((dispute) => dispute.id === onlineDisputeId),
+      false,
+      "Unrelated buyers must not see another buyer's dispute.",
+    );
+
+    const ledgerBeforeBlockedPayout = await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.centerId, center.id));
+    const blockedPayout = await request(baseUrl, "/admin/education/payouts", {
+      method: "POST",
+      cookie: adminCookie,
+      body: { centerId: center.id },
+    });
+    assert.equal(blockedPayout.status, 409, "An open dispute must block payout for the center.");
+    const ledgerAfterBlockedPayout = await db.select().from(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.centerId, center.id));
+    assert.equal(ledgerAfterBlockedPayout.length, ledgerBeforeBlockedPayout.length, "Blocked payout must not create ledger entries.");
+    const ownerFinance = await request(baseUrl, `/admin/education/finance?centerId=${center.id}`, { cookie: centerOwnerCookie });
+    assert.equal(ownerFinance.status, 403, "Center owners must not access admin finance.");
+    const ownerPayout = await request(baseUrl, "/admin/education/payouts", {
+      method: "POST",
+      cookie: centerOwnerCookie,
+      body: { centerId: center.id },
+    });
+    assert.equal(ownerPayout.status, 403, "Center owners must not create payouts.");
+
+    const releaseDecision = await request(baseUrl, `/admin/education/disputes/${onlineDisputeId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { action: "release", resolutionNote: "Spor se rešava u korist centra." },
+    });
+    assert.equal(releaseDecision.status, 200);
+    assert.equal((await json<{ status: string }>(releaseDecision)).status, "resolved_payout");
+    const [releasedDisputeEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId));
+    assert.equal(releasedDisputeEscrow?.status, "held", "A pre-deadline release decision must keep escrow held.");
+    const releaseEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.enrollmentId, onlineEnrollmentId),
+      eq(educationFinancialEventsTable.eventType, "dispute_release"),
+    ));
+    assert.equal(releaseEvents.length, 1, "Release decision must create one audit event.");
+    const releaseLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.enrollmentId, onlineEnrollmentId),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(releaseLedger.length, 0, "A release decision must not pay before its deadline.");
+    const ownerResolution = await request(baseUrl, `/admin/education/disputes/${onlineDisputeId}`, {
+      method: "PATCH",
+      cookie: centerOwnerCookie,
+      body: { action: "reject", resolutionNote: "Vlasnik nije administrator." },
+    });
+    assert.equal(ownerResolution.status, 403);
+
+    const refundDisputeId = await openDispute(refundEnrollmentId);
+    const refundDecision = await request(baseUrl, `/admin/education/disputes/${refundDisputeId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { action: "refund", resolutionNote: "Refund odobren nakon provere." },
+    });
+    assert.equal(refundDecision.status, 200);
+    assert.equal((await json<{ status: string }>(refundDecision)).status, "resolved_refund");
+    const [refundedEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, refundEnrollmentId));
+    const [refundedEnrollment] = await db.select().from(courseEnrollmentsTable)
+      .where(eq(courseEnrollmentsTable.id, refundEnrollmentId));
+    assert.equal(refundedEscrow?.status, "refunded");
+    assert.equal(refundedEnrollment?.status, "cancelled");
+    assert.equal(refundedEnrollment?.paymentStatus, "refunded");
+    const refundLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.enrollmentId, refundEnrollmentId),
+      eq(educationLedgerEntriesTable.type, "refund"),
+    ));
+    assert.deepEqual(refundLedger.map((entry) => entry.amount), [-refundCourse!.price]);
+    const refundEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.enrollmentId, refundEnrollmentId),
+      eq(educationFinancialEventsTable.eventType, "dispute_refund"),
+    ));
+    assert.equal(refundEvents.length, 1, "Refund decision must create one audit event.");
+
+    const rejectDisputeId = await openDispute(rejectEnrollmentId);
+    const rejectDecision = await request(baseUrl, `/admin/education/disputes/${rejectDisputeId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { action: "reject", resolutionNote: "Spor je odbijen nakon provere." },
+    });
+    assert.equal(rejectDecision.status, 200);
+    assert.equal((await json<{ status: string }>(rejectDecision)).status, "rejected");
+    const [rejectedEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, rejectEnrollmentId));
+    assert.equal(rejectedEscrow?.status, "held");
+    const rejectEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.enrollmentId, rejectEnrollmentId),
+      eq(educationFinancialEventsTable.eventType, "dispute_reject"),
+    ));
+    assert.equal(rejectEvents.length, 1, "Reject decision must create one audit event.");
+    const rejectLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.enrollmentId, rejectEnrollmentId),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(rejectLedger.length, 0, "Reject decision must not create a payout.");
+
+    const elapsedEscrowIds = [onlineEnrollmentId, liveEnrollmentId, rejectEnrollmentId];
+    await db.update(educationEscrowsTable).set({
+      releaseAt: new Date(Date.now() - 60 * 60 * 1000),
+    }).where(inArray(educationEscrowsTable.enrollmentId, elapsedEscrowIds));
+    const matureFinance = await request(baseUrl, `/admin/education/finance?centerId=${center.id}`, { cookie: adminCookie });
+    assert.equal(matureFinance.status, 200);
+    const matureFinanceBody = await json<{ escrows: Array<{ enrollmentId: string; status: string }> }>(matureFinance);
+    for (const enrollmentId of elapsedEscrowIds) {
+      assert.equal(
+        matureFinanceBody.escrows.find((escrow) => escrow.enrollmentId === enrollmentId)?.status,
+        "ready_for_payout",
+        "Elapsed online/live protection windows must mature escrow into payout-ready status.",
+      );
+    }
+    const releaseLedgerEntries = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, center.id),
+      eq(educationLedgerEntriesTable.type, "release"),
+    ));
+    assert.equal(releaseLedgerEntries.length, 3, "Each elapsed escrow must receive exactly one release ledger entry.");
+    const maturityEvents = await db.select().from(educationFinancialEventsTable).where(and(
+      eq(educationFinancialEventsTable.escrowId, releasedDisputeEscrow!.id),
+      eq(educationFinancialEventsTable.eventType, "escrow_released"),
+    ));
+    assert.equal(maturityEvents.length, 1, "Maturing escrow must create one release audit event.");
+
+    const netAmounts = await db.select({ netAmount: educationEscrowsTable.netAmount }).from(educationEscrowsTable)
+      .where(inArray(educationEscrowsTable.enrollmentId, elapsedEscrowIds));
+    const expectedNetPayout = netAmounts.reduce((total, row) => total + row.netAmount, 0);
+    const firstPayout = await request(baseUrl, "/admin/education/payouts", {
+      method: "POST",
+      cookie: adminCookie,
+      body: { centerId: center.id, reference: `net-${suffix}` },
+    });
+    assert.equal(firstPayout.status, 201, "Matured net escrow must be payable.");
+    assert.equal((await json<{ amount: number }>(firstPayout)).amount, expectedNetPayout);
+    const [afterNetPayoutEscrows] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, onlineEnrollmentId));
+    assert.ok(afterNetPayoutEscrows?.netPaidAt);
+    assert.equal(afterNetPayoutEscrows?.status, "ready_for_payout", "Net payout must leave reserve payable separately.");
+    const netPayoutLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, center.id),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(netPayoutLedger.length, 3, "Normal payout must create one ledger entry per net escrow.");
+
+    const netReplay = await request(baseUrl, "/admin/education/payouts", {
+      method: "POST",
+      cookie: adminCookie,
+      body: { centerId: center.id, reference: `net-replay-${suffix}` },
+    });
+    assert.equal(netReplay.status, 409, "Replaying a completed net payout must be rejected.");
+    const netReplayLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, center.id),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(netReplayLedger.length, netPayoutLedger.length, "Net payout replay must not duplicate ledger entries.");
+
+    const reserveAmounts = await db.select({ reserveAmount: educationEscrowsTable.reserveAmount }).from(educationEscrowsTable)
+      .where(inArray(educationEscrowsTable.enrollmentId, elapsedEscrowIds));
+    const expectedReservePayout = reserveAmounts.reduce((total, row) => total + row.reserveAmount, 0);
+    const reservePayout = await withQuarterEnd(async () => {
+      const quarterAdminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
+      return request(baseUrl, "/admin/education/payouts", {
+        method: "POST",
+        cookie: quarterAdminCookie,
+        body: { centerId: center.id, includeReserve: true, reference: `reserve-${suffix}` },
+      });
+    });
+    assert.equal(reservePayout.status, 201, "Quarter-end reserve payout must release each unpaid reserve.");
+    assert.equal((await json<{ amount: number }>(reservePayout)).amount, expectedReservePayout);
+    const paidOutEscrows = await db.select().from(educationEscrowsTable)
+      .where(inArray(educationEscrowsTable.enrollmentId, elapsedEscrowIds));
+    assert.ok(paidOutEscrows.every((escrow) => escrow.status === "paid_out" && escrow.reservePaidAt), "Quarterly reserve payout must close each escrow.");
+    const allPayoutLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, center.id),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(allPayoutLedger.length, 6, "Net and reserve payouts must create exactly one entry for each component.");
+
+    const reserveReplay = await withQuarterEnd(async () => {
+      const quarterAdminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
+      return request(baseUrl, "/admin/education/payouts", {
+        method: "POST",
+        cookie: quarterAdminCookie,
+        body: { centerId: center.id, includeReserve: true, reference: `reserve-replay-${suffix}` },
+      });
+    });
+    assert.equal(reserveReplay.status, 409, "Replaying a completed reserve payout must be rejected.");
+    const replayPayouts = await db.select().from(educationPayoutsTable).where(eq(educationPayoutsTable.centerId, center.id));
+    assert.equal(replayPayouts.length, 2, "Idempotent payout replays must not create a second payout record.");
+    const replayLedger = await db.select().from(educationLedgerEntriesTable).where(and(
+      eq(educationLedgerEntriesTable.centerId, center.id),
+      eq(educationLedgerEntriesTable.type, "payout"),
+    ));
+    assert.equal(replayLedger.length, allPayoutLedger.length, "Reserve replay must not duplicate financial entries.");
+
+    console.log("Education financial release, dispute, payout, and authorization regression passed.");
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+    }
+    if (centerId) {
+      await db.delete(educationPayoutsTable).where(eq(educationPayoutsTable.centerId, centerId));
+    }
+    if (enrollmentIds.length) {
+      await db.delete(courseEnrollmentsTable).where(inArray(courseEnrollmentsTable.id, enrollmentIds));
+    }
+    if (courseIds.length) {
+      await db.delete(coursesTable).where(inArray(coursesTable.id, courseIds));
+    }
+    if (centerId) {
+      await db.delete(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, centerId));
+      await db.delete(educationCentersTable).where(eq(educationCentersTable.id, centerId));
+    }
+    if (createdUserIds.length) {
+      await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+    }
+  }
+}
+
+run().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
