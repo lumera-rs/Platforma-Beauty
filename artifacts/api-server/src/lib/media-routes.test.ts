@@ -701,16 +701,21 @@ async function run() {
     assert.equal(profileAfterRestartBody.imageUrl, firstFinalize.body.imageUrl);
     assert.deepEqual(profileAfterRestartBody.gallery, [galleryFinalize.body.imageUrl]);
 
+    const replacementProfileAsset = await uploadAsset("salon-profile", session, "profile-detachment-replacement.jpg");
     const detachedProfile = await jsonRequest<{ imageUrl: string; gallery: string[] }>(
       activeServer.baseUrl,
       "/salon/profile",
       session,
       "PATCH",
-      originalSalonMedia,
+      { imageUrl: replacementProfileAsset.imageUrl, gallery: [] },
     );
-    assert.equal(detachedProfile.status, 200);
-    assert.equal(detachedProfile.body.imageUrl, originalSalonMedia.imageUrl);
-    assert.deepEqual(detachedProfile.body.gallery, originalSalonMedia.gallery);
+    assert.equal(
+      detachedProfile.status,
+      200,
+      `Replacing managed salon media failed: ${JSON.stringify(detachedProfile.body)}`,
+    );
+    assert.equal(detachedProfile.body.imageUrl, replacementProfileAsset.imageUrl);
+    assert.deepEqual(detachedProfile.body.gallery, []);
     for (const assetId of [firstFinalize.body.id, galleryFinalize.body.id]) {
       const [detachedAsset] = await db.select({
         resourceId: mediaAssetsTable.resourceId,
@@ -786,7 +791,7 @@ async function run() {
       "/salon/profile",
       session,
       "PATCH",
-      { gallery: originalSalonMedia.gallery },
+      { gallery: [] },
     );
     assert.equal(cleanupRaceRestoration.status, 200);
     await runMediaUploadCleanup();

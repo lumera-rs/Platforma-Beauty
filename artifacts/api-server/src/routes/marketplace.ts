@@ -4840,10 +4840,17 @@ router.get("/salon/customers", async (req, res): Promise<void> => {
   // Grouped aggregate counts restricted to the page contacts (no full table read).
   const [visitCounts, noShowCounts, series] = await Promise.all([
     db.select({ salonCustomerId: appointmentsTable.salonCustomerId, value: count() }).from(appointmentsTable)
-      .where(inArray(appointmentsTable.salonCustomerId, contactIds))
+      .where(and(
+        eq(appointmentsTable.salonId, access.salon.id),
+        inArray(appointmentsTable.salonCustomerId, contactIds),
+      ))
       .groupBy(appointmentsTable.salonCustomerId),
     db.select({ salonCustomerId: appointmentsTable.salonCustomerId, value: count() }).from(appointmentsTable)
-      .where(and(inArray(appointmentsTable.salonCustomerId, contactIds), eq(appointmentsTable.status, "no-show")))
+      .where(and(
+        eq(appointmentsTable.salonId, access.salon.id),
+        inArray(appointmentsTable.salonCustomerId, contactIds),
+        eq(appointmentsTable.status, "no-show"),
+      ))
       .groupBy(appointmentsTable.salonCustomerId),
     db.select().from(appointmentSeriesTable)
       .where(and(eq(appointmentSeriesTable.salonId, access.salon.id), inArray(appointmentSeriesTable.salonCustomerId, contactIds))),
@@ -4858,10 +4865,16 @@ router.get("/salon/customers", async (req, res): Promise<void> => {
   const [seriesAppointments, services] = await Promise.all([
     seriesIds.length
       ? db.select({ seriesId: appointmentsTable.seriesId, status: appointmentsTable.status, date: appointmentsTable.date })
-          .from(appointmentsTable).where(inArray(appointmentsTable.seriesId, seriesIds))
+          .from(appointmentsTable).where(and(
+            eq(appointmentsTable.salonId, access.salon.id),
+            inArray(appointmentsTable.seriesId, seriesIds),
+          ))
       : Promise.resolve([] as { seriesId: string | null; status: string; date: string }[]),
     serviceIds.length
-      ? db.select({ id: servicesTable.id, name: servicesTable.name }).from(servicesTable).where(inArray(servicesTable.id, serviceIds))
+      ? db.select({ id: servicesTable.id, name: servicesTable.name }).from(servicesTable).where(and(
+          eq(servicesTable.salonId, access.salon.id),
+          inArray(servicesTable.id, serviceIds),
+        ))
       : Promise.resolve([] as { id: string; name: string }[]),
   ]);
   const serviceNameById = new Map(services.map((s) => [s.id, s.name]));
@@ -4904,10 +4917,17 @@ router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => 
   const [contact] = await db.update(salonCustomersTable).set({ smsOptOut: body.data.smsOptOut, updatedAt: new Date() })
     .where(and(eq(salonCustomersTable.id, params.data.customerId), eq(salonCustomersTable.salonId, access.salon.id))).returning();
   if (!contact) { res.status(404).json({ error: "CRM klijent nije pronađen." }); return; }
-  const appointments = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(eq(appointmentsTable.salonCustomerId, contact.id));
+  const appointments = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, access.salon.id),
+    eq(appointmentsTable.salonCustomerId, contact.id),
+  ));
   res.json(UpdateSalonCustomerResponse.parse({
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
-    smsOptOut: contact.smsOptOut, visitCount: appointments.length, noShowCount: (await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(eq(appointmentsTable.salonCustomerId, contact.id), eq(appointmentsTable.status, "no-show")))).length, isRegistered: Boolean(contact.userId),
+    smsOptOut: contact.smsOptOut, visitCount: appointments.length, noShowCount: (await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, access.salon.id),
+      eq(appointmentsTable.salonCustomerId, contact.id),
+      eq(appointmentsTable.status, "no-show"),
+    ))).length, isRegistered: Boolean(contact.userId),
   }));
 });
 
@@ -5725,8 +5745,12 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
   ]);
   const employees = employeeRows.map((row) => row.employee);
   const employeeIds = employees.map((item) => item.id);
+  const salonServiceIds = services.map((item) => item.id);
   const links = await db.select().from(employeeServicesTable)
-    .where(employeeIds.length ? inArray(employeeServicesTable.employeeId, employeeIds) : sql`false`);
+    .where(employeeIds.length && salonServiceIds.length ? and(
+      inArray(employeeServicesTable.employeeId, employeeIds),
+      inArray(employeeServicesTable.serviceId, salonServiceIds),
+    ) : sql`false`);
   const accountByEmployeeId = new Map(employeeRows.map((row) => [row.employee.id, row.account]));
   const serviceNameById = new Map(services.map((service) => [service.id, service.name]));
   const serviceIdsByEmployeeId = new Map<string, string[]>();
@@ -5751,6 +5775,7 @@ router.get("/salon/employees", async (req, res): Promise<void> => {
 
 async function employeeDeactivationPreview(employee: typeof employeesTable.$inferSelect) {
   const [future] = await db.select({ count: count() }).from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, employee.salonId),
     eq(appointmentsTable.employeeId, employee.id),
     gte(appointmentsTable.date, new Date().toISOString().slice(0, 10)),
     ne(appointmentsTable.status, "cancelled"),
@@ -5922,12 +5947,15 @@ router.post("/salon/employees/:employeeId/access/reset-password", async (req, re
 
 router.get("/salon/leave-requests", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
-  const [employees, requests] = await Promise.all([
-    db.select().from(employeesTable).where(eq(employeesTable.salonId, access.salon.id)),
-    db.select().from(employeeLeaveRequestsTable).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
-  ]);
+  const employees = await db.select().from(employeesTable).where(eq(employeesTable.salonId, access.salon.id));
+  const employeeIds = employees.map((employee) => employee.id);
+  const requests = employeeIds.length
+    ? await db.select().from(employeeLeaveRequestsTable)
+      .where(inArray(employeeLeaveRequestsTable.employeeId, employeeIds))
+      .orderBy(desc(employeeLeaveRequestsTable.createdAt))
+    : [];
   const names = new Map(employees.map((employee) => [employee.id, employee.name]));
-  res.json(requests.filter((request) => names.has(request.employeeId)).map((request) => ({
+  res.json(requests.map((request) => ({
     ...request, employeeName: names.get(request.employeeId)!,
   })));
 });
@@ -5975,7 +6003,10 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
   const windowStart = [monthStart, weekStart, shiftCalendarDate(today, -EMPLOYEE_PORTAL_WINDOW_LOOKBACK_DAYS)]
     .reduce((earliest, candidate) => (candidate < earliest ? candidate : earliest));
   const recentCreatedThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const employeeScope = eq(appointmentsTable.employeeId, employee.id);
+  const employeeScope = and(
+    eq(appointmentsTable.employeeId, employee.id),
+    eq(appointmentsTable.salonId, salon.id),
+  );
   const inMonth = and(gte(appointmentsTable.date, monthStart), lte(appointmentsTable.date, shiftCalendarDate(monthStart, 31)));
 
   const [
@@ -5984,7 +6015,7 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     schedules,
     timeOff,
     leaveRequests,
-    serviceLinks,
+    services,
     [statRow],
   ] = await Promise.all([
     // Bounded operational window (short look-back + all upcoming), stably
@@ -6001,7 +6032,17 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
     db.select().from(employeeSchedulesTable).where(eq(employeeSchedulesTable.employeeId, employee.id)).orderBy(asc(employeeSchedulesTable.weekday)),
     db.select().from(employeeTimeOffTable).where(eq(employeeTimeOffTable.employeeId, employee.id)),
     db.select().from(employeeLeaveRequestsTable).where(eq(employeeLeaveRequestsTable.employeeId, employee.id)).orderBy(desc(employeeLeaveRequestsTable.createdAt)),
-    db.select().from(employeeServicesTable).where(eq(employeeServicesTable.employeeId, employee.id)),
+    db.select({
+      id: servicesTable.id,
+      name: servicesTable.name,
+      durationMinutes: servicesTable.durationMinutes,
+      active: servicesTable.active,
+    }).from(servicesTable)
+      .innerJoin(employeeServicesTable, eq(employeeServicesTable.serviceId, servicesTable.id))
+      .where(and(
+        eq(employeeServicesTable.employeeId, employee.id),
+        eq(servicesTable.salonId, salon.id),
+      )),
     // Stat counters computed in SQL over the full history, scoped to this employee.
     db.select({
       week: sql<number>`count(*) filter (where ${appointmentsTable.status} <> 'cancelled' and ${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${today})::int`,
@@ -6014,8 +6055,7 @@ router.get("/employee/portal", async (req, res): Promise<void> => {
   // Resolve only the customers/contacts referenced by the bounded window.
   const salonCustomerIds = [...new Set(windowAppointments.map((appointment) => appointment.salonCustomerId).filter((id): id is string => Boolean(id)))];
   const customerUserIds = [...new Set(windowAppointments.map((appointment) => appointment.customerId).filter((id): id is string => Boolean(id)))];
-  const [services, contacts, customers, allocationsByAppointment] = await Promise.all([
-    serviceLinks.length ? db.select().from(servicesTable).where(inArray(servicesTable.id, serviceLinks.map((link) => link.serviceId))) : Promise.resolve([] as (typeof servicesTable.$inferSelect)[]),
+  const [contacts, customers, allocationsByAppointment] = await Promise.all([
     salonCustomerIds.length ? db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), inArray(salonCustomersTable.id, salonCustomerIds))) : Promise.resolve([] as (typeof salonCustomersTable.$inferSelect)[]),
     customerUserIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, customerUserIds)) : Promise.resolve([] as (typeof usersTable.$inferSelect)[]),
     getAllocationsForAppointments(windowAppointments.map((appointment) => appointment.id)),
@@ -8535,7 +8575,16 @@ router.get("/education/courses/:courseId/sessions", async (req, res): Promise<vo
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, parsed.data.courseId)).limit(1);
   if (!course || ((!course.published || course.archived) && !isCourseOwner(access, course) && !access.admin)) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
-  res.json(ListEducationSessionsResponse.parse(await sessionsForCourse(course.id)));
+  const [paidEnrollment] = access.admin || isCourseOwner(access, course)
+    ? []
+    : await db.select({ id: courseEnrollmentsTable.id }).from(courseEnrollmentsTable).where(and(
+        eq(courseEnrollmentsTable.courseId, course.id),
+        eq(courseEnrollmentsTable.purchaserId, access.user.id),
+        eq(courseEnrollmentsTable.paymentStatus, "paid"),
+        inArray(courseEnrollmentsTable.status, ["active", "completed"]),
+      )).limit(1);
+  const includeLocation = access.admin || isCourseOwner(access, course) || Boolean(paidEnrollment);
+  res.json(ListEducationSessionsResponse.parse(await sessionsForCourse(course.id, includeLocation)));
 });
 
 router.post("/education/courses/:courseId/sessions", async (req, res): Promise<void> => {
@@ -9149,7 +9198,12 @@ router.get("/education/enrollments/:enrollmentId/lms", async (req, res): Promise
   if (!enrollment) { res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." }); return; }
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);
   if (!course) { res.status(404).json({ error: "Kurs nije pronađen." }); return; }
-  if (!lmsAccess.access.admin && enrollment.purchaserId !== lmsAccess.access.user.id && enrollment.employeeId !== lmsAccess.learnerEmployeeId && !isCourseOwner(lmsAccess.access, course)) {
+  const assignedEmployee = Boolean(
+    enrollment.employeeId
+    && lmsAccess.learnerEmployeeId
+    && enrollment.employeeId === lmsAccess.learnerEmployeeId,
+  );
+  if (!lmsAccess.access.admin && enrollment.purchaserId !== lmsAccess.access.user.id && !assignedEmployee && !isCourseOwner(lmsAccess.access, course)) {
     res.status(403).json({ error: "Nemate pristup ovom LMS sadržaju." });
     return;
   }
@@ -9173,7 +9227,12 @@ router.post("/education/enrollments/:enrollmentId/lessons/:lessonId/complete", a
     db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, parsed.data.enrollmentId)).limit(1),
     db.select().from(courseLessonsTable).where(eq(courseLessonsTable.id, parsed.data.lessonId)).limit(1),
   ]);
-  if (!enrollment[0] || (enrollment[0].purchaserId !== lmsAccess.access.user.id && enrollment[0].employeeId !== lmsAccess.learnerEmployeeId) || enrollment[0].status !== "active") { res.status(403).json({ error: "Nemate pravo izmene ovog napretka." }); return; }
+  const assignedEmployee = Boolean(
+    enrollment[0]?.employeeId
+    && lmsAccess.learnerEmployeeId
+    && enrollment[0].employeeId === lmsAccess.learnerEmployeeId,
+  );
+  if (!enrollment[0] || (enrollment[0].purchaserId !== lmsAccess.access.user.id && !assignedEmployee) || enrollment[0].status !== "active") { res.status(403).json({ error: "Nemate pravo izmene ovog napretka." }); return; }
   if (!lesson[0]) { res.status(404).json({ error: "Lekcija nije pronađena." }); return; }
   const [module] = await db.select().from(courseModulesTable).where(eq(courseModulesTable.id, lesson[0].moduleId)).limit(1);
   if (!module || module.courseId !== enrollment[0].courseId) { res.status(400).json({ error: "Lekcija ne pripada ovom kursu." }); return; }
