@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import sharp from "sharp";
 import {
   db,
@@ -17,10 +17,11 @@ import {
   productCategoriesTable,
   productsTable,
   salonsTable,
+  subscriptionPlansTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
-import { createSession, sessionCookieName } from "./auth";
+import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
 import { approvedServiceCategoryReference } from "./media-migration";
 import {
@@ -34,6 +35,7 @@ import {
 
 type Ticket = { uploadId: string; uploadUrl: string; expiresAt: string };
 type Asset = { id: string; imageUrl: string; width: number; height: number; contentHash: string };
+type EducationCourse = { id: string; imageUrl: string; published: boolean; archived: boolean };
 
 async function jsonRequest<T>(
   baseUrl: string,
@@ -122,6 +124,11 @@ async function run() {
   const session = await createSession(ownerAndSalon.user.id);
   const adminSession = await createSession(adminUser.id);
   const createdUploadIds: string[] = [];
+  let educationFixtureOwnerId: string | null = null;
+  let educationFixtureCenterId: string | null = null;
+  let educationFixtureSubscriptionId: string | null = null;
+  let educationFixturePlanId: string | null = null;
+  let educationFixtureCourseId: string | null = null;
   const originalSalonMedia = {
     imageUrl: ownerAndSalon.salon.imageUrl,
     gallery: ownerAndSalon.salon.gallery,
@@ -568,58 +575,103 @@ async function run() {
       "The same asset should become cleanup-eligible after its resource reference is removed.",
     );
 
-    const [educationFixture] = await db.select({
-      course: coursesTable,
-      ownerId: educationCentersTable.ownerId,
-    }).from(coursesTable)
-      .innerJoin(educationCentersTable, eq(educationCentersTable.id, coursesTable.centerId))
-      .innerJoin(
-        educationCenterSubscriptionsTable,
-        eq(educationCenterSubscriptionsTable.centerId, educationCentersTable.id),
-      )
-      .innerJoin(usersTable, eq(usersTable.id, educationCentersTable.ownerId))
-      .where(and(
-        eq(coursesTable.published, true),
-        eq(coursesTable.archived, false),
-        eq(educationCentersTable.verificationStatus, "verified"),
-        inArray(educationCenterSubscriptionsTable.status, ["active", "free_via_loyalty"]),
-        eq(usersTable.active, true),
-        eq(usersTable.role, "EDUCATION_CENTER_OWNER"),
-        sql`${coursesTable.imageUrl} like '/api/media/%'`,
-      ))
-      .limit(1);
-    assert.ok(educationFixture, "A public managed Education course is required for cover revocation regression.");
-    const oldEducationCover = educationFixture.course.imageUrl;
-    const oldEducationAssetId = mediaAssetIdFromUrl(oldEducationCover);
-    assert.ok(oldEducationAssetId);
-    const educationSession = await createSession(educationFixture.ownerId);
-    const educationTicket = await jsonRequest<Ticket>(
+    const educationFixtureKey = randomUUID();
+    const [educationOwner] = await db.insert(usersTable).values({
+      firstName: "Media",
+      lastName: "Regression",
+      email: `media-regression-${educationFixtureKey}@example.invalid`,
+      passwordHash: await hashPassword(randomUUID()),
+      passwordSetAt: new Date(),
+      role: "EDUCATION_CENTER_OWNER",
+    }).returning();
+    assert.ok(educationOwner);
+    educationFixtureOwnerId = educationOwner.id;
+
+    const [educationPlan] = await db.insert(subscriptionPlansTable).values({
+      name: `MEDIA-REGRESSION-${educationFixtureKey}`,
+      price: 0,
+      features: ["Media regression fixture"],
+      limits: {},
+    }).returning();
+    assert.ok(educationPlan);
+    educationFixturePlanId = educationPlan.id;
+
+    const [educationCenter] = await db.insert(educationCentersTable).values({
+      ownerId: educationOwner.id,
+      name: `Media regression center ${educationFixtureKey}`,
+      city: "Beograd",
+      description: "Temporary fixture for the managed Education cover regression.",
+      imageUrl: "/lumera-media/course-1.jpg",
+      verificationStatus: "verified",
+      verifiedAt: new Date(),
+      verifiedByUserId: adminUser.id,
+    }).returning();
+    assert.ok(educationCenter);
+    educationFixtureCenterId = educationCenter.id;
+
+    const [educationSubscription] = await db.insert(educationCenterSubscriptionsTable).values({
+      centerId: educationCenter.id,
+      planId: educationPlan.id,
+      status: "active",
+      dueAmount: 0,
+      currentPeriodEnd: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    }).returning();
+    assert.ok(educationSubscription);
+    educationFixtureSubscriptionId = educationSubscription.id;
+
+    const educationSession = await createSession(educationOwner.id);
+    const originalEducationAsset = await uploadAsset(
+      "education-cover",
+      educationSession,
+      "education-cover-original.jpg",
+    );
+    const educationCourse = await jsonRequest<EducationCourse>(
       activeServer.baseUrl,
-      "/media/uploads",
+      "/education/courses",
       educationSession,
       "POST",
       {
-        scope: "education-cover",
-        resourceId: educationFixture.course.id,
-        name: "education-cover-regression.jpg",
-        size: jpeg.length,
-        contentType: "image/jpeg",
+        title: `Media cover regression ${educationFixtureKey}`,
+        description: "Temporary published course for the managed Education cover regression.",
+        category: "Test",
+        format: "online",
+        price: 1000,
+        duration: "1 dan",
+        certification: false,
+        imageUrl: originalEducationAsset.imageUrl,
       },
     );
-    assert.equal(educationTicket.status, 200);
-    createdUploadIds.push(educationTicket.body.uploadId);
-    assert.ok((await fetch(educationTicket.body.uploadUrl, {
-      method: "PUT",
-      headers: { "content-type": "image/jpeg" },
-      body: jpeg,
-    })).ok);
-    const educationAsset = await jsonRequest<Asset>(
+    assert.equal(educationCourse.status, 201, "The regression should create its own managed Education course.");
+    educationFixtureCourseId = educationCourse.body.id;
+    const publishedEducationCourse = await jsonRequest<EducationCourse>(
       activeServer.baseUrl,
-      `/media/uploads/${educationTicket.body.uploadId}/finalize`,
+      `/education/courses/${educationCourse.body.id}/publish`,
       educationSession,
       "POST",
     );
-    assert.equal(educationAsset.status, 201);
+    assert.equal(publishedEducationCourse.status, 200, "The temporary Education course should be publishable.");
+    assert.equal(publishedEducationCourse.body.published, true);
+    assert.equal(publishedEducationCourse.body.archived, false);
+    assert.equal(publishedEducationCourse.body.imageUrl, originalEducationAsset.imageUrl);
+
+    const oldEducationCover = publishedEducationCourse.body.imageUrl;
+    const oldEducationAssetId = mediaAssetIdFromUrl(oldEducationCover);
+    assert.equal(oldEducationAssetId, originalEducationAsset.id);
+    const [claimedOriginalEducationAsset] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, originalEducationAsset.id)).limit(1);
+    assert.deepEqual(
+      claimedOriginalEducationAsset,
+      { resourceId: educationCourse.body.id, visibility: "education" },
+      "The fixture course must own its managed cover before the revocation check starts.",
+    );
+
+    const educationAsset = await uploadAsset(
+      "education-cover",
+      educationSession,
+      "education-cover-replacement.jpg",
+    );
     const oldCoverBeforeReplacement = await fetch(`${activeServer.baseUrl}${oldEducationCover}&size=thumbnail`);
     assert.equal(oldCoverBeforeReplacement.status, 200);
     assert.equal(
@@ -632,10 +684,10 @@ async function run() {
     try {
       const replacement = await jsonRequest<{ imageUrl: string }>(
         activeServer.baseUrl,
-        `/education/courses/${educationFixture.course.id}`,
+        `/education/courses/${educationCourse.body.id}`,
         educationSession,
         "PATCH",
-        { imageUrl: educationAsset.body.imageUrl },
+        { imageUrl: educationAsset.imageUrl },
       );
       educationCoverReplaced = replacement.status === 200;
       assert.equal(replacement.status, 200);
@@ -650,14 +702,14 @@ async function run() {
         { resourceId: null, visibility: "private" },
         "Replacing a course cover must atomically privatize and unbind the previous asset.",
       );
-      const newCoverAfterReplacement = await fetch(`${activeServer.baseUrl}${educationAsset.body.imageUrl}&size=thumbnail`);
+      const newCoverAfterReplacement = await fetch(`${activeServer.baseUrl}${educationAsset.imageUrl}&size=thumbnail`);
       assert.equal(newCoverAfterReplacement.status, 200);
       assert.equal(newCoverAfterReplacement.headers.get("cache-control"), "private, no-store");
     } finally {
       if (educationCoverReplaced) {
         const restoration = await jsonRequest<{ imageUrl: string }>(
           activeServer.baseUrl,
-          `/education/courses/${educationFixture.course.id}`,
+          `/education/courses/${educationCourse.body.id}`,
           educationSession,
           "PATCH",
           { imageUrl: oldEducationCover },
@@ -665,26 +717,50 @@ async function run() {
         assert.equal(restoration.status, 200, "Education cover regression must restore its original course reference.");
       }
     }
-    const newCoverAfterRestoration = await fetch(`${activeServer.baseUrl}${educationAsset.body.imageUrl}&size=thumbnail`);
+    const newCoverAfterRestoration = await fetch(`${activeServer.baseUrl}${educationAsset.imageUrl}&size=thumbnail`);
     assert.equal(newCoverAfterRestoration.status, 403, "Restoration must revoke the temporary Education cover.");
 
     console.log("Media upload, optimization, cache and restart regression passed.");
   } finally {
+    const storageCleanupErrors: unknown[] = [];
     if (activeServer) await stopServer(activeServer.server).catch(() => undefined);
     await db.update(salonsTable).set(originalSalonMedia).where(eq(salonsTable.id, ownerAndSalon.salon.id));
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-ROLLBACK-%"));
     await db.delete(productCategoriesTable).where(like(productCategoriesTable.name, "Media category rollback %"));
     await db.delete(coursesTable).where(like(coursesTable.title, "Media course rollback %"));
     await db.delete(employeesTable).where(like(employeesTable.name, "Media employee rollback %"));
+    if (educationFixtureCourseId) {
+      await db.delete(coursesTable).where(eq(coursesTable.id, educationFixtureCourseId));
+    }
+    if (educationFixtureSubscriptionId) {
+      await db.delete(educationCenterSubscriptionsTable)
+        .where(eq(educationCenterSubscriptionsTable.id, educationFixtureSubscriptionId));
+    }
+    if (educationFixtureCenterId) {
+      await db.delete(educationCentersTable).where(eq(educationCentersTable.id, educationFixtureCenterId));
+    }
     for (const uploadId of createdUploadIds) {
       const variants = await db.select().from(mediaVariantsTable).where(eq(mediaVariantsTable.assetId, uploadId));
       const [ticket] = await db.select().from(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, uploadId)).limit(1);
-      for (const variant of variants) await deletePrivateStorageObject(variant.objectPath).catch(() => undefined);
-      if (ticket) await deletePrivateStorageObject(ticket.stagingObjectPath).catch(() => undefined);
+      for (const variant of variants) {
+        await deletePrivateStorageObject(variant.objectPath).catch((error) => storageCleanupErrors.push(error));
+      }
+      if (ticket) {
+        await deletePrivateStorageObject(ticket.stagingObjectPath).catch((error) => storageCleanupErrors.push(error));
+      }
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, uploadId));
       await db.delete(mediaUploadTicketsTable).where(eq(mediaUploadTicketsTable.id, uploadId));
     }
+    if (educationFixturePlanId) {
+      await db.delete(subscriptionPlansTable).where(eq(subscriptionPlansTable.id, educationFixturePlanId));
+    }
+    if (educationFixtureOwnerId) {
+      await db.delete(usersTable).where(eq(usersTable.id, educationFixtureOwnerId));
+    }
     await pool.end();
+    if (storageCleanupErrors.length) {
+      throw new AggregateError(storageCleanupErrors, "Media regression cleanup left App Storage objects behind.");
+    }
   }
 }
 
