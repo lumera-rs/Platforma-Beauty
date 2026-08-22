@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -326,7 +326,14 @@ import {
   UpdateShopCartItemResponse,
 } from "@workspace/api-zod";
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
-import { createBrevoMarketingCampaign, lumeraEmailHtml, sendBrevoCampaignNow, sendTransactionalEmail } from "../lib/brevo";
+import {
+  createBrevoMarketingCampaign,
+  lumeraEmailHtml,
+  sendBrevoCampaignNow,
+  sendEducationGalleryCleanupAlert,
+  sendTransactionalEmail,
+  type EducationGalleryCleanupAlert,
+} from "../lib/brevo";
 import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
@@ -1598,6 +1605,9 @@ type EducationGalleryCleanupResult = {
 };
 
 const EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT = 3;
+type EducationGalleryCleanupOptions = {
+  notify?: (alert: EducationGalleryCleanupAlert, now: Date) => Promise<unknown>;
+};
 
 function educationMediaUploadCleanupEligibility(now: Date) {
   return or(
@@ -1615,6 +1625,20 @@ async function recordEducationGalleryCleanupFailure(uploadId: string, failedAt: 
     .where(eq(educationMediaUploadsTable.id, uploadId))
     .returning({ cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount });
   return upload?.cleanupFailureCount ?? null;
+}
+
+async function educationGalleryCleanupAlertSummary(): Promise<EducationGalleryCleanupAlert> {
+  const [summary] = await db.select({
+    failedTickets: count(educationMediaUploadsTable.id),
+    failureAttempts: sql<number>`coalesce(sum(${educationMediaUploadsTable.cleanupFailureCount}), 0)::int`,
+    repeatedFailureTickets: sql<number>`count(*) filter (where ${educationMediaUploadsTable.cleanupFailureCount} >= ${EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT})::int`,
+  })
+    .from(educationMediaUploadsTable)
+    .where(and(
+      educationMediaUploadCleanupEligibility(new Date()),
+      gt(educationMediaUploadsTable.cleanupFailureCount, 0),
+    ));
+  return summary ?? { failedTickets: 0, failureAttempts: 0, repeatedFailureTickets: 0 };
 }
 
 export async function cleanupEducationMediaUpload(
@@ -1665,7 +1689,7 @@ export async function cleanupEducationMediaUpload(
   });
 }
 
-export async function runEducationGalleryCleanup(): Promise<EducationGalleryCleanupResult> {
+export async function runEducationGalleryCleanup(options: EducationGalleryCleanupOptions = {}): Promise<EducationGalleryCleanupResult> {
   const now = new Date();
   const candidates = await db.select().from(educationMediaUploadsTable)
     .where(educationMediaUploadCleanupEligibility(now))
@@ -1691,12 +1715,30 @@ export async function runEducationGalleryCleanup(): Promise<EducationGalleryClea
       } catch (recordingError) {
         logger.error({ err: recordingError }, "Education gallery cleanup failure could not be recorded");
       }
-      logger.warn({ err: error, cleanupFailureCount }, "Education gallery cleanup failed");
-      if (cleanupFailureCount === EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT) {
+      logger.warn(
+        {
+          cleanupFailureCount,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        "Education gallery cleanup failed",
+      );
+      if (cleanupFailureCount !== null && cleanupFailureCount >= EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT) {
         logger.warn(
           { cleanupFailureCount },
           "Education gallery cleanup needs attention: inspect App Storage availability and the cleanup job credentials",
         );
+        try {
+          const alert = await educationGalleryCleanupAlertSummary();
+          await (options.notify ?? sendEducationGalleryCleanupAlert)(alert, now);
+        } catch (notificationError) {
+          logger.error(
+            {
+              cleanupFailureCount,
+              errorType: notificationError instanceof Error ? notificationError.name : typeof notificationError,
+            },
+            "Education gallery cleanup alert notification failed",
+          );
+        }
       }
     }
   }

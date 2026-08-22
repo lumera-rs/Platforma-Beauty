@@ -1,7 +1,7 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
-import { randomUUID } from "node:crypto";
-import { db, emailDeliveriesTable } from "@workspace/db";
-import { and, eq, isNotNull, lt, lte } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { db, emailDeliveriesTable, usersTable } from "@workspace/db";
+import { and, eq, inArray, isNotNull, lt, lte } from "drizzle-orm";
 import { logger } from "./logger";
 import { integrationSettings, integrationValue } from "./integrations";
 
@@ -18,9 +18,17 @@ export type TransactionalEmailTransport = {
 };
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
+const EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE = "education_gallery_cleanup_alert";
+const EDUCATION_GALLERY_CLEANUP_ALERT_COOLDOWN_MS = 60 * 60_000;
 const RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000] as const;
 const RETRY_LEASE_MS = 2 * 60_000;
 const RETRY_BATCH_SIZE = 50;
+
+export type EducationGalleryCleanupAlert = {
+  failedTickets: number;
+  failureAttempts: number;
+  repeatedFailureTickets: number;
+};
 
 async function sender() {
   const email = await integrationValue("brevo", "senderEmail", process.env["BREVO_SENDER_EMAIL"]);
@@ -123,6 +131,76 @@ export async function sendTransactionalEmail(input: {
   return deliverEmail(delivery, input.htmlContent, undefined, transport);
 }
 
+export async function sendEducationGalleryCleanupAlert(
+  alert: EducationGalleryCleanupAlert,
+  now = new Date(),
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
+  const recipients = await db.select({ email: usersTable.email })
+    .from(usersTable)
+    .where(and(
+      eq(usersTable.active, true),
+      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
+    ));
+  const alertWindow = Math.floor(now.getTime() / EDUCATION_GALLERY_CLEANUP_ALERT_COOLDOWN_MS);
+
+  if (!recipients.length) {
+    logger.warn(
+      { alertWindow, failedTickets: alert.failedTickets, failureAttempts: alert.failureAttempts },
+      "Education gallery cleanup alert has no configured administrator recipients",
+    );
+    return { recipientCount: 0, failedDeliveryCount: 0, skippedDeliveryCount: 0 };
+  }
+
+  const subject = "LUMERA — potrebna je intervencija za čišćenje galerije";
+  const htmlContent = lumeraEmailHtml(
+    "Potrebna je intervencija za čišćenje galerije",
+    `<p>Automatsko čišćenje privatnih staging fajlova je više puta neuspešno.</p>
+    <p><strong>Trenutno stanje:</strong> ${alert.failedTickets} neuspešnih zapisa, ${alert.failureAttempts} neuspešnih pokušaja i ${alert.repeatedFailureTickets} zapisa sa ponovljenim neuspehom.</p>
+    <p>Proverite dostupnost App Storage-a i kredencijale posla za čišćenje, a zatim proverite Admin pregled pre ponovnog pokretanja posla.</p>`,
+  );
+  const results = await Promise.allSettled(recipients.map((recipient) => {
+    const recipientKey = createHash("sha256").update(recipient.email.toLowerCase()).digest("hex").slice(0, 16);
+    return sendTransactionalEmail({
+      eventKey: `education-gallery-cleanup-alert:${alertWindow}:${recipientKey}`,
+      emailType: EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE,
+      to: { email: recipient.email },
+      subject,
+      htmlContent,
+      metadata: {
+        alertWindow,
+        failedTickets: alert.failedTickets,
+        failureAttempts: alert.failureAttempts,
+        repeatedFailureTickets: alert.repeatedFailureTickets,
+      },
+    }, transport);
+  }));
+  const failedDeliveryCount = results.filter(
+    (result) => result.status === "rejected" || ("failed" in result.value && result.value.failed),
+  ).length;
+  const skippedDeliveryCount = results.filter(
+    (result) => result.status === "fulfilled" && "skipped" in result.value && result.value.skipped,
+  ).length;
+
+  if (failedDeliveryCount || skippedDeliveryCount) {
+    logger.warn(
+      {
+        alertWindow,
+        recipientCount: recipients.length,
+        failedDeliveryCount,
+        skippedDeliveryCount,
+      },
+      "Education gallery cleanup alert delivery did not complete for every administrator",
+    );
+  } else {
+    logger.info(
+      { alertWindow, recipientCount: recipients.length },
+      "Education gallery cleanup alert delivery queued",
+    );
+  }
+  return { recipientCount: recipients.length, failedDeliveryCount, skippedDeliveryCount };
+}
+
 function nextRetryAt(retryCount: number, now = new Date()) {
   const delay = RETRY_DELAYS_MS[retryCount];
   return delay === undefined ? null : new Date(now.getTime() + delay);
@@ -142,6 +220,23 @@ function temporaryFailure(error: unknown) {
   return error instanceof TypeError
     || error instanceof DOMException
     || /\b(ECONNRESET|ECONNREFUSED|ETIMEDOUT|network|socket hang up|timeout)\b/i.test(message);
+}
+
+function educationGalleryAlertDeliveryErrorContext(error: unknown, eventKey: string) {
+  const message = error instanceof Error ? error.message : "";
+  const providerStatus = /Brevo (\d{3}):/.exec(message)?.[1];
+  return {
+    eventKey,
+    errorType: error instanceof Error ? error.name : typeof error,
+    ...(providerStatus ? { providerStatus: Number(providerStatus) } : {}),
+  };
+}
+
+function educationGalleryAlertStoredError(error: unknown) {
+  const context = educationGalleryAlertDeliveryErrorContext(error, "");
+  return context.providerStatus
+    ? `${context.errorType} (Brevo ${context.providerStatus})`
+    : context.errorType;
 }
 
 function claimedDeliveryWhere(deliveryId: string, processingToken?: string) {
@@ -175,7 +270,9 @@ async function deliverEmail(
     if ("skipped" in result) {
       await db.update(emailDeliveriesTable).set({
         status: "skipped",
-        errorMessage: result.errorMessage,
+        errorMessage: delivery.emailType === EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE
+          ? "Email transport is not configured."
+          : result.errorMessage,
         nextRetryAt: null,
         processingToken: null,
       }).where(claimedDeliveryWhere(delivery.id, processingToken));
@@ -191,7 +288,14 @@ async function deliverEmail(
     }).where(claimedDeliveryWhere(delivery.id, processingToken));
     return { messageId: result.messageId };
   } catch (error) {
-    logger.warn({ err: error, eventKey: delivery.eventKey }, "Brevo transactional email failed");
+    if (delivery.emailType === EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE) {
+      logger.warn(
+        educationGalleryAlertDeliveryErrorContext(error, delivery.eventKey),
+        "Brevo transactional email failed",
+      );
+    } else {
+      logger.warn({ err: error, eventKey: delivery.eventKey }, "Brevo transactional email failed");
+    }
     if (duplicateBrevoRequest(error)) {
       await db.update(emailDeliveriesTable).set({
         status: "sent",
@@ -205,7 +309,9 @@ async function deliverEmail(
     const retryAt = retryable(delivery) && temporaryFailure(error) ? nextRetryAt(delivery.retryCount) : null;
     await db.update(emailDeliveriesTable).set({
       status: retryAt ? "queued" : "failed",
-      errorMessage: error instanceof Error ? error.message.slice(0, 1000) : "Nepoznata Brevo greška",
+      errorMessage: delivery.emailType === EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE
+        ? educationGalleryAlertStoredError(error)
+        : error instanceof Error ? error.message.slice(0, 1000) : "Nepoznata Brevo greška",
       nextRetryAt: retryAt,
       processingToken: null,
     }).where(claimedDeliveryWhere(delivery.id, processingToken));

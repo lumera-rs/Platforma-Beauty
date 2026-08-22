@@ -6,6 +6,7 @@ import {
   coursesTable,
   educationCentersTable,
   educationCenterSubscriptionsTable,
+  emailDeliveriesTable,
   educationMediaTable,
   educationMediaUploadsTable,
   subscriptionPlansTable,
@@ -13,10 +14,14 @@ import {
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
 import {
+  sendEducationGalleryCleanupAlert,
+  type TransactionalEmailTransport,
+} from "../../artifacts/api-server/src/lib/brevo";
+import {
   cleanupEducationMediaUpload,
   runEducationGalleryCleanup,
 } from "../../artifacts/api-server/src/routes/marketplace";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, like, or, sql } from "drizzle-orm";
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEklEQVQImWPYEtD0HxkzkC4AAFKXKFH5WEhSAAAAAElFTkSuQmCC",
@@ -445,7 +450,7 @@ test("education gallery accepts the exact 8 MB limit and rejects invalid bytes b
 
     const uploadTicketResponse = await page.request.post(`/api/education/courses/${fixture.courseId}/gallery/upload-url`, {
       data: {
-        name: "course-gallery-maximum.png",
+        name: "course-gallery-max-size.png",
         size: maxGalleryImageBytes,
         contentType: "image/png",
       },
@@ -525,7 +530,7 @@ test("education gallery cleanup keeps an upload ticket when storage deletion fai
     });
     expect(ownerLogin).toBeOK();
 
-    const ticket = await uploadGalleryImage(page.request, fixture, "cleanup-delete-failure.png");
+    const ticket = await uploadGalleryImage(page.request, fixture, "delete-rollback-retry.png");
     const [expiredUpload] = await db.update(educationMediaUploadsTable)
       .set({ expiresAt: new Date(0) })
       .where(eq(educationMediaUploadsTable.id, ticket.mediaId))
@@ -735,6 +740,18 @@ test("concurrent gallery attach, cleanup, and deletion preserve a referenced fin
 test("repeated gallery cleanup failures alert admins without exposing ticket details", async ({ page }) => {
   test.setTimeout(90_000);
   const fixture = await createGalleryFixture();
+  const syntheticAlertWindow = 40_000_000 + Number.parseInt(randomUUID().slice(0, 8), 16) % 1_000_000;
+  const syntheticAlertTime = new Date(syntheticAlertWindow * 60 * 60_000);
+  const cleanupAlerts: Array<{
+    failedTickets: number;
+    failureAttempts: number;
+    repeatedFailureTickets: number;
+  }> = [];
+  const cleanupOptions = {
+    notify: async (alert: typeof cleanupAlerts[number]) => {
+      cleanupAlerts.push(alert);
+    },
+  };
   try {
     const ownerLogin = await page.request.post("/api/auth/login", {
       data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
@@ -760,9 +777,9 @@ test("repeated gallery cleanup failures alert admins without exposing ticket det
       })
       .where(eq(educationMediaUploadsTable.id, uploadTicket.mediaId));
 
-    await runEducationGalleryCleanup();
-    await runEducationGalleryCleanup();
-    await runEducationGalleryCleanup();
+    await runEducationGalleryCleanup(cleanupOptions);
+    await runEducationGalleryCleanup(cleanupOptions);
+    await runEducationGalleryCleanup(cleanupOptions);
 
     const [failedTicket] = await db.select({
       cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
@@ -772,6 +789,59 @@ test("repeated gallery cleanup failures alert admins without exposing ticket det
       .where(eq(educationMediaUploadsTable.id, uploadTicket.mediaId));
     expect(failedTicket?.cleanupFailureCount).toBeGreaterThanOrEqual(3);
     expect(failedTicket?.lastCleanupFailureAt).not.toBeNull();
+    expect(cleanupAlerts).toHaveLength(1);
+    expect(cleanupAlerts[0]!.failedTickets).toBeGreaterThanOrEqual(1);
+    expect(cleanupAlerts[0]!.failureAttempts).toBeGreaterThanOrEqual(3);
+    expect(cleanupAlerts[0]!.repeatedFailureTickets).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(cleanupAlerts[0])).not.toContain(malformedStoragePath);
+    expect(JSON.stringify(cleanupAlerts[0])).not.toContain(uploadTicket.mediaId);
+
+    let transportCalls = 0;
+    const attemptedEmails: Parameters<TransactionalEmailTransport["send"]>[0][] = [];
+    const transport: TransactionalEmailTransport = {
+      async send(input) {
+        transportCalls += 1;
+        attemptedEmails.push(input);
+        if (transportCalls === 1) throw new TypeError("simulated network failure");
+        return { messageId: `gallery-alert-${transportCalls}` };
+      },
+    };
+    const firstDelivery = await sendEducationGalleryCleanupAlert(cleanupAlerts[0]!, syntheticAlertTime, transport);
+    expect(firstDelivery.recipientCount).toBeGreaterThanOrEqual(1);
+    expect(firstDelivery.failedDeliveryCount).toBe(1);
+    expect(transportCalls).toBe(firstDelivery.recipientCount);
+
+    const firstWindowDeliveries = await db.select({
+      errorMessage: emailDeliveriesTable.errorMessage,
+      eventKey: emailDeliveriesTable.eventKey,
+    }).from(emailDeliveriesTable).where(
+      like(emailDeliveriesTable.eventKey, `education-gallery-cleanup-alert:${syntheticAlertWindow}:%`),
+    );
+    expect(firstWindowDeliveries).toHaveLength(firstDelivery.recipientCount);
+    const persistedDeliveryDiagnostics = JSON.stringify(firstWindowDeliveries);
+    expect(persistedDeliveryDiagnostics).toContain("TypeError");
+    expect(persistedDeliveryDiagnostics).not.toContain("simulated network failure");
+    expect(persistedDeliveryDiagnostics).not.toContain(fixture.adminEmail);
+    expect(persistedDeliveryDiagnostics).not.toContain(malformedStoragePath);
+    expect(persistedDeliveryDiagnostics).not.toContain(uploadTicket.mediaId);
+
+    const duplicateDelivery = await sendEducationGalleryCleanupAlert(cleanupAlerts[0]!, syntheticAlertTime, transport);
+    expect(duplicateDelivery.recipientCount).toBe(firstDelivery.recipientCount);
+    expect(transportCalls).toBe(firstDelivery.recipientCount);
+
+    const nextWindowDelivery = await sendEducationGalleryCleanupAlert(
+      cleanupAlerts[0]!,
+      new Date(syntheticAlertTime.getTime() + 60 * 60_000),
+      transport,
+    );
+    expect(nextWindowDelivery.recipientCount).toBe(firstDelivery.recipientCount);
+    expect(transportCalls).toBe(firstDelivery.recipientCount * 2);
+    for (const email of attemptedEmails) {
+      expect(email.htmlContent).toContain("neuspešnih pokušaja");
+      expect(email.htmlContent).toContain("App Storage");
+      expect(email.htmlContent).not.toContain(malformedStoragePath);
+      expect(email.htmlContent).not.toContain(uploadTicket.mediaId);
+    }
 
     const forbiddenSummary = await page.request.get("/api/admin/summary");
     expect(forbiddenSummary.status()).toBe(403);
@@ -806,6 +876,10 @@ test("repeated gallery cleanup failures alert admins without exposing ticket det
     await expect(page.getByTestId("gallery-cleanup-failure-attempts")).not.toHaveText("0");
     await expect(page.getByTestId("gallery-cleanup-oldest-ticket-age")).not.toHaveText("Nema");
   } finally {
+    await db.delete(emailDeliveriesTable).where(or(
+      like(emailDeliveriesTable.eventKey, `education-gallery-cleanup-alert:${syntheticAlertWindow}:%`),
+      like(emailDeliveriesTable.eventKey, `education-gallery-cleanup-alert:${syntheticAlertWindow + 1}:%`),
+    ));
     await cleanUpGalleryFixture(fixture);
   }
 });
