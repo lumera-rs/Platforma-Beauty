@@ -201,6 +201,12 @@ async function main() {
       assert.ok(row.previous, `${label}: previous block present for compare=previous`);
       assert.equal(row.previous.attributedAppointments, PREVIOUS,
         `${label}: previous window counts exactly the two edge runs plus the createdAt-fallback run`);
+      if (label === "per-rule") {
+        assert.equal(row.previous.newClientCount, 0,
+          "per-rule: previous new-client count uses the same returning derivation as the attributed-appointments summary");
+        assert.equal(row.previous.returningClientCount, PREVIOUS,
+          "per-rule: previous returning-client count follows the exact previous run window");
+      }
       assert.equal(row.emailDeliveredCount, CURRENT, `${label}: current delivered count`);
       assert.equal(row.emailOpenedCount, CURRENT, `${label}: current opened count`);
       assert.equal(row.previous.emailDeliveredCount, PREVIOUS, `${label}: previous delivered count`);

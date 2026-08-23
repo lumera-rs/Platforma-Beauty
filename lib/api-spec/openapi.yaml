@@ -7697,10 +7697,16 @@ components:
             attributedRevenue:
               type: number
               description: Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.
+            newClientCount:
+              type: number
+              description: Attributed appointments in the preceding window whose salon client had no completed appointment before the campaign message was sent.
+            returningClientCount:
+              type: number
+              description: Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent.
             emailDeliveredCount: { type: number }
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
-          required: [attributedAppointments, attributedRevenue, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
+          required: [attributedAppointments, attributedRevenue, newClientCount, returningClientCount, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
       required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:

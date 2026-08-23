@@ -675,6 +675,28 @@ const appointmentIsUpcomingRealized = inArray(
   CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
 );
 
+/**
+ * NEW vs RETURNING derivation for an attributed appointment: a client is
+ * returning when they had a completed appointment strictly before the
+ * campaign message went out. The campaign appointment itself is excluded
+ * from the prior-visit lookup, and appointments without a linked customer
+ * remain unknown. Keep this expression shared by the row projection and all
+ * stats windows so current and previous periods classify clients identically.
+ */
+const campaignIsReturningExpr = sql<boolean | null>`
+  case
+    when ${appointmentsTable.salonCustomerId} is null then null
+    else exists (
+      select 1
+      from ${appointmentsTable} prior
+      where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
+        and prior.id <> ${appointmentsTable.id}
+        and prior.status = 'completed'
+        and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
+    )
+  end
+`;
+
 function statsScopeRunCondition(scope: StatsScope) {
   return "ruleId" in scope
     ? eq(automationRunsTable.ruleId, scope.ruleId)
@@ -709,6 +731,8 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
       attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} then 1 else 0 end)::int`,
       attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentCountsAsRealized} then ${appointmentsTable.price} end), 0)::int`,
+      newClientCount: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} and (${campaignIsReturningExpr}) is false then 1 else 0 end)::int`,
+      returningClientCount: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} and (${campaignIsReturningExpr}) is true then 1 else 0 end)::int`,
       // Completed vs upcoming split of the realized rows. Both status lists
       // are explicit, so the two buckets sum exactly to the attributed totals
       // without absorbing an unclassified future status.
@@ -917,7 +941,15 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     // current window and the same shape as the overview endpoint's `previous`
     // block so the UI trends stay consistent.
     let previous:
-      | { attributedAppointments: number; attributedRevenue: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
+      | {
+          attributedAppointments: number;
+          attributedRevenue: number;
+          newClientCount: number;
+          returningClientCount: number;
+          emailDeliveredCount: number;
+          emailOpenedCount: number;
+          smsDeliveredCount: number;
+        }
       | undefined;
     if (previousWindow) {
       const [prevRuns] = await aggregateRunStats({ ruleId: rule.id }, previousWindow);
@@ -926,6 +958,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       previous = {
         attributedAppointments: prevRuns?.attributedAppointments ?? 0,
         attributedRevenue: prevRuns?.attributedRevenue ?? 0,
+        newClientCount: prevRuns?.newClientCount ?? 0,
+        returningClientCount: prevRuns?.returningClientCount ?? 0,
         emailDeliveredCount: prevDeliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: prevDeliveries?.emailOpenedCount ?? 0,
         smsDeliveredCount: prevDeliveries?.smsDeliveredCount ?? 0,

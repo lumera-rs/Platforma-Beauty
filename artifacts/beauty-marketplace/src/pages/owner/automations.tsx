@@ -1062,8 +1062,26 @@ export default function OwnerAutomations() {
                 {attributedMix && (attributedMix.newClientCount + attributedMix.returningClientCount + attributedMix.unknownClientCount) > 0 && (
                   <p className="text-sm" data-testid="attributed-client-mix">
                     <span className="font-semibold">{srCount(attributedMix.newClientCount, "nov", "nova", "novih")}</span>
+                    {statsData?.previous && (
+                      <span className="ml-1.5">
+                        <TrendIndicator
+                          current={attributedMix.newClientCount}
+                          previous={statsData.previous.newClientCount}
+                          testId="stats-trend-new-clients"
+                        />
+                      </span>
+                    )}
                     <span className="text-muted-foreground"> · </span>
                     <span className="font-semibold">{srCount(attributedMix.returningClientCount, "vraćen", "vraćena", "vraćenih")}</span>
+                    {statsData?.previous && (
+                      <span className="ml-1.5">
+                        <TrendIndicator
+                          current={attributedMix.returningClientCount}
+                          previous={statsData.previous.returningClientCount}
+                          testId="stats-trend-returning-clients"
+                        />
+                      </span>
+                    )}
                     {attributedMix.unknownClientCount > 0 && (
                       <>
                         <span className="text-muted-foreground"> · </span>
