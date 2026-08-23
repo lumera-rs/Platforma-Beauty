@@ -352,7 +352,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
+import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
@@ -3195,7 +3195,14 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
   const [entries, deliveryReportsByProvider] = await Promise.all([
     Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
       name,
-      await integrationDisplay(name as IntegrationName, definition.keys, definition.required),
+      {
+        ...(await integrationDisplay(name as IntegrationName, definition.keys, definition.required)),
+        // Persisted server-side, so the "secret changed, registration not yet
+        // re-confirmed" reminder survives page reloads and later sessions.
+        ...(name === "sms" || name === "brevo"
+          ? { webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(name) }
+          : {}),
+      },
     ])),
     deliveryReportStatuses(),
   ]);
@@ -3238,8 +3245,21 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   if (req.params.integration === "sms" && values.baseUrl) {
     try { infobipBaseUrl(values.baseUrl); } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : "SMS base URL nije ispravan." }); return; }
   }
+  // A saved webhookSecret that differs from the EFFECTIVE secret (database or
+  // env fallback) invalidates the URL registered at the provider. Persist that
+  // moment so the re-registration reminder survives reloads; re-saving an
+  // identical secret changes nothing and must not raise the reminder.
+  const webhookIntegration = req.params.integration === "sms" || req.params.integration === "brevo" ? req.params.integration : null;
+  const savedWebhookSecret = webhookIntegration ? values["webhookSecret"]?.trim() || undefined : undefined;
+  const previousWebhookSecret = webhookIntegration && savedWebhookSecret ? await resolveWebhookSecret(webhookIntegration) : undefined;
   await saveIntegrationSettings({ integration: req.params.integration, enabled: body.enabled, values, updatedByUserId: user.id });
-  res.json(await integrationDisplay(req.params.integration, definition.keys, definition.required));
+  if (webhookIntegration && savedWebhookSecret && savedWebhookSecret !== previousWebhookSecret) {
+    await markWebhookSecretChanged(webhookIntegration, user.id);
+  }
+  res.json({
+    ...(await integrationDisplay(req.params.integration, definition.keys, definition.required)),
+    ...(webhookIntegration ? { webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(webhookIntegration) } : {}),
+  });
 });
 
 router.post("/admin/integrations/:integration/test", async (req, res): Promise<void> => {
@@ -3325,6 +3345,9 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
   if (!response.ok || !body || body["processed"] !== 1 || body["unmatched"] !== 1) {
     res.status(502).json({ error: `Webhook endpoint nije prihvatio probni događaj (status ${response.status}). Proverite podešavanja, pa pokušajte ponovo.` }); return;
   }
+  // Successful self-check re-confirms the current secret — clear the persisted
+  // "secret changed, registration not re-confirmed" reminder.
+  await markWebhookReconfirmed(integration, user.id);
   res.json({
     message: integration === "sms"
       ? "Infobip webhook radi: sačuvana tajna se poklapa i endpoint prihvata izveštaje o isporuci. Probni događaj nije promenio nijednu isporuku."
@@ -3624,6 +3647,9 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
   }
   const verdict = brevoRegistrationVerdict(brevoRegistrationCandidates(refreshed, secret), context);
   if (verdict.ok) {
+    // One-click registration wrote the current secret to the provider and the
+    // re-check confirmed it — clear the persisted re-registration reminder.
+    await markWebhookReconfirmed("brevo", user.id);
     res.json({ message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.` }); return;
   }
   res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}` });

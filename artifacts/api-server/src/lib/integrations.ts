@@ -1,8 +1,25 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { db, integrationSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
+
+/**
+ * Metadata marker rows stored alongside integration settings (same encrypted
+ * key/value table) but never treated as configuration: they are excluded from
+ * `integrationSettings` values and do not make an integration count as
+ * "configured in database". Used to persist the "webhook secret changed but
+ * the provider registration was not re-confirmed yet" state across reloads:
+ *   - webhookSecretChangedAt — set when a save actually changes the effective
+ *     webhook secret (which invalidates the URL registered at the provider)
+ *   - webhookVerifiedAt — set when a webhook re-confirmation succeeds (the
+ *     loopback self-check, or Brevo one-click registration whose re-check
+ *     passed)
+ * The reminder is pending while changedAt exists and verifiedAt is older.
+ */
+const WEBHOOK_MARKER_KEYS = ["webhookSecretChangedAt", "webhookVerifiedAt"] as const;
+type WebhookMarkerKey = (typeof WEBHOOK_MARKER_KEYS)[number];
+const WEBHOOK_MARKER_KEY_SET: ReadonlySet<string> = new Set(WEBHOOK_MARKER_KEYS);
 
 const key = () => {
   const secret = process.env["SESSION_SECRET"];
@@ -48,7 +65,10 @@ function fallbackValues(integration: IntegrationName): Record<string, string | u
 }
 
 export async function integrationSettings(integration: IntegrationName) {
-  const rows = await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, integration));
+  const rows = (await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, integration)))
+    // Marker rows are metadata, not configuration: they must neither surface
+    // as values nor flip an env-fallback integration to "database-configured".
+    .filter((row) => !WEBHOOK_MARKER_KEY_SET.has(row.settingKey));
   if (!rows.length) return { configuredInDatabase: false, enabled: true, values: {} as Record<string, string> };
   const values: Record<string, string> = {};
   for (const row of rows) values[row.settingKey] = decrypt(row.encryptedValue);
@@ -78,6 +98,49 @@ export async function saveIntegrationSettings(input: {
   }
   const rows = await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
   if (rows.length) await db.update(integrationSettingsTable).set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() }).where(eq(integrationSettingsTable.integration, input.integration));
+}
+
+async function integrationMarker(integration: IntegrationName, settingKey: WebhookMarkerKey): Promise<Date | null> {
+  const [row] = await db.select().from(integrationSettingsTable)
+    .where(and(eq(integrationSettingsTable.integration, integration), eq(integrationSettingsTable.settingKey, settingKey)))
+    .limit(1);
+  if (!row) return null;
+  let at: Date;
+  try { at = new Date(decrypt(row.encryptedValue)); } catch { return null; }
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
+async function setIntegrationMarker(integration: IntegrationName, settingKey: WebhookMarkerKey, updatedByUserId: string, at: Date) {
+  await db.insert(integrationSettingsTable).values({
+    integration, settingKey, encryptedValue: encrypt(at.toISOString()), enabled: true, updatedByUserId,
+  }).onConflictDoUpdate({
+    target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+    set: { encryptedValue: encrypt(at.toISOString()), updatedByUserId, updatedAt: new Date() },
+  });
+}
+
+/** Persist that the effective webhook secret changed — the URL registered at
+ * the provider no longer works until the admin re-registers and re-confirms. */
+export async function markWebhookSecretChanged(integration: "sms" | "brevo", updatedByUserId: string, at = new Date()) {
+  await setIntegrationMarker(integration, "webhookSecretChangedAt", updatedByUserId, at);
+}
+
+/** Persist that a webhook re-confirmation succeeded (loopback self-check, or
+ * Brevo one-click registration whose provider-side re-check passed). */
+export async function markWebhookReconfirmed(integration: "sms" | "brevo", updatedByUserId: string, at = new Date()) {
+  await setIntegrationMarker(integration, "webhookVerifiedAt", updatedByUserId, at);
+}
+
+/**
+ * True while a webhook secret change awaits re-confirmation: a change was
+ * recorded and no confirmation succeeded at or after it. Derived from the two
+ * persisted markers so the admin reminder survives page reloads and sessions.
+ */
+export async function webhookSecretPendingReconfirmation(integration: "sms" | "brevo"): Promise<boolean> {
+  const changedAt = await integrationMarker(integration, "webhookSecretChangedAt");
+  if (!changedAt) return false;
+  const verifiedAt = await integrationMarker(integration, "webhookVerifiedAt");
+  return !verifiedAt || verifiedAt.getTime() < changedAt.getTime();
 }
 
 export async function integrationDisplay(integration: IntegrationName, keys: string[], required: string[]) {
