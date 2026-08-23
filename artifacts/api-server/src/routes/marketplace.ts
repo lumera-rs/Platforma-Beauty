@@ -2885,7 +2885,7 @@ router.post("/auth/phone-verification/request", async (req, res): Promise<void> 
 });
 
 router.post("/auth/phone-verification/confirm", async (req, res): Promise<void> => {
-  const user = await requireCustomer(req, res);
+  const user = await current(req, res);
   if (!user) return;
   const phone = typeof req.body?.phone === "string" ? req.body.phone : "";
   const code = typeof req.body?.code === "string" ? req.body.code : "";
@@ -2898,7 +2898,7 @@ router.post("/auth/phone-verification/confirm", async (req, res): Promise<void> 
   try {
     await db.transaction(async (tx) => {
       await tx.update(usersTable).set({ phone, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-      await linkPhoneContactsToUser(tx, user.id, phone);
+      if (user.role === "CUSTOMER") await linkPhoneContactsToUser(tx, user.id, phone);
       await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
     });
     res.json({ ok: true });

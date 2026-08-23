@@ -71,6 +71,8 @@ const AdminSalons = lazy(() => import('./pages/admin/salons'));
 const AdminSalonDetail = lazy(() => import('./pages/admin/salon-detail'));
 const AdminServiceTemplates = lazy(() => import('./pages/admin/service-templates'));
 const AdminUsers = lazy(() => import('./pages/admin/users'));
+
+const AdminProfile = lazy(() => import('./pages/admin/profile'));
 const AdminLoyalty = lazy(() => import('./pages/admin/loyalty'));
 const AdminRetentionSettings = lazy(() => import('./pages/admin/retention-settings'));
 const AdminSubscriptions = lazy(() => import('./pages/admin/subscriptions'));
@@ -282,6 +284,7 @@ function Router() {
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/profil"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProfile /></RoleGuard></Route>
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
         <Route path="/admin/retencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetentionSettings /></RoleGuard></Route>
         <Route path="/admin/proizvodi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProducts /></RoleGuard></Route>

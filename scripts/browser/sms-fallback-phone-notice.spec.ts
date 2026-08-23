@@ -9,9 +9,11 @@
  *  1. With every active admin phone cleared (the reachableAdminCount = 0
  *     state), the standing warning (sms-fallback-no-admin-phone) must be
  *     visible after the page loads.
- *  2. After one active admin gets a phone number and the page is reloaded,
- *     the warning must be gone — while the rest of the page (the integration
- *     cards) still renders, proving absence is not just "data never loaded".
+ *  2. Its direct profile link must lead to the verified phone controls.
+ *  3. After the signed-in admin verifies a phone there and returns to the
+ *     integrations page, the warning must be gone — while the rest of the
+ *     page (the integration cards) still renders, proving absence is not just
+ *     "data never loaded".
  *
  * State setup mirrors the API suite: the users table is global, so the
  * phone columns of every active admin are snapshotted up front, cleared for
@@ -30,7 +32,7 @@ const scrypt = promisify(scryptCallback);
 const suffix = randomUUID();
 const password = "browser-sms-fallback-notice-password";
 const adminEmail = `browser-sms-fallback-notice-admin-${suffix}@example.test`;
-const ADMIN_PHONE = "+381601112233";
+const ADMIN_PHONE = `+3816${String(Date.now()).slice(-8)}`;
 
 const createdUserIds: string[] = [];
 let adminId = "";
@@ -100,15 +102,28 @@ test("the zero-phone warning shows on /admin/integracije and disappears once an 
   await expect(banner, "with reachableAdminCount = 0 the standing warning must render").toBeVisible();
   await expect(banner).toContainText("Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu");
   await expect(banner).toHaveAttribute("role", "alert");
+  const profileLink = page.getByTestId("sms-fallback-no-admin-phone-link");
+  await expect(profileLink).toBeVisible();
+  await expect(profileLink).toContainText("Dodajte broj telefona u svom profilu");
+  await expect(profileLink).toHaveAttribute("href", "/admin/profil");
+  await profileLink.click();
+  await expect(page).toHaveURL(/\/admin\/profil$/);
+  await expect(page.getByTestId("admin-profile-phone")).toBeVisible();
+  await expect(page.getByTestId("admin-profile-phone-code")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pošalji kod" })).toBeVisible();
+  await page.getByTestId("admin-profile-phone").fill(ADMIN_PHONE);
+  await page.getByRole("button", { name: "Pošalji kod" }).click();
+  const codeInput = page.getByTestId("admin-profile-phone-code");
+  await expect(codeInput).toHaveValue(/^\d{6}$/);
+  const confirmResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/auth/phone-verification/confirm")
+    && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Potvrdi broj" }).click();
+  expect((await confirmResponse).ok(), "the admin profile must accept the verified phone number").toBe(true);
 
-  // The warning coexists with the normal page content — it is a banner above
-  // the cards, not an error page.
-  await expect(page.getByTestId("toggle-enabled-brevo")).toBeVisible();
-
-  // ── 2. One admin gains a phone → after reload the warning is gone ────────
-  await db.update(usersTable).set({ phone: ADMIN_PHONE }).where(eq(usersTable.id, adminId));
-
-  await page.reload();
+  // ── 2. One admin verifies a phone → after returning, the warning is gone ─
+  await page.goto("/admin/integracije");
 
   // Wait until the integrations payload has rendered, so the banner's absence
   // proves the notice cleared rather than that data never arrived.

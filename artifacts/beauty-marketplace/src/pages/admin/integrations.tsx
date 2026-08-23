@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { armHistoryTraversalGuard } from "@/lib/unsaved-changes-guard";
 import { Button } from "@/components/ui/button";
@@ -236,7 +237,7 @@ export default function AdminIntegrations() {
       {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
         <p className="font-semibold text-destructive"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu</p>
         <p className="mt-1 text-sm text-destructive">Nijedan aktivan administrator nema broj telefona na nalogu. Ako slanje e-pošte potpuno otkaže, rezervni SMS je jedini kanal kojim biste saznali za prekid — bez broja telefona upozorenje završava samo u logovima servera.</p>
-        <p className="mt-1 text-sm text-destructive">Neka bar jedan administrator doda i verifikuje broj telefona na svom nalogu; ovo obaveštenje nestaje čim prvi broj bude sačuvan.</p>
+        <p className="mt-1 text-sm text-destructive">Neka bar jedan administrator doda i verifikuje broj telefona na svom nalogu; ovo obaveštenje nestaje čim prvi broj bude sačuvan. <Link href="/admin/profil" className="font-semibold underline underline-offset-2" data-testid="sms-fallback-no-admin-phone-link">Dodajte broj telefona u svom profilu</Link>.</p>
       </div>}
       {data.smsFallback?.reachableAdminCount === 1 && <div className="rounded-xl border border-sky-300 bg-sky-50 p-4" role="status" data-testid="sms-fallback-single-admin-phone">
         <p className="font-semibold text-sky-800"><ShieldCheck className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno zavise od samo jednog administratora</p>
