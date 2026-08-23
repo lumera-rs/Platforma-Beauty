@@ -7,10 +7,12 @@ import growthRouter from "./growth";
 import providerWebhooksRouter from "./provider-webhooks";
 import phase3Router from "./phase3";
 import widgetRouter from "./widget";
+import businessGuideRouter from "./business-guide";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(businessGuideRouter);
 router.use(imageMediaRouter);
 router.use(mediaRouter);
 router.use(widgetRouter);

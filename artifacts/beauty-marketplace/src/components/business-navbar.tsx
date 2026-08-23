@@ -130,11 +130,13 @@ export function BusinessNavbar() {
           { href: "/vlasnik/porudzbine", label: "Porudžbine" },
           { href: "/vlasnik/obavestenja", label: "Obaveštenja" },
           { href: "/biznis/edukacije", label: "Edukacije" },
+          { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'SALON_EMPLOYEE':
         return [
           { href: "/zaposleni", label: "Moj portal" },
           { href: "/biznis/edukacije", label: "Edukacije" },
+          { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'EDUCATION_CENTER_OWNER':
         return [

@@ -63,6 +63,7 @@ const OwnerInventory = lazy(() => import('./pages/owner/inventory'));
 const OwnerStaffOps = lazy(() => import('./pages/owner/staff-ops'));
 const WidgetBooking = lazy(() => import('./pages/widget-booking'));
 const EmployeePortal = lazy(() => import('./pages/employee/portal'));
+const BusinessGuidePage = lazy(() => import('./pages/business-guide'));
 const EmployeePasswordChange = lazy(() => import('./pages/employee/portal').then((module) => ({ default: module.EmployeePasswordChange })));
 const AdminDashboard = lazy(() => import('./pages/admin/dashboard'));
 const AdminSalons = lazy(() => import('./pages/admin/salons'));
@@ -199,6 +200,11 @@ function Router() {
         <Route path="/moj-nalog">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
             <CustomerDashboard />
+          </RoleGuard>
+        </Route>
+        <Route path="/biznis/vodic">
+          <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava">
+            <BusinessGuidePage />
           </RoleGuard>
         </Route>
         <Route path="/biznis/edukacije">

@@ -30,6 +30,9 @@ async function buildAll() {
     external: [
       "*.node",
       "sharp",
+      // pdfkit reads its bundled font data files from its package directory
+      // at runtime, so it cannot be inlined into the single-file bundle.
+      "pdfkit",
       "better-sqlite3",
       "sqlite3",
       "canvas",

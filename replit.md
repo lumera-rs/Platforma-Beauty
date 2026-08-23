@@ -91,6 +91,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Catalog mutations must invalidate every affected cache namespace; PostgreSQL notifications are cross-process wakeups, while the database remains the source of truth.
 - Any schema/query/cache/admin mutation change must keep `pnpm run test:backend-standards` and `pnpm run validate:release` passing.
 - New frontend routes, text filters, optimistic mutations, or monitoring changes must keep `pnpm run test:frontend-standards`, `pnpm run test:frontend-interactions`, `pnpm run test:monitoring`, and `pnpm run validate:release` passing.
+- Business user guide ("Pomoć", `/biznis/vodic` + `/api/business/guide[.pdf]`): content lives in `artifacts/api-server/src/lib/business-guide-content.ts` (versioned; bump `version`/`updatedAt` on edits). When business menus, modules, routes, or role permissions change, update the guide content too. PDF is generated with pdfkit (kept external in `build.mjs`, DejaVu fonts under `artifacts/api-server/assets/fonts/`). Owner/employee only; keep it out of sitemap and noindex.
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
