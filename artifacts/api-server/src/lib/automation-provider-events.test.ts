@@ -1219,6 +1219,64 @@ async function run() {
         assert.equal(infobipRepeatRun.attemptedEventKeys.length, 0, "repeat tick attempts no infobip alert emails");
         assert.equal(infobipRepeatRun.smsFallback.triggered, false, "suppressed tick never evaluates the fallback");
         assert.equal(infobipRepeatSms.calls.length, 0, "no repeat SMS inside the cooldown window");
+
+        // When both delivery-report channels are silent in the same run and
+        // the email path is fully down, combine the pages into one SMS per
+        // phone-carrying administrator. The provider set and both sequences
+        // are part of the durable key, so racing runs still collide.
+        const combinedNow = new Date(infobipOutageNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+        const combinedSentAt = new Date(combinedNow.getTime() - 35 * 60_000);
+        await db.insert(automationDeliveriesTable).values([
+          {
+            runId: staleRun.id, salonId: c.salon.id, eventKey: `${staleRunKey}:combined:email`,
+            channel: "email", recipientEmail: `pe-combined-${suffix}@bg.test`,
+            status: "sent", sentAt: combinedSentAt,
+          },
+          {
+            runId: staleRun.id, salonId: c.salon.id, eventKey: `${staleRunKey}:combined:sms`,
+            channel: "sms", recipientPhone: "+381601234567",
+            status: "sent", sentAt: combinedSentAt,
+          },
+        ]);
+
+        const combinedSms = makeFakeSms();
+        const combinedRun = await runDeliveryReportSilenceAlerts(combinedNow, failingTransport, combinedSms.provider);
+        cleanup.emailEventKeys.push(...combinedRun.attemptedEventKeys);
+        cleanup.smsEventKeys.push(...combinedRun.smsFallback.attemptedEventKeys);
+        assert.deepEqual(combinedRun.staleProviders, ["brevo", "infobip"], "both channels read silent at the combined probe");
+        assert.equal(combinedRun.failedDeliveryCount, combinedRun.attemptedEventKeys.length, "every combined alert email failed");
+        assert.equal(combinedRun.smsFallback.triggered, true, "both failed channels trigger the SMS fallback");
+        assert.equal(
+          combinedRun.smsFallback.attemptedEventKeys.length,
+          combinedRun.smsFallback.recipientCount,
+          "combined outage sends one fallback SMS per phone-carrying admin",
+        );
+        assert.equal(combinedSms.calls.length, combinedRun.smsFallback.recipientCount, "combined outage makes one provider call per admin");
+        for (const eventKey of combinedRun.smsFallback.attemptedEventKeys) {
+          assert.ok(
+            eventKey.startsWith(`${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:brevo+infobip:`),
+            "combined fallback keys are namespaced by the affected provider set",
+          );
+          assert.ok(!eventKey.includes(":brevo:"), "combined fallback does not use a Brevo-only key");
+          assert.ok(!eventKey.includes(":infobip:"), "combined fallback does not use an Infobip-only key");
+        }
+        for (const call of combinedSms.calls) {
+          assert.ok(call.text.includes("Brevo"), "combined SMS names Brevo");
+          assert.ok(call.text.includes("Infobip"), "combined SMS names Infobip");
+        }
+        const combinedFallbackRows = await db.select().from(smsDeliveriesTable)
+          .where(inArray(smsDeliveriesTable.eventKey, combinedRun.smsFallback.attemptedEventKeys));
+        assert.equal(
+          combinedFallbackRows.length,
+          combinedRun.smsFallback.attemptedEventKeys.length,
+          "combined fallback has one durable outbox row per admin",
+        );
+
+        const combinedRepeatSms = makeFakeSms();
+        const combinedRepeatRun = await runDeliveryReportSilenceAlerts(combinedNow, failingTransport, combinedRepeatSms.provider);
+        assert.equal(combinedRepeatRun.attemptedEventKeys.length, 0, "combined repeat tick attempts no alert emails");
+        assert.equal(combinedRepeatRun.smsFallback.triggered, false, "combined repeat tick never evaluates the fallback");
+        assert.equal(combinedRepeatSms.calls.length, 0, "combined repeat tick sends no SMS inside the cooldown");
         console.log("✓ SMS fallback pages admins exactly when the alert email path is fully down, once per window");
       }
     }

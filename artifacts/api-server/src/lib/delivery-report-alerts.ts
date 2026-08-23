@@ -38,8 +38,8 @@
  * exactly that case — at least one alert email about a stale provider was
  * attempted this tick AND every attempted one for that provider failed or
  * was skipped — a fallback SMS (via Infobip, when the SMS integration is
- * configured) naming the affected provider goes to administrators who have a
- * phone number on file. Each stale provider is evaluated independently.
+ * configured) naming the affected provider(s) goes to administrators who have
+ * a phone number on file. Providers that trip in the same run share one SMS.
  * Rate limiting is inherited from the email path: email attempts only happen
  * once per rolling cooldown window (cooldown-suppressed ticks attempt
  * nothing, so the fallback is never even evaluated), and the SMS outbox
@@ -282,23 +282,30 @@ export async function runDeliveryReportSilenceAlerts(
   // provider. `deduplicated` and in-flight outcomes do NOT count as failures
   // (a racing instance owns that delivery and evaluates its own fallback), so
   // the fallback fires only when the primary email path actually failed.
+  // Several providers can trip in the same run; combine those pages so an
+  // administrator receives one SMS naming the whole affected provider set.
   let smsFallback = emptySmsFallbackSummary();
+  const fallbackProviders: DeliveryReportProvider[] = [];
+  const fallbackSequences: { provider: DeliveryReportProvider; sequence: number }[] = [];
   for (const provider of staleProviders) {
     const providerResults = results.filter((_, index) => sends[index]?.provider === provider);
     if (!providerResults.length || !providerResults.every(emailFailedOrSkipped)) continue;
     const providerSequences = sends
       .filter((send) => send.provider === provider)
       .map((send) => send.sequence);
-    const providerFallback = await sendSilenceAlertSmsFallback({
-      provider,
-      // The highest alert sequence attempted this tick identifies the current
-      // cooldown window deterministically across racing instances (they read
-      // the same history), so their SMS eventKeys collide in the outbox.
-      sequence: Math.max(...providerSequences),
+    fallbackProviders.push(provider);
+    // The highest alert sequence attempted this tick identifies the current
+    // cooldown window deterministically across racing instances (they read
+    // the same history), so their SMS eventKeys collide in the outbox.
+    fallbackSequences.push({ provider, sequence: Math.max(...providerSequences) });
+  }
+  if (fallbackProviders.length) {
+    smsFallback = await sendSilenceAlertSmsFallback({
+      providers: fallbackProviders,
+      sequences: fallbackSequences,
       admins: recipients,
       smsProvider,
     });
-    smsFallback = mergeSmsFallbackSummaries(smsFallback, providerFallback);
   }
 
   return {
@@ -511,55 +518,54 @@ function emptySmsFallbackSummary(): SmsFallbackSummary {
   };
 }
 
-/** Merge per-provider fallback summaries into the run-level summary. */
-function mergeSmsFallbackSummaries(a: SmsFallbackSummary, b: SmsFallbackSummary): SmsFallbackSummary {
-  return {
-    triggered: a.triggered || b.triggered,
-    // Same admin audience for every provider — not additive.
-    recipientCount: Math.max(a.recipientCount, b.recipientCount),
-    attemptedEventKeys: [...a.attemptedEventKeys, ...b.attemptedEventKeys],
-    sentCount: a.sentCount + b.sentCount,
-    failedCount: a.failedCount + b.failedCount,
-    skippedCount: a.skippedCount + b.skippedCount,
-    deduplicatedCount: a.deduplicatedCount + b.deduplicatedCount,
-  };
-}
-
 /**
  * Page administrators over SMS because the silence-alert email about a stale
  * provider could not be sent to anyone (total email outage). Reuses the
- * durable SMS outbox (sendSms): the eventKey embeds the affected provider and
- * the alert sequence of the current cooldown window, so repeats and racing
- * instances collapse onto one unique sms_deliveries row per admin per
- * provider per window — the fallback can never spam.
+ * durable SMS outbox (sendSms): the eventKey embeds the affected provider set
+ * and the alert sequence(s) of the current cooldown window, so repeats and
+ * racing instances collapse onto one unique sms_deliveries row per admin per
+ * affected provider set per window — the fallback can never spam.
  * Never throws — individual send outcomes are tallied and logged.
  */
 async function sendSilenceAlertSmsFallback(input: {
-  provider: DeliveryReportProvider;
-  sequence: number;
+  providers: DeliveryReportProvider[];
+  sequences: { provider: DeliveryReportProvider; sequence: number }[];
   admins: { email: string; phone: string | null }[];
   smsProvider?: SmsProvider;
 }): Promise<SmsFallbackSummary> {
-  const label = DELIVERY_REPORT_PROVIDER_LABELS[input.provider];
+  const providers = (["brevo", "infobip"] as const).filter((provider) =>
+    input.providers.includes(provider),
+  );
+  const sequencesByProvider = new Map(input.sequences.map((entry) => [entry.provider, entry.sequence]));
+  const labels = providers.map((provider) => DELIVERY_REPORT_PROVIDER_LABELS[provider]).join(", ");
+  const providerSetKey = providers.join("+");
+  const sequenceKey = providers.length === 1
+    ? String(sequencesByProvider.get(providers[0]))
+    : providers.map((provider) => `${provider}-${sequencesByProvider.get(provider)}`).join("+");
   const phoneAdmins = input.admins.filter(
     (admin): admin is { email: string; phone: string } => hasUsablePhone(admin.phone),
   );
   if (!phoneAdmins.length) {
     logger.warn(
-      { provider: input.provider, sequence: input.sequence },
+      { providers, sequences: input.sequences },
       "Delivery-report silence alert email failed for every administrator and no administrator has a phone number for the SMS fallback",
     );
     return { ...emptySmsFallbackSummary(), triggered: true };
   }
 
-  const text = `LUMERA upozorenje: izveštaji o isporuci ne stižu (${label}), a upozorenje e-poštom nije moglo da se pošalje (slanje e-pošte ne radi). Proverite Integracije u admin panelu.`;
+  const text = `LUMERA upozorenje: izveštaji o isporuci ne stižu (${labels}), a upozorenje e-poštom nije moglo da se pošalje (slanje e-pošte ne radi). Proverite Integracije u admin panelu.`;
   const attemptedEventKeys: string[] = [];
   const sends = phoneAdmins.map((admin) => {
     const recipientKey = createHash("sha256")
       .update(admin.phone.replace(/\s+/g, ""))
       .digest("hex")
       .slice(0, 16);
-    const eventKey = `${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:${input.provider}:${recipientKey}:${input.sequence}`;
+    // Keep the single-provider key byte-for-byte compatible. For a combined
+    // incident, the canonical provider set and all provider sequences make
+    // the key unique to this exact cooldown window while racing runs collide.
+    const eventKey = providers.length === 1
+      ? `${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:${providers[0]}:${recipientKey}:${sequenceKey}`
+      : `${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:${providerSetKey}:${recipientKey}:${sequenceKey}`;
     attemptedEventKeys.push(eventKey);
     return sendSms({
       eventKey,
@@ -590,12 +596,12 @@ async function sendSilenceAlertSmsFallback(input: {
 
   if (summary.failedCount || summary.skippedCount) {
     logger.warn(
-      { provider: input.provider, sequence: input.sequence, ...summary, attemptedEventKeys: undefined },
+      { providers, sequences: input.sequences, ...summary, attemptedEventKeys: undefined },
       "Delivery-report silence SMS fallback did not reach every administrator",
     );
   } else if (summary.sentCount) {
     logger.warn(
-      { provider: input.provider, sequence: input.sequence, recipientCount: summary.recipientCount, sentCount: summary.sentCount },
+      { providers, sequences: input.sequences, recipientCount: summary.recipientCount, sentCount: summary.sentCount },
       "Delivery-report silence alert emails all failed — SMS fallback sent to administrators",
     );
   }

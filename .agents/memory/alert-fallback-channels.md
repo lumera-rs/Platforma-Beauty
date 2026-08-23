@@ -23,11 +23,19 @@ clock anchor (row `createdAt` diverges from injected test times) and could
 double-alert across windows; reusing the primary sequence keeps both
 channels in lockstep and spam-proof by construction.
 
-Scope: evaluate the fallback PER ALERT SUBJECT (e.g. per stale provider), not
-hardcoded to the one subject whose outage motivated it — every alert email
-rides the same send API, so a total send outage silences alerts about every
-subject. Namespace the fallback eventKey by subject so windows dedup
-independently.
+Scope: evaluate whether the fallback qualifies PER ALERT SUBJECT (e.g. per
+stale provider), not hardcoded to the one subject whose outage motivated it —
+every alert email rides the same send API, so a total send outage silences
+alerts about every subject. When multiple subjects qualify in the same tick
+for the same audience, send one combined fallback naming the canonical subject
+set. Its durable event key must include that full ordered set and every
+subject's primary-alert sequence; a one-subject fallback retains its
+subject-namespaced key.
+
+**Why:** paging separately for simultaneous channels turns one outage into
+several urgent interruptions. The full set plus per-subject sequence makes the
+combined message idempotent for racing workers while preserving a fresh page
+when the set or a cooldown window changes.
 
 **How to apply:** any new emergency/fallback notification path (SMS, push,
 etc.) layered over an outbox-based alert. Platform-level (salon-less) SMS
