@@ -383,7 +383,7 @@ export async function checkCacheInvariants(): Promise<CacheInvariantResult[]> {
         if (seenOpen && depth === 0) { handlerEnd = i; break; }
       }
       const body = lines.slice(handlerStart, handlerEnd + 1);
-      const updateIdx = body.findIndex((line) => /db\.update\(salonsTable\)/.test(line));
+      const updateIdx = body.findIndex((line) => /\b(?:db|tx)\.update\(salonsTable\)/.test(line));
       const afterUpdate = updateIdx === -1 ? [] : body.slice(updateIdx + 1);
       const broadcastsSalons = afterUpdate.some((line) => /publishCatalogInvalidation\(\s*\[[^\]]*["'`]salons["'`]/.test(line));
       salonInvalidationOk = updateIdx !== -1 && broadcastsSalons;
