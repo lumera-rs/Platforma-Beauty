@@ -24,9 +24,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 import { rangePresets, toDateParam } from "@/lib/date-range-presets";
@@ -42,6 +43,8 @@ function rate(part: number, total: number) {
 
 /** Page size for the attributed-appointments drill-down list. */
 const ATTRIBUTED_PAGE_SIZE = 25;
+const CANCELLATION_FLAG_THRESHOLD = 1 / 3;
+const CANCELLATION_FLAG_MIN_VOLUME = 3;
 const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] = [
   { value: "7d", label: "7 dana" },
   { value: "30d", label: "30 dana" },
@@ -64,6 +67,24 @@ function srCount(n: number, one: string, few: string, many: string): string {
 function formatRangeLabel(range: DateRange | undefined): string | null {
   if (!range?.from || !range?.to) return null;
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
+}
+
+function getCancellationFlag(item: {
+  attributedAppointments?: number | null;
+  cancelledAttributedAppointments?: number | null;
+}) {
+  const attributedAppointments = item.attributedAppointments ?? 0;
+  const cancelledAppointments = item.cancelledAttributedAppointments ?? 0;
+  const totalAttributedBookings = attributedAppointments + cancelledAppointments;
+  const cancellationShare = totalAttributedBookings > 0
+    ? cancelledAppointments / totalAttributedBookings
+    : 0;
+
+  return {
+    isFlagged: totalAttributedBookings >= CANCELLATION_FLAG_MIN_VOLUME
+      && cancellationShare >= CANCELLATION_FLAG_THRESHOLD,
+    cancellationShare,
+  };
 }
 
 function periodDescription(period: StatsPeriod, customRange: DateRange | undefined): string {
@@ -272,17 +293,42 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.ruleId} className="border-b last:border-b-0 align-top" data-testid={`overview-row-${item.ruleId}`}>
+              {items.map((item) => {
+                const cancellationFlag = getCancellationFlag(item);
+                const cancellationShareLabel = `${Math.round(cancellationFlag.cancellationShare * 100)}%`;
+                const totalAttributedBookings = (item.attributedAppointments ?? 0) + (item.cancelledAttributedAppointments ?? 0);
+                const cancellationExplanation = `Visok udeo otkazanih termina: ${cancellationShareLabel} (${item.cancelledAttributedAppointments ?? 0} od ${totalAttributedBookings} kampanjom pripisanih termina). Proverite poruke, ponude ili publiku kampanje.`;
+                return (
+                <tr key={item.ruleId} className={`border-b last:border-b-0 align-top ${cancellationFlag.isFlagged ? "bg-amber-50/70" : ""}`} data-testid={`overview-row-${item.ruleId}`}>
                   <td className="py-3 pr-4">
-                    <button
-                      type="button"
-                      className="font-medium text-foreground hover:underline text-left"
-                      onClick={() => onShowStats(item.ruleId)}
-                      title="Otvori detaljnu statistiku"
-                    >
-                      {item.ruleName}
-                    </button>
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        className="font-medium text-foreground hover:underline text-left"
+                        onClick={() => onShowStats(item.ruleId)}
+                        title="Otvori detaljnu statistiku"
+                      >
+                        {item.ruleName}
+                      </button>
+                      {cancellationFlag.isFlagged && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              role="img"
+                              tabIndex={0}
+                              aria-label={cancellationExplanation}
+                              data-testid={`overview-cancellation-flag-${item.ruleId}`}
+                              className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full text-amber-700 outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-1"
+                            >
+                              <AlertTriangle className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-center">
+                            {cancellationExplanation} Proverite poruke, ponude ili publiku kampanje.
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
                     <div className="mt-1 flex items-center gap-2">
                       {item.ruleStatus === 'active'
                         ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none">Aktivno</Badge>
@@ -357,7 +403,8 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
