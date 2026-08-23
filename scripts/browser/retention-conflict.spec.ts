@@ -13,6 +13,8 @@
  *     just saved.
  *  3. Re-confirming (confirm-retention-conflict) retries with the refreshed
  *     version and records admin A's values as a new version.
+ *  4. Cancelling (cancel-retention-conflict) keeps admin B's newer version
+ *     active and replaces admin A's abandoned form values.
  *
  * Cleanup follows the existing suite's version-watermark pattern: the max
  * version is captured before the test and every row above it is deleted
@@ -64,6 +66,14 @@ async function hashPassword(value: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const derived = await scrypt(value, salt, 64) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
+}
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 test.beforeAll(async () => {
@@ -202,6 +212,188 @@ test("a concurrent admin save opens the conflict dialog and re-confirm records a
     const activeAfterConfirm = await (await apiB.get(settingsPath)).json();
     expect(activeAfterConfirm.version).toBe(baselineVersion + 2);
     expect(activeAfterConfirm.thresholds.newCustomerWindowDays).toBe(ADMIN_A_WINDOW_DAYS);
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("cancelling the conflict keeps the newer version and resets the form", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // Admin B works through a separate API session, like a second browser.
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Establish a known baseline version for deterministic assertions.
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    // Admin A signs in and loads the settings page at the baseline version.
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion}`);
+
+    // Admin A edits a threshold but has not saved yet.
+    await windowInput.fill(String(ADMIN_A_WINDOW_DAYS));
+
+    // Admin B saves a different value first — the active version moves on.
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...BASELINE_THRESHOLDS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+    expect((await concurrentResponse.json()).version).toBe(baselineVersion + 1);
+
+    // Admin A saves → the server answers 409 and the conflict dialog opens.
+    const conflictSave = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("save-retention-settings").click();
+    expect((await conflictSave).status(), "the stale save must be rejected with 409").toBe(409);
+
+    const conflictDialog = page.getByTestId("retention-conflict-dialog");
+    await expect(conflictDialog).toBeVisible();
+
+    // Wait for the conflict refresh before exercising the ordinary cancel
+    // path; this makes the post-close assertion independent of request timing.
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+
+    // Backing out must discard admin A's pending value without writing it.
+    await page.getByTestId("cancel-retention-conflict").click();
+    await expect(conflictDialog).not.toBeVisible();
+
+    // The active version is still exactly admin B's version: cancelling did
+    // not record another settings version.
+    const activeAfterCancel = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterCancel.version).toBe(baselineVersion + 1);
+    expect(activeAfterCancel.thresholds).toEqual({
+      ...BASELINE_THRESHOLDS,
+      newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+    });
+
+    // The form follows the active settings after the conflict closes rather
+    // than showing admin A's abandoned value.
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("immediately cancelling a conflict waits for newer settings before closing", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // Hold the conflict refresh and the cancellation fetch independently. This
+  // proves cancellation cannot close the dialog until its own confirmed read
+  // returns, even if the original refresh is still in transit.
+  const conflictRefreshStarted = createDeferred();
+  const releaseConflictRefresh = createDeferred();
+  const cancellationFetchStarted = createDeferred();
+  const releaseCancellationFetch = createDeferred();
+  let gateSettingsRequests = false;
+  let gatedGetCount = 0;
+  await page.route(`**${settingsPath}`, async (route) => {
+    if (gateSettingsRequests && route.request().method() === "GET") {
+      gatedGetCount += 1;
+      if (gatedGetCount === 1) {
+        conflictRefreshStarted.resolve();
+        await releaseConflictRefresh.promise;
+      } else if (gatedGetCount === 2) {
+        cancellationFetchStarted.resolve();
+        await releaseCancellationFetch.promise;
+      }
+    }
+    await route.continue();
+  });
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await windowInput.fill(String(ADMIN_A_WINDOW_DAYS));
+
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...BASELINE_THRESHOLDS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+
+    gateSettingsRequests = true;
+    const conflictSave = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("save-retention-settings").click();
+    expect((await conflictSave).status(), "the stale save must be rejected with 409").toBe(409);
+
+    const conflictDialog = page.getByTestId("retention-conflict-dialog");
+    await expect(conflictDialog).toBeVisible();
+    await conflictRefreshStarted.promise;
+
+    // Cancel while the original refresh is held. Its own request must start,
+    // and the dialog must stay open until that request gets a response.
+    await page.getByTestId("cancel-retention-conflict").click();
+    await cancellationFetchStarted.promise;
+    await expect(conflictDialog).toBeVisible();
+    await expect(page.getByTestId("cancel-retention-conflict")).toBeDisabled();
+
+    // Releasing the aborted original refresh cannot close the dialog or
+    // replace the cancellation read's eventual cache value.
+    releaseConflictRefresh.resolve();
+    await expect(conflictDialog).toBeVisible();
+    releaseCancellationFetch.resolve();
+    await expect(conflictDialog).not.toBeVisible();
+
+    const activeAfterImmediateCancel = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterImmediateCancel.version).toBe(baselineVersion + 1);
+    expect(activeAfterImmediateCancel.thresholds).toEqual({
+      ...BASELINE_THRESHOLDS,
+      newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+    });
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
   } finally {
     await apiB.dispose();
   }

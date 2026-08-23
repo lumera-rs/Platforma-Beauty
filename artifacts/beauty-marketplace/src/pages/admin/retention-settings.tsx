@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminLayout } from "./layout";
 import {
   useAdminGetRetentionSettings,
+  adminGetRetentionSettings,
   useAdminUpdateRetentionSettings,
   useAdminPreviewRetentionSettings,
   useAdminGetRetentionSettingsHistory,
@@ -120,6 +121,9 @@ export default function AdminRetentionSettings() {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
   const [conflict, setConflict] = useState<VersionConflict | null>(null);
+  const [isDiscardingConflict, setIsDiscardingConflict] = useState(false);
+  const conflictDismissalInFlight = useRef(false);
+  const conflictRefreshController = useRef<AbortController | null>(null);
 
   /**
    * Parsed values held while the "these values change nothing" confirmation is
@@ -220,15 +224,30 @@ export default function AdminRetentionSettings() {
   };
 
   /**
-   * Refetch the active settings + history after a version conflict, so the
-   * page shows the values the other admin just saved (the form is reset from
-   * the fresh settings by the effect above).
+   * Refresh the active settings after a version conflict without allowing an
+   * older query response to refill the cache after a later cancellation read.
    */
-  const refreshAfterConflict = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() }),
-      queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() }),
-    ]);
+  const refreshAfterConflict = async () => {
+    conflictRefreshController.current?.abort();
+    const controller = new AbortController();
+    conflictRefreshController.current = controller;
+    await queryClient.cancelQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
+    try {
+      const activeSettings = await adminGetRetentionSettings({ signal: controller.signal });
+      if (controller.signal.aborted) return;
+      queryClient.setQueryData(getAdminGetRetentionSettingsQueryKey(), activeSettings);
+      await queryClient.invalidateQueries({
+        queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
+      });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      throw error;
+    } finally {
+      if (conflictRefreshController.current === controller) {
+        conflictRefreshController.current = null;
+      }
+    }
+  };
 
   /**
    * Single write path for save, restore, and conflict re-confirmation.
@@ -276,7 +295,9 @@ export default function AdminRetentionSettings() {
             changedByName: conflictDetails.changedByName,
             changedAt: conflictDetails.changedAt,
           });
-          void refreshAfterConflict();
+          void refreshAfterConflict().catch((refreshError) => {
+            toast.error(extractApiError(refreshError, "Nove vrednosti nisu mogle da se učitaju."));
+          });
           toast.error("Drugi administrator je u međuvremenu sačuvao izmene. Proverite nove vrednosti i potvrdite ponovo.");
           return;
         }
@@ -344,6 +365,34 @@ export default function AdminRetentionSettings() {
     // when it is still truthful (restoring version N is unaffected by the
     // concurrent change; restoring defaults still matches the defaults).
     performUpdate(conflict.pending, conflict.origin);
+  };
+
+  /**
+   * Discard pending values only after loading the latest active version.
+   * The 409 refresh starts in the background, so a dialog may be dismissed
+   * before it reaches the cache; fetching directly here keeps stale form
+   * values from surviving that timing window.
+   */
+  const handleCancelConflict = async () => {
+    if (conflictDismissalInFlight.current) return;
+    conflictDismissalInFlight.current = true;
+    setIsDiscardingConflict(true);
+    try {
+      conflictRefreshController.current?.abort();
+      await queryClient.cancelQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
+      const activeSettings = await adminGetRetentionSettings();
+      queryClient.setQueryData(getAdminGetRetentionSettingsQueryKey(), activeSettings);
+      loadFormFromSettings(activeSettings);
+      setConflict(null);
+      await queryClient.invalidateQueries({
+        queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
+      });
+    } catch (err) {
+      toast.error(extractApiError(err, "Nove vrednosti nisu mogle da se učitaju. Pokušajte ponovo."));
+    } finally {
+      conflictDismissalInFlight.current = false;
+      setIsDiscardingConflict(false);
+    }
   };
 
   // A restore whose values equal the active thresholds would only clutter the
@@ -853,7 +902,12 @@ export default function AdminRetentionSettings() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <AlertDialog open={conflict !== null} onOpenChange={(open) => { if (!open) setConflict(null); }}>
+        <AlertDialog
+          open={conflict !== null}
+          onOpenChange={(open) => {
+            if (!open && conflict) void handleCancelConflict();
+          }}
+        >
           <AlertDialogContent data-testid="retention-conflict-dialog">
             <AlertDialogHeader>
               <AlertDialogTitle>Drugi administrator je sačuvao novije izmene</AlertDialogTitle>
@@ -896,7 +950,11 @@ export default function AdminRetentionSettings() {
               );
             })()}
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-retention-conflict">
+              <AlertDialogCancel
+                disabled={updateMutation.isPending || isDiscardingConflict}
+                data-testid="cancel-retention-conflict"
+              >
+                {isDiscardingConflict && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Zadrži novije vrednosti
               </AlertDialogCancel>
               <AlertDialogAction
@@ -904,7 +962,7 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   handleConfirmConflict();
                 }}
-                disabled={updateMutation.isPending}
+                disabled={updateMutation.isPending || isDiscardingConflict}
                 data-testid="confirm-retention-conflict"
               >
                 {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
