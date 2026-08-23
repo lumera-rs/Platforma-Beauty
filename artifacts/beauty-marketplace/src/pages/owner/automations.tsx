@@ -930,22 +930,40 @@ export default function OwnerAutomations() {
                       { value: "all", label: "Svi" },
                       { value: "new", label: "Novi" },
                       { value: "returning", label: "Vraćeni" },
-                    ] as const).map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setAttributedClientType(opt.value)}
-                        aria-pressed={attributedClientType === opt.value}
-                        data-testid={`client-type-${opt.value}`}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                          attributedClientType === opt.value
-                            ? "bg-background text-foreground shadow-sm border"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                    ] as const).map((opt) => {
+                      // Per-segment count for the selected period, from the
+                      // same period-wide mix as the summary line ("Svi" sums
+                      // all three buckets, unknown included, so it matches
+                      // the unfiltered list total). Hidden until the first
+                      // page for this period arrives; stable while switching
+                      // segments because the mix ignores the active filter.
+                      const count = attributedMix === null
+                        ? null
+                        : opt.value === "all"
+                          ? attributedMix.newClientCount + attributedMix.returningClientCount + attributedMix.unknownClientCount
+                          : opt.value === "new"
+                            ? attributedMix.newClientCount
+                            : attributedMix.returningClientCount;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setAttributedClientType(opt.value)}
+                          aria-pressed={attributedClientType === opt.value}
+                          data-testid={`client-type-${opt.value}`}
+                          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                            attributedClientType === opt.value
+                              ? "bg-background text-foreground shadow-sm border"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {opt.label}
+                          {count !== null && (
+                            <span data-testid={`client-type-count-${opt.value}`}> ({count})</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 {attributedMix && (attributedMix.newClientCount + attributedMix.returningClientCount + attributedMix.unknownClientCount) > 0 && (
