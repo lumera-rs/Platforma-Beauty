@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { expect, request, test } from "@playwright/test";
 import { gt, inArray } from "drizzle-orm";
 import { db, platformRetentionSettingsTable, usersTable } from "@workspace/db";
+import { acquireRetentionSettingsLock } from "./retention-settings-lock";
 
 const scrypt = promisify(scryptCallback);
 
@@ -57,6 +58,7 @@ const adminB = { email: `browser-retention-conflict-admin-b-${suffix}@example.te
 
 const createdUserIds: string[] = [];
 let versionWatermark = 0;
+let releaseRetentionSettingsLock: (() => Promise<void>) | undefined;
 
 async function hashPassword(value: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -65,6 +67,12 @@ async function hashPassword(value: string): Promise<string> {
 }
 
 test.beforeAll(async () => {
+  // A sibling retention spec may hold the lock for its full test; wait it out.
+  test.setTimeout(300_000);
+  // Serialize with the sibling retention specs: the watermark below is only
+  // safe while no other file writes retention versions concurrently.
+  releaseRetentionSettingsLock = await acquireRetentionSettingsLock();
+
   // Watermark: versions recorded by this run are removed afterwards.
   const versions = await db
     .select({ version: platformRetentionSettingsTable.version })
@@ -95,12 +103,19 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Remove only rows created by this run; earlier versions stay untouched, so
-  // the pre-test active settings become the highest (active) version again.
-  await db.delete(platformRetentionSettingsTable)
-    .where(gt(platformRetentionSettingsTable.version, versionWatermark));
-  if (createdUserIds.length > 0) {
-    await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+  try {
+    // Remove only rows created by this run; earlier versions stay untouched,
+    // so the pre-test active settings become the highest (active) version
+    // again.
+    await db.delete(platformRetentionSettingsTable)
+      .where(gt(platformRetentionSettingsTable.version, versionWatermark));
+    if (createdUserIds.length > 0) {
+      await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+    }
+  } finally {
+    // Only hand the table to the next retention spec once cleanup restored
+    // the pre-test state.
+    await releaseRetentionSettingsLock?.();
   }
 });
 

@@ -1,25 +1,29 @@
 /**
- * Restore-through-conflict on retention settings — browser regression.
+ * Restore-defaults-through-conflict on retention settings — browser regression.
  *
- * Restores share the single write path (performUpdate with expectedVersion)
- * with manual saves on /admin/retencija, so a restore attempted from a stale
- * page must hit the same conflict dialog. The server side of this contract is
- * covered by artifacts/api-server/src/lib/retention-settings.test.ts; this
- * spec proves the browser interplay:
+ * The second restore flavor, "Vrati podrazumevane vrednosti" (changeSource
+ * restore_defaults), shares the single write path (performUpdate with
+ * expectedVersion) with manual saves and version restores on /admin/retencija.
+ * scripts/browser/retention-restore-conflict.spec.ts already proves the
+ * conflict interplay for version restores; this spec proves the same contract
+ * for the defaults restore:
  *
- *  1. Admin A opens the restore dialog for an older version while admin B
- *     saves a newer version through PUT /api/growth/admin/retention-settings.
+ *  1. Active settings differ from the platform defaults, so admin A can open
+ *     the defaults-restore dialog (restore-retention-defaults) while admin B
+ *     saves a different non-default value through
+ *     PUT /api/growth/admin/retention-settings.
  *  2. Confirming the restore must be rejected with 409 and open the conflict
  *     dialog (retention-conflict-dialog) — not silently overwrite admin B's
  *     values and not fall back to a generic error toast.
  *  3. Re-confirming (confirm-retention-conflict) retries against the
- *     refreshed version and the new active version keeps its truthful restore
- *     audit label ("Vraćeno iz verzije N" / changeSource restore_version) on
- *     the active-settings badge, in the history, and in the API payload.
+ *     refreshed version and the new active version keeps its truthful
+ *     defaults-restore audit label ("Vraćene podrazumevane vrednosti" /
+ *     changeSource restore_defaults) on the active-settings badge, in the
+ *     history, and in the API payload.
  *
- * Cleanup follows scripts/browser/retention-conflict.spec.ts: the max version
- * is captured before the test and every row above that watermark is deleted
- * afterwards, restoring the pre-test active settings exactly.
+ * Cleanup follows the sibling retention specs: the max version is captured
+ * before the test and every row above that watermark is deleted afterwards,
+ * restoring the pre-test active settings exactly.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -34,11 +38,12 @@ const baseURL = process.env.LUMERA_WEB_BASE_URL ?? "http://localhost:80";
 const settingsPath = "/api/growth/admin/retention-settings";
 
 /**
- * Deterministic baseline written as the first version of this run — this is
- * the "older version" admin A later restores (values match the platform
- * defaults, so assertions never depend on the shared development database).
+ * The platform defaults the restore writes back. Kept in the spec so the
+ * assertions are self-describing; the test cross-checks them against the
+ * `defaults` object the API reports before relying on them, so a drift in
+ * the platform defaults fails loudly instead of asserting the wrong values.
  */
-const BASELINE_THRESHOLDS = {
+const PLATFORM_DEFAULTS = {
   newCustomerWindowDays: 45,
   defaultIntervalDays: 45,
   atRiskIntervalPercent: 150,
@@ -49,22 +54,23 @@ const BASELINE_THRESHOLDS = {
 };
 
 /**
- * The value that makes the second version differ from the baseline, so the
- * baseline becomes a restorable (non-active, non-identical) older version.
+ * The non-default value that makes the defaults-restore button appear for
+ * admin A (active settings must differ from the defaults).
  */
-const SECOND_VERSION_WINDOW_DAYS = 30;
+const NON_DEFAULT_WINDOW_DAYS = 30;
 /**
- * The different value admin B saves while admin A's restore dialog is open.
- * Distinct from both the baseline (45) and the second version (30), so the
- * restore stays a real change (never a NO_OP_RESTORE) and the conflict diff
- * is unambiguous about which value it crosses out.
+ * The different non-default value admin B saves while admin A's
+ * defaults-restore dialog is open. Distinct from the default (45) so the
+ * re-confirmed restore stays a real change (never a NO_OP_RESTORE), and
+ * distinct from the first non-default value (30) so the conflict diff is
+ * unambiguous about which value it crosses out.
  */
 const ADMIN_B_WINDOW_DAYS = 21;
 
 const suffix = randomUUID();
-const password = "browser-retention-restore-conflict-password";
-const adminA = { email: `browser-retention-restore-admin-a-${suffix}@example.test` };
-const adminB = { email: `browser-retention-restore-admin-b-${suffix}@example.test` };
+const password = "browser-retention-defaults-conflict-password";
+const adminA = { email: `browser-retention-defaults-admin-a-${suffix}@example.test` };
+const adminB = { email: `browser-retention-defaults-admin-b-${suffix}@example.test` };
 
 const createdUserIds: string[] = [];
 let versionWatermark = 0;
@@ -93,7 +99,7 @@ test.beforeAll(async () => {
   const inserted = await db.insert(usersTable).values([
     {
       firstName: "Browser",
-      lastName: "Restore Admin A",
+      lastName: "Defaults Admin A",
       email: adminA.email,
       passwordHash,
       passwordSetAt: new Date(),
@@ -101,14 +107,14 @@ test.beforeAll(async () => {
     },
     {
       firstName: "Browser",
-      lastName: "Restore Admin B",
+      lastName: "Defaults Admin B",
       email: adminB.email,
       passwordHash,
       passwordSetAt: new Date(),
       role: "ADMIN",
     },
   ]).returning();
-  if (inserted.length !== 2) throw new Error("The restore-conflict fixture could not create both admins.");
+  if (inserted.length !== 2) throw new Error("The defaults-conflict fixture could not create both admins.");
   createdUserIds.push(...inserted.map((user) => user.id));
 });
 
@@ -129,7 +135,7 @@ test.afterAll(async () => {
   }
 });
 
-test("a restore from a stale page opens the conflict dialog and re-confirm keeps the restore label", async ({ page }) => {
+test("a defaults restore from a stale page opens the conflict dialog and re-confirm keeps the defaults label", async ({ page }) => {
   test.setTimeout(120_000);
 
   // Admin B works through a separate API session, like a second browser.
@@ -140,58 +146,57 @@ test("a restore from a stale page opens the conflict dialog and re-confirm keeps
     });
     expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
 
-    // Version 1 of this run: the restorable baseline.
+    // Guard the hardcoded defaults against drift before asserting with them.
     const before = await (await apiB.get(settingsPath)).json();
-    const baselineResponse = await apiB.put(settingsPath, {
-      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
-    });
-    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
-    const baselineVersion = (await baselineResponse.json()).version as number;
-    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+    expect(before.defaults, "the platform defaults the spec assumes must match the API")
+      .toEqual(PLATFORM_DEFAULTS);
 
-    // Version 2 of this run: makes the baseline an older, non-active version
-    // whose values differ from the active ones (so restoring it is a change).
-    const secondResponse = await apiB.put(settingsPath, {
+    // Version 1 of this run: a non-default value, so the active settings
+    // differ from the defaults and the restore-defaults button appears.
+    const nonDefaultResponse = await apiB.put(settingsPath, {
       data: {
-        ...BASELINE_THRESHOLDS,
-        newCustomerWindowDays: SECOND_VERSION_WINDOW_DAYS,
-        expectedVersion: baselineVersion,
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
       },
     });
-    expect(secondResponse.ok(), "the second save must succeed").toBe(true);
-    const secondVersion = (await secondResponse.json()).version as number;
-    expect(secondVersion).toBe(baselineVersion + 1);
+    expect(nonDefaultResponse.ok(), "the non-default save must succeed").toBe(true);
+    const nonDefaultVersion = (await nonDefaultResponse.json()).version as number;
+    expect(nonDefaultVersion).toBeGreaterThan(versionWatermark);
 
-    // Admin A signs in and loads the settings page at the second version.
+    // Admin A signs in and loads the settings page at the non-default version.
     const loginA = await page.request.post("/api/auth/login", {
       data: { email: adminA.email, password },
     });
     expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
     await page.goto("/admin/retencija");
 
-    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${secondVersion}`);
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${nonDefaultVersion}`);
     await expect(page.getByTestId("input-newCustomerWindowDays"))
-      .toHaveValue(String(SECOND_VERSION_WINDOW_DAYS));
+      .toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
 
-    // Admin A opens the restore dialog for the older baseline version. The
-    // dialog's diff crosses out the currently active value (30 → 45).
-    await page.getByTestId(`restore-retention-v${baselineVersion}`).click();
+    // Admin A opens the defaults-restore dialog. The dialog's diff crosses
+    // out the currently active value (30 → 45).
+    await page.getByTestId("restore-retention-defaults").click();
     const restoreDialog = page.getByTestId("restore-retention-dialog");
     await expect(restoreDialog).toBeVisible();
-    await expect(restoreDialog.locator(".line-through")).toHaveText(String(SECOND_VERSION_WINDOW_DAYS));
-    await expect(restoreDialog).toContainText(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await expect(restoreDialog).toContainText("Vrati podrazumevane vrednosti platforme?");
+    await expect(restoreDialog.locator(".line-through")).toHaveText(String(NON_DEFAULT_WINDOW_DAYS));
+    await expect(restoreDialog).toContainText(String(PLATFORM_DEFAULTS.newCustomerWindowDays));
 
-    // While the dialog is open, admin B saves a different value first — the
-    // active version moves on underneath admin A's page.
+    // While the dialog is open, admin B saves a different non-default value
+    // first — the active version moves on underneath admin A's page. The
+    // value stays non-default so the re-confirmed restore remains a real
+    // change (never a NO_OP_RESTORE).
     const concurrentResponse = await apiB.put(settingsPath, {
       data: {
-        ...BASELINE_THRESHOLDS,
+        ...PLATFORM_DEFAULTS,
         newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
-        expectedVersion: secondVersion,
+        expectedVersion: nonDefaultVersion,
       },
     });
     expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
-    expect((await concurrentResponse.json()).version).toBe(secondVersion + 1);
+    expect((await concurrentResponse.json()).version).toBe(nonDefaultVersion + 1);
 
     // Admin A confirms the restore → the server answers 409 and the restore
     // dialog is replaced by the conflict dialog.
@@ -200,21 +205,21 @@ test("a restore from a stale page opens the conflict dialog and re-confirm keeps
       && new URL(response.url()).pathname === settingsPath,
     );
     await page.getByTestId("confirm-restore-retention").click();
-    expect((await conflictSave).status(), "the stale restore must be rejected with 409").toBe(409);
+    expect((await conflictSave).status(), "the stale defaults restore must be rejected with 409").toBe(409);
 
     const conflictDialog = page.getByTestId("retention-conflict-dialog");
     await expect(conflictDialog).toBeVisible();
     await expect(restoreDialog).not.toBeVisible();
 
-    // The diff compares admin B's just-saved value with the pending restore
+    // The diff compares admin B's just-saved value with the pending default
     // values (the page refetches the newer settings when the conflict hits).
     const conflictDiff = page.getByTestId("retention-conflict-diff");
     await expect(conflictDiff.locator(".line-through")).toHaveText(String(ADMIN_B_WINDOW_DAYS));
-    await expect(conflictDiff).toContainText(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await expect(conflictDiff).toContainText(String(PLATFORM_DEFAULTS.newCustomerWindowDays));
 
     // Nothing was silently overwritten: admin B's version is still active.
     const activeDuringConflict = await (await apiB.get(settingsPath)).json();
-    expect(activeDuringConflict.version).toBe(secondVersion + 1);
+    expect(activeDuringConflict.version).toBe(nonDefaultVersion + 1);
     expect(activeDuringConflict.thresholds.newCustomerWindowDays).toBe(ADMIN_B_WINDOW_DAYS);
 
     // Re-confirm retries against the refreshed version and succeeds.
@@ -223,29 +228,34 @@ test("a restore from a stale page opens the conflict dialog and re-confirm keeps
       && new URL(response.url()).pathname === settingsPath,
     );
     await page.getByTestId("confirm-retention-conflict").click();
-    expect((await retriedSave).status(), "the re-confirmed restore must succeed").toBe(200);
+    expect((await retriedSave).status(), "the re-confirmed defaults restore must succeed").toBe(200);
     await expect(conflictDialog).not.toBeVisible();
 
-    const finalVersion = secondVersion + 2;
+    const finalVersion = nonDefaultVersion + 2;
     await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${finalVersion}`);
     await expect(page.getByTestId("input-newCustomerWindowDays"))
-      .toHaveValue(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+      .toHaveValue(String(PLATFORM_DEFAULTS.newCustomerWindowDays));
 
-    // The re-confirmed version keeps its truthful restore label — on the
-    // active-settings badge and in the history entry for the new version.
+    // The re-confirmed version keeps its truthful defaults-restore label —
+    // on the active-settings badge and in the history entry for the new
+    // version.
     await expect(page.getByTestId("retention-settings-source"))
-      .toHaveText(`Vraćeno iz verzije ${baselineVersion}`);
+      .toHaveText("Vraćene podrazumevane vrednosti");
     await expect(page.getByTestId(`retention-source-v${finalVersion}`))
-      .toHaveText(`Vraćeno iz verzije ${baselineVersion}`);
+      .toHaveText("Vraćene podrazumevane vrednosti");
     await expect(page.getByTestId(`retention-active-v${finalVersion}`)).toBeVisible();
 
-    // The API payload records the restore provenance, not a manual save.
+    // The active settings now equal the defaults, so the restore-defaults
+    // button disappears (nothing left to restore).
+    await expect(page.getByTestId("restore-retention-defaults")).not.toBeVisible();
+
+    // The API payload records the defaults-restore provenance, not a manual
+    // save and not a version restore.
     const activeAfterConfirm = await (await apiB.get(settingsPath)).json();
     expect(activeAfterConfirm.version).toBe(finalVersion);
-    expect(activeAfterConfirm.changeSource).toBe("restore_version");
-    expect(activeAfterConfirm.restoredFromVersion).toBe(baselineVersion);
-    expect(activeAfterConfirm.thresholds.newCustomerWindowDays)
-      .toBe(BASELINE_THRESHOLDS.newCustomerWindowDays);
+    expect(activeAfterConfirm.changeSource).toBe("restore_defaults");
+    expect(activeAfterConfirm.restoredFromVersion).toBeNull();
+    expect(activeAfterConfirm.thresholds).toEqual(PLATFORM_DEFAULTS);
   } finally {
     await apiB.dispose();
   }

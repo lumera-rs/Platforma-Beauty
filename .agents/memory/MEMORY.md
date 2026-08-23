@@ -53,6 +53,7 @@
 - [Wouter query-string reactivity](wouter-query-string-reactivity.md) — useLocation() tracks only the pathname; query-driven UI must subscribe via useSearch() or same-path ?param navigation never re-renders.
 - [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
 - [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
+- [Browser suite shared-state locks](browser-suite-shared-state-locks.md) — spec files writing one global table need a file-lifetime advisory lock; fullyParallel:false doesn't serialize across files.
 - [SPA unsaved-navigation guard](spa-unsaved-navigation-guard.md) — Back/Forward guards must hook history ahead of the router; page-local popstate listeners are removed mid-dispatch on unmount.
 - [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path's exact audience and phone predicate, never a re-derived query.
 - [Modal dialog background controls](modal-dialog-background-controls.md) — modal overlays block real clicks on page controls; test dialog-open state changes via dispatchEvent("click") and mutation-check the guard.
