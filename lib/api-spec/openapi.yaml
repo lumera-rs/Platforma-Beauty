@@ -4213,14 +4213,14 @@ paths:
             schema: { $ref: "#/components/schemas/RetentionThresholds" }
       responses:
         "200":
-          description: Platform-wide per-status counts under current vs. candidate thresholds
+          description: Platform-wide per-status counts under current vs. candidate thresholds; above the exact-preview cap the counts are extrapolated from a uniform random sample and flagged with isEstimate/sampleSize
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RetentionSettingsPreview" }
         "400": { description: Validation error (out-of-range or inconsistent thresholds) }
         "401": { description: Authentication required }
         "403": { description: Admin access required }
-        "503": { description: Preview temporarily unavailable — dataset exceeds the row-count cap or the computation exceeded its time budget (friendly message in `error`) }
+        "503": { description: "Preview temporarily unavailable — the computation exceeded its time budget, or a single customer's history exceeds the per-batch row budget (friendly message in `error`)" }
 
   /growth/admin/retention-settings/history:
     get:
@@ -7379,14 +7379,20 @@ components:
           items: { $ref: "#/components/schemas/RetentionReclassificationShift" }
         topAffectedSalons:
           type: array
-          description: "Salons with the most reclassified customers, largest first (top 10)"
+          description: "Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample"
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
         topShareAffectedSalons:
           type: array
           description: "Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify"
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
         shareRankingMinCustomers: { type: number, description: "Minimum customers a salon needs to qualify for the share-based ranking" }
-      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers]
+        isEstimate:
+          type: boolean
+          description: "True when the platform exceeded the exact-preview cap and counts (except totalCustomers) were extrapolated from a uniform random customer sample; render such values as approximate (~), never as exact; both per-salon rankings are empty in estimate mode"
+        sampleSize:
+          type: ["number", "null"]
+          description: "Customers actually classified when isEstimate is true; null in exact mode"
+      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
 
     RetentionSettingsUpdate:
       allOf:

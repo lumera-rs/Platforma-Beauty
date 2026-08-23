@@ -20,11 +20,13 @@
  * 11b. Preview dry-runs candidate thresholds: identity candidate moves nobody,
  *     a tuned candidate reports counts + shifts, and NO settings version or
  *     row is ever recorded (including for invalid candidates → 400)
- * 11c. Preview guards: a row-count cap and a time budget (both env-tunable)
- *     turn an oversized/slow preview into a friendly 503 instead of stalling
- *     the admin page — including when a SINGLE (final) batch overruns the
- *     budget after its work (deterministic fault-injected batch delay); the
- *     preview recovers once the guards are lifted
+ * 11c. Preview guards: above the (env-tunable) row-count cap the preview
+ *     falls back to a clearly-flagged sampled estimate (isEstimate +
+ *     sampleSize, sample clamped to the cap, boundary inclusive) instead of
+ *     refusing; the time budget still turns a slow preview into a friendly
+ *     503 — including when a SINGLE (final) batch overruns the budget after
+ *     its work (deterministic fault-injected batch delay); the preview
+ *     returns to exact mode once the guards are lifted
  * 11d. Preview building blocks: the database-side statement_timeout cancels a
  *     slow query and surfaces as the friendly overload error, and SQL
  *     percentile_cont agrees exactly with computeSalonMedianSpend for odd and
@@ -32,7 +34,9 @@
  * 16. Volume benchmark: with a realistic seeded volume (30 extra salons,
  *     12,000+ customers, 27,000 appointments including deep per-customer
  *     histories) the keyset-batched preview still answers correctly within
- *     the response-time bound
+ *     the response-time bound; forcing estimate mode over the same volume
+ *     answers a flagged estimate just as fast whose extrapolated counts land
+ *     within a sampling-error corridor of the exact run
  * 12. Owner CRM list flips a 3-visit customer ACTIVE → VIP when the admin
  *     lowers vipMinCompletedVisits, and reports the active version
  * 13. Owner CRM detail turns AT_RISK → LOST under tuned lost thresholds and
@@ -550,6 +554,7 @@ async function integrationTests() {
     );
     console.log("✓ Share ranking respects the minimum-customer floor and share order");
 
+
     // Invalid candidate → 400 (same validation as PUT).
     const badPreviewRes = await postPreview({
       ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 300, lostIntervalPercent: 300,
@@ -566,20 +571,68 @@ async function integrationTests() {
     assert.equal(rowsAfterPreview.length, 0, "preview inserts no settings rows");
     console.log("✓ Preview dry-runs candidate thresholds without persisting");
 
-    // ── 11c. Preview guards: row-count cap + time budget → friendly 503 ─────
+    // ── 11c. Preview guards: sampled fallback above the cap + time budget ───
     try {
-      // Cap of 1 customer: the platform has at least the 3 fixture customers,
-      // so the row-count guard must trip BEFORE any data is loaded.
-      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = "1";
-      const cappedRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
-      assert.equal(cappedRes.status, 503, "over-cap preview returns 503, not a stall or a 500");
-      const capped = (await cappedRes.json()) as any;
-      assert.equal(capped.code, "PREVIEW_TOO_LARGE");
+      // Baseline exact preview: below the cap the counts are exact and carry
+      // no estimate flag. Its totalCustomers pins the platform size for the
+      // boundary assertions below.
+      const exactBaseline = (await (await postPreview(DEFAULT_RETENTION_THRESHOLDS)).json()) as any;
+      assert.equal(exactBaseline.isEstimate, false, "below the cap the preview stays exact");
+      assert.equal(exactBaseline.sampleSize, null, "exact mode reports no sample size");
+      const platformCustomers = exactBaseline.totalCustomers as number;
+      assert.ok(platformCustomers >= 3, "fixtures guarantee at least 3 customers");
+
+      // Boundary: cap == platform size → still exact (the cap is inclusive).
+      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = String(platformCustomers);
+      const atCapRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+      assert.equal(atCapRes.status, 200);
+      const atCap = (await atCapRes.json()) as any;
+      assert.equal(atCap.isEstimate, false, "exact mode holds up to and including the cap");
+      assert.equal(atCap.totalCustomers, platformCustomers);
+
+      // One over the cap → the preview no longer refuses: it answers with a
+      // sampled estimate, clearly flagged. Identity thresholds keep the
+      // assertion deterministic regardless of WHICH customers were sampled:
+      // nothing can shift, so the estimated reclassified count must be 0.
+      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = String(platformCustomers - 1);
+      const overCapRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+      assert.equal(overCapRes.status, 200, "over-cap preview answers a sampled estimate, not a 503");
+      const overCap = (await overCapRes.json()) as any;
+      assert.equal(overCap.isEstimate, true, "over-cap preview is flagged as an estimate");
       assert.ok(
-        typeof capped.error === "string" && capped.error.length > 0,
-        "row-count guard carries a friendly message",
+        Number.isInteger(overCap.sampleSize) && overCap.sampleSize >= 1 && overCap.sampleSize <= platformCustomers - 1,
+        "estimate reports how many customers were actually classified (at most the cap)",
       );
+      assert.equal(overCap.totalCustomers, platformCustomers, "estimate reports the true platform size");
+      assert.equal(overCap.reclassifiedCount, 0, "identity thresholds reclassify nobody, even sampled");
+      assert.deepEqual(overCap.shifts, [], "no shifts under identity thresholds");
+      assert.deepEqual(overCap.topAffectedSalons, [], "per-salon breakdown is never extrapolated");
+      // Extrapolated status counts cover approximately the whole platform
+      // (rounding each of the 5 statuses independently drifts by < 0.5 each).
+      const overCapSum = Object.values(overCap.currentCounts as Record<string, number>)
+        .reduce((s, n) => s + n, 0);
+      assert.ok(
+        Math.abs(overCapSum - platformCustomers) <= 3,
+        `extrapolated counts cover the platform (got ${overCapSum} of ${platformCustomers})`,
+      );
+
+      // Tiny cap (1) with a reclassifying candidate: the smallest possible
+      // sample still produces an internally consistent, clearly-flagged
+      // estimate — shifts sum to the reclassified total, and the sample is
+      // clamped to the cap so estimate mode is never costlier than exact.
+      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = "1";
+      process.env.RETENTION_PREVIEW_SAMPLE_SIZE = "50";
+      const tinyRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 });
+      assert.equal(tinyRes.status, 200, "even a cap of 1 yields an estimate instead of a refusal");
+      const tiny = (await tinyRes.json()) as any;
+      assert.equal(tiny.isEstimate, true);
+      assert.equal(tiny.sampleSize, 1, "sample is clamped to the exact-mode cap");
+      assert.equal(tiny.totalCustomers, platformCustomers);
+      const tinyShiftSum = (tiny.shifts as any[]).reduce((s: number, x: any) => s + x.count, 0);
+      assert.equal(tinyShiftSum, tiny.reclassifiedCount, "estimated shifts add up to the estimated total");
+      delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
       delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
+      console.log("✓ Over-cap preview falls back to a clearly-flagged sampled estimate (boundary inclusive)");
 
       // 1 ms budget: the settings + count queries alone exceed it, so the
       // time guard must abort during setup, before any batch is loaded.
@@ -634,19 +687,23 @@ async function integrationTests() {
       }
     } finally {
       delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
+      delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
       delete process.env.RETENTION_PREVIEW_TIME_BUDGET_MS;
       delete process.env.LUMERA_TEST_RETENTION_PREVIEW_BATCH_DELAY_MS;
       delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_AT;
       delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_MS;
     }
 
-    // Guards are strictly read-only failures: no settings row recorded, and
-    // the preview works again once the limits are back to defaults.
+    // Guards and estimates are strictly read-only: no settings row recorded,
+    // and the preview is exact again once the limits are back to defaults.
     const afterGuardsRes = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
     assert.equal(((await afterGuardsRes.json()) as any).version, initialVersion + 1, "guard trips record no settings version");
     const recoveredRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
     assert.equal(recoveredRes.status, 200, "preview recovers once guards are lifted");
-    console.log("✓ Preview guards: cap, setup/step cancellation, and final-batch overrun → friendly 503, then recovery");
+    const recovered = (await recoveredRes.json()) as any;
+    assert.equal(recovered.isEstimate, false, "default limits restore exact mode");
+    assert.equal(recovered.sampleSize, null, "exact mode reports no sample size");
+    console.log("✓ Preview guards: sampled fallback, setup/step cancellation, final-batch overrun → then exact recovery");
 
     // ── 11d. Preview building blocks ────────────────────────────────────────
     // Database-side cancellation: a query slower than the remaining budget is
@@ -999,6 +1056,90 @@ async function integrationTests() {
     console.log(
       `✓ Volume benchmark: ${perf.totalCustomers} customers previewed in ${perfElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
     );
+
+    // ── 16a. Oversized-platform estimate: sampled fallback stays fast ───────
+    // Force estimate mode over the full seeded volume (cap far below the real
+    // row count, sample of 1,000). The preview must answer a flagged estimate
+    // within the same response-time bound — proving the sampling path
+    // (TABLESAMPLE page sampling + sampled-salon-only medians) does no
+    // platform-sized work — and its extrapolated counts must land within a
+    // generous sampling-error corridor of the exact run above.
+    try {
+      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = "2000";
+      process.env.RETENTION_PREVIEW_SAMPLE_SIZE = "1000";
+      const estStartedAt = Date.now();
+      const estRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      const estElapsedMs = Date.now() - estStartedAt;
+      assert.equal(estRes.status, 200, "oversized platform still gets a preview (estimate mode)");
+      const est = (await estRes.json()) as any;
+      assert.equal(est.isEstimate, true, "over-cap volume preview is a flagged estimate");
+      assert.equal(est.sampleSize, 1000, "sample honors the configured size");
+      assert.equal(est.totalCustomers, perf.totalCustomers, "estimate reports the true platform size");
+      assert.ok(
+        estElapsedMs <= PERF_RESPONSE_BOUND_MS,
+        `estimate over ${est.totalCustomers} customers answered in ${estElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+      );
+      // Sampling-error corridor vs. the exact run: ~5σ for a 1,000-row sample
+      // plus slack for page-cluster correlation — loose enough to never flake,
+      // tight enough to catch a broken extrapolation (e.g. unscaled counts).
+      const corridor = Math.round(perf.totalCustomers * 0.1) + 50;
+      for (const status of Object.keys(perf.currentCounts as Record<string, number>)) {
+        assert.ok(
+          Math.abs(est.currentCounts[status] - perf.currentCounts[status]) <= corridor,
+          `estimated current ${status} within corridor (est ${est.currentCounts[status]}, exact ${perf.currentCounts[status]})`,
+        );
+        assert.ok(
+          Math.abs(est.candidateCounts[status] - perf.candidateCounts[status]) <= corridor,
+          `estimated candidate ${status} within corridor (est ${est.candidateCounts[status]}, exact ${perf.candidateCounts[status]})`,
+        );
+      }
+      const estShiftSum = (est.shifts as any[]).reduce((s: number, x: any) => s + x.count, 0);
+      assert.equal(estShiftSum, est.reclassifiedCount, "estimated shifts add up to the estimated total");
+      assert.deepEqual(est.topAffectedSalons, [], "per-salon breakdown stays empty in estimate mode");
+      console.log(
+        `✓ Oversized-platform estimate: 1,000-row sample previewed ${est.totalCustomers} customers in ${estElapsedMs} ms`,
+      );
+
+      // Regression: an under-delivering page sample must NEVER widen the
+      // scan. Force a tiny sampling percentage (test-only hook): the preview
+      // keeps the smaller sample, reports its true size, and still
+      // extrapolates to the real platform total — it never falls back to a
+      // full-table read to "fill up" the target.
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT = "2.5";
+      const underRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      assert.equal(underRes.status, 200, "under-delivering sample still answers an estimate");
+      const under = (await underRes.json()) as any;
+      assert.equal(under.isEstimate, true);
+      assert.ok(
+        under.sampleSize >= 1 && under.sampleSize < 1000,
+        `forced 2.5% page sample stays below the 1,000 target (got ${under.sampleSize})`,
+      );
+      assert.ok(
+        under.sampleSize < Math.floor(perf.totalCustomers / 4),
+        `no full-table fallback occurred (classified ${under.sampleSize} of ${perf.totalCustomers})`,
+      );
+      assert.equal(under.totalCustomers, perf.totalCustomers, "small sample still reports the true platform size");
+      const underSum = Object.values(under.currentCounts as Record<string, number>)
+        .reduce((s: number, n) => s + (n as number), 0);
+      assert.ok(
+        Math.abs(underSum - perf.totalCustomers) <= 10,
+        `truthful extrapolation from the smaller sample (counts sum ${underSum} vs ${perf.totalCustomers})`,
+      );
+
+      // Forced EMPTY sample (0%): refuse under the friendly overload
+      // contract instead of widening the scan or returning all-zero
+      // "estimates".
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT = "0";
+      const emptyRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      assert.equal(emptyRes.status, 503, "an unobtainable sample refuses honestly");
+      assert.equal(((await emptyRes.json()) as any).code, "PREVIEW_TOO_LARGE");
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT;
+      console.log("✓ Under-delivering page sample: truthful smaller estimate, never a widened scan; empty sample refuses");
+    } finally {
+      delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
+      delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT;
+    }
 
     // ── 16a. Share ranking surfaces the hardest-hit small salon at volume ───
     // The 5-customer salon flips 100% of its clientele, so it must appear in

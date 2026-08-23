@@ -1996,8 +1996,10 @@ router.post("/growth/admin/retention-settings/preview", async (req, res, next) =
 
     res.json(await previewRetentionThresholds(parsed.data));
   } catch (err) {
-    // Guard trip (dataset too large / time budget exceeded): friendly 503
-    // instead of stalling the admin page or surfacing a generic 500.
+    // Guard trip (time budget exceeded / a single history too deep): friendly
+    // 503 instead of stalling the admin page or surfacing a generic 500.
+    // Above the row-count cap the preview no longer refuses — it answers 200
+    // with a sampled estimate flagged via isEstimate/sampleSize.
     if (err instanceof RetentionPreviewOverloadError) {
       res.status(503).json({ error: err.message, code: err.code });
       return;

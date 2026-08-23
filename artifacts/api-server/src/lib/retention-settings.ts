@@ -14,7 +14,7 @@
  * same version (the unique index on version is the final backstop).
  */
 
-import { desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
   db,
   appointmentsTable,
@@ -331,22 +331,41 @@ export interface RetentionPreviewAffectedSalon {
 export interface RetentionPreviewResult {
   /** Version whose thresholds produced the "current" counts (0 = defaults). */
   currentVersion: number;
+
   totalCustomers: number;
+
   reclassifiedCount: number;
+
   currentCounts: RetentionStatusCounts;
+
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first. */
+
   shifts: RetentionPreviewShift[];
   /** Salons with the most reclassified customers, largest first (top N). */
+
   topAffectedSalons: RetentionPreviewAffectedSalon[];
   /**
    * Salons with the highest SHARE of reclassified customers, largest first
    * (top N). Only salons with at least shareRankingMinCustomers customers
    * qualify, so a 1-of-1 salon cannot dominate the ranking.
    */
+
   topShareAffectedSalons: RetentionPreviewAffectedSalon[];
   /** Minimum customers a salon needs to qualify for the share ranking. */
+
   shareRankingMinCustomers: number;
+  /**
+   * True when the platform exceeded the exact-preview cap and every count
+   * (except totalCustomers, which is the real platform-wide count) was
+   * extrapolated from a uniform random sample. Estimates must be rendered as
+   * approximate ("~"), never as exact numbers. In estimate mode the per-salon
+   * rankings are empty — per-salon numbers are too noisy to trust.
+   */
+  isEstimate: boolean;
+  /** Customers actually classified when isEstimate; null in exact mode. */
+
+  sampleSize: number | null;
 }
 
 /** How many most-affected salons the preview reports. */
@@ -376,8 +395,36 @@ function emptyStatusCounts(): RetentionStatusCounts {
 // Cap and budget are env-tunable so operators can raise them without a deploy
 // and tests can exercise the guard paths without seeding millions of rows.
 
-/** Hard cap on salon customers the preview will classify (row-count guard). */
+/** Hard cap on salon customers the preview will classify exactly. Above it
+ * the preview falls back to sampled-estimate mode instead of refusing. */
 export const RETENTION_PREVIEW_DEFAULT_MAX_CUSTOMERS = 250_000;
+
+/**
+ * Customers drawn (uniformly at random, without replacement) for estimate
+ * mode. Clamped to the exact-mode cap so an estimate is never more expensive
+ * than the largest allowed exact preview. At 25,000 sampled customers the
+ * worst-case standard error of an extrapolated proportion is ±0.3 percentage
+ * points (95% CI) — comfortably precise for a "~" preview.
+ */
+export const RETENTION_PREVIEW_DEFAULT_SAMPLE_SIZE = 25_000;
+
+/**
+ * Estimate-mode page oversampling factor. TABLESAMPLE SYSTEM surfaces whole
+ * table pages, so the row count it returns is approximate — requesting a few
+ * times more rows than the target sample makes a single pass almost always
+ * deliver at least the target. The percentage is never raised afterwards; an
+ * under-delivering sample is simply used (and reported) at its smaller size.
+ */
+const RETENTION_PREVIEW_SAMPLE_OVERSAMPLE = 4;
+
+/**
+ * Constant floor for the estimate-mode source-row budget. Page-level
+ * sampling is unreliable when the target percentage rounds to a handful of
+ * pages (tiny tables), so tables at or below this size are simply read in
+ * full — a fixed, trivially bounded amount of work independent of the
+ * platform size that triggered estimate mode.
+ */
+const RETENTION_PREVIEW_SAMPLE_MIN_SOURCE_ROWS = 1_000;
 /**
  * Dry-run: classify every salon customer platform-wide under BOTH the active
  * thresholds and a candidate, and report the per-status counts plus how many
@@ -391,11 +438,18 @@ export const RETENTION_PREVIEW_DEFAULT_MAX_CUSTOMERS = 250_000;
  * (percentile_cont matches computeSalonMedianSpend exactly), and customers
  * are classified in keyset-paginated batches with their appointment history
  * fetched per batch — peak memory is bounded by one batch of customers plus
- * their appointments, never the whole platform. Guards: a customer-count cap
- * (checked before loading anything), a wall-clock deadline (checked before
- * and after every query and batch), and a database statement_timeout set to
- * the remaining budget all abort with RetentionPreviewOverloadError instead
- * of stalling the admin page.
+ * their appointments, never the whole platform.
+ *
+ * Guards: above the customer-count cap (checked before loading anything) the
+ * preview switches to sampled-estimate mode instead of refusing: a bounded
+ * page-level random sample (TABLESAMPLE SYSTEM, uniformly thinned in memory)
+ * is classified through the same pipeline and extrapolated to the platform
+ * size, flagged via isEstimate/sampleSize; salon medians are then computed
+ * only for sampled salons, so no estimate-mode query scales with the whole
+ * platform. A wall-clock deadline (checked before and after every query and
+ * batch) and a database statement_timeout set to the remaining budget still
+ * abort with RetentionPreviewOverloadError instead of stalling the admin
+ * page, in both modes.
  */
 export async function previewRetentionThresholds(
   candidate: RetentionThresholds,
@@ -405,7 +459,8 @@ export async function previewRetentionThresholds(
     throw new Error(`Invalid retention thresholds: ${problems.join(" ")}`);
   }
 
-  const { maxCustomers, timeBudgetMs, appointmentRowBudget } = retentionPreviewGuardLimits();
+  const { maxCustomers, timeBudgetMs, appointmentRowBudget, sampleSize } =
+    retentionPreviewGuardLimits();
   const deadlineAt = Date.now() + timeBudgetMs;
   const remainingMs = () => deadlineAt - Date.now();
   const assertWithinBudget = () => {
@@ -424,19 +479,23 @@ export async function previewRetentionThresholds(
   );
   assertWithinBudget();
 
-  // Row-count guard — refuse before loading a single customer row.
+  // Row-count guard — decided before loading a single customer row. At or
+  // below the cap every customer is classified (exact mode). Above the cap
+  // the preview no longer refuses: it falls back to SAMPLED-ESTIMATE mode —
+  // classify a uniform random sample of customers and extrapolate the counts
+  // to the platform size, clearly flagged via isEstimate/sampleSize so the
+  // UI can render them as approximations ("~"), never as exact numbers.
   const [countRow] = await withPreviewStatementTimeout(remainingMs(), (tx) =>
     tx.select({ count: sql<number>`count(*)::int` }).from(salonCustomersTable),
     "customer-count",
   );
   const customerCount = countRow?.count ?? 0;
-  if (customerCount > maxCustomers) {
-    throw new RetentionPreviewOverloadError(
-      "PREVIEW_TOO_LARGE",
-      `Pregled uticaja je privremeno nedostupan: platforma trenutno ima ${customerCount.toLocaleString("sr-Latn-RS")} klijenata, ` +
-        `a pregled podržava do ${maxCustomers.toLocaleString("sr-Latn-RS")}. Pragovi se i dalje mogu sačuvati bez pregleda.`,
-    );
-  }
+  const isEstimate = customerCount > maxCustomers;
+  // The sample never exceeds the exact-mode cap, so estimate mode is always
+  // at most as expensive as the largest allowed exact preview.
+  const estimateSampleSize = isEstimate
+    ? Math.min(sampleSize, maxCustomers, customerCount)
+    : null;
   assertWithinBudget();
 
   // Salon-wide median of completed prices, aggregated database-side — same
@@ -444,22 +503,36 @@ export async function previewRetentionThresholds(
   // linked to a customer or not). For sorted prices, percentile_cont(0.5)
   // returns the middle value (odd count) or the average of the two middle
   // values (even count) — exactly computeSalonMedianSpend's definition.
-  const medianRows = await withPreviewStatementTimeout(remainingMs(), (tx) =>
-    tx
-      .select({
-        salonId: appointmentsTable.salonId,
-        median: sql<number | string | null>`percentile_cont(0.5) within group (order by ${appointmentsTable.price})`,
-      })
-      .from(appointmentsTable)
-      .where(eq(appointmentsTable.status, "completed"))
-      .groupBy(appointmentsTable.salonId),
-    "salon-medians",
-  );
+  //
+  // Exact mode aggregates the whole platform in one pass. Estimate mode
+  // skips this — at estimate-mode scale a platform-wide aggregate over ALL
+  // appointments could alone exhaust the budget, so medians are computed
+  // later, only for the salons that actually appear in the sample.
   const medianBySalon = new Map<string, number | undefined>();
-  for (const row of medianRows) {
-    medianBySalon.set(row.salonId, row.median == null ? undefined : Number(row.median));
+  const loadMediansForSalons = async (salonIds: string[] | null) => {
+    const medianRows = await withPreviewStatementTimeout(remainingMs(), (tx) =>
+      tx
+        .select({
+          salonId: appointmentsTable.salonId,
+          median: sql<number | string | null>`percentile_cont(0.5) within group (order by ${appointmentsTable.price})`,
+        })
+        .from(appointmentsTable)
+        .where(
+          salonIds === null
+            ? eq(appointmentsTable.status, "completed")
+            : and(eq(appointmentsTable.status, "completed"), inArray(appointmentsTable.salonId, salonIds)),
+        )
+        .groupBy(appointmentsTable.salonId),
+      "salon-medians",
+    );
+    for (const row of medianRows) {
+      medianBySalon.set(row.salonId, row.median == null ? undefined : Number(row.median));
+    }
+    assertWithinBudget();
+  };
+  if (!isEstimate) {
+    await loadMediansForSalons(null);
   }
-  assertWithinBudget();
 
   // One fixed "today" so every batch and both passes see the same clock.
   const today = new Date();
@@ -474,26 +547,11 @@ export async function previewRetentionThresholds(
   // affected salon's reclassified count in proportion (swing vs base).
   const totalCustomersBySalon = new Map<string, number>();
 
-  // Keyset pagination over customers — batches are bounded by actual rows,
-  // not by salon count, so one giant salon cannot blow up a single batch.
-  let cursor: string | null = null;
-  for (;;) {
+  // Classify one page of customers into the shared accumulators. Used by
+  // both modes: exact mode feeds keyset-paginated pages of ALL customers,
+  // estimate mode feeds bounded pages of the random sample.
+  const processCustomerPage = async (customers: { id: string; salonId: string }[]) => {
     assertWithinBudget();
-
-    const customers: { id: string; salonId: string }[] = await withPreviewStatementTimeout(
-      remainingMs(),
-      (tx) =>
-        tx
-          .select({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId })
-          .from(salonCustomersTable)
-          .where(cursor === null ? undefined : gt(salonCustomersTable.id, cursor))
-          .orderBy(salonCustomersTable.id)
-          .limit(RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE),
-      "customers",
-    );
-    if (customers.length === 0) break;
-    assertWithinBudget();
-
     // Deep histories must not blow up a single fetch: count each customer's
     // appointment rows database-side first, then split the page into
     // sub-chunks whose summed counts respect the row budget. Memory is thus
@@ -622,10 +680,124 @@ export async function previewRetentionThresholds(
     // Deadline also covers the batch just classified — including the final
     // one — so a slow single-batch platform still gets a friendly refusal.
     assertWithinBudget();
+  };
 
-    const lastCustomer = customers[customers.length - 1];
-    if (!lastCustomer || customers.length < RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE) break;
-    cursor = lastCustomer.id;
+  if (isEstimate) {
+    // Sampled-estimate mode. The sample must be drawn with WORK BOUNDED by
+    // the configured sample size, never the platform size — ORDER BY
+    // random() would visit and heap-sort every customer row, which at
+    // estimate-mode scale could itself exhaust the time budget. Strategy (a
+    // two-stage cluster sample, single pass, no escalation):
+    //   1. TABLESAMPLE SYSTEM reads a uniformly random subset of table PAGES
+    //      (I/O proportional to the requested percentage, cancelled by
+    //      statement_timeout like every other preview query). The percentage
+    //      is derived from a hard source-row budget — a few times the target
+    //      sample (plus a small constant floor so page-granular sampling
+    //      stays reliable on tiny tables) — and a LIMIT of that budget caps
+    //      the transferred rows outright. The percentage reaches 100 ONLY
+    //      when the whole table fits inside the source-row budget, so a
+    //      full-page read is bounded by the budget itself, never by the
+    //      platform. The percentage is NEVER raised afterwards: if page
+    //      sampling under-delivers, the smaller sample is used as-is and
+    //      reported truthfully via sampleSize; an empty sample refuses under
+    //      the friendly overload contract instead of widening the scan.
+    //   2. A Fisher–Yates prefix shuffle thins the surfaced rows uniformly
+    //      down to the target, breaking up the physical row-order clustering
+    //      that page sampling introduces.
+    // Residual page-cluster correlation slightly widens the error of the
+    // estimate; that is acceptable for a clearly-flagged approximation (and
+    // is one more reason per-salon numbers are never extrapolated).
+    const targetSample = estimateSampleSize!;
+    const expectedSourceRows = Math.min(
+      customerCount,
+      Math.max(
+        targetSample * RETENTION_PREVIEW_SAMPLE_OVERSAMPLE,
+        RETENTION_PREVIEW_SAMPLE_MIN_SOURCE_ROWS,
+      ),
+    );
+    // Hard cap on transferred rows: double the expectation so the LIMIT
+    // virtually never truncates (truncation would bias against late pages).
+    const sourceRowLimit = expectedSourceRows * 2;
+    const samplePct =
+      testOnlySamplePctOverride() ??
+      Math.min(100, Math.max(0.01, (expectedSourceRows / customerCount) * 100));
+    assertWithinBudget();
+    const sampleRes = await withPreviewStatementTimeout(remainingMs(), (tx) =>
+      tx.execute(
+        // samplePct/sourceRowLimit are locally computed finite numbers
+        // rendered via toFixed/String — inlined because TABLESAMPLE
+        // arguments predate plan parameters on some planners; never user
+        // input.
+        sql`select id, salon_id from ${salonCustomersTable} tablesample system (${sql.raw(samplePct.toFixed(4))}) limit ${sql.raw(String(sourceRowLimit))}`,
+      ),
+      "customer-sample",
+    );
+    const sampleRows = (sampleRes as unknown as { rows?: Record<string, unknown>[] }).rows
+      ?? (sampleRes as unknown as Record<string, unknown>[]);
+    const sampled: { id: string; salonId: string }[] = sampleRows.map((row) => ({
+      id: String(row.id),
+      salonId: String(row.salon_id),
+    }));
+    if (sampled.length === 0) {
+      // Pathological under-sampling (in practice only reachable with a
+      // test-forced percentage): without a single sampled customer there is
+      // nothing to extrapolate from — refuse honestly rather than answer
+      // all-zero "estimates".
+      throw new RetentionPreviewOverloadError(
+        "PREVIEW_TOO_LARGE",
+        "Pregled uticaja je privremeno nedostupan: nije bilo moguće izvući uzorak klijenata za procenu. " +
+          "Pokušajte ponovo — pragovi se i dalje mogu sačuvati bez pregleda.",
+      );
+    }
+    assertWithinBudget();
+    // Uniform in-memory thinning down to the target (prefix shuffle — only
+    // the first targetSample positions need to be randomized).
+    for (let i = 0; i < Math.min(targetSample, sampled.length); i += 1) {
+      const j = i + Math.floor(Math.random() * (sampled.length - i));
+      const a = sampled[i]!;
+      sampled[i] = sampled[j]!;
+      sampled[j] = a;
+    }
+    if (sampled.length > targetSample) sampled.length = targetSample;
+
+    // Medians only for the salons the sample actually touches, in bounded
+    // chunks — never a platform-wide aggregate in estimate mode.
+    const sampledSalonIds = [...new Set(sampled.map((customer) => customer.salonId))];
+    for (let i = 0; i < sampledSalonIds.length; i += RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE) {
+      await loadMediansForSalons(sampledSalonIds.slice(i, i + RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE));
+    }
+
+    for (let i = 0; i < sampled.length; i += RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE) {
+      await processCustomerPage(sampled.slice(i, i + RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE));
+    }
+  } else {
+    // Exact mode: keyset pagination over ALL customers — batches are bounded
+    // by actual rows, not by salon count, so one giant salon cannot blow up
+    // a single batch.
+    let cursor: string | null = null;
+    for (;;) {
+      assertWithinBudget();
+
+      const customers: { id: string; salonId: string }[] = await withPreviewStatementTimeout(
+        remainingMs(),
+        (tx) =>
+          tx
+            .select({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId })
+            .from(salonCustomersTable)
+            .where(cursor === null ? undefined : gt(salonCustomersTable.id, cursor))
+            .orderBy(salonCustomersTable.id)
+            .limit(RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE),
+        "customers",
+      );
+      if (customers.length === 0) break;
+      assertWithinBudget();
+
+      await processCustomerPage(customers);
+
+      const lastCustomer = customers[customers.length - 1];
+      if (!lastCustomer || customers.length < RETENTION_PREVIEW_CUSTOMER_BATCH_SIZE) break;
+      cursor = lastCustomer.id;
+    }
   }
 
   const shifts: RetentionPreviewShift[] = [...shiftCounts.entries()]
@@ -639,6 +811,40 @@ export async function previewRetentionThresholds(
         RETENTION_STATUSES.indexOf(a.fromStatus) - RETENTION_STATUSES.indexOf(b.fromStatus) ||
         RETENTION_STATUSES.indexOf(a.toStatus) - RETENTION_STATUSES.indexOf(b.toStatus),
     );
+
+  if (isEstimate) {
+    // Extrapolate sample counts to the platform size. The scale factor uses
+    // the customers actually classified (the sample), and every scaled number
+    // is an estimate — reclassifiedCount is derived from the scaled shifts so
+    // the estimate stays internally consistent (shifts always sum to the
+    // total). BOTH per-salon rankings (absolute and share-based) are
+    // intentionally omitted: a uniform customer sample is far too noisy at
+    // individual-salon granularity, and a misleading "most affected salons"
+    // list is worse than none.
+    const sampledCount = totalCustomers;
+    const factor = sampledCount > 0 ? customerCount / sampledCount : 0;
+    const scale = (n: number) => Math.round(n * factor);
+    const estimatedShifts = shifts.map((shift) => ({ ...shift, count: scale(shift.count) }));
+    const estimatedCounts = (counts: RetentionStatusCounts): RetentionStatusCounts => {
+      const scaled = emptyStatusCounts();
+      for (const status of RETENTION_STATUSES) scaled[status] = scale(counts[status]);
+      return scaled;
+    };
+    assertWithinBudget();
+    return {
+      currentVersion: active.version,
+      totalCustomers: customerCount,
+      reclassifiedCount: estimatedShifts.reduce((sum, shift) => sum + shift.count, 0),
+      currentCounts: estimatedCounts(currentCounts),
+      candidateCounts: estimatedCounts(candidateCounts),
+      shifts: estimatedShifts,
+      topAffectedSalons: [],
+      topShareAffectedSalons: [],
+      shareRankingMinCustomers: PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+      isEstimate: true,
+      sampleSize: sampledCount,
+    };
+  }
 
   // Top-N most-affected salons, accumulated across all batches. Ties break on
   // salonId so the cut is deterministic; names are fetched only for the salons
@@ -709,6 +915,8 @@ export async function previewRetentionThresholds(
     topAffectedSalons,
     topShareAffectedSalons,
     shareRankingMinCustomers: PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+    isEstimate: false,
+    sampleSize: null,
   };
 }
 
@@ -828,6 +1036,7 @@ export function retentionPreviewGuardLimits(): {
   maxCustomers: number;
   timeBudgetMs: number;
   appointmentRowBudget: number;
+  sampleSize: number;
 } {
   return {
     maxCustomers:
@@ -839,6 +1048,9 @@ export function retentionPreviewGuardLimits(): {
     appointmentRowBudget:
       readPositiveIntEnv("RETENTION_PREVIEW_APPOINTMENT_ROW_BUDGET") ??
       RETENTION_PREVIEW_DEFAULT_APPOINTMENT_ROW_BUDGET,
+    sampleSize:
+      readPositiveIntEnv("RETENTION_PREVIEW_SAMPLE_SIZE") ??
+      RETENTION_PREVIEW_DEFAULT_SAMPLE_SIZE,
   };
 }
 
@@ -906,5 +1118,19 @@ function testOnlyBatchDelayMs(): number {
   return readPositiveIntEnv("LUMERA_TEST_RETENTION_PREVIEW_BATCH_DELAY_MS") ?? 0;
 }
 
+/**
+ * Test-only override for the estimate-mode TABLESAMPLE percentage, so tests
+ * can force an under-delivering (or empty) page sample deterministically and
+ * prove the preview never widens the scan in response. Honored only under
+ * NODE_ENV=test; accepts 0 (guaranteed empty sample) through 100.
+ */
+function testOnlySamplePctOverride(): number | null {
+  if (process.env.NODE_ENV !== "test") return null;
+  const raw = process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT;
+  if (raw === undefined || raw === "") return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
+  return parsed;
+}
 /** Deadline is re-checked every N customers during CPU-side classification. */
 const RETENTION_PREVIEW_CLASSIFY_CHECK_EVERY = 100;

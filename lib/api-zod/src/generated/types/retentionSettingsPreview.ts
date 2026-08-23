@@ -20,10 +20,17 @@ export interface RetentionSettingsPreview {
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first */
   shifts: RetentionReclassificationShift[];
-  /** Salons with the most reclassified customers, largest first (top 10) */
+  /** Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample */
   topAffectedSalons: RetentionPreviewAffectedSalon[];
   /** Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify */
   topShareAffectedSalons: RetentionPreviewAffectedSalon[];
   /** Minimum customers a salon needs to qualify for the share-based ranking */
   shareRankingMinCustomers: number;
+  /** True when the platform exceeded the exact-preview cap and counts (except totalCustomers) were extrapolated from a uniform random customer sample; render such values as approximate (~), never as exact; both per-salon rankings are empty in estimate mode */
+  isEstimate: boolean;
+  /**
+     * Customers actually classified when isEstimate is true; null in exact mode
+     * @nullable
+     */
+  sampleSize: number | null;
 }

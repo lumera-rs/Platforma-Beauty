@@ -507,13 +507,24 @@ export default function AdminRetentionSettings() {
                 <div className="flex flex-wrap items-center gap-2">
                   <Eye className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm font-semibold text-foreground">Pregled uticaja</span>
+                  {preview.isEstimate && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/60 text-amber-600 dark:text-amber-500"
+                      data-testid="retention-preview-estimate"
+                    >
+                      ~ Procena
+                    </Badge>
+                  )}
                   <Badge
                     variant={preview.reclassifiedCount > 0 ? "default" : "secondary"}
                     data-testid="retention-preview-reclassified"
                   >
                     {preview.reclassifiedCount === 0
-                      ? "Bez promena statusa"
-                      : `${preview.reclassifiedCount} od ${preview.totalCustomers} klijenata menja status`}
+                      ? preview.isEstimate
+                        ? "Bez promena statusa (procena)"
+                        : "Bez promena statusa"
+                      : `${preview.isEstimate ? "~" : ""}${preview.reclassifiedCount} od ${preview.totalCustomers} klijenata menja status`}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -522,6 +533,13 @@ export default function AdminRetentionSettings() {
                   ukupno {preview.totalCustomers} klijenata na platformi. Pregled ništa ne čuva — pragovi ostaju
                   nepromenjeni dok ne kliknete „Sačuvaj izmene“.
                 </p>
+                {preview.isEstimate && (
+                  <p className="text-xs text-amber-600 dark:text-amber-500" data-testid="retention-preview-estimate-note">
+                    Platforma je prevelika za tačan pregled, pa su brojevi procena na osnovu nasumičnog
+                    uzorka od {preview.sampleSize?.toLocaleString("sr-Latn-RS")} klijenata — vrednosti
+                    označene znakom „~“ su približne, ne tačne.
+                  </p>
+                )}
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -538,13 +556,15 @@ export default function AdminRetentionSettings() {
                         const current = preview.currentCounts[status];
                         const candidate = preview.candidateCounts[status];
                         const delta = candidate - current;
+                        // Estimates are never rendered as exact numbers.
+                        const approx = preview.isEstimate ? "~" : "";
                         return (
                           <tr key={status} className="border-b border-border/30 last:border-0" data-testid={`retention-preview-row-${status}`}>
                             <td className="py-1.5 pr-4 text-foreground">{STATUS_LABELS[status]}</td>
-                            <td className="py-1.5 pr-4">{current}</td>
-                            <td className="py-1.5 pr-4 font-medium text-foreground">{candidate}</td>
+                            <td className="py-1.5 pr-4">{approx}{current}</td>
+                            <td className="py-1.5 pr-4 font-medium text-foreground">{approx}{candidate}</td>
                             <td className={`py-1.5 font-medium ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                              {delta > 0 ? `+${delta}` : delta}
+                              {approx}{delta > 0 ? `+${delta}` : delta}
                             </td>
                           </tr>
                         );
@@ -566,14 +586,22 @@ export default function AdminRetentionSettings() {
                           <span className="text-foreground">{STATUS_LABELS[shift.fromStatus]}</span>
                           <MoveRight className="w-3.5 h-3.5 shrink-0" />
                           <span className="text-foreground">{STATUS_LABELS[shift.toStatus]}</span>
-                          <span className="font-semibold text-foreground">{shift.count}</span>
-                          {shift.count === 1 ? "klijent" : "klijenata"}
+                          <span className="font-semibold text-foreground">
+                            {preview.isEstimate ? "~" : ""}{shift.count}
+                          </span>
+                          {shift.count === 1 && !preview.isEstimate ? "klijent" : "klijenata"}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
+                {preview.isEstimate && (
+                  <p className="text-xs text-muted-foreground italic" data-testid="retention-preview-no-salons-note">
+                    Pregled najpogođenijih salona nije dostupan u proceni — uzorak je premali za
+                    pouzdane brojeve po pojedinačnom salonu.
+                  </p>
+                )}
                 {preview.topAffectedSalons.length > 0 && (
                   <div className="space-y-1.5" data-testid="retention-preview-affected-salons">
                     <div className="flex flex-wrap items-center justify-between gap-2">
