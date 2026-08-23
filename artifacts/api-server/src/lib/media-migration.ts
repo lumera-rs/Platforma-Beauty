@@ -20,6 +20,7 @@ import {
 import { logger } from "./logger";
 import {
   cleanupPromotedMediaVariants,
+  publishActiveSalonMediaReferences,
   processImageBytes,
   readPrivateStorageObject,
   stableMediaUrl,
@@ -45,6 +46,7 @@ type MigrationResult = {
 type MigrationReport = {
   migrated: number;
   retained: number;
+  repaired: number;
   skipped: Record<string, number>;
   remainingSources: Array<{
     scope: LegacyScope;
@@ -270,7 +272,7 @@ async function migrateList(input: {
  * Legacy files/objects are intentionally retained for rollback compatibility.
  */
 export async function migrateLegacyMediaReferences() {
-  const report: MigrationReport = { migrated: 0, retained: 0, skipped: {}, remainingSources: [] };
+  const report: MigrationReport = { migrated: 0, retained: 0, repaired: 0, skipped: {}, remainingSources: [] };
   const admin = (await db.select({ id: usersTable.id }).from(usersTable)
     .where(inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"])).limit(1))[0];
 
@@ -299,6 +301,13 @@ export async function migrateLegacyMediaReferences() {
   }
 
   for (const salon of await db.select().from(salonsTable)) {
+    report.repaired += await publishActiveSalonMediaReferences({
+      salonId: salon.id,
+      ownerUserId: salon.ownerId,
+      active: salon.active,
+      imageUrl: salon.imageUrl,
+      gallery: salon.gallery,
+    });
     const [imageUrl] = await migrateList({
       references: [salon.imageUrl],
       scope: "salon-profile",

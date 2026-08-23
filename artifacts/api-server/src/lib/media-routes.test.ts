@@ -23,7 +23,7 @@ import {
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureDemoData } from "./seed";
-import { approvedServiceCategoryReference } from "./media-migration";
+import { approvedServiceCategoryReference, migrateLegacyMediaReferences } from "./media-migration";
 import {
   canClaimMediaReference,
   claimMediaReference,
@@ -143,7 +143,9 @@ async function run() {
   const originalSalonMedia = {
     imageUrl: ownerAndSalon.salon.imageUrl,
     gallery: ownerAndSalon.salon.gallery,
+    active: ownerAndSalon.salon.active,
   };
+  let privacyProbeAssetId: string | null = null;
   let activeServer: Awaited<ReturnType<typeof startServer>> | null = null;
   let disableRegressionUploadMarking: (() => void) | null = null;
   const regressionLock = await pool.connect();
@@ -632,6 +634,72 @@ async function run() {
     assert.equal(attachedProfile.body.imageUrl, firstFinalize.body.imageUrl);
     assert.deepEqual(attachedProfile.body.gallery, [galleryFinalize.body.imageUrl]);
 
+    await db.update(mediaAssetsTable).set({ resourceId: null, visibility: "private" })
+      .where(eq(mediaAssetsTable.id, firstFinalize.body.id));
+    const migrationReport = await migrateLegacyMediaReferences();
+    assert.ok(migrationReport.repaired >= 1, "The media audit should repair a drifted active salon cover.");
+    const [repairedProfileAsset] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+      scope: mediaAssetsTable.scope,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, firstFinalize.body.id)).limit(1);
+    assert.deepEqual(
+      repairedProfileAsset,
+      { resourceId: ownerAndSalon.salon.id, visibility: "public", scope: "salon-profile" },
+      "Only the matching owner-uploaded salon-profile asset should be repaired.",
+    );
+    const repairedCover = await fetch(`${activeServer.baseUrl}${firstFinalize.body.imageUrl}&size=thumbnail`);
+    assert.equal(repairedCover.status, 200, "An audited active salon cover must load anonymously.");
+
+    const publicCatalog = await fetch(`${activeServer.baseUrl}/api/salons?pageSize=100`);
+    assert.equal(publicCatalog.status, 200);
+    const publicCatalogSalons = await publicCatalog.json() as Array<{ id: string; imageUrl: string }>;
+    const publicProfile = await fetch(`${activeServer.baseUrl}/api/salons/${ownerAndSalon.salon.slug}`);
+    assert.equal(publicProfile.status, 200);
+    const publicProfileBody = await publicProfile.json() as { imageUrl: string; gallery: string[] };
+    const publicSalonImages = [
+      ...publicCatalogSalons.map((salon) => salon.imageUrl),
+      publicProfileBody.imageUrl,
+      ...publicProfileBody.gallery,
+    ].filter((url) => mediaAssetIdFromUrl(url));
+    for (const imageUrl of new Set(publicSalonImages)) {
+      assert.equal(
+        (await fetch(`${activeServer.baseUrl}${imageUrl}&size=thumbnail`)).status,
+        200,
+        `Public salon image ${imageUrl} must load anonymously.`,
+      );
+    }
+
+    privacyProbeAssetId = randomUUID();
+    const privacyProbeUrl = `/api/media/${privacyProbeAssetId}?v=${"a".repeat(16)}`;
+    await db.insert(mediaAssetsTable).values({
+      id: privacyProbeAssetId,
+      ownerUserId: ownerAndSalon.user.id,
+      scope: "treatment-photo",
+      resourceId: null,
+      visibility: "private",
+      originalFileName: "customer-treatment.jpg",
+      originalContentType: "image/jpeg",
+      width: 1,
+      height: 1,
+      contentHash: "a".repeat(64),
+    });
+    await db.update(salonsTable).set({ gallery: [galleryFinalize.body.imageUrl, privacyProbeUrl] })
+      .where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    await migrateLegacyMediaReferences();
+    const [privateTreatmentAsset] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+      scope: mediaAssetsTable.scope,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, privacyProbeAssetId)).limit(1);
+    assert.deepEqual(
+      privateTreatmentAsset,
+      { resourceId: null, visibility: "private", scope: "treatment-photo" },
+      "The salon audit must never publish treatment/customer media, even if a bad salon row references it.",
+    );
+    await db.update(salonsTable).set({ gallery: [galleryFinalize.body.imageUrl] })
+      .where(eq(salonsTable.id, ownerAndSalon.salon.id));
+
     const webpResponse = await fetch(`${activeServer.baseUrl}${firstFinalize.body.imageUrl}&size=thumbnail`, {
       headers: { accept: "image/webp,image/*" },
     });
@@ -700,6 +768,49 @@ async function run() {
     const profileAfterRestartBody = await profileAfterRestart.json() as { imageUrl: string; gallery: string[] };
     assert.equal(profileAfterRestartBody.imageUrl, firstFinalize.body.imageUrl);
     assert.deepEqual(profileAfterRestartBody.gallery, [galleryFinalize.body.imageUrl]);
+
+    const inactiveCoverAsset = await uploadAsset("salon-profile", session, "inactive-salon-cover.jpg");
+    const inactiveGalleryAsset = await uploadAsset("salon-gallery", session, "inactive-salon-gallery.jpg");
+    const deactivated = await jsonRequest<{ active: boolean }>(
+      activeServer.baseUrl,
+      `/admin/salons/${ownerAndSalon.salon.id}`,
+      adminSession,
+      "PATCH",
+      { active: false },
+    );
+    assert.equal(deactivated.status, 200);
+    assert.equal(deactivated.body.active, false);
+    const inactiveProfile = await jsonRequest<{ imageUrl: string; gallery: string[] }>(
+      activeServer.baseUrl,
+      "/salon/profile",
+      session,
+      "PATCH",
+      { imageUrl: inactiveCoverAsset.imageUrl, gallery: [inactiveGalleryAsset.imageUrl] },
+    );
+    assert.equal(inactiveProfile.status, 200);
+    for (const imageUrl of [inactiveCoverAsset.imageUrl, inactiveGalleryAsset.imageUrl]) {
+      assert.equal(
+        (await fetch(`${activeServer.baseUrl}${imageUrl}&size=thumbnail`)).status,
+        403,
+        "Media attached while the salon is inactive must remain private.",
+      );
+    }
+    const activated = await jsonRequest<{ active: boolean }>(
+      activeServer.baseUrl,
+      `/admin/salons/${ownerAndSalon.salon.id}`,
+      adminSession,
+      "PATCH",
+      { active: true },
+    );
+    assert.equal(activated.status, 200);
+    assert.equal(activated.body.active, true);
+    for (const imageUrl of [inactiveCoverAsset.imageUrl, inactiveGalleryAsset.imageUrl]) {
+      assert.equal(
+        (await fetch(`${activeServer.baseUrl}${imageUrl}&size=thumbnail`)).status,
+        200,
+        "Activating a salon must publish its matching profile and gallery images immediately.",
+      );
+    }
 
     const replacementProfileAsset = await uploadAsset("salon-profile", session, "profile-detachment-replacement.jpg");
     const detachedProfile = await jsonRequest<{ imageUrl: string; gallery: string[] }>(
@@ -954,6 +1065,9 @@ async function run() {
     disableRegressionUploadMarking?.();
     mediaRegressionRequestHeaders = {};
     await db.update(salonsTable).set(originalSalonMedia).where(eq(salonsTable.id, ownerAndSalon.salon.id));
+    if (privacyProbeAssetId) {
+      await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, privacyProbeAssetId));
+    }
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-ROLLBACK-%"));
     await db.delete(productCategoriesTable).where(like(productCategoriesTable.name, "Media category rollback %"));
     await db.delete(coursesTable).where(like(coursesTable.title, "Media course rollback %"));

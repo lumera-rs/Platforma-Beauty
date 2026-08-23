@@ -1,3 +1,5 @@
+- [EventSource navigation teardown](eventsource-navigation-teardown.md) — ignore only deliberate aborted stream cleanup when browser tests navigate away.
+- [Retail cart live announcements](retail-cart-live-announcements.md) — carry server-confirmed counts through a persistent app-shell announcer and cancel stale summary loads first.
 - [Orval and Zod compatibility](orval-zod-compatibility.md) — shared API generation needs Zod v3-safe OpenAPI schemas and a duplicate-export check.
 - [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.
 - [Social sign-in safety](social-signin-safety.md) — safe provider removal and initiator-bound OAuth linking prevent account loss or switching.
@@ -22,7 +24,8 @@
 - [Partial expression index publishing](partial-expression-index-publishing.md) — use a generated normalized column for nullable participant keys before partial unique indexing.
 - [Immutable gallery media](immutable-gallery-media.md) — browser uploads must land in staging and be promoted before attachment; private media must disable shared caching.
 - [Managed image attachment](managed-image-attachment.md) — claim leased image assets in the same transaction as the business reference, using only newly supplied fields.
-- [Shared end-to-end spec validation](shared-end-to-end-spec-validation.md) — after concurrent merges, run direct test discovery and the full affected suite; typechecks can miss scope drift.
+- [Active salon media publishing](active-salon-media-publishing.md) — only matching owner-uploaded salon media becomes public, and activation must reconcile it transactionally.
+- [Shared end-to-end spec validation](shared-e2e-spec-validation.md) — after concurrent merges, run direct test discovery and the full affected suite; typechecks can miss scope drift.
 - [EventSource reconnect recovery](eventsource-reconnect-recovery.md) — explicitly reconnect browser streams and rehydrate state after network restoration.
 - [Cache invalidation generations](cache-invalidation-generations.md) — detach pending loads on invalidation so stale in-flight results cannot refill catalog caches.
 - [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.
@@ -68,5 +71,3 @@
 - [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
 - [Retail cart summary safety](retail-cart-summary-safety.md) — passive cart indicators must never create empty carts or poll them globally.
 - [Drizzle expression indexes](drizzle-expression-indexes.md) — raw expression indexes need their own parentheses, and disposable schema setup must reject reported SQL errors.
-- [EventSource navigation teardown](eventsource-navigation-teardown.md) — ignore only deliberate aborted stream cleanup when browser tests navigate away.
-- [Retail cart live announcements](retail-cart-live-announcements.md) — carry server-confirmed counts through a persistent app-shell announcer and cancel stale summary loads first.

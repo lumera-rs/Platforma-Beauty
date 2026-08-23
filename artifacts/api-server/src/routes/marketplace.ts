@@ -377,6 +377,7 @@ import {
   canClaimMediaReference,
   claimMediaReference,
   mediaAssetIdFromUrl,
+  publishActiveSalonMediaReferences,
   releaseMediaReferenceClaims,
   stableMediaUrl,
 } from "./media";
@@ -4570,7 +4571,10 @@ router.get("/salons/:slug", async (req, res): Promise<void> => {
   await ensureDemoData();
   const parsed = GetSalonParams.safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.slug, parsed.data.slug)).limit(1);
+  const [salon] = await db.select().from(salonsTable).where(and(
+    eq(salonsTable.slug, parsed.data.slug),
+    eq(salonsTable.active, true),
+  )).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
   const [services, staff, hours, reviews, firstAvailability] = await Promise.all([
     db.select().from(servicesTable).where(and(eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))),
@@ -5461,6 +5465,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
         url: parsed.data.imageUrl,
         scope: "salon-profile",
         resourceId: access.salon.id,
+        visibility: access.salon.active ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -5471,6 +5476,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
             url,
             scope: "salon-gallery",
             resourceId: access.salon.id,
+            visibility: access.salon.active ? "public" : "private",
           }, tx)) {
             throw new MediaClaimConflictError();
           }
@@ -12439,7 +12445,18 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   if (topSalon !== undefined) updates.topSalon = topSalon;
   if (videoUrl !== undefined) updates.videoUrl = videoUrl;
 
-  const [updated] = await db.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
+  const [updated] = await db.transaction(async (tx) => {
+    const rows = await tx.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
+    const changed = rows[0]!;
+    await publishActiveSalonMediaReferences({
+      salonId: changed.id,
+      ownerUserId: changed.ownerId,
+      active: changed.active,
+      imageUrl: changed.imageUrl,
+      gallery: changed.gallery,
+    }, tx);
+    return rows;
+  });
 
   // Only after a successful mutation that can affect salon discovery visibility
   // (active/featured/isVerified/topSalon) do we invalidate the shared catalog

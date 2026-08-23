@@ -325,6 +325,43 @@ export async function claimMediaReference(input: {
   return Boolean(asset);
 }
 
+/**
+ * Reconciles only the managed media already referenced by an active salon.
+ * This is intentionally stricter than a URL match: an asset must be owned by
+ * that salon, have the matching salon-media scope, be unreserved, and either
+ * unclaimed or already claimed by that salon before it can become public.
+ */
+export async function publishActiveSalonMediaReferences(input: {
+  salonId: string;
+  ownerUserId: string;
+  active: boolean;
+  imageUrl: string;
+  gallery: readonly string[];
+}, executor: Pick<typeof db, "update"> = db): Promise<number> {
+  if (!input.active) return 0;
+  const references = [
+    { url: input.imageUrl, scope: "salon-profile" as const },
+    ...input.gallery.map((url) => ({ url, scope: "salon-gallery" as const })),
+  ];
+  let published = 0;
+  for (const { url, scope } of references) {
+    const assetId = mediaAssetIdFromUrl(url);
+    if (!assetId) continue;
+    const [asset] = await executor.update(mediaAssetsTable).set({
+      resourceId: input.salonId,
+      visibility: "public",
+    }).where(and(
+      eq(mediaAssetsTable.id, assetId),
+      eq(mediaAssetsTable.ownerUserId, input.ownerUserId),
+      eq(mediaAssetsTable.scope, scope),
+      isNull(mediaAssetsTable.cleanupReservedAt),
+      or(isNull(mediaAssetsTable.resourceId), eq(mediaAssetsTable.resourceId, input.salonId)),
+    )).returning({ id: mediaAssetsTable.id });
+    if (asset) published += 1;
+  }
+  return published;
+}
+
 export async function releaseMediaReferenceClaims(input: {
   urls: readonly string[];
   resourceId: string;
