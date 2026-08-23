@@ -8,7 +8,9 @@ import {
   subscriptionsTable,
   usersTable,
 } from "@workspace/db";
+import * as apiSchemas from "../../lib/api-zod/src/generated/api";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
+import { checkedApiFixture } from "../src/browser-api-fixtures";
 
 const ADMIN_NAV = [
   { href: "/admin", testId: "admin-nav-dashboard" },
@@ -65,6 +67,10 @@ function adminSummary() {
     totalReviews: 3,
     hiddenReviews: 1,
     activeSubscriptions: 2,
+    galleryCleanupFailedTickets: 0,
+    galleryCleanupFailureAttempts: 0,
+    galleryCleanupOldestEligibleTicketAgeMinutes: null,
+    galleryCleanupHasRepeatedFailures: false,
     topCategories: [{ name: "Kosa", count: 4 }],
     deliveryReportStaleProviders: [],
     smsFallbackReachableAdminCount: 2,
@@ -165,7 +171,11 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
     const method = request.method();
 
     if (path === "/api/auth/me") {
-      await route.fulfill({ json: { user: isLoggedIn ? currentUser : null } });
+      await route.fulfill({
+        json: checkedApiFixture("/api/auth/me", apiSchemas.GetCurrentUserResponse, {
+          user: isLoggedIn ? currentUser : null,
+        }),
+      });
       return;
     }
     if (path === "/api/auth/login" && method === "POST") {
@@ -175,22 +185,27 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       return;
     }
     if (path === "/api/education/disputes" && method === "GET") {
-      await route.fulfill({ json: [] });
+      await route.fulfill({
+        json: checkedApiFixture("/api/education/disputes", apiSchemas.ListEducationDisputesResponse, []),
+      });
       return;
     }
 
     if (path.startsWith("/api/admin/")) {
       if (path === "/api/admin/summary") {
-        await route.fulfill({ json: adminSummary() });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/summary", apiSchemas.GetAdminSummaryResponse, adminSummary()),
+        });
         return;
       }
       if (path === "/api/admin/salons" && method === "GET") {
-        await route.fulfill({ json: [salon] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/salons", apiSchemas.AdminListSalonsResponse, [salon]),
+        });
         return;
       }
       if (path === `/api/admin/salons/${salonId}` && method === "GET") {
-        await route.fulfill({
-          json: {
+        const detail = {
             ...salon,
             address: "Test 1",
             postalCode: "11000",
@@ -199,66 +214,105 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
             orderCount: 0,
             orderTotal: 0,
             orders: [],
-          },
+        };
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/salons/${salonId}`, apiSchemas.AdminGetSalonResponse, detail),
         });
         return;
       }
       if (path === `/api/admin/salons/${salonId}` && method === "PATCH") {
         salon = { ...salon, ...(request.postDataJSON() as Partial<typeof salon>) };
-        await route.fulfill({ json: salon });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/salons/${salonId}`, apiSchemas.AdminUpdateSalonResponse, salon),
+        });
         return;
       }
       if (path === "/api/admin/users" && method === "GET") {
-        await route.fulfill({ json: [user] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/users", apiSchemas.AdminListUsersResponse, [user]),
+        });
         return;
       }
       if (path === `/api/admin/users/${userId}` && method === "PATCH") {
         user = { ...user, ...(request.postDataJSON() as Partial<typeof user>) };
-        await route.fulfill({ json: user });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/users/${userId}`, apiSchemas.AdminUpdateUserResponse, user),
+        });
         return;
       }
       if (path === "/api/admin/loyalty-tiers" && method === "GET") {
-        await route.fulfill({ json: [tier] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/loyalty-tiers", apiSchemas.AdminListLoyaltyTiersResponse, [tier]),
+        });
         return;
       }
       if (path === `/api/admin/loyalty-tiers/${tierId}` && method === "PATCH") {
         tier = { ...tier, ...(request.postDataJSON() as Partial<typeof tier>) };
-        await route.fulfill({ json: tier });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/loyalty-tiers/${tierId}`, apiSchemas.AdminUpdateLoyaltyTierResponse, tier),
+        });
         return;
       }
       if (path === "/api/admin/loyalty-tiers" && method === "POST") {
-        await route.fulfill({ status: 201, json: { ...tier, id: randomUUID() } });
+        await route.fulfill({
+          status: 201,
+          json: checkedApiFixture("/api/admin/loyalty-tiers", apiSchemas.AdminCreateLoyaltyTierResponse, {
+            ...tier,
+            id: randomUUID(),
+          }),
+        });
         return;
       }
       if (path === `/api/admin/loyalty-tiers/${tierId}` && method === "DELETE") {
-        await route.fulfill({ json: { ...tier, active: false } });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/loyalty-tiers/${tierId}`, apiSchemas.AdminDeleteLoyaltyTierResponse, {
+            ...tier,
+            active: false,
+          }),
+        });
         return;
       }
       if (path === "/api/admin/subscription-plans" && method === "GET") {
-        await route.fulfill({ json: [plan] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/subscription-plans", apiSchemas.AdminListSubscriptionPlansResponse, [plan]),
+        });
         return;
       }
       if (path === `/api/admin/subscription-plans/${planId}` && method === "PATCH") {
         plan = { ...plan, ...(request.postDataJSON() as Partial<typeof plan>) };
-        await route.fulfill({ json: plan });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/subscription-plans/${planId}`, apiSchemas.AdminUpdateSubscriptionPlanResponse, plan),
+        });
         return;
       }
       if (path === "/api/admin/subscription-plans" && method === "POST") {
-        await route.fulfill({ status: 201, json: { ...plan, id: randomUUID() } });
+        await route.fulfill({
+          status: 201,
+          json: checkedApiFixture("/api/admin/subscription-plans", apiSchemas.AdminCreateSubscriptionPlanResponse, {
+            ...plan,
+            id: randomUUID(),
+          }),
+        });
         return;
       }
       if (path === `/api/admin/subscription-plans/${planId}` && method === "DELETE") {
         plan = { ...plan, active: false };
-        await route.fulfill({ json: plan });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/subscription-plans/${planId}`, apiSchemas.AdminDeleteSubscriptionPlanResponse, plan),
+        });
         return;
       }
       if (path === "/api/admin/reviews" && method === "GET") {
-        await route.fulfill({ json: [review] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/reviews", apiSchemas.AdminListReviewsResponse, [review]),
+        });
         return;
       }
       if (path === `/api/admin/reviews/${reviewId}` && method === "PATCH") {
         review = { ...review, ...(request.postDataJSON() as Partial<typeof review>) };
-        await route.fulfill({ json: review });
+        await route.fulfill({
+          json: checkedApiFixture(`/api/admin/reviews/${reviewId}`, apiSchemas.AdminUpdateReviewResponse, review),
+        });
         return;
       }
       if (path === `/api/admin/reviews/${reviewId}` && method === "DELETE") {
@@ -266,8 +320,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         return;
       }
       if (path === "/api/admin/shipping" && method === "GET") {
-        await route.fulfill({
-          json: {
+        const shipping = {
             freeShippingThreshold: 10000,
             tiers: [],
             personalDeliveryEnabled: false,
@@ -275,16 +328,24 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
             personalDeliveryPrice: 0,
             personalDeliveryDescription: "Dostava na adresu u Beogradu.",
             updatedAt: "2026-08-21T09:00:00.000Z",
-          },
+        };
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/shipping", apiSchemas.AdminGetShippingConfigResponse, shipping),
         });
         return;
       }
       if (path === "/api/admin/courier-services" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/courier-services", apiSchemas.AdminListCourierServicesResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/email-marketing/campaigns" && method === "GET") {
-        await route.fulfill({ json: { campaigns: [] } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/email-marketing/campaigns", apiSchemas.AdminListEmailCampaignsResponse, {
+            campaigns: [],
+          }),
+        });
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
@@ -305,22 +366,34 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       }
       if (path === "/api/admin/education/settings" && method === "GET") {
         await route.fulfill({
-          json: {
+          json: checkedApiFixture("/api/admin/education/settings", apiSchemas.GetAdminEducationSettingsResponse, {
+            id: "00000000-0000-4000-8000-000000000077",
             commissionPercent: 10,
             reservePercent: 5,
             onlineRefundDays: 14,
             liveAppealDays: 7,
             featuredCoursePrice: 5000,
-          },
+            updatedAt: "2026-08-21T09:00:00.000Z",
+          }),
         });
         return;
       }
       if (path === "/api/admin/education/centers" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/education/centers", apiSchemas.ListAdminEducationCentersResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/education/finance" && method === "GET") {
-        await route.fulfill({ json: { summary: {}, escrows: [], pendingEnrollments: [], featuredCharges: [] } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/education/finance", apiSchemas.GetAdminEducationFinanceResponse, {
+            summary: {},
+            escrows: [],
+            pendingEnrollments: [],
+            featuredCharges: [],
+            payouts: [],
+          }),
+        });
         return;
       }
 

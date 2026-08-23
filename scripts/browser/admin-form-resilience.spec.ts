@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import * as apiSchemas from "../../lib/api-zod/src/generated/api";
+import { checkedApiFixture } from "../src/browser-api-fixtures";
 
 /**
  * Task 131 — admin form resilience regression gate.
@@ -40,6 +42,7 @@ function productCategory() {
   return {
     id: categoryId,
     name: "Kosa",
+    slug: "kosa",
     parentId: null,
     sortOrder: 1,
     icon: null,
@@ -77,6 +80,8 @@ function adminProduct() {
     variantType: null,
     variants: null,
     active: true,
+    discountPercent: null,
+    createdAt: "2026-08-21T09:00:00.000Z",
   };
 }
 
@@ -125,11 +130,13 @@ function serviceTemplate() {
 
 function educationSettings() {
   return {
+    id: "00000000-0000-4000-8000-000000000097",
     commissionPercent: 10,
     reservePercent: 5,
     onlineRefundDays: 14,
     liveAppealDays: 7,
     featuredCoursePrice: 5000,
+    updatedAt: "2026-08-21T09:00:00.000Z",
   };
 }
 
@@ -159,62 +166,121 @@ async function mockAdminApi(page: Page): Promise<void> {
       return;
     }
     if (path === "/api/education/disputes" && method === "GET") {
-      await route.fulfill({ json: [] });
+      await route.fulfill({
+        json: checkedApiFixture("/api/education/disputes", apiSchemas.ListEducationDisputesResponse, []),
+      });
       return;
     }
 
     if (path.startsWith("/api/admin/")) {
       // Read endpoints — provide representative seed rows.
       if (path === "/api/admin/summary") {
-        await route.fulfill({ json: { totalUsers: 1, totalSalons: 0, activeSalons: 0, bookingsThisMonth: 0, bookingsLastMonth: 0, bookingsTrend: 0, grossMerchandiseValue: 0, newSalonsThisMonth: 0, totalReviews: 0, hiddenReviews: 0, activeSubscriptions: 0, topCategories: [] } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/summary", apiSchemas.GetAdminSummaryResponse, {
+            totalUsers: 1,
+            totalSalons: 0,
+            activeSalons: 0,
+            bookingsThisMonth: 0,
+            bookingsLastMonth: 0,
+            bookingsTrend: 0,
+            grossMerchandiseValue: 0,
+            newSalonsThisMonth: 0,
+            totalReviews: 0,
+            hiddenReviews: 0,
+            activeSubscriptions: 0,
+            galleryCleanupFailedTickets: 0,
+            galleryCleanupFailureAttempts: 0,
+            galleryCleanupOldestEligibleTicketAgeMinutes: null,
+            galleryCleanupHasRepeatedFailures: false,
+            deliveryReportStaleProviders: [],
+            smsFallbackReachableAdminCount: 0,
+            topCategories: [],
+          }),
+        });
         return;
       }
       if (path === "/api/admin/product-categories" && method === "GET") {
-        await route.fulfill({ json: [productCategory()] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/product-categories", apiSchemas.AdminListProductCategoriesResponse, [productCategory()]),
+        });
         return;
       }
       if (path === "/api/admin/service-categories" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/service-categories", apiSchemas.AdminListServiceCategoriesResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/products" && method === "GET") {
-        await route.fulfill({ json: { items: [adminProduct()], total: 1, page: 1, pageSize: 20, totalPages: 1 } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/products", apiSchemas.AdminListProductsResponse, {
+            items: [adminProduct()],
+            total: 1,
+            page: 1,
+            pageSize: 20,
+            totalPages: 1,
+          }),
+        });
         return;
       }
       if (path === "/api/admin/brands" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/brands", apiSchemas.AdminListBrandsResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/loyalty-tiers" && method === "GET") {
-        await route.fulfill({ json: [loyaltyTier()] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/loyalty-tiers", apiSchemas.AdminListLoyaltyTiersResponse, [loyaltyTier()]),
+        });
         return;
       }
       if (path === "/api/admin/subscription-plans" && method === "GET") {
-        await route.fulfill({ json: [subscriptionPlan()] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/subscription-plans", apiSchemas.AdminListSubscriptionPlansResponse, [subscriptionPlan()]),
+        });
         return;
       }
       if (path === "/api/admin/service-templates" && method === "GET") {
-        await route.fulfill({ json: [serviceTemplate()] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/service-templates", apiSchemas.AdminListServiceTemplatesResponse, [serviceTemplate()]),
+        });
         return;
       }
       if (path === "/api/admin/shipping" && method === "GET") {
-        await route.fulfill({ json: shippingConfig() });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/shipping", apiSchemas.AdminGetShippingConfigResponse, shippingConfig()),
+        });
         return;
       }
       if (path === "/api/admin/courier-services" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/courier-services", apiSchemas.AdminListCourierServicesResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/education/settings" && method === "GET") {
-        await route.fulfill({ json: educationSettings() });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/education/settings", apiSchemas.GetAdminEducationSettingsResponse, educationSettings()),
+        });
         return;
       }
       if (path === "/api/admin/education/centers" && method === "GET") {
-        await route.fulfill({ json: [] });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/education/centers", apiSchemas.ListAdminEducationCentersResponse, []),
+        });
         return;
       }
       if (path === "/api/admin/education/finance" && method === "GET") {
-        await route.fulfill({ json: { summary: {}, escrows: [], pendingEnrollments: [], featuredCharges: [] } });
+        await route.fulfill({
+          json: checkedApiFixture("/api/admin/education/finance", apiSchemas.GetAdminEducationFinanceResponse, {
+            summary: {},
+            escrows: [],
+            pendingEnrollments: [],
+            featuredCharges: [],
+            payouts: [],
+          }),
+        });
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
