@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus, AlertTriangle, Copy } from "lucide-react";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus, AlertTriangle, Copy, Share2 } from "lucide-react";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -127,6 +127,13 @@ function srCount(n: number, one: string, few: string, many: string): string {
 function formatRangeLabel(range: DateRange | undefined): string | null {
   if (!range?.from || !range?.to) return null;
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
+}
+
+function isShareCancelled(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && (error as { name?: unknown }).name === "AbortError";
 }
 
 async function copyTextWithFallback(text: string): Promise<void> {
@@ -675,6 +682,25 @@ export default function OwnerAutomations() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentRuleId, setCurrentRuleId] = useState<string | null>(null);
   const [isCopyingStatsLink, setIsCopyingStatsLink] = useState(false);
+  const [isSharingStatsLink, setIsSharingStatsLink] = useState(false);
+
+  const statsShareUrl = useMemo(() => {
+    const serialized = serializePeriodSelection(searchString, statsPeriod, customRange);
+    if (serialized === null) return window.location.href;
+
+    const params = new URLSearchParams(serialized);
+    params.delete("rule");
+    params.delete("clients");
+    if (statsRuleId) {
+      params.set("rule", statsRuleId);
+      if (attributedClientType !== "all") params.set("clients", attributedClientType);
+    }
+
+    const url = new URL(window.location.href);
+    url.pathname = pathname;
+    url.search = params.toString() ? `?${params.toString()}` : "";
+    return url.toString();
+  }, [searchString, statsPeriod, customRange, statsRuleId, attributedClientType, pathname]);
 
   // The dialog mirrors the overview request so it shows the same trends for
   // presets and complete custom ranges; "all time" has no previous window.
@@ -871,12 +897,44 @@ export default function OwnerAutomations() {
   const handleCopyStatsLink = async () => {
     setIsCopyingStatsLink(true);
     try {
-      await copyTextWithFallback(window.location.href);
+      await copyTextWithFallback(statsShareUrl);
       toast.success("Link kopiran.");
     } catch {
       toast.error("Link nije moguće kopirati. Kopirajte ga ručno iz adresne trake.");
     } finally {
       setIsCopyingStatsLink(false);
+    }
+  };
+
+  const handleShareStatsLink = async () => {
+    setIsSharingStatsLink(true);
+    try {
+      if (typeof navigator.share !== "function") {
+        await copyTextWithFallback(statsShareUrl);
+        toast.success("Link kopiran.");
+        return;
+      }
+
+      await navigator.share({
+        title: "Statistika automatizacije",
+        text: "Pogledajte statistiku automatizacije.",
+        url: statsShareUrl,
+      });
+      toast.success("Link je spreman za deljenje.");
+    } catch (error) {
+      if (!isShareCancelled(error)) {
+        toast.error("Direktno deljenje nije moguće. Pokušajte kopiranje linka.");
+        return;
+      }
+
+      try {
+        await copyTextWithFallback(statsShareUrl);
+        toast.success("Link kopiran.");
+      } catch {
+        toast.error("Deljenje je otkazano, a link nije moguće kopirati.");
+      }
+    } finally {
+      setIsSharingStatsLink(false);
     }
   };
 
@@ -1072,19 +1130,36 @@ export default function OwnerAutomations() {
           <DialogHeader className="pr-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <DialogTitle>Statistika automatizacije</DialogTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 gap-1.5"
-                onClick={() => void handleCopyStatsLink()}
-                disabled={isCopyingStatsLink}
-                aria-label="Kopiraj link do statistike"
-                data-testid="stats-copy-link"
-              >
-                {isCopyingStatsLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                Kopiraj link
-              </Button>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => void handleShareStatsLink()}
+                    disabled={isSharingStatsLink || isCopyingStatsLink}
+                    aria-label="Podeli link do statistike"
+                    data-testid="stats-share-link"
+                  >
+                    {isSharingStatsLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Share2 className="h-3.5 w-3.5" />}
+                    Podeli
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => void handleCopyStatsLink()}
+                  disabled={isCopyingStatsLink || isSharingStatsLink}
+                  aria-label="Kopiraj link do statistike"
+                  data-testid="stats-copy-link"
+                >
+                  {isCopyingStatsLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                  Kopiraj link
+                </Button>
+              </div>
             </div>
             <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescription(statsPeriod, customRange)}.</DialogDescription>
           </DialogHeader>
