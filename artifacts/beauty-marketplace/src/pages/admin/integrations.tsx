@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, Loader2, PlugZap, Send, ShieldCheck, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null> };
@@ -118,6 +118,13 @@ export default function AdminIntegrations() {
       setRegisteringWebhook(false);
     }
   };
+  const generateWebhookSecret = (integration: Integration) => {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    setForm((previous) => ({ ...previous, [integration]: { ...previous[integration], webhookSecret: secret } }));
+    toast.success("Jaka tajna je generisana. Kliknite „Sačuvaj“ da bi počela da važi, zatim kopirajte kompletan URL i ponovo registrujte webhook kod provajdera.");
+  };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
@@ -135,7 +142,13 @@ export default function AdminIntegrations() {
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{titles[integration]}</h2><p className="text-sm text-muted-foreground">{card.configuredInDatabase ? "Baza je izvor konfiguracije." : "Koristi environment fallback dok ne sačuvate vrednosti."}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${color}`}>{label}</span></div>
           <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
-          {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
+          {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.key === "webhookSecret" && (integration === "sms" || integration === "brevo") ? <>
+            <div className="flex gap-2">
+              <div className="flex-1"><PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>
+              <Button type="button" variant="outline" onClick={() => generateWebhookSecret(integration)}><KeyRound className="mr-2 h-4 w-4" />Generiši tajnu</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Generisana tajna počinje da važi tek kada kliknete „Sačuvaj“.</p>
+          </> : field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label><div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">
             <Label>Webhook URL za statuse isporuke</Label>
