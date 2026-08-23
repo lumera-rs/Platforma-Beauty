@@ -153,6 +153,12 @@ export default function AdminIntegrations() {
       const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
+      // A development/preview verdict may be successful only in the softened
+      // sense that it found the current secret elsewhere (likely production).
+      // The server marks only a strict production-origin verdict as a
+      // re-confirmation, so mirror that explicit result instead of clearing
+      // on every 200 response.
+      if (result.reconfirmed === true) clearPendingReconfirmation("brevo");
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Provera registracije na Brevo nije uspela.");

@@ -3637,11 +3637,19 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
   } catch (error) {
     respondBrevoListingFailure(res, error); return;
   }
+  const context = brevoVerdictContext(req);
   const verdict = brevoRegistrationVerdict(
     brevoRegistrationCandidates(webhooks, secret),
-    brevoVerdictContext(req),
+    context,
   );
-  if (verdict.ok) { res.json({ message: verdict.message }); return; }
+  if (verdict.ok) {
+    // A development-origin verdict is intentionally softened: it can
+    // recognize the production registration, but the preview cannot prove
+    // that this deployment's public origin is the one Brevo will call.
+    // Only a strict production-origin success re-confirms the new secret.
+    if (!context.developmentOrigin) await markWebhookReconfirmed("brevo", user.id);
+    res.json({ message: verdict.message, reconfirmed: !context.developmentOrigin }); return;
+  }
   res.status(409).json({ error: verdict.error });
 });
 

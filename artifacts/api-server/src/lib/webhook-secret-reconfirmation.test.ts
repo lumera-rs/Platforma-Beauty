@@ -18,9 +18,12 @@
  *   3. Re-saving the identical secret while pending keeps the reminder;
  *      re-saving it after confirmation never re-raises a false reminder
  *   4. A successful self-check clears the flag persistently
- *   5. A successful one-click Brevo registration (create + verified re-check,
+ *   5. A softened development-origin Brevo registration verdict does not
+ *      clear the flag
+ *   6. A strict production-origin Brevo registration verdict clears it
+ *   7. A successful one-click Brevo registration (create + verified re-check,
  *      Brevo API intercepted) clears the flag persistently
- *   6. Marker rows are metadata only: they never surface as integration
+ *   8. Marker rows are metadata only: they never surface as integration
  *      values
  *
  * The integration_settings table is global, so the suite snapshots every
@@ -29,6 +32,7 @@
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/webhook-secret-reconfirmation.test.ts
  */
 import assert from "node:assert/strict";
+import { request as httpRequest } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -69,6 +73,8 @@ async function run() {
   await once(server, "listening");
   const port = (server.address() as AddressInfo).port;
   const baseUrl = `http://127.0.0.1:${port}`;
+  const prodHost = `wsr-prod-${suffix}.example.com`;
+  const prodOrigin = `https://${prodHost}`;
 
   // Snapshot the global sms/brevo integration rows for exact restoration.
   const priorRows = await db.select().from(integrationSettingsTable)
@@ -91,6 +97,27 @@ async function run() {
     cleanup.userIds.push(admin.id);
     const cookie = `${sessionCookieName}=${await createSession(admin.id)}`;
 
+    // Registration checks must be exercised from a production-looking origin:
+    // fetch() forbids setting Host, so use node:http for the strict-versus-dev
+    // origin assertions.
+    const requestWithHost = (path: string, options: { host: string; method?: string }) =>
+      new Promise<{ status: number; raw: string }>((resolve, reject) => {
+        const request = httpRequest({
+          hostname: "127.0.0.1",
+          port,
+          path,
+          method: options.method ?? "GET",
+          headers: { host: options.host, "x-forwarded-proto": "https", cookie },
+        }, (response) => {
+          let raw = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk: string) => { raw += chunk; });
+          response.on("end", () => resolve({ status: response.statusCode ?? 0, raw }));
+        });
+        request.on("error", reject);
+        request.end();
+      });
+
     const getCards = async () => {
       const response = await fetch(`${baseUrl}/api/admin/integrations`, { headers: { cookie } });
       assert.equal(response.status, 200, "admin integrations read must succeed");
@@ -112,6 +139,13 @@ async function run() {
       });
       const body = await response.json() as { message?: string; error?: string };
       assert.equal(response.status, 200, `${integration} self-check must succeed: ${JSON.stringify(body)}`);
+    };
+    const verifyBrevoRegistration = async (host: string) => {
+      const response = await requestWithHost("/api/admin/integrations/brevo/verify-registration", {
+        method: "POST", host,
+      });
+      const body = JSON.parse(response.raw) as { message?: string; error?: string; reconfirmed?: boolean };
+      return { response, body };
     };
 
     // ── 1. Baseline: never-changed secrets carry no reminder ───────────────
@@ -171,16 +205,49 @@ async function run() {
       console.log("✓ unchanged confirmed secret never re-flags; the change→confirm cycle repeats cleanly");
     }
 
-    // ── 6. Brevo: one-click registration clears the reminder ───────────────
+    // ── 6. Brevo: registration check only clears on strict production proof ─
     {
-      const brevoSecret = `wsr-brevo-secret-${suffix}`;
+      const brevoSecret = `wsr-brevo-secret-${suffix}-check`;
+      const saved = await putIntegration("brevo", { webhookSecret: brevoSecret });
+      assert.equal(saved.webhookSecretPendingReconfirmation, true, "changed brevo secret raises the reminder");
+
+      const registeredUrl = `${prodOrigin}/api/webhooks/brevo/${encodeURIComponent(brevoSecret)}`;
+      brevoQueue.push({
+        method: "GET", pathIncludes: "/webhooks?type=transactional", status: 200,
+        body: [{ id: 490, url: registeredUrl, events: [...BREVO_WEBHOOK_EVENTS] }],
+      });
+      const softened = await verifyBrevoRegistration(`wsr-${suffix}.riker.replit.dev`);
+      assert.equal(softened.response.status, 200,
+        `development-origin current-secret verdict should still succeed softly: ${softened.response.raw}`);
+      assert.equal(softened.body.reconfirmed, false,
+        "a softened development-origin verdict must not re-confirm the secret");
+      assert.equal((await getCards())["brevo"]?.webhookSecretPendingReconfirmation, true,
+        "development-origin registration check must leave the reminder pending");
+
+      brevoQueue.push({
+        method: "GET", pathIncludes: "/webhooks?type=transactional", status: 200,
+        body: [{ id: 491, url: registeredUrl, events: [...BREVO_WEBHOOK_EVENTS] }],
+      });
+      const strict = await verifyBrevoRegistration(prodHost);
+      assert.equal(strict.response.status, 200,
+        `strict production-origin registration check must succeed: ${strict.response.raw}`);
+      assert.equal(strict.body.reconfirmed, true,
+        "strict production-origin success must report re-confirmation");
+      assert.equal((await getCards())["brevo"]?.webhookSecretPendingReconfirmation, false,
+        "strict production-origin registration check must clear the reminder after reload");
+      console.log("✓ Brevo registration check keeps dev verdicts pending and clears on strict production proof");
+    }
+
+    // ── 7. Brevo: one-click registration clears the reminder ───────────────
+    {
+      const brevoSecret = `wsr-brevo-secret-${suffix}-repair`;
       const saved = await putIntegration("brevo", { webhookSecret: brevoSecret });
       assert.equal(saved.webhookSecretPendingReconfirmation, true, "changed brevo secret raises the reminder");
 
       // One-click flow: empty listing → create → fresh listing showing the
       // registration this deployment just wrote (URL + current secret + all
       // subscribed events), so the route's re-check passes.
-      const targetUrl = `${baseUrl}/api/webhooks/brevo/${encodeURIComponent(brevoSecret)}`;
+      const targetUrl = `${prodOrigin}/api/webhooks/brevo/${encodeURIComponent(brevoSecret)}`;
       brevoQueue.push(
         { method: "GET", pathIncludes: "/webhooks?type=transactional", status: 200, body: [] },
         { method: "POST", pathIncludes: "/webhooks", status: 201, body: { id: 501 } },
@@ -188,11 +255,11 @@ async function run() {
           { id: 501, url: targetUrl, events: [...BREVO_WEBHOOK_EVENTS] },
         ] },
       );
-      const response = await fetch(`${baseUrl}/api/admin/integrations/brevo/register-webhook`, {
-        method: "POST", headers: { cookie },
+      const registrationRequest = await requestWithHost("/api/admin/integrations/brevo/register-webhook", {
+        method: "POST", host: prodHost,
       });
-      const body = await response.json() as { message?: string; error?: string };
-      assert.equal(response.status, 200, `one-click registration must succeed: ${JSON.stringify(body)}`);
+      const body = JSON.parse(registrationRequest.raw) as { message?: string; error?: string };
+      assert.equal(registrationRequest.status, 200, `one-click registration must succeed: ${JSON.stringify(body)}`);
       assert.equal(brevoQueue.length, 0, "registration flow must consume the full stub sequence");
 
       const cards = await getCards();
@@ -202,7 +269,7 @@ async function run() {
       console.log("✓ one-click Brevo registration clears the reminder persistently");
     }
 
-    // ── 7. Markers are metadata: never surfaced as integration values ──────
+    // ── 8. Markers are metadata: never surfaced as integration values ──────
     {
       for (const integration of ["sms", "brevo"] as const) {
         const settings = await integrationSettings(integration);
