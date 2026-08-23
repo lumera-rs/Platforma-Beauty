@@ -96,6 +96,20 @@ export default function AdminIntegrations() {
       setVerifyingRegistration(false);
     }
   };
+  const [registeringWebhook, setRegisteringWebhook] = useState(false);
+  const registerBrevoWebhook = async () => {
+    setRegisteringWebhook(true);
+    try {
+      const response = await fetch("/api/admin/integrations/brevo/register-webhook", { method: "POST", credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Registracija webhook-a na Brevo nije uspela.");
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Registracija webhook-a na Brevo nije uspela.");
+    } finally {
+      setRegisteringWebhook(false);
+    }
+  };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
@@ -132,10 +146,15 @@ export default function AdminIntegrations() {
                 {verifyingRegistration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
                 {verifyingRegistration ? "Proveravam…" : "Proveri registraciju na Brevo"}
               </Button>}
+              {integration === "brevo" && <Button variant="outline" size="sm" disabled={registeringWebhook} onClick={registerBrevoWebhook}>
+                {registeringWebhook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
+                {registeringWebhook ? "Registrujem…" : "Registruj webhook"}
+              </Button>}
             </div>
             <p className="mt-1.5 text-xs text-muted-foreground">Kopiranje ubacuje sačuvanu tajnu umesto {"<tajna>"} — nalepite kopirani URL direktno kod provajdera, bez ručnog sklapanja.</p>
             <p className="mt-1.5 text-xs text-muted-foreground">Šalje probni događaj na sopstveni endpoint sa sačuvanom tajnom — potvrđuje da se tajna poklapa i da endpoint prima događaje, bez uticaja na isporuke.</p>
             {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije pita Brevo API da li je webhook zaista registrovan kod provajdera: da li URL pokazuje na ovaj domen i nosi aktuelnu tajnu. Poređenje se obavlja na serveru; tajna se nikada ne prikazuje.</p>}
+            {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">„Registruj webhook“ jednim klikom kreira ili ažurira transakcioni webhook direktno preko Brevo API-ja — URL ove aplikacije sa sačuvanom tajnom i pretplatom na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka — a zatim ponovo proverava registraciju. Tajna se koristi samo na serveru.</p>}
           </div>}
           {(integration === "sms" || integration === "brevo") && (() => {
             const report = deliveryReport(integration);

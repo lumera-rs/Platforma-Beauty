@@ -511,15 +511,18 @@ export async function sendBrevoCampaignNow(campaignId: number) {
   await brevoJson(`/emailCampaigns/${campaignId}/sendNow`, {});
 }
 
+export type BrevoTransactionalWebhook = { id: number; url: string };
+
 /**
- * List the transactional webhook URLs currently registered at Brevo, using the
- * saved apiKey. Powers the admin registration check that confirms the app's
- * webhook URL (with the current secret token) actually exists at the provider
- * — the loopback self-check alone cannot see a webhook that was deleted at
- * Brevo, points at a stale domain, or still carries an old secret.
+ * List the transactional webhooks currently registered at Brevo (id + URL),
+ * using the saved apiKey. Powers the admin registration check that confirms
+ * the app's webhook URL (with the current secret token) actually exists at
+ * the provider — the loopback self-check alone cannot see a webhook that was
+ * deleted at Brevo, points at a stale domain, or still carries an old secret
+ * — and the one-click repair, which needs the webhook id to update in place.
  * Brevo answers 404 when no webhook is registered; treated as an empty list.
  */
-export async function listBrevoTransactionalWebhookUrls(): Promise<string[]> {
+export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransactionalWebhook[]> {
   const response = await brevoFetch("/webhooks?type=transactional", {
     method: "GET",
     signal: AbortSignal.timeout(15_000),
@@ -535,8 +538,57 @@ export async function listBrevoTransactionalWebhookUrls(): Promise<string[]> {
     : body && typeof body === "object" && Array.isArray((body as { webhooks?: unknown }).webhooks)
       ? (body as { webhooks: unknown[] }).webhooks
       : [];
-  return entries.flatMap((entry) =>
-    entry && typeof entry === "object" && typeof (entry as { url?: unknown }).url === "string"
-      ? [(entry as { url: string }).url]
-      : []);
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const { id, url } = entry as { id?: unknown; url?: unknown };
+    return typeof id === "number" && typeof url === "string" ? [{ id, url }] : [];
+  });
+}
+
+/**
+ * Delivery events the app's Brevo webhook endpoint consumes (see
+ * provider-events.ts): delivery confirmations, opens, and the failure family
+ * (hard/soft bounce, blocked, provider error). Subscribed on every one-click
+ * registration so a repaired webhook never silently misses an event class.
+ */
+export const BREVO_WEBHOOK_EVENTS = [
+  "delivered",
+  "opened",
+  "hardBounce",
+  "softBounce",
+  "blocked",
+  "error",
+] as const;
+
+const BREVO_WEBHOOK_DESCRIPTION = "LUMERA — statusi isporuke transakcionih e-mailova";
+
+async function brevoWebhookWrite(path: string, method: "POST" | "PUT", body: unknown): Promise<void> {
+  const response = await brevoFetch(path, {
+    method,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Brevo ${response.status}: ${error.slice(0, 500)}`);
+  }
+}
+
+/** Create the transactional webhook at Brevo, subscribed to all consumed events. */
+export async function createBrevoTransactionalWebhook(url: string): Promise<void> {
+  await brevoWebhookWrite("/webhooks", "POST", {
+    url,
+    type: "transactional",
+    description: BREVO_WEBHOOK_DESCRIPTION,
+    events: BREVO_WEBHOOK_EVENTS,
+  });
+}
+
+/** Point an existing Brevo webhook at a new URL and re-subscribe all consumed events. */
+export async function updateBrevoTransactionalWebhook(id: number, url: string): Promise<void> {
+  await brevoWebhookWrite(`/webhooks/${id}`, "PUT", {
+    url,
+    description: BREVO_WEBHOOK_DESCRIPTION,
+    events: BREVO_WEBHOOK_EVENTS,
+  });
 }
