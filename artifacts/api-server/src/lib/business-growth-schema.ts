@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 4;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 5;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -258,6 +258,16 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS automation_deliveries_run_idx ON ${s}.automation_deliveries (run_id)`,
     `CREATE INDEX IF NOT EXISTS automation_deliveries_salon_created_idx ON ${s}.automation_deliveries (salon_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS automation_deliveries_claim_expiry_idx ON ${s}.automation_deliveries (status, claim_expires_at)`,
+
+    // ── provider_webhook_receipts (v5: delivery-report freshness) ───────────
+    // One row per delivery-report provider ("brevo" | "infobip") holding the
+    // last accepted verified webhook event receipt time. Mirrors
+    // lib/db/src/schema/business-growth.ts providerWebhookReceiptsTable.
+    `CREATE TABLE IF NOT EXISTS ${s}.provider_webhook_receipts (
+      provider text PRIMARY KEY,
+      last_event_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
 
     // ── treatment_packages ───────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS ${s}.treatment_packages (

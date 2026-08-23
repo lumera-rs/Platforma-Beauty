@@ -32,9 +32,10 @@ import {
   automationDeliveriesTable,
   db,
   emailDeliveriesTable,
+  providerWebhookReceiptsTable,
   smsDeliveriesTable,
 } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
 import { integrationSettings, type IntegrationName } from "./integrations";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,123 @@ export function webhookTokenMatches(expected: string, provided: string): boolean
   const a = createHash("sha256").update(expected).digest();
   const b = createHash("sha256").update(provided).digest();
   return timingSafeEqual(a, b);
+}
+
+// ---------------------------------------------------------------------------
+// Delivery-report receipt tracking (webhook freshness monitoring)
+// ---------------------------------------------------------------------------
+
+/** Delivery-report provider keys as shown to admins (webhook path names). */
+export type DeliveryReportProvider = "brevo" | "infobip";
+
+/** Automation sends within this window are considered "recent" for warnings. */
+export const DELIVERY_REPORT_WINDOW_HOURS = 24;
+/**
+ * Sends younger than this are not expected to have produced events yet —
+ * providers need a little time to attempt delivery and call the webhook.
+ */
+export const DELIVERY_REPORT_GRACE_MINUTES = 30;
+
+/**
+ * Record that a verified webhook request with at least one parseable event
+ * was accepted for this provider. Monotonic (GREATEST) so concurrent or
+ * replayed recordings can never move the timestamp backwards. Monitoring
+ * metadata only — callers treat failures as non-fatal so a tracking hiccup
+ * can never change webhook response semantics.
+ */
+export async function recordWebhookReceipt(provider: DeliveryReportProvider, at = new Date()): Promise<void> {
+  await db.insert(providerWebhookReceiptsTable)
+    .values({ provider, lastEventAt: at, updatedAt: at })
+    .onConflictDoUpdate({
+      target: providerWebhookReceiptsTable.provider,
+      set: {
+        lastEventAt: sql`greatest(${providerWebhookReceiptsTable.lastEventAt}, excluded.last_event_at)`,
+        updatedAt: at,
+      },
+    });
+}
+
+export interface DeliveryReportStatus {
+  /** Server receipt time of the last accepted verified event (ISO), or null if never. */
+  lastEventAt: string | null;
+  /** Most recent automation send on this provider's channel within the window (ISO). */
+  lastAutomationSentAt: string | null;
+  /** Automation sends on this provider's channel within the window. */
+  recentSendCount: number;
+  /** True when recent sends exist but no event has arrived since the newest grace-aged send. */
+  warning: boolean;
+}
+
+/**
+ * Pure warning decision: warn when at least one automation send is old enough
+ * that its delivery report should have arrived (grace-aged, within the recent
+ * window) and no verified event has been received since that send. A healthy
+ * webhook produces delivered/bounce events within minutes of every send, so
+ * "newest qualifying send with zero events after it" is the silence signal.
+ */
+export function deliveryReportWarning(input: {
+  lastEventAt: Date | null;
+  lastQualifyingSentAt: Date | null;
+}): boolean {
+  if (!input.lastQualifyingSentAt) return false;
+  return !input.lastEventAt || input.lastEventAt.getTime() < input.lastQualifyingSentAt.getTime();
+}
+
+/** Normalize a driver-returned timestamp (Date or string) to Date. */
+function asDate(value: unknown): Date | null {
+  if (value == null) return null;
+  const parsed = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Per-provider delivery-report freshness for the admin integrations page.
+ * Compares recent automation sends (per channel) with the last accepted
+ * verified webhook event per provider. Read-only monitoring — no effect on
+ * webhook authentication or delivery-state transitions.
+ */
+export async function deliveryReportStatuses(now = new Date()): Promise<Record<DeliveryReportProvider, DeliveryReportStatus>> {
+  const windowStart = new Date(now.getTime() - DELIVERY_REPORT_WINDOW_HOURS * 60 * 60 * 1000);
+  const graceCutoff = new Date(now.getTime() - DELIVERY_REPORT_GRACE_MINUTES * 60 * 1000);
+
+  const [receipts, sends] = await Promise.all([
+    db.select({
+      provider: providerWebhookReceiptsTable.provider,
+      lastEventAt: providerWebhookReceiptsTable.lastEventAt,
+    }).from(providerWebhookReceiptsTable),
+    db.select({
+      channel: automationDeliveriesTable.channel,
+      recentSendCount: sql<number>`count(*)::int`,
+      lastSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt})`,
+      lastQualifyingSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt}) filter (where ${automationDeliveriesTable.sentAt} <= ${graceCutoff})`,
+    })
+      .from(automationDeliveriesTable)
+      .where(and(
+        eq(automationDeliveriesTable.status, "sent"),
+        isNotNull(automationDeliveriesTable.sentAt),
+        gte(automationDeliveriesTable.sentAt, windowStart),
+      ))
+      .groupBy(automationDeliveriesTable.channel),
+  ]);
+
+  const receiptByProvider = new Map(receipts.map((row) => [row.provider, row.lastEventAt]));
+  const sendsByChannel = new Map(sends.map((row) => [row.channel, row]));
+  const channelForProvider: Record<DeliveryReportProvider, "email" | "sms"> = { brevo: "email", infobip: "sms" };
+
+  const status = (provider: DeliveryReportProvider): DeliveryReportStatus => {
+    const lastEventAt = receiptByProvider.get(provider) ?? null;
+    const channelSends = sendsByChannel.get(channelForProvider[provider]);
+    const lastSentAt = asDate(channelSends?.lastSentAt);
+    const lastQualifyingSentAt = asDate(channelSends?.lastQualifyingSentAt);
+    return {
+      lastEventAt: lastEventAt ? lastEventAt.toISOString() : null,
+      lastAutomationSentAt: lastSentAt ? lastSentAt.toISOString() : null,
+      recentSendCount: channelSends?.recentSendCount ?? 0,
+      warning: deliveryReportWarning({ lastEventAt, lastQualifyingSentAt }),
+    };
+  };
+
+  return { brevo: status("brevo"), infobip: status("infobip") };
 }
 
 // ---------------------------------------------------------------------------

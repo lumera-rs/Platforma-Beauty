@@ -215,10 +215,24 @@ export const automationDeliveriesTable = pgTable("automation_deliveries", {
   index("automation_deliveries_claim_expiry_idx").on(table.status, table.claimExpiresAt),
 ]);
 
-// ---------------------------------------------------------------------------
-// Treatment packages
-// ---------------------------------------------------------------------------
-
+/**
+ * Last accepted verified webhook event per delivery-report provider.
+ *
+ * One row per provider ("brevo" | "infobip"), updated whenever a webhook
+ * request passes token verification and carries at least one parseable event.
+ * Powers the admin integrations page warning when automation messages were
+ * sent recently but no delivery reports have arrived — a misconfigured or
+ * disabled provider webhook otherwise fails silently (counts just stop
+ * updating). Monitoring metadata only: it never influences webhook
+ * authentication or delivery-state transitions.
+ */
+export const providerWebhookReceiptsTable = pgTable("provider_webhook_receipts", {
+  /** Delivery-report provider key: "brevo" (email) or "infobip" (SMS). */
+  provider: text("provider").primaryKey(),
+  /** Server receipt time of the most recent accepted verified event batch. */
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 export const treatmentPackagesTable = pgTable("treatment_packages", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),

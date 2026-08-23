@@ -23,13 +23,30 @@ import {
   applyInfobipReports,
   parseBrevoWebhookBody,
   parseInfobipWebhookBody,
+  recordWebhookReceipt,
   resolveWebhookSecret,
   webhookTokenMatches,
+  type DeliveryReportProvider,
   type WebhookProvider,
+  type WebhookSummary,
 } from "../lib/provider-events";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+/**
+ * Track the last accepted verified event batch per provider (admin freshness
+ * monitoring). Non-fatal by design: a tracking failure must never change the
+ * webhook response semantics (the events themselves were already applied).
+ */
+async function trackWebhookReceipt(provider: DeliveryReportProvider, summary: WebhookSummary): Promise<void> {
+  if (summary.processed === 0) return;
+  try {
+    await recordWebhookReceipt(provider);
+  } catch (err) {
+    logger.warn({ provider, err }, "failed to record webhook receipt timestamp");
+  }
+}
 
 /**
  * Verify the path token against the configured secret. Returns true when the
@@ -59,6 +76,7 @@ router.post("/webhooks/brevo/:token", async (req, res, next) => {
       return;
     }
     const summary = await applyBrevoEvents(events);
+    await trackWebhookReceipt("brevo", summary);
     logger.info({ provider: "brevo", ...summary }, "provider webhook processed");
     res.json(summary);
   } catch (err) { next(err); }
@@ -73,6 +91,7 @@ router.post("/webhooks/infobip/:token", async (req, res, next) => {
       return;
     }
     const summary = await applyInfobipReports(reports);
+    await trackWebhookReceipt("infobip", summary);
     logger.info({ provider: "infobip", ...summary }, "provider webhook processed");
     res.json(summary);
   } catch (err) { next(err); }

@@ -204,6 +204,7 @@ async function run() {
       "package_purchase_service_links", "package_redemptions",
       "employee_commission_settings", "employee_ratings",
       "platform_retention_settings",
+      "provider_webhook_receipts",
     ];
     for (const tbl of growthTables) {
       const exists = await objectExists(
@@ -228,6 +229,28 @@ async function run() {
     assert.ok(await columnExists("automation_runs", "sent_at"), "automation_runs.sent_at present");
     assert.ok(await columnExists("automation_deliveries", "claim_expires_at"), "automation_deliveries.claim_expires_at present");
     assert.ok(await columnExists("automation_deliveries", "failed_at"), "automation_deliveries.failed_at present (provider webhook failure state)");
+    // v5: delivery-report freshness tracking (mirrors providerWebhookReceiptsTable).
+    for (const column of ["provider", "last_event_at", "updated_at"]) {
+      assert.ok(await columnExists("provider_webhook_receipts", column), `provider_webhook_receipts.${column} present`);
+    }
+    // The monotonic receipt upsert used at runtime must work on the rolled-out table.
+    await q(
+      `INSERT INTO "${s}".provider_webhook_receipts (provider, last_event_at, updated_at)
+       VALUES ('brevo', now(), now())
+       ON CONFLICT (provider) DO UPDATE SET
+         last_event_at = greatest(provider_webhook_receipts.last_event_at, excluded.last_event_at),
+         updated_at = excluded.updated_at`,
+    );
+    const receiptBefore = (await q<{ last_event_at: string }>(`SELECT last_event_at FROM "${s}".provider_webhook_receipts WHERE provider = 'brevo'`)).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".provider_webhook_receipts (provider, last_event_at, updated_at)
+       VALUES ('brevo', now() - interval '1 hour', now())
+       ON CONFLICT (provider) DO UPDATE SET
+         last_event_at = greatest(provider_webhook_receipts.last_event_at, excluded.last_event_at),
+         updated_at = excluded.updated_at`,
+    );
+    const receiptAfter = (await q<{ last_event_at: string }>(`SELECT last_event_at FROM "${s}".provider_webhook_receipts WHERE provider = 'brevo'`)).rows[0]!;
+    assert.equal(receiptAfter.last_event_at.toString(), receiptBefore.last_event_at.toString(), "stale receipt upsert never regresses last_event_at");
 
     // ── Key indexes ────────────────────────────────────────────────────────
     async function indexExists(name: string) {

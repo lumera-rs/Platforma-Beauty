@@ -30,6 +30,7 @@ import {
   db,
   emailDeliveriesTable,
   pool,
+  providerWebhookReceiptsTable,
   salonCustomersTable,
   salonsTable,
   smsDeliveriesTable,
@@ -37,7 +38,12 @@ import {
 } from "@workspace/db";
 import app, { safePathname, redactPathSecrets } from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { resolveWebhookSecret } from "./provider-events";
+import {
+  deliveryReportWarning,
+  recordWebhookReceipt,
+  resolveWebhookSecret,
+  type DeliveryReportProvider,
+} from "./provider-events";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = {
@@ -127,6 +133,14 @@ async function automationDelivery(eventKey: string) {
     .where(eq(automationDeliveriesTable.eventKey, eventKey)).limit(1);
   assert.ok(row, `automation delivery ${eventKey} must exist`);
   return row;
+}
+
+/** Current last-accepted-event timestamp for a provider (null if never). */
+async function webhookReceipt(provider: DeliveryReportProvider): Promise<Date | null> {
+  const [row] = await db.select({ lastEventAt: providerWebhookReceiptsTable.lastEventAt })
+    .from(providerWebhookReceiptsTable)
+    .where(eq(providerWebhookReceiptsTable.provider, provider)).limit(1);
+  return row?.lastEventAt ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +252,11 @@ async function run() {
     const runA3 = await makeSentRun(a.salon.id, ruleA.id, customerA.id, "a3");
     const runB = await makeSentRun(b.salon.id, ruleB.id, customerB.id, "b1");
 
+    // Baseline receipt state — rejected/malformed requests must not move it.
+    const baselineBrevoReceipt = await webhookReceipt("brevo");
+    const baselineInfobipReceipt = await webhookReceipt("infobip");
+    const suiteStart = new Date();
+
     // ── 1. Forged / invalid tokens are rejected with no state change ───────
     {
       const forged = await postJson(`/webhooks/brevo/${encodeURIComponent(`${brevoSecret}x`)}`, {
@@ -259,7 +278,20 @@ async function run() {
       assert.equal(bad.status, 400, "malformed Brevo payload must be 400");
       const badSms = await postJson(`/webhooks/infobip/${encodeURIComponent(smsSecret)}`, { results: "x" });
       assert.equal(badSms.status, 400, "malformed Infobip payload must be 400");
-      console.log("✓ malformed payloads rejected (400)");
+
+      // Neither unconfigured (503), forged (401), nor malformed (400) requests
+      // may count as a received delivery report.
+      assert.equal(
+        (await webhookReceipt("brevo"))?.getTime() ?? null,
+        baselineBrevoReceipt?.getTime() ?? null,
+        "rejected Brevo requests must not update the receipt timestamp",
+      );
+      assert.equal(
+        (await webhookReceipt("infobip"))?.getTime() ?? null,
+        baselineInfobipReceipt?.getTime() ?? null,
+        "rejected Infobip requests must not update the receipt timestamp",
+      );
+      console.log("✓ malformed payloads rejected (400); rejected requests leave receipts untouched");
     }
 
     // ── 3. Delivered → opened lifecycle + duplicate replays are no-ops ─────
@@ -416,6 +448,76 @@ async function run() {
       assert.ok(failedRow.failedAt, "UNDELIVERABLE records provider failure");
       assert.equal(failedRow.status, "sent", "status untouched");
       console.log("✓ SMS reports update delivered/failed idempotently; PENDING ignored");
+    }
+
+    // ── 7b. Accepted verified events update per-provider receipt tracking ──
+    {
+      const brevoReceipt = await webhookReceipt("brevo");
+      const infobipReceipt = await webhookReceipt("infobip");
+      assert.ok(brevoReceipt && brevoReceipt.getTime() >= suiteStart.getTime(),
+        "accepted verified Brevo events must record a fresh receipt timestamp");
+      assert.ok(infobipReceipt && infobipReceipt.getTime() >= suiteStart.getTime(),
+        "accepted verified Infobip reports must record a fresh receipt timestamp");
+
+      // Monotonic: an out-of-order/stale recording can never move it backwards.
+      await recordWebhookReceipt("brevo", new Date(suiteStart.getTime() - 60 * 60 * 1000));
+      const afterStale = await webhookReceipt("brevo");
+      assert.equal(afterStale?.getTime(), brevoReceipt.getTime(),
+        "stale receipt recording must not regress the timestamp");
+
+      // Pure warning decision: silence = grace-aged recent send with no event since.
+      const t0 = new Date("2026-08-23T10:00:00Z");
+      const later = new Date(t0.getTime() + 60_000);
+      assert.equal(deliveryReportWarning({ lastEventAt: null, lastQualifyingSentAt: null }), false, "no recent sends → no warning");
+      assert.equal(deliveryReportWarning({ lastEventAt: t0, lastQualifyingSentAt: null }), false, "events but no recent sends → no warning");
+      assert.equal(deliveryReportWarning({ lastEventAt: null, lastQualifyingSentAt: t0 }), true, "grace-aged send and no event ever → warning");
+      assert.equal(deliveryReportWarning({ lastEventAt: t0, lastQualifyingSentAt: later }), true, "no event since the newest grace-aged send → warning");
+      assert.equal(deliveryReportWarning({ lastEventAt: later, lastQualifyingSentAt: t0 }), false, "event after the newest grace-aged send → healthy");
+      console.log("✓ receipt tracking is fresh + monotonic; warning fires only on report silence");
+    }
+
+    // ── 7c. Admin integrations endpoint surfaces delivery-report freshness ─
+    {
+      const adminHash = await hashPassword(`pe-admin-${suffix}`);
+      const [admin] = await db.insert(usersTable).values({
+        firstName: "Admin", lastName: "PE",
+        email: `pe-admin-${suffix}@bg.test`, passwordHash: adminHash, passwordSetAt: new Date(), role: "ADMIN",
+      }).returning();
+      assert.ok(admin);
+      cleanup.userIds.push(admin.id);
+      const adminToken = await createSession(admin.id);
+
+      const response = await fetch(`${baseUrl}/api/admin/integrations`, {
+        headers: { cookie: `${sessionCookieName}=${adminToken}` },
+      });
+      assert.equal(response.status, 200);
+      type ReportedStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
+      const body = await response.json() as {
+        deliveryReports?: {
+          providers?: Record<string, ReportedStatus>;
+          windowHours?: number;
+          graceMinutes?: number;
+        };
+      };
+      assert.ok(body.deliveryReports, "admin integrations response must include deliveryReports");
+      assert.equal(typeof body.deliveryReports.windowHours, "number");
+      assert.equal(typeof body.deliveryReports.graceMinutes, "number");
+      for (const provider of ["brevo", "infobip"] as const) {
+        const providerStatus: ReportedStatus | undefined = body.deliveryReports.providers?.[provider];
+        assert.ok(providerStatus, `deliveryReports.providers.${provider} present`);
+        assert.equal(typeof providerStatus.recentSendCount, "number");
+        assert.equal(typeof providerStatus.warning, "boolean");
+        // This suite just accepted verified events for both providers, so the
+        // receipt is newer than any grace-aged send — never a warning here.
+        assert.ok(providerStatus.lastEventAt, `last accepted event surfaced for ${provider}`);
+        assert.ok(new Date(providerStatus.lastEventAt).getTime() >= suiteStart.getTime(), `fresh receipt surfaced for ${provider}`);
+        assert.equal(providerStatus.warning, false, `fresh receipts must read healthy for ${provider}`);
+      }
+
+      // Unauthenticated / non-admin callers see nothing (security unchanged).
+      const anonymous = await fetch(`${baseUrl}/api/admin/integrations`);
+      assert.equal(anonymous.status, 401, "anonymous integrations read rejected");
+      console.log("✓ admin integrations endpoint exposes per-provider delivery-report freshness");
     }
 
     // ── 8. Cross-salon isolation + owner stats accuracy ────────────────────

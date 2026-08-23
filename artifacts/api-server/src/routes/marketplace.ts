@@ -349,6 +349,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
+import { deliveryReportStatuses, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS } from "../lib/provider-events";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -3186,13 +3187,21 @@ function requestOrigin(req: Request) {
 
 router.get("/admin/integrations", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const entries = await Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
-    name,
-    await integrationDisplay(name as IntegrationName, definition.keys, definition.required),
-  ]));
+  const [entries, deliveryReportsByProvider] = await Promise.all([
+    Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
+      name,
+      await integrationDisplay(name as IntegrationName, definition.keys, definition.required),
+    ])),
+    deliveryReportStatuses(),
+  ]);
   const origin = requestOrigin(req);
   res.json({
     integrations: Object.fromEntries(entries),
+    deliveryReports: {
+      providers: deliveryReportsByProvider,
+      windowHours: DELIVERY_REPORT_WINDOW_HOURS,
+      graceMinutes: DELIVERY_REPORT_GRACE_MINUTES,
+    },
     redirectUris: {
       google: `${origin}/api/auth/oauth/google/callback`,
       facebook: `${origin}/api/auth/oauth/facebook/callback`,

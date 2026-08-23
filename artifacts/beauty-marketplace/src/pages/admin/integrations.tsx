@@ -5,11 +5,14 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { CheckCircle2, Copy, PlugZap, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, PlugZap, Send, ShieldCheck } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null> };
-type Data = { integrations: Record<Integration, Card>; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
+type DeliveryReportProvider = "brevo" | "infobip";
+type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
+type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
+type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
 
 const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
@@ -51,6 +54,13 @@ export default function AdminIntegrations() {
     toast.success(result.message);
   };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
+  const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
+    if (!data?.deliveryReports) return null;
+    if (integration === "brevo") return data.deliveryReports.providers.brevo;
+    if (integration === "sms") return data.deliveryReports.providers.infobip;
+    return null;
+  };
+  const formatTimestamp = (iso: string | null) => iso ? new Date(iso).toLocaleString("sr-RS") : null;
 
   return <AdminLayout><div className="space-y-6">
     <header><div className="flex items-center gap-3"><PlugZap className="h-7 w-7 text-primary" /><h1 className="font-serif text-3xl font-bold">Integracije i konektori</h1></div><p className="mt-2 text-muted-foreground">Sačuvane vrednosti su šifrovane u bazi i primenjuju se odmah, bez restarta aplikacije.</p></header>
@@ -63,6 +73,19 @@ export default function AdminIntegrations() {
           {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label><div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Webhook URL za statuse isporuke</Label><p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p><div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div></div>}
+          {(integration === "sms" || integration === "brevo") && (() => {
+            const report = deliveryReport(integration);
+            if (!report) return null;
+            return <div className={`rounded-lg border p-3 space-y-2 ${report.warning ? "border-amber-300 bg-amber-50" : "bg-muted/30"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <Label className={report.warning ? "text-amber-800" : undefined}>Izveštaji o isporuci</Label>
+                {report.warning && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700"><AlertTriangle className="h-3.5 w-3.5" />Ne stižu</span>}
+              </div>
+              <p className={`text-xs ${report.warning ? "text-amber-800" : "text-muted-foreground"}`}>Poslednji primljen izveštaj: <span className="font-medium">{formatTimestamp(report.lastEventAt) ?? "nijedan do sada"}</span></p>
+              {report.lastAutomationSentAt && <p className={`text-xs ${report.warning ? "text-amber-800" : "text-muted-foreground"}`}>Poslednja automatska poruka poslata: <span className="font-medium">{formatTimestamp(report.lastAutomationSentAt)}</span> ({report.recentSendCount} u poslednja {data.deliveryReports?.windowHours ?? 24} h)</p>}
+              {report.warning && <p className="text-xs font-medium text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Automatske poruke su nedavno poslate, ali provajder nije javio nijedan izveštaj o isporuci u očekivanom roku ({data.deliveryReports?.graceMinutes ?? 30} min). Proverite da li je webhook URL registrovan kod provajdera i da li se webhook tajna poklapa sa sačuvanom.</p>}
+            </div>;
+          })()}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg bg-muted/30 p-3 space-y-2"><Label>{integration === "sms" ? "Broj za test SMS" : "E-mail za test poruku"}</Label><Input value={testRecipient[integration]} onChange={(event) => setTestRecipient({ ...testRecipient, [integration]: event.target.value })} placeholder={integration === "sms" ? "+381..." : "admin@vasdomen.rs"} /></div>}
           <div className="flex flex-wrap gap-2"><Button onClick={() => save(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Čuvanje nije uspelo."))}><CheckCircle2 className="mr-2 h-4 w-4" />Sačuvaj</Button><Button variant="outline" onClick={() => test(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Test nije uspeo."))}><Send className="mr-2 h-4 w-4" />{integration === "sms" ? "Pošalji test SMS" : integration === "brevo" ? "Pošalji test e-mail" : "Testiraj konfiguraciju"}</Button></div>
         </section>;
