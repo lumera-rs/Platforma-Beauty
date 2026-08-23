@@ -63,7 +63,7 @@
  */
 import { createHash } from "node:crypto";
 import { db, emailDeliveriesTable, usersTable } from "@workspace/db";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   lumeraEmailHtml,
   sendTransactionalEmail,
@@ -106,6 +106,14 @@ export function staleDeliveryReportProviders(
 /** True when this phone value can actually receive the fallback SMS. */
 function hasUsablePhone(phone: string | null): phone is string {
   return !!phone && phone.trim().length > 0;
+}
+
+/** The active administrator audience shared by fallback sends and its UI. */
+function smsFallbackAdminAudiencePredicate() {
+  return and(
+    eq(usersTable.active, true),
+    inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
+  );
 }
 function formatBelgradeTime(iso: string | null): string {
   if (!iso) return "nikada";
@@ -158,10 +166,7 @@ export async function runDeliveryReportSilenceAlerts(
 
   const recipients = await db.select({ email: usersTable.email, phone: usersTable.phone })
     .from(usersTable)
-    .where(and(
-      eq(usersTable.active, true),
-      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
-    ));
+    .where(smsFallbackAdminAudiencePredicate());
   if (!recipients.length) {
     logger.warn(
       { staleProviders },
@@ -383,10 +388,7 @@ export async function runDeliveryReportRecoveryAlerts(
 
   const recipients = await db.select({ email: usersTable.email })
     .from(usersTable)
-    .where(and(
-      eq(usersTable.active, true),
-      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
-    ));
+    .where(smsFallbackAdminAudiencePredicate());
   if (!recipients.length) return empty;
 
   // Silence-alert history per provider + recipient: the row count is the
@@ -609,18 +611,39 @@ async function sendSilenceAlertSmsFallback(input: {
 }
 
 /**
- * How many active administrators the total-email-outage SMS fallback could
+ * The active administrators the total-email-outage SMS fallback could
  * actually reach. Uses the exact same audience (active ADMIN/SUPER_ADMIN) and
- * phone predicate as the fallback send path, so the admin-panel notice fed by
- * this count can never disagree with what the fallback would really do.
- * Zero means a total email outage would degrade to a log line nobody sees.
+ * phone predicate as the fallback send path, so the admin-panel audience list
+ * can never disagree with what the fallback would really do. Only the names
+ * needed for coordination are returned; phone numbers and email addresses
+ * stay server-side.
+ *
+ * The stable name ordering keeps the admin panel readable without exposing
+ * another private account field just to sort the response.
+ */
+export interface SmsFallbackReachableAdmin {
+  firstName: string;
+  lastName: string;
+}
+/**
+ * How many active administrators the total-email-outage SMS fallback could
+ * actually reach. Keep this derived from the same audience-list helper so
+ * count and names cannot drift apart.
  */
 export async function smsFallbackReachableAdminCount(): Promise<number> {
-  const admins = await db.select({ phone: usersTable.phone })
+  return (await smsFallbackReachableAdmins()).length;
+}
+
+export async function smsFallbackReachableAdmins(): Promise<SmsFallbackReachableAdmin[]> {
+  const names = await db.select({
+    firstName: usersTable.firstName,
+    lastName: usersTable.lastName,
+    phone: usersTable.phone,
+  })
     .from(usersTable)
-    .where(and(
-      eq(usersTable.active, true),
-      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
-    ));
-  return admins.filter((admin) => hasUsablePhone(admin.phone)).length;
+    .where(smsFallbackAdminAudiencePredicate())
+    .orderBy(asc(usersTable.lastName), asc(usersTable.firstName));
+  return names
+    .filter((admin) => hasUsablePhone(admin.phone))
+    .map(({ firstName, lastName }) => ({ firstName, lastName }));
 }

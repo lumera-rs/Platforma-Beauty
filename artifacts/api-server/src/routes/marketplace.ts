@@ -366,7 +366,7 @@ import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerifiedAt, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
-import { smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
+import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -3206,7 +3206,7 @@ function requestOrigin(req: Request) {
 
 router.get("/admin/integrations", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const [entries, deliveryReportsByProvider, reachableAdminCount] = await Promise.all([
+  const [entries, deliveryReportsByProvider, reachableAdmins] = await Promise.all([
     Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
       name,
       {
@@ -3222,7 +3222,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
       },
     ])),
     deliveryReportStatuses(),
-    smsFallbackReachableAdminCount(),
+    smsFallbackReachableAdmins(),
   ]);
   // Standing registration verdict for the Infobip delivery-report webhook —
   // Infobip's API cannot list the configured report URL, so the verdict is
@@ -3245,7 +3245,10 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
     // predicate as the send path). Zero → the admin panel shows a standing
     // warning to add a phone number, because a total email outage would
     // otherwise degrade to an unseen log line.
-    smsFallback: { reachableAdminCount },
+    smsFallback: {
+      reachableAdminCount: reachableAdmins.length,
+      reachableAdmins,
+    },
     smsWebhookRegistration,
     redirectUris: {
       google: `${origin}/api/auth/oauth/google/callback`,

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null };
@@ -16,7 +16,9 @@ type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: 
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
 
 type SmsWebhookRegistrationState = "no_secret" | "confirmed" | "misconfigured" | "stale_secret" | "unconfirmed";
-type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number }; smsWebhookRegistration?: SmsWebhookRegistration; redirectUris: { google: string; facebook: string }; redirectUriWarning?: string; smsReminder: { command: string; active: boolean; instructions: string[] } };
+
+type SmsFallbackReachableAdmin = { firstName: string; lastName: string };
+type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number; reachableAdmins: SmsFallbackReachableAdmin[] }; smsWebhookRegistration?: SmsWebhookRegistration; redirectUris: { google: string; facebook: string }; redirectUriWarning?: string; smsReminder: { command: string; active: boolean; instructions: string[] } };
 
 const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
@@ -292,6 +294,23 @@ export default function AdminIntegrations() {
         <p className="mt-1 text-sm text-sky-800">Samo jedan aktivan administrator ima broj telefona za rezervna SMS upozorenja. Ako ta osoba nije dostupna ili bude deaktivirana, potpuni prekid slanja e-pošte mogao bi ponovo proći neprimećeno.</p>
         <p className="mt-1 text-sm text-sky-800">Preporučujemo da još jedan aktivan administrator doda i verifikuje broj telefona.</p>
       </div>}
+      {data.smsFallback && <section className="rounded-xl border bg-card p-4 shadow-sm" data-testid="sms-fallback-audience">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <UsersRound className="h-5 w-5 text-primary" />
+              <h2 className="font-semibold">Administratori za hitni SMS</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">Ovo su aktivni administratori sa sačuvanim brojem telefona koji bi primili rezervno SMS upozorenje ako slanje e-pošte potpuno otkaže.</p>
+          </div>
+          <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-semibold" data-testid="sms-fallback-audience-count">{data.smsFallback.reachableAdminCount}</span>
+        </div>
+        {data.smsFallback.reachableAdmins.length > 0 ? <ul className="mt-3 grid gap-2 sm:grid-cols-2" data-testid="sms-fallback-audience-list">
+          {data.smsFallback.reachableAdmins.map((admin, index) => <li key={`${admin.firstName}-${admin.lastName}-${index}`} className="rounded-lg border bg-muted/30 px-3 py-2 text-sm font-medium">
+            {admin.firstName} {admin.lastName}
+          </li>)}
+        </ul> : <p className="mt-3 rounded-lg border border-dashed p-3 text-sm text-muted-foreground" data-testid="sms-fallback-audience-empty">Trenutno nema aktivnog administratora koji može da primi rezervni SMS.</p>}
+      </section>}
       <div className="grid gap-6 xl:grid-cols-2">{(Object.keys(fields) as Integration[]).map((integration) => {
         const card = data.integrations[integration]; const [label, color] = status(card);
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">

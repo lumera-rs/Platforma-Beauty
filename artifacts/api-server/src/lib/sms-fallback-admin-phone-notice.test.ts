@@ -31,7 +31,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, pool, usersTable } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { smsFallbackReachableAdminCount } from "./delivery-report-alerts";
+import { smsFallbackReachableAdminCount, smsFallbackReachableAdmins } from "./delivery-report-alerts";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = { userIds: [] as string[] };
@@ -70,10 +70,19 @@ async function run() {
     const reachableAdminCount = async () => {
       const response = await fetch(`${baseUrl}/api/admin/integrations`, { headers: { cookie } });
       assert.equal(response.status, 200, "admin integrations read must succeed");
-      const body = await response.json() as { smsFallback?: { reachableAdminCount?: number } };
+      const body = await response.json() as {
+        smsFallback?: {
+          reachableAdminCount?: number;
+          reachableAdmins?: Array<{ firstName: string; lastName: string }>;
+        };
+      };
       assert.ok(body.smsFallback, "response must carry the smsFallback audience health block");
       assert.equal(typeof body.smsFallback.reachableAdminCount, "number",
         "reachableAdminCount must be a number");
+      assert.ok(Array.isArray(body.smsFallback.reachableAdmins),
+        "reachableAdmins must be an array");
+      assert.equal(body.smsFallback.reachableAdmins.length, body.smsFallback.reachableAdminCount,
+        "reachableAdmins must contain exactly the counted recipients");
 
       // The dashboard landing page shows the same warning from GET
       // /admin/summary — both endpoints share the helper, so they must agree.
@@ -91,6 +100,8 @@ async function run() {
       "with every active admin phone cleared the endpoint must report 0 (notice shows)");
     assert.equal(await smsFallbackReachableAdminCount(), 0,
       "helper must agree with the endpoint in the zero state");
+    assert.deepEqual(await smsFallbackReachableAdmins(), [],
+      "the audience list must be empty in the zero state");
     console.log("✓ zero state: endpoint reports reachableAdminCount = 0");
 
     // ── 2. Whitespace-only phones do not count ─────────────────────────────
@@ -123,12 +134,17 @@ async function run() {
     cleanup.userIds.push(phoneAdmin.id);
     assert.equal(await reachableAdminCount(), 1,
       "one active admin with a phone must flip the count to 1 (notice disappears)");
+    const reachableAdmins = await smsFallbackReachableAdmins();
+    assert.deepEqual(reachableAdmins, [{ firstName: "Admin", lastName: "WithPhone" }],
+      "the audience list must expose only the eligible admin's name");
     console.log("✓ one active admin with a phone clears the notice condition");
 
     // ── 5. Deactivated admins fall out of the audience ─────────────────────
     await db.update(usersTable).set({ active: false }).where(eq(usersTable.id, phoneAdmin.id));
     assert.equal(await reachableAdminCount(), 0,
       "a deactivated admin's phone must not count — the audience is active admins only");
+    assert.deepEqual(await smsFallbackReachableAdmins(), [],
+      "a deactivated admin must be removed from the audience list");
     console.log("✓ deactivated admin drops out of the reachable audience");
 
     console.log("\n✅ All emergency-SMS fallback audience notice tests passed");

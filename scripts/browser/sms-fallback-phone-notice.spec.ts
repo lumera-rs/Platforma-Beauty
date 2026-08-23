@@ -102,6 +102,10 @@ test("the zero-phone warning shows on /admin/integracije and disappears once an 
   await expect(banner, "with reachableAdminCount = 0 the standing warning must render").toBeVisible();
   await expect(banner).toContainText("Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu");
   await expect(banner).toHaveAttribute("role", "alert");
+  const audience = page.getByTestId("sms-fallback-audience");
+  await expect(audience).toBeVisible();
+  await expect(page.getByTestId("sms-fallback-audience-count")).toHaveText("0");
+  await expect(page.getByTestId("sms-fallback-audience-empty")).toContainText("Trenutno nema aktivnog administratora");
   const profileLink = page.getByTestId("sms-fallback-no-admin-phone-link");
   await expect(profileLink).toBeVisible();
   await expect(profileLink).toContainText("Dodajte broj telefona u svom profilu");
@@ -129,4 +133,8 @@ test("the zero-phone warning shows on /admin/integracije and disappears once an 
   // proves the notice cleared rather than that data never arrived.
   await expect(page.getByTestId("toggle-enabled-brevo")).toBeVisible();
   await expect(banner, "with a reachable admin the warning must not render").toHaveCount(0);
+  await expect(page.getByTestId("sms-fallback-single-admin-phone"),
+    "with exactly one reachable admin, the coverage warning must remain visible").toBeVisible();
+  await expect(page.getByTestId("sms-fallback-audience-count")).toHaveText("1");
+  await expect(page.getByTestId("sms-fallback-audience-list")).toContainText("Browser SmsFallback Notice");
 });
