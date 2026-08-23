@@ -55,3 +55,4 @@
 - [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
 - [SPA unsaved-navigation guard](spa-unsaved-navigation-guard.md) — Back/Forward guards must hook history ahead of the router; page-local popstate listeners are removed mid-dispatch on unmount.
 - [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path's exact audience and phone predicate, never a re-derived query.
+- [Modal dialog background controls](modal-dialog-background-controls.md) — modal overlays block real clicks on page controls; test dialog-open state changes via dispatchEvent("click") and mutation-check the guard.
