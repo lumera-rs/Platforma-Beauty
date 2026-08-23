@@ -63,6 +63,7 @@ export * from './adminUserUpdateRole';
 export * from './allocatedResource';
 export * from './apiError';
 export * from './apiErrorIssuesItem';
+export * from './apiErrorUnavailableItemsItem';
 export * from './appointment';
 export * from './appointmentConflictError';
 export * from './appointmentConflictErrorCode';

@@ -7205,6 +7205,15 @@ components:
       properties:
         error: { type: string }
         code: { type: string }
+        unavailableItems:
+          type: array
+          description: Products from the shopper's cart that are no longer available
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              name: { type: string }
+            required: [productId, name]
         issues:
           type: array
           items:

@@ -7541,14 +7541,24 @@ async function retailCheckoutCartQuote(cartId: string) {
       weightGrams: product.weightGrams ?? 0,
     };
   });
-  if (lines.some((line) => !line)) return null;
+  const unavailableItems = cartItems
+    .filter((_, index) => lines[index] === null)
+    .map((item) => ({
+      productId: item.productId,
+      name: byId.get(item.productId)?.name ?? item.productName,
+    }))
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.productId === item.productId) === index);
+  if (unavailableItems.length) return { view: null, unavailableItems };
   const validLines = lines.filter((line): line is NonNullable<typeof line> => line !== null);
   return {
-    id: cartId,
-    items: validLines.map(({ weightGrams: _weightGrams, ...line }) => line),
-    itemCount: validLines.reduce((sum, item) => sum + item.quantity, 0),
-    subtotal: validLines.reduce((sum, item) => sum + item.lineTotal, 0),
-    totalWeightGrams: validLines.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
+    view: {
+      id: cartId,
+      items: validLines.map(({ weightGrams: _weightGrams, ...line }) => line),
+      itemCount: validLines.reduce((sum, item) => sum + item.quantity, 0),
+      subtotal: validLines.reduce((sum, item) => sum + item.lineTotal, 0),
+      totalWeightGrams: validLines.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
+    },
+    unavailableItems: [],
   };
 }
 
@@ -7768,14 +7778,16 @@ router.delete("/retail/cart/items/:cartItemId", async (req, res): Promise<void> 
 
 router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
-  const view = await retailCheckoutCartQuote(cart.id);
-  if (!view) {
+  const quote = await retailCheckoutCartQuote(cart.id);
+  if (!quote.view) {
     res.status(409).json({
       error: "Dostupnost ili cena proizvoda u korpi se promenila. Osvežite korpu i pokušajte ponovo.",
       code: "CHECKOUT_QUOTE_CHANGED",
+      unavailableItems: quote.unavailableItems,
     });
     return;
   }
+  const view = quote.view;
   const config = await getShippingConfig();
   const deliveryMethod = req.query.deliveryMethod === "personal_belgrade" ? "personal_belgrade" : "courier";
   const city = typeof req.query.city === "string" ? req.query.city : "";
@@ -7800,6 +7812,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Lična dostava je trenutno dostupna samo u Beogradu." }); return;
   }
   let stockError: string | null = null;
+  let unavailableItems: Array<{ productId: string; name: string }> = [];
   let trackingToken: string | null = null;
   let stockConflict = false;
   let idempotencyConflict = false;
@@ -7826,16 +7839,26 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     for (const [productId, quantity] of quantityByProduct) {
       const product = byId.get(productId);
       if (!product || product.stock < quantity || (product.variants?.length ?? 0) > 0) {
-        stockError = product?.name ?? cartItems.find((item) => item.productId === productId)?.productName ?? null;
-        throw new Error("retail_stock_conflict");
+        unavailableItems.push({
+          productId,
+          name: product?.name ?? cartItems.find((item) => item.productId === productId)?.productName ?? "Proizvod",
+        });
       }
+    }
+    if (unavailableItems.length) {
+      stockError = unavailableItems[0]!.name;
+      throw new Error("retail_stock_conflict");
     }
     let subtotal = 0;
     let weight = 0;
     const lines = cartItems.map((item) => {
       const product = byId.get(item.productId);
        if (!product || !product.active || !product.retailEnabled || !product.publicDescription || product.publicPrice == null) {
-        stockError = product?.name ?? item.productName;
+        const name = product?.name ?? item.productName;
+        if (!unavailableItems.some((unavailable) => unavailable.productId === item.productId)) {
+          unavailableItems.push({ productId: item.productId, name });
+        }
+        stockError ??= name;
         return null;
       }
       const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
@@ -7893,6 +7916,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     res.status(409).json({
       error: `Dostupnost proizvoda${stockError ? ` "${stockError}"` : ""} se promenila. Osvežite korpu i pokušajte ponovo.`,
       code: "CHECKOUT_QUOTE_CHANGED",
+      unavailableItems,
     });
     return;
   }

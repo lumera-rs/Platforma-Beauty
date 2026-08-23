@@ -3418,6 +3418,11 @@ export interface AdminReviewUpdate {
   visible?: boolean;
 }
 
+export type ApiErrorUnavailableItemsItem = {
+  productId: string;
+  name: string;
+};
+
 export type ApiErrorIssuesItem = {
   path: string;
   message: string;
@@ -3426,6 +3431,8 @@ export type ApiErrorIssuesItem = {
 export interface ApiError {
   error: string;
   code?: string;
+  /** Products from the shopper's cart that are no longer available */
+  unavailableItems?: ApiErrorUnavailableItemsItem[];
   issues?: ApiErrorIssuesItem[];
 }
 

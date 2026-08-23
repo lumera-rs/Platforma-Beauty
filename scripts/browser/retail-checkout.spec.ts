@@ -28,6 +28,8 @@ const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
 let categoryId: string | undefined;
 let productId: string | undefined;
+
+let secondProductId: string | undefined;
 let shippingRuleId: string | undefined;
 
 let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
@@ -37,15 +39,17 @@ const money = (amount: number) => new Intl.NumberFormat("sr-RS", {
   maximumFractionDigits: 0,
 }).format(amount);
 
-async function createCartAndOpenCheckout(page: Page) {
+async function createCartAndOpenCheckout(page: Page, productIds: string[] = [productId!]) {
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { id: string };
   createdCartIds.push(cart.id);
-  const addResponse = await page.request.post("/api/retail/cart/items", {
-    data: { productId, quantity: 1 },
-  });
-  expect(addResponse.status()).toBe(201);
+  for (const productIdToAdd of productIds) {
+    const addResponse = await page.request.post("/api/retail/cart/items", {
+      data: { productId: productIdToAdd, quantity: 1 },
+    });
+    expect(addResponse.status()).toBe(201);
+  }
   await page.goto("/korpa/placanje");
 }
 
@@ -159,6 +163,26 @@ test.beforeAll(async () => {
     active: true,
   }).returning();
   productId = product!.id;
+
+  const [secondProduct] = await db.insert(productsTable).values({
+    categoryId: category!.id,
+    categoryName: category!.name,
+    name: `Drugi retail browser proizvod ${suffix}`,
+    description: "Drugi test proizvod za browser checkout.",
+    publicDescription: "Javni opis drugog retail proizvoda.",
+    imageUrl: "/retail-browser-second-test.jpg",
+    price: 3_000,
+    publicPrice: 3_000,
+    publicDiscountPrice: 2_400,
+    retailEnabled: true,
+    professionalEnabled: false,
+    stock: 8,
+    sku: `retail-browser-second-${suffix}`,
+    unit: "kom",
+    weightGrams: 500,
+    active: true,
+  }).returning();
+  secondProductId = secondProduct!.id;
 });
 
 test.afterAll(async () => {
@@ -170,6 +194,7 @@ test.afterAll(async () => {
     await db.delete(retailCartItemsTable).where(inArray(retailCartItemsTable.cartId, createdCartIds));
     await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, createdCartIds));
   }
+  if (secondProductId) await db.delete(productsTable).where(eq(productsTable.id, secondProductId));
   if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
   if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
   if (previousShippingRule) {
@@ -221,8 +246,10 @@ test("retail checkout refreshes a changed quote before allowing confirmation aga
     );
     await confirmButton.click();
     const response = await checkoutResponse;
+
+    const conflict = await response.json() as { code?: string };
     expect(response.status()).toBe(409);
-    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+    expect(conflict.code).toBe("CHECKOUT_QUOTE_CHANGED");
 
     await refreshStarted;
     await expect(confirmButton).toBeDisabled();
@@ -269,8 +296,10 @@ test("retail checkout refreshes a changed delivery fee before allowing confirmat
     );
     await confirmButton.click();
     const response = await checkoutResponse;
+
+    const conflict = await response.json() as { code?: string };
     expect(response.status()).toBe(409);
-    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+    expect(conflict.code).toBe("CHECKOUT_QUOTE_CHANGED");
 
     await refreshStarted;
     await expect(confirmButton).toBeDisabled();
@@ -318,10 +347,12 @@ test("retail checkout offers a retry after a failed quote refresh", async ({ pag
     );
     await confirmButton.click();
     const response = await checkoutResponse;
-    expect(response.status()).toBe(409);
-    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
 
-  const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
+    const conflict = await response.json() as { code?: string };
+    expect(response.status()).toBe(409);
+    expect(conflict.code).toBe("CHECKOUT_QUOTE_CHANGED");
+
+    const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
     await expect(retryButton).toBeVisible();
     await expect(confirmButton).toBeDisabled();
     await expect(page.getByText(money(2_390), { exact: true })).not.toBeVisible();
@@ -397,8 +428,6 @@ test("retail checkout detects a cart changed in another tab and refreshes before
   const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
-  // A second tab or device shares the same session cookie, so an API call from the
-  // same browser context is exactly what a cross-tab cart change looks like.
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { items: Array<{ id: string }> };
@@ -439,11 +468,9 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   await fillCheckoutContact(page, "Novi Sad");
   const checkoutUrl = page.url();
   const paymentForm = page.locator("form");
-  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
+  const confirmButton = paymentForm.getByRole("button");
   await expect(confirmButton).toBeEnabled();
 
-  // A second tab or device shares the same session cookie, so API calls from the
-  // same browser context are exactly what emptying the cart elsewhere looks like.
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { items: Array<{ id: string }> };
@@ -631,25 +658,33 @@ test("retail cart page ignores a stale poll response while a local edit is in fl
 });
 
 test("retail checkout explains unavailable items and offers recovery without creating an order", async ({ page }) => {
-  await createCartAndOpenCheckout(page);
+  expect(secondProductId).toBeTruthy();
+  await createCartAndOpenCheckout(page, [productId!, secondProductId!]);
   await fillCheckoutContact(page, "Novi Sad");
   const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   expect(productId).toBeTruthy();
-  const [product] = await db.select({ stock: productsTable.stock }).from(productsTable)
+  const [product] = await db.select({ name: productsTable.name }).from(productsTable)
     .where(eq(productsTable.id, productId!)).limit(1);
+
+  const [secondProduct] = await db.select({ name: productsTable.name, stock: productsTable.stock }).from(productsTable)
+    .where(eq(productsTable.id, secondProductId!)).limit(1);
+
   expect(product).toBeTruthy();
-  await db.update(productsTable).set({ stock: 0 }).where(eq(productsTable.id, productId!));
+  expect(secondProduct).toBeTruthy();
+  await db.update(productsTable).set({ stock: 0 }).where(eq(productsTable.id, secondProductId!));
   try {
     const checkoutResponse = page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/api/retail/checkout" && response.request().method() === "POST",
     );
     await confirmButton.click();
     const response = await checkoutResponse;
-    expect(response.status()).toBe(409);
-    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
 
+    const conflict = await response.json() as { code?: string; unavailableItems?: Array<{ productId: string; name: string }> };
+    expect(response.status()).toBe(409);
+    expect(conflict.code).toBe("CHECKOUT_QUOTE_CHANGED");
+    expect(conflict.unavailableItems).toEqual([{ productId: secondProductId, name: secondProduct!.name }]);
     const checkoutCartId = createdCartIds.at(-1);
     expect(checkoutCartId).toBeTruthy();
     const [createdOrder] = await db.select({ id: retailOrdersTable.id }).from(retailOrdersTable)
@@ -659,6 +694,8 @@ test("retail checkout explains unavailable items and offers recovery without cre
     const recovery = page.getByTestId("unavailable-item-recovery");
     await expect(recovery).toBeVisible();
     await expect(recovery.getByRole("heading", { name: "Proizvod više nije dostupan" })).toBeVisible();
+    await expect(recovery).toContainText(secondProduct!.name);
+    await expect(recovery).not.toContainText(product!.name);
     await expect(recovery).toContainText("rasprodat ili više nije aktivan");
     await expect(recovery).toContainText("Porudžbina nije kreirana");
     await expect(recovery.getByRole("link", { name: "Vrati se u korpu" })).toHaveAttribute("href", "/korpa");
@@ -676,6 +713,6 @@ test("retail checkout explains unavailable items and offers recovery without cre
     await refreshedRecovery.getByRole("link", { name: "Nastavi sa kupovinom" }).click();
     await expect(page).toHaveURL(/\/proizvodi$/);
   } finally {
-    await db.update(productsTable).set({ stock: product!.stock }).where(eq(productsTable.id, productId!));
+    await db.update(productsTable).set({ stock: secondProduct!.stock }).where(eq(productsTable.id, secondProductId!));
   }
 });

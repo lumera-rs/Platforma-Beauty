@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ApiErrorIssuesItem } from './apiErrorIssuesItem';
+import type { ApiErrorUnavailableItemsItem } from './apiErrorUnavailableItemsItem';
 
 export interface ApiError {
   error: string;
   code?: string;
+  /** Products from the shopper's cart that are no longer available */
+  unavailableItems?: ApiErrorUnavailableItemsItem[];
   issues?: ApiErrorIssuesItem[];
 }
