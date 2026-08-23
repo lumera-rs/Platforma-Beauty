@@ -9214,6 +9214,9 @@ export const OwnerListAutomationAttributedAppointmentsResponse = zod.object({
   "isReturning": zod.boolean().nullable().describe('True when the salon client had at least one completed appointment before this campaign message was sent (returning client), false when this is their first appointment at the salon (new client), null when the appointment has no linked salon customer.')
 })),
   "total": zod.number().describe('Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count.'),
+  "newClientCount": zod.number().describe('Attributed appointments (within the requested period) whose salon client had no completed appointment before the campaign message was sent — new clients the campaign brought in. The summary counts always cover the whole attributed set for the window, ignoring any clientType filter, so newClientCount + returningClientCount + unknownClientCount equals the unfiltered total.'),
+  "returningClientCount": zod.number().describe('Attributed appointments (within the requested period) whose salon client already had at least one completed appointment before the campaign message was sent — returning clients the campaign won back. Ignores any clientType filter.'),
+  "unknownClientCount": zod.number().describe('Attributed appointments (within the requested period) without a linked salon customer, so the new\/returning split is unknown for them. Ignores any clientType filter.'),
   "limit": zod.number().describe('Page size actually applied by the server.'),
   "offset": zod.number().describe('Offset actually applied by the server.')
 })

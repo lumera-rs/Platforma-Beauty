@@ -3945,6 +3945,12 @@ export interface AutomationAttributedAppointmentsPage {
   items: AutomationAttributedAppointment[];
   /** Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count. */
   total: number;
+  /** Attributed appointments (within the requested period) whose salon client had no completed appointment before the campaign message was sent — new clients the campaign brought in. The summary counts always cover the whole attributed set for the window, ignoring any clientType filter, so newClientCount + returningClientCount + unknownClientCount equals the unfiltered total. */
+  newClientCount: number;
+  /** Attributed appointments (within the requested period) whose salon client already had at least one completed appointment before the campaign message was sent — returning clients the campaign won back. Ignores any clientType filter. */
+  returningClientCount: number;
+  /** Attributed appointments (within the requested period) without a linked salon customer, so the new/returning split is unknown for them. Ignores any clientType filter. */
+  unknownClientCount: number;
   /** Page size actually applied by the server. */
   limit: number;
   /** Offset actually applied by the server. */

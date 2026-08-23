@@ -157,6 +157,32 @@ async function main() {
     assert.equal(byId.get(selfOnlyAppt.id)?.isReturning, false, "attributed appointment never counts as its own prior visit");
     console.log("✓ isReturning derived correctly for all six scenarios");
 
+    // Summary aggregates: same derivation as the per-row field, over the whole
+    // attributed set. new = brandNew, cancelledPrior, laterOnly, selfOnly.
+    assert.equal(body.newClientCount, 4, "four new clients");
+    assert.equal(body.returningClientCount, 1, "one returning client");
+    assert.equal(body.unknownClientCount, 1, "one unknown (no linked salon customer)");
+    assert.equal(
+      body.newClientCount + body.returningClientCount + body.unknownClientCount,
+      body.total,
+      "summary buckets partition the unfiltered total exactly",
+    );
+
+    // Pagination must not change the summary: a small page still reports the
+    // full-set counts, so the dialog summary stays stable while pages load.
+    const pagedResponse = await fetch(
+      `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?limit=2&offset=0`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(pagedResponse.status, 200);
+    const pagedBody = await pagedResponse.json() as any;
+    assert.equal(pagedBody.items.length, 2, "page size respected");
+    assert.equal(pagedBody.total, 6, "paged total unchanged");
+    assert.equal(pagedBody.newClientCount, 4, "paged newClientCount covers the full set");
+    assert.equal(pagedBody.returningClientCount, 1, "paged returningClientCount covers the full set");
+    assert.equal(pagedBody.unknownClientCount, 1, "paged unknownClientCount covers the full set");
+    console.log("✓ new/returning/unknown summary counts aggregate the full attributed set");
+
     // clientType=returning: only the customer with a prior completed visit.
     const returningResp = await fetch(
       `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?limit=100&clientType=returning`,
@@ -168,6 +194,11 @@ async function main() {
     assert.equal(returningBody.items.length, 1, "clientType=returning returns only returning rows");
     assert.equal(returningBody.items[0]?.appointmentId, returningAppt.id, "returning row is the prior-completed customer");
     assert.equal(returningBody.items[0]?.isReturning, true);
+    // The mix summary describes the whole window, not the filtered segment,
+    // so the "X novih · Y vraćenih" line stays stable while filtering.
+    assert.equal(returningBody.newClientCount, 4, "summary newClientCount ignores clientType filter");
+    assert.equal(returningBody.returningClientCount, 1, "summary returningClientCount ignores clientType filter");
+    assert.equal(returningBody.unknownClientCount, 1, "summary unknownClientCount ignores clientType filter");
     console.log("✓ clientType=returning filters to the single returning client");
 
     // clientType=new: the four isReturning=false rows; the walk-in (null)
@@ -187,6 +218,8 @@ async function main() {
     );
     assert.ok(!newIds.has(walkInAppt.id), "unknown (no salon customer) row excluded from new segment");
     assert.ok(newBody.items.every((i: any) => i.isReturning === false), "every new-segment row has isReturning=false");
+    assert.equal(newBody.newClientCount, 4, "summary newClientCount ignores clientType filter");
+    assert.equal(newBody.returningClientCount, 1, "summary returningClientCount ignores clientType filter");
     console.log("✓ clientType=new filters to the four new clients and excludes the unknown row");
 
     // Invalid clientType is rejected.

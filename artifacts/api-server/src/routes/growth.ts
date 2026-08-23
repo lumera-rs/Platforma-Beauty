@@ -1020,8 +1020,10 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     // first appointment at the salon, and null (unknown) when the
     // appointment has no linked salon customer. The attributed appointment
     // itself is excluded so it can never count as its own "prior" visit.
-    // Shared between the row projection and the clientType filter so the
-    // filter can never disagree with the badge shown on each row.
+    // Shared between the row projection, the clientType filter, and the
+    // summary aggregates below so neither the filter nor the
+    // "X novih · Y vraćenih" summary can ever disagree with the badge shown
+    // on each row.
     const isReturningExpr = sql<boolean | null>`
       case
         when ${appointmentsTable.salonCustomerId} is null then null
@@ -1045,16 +1047,37 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     // Same run-window filter as the stats endpoints, so the paginated total
     // agrees with the attributedAppointments count for every period choice
     // (statsRunPeriodCondition returns undefined for all-time; and() drops it).
-    // The clientType filter is part of the same scope so count and page rows
-    // always agree.
-    const runScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window), clientTypeCondition);
+    // The base scope deliberately excludes the clientType filter: the summary
+    // counts always describe the whole attributed set for the window, so the
+    // "X novih · Y vraćenih" line stays stable while the owner narrows the
+    // list to one segment. The page scope adds the filter for rows.
+    const baseRunScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window));
+    const runScope = and(baseRunScope, clientTypeCondition);
 
+    // The summary counts aggregate over the full (unpaginated, unfiltered)
+    // attributed set with the exact same isReturning derivation as the rows,
+    // so newClientCount + returningClientCount + unknownClientCount ===
+    // unfiltered total for every period choice.
     const [countRow] = await db
-      .select({ total: sql<number>`count(*)::int` })
+      .select({
+        total: sql<number>`count(*)::int`,
+        newClientCount: sql<number>`sum(case when (${isReturningExpr}) is false then 1 else 0 end)::int`,
+        returningClientCount: sql<number>`sum(case when (${isReturningExpr}) is true then 1 else 0 end)::int`,
+        unknownClientCount: sql<number>`sum(case when ${appointmentsTable.salonCustomerId} is null then 1 else 0 end)::int`,
+      })
       .from(automationRunsTable)
       .innerJoin(appointmentsTable, attributedAppointmentJoin)
       .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
-      .where(runScope);
+      .where(baseRunScope);
+
+    // The filtered total is by definition the matching summary bucket — the
+    // clientType condition and the bucket use the identical expression — so
+    // reusing it guarantees the paginated total and the summary always agree
+    // and saves a second aggregate query.
+    const total =
+      clientType === "new" ? (countRow?.newClientCount ?? 0)
+      : clientType === "returning" ? (countRow?.returningClientCount ?? 0)
+      : (countRow?.total ?? 0);
 
     // Deterministic ordering (id as final tiebreaker) so limit/offset pages
     // never overlap or skip rows when appointments share a date and time.
@@ -1077,7 +1100,15 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       .limit(limit)
       .offset(offset);
 
-    res.json({ items, total: countRow?.total ?? 0, limit, offset });
+    res.json({
+      items,
+      total,
+      newClientCount: countRow?.newClientCount ?? 0,
+      returningClientCount: countRow?.returningClientCount ?? 0,
+      unknownClientCount: countRow?.unknownClientCount ?? 0,
+      limit,
+      offset,
+    });
   } catch (err) { next(err); }
 });
 

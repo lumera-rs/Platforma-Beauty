@@ -49,6 +49,18 @@ const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] 
   { value: "all", label: "Sve vreme" },
 ];
 
+/**
+ * Serbian count phrase for masculine forms: "1 nov", "2 nova", "5 novih"
+ * (standard 11–14 exception included). Used for the new/returning client
+ * mix summary above the attributed-appointments list.
+ */
+function srCount(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} ${one}`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
 function formatRangeLabel(range: DateRange | undefined): string | null {
   if (!range?.from || !range?.to) return null;
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
@@ -472,6 +484,11 @@ export default function OwnerAutomations() {
   const [attributedOffset, setAttributedOffset] = useState(0);
   const [attributedItems, setAttributedItems] = useState<AutomationAttributedAppointment[]>([]);
   const [attributedTotal, setAttributedTotal] = useState<number | null>(null);
+  // New vs returning client mix for the whole attributed set (not just the
+  // loaded pages) — computed server-side with the same derivation as each
+  // row's isReturning badge. The server ignores the clientType filter for
+  // these counts, so the summary stays stable while the list is narrowed.
+  const [attributedMix, setAttributedMix] = useState<{ newClientCount: number; returningClientCount: number; unknownClientCount: number } | null>(null);
 
   // Client-segment filter for the drill-down list: all / only new / only
   // returning clients. Server-side filter (same SQL derivation as the
@@ -510,10 +527,22 @@ export default function OwnerAutomations() {
     setAttributedTotal(null);
   }, [statsRuleId, activeStatsParams, attributedClientType]);
 
+  // The mix summary only depends on the rule and window — not the segment
+  // filter — so it is kept through filter switches and only cleared when the
+  // rule or period actually changes.
+  useEffect(() => {
+    setAttributedMix(null);
+  }, [statsRuleId, activeStatsParams]);
+
   // Merge each arriving page at its offset — idempotent if a page refetches.
   useEffect(() => {
     if (!attributedPage) return;
     setAttributedTotal(attributedPage.total);
+    setAttributedMix({
+      newClientCount: attributedPage.newClientCount,
+      returningClientCount: attributedPage.returningClientCount,
+      unknownClientCount: attributedPage.unknownClientCount,
+    });
     setAttributedItems((prev) => [...prev.slice(0, attributedPage.offset), ...attributedPage.items]);
   }, [attributedPage]);
 
@@ -930,6 +959,19 @@ export default function OwnerAutomations() {
                     ))}
                   </div>
                 </div>
+                {attributedMix && (attributedMix.newClientCount + attributedMix.returningClientCount + attributedMix.unknownClientCount) > 0 && (
+                  <p className="text-sm" data-testid="attributed-client-mix">
+                    <span className="font-semibold">{srCount(attributedMix.newClientCount, "nov", "nova", "novih")}</span>
+                    <span className="text-muted-foreground"> · </span>
+                    <span className="font-semibold">{srCount(attributedMix.returningClientCount, "vraćen", "vraćena", "vraćenih")}</span>
+                    {attributedMix.unknownClientCount > 0 && (
+                      <>
+                        <span className="text-muted-foreground"> · </span>
+                        <span className="text-muted-foreground">{srCount(attributedMix.unknownClientCount, "nepoznat", "nepoznata", "nepoznatih")}</span>
+                      </>
+                    )}
+                  </p>
+                )}
                 {isAttributedLoading && attributedItems.length === 0 ? (
                   <div className="flex justify-center p-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
                 ) : attributedItems.length === 0 ? (
