@@ -332,6 +332,7 @@ export * from './retentionCustomer';
 export * from './retentionCustomerDetail';
 export * from './retentionCustomerDetailRecentAppointmentsItem';
 export * from './retentionCustomerStatus';
+export * from './retentionPreviewAffectedSalon';
 export * from './retentionReclassificationShift';
 export * from './retentionReclassificationShiftFromStatus';
 export * from './retentionReclassificationShiftToStatus';

@@ -31,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight } from "lucide-react";
+import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight, Store } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { format } from "date-fns";
@@ -364,6 +364,28 @@ export default function AdminRetentionSettings() {
                           <span className="text-foreground">{STATUS_LABELS[shift.toStatus]}</span>
                           <span className="font-semibold text-foreground">{shift.count}</span>
                           {shift.count === 1 ? "klijent" : "klijenata"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {preview.topAffectedSalons.length > 0 && (
+                  <div className="space-y-1.5" data-testid="retention-preview-affected-salons">
+                    <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                      <Store className="w-3.5 h-3.5 shrink-0" />
+                      Najviše pogođeni saloni:
+                    </p>
+                    <ul className="space-y-1">
+                      {preview.topAffectedSalons.map((salon) => (
+                        <li
+                          key={salon.salonId}
+                          className="text-sm text-muted-foreground flex items-center gap-1.5"
+                          data-testid={`retention-preview-salon-${salon.salonId}`}
+                        >
+                          <span className="text-foreground">{salon.salonName}</span>
+                          <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
+                          {salon.reclassifiedCount === 1 ? "klijent menja status" : "klijenata menja status"}
                         </li>
                       ))}
                     </ul>

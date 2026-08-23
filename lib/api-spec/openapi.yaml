@@ -7195,6 +7195,14 @@ components:
         count: { type: number, description: "Customers that would move fromStatus → toStatus" }
       required: [fromStatus, toStatus, count]
 
+    RetentionPreviewAffectedSalon:
+      type: object
+      properties:
+        salonId: { type: string }
+        salonName: { type: string }
+        reclassifiedCount: { type: number, description: "Customers of this salon whose status would change under the candidate thresholds" }
+      required: [salonId, salonName, reclassifiedCount]
+
     RetentionSettingsPreview:
       type: object
       properties:
@@ -7207,7 +7215,11 @@ components:
           type: array
           description: "Status moves under the candidate thresholds, largest first"
           items: { $ref: "#/components/schemas/RetentionReclassificationShift" }
-      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts]
+        topAffectedSalons:
+          type: array
+          description: "Salons with the most reclassified customers, largest first (top 10)"
+          items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
+      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons]
 
     RetentionSettingsHistoryEntry:
       type: object

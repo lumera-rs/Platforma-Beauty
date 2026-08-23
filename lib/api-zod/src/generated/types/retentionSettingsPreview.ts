@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { RetentionPreviewAffectedSalon } from './retentionPreviewAffectedSalon';
 import type { RetentionReclassificationShift } from './retentionReclassificationShift';
 import type { RetentionStatusCounts } from './retentionStatusCounts';
 
@@ -19,4 +20,6 @@ export interface RetentionSettingsPreview {
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first */
   shifts: RetentionReclassificationShift[];
+  /** Salons with the most reclassified customers, largest first (top 10) */
+  topAffectedSalons: RetentionPreviewAffectedSalon[];
 }

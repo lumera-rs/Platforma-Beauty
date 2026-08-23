@@ -4334,6 +4334,12 @@ export interface RetentionReclassificationShift {
   count: number;
 }
 
+export interface RetentionPreviewAffectedSalon {
+  salonId: string;
+  salonName: string;
+  /** Customers of this salon whose status would change under the candidate thresholds */
+  reclassifiedCount: number;
+}
 export interface RetentionSettingsPreview {
   /** Settings version the current counts were computed against (0 = platform defaults) */
   currentVersion: number;
@@ -4345,6 +4351,8 @@ export interface RetentionSettingsPreview {
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first */
   shifts: RetentionReclassificationShift[];
+  /** Salons with the most reclassified customers, largest first (top 10) */
+  topAffectedSalons: RetentionPreviewAffectedSalon[];
 }
 
 export interface RetentionSettingsHistoryEntry {

@@ -400,6 +400,7 @@ async function integrationTests() {
     assert.equal(identity.reclassifiedCount, 0, "identical thresholds reclassify nobody");
     assert.deepEqual(identity.candidateCounts, identity.currentCounts, "counts agree for identical thresholds");
     assert.deepEqual(identity.shifts, [], "no shifts for identical thresholds");
+    assert.deepEqual(identity.topAffectedSalons, [], "no affected salons for identical thresholds");
     assert.ok(identity.totalCustomers >= 3, "platform-wide totals include the fixture customers");
     const sumCurrent = Object.values(identity.currentCounts as Record<string, number>)
       .reduce((s, n) => s + n, 0);
@@ -425,6 +426,25 @@ async function integrationTests() {
     const sumCandidate = Object.values(previewBody.candidateCounts as Record<string, number>)
       .reduce((s: number, n) => s + (n as number), 0);
     assert.equal(sumCandidate, previewBody.totalCustomers, "candidate counts cover every customer");
+
+    // Most-affected salons: the fixture salon must appear with its name and a
+    // per-salon count, the list is capped at 10 and sorted largest-first, and
+    // the per-salon counts never exceed the platform-wide reclassified total.
+    const affected = previewBody.topAffectedSalons as any[];
+    assert.ok(Array.isArray(affected) && affected.length >= 1, "preview reports affected salons");
+    assert.ok(affected.length <= 10, "affected salons list is capped at 10");
+    const fixtureSalon = affected.find((s) => s.salonId === salon.id);
+    assert.ok(fixtureSalon, "the fixture salon appears among the most affected");
+    assert.equal(fixtureSalon.salonName, salon.name, "affected salon carries its display name");
+    assert.ok(fixtureSalon.reclassifiedCount >= 1, "fixture salon reports at least the moved customer");
+    for (let i = 1; i < affected.length; i++) {
+      assert.ok(
+        affected[i - 1].reclassifiedCount >= affected[i].reclassifiedCount,
+        "affected salons are sorted largest-first",
+      );
+    }
+    const affectedSum = affected.reduce((s: number, x: any) => s + x.reclassifiedCount, 0);
+    assert.ok(affectedSum <= previewBody.reclassifiedCount, "per-salon counts stay within the total");
 
     // Invalid candidate → 400 (same validation as PUT).
     const badPreviewRes = await postPreview({

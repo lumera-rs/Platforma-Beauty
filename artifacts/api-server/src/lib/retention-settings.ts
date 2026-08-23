@@ -14,12 +14,13 @@
  * same version (the unique index on version is the final backstop).
  */
 
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   appointmentsTable,
   platformRetentionSettingsTable,
   salonCustomersTable,
+  salonsTable,
   usersTable,
 } from "@workspace/db";
 import {
@@ -177,6 +178,13 @@ export interface RetentionPreviewShift {
   count: number;
 }
 
+export interface RetentionPreviewAffectedSalon {
+  salonId: string;
+  salonName: string;
+  /** Customers of this salon whose status would change. */
+  reclassifiedCount: number;
+}
+
 export interface RetentionPreviewResult {
   /** Version whose thresholds produced the "current" counts (0 = defaults). */
   currentVersion: number;
@@ -186,7 +194,12 @@ export interface RetentionPreviewResult {
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first. */
   shifts: RetentionPreviewShift[];
+  /** Salons with the most reclassified customers, largest first (top N). */
+  topAffectedSalons: RetentionPreviewAffectedSalon[];
 }
+
+/** How many most-affected salons the preview reports. */
+export const PREVIEW_TOP_AFFECTED_SALONS_LIMIT = 10;
 
 const RETENTION_STATUSES: RetentionStatus[] = ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"];
 
@@ -258,6 +271,7 @@ export async function previewRetentionThresholds(
   const currentCounts = emptyStatusCounts();
   const candidateCounts = emptyStatusCounts();
   const shiftCounts = new Map<string, number>();
+  const reclassifiedBySalon = new Map<string, number>();
   let reclassifiedCount = 0;
 
   for (const customer of customers) {
@@ -276,6 +290,10 @@ export async function previewRetentionThresholds(
       reclassifiedCount += 1;
       const key = `${currentStatus}\u0000${candidateStatus}`;
       shiftCounts.set(key, (shiftCounts.get(key) ?? 0) + 1);
+      reclassifiedBySalon.set(
+        customer.salonId,
+        (reclassifiedBySalon.get(customer.salonId) ?? 0) + 1,
+      );
     }
   }
 
@@ -291,6 +309,27 @@ export async function previewRetentionThresholds(
         RETENTION_STATUSES.indexOf(a.toStatus) - RETENTION_STATUSES.indexOf(b.toStatus),
     );
 
+  // Top-N most-affected salons. Ties break on salonId so the cut is
+  // deterministic; names are fetched only for the salons that made the cut
+  // (read-only lookup — the preview still never writes anything).
+  const topAffected = [...reclassifiedBySalon.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, PREVIEW_TOP_AFFECTED_SALONS_LIMIT);
+
+  let topAffectedSalons: RetentionPreviewAffectedSalon[] = [];
+  if (topAffected.length > 0) {
+    const salonRows = await db
+      .select({ id: salonsTable.id, name: salonsTable.name })
+      .from(salonsTable)
+      .where(inArray(salonsTable.id, topAffected.map(([salonId]) => salonId)));
+    const nameById = new Map(salonRows.map((row) => [row.id, row.name]));
+    topAffectedSalons = topAffected.map(([salonId, count]) => ({
+      salonId,
+      salonName: nameById.get(salonId) ?? "Nepoznat salon",
+      reclassifiedCount: count,
+    }));
+  }
+
   return {
     currentVersion: active.version,
     totalCustomers: customers.length,
@@ -298,6 +337,7 @@ export async function previewRetentionThresholds(
     currentCounts,
     candidateCounts,
     shifts,
+    topAffectedSalons,
   };
 }
 
