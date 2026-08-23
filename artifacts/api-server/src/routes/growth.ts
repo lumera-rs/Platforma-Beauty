@@ -704,6 +704,26 @@ function statsScopeRunCondition(scope: StatsScope) {
 }
 
 /**
+ * NEW vs RETURNING derivation shared by the overview and attributed-
+ * appointments endpoints. A customer is returning only when they have a
+ * completed appointment strictly before the campaign message timestamp.
+ * Missing salonCustomerId remains unknown.
+ */
+const isReturningExpr = sql<boolean | null>`
+  case
+    when ${appointmentsTable.salonCustomerId} is null then null
+    else exists (
+      select 1
+      from ${appointmentsTable} prior
+      where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
+        and prior.id <> ${appointmentsTable.id}
+        and prior.status = 'completed'
+        and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
+    )
+  end
+`;
+
+/**
  * Run/attribution aggregation shared by the overview and per-rule stats
  * endpoints, for both the current window and the preceding comparison window
  * (compare=previous). The selections, the attribution join, and the window
@@ -748,6 +768,31 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
     })
     .from(automationRunsTable)
     .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+    .where(and(statsScopeRunCondition(scope), statsRunPeriodCondition(window)))
+    .groupBy(automationRunsTable.ruleId);
+}
+
+/**
+ * New/returning/unknown client mix for realized attributed appointments.
+ * The join and window scope intentionally mirror the attributed-appointments
+ * response so overview cards and the dialog describe the same set.
+ */
+function aggregateClientMixStats(scope: StatsScope, window: StatsWindow) {
+  const attributedAppointmentJoin = and(
+    eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+    appointmentCountsAsRealized,
+  );
+
+  return db
+    .select({
+      ruleId: automationRunsTable.ruleId,
+      newClientCount: sql<number>`sum(case when (${isReturningExpr}) is false then 1 else 0 end)::int`,
+      returningClientCount: sql<number>`sum(case when (${isReturningExpr}) is true then 1 else 0 end)::int`,
+      unknownClientCount: sql<number>`sum(case when ${appointmentsTable.salonCustomerId} is null then 1 else 0 end)::int`,
+    })
+    .from(automationRunsTable)
+    .innerJoin(appointmentsTable, attributedAppointmentJoin)
+    .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
     .where(and(statsScopeRunCondition(scope), statsRunPeriodCondition(window)))
     .groupBy(automationRunsTable.ruleId);
 }
@@ -826,6 +871,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     const ruleIds = rules.map((r) => r.id);
 
     const runAgg = await aggregateRunStats({ ruleIds }, window);
+    const clientMixAgg = await aggregateClientMixStats({ ruleIds }, window);
     const deliveryAgg = await aggregateDeliveryStats({ ruleIds }, window);
 
     // Preceding window of the same length (compare=previous): only the counts
@@ -849,10 +895,12 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     }
 
     const runsByRule = new Map(runAgg.map((r) => [r.ruleId, r]));
+    const clientMixByRule = new Map(clientMixAgg.map((r) => [r.ruleId, r]));
     const deliveriesByRule = new Map(deliveryAgg.map((d) => [d.ruleId, d]));
 
     res.json(rules.map((rule) => {
       const runs = runsByRule.get(rule.id);
+      const clientMix = clientMixByRule.get(rule.id);
       const deliveries = deliveriesByRule.get(rule.id);
       const previous = prevRunsByRule && prevDeliveriesByRule
         ? {
@@ -880,6 +928,9 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         upcomingRevenue: runs?.upcomingRevenue ?? 0,
         cancelledAttributedAppointments: runs?.cancelledAttributedAppointments ?? 0,
         cancelledAttributedRevenue: runs?.cancelledAttributedRevenue ?? 0,
+         newClientCount: clientMix?.newClientCount ?? 0,
+         returningClientCount: clientMix?.returningClientCount ?? 0,
+         unknownClientCount: clientMix?.unknownClientCount ?? 0,
         emailSentCount: deliveries?.emailSentCount ?? 0,
         emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: deliveries?.emailOpenedCount ?? 0,
@@ -1083,30 +1134,8 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
       appointmentCountsAsRealized,
     );
-    // NEW vs RETURNING derivation: true when the salon customer already had
-    // at least one completed appointment strictly before the campaign
-    // message went out (anchored on sentAt, falling back to executedAt and
-    // then createdAt like the stats windows), false when this is their
-    // first appointment at the salon, and null (unknown) when the
-    // appointment has no linked salon customer. The attributed appointment
-    // itself is excluded so it can never count as its own "prior" visit.
-    // Shared between the row projection, the clientType filter, and the
-    // summary aggregates below so neither the filter nor the
-    // "X novih · Y vraćenih" summary can ever disagree with the badge shown
-    // on each row.
-    const isReturningExpr = sql<boolean | null>`
-      case
-        when ${appointmentsTable.salonCustomerId} is null then null
-        else exists (
-          select 1
-          from ${appointmentsTable} prior
-          where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
-            and prior.id <> ${appointmentsTable.id}
-            and prior.status = 'completed'
-            and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
-        )
-      end
-    `;
+    // The shared NEW vs RETURNING derivation also powers the overview
+    // aggregate, so its clientType filter, summary, and row badge cannot drift.
     // Optional client-segment filter. `is true` / `is false` naturally exclude
     // the null (no linked salon customer) rows from both segments.
     const clientTypeCondition =

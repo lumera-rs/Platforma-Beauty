@@ -31,7 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
 import { rangePresets, toDateParam } from "@/lib/date-range-presets";
-import type { AutomationAttributedAppointment } from "@workspace/api-client-react";
+import type { AutomationAttributedAppointment, AutomationStatsOverviewItem } from "@workspace/api-client-react";
 import { useLocation, useSearch } from "wouter";
 import { Link } from "wouter";
 import { parsePeriodSelection, serializePeriodSelection, type StatsPeriod } from "@/lib/campaign-period-url";
@@ -207,7 +207,7 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
  * do not report opens, so the SMS column shows delivery only.
  */
 function CampaignOverview({ items, period, onPeriodChange, customRange, onCustomRangeChange, onShowStats }: {
-  items: any[];
+  items: AutomationStatsOverviewItem[];
   period: StatsPeriod;
   onPeriodChange: (period: StatsPeriod) => void;
   customRange: DateRange | undefined;
@@ -403,6 +403,19 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                   </td>
                   <td className="py-3 text-right">
                     <span className="text-lg font-bold text-primary">{item.attributedAppointments}</span>
+                    {(item.newClientCount + item.returningClientCount + item.unknownClientCount) > 0 && (
+                      <div className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid={`overview-client-mix-${item.ruleId}`}>
+                        <span className="font-semibold text-foreground">{srCount(item.newClientCount, "nov", "nova", "novih")}</span>
+                        <span> · </span>
+                        <span className="font-semibold text-foreground">{srCount(item.returningClientCount, "vraćen", "vraćena", "vraćenih")}</span>
+                        {item.unknownClientCount > 0 && (
+                          <>
+                            <span> · </span>
+                            <span>{srCount(item.unknownClientCount, "nepoznat", "nepoznata", "nepoznatih")}</span>
+                          </>
+                        )}
+                      </div>
+                    )}
                     <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
                       {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
                       {item.previous && <span className="ml-1.5"><TrendIndicator current={item.attributedRevenue ?? 0} previous={item.previous.attributedRevenue ?? 0} testId={`trend-revenue-${item.ruleId}`} /></span>}

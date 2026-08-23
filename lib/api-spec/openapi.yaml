@@ -7791,6 +7791,15 @@ components:
         cancelledAttributedRevenue:
           type: number
           description: Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.
+        newClientCount:
+          type: number
+          description: Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response.
+        returningClientCount:
+          type: number
+          description: Attributed appointments from returning clients in the requested period; a prior completed appointment must be strictly before coalesce(sentAt, executedAt, createdAt).
+        unknownClientCount:
+          type: number
+          description: Attributed appointments in the requested period without a linked salon customer, so the new/returning split is unknown.
         emailSentCount: { type: number }
         emailDeliveredCount: { type: number }
         emailOpenedCount: { type: number }
@@ -7811,7 +7820,7 @@ components:
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
           required: [attributedAppointments, attributedRevenue, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientCount, returningClientCount, unknownClientCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

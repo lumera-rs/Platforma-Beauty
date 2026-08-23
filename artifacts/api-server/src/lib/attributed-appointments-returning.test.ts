@@ -168,6 +168,26 @@ async function main() {
       "summary buckets partition the unfiltered total exactly",
     );
 
+    // The campaign overview must expose the exact same period-wide mix as the
+    // attributed-appointments response for this rule.
+    const overviewResponse = await fetch(
+      `${baseUrl}/api/growth/automation-stats`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(overviewResponse.status, 200);
+    const overviewBody = await overviewResponse.json() as any[];
+    const overviewRule = overviewBody.find((item) => item.ruleId === rule.id);
+    assert.ok(overviewRule, "rule present in overview stats");
+    assert.equal(overviewRule.newClientCount, body.newClientCount, "overview new-client count matches drill-down");
+    assert.equal(overviewRule.returningClientCount, body.returningClientCount, "overview returning-client count matches drill-down");
+    assert.equal(overviewRule.unknownClientCount, body.unknownClientCount, "overview unknown-client count matches drill-down");
+    assert.equal(
+      overviewRule.newClientCount + overviewRule.returningClientCount + overviewRule.unknownClientCount,
+      overviewRule.attributedAppointments,
+      "overview client-mix buckets partition attributed appointments",
+    );
+    console.log("✓ overview client mix matches the attributed-appointments summary");
+
     // Pagination must not change the summary: a small page still reports the
     // full-set counts, so the dialog summary stays stable while pages load.
     const pagedResponse = await fetch(
