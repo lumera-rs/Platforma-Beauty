@@ -293,36 +293,91 @@ test("switching the client-type filter never shows mixed or stale attributed row
   }
 });
 
-test("shared campaign links restore the client filter and close cleanly", async ({ page }) => {
+test("shared campaign links preserve tracking tags while filtering and closing", async ({ page }) => {
   const fixture = await createFixture();
 
   try {
     await signInAsFixtureOwner(page, fixture);
-    await page.goto(`/vlasnik/automatizacije?rule=${fixture.ruleId}&clients=returning`);
+    await page.goto(`/vlasnik/automatizacije?utm_source=instagram&rule=${fixture.ruleId}&clients=returning`);
 
     const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
     await expect(dialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "false");
-    await expect(page).toHaveURL(new RegExp(`rule=${fixture.ruleId}&clients=returning$`));
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: "returning",
+    });
 
     await dialog.getByTestId("client-type-new").click();
-    await expect(page).toHaveURL(new RegExp(`rule=${fixture.ruleId}&clients=new$`));
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: "new",
+    });
     await expect(dialog.getByTestId("client-type-new")).toHaveAttribute("aria-pressed", "true");
 
     await dialog.getByTestId("client-type-all").click();
-    await expect(page).toHaveURL(new RegExp(`rule=${fixture.ruleId}$`));
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: null,
+    });
     await expect(dialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "true");
 
     await dialog.getByRole("button", { name: "Close" }).click();
     await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(/\/vlasnik\/automatizacije$/);
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: null,
+      clients: null,
+    });
 
-    await page.goto(`/vlasnik/automatizacije?rule=${fixture.ruleId}&clients=bogus`);
+    await page.goto(`/vlasnik/automatizacije?utm_source=instagram&rule=${fixture.ruleId}&clients=bogus`);
     await expect(dialog).toBeVisible();
     await expect(dialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "true");
     await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "false");
-    await expect(page).toHaveURL(new RegExp(`rule=${fixture.ruleId}$`));
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: null,
+    });
   } finally {
     await cleanUpFixture(fixture);
   }
