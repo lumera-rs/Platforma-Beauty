@@ -6,8 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { HealthStatusDatabasePool } from './healthStatusDatabasePool';
+import type { SchedulerJobHealth } from './schedulerJobHealth';
 
 export interface HealthStatus {
   status: string;
   databasePool: HealthStatusDatabasePool;
+  /** Last known local status of each periodic database-backed scheduler job. */
+  schedulerJobs: SchedulerJobHealth[];
 }

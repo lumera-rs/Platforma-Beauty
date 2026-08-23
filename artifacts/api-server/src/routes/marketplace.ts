@@ -367,6 +367,7 @@ import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmati
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
+import { schedulerHealthSnapshot } from "../lib/scheduler-resilience";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -11951,6 +11952,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const galleryCleanupOldestEligibleTicketAgeMinutes = oldestEligibleGalleryUploadTicket
     ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
     : null;
+  const schedulerJobs = schedulerHealthSnapshot();
 
   res.json(GetAdminSummaryResponse.parse({
     totalUsers: Number(userSummary[0]?.total ?? 0),
@@ -11977,6 +11979,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     // helper) — zero means a total email outage would reach no administrator,
     // so the dashboard shows the same standing warning as the integrations page.
     smsFallbackReachableAdminCount: reachableAdminCount,
+    schedulerJobs,
     topCategories,
   }));
 });

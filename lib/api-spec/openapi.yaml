@@ -4929,7 +4929,24 @@ components:
             waiting: { type: number, minimum: 0, multipleOf: 1 }
             max: { type: number, minimum: 1, multipleOf: 1 }
           required: [total, idle, waiting, max]
-      required: [status, databasePool]
+        schedulerJobs:
+          type: array
+          description: Last known local status of each periodic database-backed scheduler job.
+          items: { $ref: "#/components/schemas/SchedulerJobHealth" }
+      required: [status, databasePool, schedulerJobs]
+    SchedulerJobHealth:
+      type: object
+      properties:
+        job: { type: string }
+        state: { type: string, enum: [idle, running, retrying, failed] }
+        lastStartedAt: { type: ["string", "null"], format: date-time }
+        lastSucceededAt: { type: ["string", "null"], format: date-time }
+        lastFailedAt: { type: ["string", "null"], format: date-time }
+        lastFailureClass: { type: ["string", "null"], enum: [transient_database, permanent] }
+        consecutiveFailures: { type: number, minimum: 0, multipleOf: 1 }
+        deferredCycles: { type: number, minimum: 0, multipleOf: 1 }
+        nextRetryAt: { type: ["string", "null"], format: date-time }
+      required: [job, state, lastStartedAt, lastSucceededAt, lastFailedAt, lastFailureClass, consecutiveFailures, deferredCycles, nextRetryAt]
     User:
       type: object
       properties:
@@ -6994,6 +7011,10 @@ components:
         smsFallbackReachableAdminCount:
           type: number
           description: How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody.
+        schedulerJobs:
+          type: array
+          description: Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle.
+          items: { $ref: "#/components/schemas/SchedulerJobHealth" }
         topCategories:
           type: array
           items:
@@ -7002,7 +7023,7 @@ components:
               name: { type: string }
               count: { type: number }
             required: [name, count]
-      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, smsFallbackReachableAdminCount, topCategories]
+      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, smsFallbackReachableAdminCount, schedulerJobs, topCategories]
     AdminSalon:
       type: object
       properties:

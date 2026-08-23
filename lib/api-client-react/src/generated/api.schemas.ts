@@ -16,9 +16,51 @@ export type HealthStatusDatabasePool = {
   max: number;
 };
 
+export type SchedulerJobHealthState = typeof SchedulerJobHealthState[keyof typeof SchedulerJobHealthState];
+
+
+export const SchedulerJobHealthState = {
+  idle: 'idle',
+  running: 'running',
+  retrying: 'retrying',
+  failed: 'failed',
+} as const;
+
+/**
+ * @nullable
+ */
+export type SchedulerJobHealthLastFailureClass = typeof SchedulerJobHealthLastFailureClass[keyof typeof SchedulerJobHealthLastFailureClass] | null;
+
+
+export const SchedulerJobHealthLastFailureClass = {
+  transient_database: 'transient_database',
+  permanent: 'permanent',
+} as const;
+
+export interface SchedulerJobHealth {
+  job: string;
+  state: SchedulerJobHealthState;
+  /** @nullable */
+  lastStartedAt: string | null;
+  /** @nullable */
+  lastSucceededAt: string | null;
+  /** @nullable */
+  lastFailedAt: string | null;
+  /** @nullable */
+  lastFailureClass: SchedulerJobHealthLastFailureClass;
+  /** @minimum 0 */
+  consecutiveFailures: number;
+  /** @minimum 0 */
+  deferredCycles: number;
+  /** @nullable */
+  nextRetryAt: string | null;
+}
+
 export interface HealthStatus {
   status: string;
   databasePool: HealthStatusDatabasePool;
+  /** Last known local status of each periodic database-backed scheduler job. */
+  schedulerJobs: SchedulerJobHealth[];
 }
 
 export type UserRole = typeof UserRole[keyof typeof UserRole];
@@ -3141,6 +3183,8 @@ export interface AdminSummary {
   deliveryReportStaleProviders: AdminSummaryDeliveryReportStaleProvidersItem[];
   /** How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody. */
   smsFallbackReachableAdminCount: number;
+  /** Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle. */
+  schedulerJobs: SchedulerJobHealth[];
   topCategories: AdminSummaryTopCategoriesItem[];
 }
 

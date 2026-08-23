@@ -19,12 +19,40 @@ function formatCleanupTicketAge(ageMinutes: number | null): string {
   return `${days} dan${days === 1 ? "" : "a"}`;
 }
 
+function schedulerJobLabel(job: string): string {
+  const labels: Record<string, string> = {
+    "rescheduled-confirmation-retries": "ponovni pokušaji potvrda",
+    "education-session-maintenance": "održavanje edukacija",
+    "education-gallery-cleanup": "čišćenje edukativne galerije",
+    "media-upload-cleanup": "čišćenje upload-a",
+    "compatibility-image-cleanup": "čišćenje privremenih slika",
+    "communication-archive": "arhiviranje komunikacije",
+    "automation-worker": "automatizacije",
+    "delivery-report-silence-alerts": "provera izveštaja o isporuci",
+    "delivery-report-recovery-alerts": "oporavak izveštaja o isporuci",
+  };
+  return labels[job] ?? job;
+}
+
+function schedulerStateLabel(state: "idle" | "running" | "retrying" | "failed"): string {
+  if (state === "retrying") return "Ponovni pokušaj";
+  if (state === "failed") return "Čeka redovni ciklus";
+  if (state === "running") return "U toku";
+  return "U redu";
+}
+
+function formatSchedulerTime(value: string | null): string {
+  if (!value) return "Još nije zabeleženo";
+  return new Date(value).toLocaleString("sr-RS", { dateStyle: "short", timeStyle: "short" });
+}
+
 export default function AdminDashboard() {
   const { data: summary, isLoading, error } = useGetAdminSummary();
   const { data: growth, isLoading: isLoadingGrowth } = useAdminGetGrowthSummary();
 
   if (isLoading || isLoadingGrowth) return <AdminLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></AdminLayout>;
   if (error || !summary) return <AdminLayout><div className="p-10 text-destructive bg-destructive/10 rounded-xl text-center border border-destructive/20 font-medium">Došlo je do greške pri učitavanju pregleda platforme.</div></AdminLayout>;
+  const delayedSchedulerJobs = summary.schedulerJobs.filter((job) => job.state === "retrying" || job.state === "failed");
 
   return (
     <AdminLayout>
@@ -65,6 +93,50 @@ export default function AdminDashboard() {
               Proverite webhook podešavanja u sekciji Integracije
             </Link>.
           </div>
+        )}
+
+        {delayedSchedulerJobs.length > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100" role="alert" data-testid="scheduler-health-alert">
+            <strong>Jedan ili više zakazanih poslova zahtevaju pažnju.</strong>{" "}
+            {delayedSchedulerJobs.map((job) => schedulerJobLabel(job.job)).join(", ")}.
+            {" "}Sistem {delayedSchedulerJobs.some((job) => job.state === "retrying") ? "bezbedno pokušava ponovo nakon privremenog prekida baze." : "čeka sledeći redovni ciklus nakon neuspeha."}
+          </div>
+        )}
+
+        {delayedSchedulerJobs.length > 0 && (
+          <Card className="border-amber-300/80 dark:border-amber-900/70" data-testid="scheduler-health-card">
+            <CardHeader className="pb-2 border-b border-border/50 bg-amber-50/40 dark:bg-amber-950/10">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Activity className="w-5 h-5 text-amber-700 dark:text-amber-300" />
+                Status zakazanih poslova
+              </CardTitle>
+              <CardDescription>
+                Poslovi se ne dupliraju: privremeni prekidi baze dobijaju ograničen ponovni pokušaj.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4 space-y-3">
+              {delayedSchedulerJobs.map((job) => (
+                <div key={job.job} className="rounded-lg border border-border/70 bg-background px-4 py-3 text-sm" data-testid={`scheduler-job-${job.job}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{schedulerJobLabel(job.job)}</strong>
+                    <span className={job.state === "failed" ? "font-medium text-destructive" : "font-medium text-amber-700 dark:text-amber-300"}>
+                      {schedulerStateLabel(job.state)}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid gap-1 text-muted-foreground sm:grid-cols-2">
+                    <span>Odloženi ciklusi: {job.deferredCycles}</span>
+                    <span>Uzastopni neuspehi: {job.consecutiveFailures}</span>
+                    <span>Poslednji uspeh: {formatSchedulerTime(job.lastSucceededAt)}</span>
+                    <span>
+                      {job.nextRetryAt
+                        ? `Sledeći pokušaj: ${formatSchedulerTime(job.nextRetryAt)}`
+                        : `Vrsta poslednje greške: ${job.lastFailureClass === "permanent" ? "trajna" : "prolazna"}`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -73,3 +73,4 @@
 - [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
 - [Retail cart summary safety](retail-cart-summary-safety.md) — passive cart indicators must never create empty carts or poll them globally.
 - [Drizzle expression indexes](drizzle-expression-indexes.md) — raw expression indexes need their own parentheses, and disposable schema setup must reject reported SQL errors.
+- [Background scheduler recovery](background-scheduler-recovery.md) — retry stays process-local and bounded; job-level leases and idempotency remain the durable source of truth.

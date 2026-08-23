@@ -1,8 +1,8 @@
 import app from "./app";
 import { closePool, databasePoolStats } from "@workspace/db";
 import { logger } from "./lib/logger";
-import { runScheduledRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
-import { runScheduledEducationSessionMaintenance } from "./lib/education-scheduler";
+import { runRescheduledConfirmationRetries } from "./lib/rescheduled-confirmation-retries";
+import { processUpcomingEducationSessions } from "./lib/education-sessions";
 import {
   startSalonNotificationEventListener,
   stopSalonNotificationEventListener,
@@ -24,6 +24,7 @@ import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
 import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
 import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
+import { createResilientScheduledJob } from "./lib/scheduler-resilience";
 
 const rawPort = process.env["PORT"];
 
@@ -66,101 +67,110 @@ const server = app.listen(port, "0.0.0.0", (err) => {
 // Scheduled tasks
 // ---------------------------------------------------------------------------
 
+const rescheduledConfirmationRetries = createResilientScheduledJob({
+  job: "rescheduled-confirmation-retries",
+  run: runRescheduledConfirmationRetries,
+});
+const educationSessionMaintenance = createResilientScheduledJob({
+  job: "education-session-maintenance",
+  run: processUpcomingEducationSessions,
+});
+const educationGalleryCleanup = createResilientScheduledJob({
+  job: "education-gallery-cleanup",
+  run: runEducationGalleryCleanup,
+});
+const mediaUploadCleanup = createResilientScheduledJob({
+  job: "media-upload-cleanup",
+  run: runMediaUploadCleanup,
+});
+const compatibilityImageCleanup = createResilientScheduledJob({
+  job: "compatibility-image-cleanup",
+  run: cleanupExpiredImageAssets,
+});
+const communicationArchive = createResilientScheduledJob({
+  job: "communication-archive",
+  run: runCommunicationArchiveBatch,
+});
+const automationWorker = createResilientScheduledJob({
+  job: "automation-worker",
+  run: runAutomationWorker,
+});
+const deliveryReportSilenceAlerts = createResilientScheduledJob({
+  job: "delivery-report-silence-alerts",
+  run: runDeliveryReportSilenceAlerts,
+});
+const deliveryReportRecoveryAlerts = createResilientScheduledJob({
+  job: "delivery-report-recovery-alerts",
+  run: runDeliveryReportRecoveryAlerts,
+});
+const scheduledJobs = [
+  rescheduledConfirmationRetries,
+  educationSessionMaintenance,
+  educationGalleryCleanup,
+  mediaUploadCleanup,
+  compatibilityImageCleanup,
+  communicationArchive,
+  automationWorker,
+  deliveryReportSilenceAlerts,
+  deliveryReportRecoveryAlerts,
+];
+
 const retryInterval = setInterval(() => {
-  void runScheduledRescheduledConfirmationRetries().catch((error: unknown) => {
-    logger.warn({ err: error }, "Rescheduled confirmation retry scheduler failed");
-  });
+  void rescheduledConfirmationRetries.run();
 }, 60_000);
 retryInterval.unref();
-void runScheduledRescheduledConfirmationRetries().catch((error: unknown) => {
-  logger.warn({ err: error }, "Rescheduled confirmation retry initial run failed");
-});
+void rescheduledConfirmationRetries.run();
 
 // Education session lifecycle: drain expired waitlist offers and auto-cancel
 // under-enrolled sessions. Runs every 5 minutes on a self-unreferencing timer
 // so it never keeps the process alive on its own.
 const educationMaintenanceInterval = setInterval(() => {
-  void runScheduledEducationSessionMaintenance().catch((error: unknown) => {
-    logger.warn({ err: error }, "Education session maintenance scheduler failed");
-  });
+  void educationSessionMaintenance.run();
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
-void runScheduledEducationSessionMaintenance().catch((error: unknown) => {
-  logger.warn({ err: error }, "Education session maintenance initial run failed");
-});
+void educationSessionMaintenance.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
-  void runEducationGalleryCleanup().catch((error) => {
-    logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
-  });
+  void educationGalleryCleanup.run();
 }, 5 * 60_000);
 educationGalleryCleanupInterval.unref();
-void runEducationGalleryCleanup().catch((error) => {
-  logger.warn({ err: error }, "Education gallery cleanup scheduler failed");
-});
+void educationGalleryCleanup.run();
 
 const mediaCleanupInterval = setInterval(() => {
-  void runMediaUploadCleanup().catch((error) => {
-    logger.warn({ err: error }, "Media upload cleanup scheduler failed");
-  });
+  void mediaUploadCleanup.run();
 }, 5 * 60_000);
 mediaCleanupInterval.unref();
-void runMediaUploadCleanup().catch((error) => {
-  logger.warn({ err: error }, "Media upload cleanup scheduler failed");
-});
+void mediaUploadCleanup.run();
 
 const compatibilityImageCleanupInterval = setInterval(() => {
-  void cleanupExpiredImageAssets().catch((error) => {
-    logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
-  });
+  void compatibilityImageCleanup.run();
 }, 10 * 60_000);
 
 const communicationArchiveInterval = setInterval(() => {
-  void runCommunicationArchiveBatch().catch((error) => {
-    logger.warn({ err: error }, "Communication archive batch scheduler failed");
-  });
+  void communicationArchive.run();
 }, 24 * 60 * 60_000);
 communicationArchiveInterval.unref();
 
 // Automation worker: evaluate active rules every 15 minutes
 const automationWorkerInterval = setInterval(() => {
-  void runAutomationWorker().catch((error: unknown) => {
-    logger.warn({ err: error }, "Automation worker scheduler failed");
-  });
+  void automationWorker.run();
 }, 15 * 60_000);
 automationWorkerInterval.unref();
-void runAutomationWorker().catch((error: unknown) => {
-  logger.warn({ err: error }, "Automation worker initial run failed");
-});
+void automationWorker.run();
 
 // Delivery-report silence alerts: if automation messages went out recently but
 // no verified webhook events arrived, email administrators (deduplicated per
 // cooldown window through the email outbox — never one email per tick).
 const deliveryReportAlertInterval = setInterval(() => {
-  void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
-    logger.warn({ err: error }, "Delivery-report silence alert scheduler failed");
-  });
-  // Recovery notices close the loop: once a previously-alerted provider
-  // reports verified events again, each alerted admin gets a single
-  // "reports are arriving again" email (anchored per silence episode).
-  void runDeliveryReportRecoveryAlerts().catch((error: unknown) => {
-    logger.warn({ err: error }, "Delivery-report recovery notice scheduler failed");
-  });
+  void deliveryReportSilenceAlerts.run();
+  void deliveryReportRecoveryAlerts.run();
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
-void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
-  logger.warn({ err: error }, "Delivery-report silence alert initial run failed");
-});
-void runDeliveryReportRecoveryAlerts().catch((error: unknown) => {
-  logger.warn({ err: error }, "Delivery-report recovery notice initial run failed");
-});
+void deliveryReportSilenceAlerts.run();
+void deliveryReportRecoveryAlerts.run();
 compatibilityImageCleanupInterval.unref();
-void cleanupExpiredImageAssets().catch((error) => {
-  logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
-});
-void runCommunicationArchiveBatch().catch((error) => {
-  logger.warn({ err: error }, "Communication archive batch initial run failed");
-});
+void compatibilityImageCleanup.run();
+void communicationArchive.run();
 
 const databaseMetricsInterval = setInterval(() => {
   logger.debug(
@@ -189,7 +199,9 @@ function clearScheduledTasks(): void {
   clearInterval(compatibilityImageCleanupInterval);
   clearInterval(communicationArchiveInterval);
   clearInterval(automationWorkerInterval);
+  clearInterval(deliveryReportAlertInterval);
   clearInterval(databaseMetricsInterval);
+  for (const scheduledJob of scheduledJobs) scheduledJob.stop();
 }
 function shutDown(signal: NodeJS.Signals): void {
   if (shuttingDown) return;

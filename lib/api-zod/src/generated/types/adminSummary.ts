@@ -7,6 +7,7 @@
  */
 import type { AdminSummaryDeliveryReportStaleProvidersItem } from './adminSummaryDeliveryReportStaleProvidersItem';
 import type { AdminSummaryTopCategoriesItem } from './adminSummaryTopCategoriesItem';
+import type { SchedulerJobHealth } from './schedulerJobHealth';
 
 export interface AdminSummary {
   totalUsers: number;
@@ -35,5 +36,7 @@ export interface AdminSummary {
   deliveryReportStaleProviders: AdminSummaryDeliveryReportStaleProvidersItem[];
   /** How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody. */
   smsFallbackReachableAdminCount: number;
+  /** Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle. */
+  schedulerJobs: SchedulerJobHealth[];
   topCategories: AdminSummaryTopCategoriesItem[];
 }

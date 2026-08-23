@@ -22,6 +22,12 @@ export const healthCheckResponseDatabasePoolWaitingMultipleOf = 1;
 
 export const healthCheckResponseDatabasePoolMaxMultipleOf = 1;
 
+export const healthCheckResponseSchedulerJobsItemConsecutiveFailuresMin = 0;
+export const healthCheckResponseSchedulerJobsItemConsecutiveFailuresMultipleOf = 1;
+
+export const healthCheckResponseSchedulerJobsItemDeferredCyclesMin = 0;
+export const healthCheckResponseSchedulerJobsItemDeferredCyclesMultipleOf = 1;
+
 
 
 export const HealthCheckResponse = zod.object({
@@ -31,7 +37,18 @@ export const HealthCheckResponse = zod.object({
   "idle": zod.number().min(healthCheckResponseDatabasePoolIdleMin).multipleOf(healthCheckResponseDatabasePoolIdleMultipleOf),
   "waiting": zod.number().min(healthCheckResponseDatabasePoolWaitingMin).multipleOf(healthCheckResponseDatabasePoolWaitingMultipleOf),
   "max": zod.number().min(1).multipleOf(healthCheckResponseDatabasePoolMaxMultipleOf)
-})
+}),
+  "schedulerJobs": zod.array(zod.object({
+  "job": zod.string(),
+  "state": zod.enum(['idle', 'running', 'retrying', 'failed']),
+  "lastStartedAt": zod.coerce.date().nullable(),
+  "lastSucceededAt": zod.coerce.date().nullable(),
+  "lastFailedAt": zod.coerce.date().nullable(),
+  "lastFailureClass": zod.enum(['transient_database', 'permanent']).nullable(),
+  "consecutiveFailures": zod.number().min(healthCheckResponseSchedulerJobsItemConsecutiveFailuresMin).multipleOf(healthCheckResponseSchedulerJobsItemConsecutiveFailuresMultipleOf),
+  "deferredCycles": zod.number().min(healthCheckResponseSchedulerJobsItemDeferredCyclesMin).multipleOf(healthCheckResponseSchedulerJobsItemDeferredCyclesMultipleOf),
+  "nextRetryAt": zod.coerce.date().nullable()
+})).describe('Last known local status of each periodic database-backed scheduler job.')
 })
 
 
@@ -7354,6 +7371,14 @@ export const ListFeaturedEducationCoursesResponse = zod.array(ListFeaturedEducat
 /**
  * @summary Admin platform overview with aggregates and trends
  */
+export const getAdminSummaryResponseSchedulerJobsItemConsecutiveFailuresMin = 0;
+export const getAdminSummaryResponseSchedulerJobsItemConsecutiveFailuresMultipleOf = 1;
+
+export const getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMin = 0;
+export const getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMultipleOf = 1;
+
+
+
 export const GetAdminSummaryResponse = zod.object({
   "totalUsers": zod.number(),
   "totalSalons": zod.number(),
@@ -7372,6 +7397,17 @@ export const GetAdminSummaryResponse = zod.object({
   "galleryCleanupHasRepeatedFailures": zod.boolean().describe('Whether any eligible gallery upload ticket has failed cleanup three or more times.'),
   "deliveryReportStaleProviders": zod.array(zod.enum(['brevo', 'infobip'])).describe('Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since.'),
   "smsFallbackReachableAdminCount": zod.number().describe('How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN\/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody.'),
+  "schedulerJobs": zod.array(zod.object({
+  "job": zod.string(),
+  "state": zod.enum(['idle', 'running', 'retrying', 'failed']),
+  "lastStartedAt": zod.coerce.date().nullable(),
+  "lastSucceededAt": zod.coerce.date().nullable(),
+  "lastFailedAt": zod.coerce.date().nullable(),
+  "lastFailureClass": zod.enum(['transient_database', 'permanent']).nullable(),
+  "consecutiveFailures": zod.number().min(getAdminSummaryResponseSchedulerJobsItemConsecutiveFailuresMin).multipleOf(getAdminSummaryResponseSchedulerJobsItemConsecutiveFailuresMultipleOf),
+  "deferredCycles": zod.number().min(getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMin).multipleOf(getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMultipleOf),
+  "nextRetryAt": zod.coerce.date().nullable()
+})).describe('Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle.'),
   "topCategories": zod.array(zod.object({
   "name": zod.string(),
   "count": zod.number()

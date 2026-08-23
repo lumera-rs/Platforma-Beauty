@@ -39,6 +39,11 @@ type Summary = {
   totalReviews: number;
   hiddenReviews: number;
   activeSubscriptions: number;
+  schedulerJobs: Array<{
+    job: string;
+    state: "idle" | "running" | "retrying" | "failed";
+    deferredCycles: number;
+  }>;
   topCategories: Array<{ name: string; count: number }>;
 };
 
@@ -341,6 +346,15 @@ async function run(): Promise<void> {
     }, "GET /admin/summary must match independently calculated database totals");
 
     assert.equal(summary.topCategories.length, 5, "admin summary must return at most five categories");
+    assert.ok(Array.isArray(summary.schedulerJobs), "admin summary must expose scheduler health");
+    assert.ok(
+      summary.schedulerJobs.every((job) => (
+        typeof job.job === "string"
+        && ["idle", "running", "retrying", "failed"].includes(job.state)
+        && Number.isInteger(job.deferredCycles)
+      )),
+      "scheduler health must remain structured for the admin dashboard",
+    );
     assert.ok(
       !summary.topCategories.some((category) => category.name === categoryCounts[5]?.name),
       "the sixth-ranked category must be excluded by the top-five limit",
