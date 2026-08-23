@@ -3327,6 +3327,27 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
   });
 });
 
+/**
+ * Admin copy helper: returns the COMPLETE provider webhook URL with the
+ * currently saved secret substituted, so admins never assemble it by hand
+ * (hand-assembly is the main source of URL/secret mismatches). The secret is
+ * only returned on demand to an authenticated admin; the page fetches it on
+ * click and copies it without persistently rendering it.
+ */
+router.get("/admin/integrations/:integration/webhook-url", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const integration = req.params.integration;
+  if (integration !== "sms" && integration !== "brevo") {
+    res.status(404).json({ error: "Webhook URL je dostupan samo za SMS i Brevo integracije." }); return;
+  }
+  const secret = await resolveWebhookSecret(integration);
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  const webhookPath = integration === "sms" ? "infobip" : "brevo";
+  res.json({ url: `${requestOrigin(req)}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}` });
+});
+
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
   const expected = process.env["SMS_REMINDER_JOB_SECRET"];
   if (!expected || req.get("x-lumera-job-key") !== expected) { res.status(401).json({ error: "Neovlašćen posao." }); return; }

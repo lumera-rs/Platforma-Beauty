@@ -67,6 +67,21 @@ export default function AdminIntegrations() {
       setVerifyingWebhook((previous) => ({ ...previous, [integration]: false }));
     }
   };
+  const [copyingWebhookUrl, setCopyingWebhookUrl] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false });
+  const copyWebhookUrl = async (integration: Integration) => {
+    setCopyingWebhookUrl((previous) => ({ ...previous, [integration]: true }));
+    try {
+      const response = await fetch(`/api/admin/integrations/${integration}/webhook-url`, { credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Webhook URL nije učitan.");
+      await navigator.clipboard.writeText(result.url);
+      toast.success("Kompletan webhook URL sa sačuvanom tajnom je kopiran.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Kopiranje webhook URL-a nije uspelo.");
+    } finally {
+      setCopyingWebhookUrl((previous) => ({ ...previous, [integration]: false }));
+    }
+  };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
@@ -90,10 +105,17 @@ export default function AdminIntegrations() {
             <Label>Webhook URL za statuse isporuke</Label>
             <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
-            <Button variant="outline" size="sm" className="mt-3" disabled={verifyingWebhook[integration]} onClick={() => verifyWebhook(integration)}>
-              {verifyingWebhook[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Webhook className="mr-2 h-4 w-4" />}
-              {verifyingWebhook[integration] ? "Proveravam…" : "Proveri webhook"}
-            </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled={copyingWebhookUrl[integration]} onClick={() => copyWebhookUrl(integration)}>
+                {copyingWebhookUrl[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copyingWebhookUrl[integration] ? "Kopiram…" : "Kopiraj kompletan URL"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={verifyingWebhook[integration]} onClick={() => verifyWebhook(integration)}>
+                {verifyingWebhook[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Webhook className="mr-2 h-4 w-4" />}
+                {verifyingWebhook[integration] ? "Proveravam…" : "Proveri webhook"}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">Kopiranje ubacuje sačuvanu tajnu umesto {"<tajna>"} — nalepite kopirani URL direktno kod provajdera, bez ručnog sklapanja.</p>
             <p className="mt-1.5 text-xs text-muted-foreground">Šalje probni događaj na sopstveni endpoint sa sačuvanom tajnom — potvrđuje da se tajna poklapa i da endpoint prima događaje, bez uticaja na isporuke.</p>
           </div>}
           {(integration === "sms" || integration === "brevo") && (() => {

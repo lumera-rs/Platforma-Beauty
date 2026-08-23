@@ -581,6 +581,41 @@ async function run() {
       console.log("✓ admin webhook self-check verifies end-to-end without touching state or freshness");
     }
 
+    // ── 7e. Admin copy endpoint returns the complete webhook URL ───────────
+    {
+      const copyUrl = (integration: string, token?: string) => fetch(
+        `${baseUrl}/api/admin/integrations/${integration}/webhook-url`,
+        token ? { headers: { cookie: `${sessionCookieName}=${token}` } } : undefined,
+      );
+
+      // Admin gets the full URL with the saved secret already substituted.
+      const expectations = [
+        { integration: "brevo", path: "brevo", secret: brevoSecret },
+        { integration: "sms", path: "infobip", secret: smsSecret },
+      ] as const;
+      for (const { integration, path, secret } of expectations) {
+        const response = await copyUrl(integration, adminToken);
+        const body = await response.json() as { url?: string; error?: string };
+        assert.equal(response.status, 200, `${integration} webhook URL must be returned: ${JSON.stringify(body)}`);
+        assert.ok(body.url, `${integration} response carries a url`);
+        assert.ok(
+          body.url.endsWith(`/api/webhooks/${path}/${encodeURIComponent(secret)}`),
+          `${integration} URL must embed the saved secret on the ${path} webhook path (got ${body.url})`,
+        );
+        assert.ok(/^https?:\/\//.test(body.url), `${integration} URL must be absolute`);
+        assert.ok(!body.url.includes("<tajna>"), "no placeholder remains in the copied URL");
+      }
+
+      // Access control mirrors the other admin integration endpoints.
+      const anonymous = await copyUrl("brevo");
+      assert.equal(anonymous.status, 401, "anonymous webhook URL read rejected");
+      const nonAdmin = await copyUrl("brevo", a.token);
+      assert.equal(nonAdmin.status, 403, "non-admin webhook URL read rejected");
+      const unknown = await copyUrl("google_oauth", adminToken);
+      assert.equal(unknown.status, 404, "webhook URL exists only for SMS and Brevo");
+      console.log("✓ admin webhook-url copy endpoint returns the complete URL to admins only");
+    }
+
     // ── 8. Cross-salon isolation + owner stats accuracy ────────────────────
     {
       // Salon B's rows must be completely untouched by all salon-A traffic.
