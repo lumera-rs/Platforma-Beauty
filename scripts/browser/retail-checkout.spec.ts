@@ -399,6 +399,48 @@ test("retail checkout detects a cart changed in another tab and refreshes before
   expect(mainFrameNavigations).toBe(1);
 });
 
+test("retail checkout backs out to the empty-cart state when the cart is emptied in another tab", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+  const checkoutSubmissions: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/retail/checkout" && request.method() === "POST") {
+      checkoutSubmissions.push(request.url());
+    }
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const checkoutUrl = page.url();
+  const paymentForm = page.locator("form");
+  const confirmButton = paymentForm.getByRole("button", { name: "Potvrdi porudžbinu" });
+  await expect(confirmButton).toBeEnabled();
+
+  // A second tab or device shares the same session cookie, so API calls from the
+  // same browser context are exactly what emptying the cart elsewhere looks like.
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+  expect(cart.items.length).toBeGreaterThan(0);
+  for (const item of cart.items) {
+    const deleteResponse = await page.request.delete(`/api/retail/cart/items/${item.id}`);
+    expect(deleteResponse.ok()).toBe(true);
+  }
+
+  // The poll must drop the stale quote and leave the payment form entirely.
+  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  await expect(paymentForm).toHaveCount(0);
+  await expect(confirmButton).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  // No confirmation was ever submitted and the transition happened without a reload.
+  expect(checkoutSubmissions).toEqual([]);
+  expect(page.url()).toBe(checkoutUrl);
+  expect(mainFrameNavigations).toBe(1);
+});
+
 test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
