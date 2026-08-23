@@ -2,6 +2,9 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:80/api}"
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+check_api_server
+
 first_available="$(curl -fsS "${BASE_URL}/salons?sort=first-available")"
 nearest="$(curl -fsS "${BASE_URL}/salons?sort=nearest&latitude=44&longitude=20")"
 

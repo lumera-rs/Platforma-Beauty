@@ -10,6 +10,9 @@ else
   exit 1
 fi
 
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+check_api_server
+
 DEMO_PASSWORD="${LUMERA_DEMO_PASSWORD:-LumeraDemo2026!}"
 SUPER_COOKIE="$(mktemp)"
 LIMITED_COOKIE="$(mktemp)"

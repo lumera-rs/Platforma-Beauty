@@ -10,6 +10,9 @@ else
   exit 1
 fi
 
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+check_api_server
+
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is required so the isolated order fixtures can be removed after the test." >&2
   exit 1
