@@ -49,6 +49,7 @@
     "test:review-photo-privacy": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/review-photo-privacy.test.ts && pnpm --filter @workspace/scripts run test:review-photo-privacy",
     "test:admin-review-feedback": "pnpm --filter @workspace/scripts run test:admin-review-feedback",
     "test:admin-salon-designations": "pnpm --filter @workspace/scripts run test:admin-salon-designations",
+    "test:infobip-registration-browser": "pnpm --filter @workspace/scripts run test:infobip-registration-browser",
     "test:admin-form-resilience": "pnpm --filter @workspace/scripts run test:admin-form-resilience",
     "test:salon-notifications": "pnpm --filter @workspace/scripts run test:salon-notifications",
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",

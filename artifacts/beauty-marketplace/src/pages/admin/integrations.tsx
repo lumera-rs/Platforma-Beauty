@@ -194,10 +194,14 @@ export default function AdminIntegrations() {
       if (!response.ok) throw new Error(result.error ?? "Provera registracije nije uspela.");
       if (result.verified) toast.success(result.message);
       else toast.info(result.message, { duration: 15000 });
-      await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Provera registracije nije uspela.", { duration: 15000 });
     } finally {
+      // Refresh the standing verdict for both successful checks and actionable
+      // 409 responses. A failed provider-side check can change the panel from
+      // "Još nepotvrđena" to "Verovatno nije registrovan" when traffic arrived
+      // while the check was running.
+      await load().catch(() => undefined);
       setVerifyingSmsRegistration(false);
     }
   };
@@ -378,7 +382,7 @@ export default function AdminIntegrations() {
               const boxClass = panel.tone === "ok" ? "border-emerald-300 bg-emerald-50" : panel.tone === "warn" ? "border-amber-300 bg-amber-50" : "bg-muted/30";
               const textClass = panel.tone === "ok" ? "text-emerald-800" : panel.tone === "warn" ? "text-amber-800" : "text-muted-foreground";
               const badgeClass = panel.tone === "ok" ? "bg-emerald-100 text-emerald-700" : panel.tone === "warn" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
-              return <div className={`mt-3 rounded-lg border p-3 ${boxClass}`}>
+              return <div className={`mt-3 rounded-lg border p-3 ${boxClass}`} data-testid="sms-webhook-registration-panel">
                 <div className="flex items-center justify-between gap-2">
                   <Label className={panel.tone === "warn" ? "text-amber-800" : panel.tone === "ok" ? "text-emerald-800" : undefined}>Registracija na Infobip</Label>
                   <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeClass}`}>
