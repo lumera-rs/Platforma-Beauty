@@ -871,15 +871,24 @@ export default function OwnerAutomations() {
                         <div key={appt.appointmentId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-testid={`attributed-appointment-${appt.appointmentId}`}>
                           <div className="min-w-0">
                             <p className="font-medium truncate">{appt.serviceName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(appt.date).toLocaleDateString("sr-RS")}
-                              {" · "}
+                            <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                              <span>{new Date(appt.date).toLocaleDateString("sr-RS")}</span>
+                              <span>·</span>
                               <span data-testid={`attributed-appointment-client-${appt.appointmentId}`}>
                                 {appt.clientFirstName || appt.clientLastName
                                   ? [appt.clientFirstName, appt.clientLastName].filter(Boolean).join(" ")
                                   : "Nepoznat klijent"}
                               </span>
-                            </p>
+                              {appt.isReturning !== null && appt.isReturning !== undefined && (
+                                <Badge
+                                  variant={appt.isReturning ? "secondary" : "outline"}
+                                  className="px-1.5 py-0 text-[10px] font-medium"
+                                  data-testid={`attributed-appointment-client-type-${appt.appointmentId}`}
+                                >
+                                  {appt.isReturning ? "Vraćen klijent" : "Nov klijent"}
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                           <span className="font-semibold text-emerald-800 whitespace-nowrap">{appt.price.toLocaleString("sr-RS")} RSD</span>
                         </div>

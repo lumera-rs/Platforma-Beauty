@@ -23,4 +23,9 @@ export interface AutomationAttributedAppointment {
      * @nullable
      */
   clientLastName: string | null;
+  /**
+     * True when the salon client had at least one completed appointment before this campaign message was sent (returning client), false when this is their first appointment at the salon (new client), null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  isReturning: boolean | null;
 }

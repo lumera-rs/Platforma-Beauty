@@ -9209,7 +9209,8 @@ export const OwnerListAutomationAttributedAppointmentsResponse = zod.object({
   "serviceName": zod.string(),
   "price": zod.number().describe('Appointment price in RSD.'),
   "clientFirstName": zod.string().nullable().describe('First name of the salon client who booked the appointment; null when the appointment has no linked salon customer.'),
-  "clientLastName": zod.string().nullable().describe('Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.')
+  "clientLastName": zod.string().nullable().describe('Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.'),
+  "isReturning": zod.boolean().nullable().describe('True when the salon client had at least one completed appointment before this campaign message was sent (returning client), false when this is their first appointment at the salon (new client), null when the appointment has no linked salon customer.')
 })),
   "total": zod.number().describe('Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count.'),
   "limit": zod.number().describe('Page size actually applied by the server.'),

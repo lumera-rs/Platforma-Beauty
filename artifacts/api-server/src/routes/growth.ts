@@ -967,7 +967,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
 /**
  * GET /growth/automations/:automationId/attributed-appointments
  * Drill-down list of the concrete appointments attributed to a rule:
- * date, service name, and price (RSD). Owner-scoped; joins
+ * date, service name, price (RSD), client name, and a new/returning
+ * indicator. Owner-scoped; joins
  * automation_runs.attributed_appointment_id → appointments → services.
  *
  * Paginated (limit/offset) so long-running campaigns with hundreds of
@@ -1055,6 +1056,26 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
         price: appointmentsTable.price,
         clientFirstName: salonCustomersTable.firstName,
         clientLastName: salonCustomersTable.lastName,
+        // NEW vs RETURNING indicator: true when the salon customer already had
+        // at least one completed appointment strictly before the campaign
+        // message went out (anchored on sentAt, falling back to executedAt and
+        // then createdAt like the stats windows), false when this is their
+        // first appointment at the salon, and null (unknown) when the
+        // appointment has no linked salon customer. The attributed appointment
+        // itself is excluded so it can never count as its own "prior" visit.
+        isReturning: sql<boolean | null>`
+          case
+            when ${appointmentsTable.salonCustomerId} is null then null
+            else exists (
+              select 1
+              from ${appointmentsTable} prior
+              where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
+                and prior.id <> ${appointmentsTable.id}
+                and prior.status = 'completed'
+                and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
+            )
+          end
+        `,
       })
       .from(automationRunsTable)
       .innerJoin(appointmentsTable, attributedAppointmentJoin)
