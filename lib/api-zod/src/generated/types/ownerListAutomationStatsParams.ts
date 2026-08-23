@@ -14,6 +14,14 @@ export type OwnerListAutomationStatsParams = {
  */
 period?: OwnerListAutomationStatsPeriod;
 /**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: Date;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: Date;
+/**
  * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
  */
 compare?: OwnerListAutomationStatsCompare;

@@ -919,6 +919,66 @@ async function run() {
       });
       assert.equal(invalid.status, 400, "unknown period value must be rejected explicitly");
       console.log("✓ ?period= windows run/delivery aggregation on both stats endpoints; unknown values rejected");
+
+      // ── 8c. ?from=/?to= custom date ranges ────────────────────────────────
+      const toDateParam = (d: Date) => d.toISOString().slice(0, 10);
+      const dayMs = 24 * 60 * 60 * 1000;
+
+      const getOverviewRowQs = async (qs: string) => {
+        const response = await fetch(`${baseUrl}/api/growth/automation-stats${qs}`, {
+          headers: { cookie: `${sessionCookieName}=${a.token}` },
+        });
+        assert.equal(response.status, 200, `expected 200 for ${qs}`);
+        const rows = await response.json() as Array<Record<string, unknown>>;
+        const row = rows.find((r) => r["ruleId"] === ruleA.id);
+        assert.ok(row, `overview must include salon A's rule for ${qs}`);
+        return row;
+      };
+
+      // Range around only the 100-day-old run isolates exactly that run.
+      const oldOnly = await getOverviewRowQs(
+        `?from=${toDateParam(new Date(oldDate.getTime() - dayMs))}&to=${toDateParam(new Date(oldDate.getTime() + dayMs))}`,
+      );
+      assert.equal(oldOnly["totalRuns"], 1, "custom range around the old run isolates it");
+      assert.equal(oldOnly["emailSentCount"], 1, "custom range isolates the old delivery");
+
+      // Recent range (last 10 days, inclusive of today) excludes the old run.
+      const recent = await getOverviewRowQs(
+        `?from=${toDateParam(new Date(Date.now() - 10 * dayMs))}&to=${toDateParam(new Date())}`,
+      );
+      assert.equal(recent["totalRuns"], 3, "recent custom range excludes the old run; to= is end-of-day inclusive");
+      assert.equal(recent["emailSentCount"], 3, "recent custom range excludes the old delivery");
+
+      // Open-ended sides: from-only and to-only.
+      const fromOnly = await getOverviewRowQs(`?from=${toDateParam(new Date(Date.now() - 10 * dayMs))}`);
+      assert.equal(fromOnly["totalRuns"], 3, "from-only range is open-ended toward now");
+      const toOnly = await getOverviewRowQs(`?to=${toDateParam(new Date(oldDate.getTime() + dayMs))}`);
+      assert.equal(toOnly["totalRuns"], 1, "to-only range is open-ended toward the past");
+
+      // Per-rule endpoint honors the same custom range.
+      const perRuleCustom = await fetch(
+        `${baseUrl}/api/growth/automations/${ruleA.id}/stats?from=${toDateParam(new Date(oldDate.getTime() - dayMs))}&to=${toDateParam(new Date(oldDate.getTime() + dayMs))}`,
+        { headers: { cookie: `${sessionCookieName}=${a.token}` } },
+      );
+      assert.equal(perRuleCustom.status, 200);
+      const perRuleCustomBody = await perRuleCustom.json() as Record<string, number>;
+      assert.equal(perRuleCustomBody["totalRuns"], 1, "per-rule custom range isolates the old run");
+
+      // Invalid ranges are rejected explicitly (400), never silently ignored.
+      const expect400 = async (qs: string, label: string) => {
+        for (const url of [
+          `${baseUrl}/api/growth/automation-stats${qs}`,
+          `${baseUrl}/api/growth/automations/${ruleA.id}/stats${qs}`,
+        ]) {
+          const response = await fetch(url, { headers: { cookie: `${sessionCookieName}=${a.token}` } });
+          assert.equal(response.status, 400, `${label} must be rejected with 400 (${url})`);
+        }
+      };
+      await expect400("?from=2026-02-01&to=2026-01-01", "inverted range (from > to)");
+      await expect400("?from=not-a-date", "malformed from date");
+      await expect400("?to=2026-02-30", "impossible calendar date");
+      await expect400("?period=30d&from=2026-01-01", "combining period with from/to");
+      console.log("✓ ?from=/?to= custom ranges window both stats endpoints; invalid ranges rejected with 400");
     }
 
     // ── 8c. Attribution excludes cancelled appointments ─────────────────────

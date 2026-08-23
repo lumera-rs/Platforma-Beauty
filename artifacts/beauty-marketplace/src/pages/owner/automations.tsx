@@ -1,4 +1,3 @@
-import { useState, useMemo } from "react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { 
@@ -25,28 +24,45 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
 
 function rate(part: number, total: number) {
   if (!total) return null;
   return `${Math.round((part / total) * 100)}%`;
 }
 
-type StatsPeriod = "7d" | "30d" | "90d" | "all";
+type StatsPeriod = "7d" | "30d" | "90d" | "all" | "custom";
 
-const periodOptions: { value: StatsPeriod; label: string }[] = [
+const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] = [
   { value: "7d", label: "7 dana" },
   { value: "30d", label: "30 dana" },
   { value: "90d", label: "90 dana" },
   { value: "all", label: "Sve vreme" },
 ];
 
-const periodDescriptionLabels: Record<StatsPeriod, string> = {
-  "7d": "poslednjih 7 dana",
-  "30d": "poslednjih 30 dana",
-  "90d": "poslednjih 90 dana",
-  all: "sve vreme",
-};
+/** Local calendar date → YYYY-MM-DD (no UTC conversion, so the picked day is kept). */
+function toDateParam(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function formatRangeLabel(range: DateRange | undefined): string | null {
+  if (!range?.from || !range?.to) return null;
+  return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
+}
+
+function periodDescription(period: StatsPeriod, customRange: DateRange | undefined): string {
+  switch (period) {
+    case "7d": return "poslednjih 7 dana";
+    case "30d": return "poslednjih 30 dana";
+    case "90d": return "poslednjih 90 dana";
+    case "custom": return formatRangeLabel(customRange) ?? "izabrani period";
+    default: return "sve vreme";
+  }
+}
 
 /**
  * Up/down/flat indicator versus the preceding window of the same length.
@@ -126,13 +142,17 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
  * verified provider-event counts as the per-rule stats dialog. SMS providers
  * do not report opens, so the SMS column shows delivery only.
  */
-function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
+function CampaignOverview({ items, period, onPeriodChange, customRange, onCustomRangeChange, onShowStats }: {
   items: any[];
   period: StatsPeriod;
   onPeriodChange: (period: StatsPeriod) => void;
+  customRange: DateRange | undefined;
+  onCustomRangeChange: (range: DateRange | undefined) => void;
   onShowStats: (ruleId: string) => void;
 }) {
   const anySms = items.some((i) => i.smsSentCount > 0);
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const rangeLabel = formatRangeLabel(customRange);
   return (
     <Card data-testid="campaign-overview">
       <CardHeader className="pb-3">
@@ -145,7 +165,7 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
               Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama. Otkazani termini se ne računaju.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0" role="group" aria-label="Period prikaza" data-testid="overview-period-selector">
+          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0 flex-wrap" role="group" aria-label="Period prikaza" data-testid="overview-period-selector">
             {periodOptions.map((opt) => (
               <button
                 key={opt.value}
@@ -162,6 +182,43 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
                 {opt.label}
               </button>
             ))}
+            <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => onPeriodChange("custom")}
+                  aria-pressed={period === "custom"}
+                  data-testid="period-custom"
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+                    period === "custom"
+                      ? "bg-background text-foreground shadow-sm border"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <CalendarRange className="w-3.5 h-3.5" />
+                  {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="range"
+                  numberOfMonths={1}
+                  defaultMonth={customRange?.from}
+                  selected={customRange}
+                  disabled={{ after: new Date() }}
+                  onSelect={(range) => {
+                    onCustomRangeChange(range);
+                    if (range?.from && range?.to) setRangeOpen(false);
+                  }}
+                  data-testid="overview-range-calendar"
+                />
+                <p className="px-3 pb-3 text-xs text-muted-foreground">
+                  {customRange?.from && !customRange?.to
+                    ? "Izaberite i krajnji datum perioda."
+                    : "Izaberite početni i krajnji datum perioda."}
+                </p>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </CardHeader>
@@ -255,9 +312,9 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
             </tbody>
           </table>
         </div>
-        {period !== "all" && (
+        {period !== "all" && period !== "custom" && (
           <p className="text-xs text-muted-foreground mt-3" data-testid="overview-trend-note">
-            Trend u odnosu na prethodni period iste dužine ({periodDescriptionLabels[period].replace("poslednjih ", "")}).
+            Trend u odnosu na prethodni period iste dužine ({periodDescription(period, undefined).replace("poslednjih ", "")}).
           </p>
         )}
         {anySms && (
@@ -281,13 +338,35 @@ export default function OwnerAutomations() {
   });
 
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("all");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
 
-  // For bounded periods, also request counts for the preceding window of the
-  // same length so the overview can show per-rule trends. "All time" has no
-  // previous window, so no compare flag is sent and no trends are rendered.
-  const overviewParams = statsPeriod === "all"
-    ? { period: statsPeriod }
-    : { period: statsPeriod, compare: "previous" as const };
+  // Custom mode queries with exact from/to dates; presets use ?period=.
+  // While a custom range is incomplete (only start picked) there is nothing
+  // valid to request yet, so the stats queries stay disabled.
+  const statsParams = useMemo(() => {
+    if (statsPeriod === "custom") {
+      return customRange?.from && customRange?.to
+        ? { from: toDateParam(customRange.from), to: toDateParam(customRange.to) }
+        : null;
+    }
+    return { period: statsPeriod };
+  }, [statsPeriod, customRange]);
+
+  // While the custom range is incomplete, keep showing the last complete
+  // window instead of unmounting the overview (which holds the picker).
+  const lastCompleteParamsRef = useRef<NonNullable<typeof statsParams>>({ period: "all" });
+  if (statsParams !== null) lastCompleteParamsRef.current = statsParams;
+  const activeStatsParams = statsParams ?? lastCompleteParamsRef.current;
+
+  // For bounded preset periods, also request counts for the preceding window
+  // of the same length so the overview can show per-rule trends. "All time"
+  // and custom date ranges have no canonical previous window, so no compare
+  // flag is sent and no trends are rendered.
+  const overviewParams = useMemo(() => (
+    "period" in activeStatsParams && activeStatsParams.period !== "all"
+      ? { ...activeStatsParams, compare: "previous" as const }
+      : activeStatsParams
+  ), [activeStatsParams]);
 
   const { data: overviewStats } = useOwnerListAutomationStats(overviewParams, {
     query: {
@@ -309,11 +388,11 @@ export default function OwnerAutomations() {
 
   const { data: statsData, isLoading: isStatsLoading } = useOwnerGetAutomationStats(
     statsRuleId ?? "",
-    { period: statsPeriod },
+    activeStatsParams,
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-stats', statsRuleId, statsPeriod]
+        queryKey: ['owner-automation-stats', statsRuleId, activeStatsParams]
       }
     }
   );
@@ -478,7 +557,7 @@ export default function OwnerAutomations() {
           </div>
 
           {overviewStats && overviewStats.length > 0 && (
-            <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} onShowStats={setStatsRuleId} />
+            <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} customRange={customRange} onCustomRangeChange={setCustomRange} onShowStats={setStatsRuleId} />
           )}
 
           <div className="space-y-4">
@@ -627,7 +706,7 @@ export default function OwnerAutomations() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Statistika automatizacije</DialogTitle>
-            <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescriptionLabels[statsPeriod]}.</DialogDescription>
+            <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescription(statsPeriod, customRange)}.</DialogDescription>
           </DialogHeader>
           {isStatsLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>

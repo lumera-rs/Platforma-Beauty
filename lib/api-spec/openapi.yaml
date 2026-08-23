@@ -19,6 +19,7 @@ tags:
   - name: education
   - name: admin
   - name: growth
+
 paths:
   /healthz:
     get:
@@ -3677,12 +3678,21 @@ paths:
           in: query
           description: Time window for run/delivery aggregation (defaults to all time)
           schema: { type: string, enum: [7d, 30d, 90d, all] }
+        - name: from
+          in: query
+          description: Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
       responses:
         "200":
           description: Automation stats
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AutomationStats" }
+        "400": { description: Invalid period or date range }
         "404": { description: Not found }
 
   /growth/automations/{automationId}/attributed-appointments:
@@ -3717,6 +3727,14 @@ paths:
           in: query
           description: Time window for run/delivery aggregation (defaults to all time)
           schema: { type: string, enum: [7d, 30d, 90d, all] }
+        - name: from
+          in: query
+          description: Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
         - name: compare
           in: query
           description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
@@ -3729,6 +3747,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/AutomationStatsOverviewItem" }
+        "400": { description: "Invalid period, date range, or compare value" }
         "401": { description: Authentication required }
         "403": { description: Salon owner required }
 

@@ -12,4 +12,12 @@ export type OwnerGetAutomationStatsParams = {
  * Time window for run/delivery aggregation (defaults to all time)
  */
 period?: OwnerGetAutomationStatsPeriod;
+/**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: Date;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: Date;
 };

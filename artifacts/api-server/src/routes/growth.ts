@@ -9,7 +9,7 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql, type SQL } from "drizzle-orm";
 import {
   db,
   automationRulesTable,
@@ -518,29 +518,84 @@ router.post("/growth/automations/:automationId/pause", async (req, res, next) =>
 
 const STATS_PERIOD_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
+const STATS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * Parse the optional ?period= window for stats endpoints.
- * Returns the cutoff Date (null = all time), or undefined for an invalid value.
+ * Time window for stats aggregation. `start` is inclusive, `end` exclusive;
+ * either may be null for an open-ended side. Both null = all time.
  */
-function parseStatsPeriodCutoff(raw: unknown): Date | null | undefined {
-  if (raw === undefined || raw === "all") return null;
-  if (typeof raw !== "string") return undefined;
-  const days = STATS_PERIOD_DAYS[raw];
-  if (days === undefined) return undefined;
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+type StatsWindow = { start: Date | null; end: Date | null };
+
+function parseStatsDate(raw: string): Date | null {
+  if (!STATS_DATE_RE.test(raw)) return null;
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  // V8 rolls over impossible calendar dates (2026-02-30 → March 2), so a
+  // round-trip comparison is required to reject them explicitly.
+  return date.toISOString().slice(0, 10) === raw ? date : null;
 }
 
 /**
- * Period filters for stats aggregation. Runs are windowed on executedAt and
+ * Parse the optional ?period= / ?from= / ?to= window for stats endpoints.
+ * - `period` selects a rolling window (7d/30d/90d) or all time.
+ * - `from`/`to` (YYYY-MM-DD, inclusive) select an exact calendar range; either
+ *   side may be omitted for an open-ended range.
+ * Combining `period` with `from`/`to` is ambiguous and rejected explicitly,
+ * as are malformed dates and inverted ranges (from > to).
+ * Returns the window, or an error message for a 400 response.
+ */
+function parseStatsWindow(query: Record<string, unknown>): { window: StatsWindow } | { error: string } {
+  const period = query["period"];
+  const from = query["from"];
+  const to = query["to"];
+  const hasRange = from !== undefined || to !== undefined;
+
+  if (hasRange) {
+    if (period !== undefined) {
+      return { error: "Cannot combine period with from/to. Use either a preset period or a custom date range." };
+    }
+    if (from !== undefined && (typeof from !== "string" || parseStatsDate(from) === null)) {
+      return { error: "Invalid from date. Expected YYYY-MM-DD." };
+    }
+    if (to !== undefined && (typeof to !== "string" || parseStatsDate(to) === null)) {
+      return { error: "Invalid to date. Expected YYYY-MM-DD." };
+    }
+    const start = from !== undefined ? parseStatsDate(from as string) : null;
+    const toDate = to !== undefined ? parseStatsDate(to as string) : null;
+    if (start && toDate && start.getTime() > toDate.getTime()) {
+      return { error: "Invalid range: from must be on or before to." };
+    }
+    // `to` is inclusive → exclusive end is the start of the following day.
+    const end = toDate ? new Date(toDate.getTime() + 24 * 60 * 60 * 1000) : null;
+    return { window: { start, end } };
+  }
+
+  if (period === undefined || period === "all") return { window: { start: null, end: null } };
+  if (typeof period !== "string" || STATS_PERIOD_DAYS[period] === undefined) {
+    return { error: "Invalid period. Expected one of: 7d, 30d, 90d, all." };
+  }
+  return { window: { start: new Date(Date.now() - STATS_PERIOD_DAYS[period]! * 24 * 60 * 60 * 1000), end: null } };
+}
+
+/**
+ * Window filters for stats aggregation. Runs are windowed on executedAt and
  * deliveries on sentAt; both fall back to createdAt so pending/queued/failed
  * rows (which never got their execution/send timestamp) stay attributable to
  * the window in which they were created instead of silently disappearing.
+ * Returns undefined for an all-time window (drizzle's and() drops it).
  */
-function statsRunPeriodCondition(cutoff: Date) {
-  return sql`coalesce(${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}) >= ${cutoff}`;
+function statsWindowCondition(timestamp: SQL, window: StatsWindow) {
+  const parts: SQL[] = [];
+  if (window.start) parts.push(sql`${timestamp} >= ${window.start}`);
+  if (window.end) parts.push(sql`${timestamp} < ${window.end}`);
+  if (parts.length === 0) return undefined;
+  return parts.length === 1 ? parts[0] : and(...parts);
 }
-function statsDeliveryPeriodCondition(cutoff: Date) {
-  return sql`coalesce(${automationDeliveriesTable.sentAt}, ${automationDeliveriesTable.createdAt}) >= ${cutoff}`;
+function statsRunPeriodCondition(window: StatsWindow) {
+  return statsWindowCondition(sql`coalesce(${automationRunsTable.executedAt}, ${automationRunsTable.createdAt})`, window);
+}
+function statsDeliveryPeriodCondition(window: StatsWindow) {
+  return statsWindowCondition(sql`coalesce(${automationDeliveriesTable.sentAt}, ${automationDeliveriesTable.createdAt})`, window);
 }
 
 /**
@@ -567,24 +622,27 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
 
-    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
-    if (cutoff === undefined) {
-      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+    const parsedWindow = parseStatsWindow(req.query);
+    if ("error" in parsedWindow) {
+      res.status(400).json({ error: parsedWindow.error, code: "VALIDATION" });
       return;
     }
+    const { window } = parsedWindow;
 
     const compareRaw = req.query["compare"];
     if (compareRaw !== undefined && compareRaw !== "previous") {
       res.status(400).json({ error: "Invalid compare. Expected: previous.", code: "VALIDATION" });
       return;
     }
-    if (compareRaw === "previous" && !cutoff) {
+    // The preceding comparison window is only defined for the rolling presets;
+    // custom from/to ranges and all-time have no canonical "previous" window yet.
+    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
+    if (compareRaw === "previous" && (periodDays === undefined || !window.start)) {
       res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d).", code: "VALIDATION" });
       return;
     }
-    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
-    const prevCutoff = compareRaw === "previous" && cutoff && periodDays !== undefined
-      ? new Date(cutoff.getTime() - periodDays * 24 * 60 * 60 * 1000)
+    const prevCutoff = compareRaw === "previous" && window.start && periodDays !== undefined
+      ? new Date(window.start.getTime() - periodDays * 24 * 60 * 60 * 1000)
       : null;
 
     const rules = await db
@@ -620,9 +678,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
         ne(appointmentsTable.status, "cancelled"),
       ))
-      .where(cutoff
-        ? and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(cutoff))
-        : inArray(automationRunsTable.ruleId, ruleIds))
+      .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(window)))
       .groupBy(automationRunsTable.ruleId);
 
     const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
@@ -640,24 +696,22 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       })
       .from(automationDeliveriesTable)
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(cutoff
-        ? and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodCondition(cutoff))
-        : inArray(automationRunsTable.ruleId, ruleIds))
+      .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodCondition(window)))
       .groupBy(automationRunsTable.ruleId);
 
     // Preceding window of the same length (compare=previous): only the counts
     // the overview renders trends for — delivered, opened, and attributed
-    // appointments — aggregated over [prevCutoff, cutoff).
+    // appointments — aggregated over [prevCutoff, window.start).
     let prevRunsByRule: Map<string, { attributedAppointments: number }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
-    if (prevCutoff && cutoff) {
+    if (prevCutoff && window.start) {
       const prevRunAgg = await db
         .select({
           ruleId: automationRunsTable.ruleId,
           attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
         })
         .from(automationRunsTable)
-        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, cutoff)))
+        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, window.start)))
         .groupBy(automationRunsTable.ruleId);
 
       const prevDeliveryAgg = await db
@@ -669,7 +723,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         })
         .from(automationDeliveriesTable)
         .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodRangeCondition(prevCutoff, cutoff)))
+        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodRangeCondition(prevCutoff, window.start)))
         .groupBy(automationRunsTable.ruleId);
 
       prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments }]));
@@ -724,11 +778,12 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
 
-    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
-    if (cutoff === undefined) {
-      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+    const parsedWindow = parseStatsWindow(req.query);
+    if ("error" in parsedWindow) {
+      res.status(400).json({ error: parsedWindow.error, code: "VALIDATION" });
       return;
     }
+    const { window } = parsedWindow;
 
     const [rule] = await db
       .select({ id: automationRulesTable.id })
@@ -754,9 +809,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
         ne(appointmentsTable.status, "cancelled"),
       ))
-      .where(cutoff
-        ? and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(cutoff))
-        : eq(automationRunsTable.ruleId, rule.id));
+      .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window)));
 
     // Delivery stats (delivered / opened / provider-failed, updated from
     // verified provider webhooks). Broken down per channel so the UI can show
@@ -777,9 +830,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       })
       .from(automationDeliveriesTable)
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(cutoff
-        ? and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(cutoff))
-        : eq(automationRunsTable.ruleId, rule.id));
+      .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(window)));
 
     res.json({
       ruleId: rule.id,

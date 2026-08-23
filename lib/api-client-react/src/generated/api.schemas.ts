@@ -5092,6 +5092,14 @@ export type OwnerGetAutomationStatsParams = {
  * Time window for run/delivery aggregation (defaults to all time)
  */
 period?: OwnerGetAutomationStatsPeriod;
+/**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: string;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: string;
 };
 
 export type OwnerGetAutomationStatsPeriod = typeof OwnerGetAutomationStatsPeriod[keyof typeof OwnerGetAutomationStatsPeriod];
@@ -5109,6 +5117,14 @@ export type OwnerListAutomationStatsParams = {
  * Time window for run/delivery aggregation (defaults to all time)
  */
 period?: OwnerListAutomationStatsPeriod;
+/**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: string;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: string;
 /**
  * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
  */
