@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
+type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
 type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
 async function retail<T>(path: string, init?: RequestInit): Promise<T> {
@@ -44,15 +45,30 @@ export function RetailCartPage() {
 
 export function RetailCheckoutPage() {
   const [, setLocation] = useLocation(); const { toast } = useToast();
-  const [cart, setCart] = useState<Cart | null>(null); const [preview, setPreview] = useState<{ shipping: { shippingCost: number }; total: number } | null>(null); const [submitting, setSubmitting] = useState(false);
+  const [cart, setCart] = useState<Cart | null>(null); const [preview, setPreview] = useState<CheckoutPreview | null>(null); const [submitting, setSubmitting] = useState(false);
   const [idempotencyKey] = useState(() => `retail-${crypto.randomUUID()}-${crypto.randomUUID()}`);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", street: "", city: "", postalCode: "", note: "", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier" });
   useEffect(() => { void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null)); }, []);
   useEffect(() => {
     if (!cart) return;
+    const controller = new AbortController();
+    let active = true;
     setPreview(null);
     const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
-    void retail<{ shipping: { shippingCost: number }; total: number }>(`/retail/checkout-preview?${query}`).then(setPreview).catch(() => setPreview(null));
+    void retail<CheckoutPreview>(`/retail/checkout-preview?${query}`, { signal: controller.signal })
+      .then((nextPreview) => {
+        if (!active) return;
+        setPreview(nextPreview);
+        setCart(nextPreview.cart);
+      })
+      .catch((error: unknown) => {
+        if (!active || (error instanceof DOMException && error.name === "AbortError")) return;
+        setPreview(null);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [cart?.id, form.deliveryMethod, form.city]);
   useEffect(() => {
     if (form.deliveryMethod === "personal_belgrade" && !/beograd/i.test(form.city)) {
@@ -61,7 +77,16 @@ export function RetailCheckoutPage() {
   }, [form.city, form.deliveryMethod]);
   const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const submit = async (event: React.FormEvent) => { event.preventDefault(); setSubmitting(true); try {
-    const order = await retail<Order & { trackingToken?: string | null }>("/retail/checkout", { method: "POST", body: JSON.stringify({ ...form, idempotencyKey }) });
+    const order = await retail<Order & { trackingToken?: string | null }>("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        ...form,
+        idempotencyKey,
+        expectedSubtotal: preview?.cart.subtotal,
+        expectedShippingCost: preview?.shipping.shippingCost,
+        expectedTotal: preview?.total,
+      }),
+    });
     sessionStorage.setItem("retail-order", JSON.stringify(order)); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
   } catch (error) { toast.error(error instanceof Error ? error.message : "Porudžbina nije potvrđena."); } finally { setSubmitting(false); } };
   const personalAvailable = /beograd/i.test(form.city);

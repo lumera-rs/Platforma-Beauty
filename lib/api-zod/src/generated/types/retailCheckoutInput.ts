@@ -54,4 +54,19 @@ export interface RetailCheckoutInput {
   note?: string;
   paymentMethod: RetailCheckoutInputPaymentMethod;
   deliveryMethod?: RetailCheckoutInputDeliveryMethod;
+  /**
+     * Optional subtotal from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedSubtotal?: number;
+  /**
+     * Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedShippingCost?: number;
+  /**
+     * Optional final amount from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedTotal?: number;
 }

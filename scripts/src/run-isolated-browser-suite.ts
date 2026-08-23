@@ -8,12 +8,19 @@ import path from "node:path";
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
 const stateRoot = path.join(workspaceRoot, ".lumera-test-state");
 
-export interface IsolatedBrowserSuiteConfiguration {
+interface IsolatedSuiteConfiguration {
   databasePrefix: string;
   manifestDirectoryName: string;
-  specPath: string;
   testLabel: string;
   environment: Record<string, string>;
+}
+
+export interface IsolatedBrowserSuiteConfiguration extends IsolatedSuiteConfiguration {
+  specPath: string;
+}
+
+export interface IsolatedApiSuiteConfiguration extends IsolatedSuiteConfiguration {
+  testFilePath: string;
 }
 
 interface HarnessDatabaseManifest {
@@ -94,19 +101,19 @@ async function getProcessIdentity(processId: number): Promise<string | undefined
   }
 }
 
-function getManifestDirectory(configuration: IsolatedBrowserSuiteConfiguration): string {
+function getManifestDirectory(configuration: IsolatedSuiteConfiguration): string {
   return path.join(stateRoot, configuration.manifestDirectoryName);
 }
 
 function getManifestPath(
-  configuration: IsolatedBrowserSuiteConfiguration,
+  configuration: IsolatedSuiteConfiguration,
   databaseName: string,
 ): string {
   return path.join(getManifestDirectory(configuration), `${databaseName}.json`);
 }
 
 async function writeHarnessDatabaseManifest(
-  configuration: IsolatedBrowserSuiteConfiguration,
+  configuration: IsolatedSuiteConfiguration,
   manifest: HarnessDatabaseManifest,
 ): Promise<string> {
   await mkdir(getManifestDirectory(configuration), { recursive: true });
@@ -126,7 +133,7 @@ async function removeHarnessDatabaseManifest(manifestPath: string): Promise<void
 }
 
 function parseHarnessDatabaseManifest(
-  configuration: IsolatedBrowserSuiteConfiguration,
+  configuration: IsolatedSuiteConfiguration,
   contents: string,
   filename: string,
 ): HarnessDatabaseManifest | undefined {
@@ -297,7 +304,7 @@ async function stopProcess(child: ChildProcess | undefined): Promise<void> {
 }
 
 export async function recoverInterruptedHarnessDatabases(
-  configuration: IsolatedBrowserSuiteConfiguration,
+  configuration: IsolatedSuiteConfiguration,
 ): Promise<void> {
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const developmentDatabaseName = getDatabaseName(developmentDatabaseUrl);
@@ -472,6 +479,69 @@ export async function runIsolatedBrowserSuite(
   }
 }
 
+export async function runIsolatedApiSuite(
+  configuration: IsolatedApiSuiteConfiguration,
+): Promise<void> {
+  const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
+  const databaseName =
+    `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const ownerProcessIdentity = await getProcessIdentity(process.pid);
+  if (!ownerProcessIdentity) {
+    throw new Error("Could not identify the isolated API test harness process.");
+  }
+  const manifestPath = await writeHarnessDatabaseManifest(configuration, {
+    version: 1,
+    databaseName,
+    databaseTarget: getDatabaseTarget(developmentDatabaseUrl),
+    ownerPid: process.pid,
+    ownerProcessIdentity,
+  });
+  const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
+  const testEnvironment = {
+    ...process.env,
+    ...configuration.environment,
+    DATABASE_URL: testDatabaseUrl,
+    LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
+    NODE_ENV: "test",
+  };
+  let databaseMayExist = false;
+
+  try {
+    databaseMayExist = true;
+    await runCommand(
+      "createdb",
+      ["--maintenance-db", developmentDatabaseUrl, databaseName],
+      process.env,
+      "Creating the disposable API test database",
+    );
+    await runCommand(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "push-force"],
+      testEnvironment,
+      "Preparing the disposable API test schema",
+    );
+    await runCommand(
+      "pnpm",
+      ["--filter", "@workspace/scripts", "exec", "tsx", "--test", configuration.testFilePath],
+      testEnvironment,
+      configuration.testLabel,
+    );
+  } finally {
+    try {
+      if (databaseMayExist) {
+        await runCommand(
+          "dropdb",
+          ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
+          process.env,
+          "Removing the disposable API test database",
+        );
+      }
+    } finally {
+      await removeHarnessDatabaseManifest(manifestPath);
+    }
+  }
+}
+
 export async function runIsolatedBrowserSuiteCommand(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
@@ -482,6 +552,26 @@ export async function runIsolatedBrowserSuiteCommand(
       ? recoverInterruptedHarnessDatabases(configuration)
       : Promise.reject(new Error(
         `Usage: ${path.basename(process.argv[1] ?? "isolated-browser-suite")} [--recover-interrupted-databases]`,
+      ));
+
+  try {
+    await command;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
+}
+
+export async function runIsolatedApiSuiteCommand(
+  configuration: IsolatedApiSuiteConfiguration,
+): Promise<void> {
+  const commandArguments = process.argv.slice(2);
+  const command = commandArguments.length === 0
+    ? runIsolatedApiSuite(configuration)
+    : commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases"
+      ? recoverInterruptedHarnessDatabases(configuration)
+      : Promise.reject(new Error(
+        `Usage: ${path.basename(process.argv[1] ?? "isolated-api-suite")} [--recover-interrupted-databases]`,
       ));
 
   try {

@@ -11092,7 +11092,55 @@ export const PreviewRetailCheckoutQueryParams = zod.object({
   "city": zod.coerce.string().optional()
 })
 
-export const PreviewRetailCheckoutResponse = zod.unknown()
+export const previewRetailCheckoutResponseCartItemCountMin = 0;
+
+export const previewRetailCheckoutResponseCartSubtotalMin = 0;
+
+
+export const previewRetailCheckoutResponseCartItemsItemUnitPriceMin = 0;
+
+export const previewRetailCheckoutResponseCartItemsItemLineTotalMin = 0;
+
+export const previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMin = 0;
+export const previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMultipleOf = 1;
+
+export const previewRetailCheckoutResponseTotalMin = 0;
+
+
+
+export const PreviewRetailCheckoutResponse = zod.object({
+  "cart": zod.object({
+  "id": zod.string(),
+  "itemCount": zod.number().int().min(previewRetailCheckoutResponseCartItemCountMin),
+  "subtotal": zod.number().int().min(previewRetailCheckoutResponseCartSubtotalMin),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemUnitPriceMin),
+  "lineTotal": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemLineTotalMin)
+}))
+}),
+  "shipping": zod.object({
+  "totalWeightGrams": zod.number(),
+  "shippingCost": zod.number(),
+  "freeShipping": zod.boolean(),
+  "freeShippingThreshold": zod.number(),
+  "amountToFreeShipping": zod.number(),
+  "message": zod.string().nullable(),
+  "availableMethods": zod.array(zod.object({
+  "id": zod.enum(['courier', 'personal_belgrade']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "price": zod.number().min(previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMin).multipleOf(previewRetailCheckoutResponseShippingAvailableMethodsItemPriceMultipleOf),
+  "available": zod.boolean()
+}))
+}),
+  "total": zod.number().int().min(previewRetailCheckoutResponseTotalMin),
+  "paymentMethods": zod.array(zod.enum(['BANK_TRANSFER', 'CASH_ON_DELIVERY']))
+})
 
 
 /**
@@ -11124,6 +11172,12 @@ export const checkoutRetailCartBodyPostalCodeMax = 20;
 
 export const checkoutRetailCartBodyNoteMax = 1000;
 
+export const checkoutRetailCartBodyExpectedSubtotalMin = 0;
+
+export const checkoutRetailCartBodyExpectedShippingCostMin = 0;
+
+export const checkoutRetailCartBodyExpectedTotalMin = 0;
+
 
 
 export const CheckoutRetailCartBody = zod.object({
@@ -11137,7 +11191,10 @@ export const CheckoutRetailCartBody = zod.object({
   "postalCode": zod.string().min(checkoutRetailCartBodyPostalCodeMin).max(checkoutRetailCartBodyPostalCodeMax),
   "note": zod.string().max(checkoutRetailCartBodyNoteMax).optional(),
   "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
-  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional()
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
+  "expectedSubtotal": zod.number().int().min(checkoutRetailCartBodyExpectedSubtotalMin).optional().describe('Optional subtotal from the displayed checkout quote; checkout rejects a changed quote.'),
+  "expectedShippingCost": zod.number().int().min(checkoutRetailCartBodyExpectedShippingCostMin).optional().describe('Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote.'),
+  "expectedTotal": zod.number().int().min(checkoutRetailCartBodyExpectedTotalMin).optional().describe('Optional final amount from the displayed checkout quote; checkout rejects a changed quote.')
 })
 
 export const CheckoutRetailCartResponse = zod.object({

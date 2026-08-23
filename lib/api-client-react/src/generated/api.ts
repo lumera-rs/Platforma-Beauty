@@ -210,6 +210,7 @@ import type {
   RetailCart,
   RetailCartItemInput,
   RetailCheckoutInput,
+  RetailCheckoutPreview,
   RetailOrder,
   RetentionSettings,
   RetentionSettingsHistoryEntry,
@@ -19390,9 +19391,9 @@ export const getPreviewRetailCheckoutUrl = (params?: PreviewRetailCheckoutParams
 /**
  * @summary Calculate delivery and final total for the selected retail destination
  */
-export const previewRetailCheckout = async (params?: PreviewRetailCheckoutParams, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const previewRetailCheckout = async (params?: PreviewRetailCheckoutParams, options?: Parameters<typeof customFetch>[1]): Promise<RetailCheckoutPreview> => {
 
-  return customFetch<void>(getPreviewRetailCheckoutUrl(params),
+  return customFetch<RetailCheckoutPreview>(getPreviewRetailCheckoutUrl(params),
   {
     ...options,
     method: 'GET'
@@ -19482,7 +19483,7 @@ export const checkoutRetailCart = async (retailCheckoutInput: RetailCheckoutInpu
 
 
 
-export const getCheckoutRetailCartMutationOptions = <TError = ErrorType<unknown>,
+export const getCheckoutRetailCartMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext> => {
 
@@ -19511,12 +19512,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CheckoutRetailCartMutationResult = NonNullable<Awaited<ReturnType<typeof checkoutRetailCart>>>
     export type CheckoutRetailCartMutationBody = BodyType<RetailCheckoutInput>
-    export type CheckoutRetailCartMutationError = ErrorType<unknown>
+    export type CheckoutRetailCartMutationError = ErrorType<void>
 
     /**
  * @summary Create an idempotent retail order from the current cart
  */
-export const useCheckoutRetailCart = <TError = ErrorType<unknown>,
+export const useCheckoutRetailCart = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof checkoutRetailCart>>,

@@ -355,6 +355,8 @@ export * from './retailCartItemsItem';
 export * from './retailCheckoutInput';
 export * from './retailCheckoutInputDeliveryMethod';
 export * from './retailCheckoutInputPaymentMethod';
+export * from './retailCheckoutPreview';
+export * from './retailCheckoutPreviewPaymentMethodsItem';
 export * from './retailOrder';
 export * from './retailOrderItemsItem';
 export * from './retentionCustomer';

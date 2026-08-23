@@ -1503,6 +1503,65 @@ export interface RetailCheckoutInput {
   note?: string;
   paymentMethod: RetailCheckoutInputPaymentMethod;
   deliveryMethod?: RetailCheckoutInputDeliveryMethod;
+  /**
+     * Optional subtotal from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedSubtotal?: number;
+  /**
+     * Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedShippingCost?: number;
+  /**
+     * Optional final amount from the displayed checkout quote; checkout rejects a changed quote.
+     * @minimum 0
+     */
+  expectedTotal?: number;
+}
+
+export type RetailCheckoutPreviewPaymentMethodsItem = typeof RetailCheckoutPreviewPaymentMethodsItem[keyof typeof RetailCheckoutPreviewPaymentMethodsItem];
+
+
+export const RetailCheckoutPreviewPaymentMethodsItem = {
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export type DeliveryMethodOptionId = typeof DeliveryMethodOptionId[keyof typeof DeliveryMethodOptionId];
+
+
+export const DeliveryMethodOptionId = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export interface DeliveryMethodOption {
+  id: DeliveryMethodOptionId;
+  name: string;
+  description: string;
+  /** @minimum 0 */
+  price: number;
+  available: boolean;
+}
+
+export interface ShippingQuote {
+  totalWeightGrams: number;
+  shippingCost: number;
+  freeShipping: boolean;
+  freeShippingThreshold: number;
+  amountToFreeShipping: number;
+  /** @nullable */
+  message: string | null;
+  availableMethods: DeliveryMethodOption[];
+}
+
+export interface RetailCheckoutPreview {
+  cart: RetailCart;
+  shipping: ShippingQuote;
+  /** @minimum 0 */
+  total: number;
+  paymentMethods: RetailCheckoutPreviewPaymentMethodsItem[];
 }
 
 export type RetailOrderItemsItem = {
@@ -1782,34 +1841,6 @@ export const ShopCheckoutPreviewPaymentMethodsItem = {
   BANK_TRANSFER: 'BANK_TRANSFER',
   CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
 } as const;
-
-export type DeliveryMethodOptionId = typeof DeliveryMethodOptionId[keyof typeof DeliveryMethodOptionId];
-
-
-export const DeliveryMethodOptionId = {
-  courier: 'courier',
-  personal_belgrade: 'personal_belgrade',
-} as const;
-
-export interface DeliveryMethodOption {
-  id: DeliveryMethodOptionId;
-  name: string;
-  description: string;
-  /** @minimum 0 */
-  price: number;
-  available: boolean;
-}
-
-export interface ShippingQuote {
-  totalWeightGrams: number;
-  shippingCost: number;
-  freeShipping: boolean;
-  freeShippingThreshold: number;
-  amountToFreeShipping: number;
-  /** @nullable */
-  message: string | null;
-  availableMethods: DeliveryMethodOption[];
-}
 
 export interface ShopCheckoutPreview {
   cart: ShopCart;

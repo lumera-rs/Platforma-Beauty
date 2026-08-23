@@ -4746,8 +4746,11 @@ paths:
         - { name: deliveryMethod, in: query, schema: { type: string, enum: [courier, personal_belgrade] } }
         - { name: city, in: query, schema: { type: string } }
       responses:
-        "200": { description: Checkout pricing preview }
+        "200":
+          description: Checkout pricing preview
+          content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutPreview" } } }
         "400": { description: Delivery method is not available for the destination }
+        "409": { description: "A cart item price or availability changed" }
   /retail/checkout:
     post:
       operationId: checkoutRetailCart
@@ -4756,6 +4759,7 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutInput" } } } }
       responses:
         "201": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "409": { description: "The cart, stock, or displayed checkout quote changed" }
   /retail/orders/track:
     get:
       operationId: trackRetailOrder
@@ -5918,7 +5922,20 @@ components:
         note: { type: string, maxLength: 1000 }
         paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
         deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+        expectedSubtotal: { type: integer, minimum: 0, description: "Optional subtotal from the displayed checkout quote; checkout rejects a changed quote." }
+        expectedShippingCost: { type: integer, minimum: 0, description: "Optional delivery amount from the displayed checkout quote; checkout rejects a changed quote." }
+        expectedTotal: { type: integer, minimum: 0, description: "Optional final amount from the displayed checkout quote; checkout rejects a changed quote." }
       required: [idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, paymentMethod]
+    RetailCheckoutPreview:
+      type: object
+      properties:
+        cart: { $ref: "#/components/schemas/RetailCart" }
+        shipping: { $ref: "#/components/schemas/ShippingQuote" }
+        total: { type: integer, minimum: 0 }
+        paymentMethods:
+          type: array
+          items: { type: string, enum: [BANK_TRANSFER, CASH_ON_DELIVERY] }
+      required: [cart, shipping, total, paymentMethods]
     RetailOrder:
       type: object
       properties:
