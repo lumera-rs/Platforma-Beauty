@@ -3869,6 +3869,16 @@ export interface CreateAutomationFromAiProposalBody {
   aiProposalContext: string;
 }
 
+/**
+ * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+ */
+export type AutomationStatsPrevious = {
+  attributedAppointments: number;
+  emailDeliveredCount: number;
+  emailOpenedCount: number;
+  smsDeliveredCount: number;
+};
+
 export interface AutomationStats {
   ruleId: string;
   totalRuns: number;
@@ -3897,6 +3907,8 @@ export interface AutomationStats {
   smsFailedCount: number;
   /** @nullable */
   lastRunAt?: string | null;
+  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period. */
+  previous?: AutomationStatsPrevious;
 }
 
 export interface AutomationAttributedAppointment {
@@ -5157,6 +5169,10 @@ from?: string;
  * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
  */
 to?: string;
+/**
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ */
+compare?: OwnerGetAutomationStatsCompare;
 };
 
 export type OwnerGetAutomationStatsPeriod = typeof OwnerGetAutomationStatsPeriod[keyof typeof OwnerGetAutomationStatsPeriod];
@@ -5167,6 +5183,13 @@ export const OwnerGetAutomationStatsPeriod = {
   '30d': '30d',
   '90d': '90d',
   all: 'all',
+} as const;
+
+export type OwnerGetAutomationStatsCompare = typeof OwnerGetAutomationStatsCompare[keyof typeof OwnerGetAutomationStatsCompare];
+
+
+export const OwnerGetAutomationStatsCompare = {
+  previous: 'previous',
 } as const;
 
 export type OwnerListAutomationAttributedAppointmentsParams = {

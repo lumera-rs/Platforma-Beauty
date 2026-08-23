@@ -713,6 +713,9 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     let prevRunsByRule: Map<string, { attributedAppointments: number }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
     if (prevCutoff && window.start) {
+      // Same non-cancelled join as the current-period aggregate: a cancelled
+      // appointment is not campaign-earned, so it must not count in either
+      // window or the trend direction would be wrong.
       const prevRunAgg = await db
         .select({
           ruleId: automationRunsTable.ruleId,
@@ -804,6 +807,25 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     }
     const { window } = parsedWindow;
 
+    // Same compare semantics as the overview endpoint: only "previous" is
+    // accepted, and only together with a bounded period ("all" has no
+    // preceding window of equal length to compare against).
+    const compareRaw = req.query["compare"];
+    if (compareRaw !== undefined && compareRaw !== "previous") {
+      res.status(400).json({ error: "Invalid compare. Expected: previous.", code: "VALIDATION" });
+      return;
+    }
+    // The preceding comparison window is only defined for the rolling presets;
+    // custom from/to ranges and all-time have no canonical "previous" window yet.
+    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
+    if (compareRaw === "previous" && (periodDays === undefined || !window.start)) {
+      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d).", code: "VALIDATION" });
+      return;
+    }
+    const prevCutoff = compareRaw === "previous" && window.start && periodDays !== undefined
+      ? new Date(window.start.getTime() - periodDays * 24 * 60 * 60 * 1000)
+      : null;
+
     const [rule] = await db
       .select({ id: automationRulesTable.id })
       .from(automationRulesTable)
@@ -860,6 +882,46 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
       .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(window)));
 
+    // Preceding window of the same length (compare=previous): only the counts
+    // the stats dialog renders trends for — delivered, opened, and attributed
+    // appointments — aggregated over [prevCutoff, cutoff). Same shape as the
+    // overview endpoint's `previous` block so the UI trends stay consistent.
+    let previous:
+      | { attributedAppointments: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
+      | undefined;
+    if (prevCutoff && window.start) {
+      // Same non-cancelled join as the current-period aggregate: a cancelled
+      // appointment is not campaign-earned, so it must not count in either
+      // window or the trend direction would be wrong.
+      const [prevRuns] = await db
+        .select({
+          attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
+        })
+        .from(automationRunsTable)
+        .leftJoin(appointmentsTable, and(
+          eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+          ne(appointmentsTable.status, "cancelled"),
+        ))
+        .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodRangeCondition(prevCutoff, window.start)));
+
+      const [prevDeliveries] = await db
+        .select({
+          emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+          emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+          smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        })
+        .from(automationDeliveriesTable)
+        .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
+        .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodRangeCondition(prevCutoff, window.start)));
+
+      previous = {
+        attributedAppointments: prevRuns?.attributedAppointments ?? 0,
+        emailDeliveredCount: prevDeliveries?.emailDeliveredCount ?? 0,
+        emailOpenedCount: prevDeliveries?.emailOpenedCount ?? 0,
+        smsDeliveredCount: prevDeliveries?.smsDeliveredCount ?? 0,
+      };
+    }
+
     res.json({
       ruleId: rule.id,
       totalRuns: stats?.totalRuns ?? 0,
@@ -882,6 +944,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       smsDeliveredCount: deliveryStats?.smsDeliveredCount ?? 0,
       smsFailedCount: deliveryStats?.smsFailedCount ?? 0,
       lastRunAt: stats?.lastRunAt ?? null,
+      ...(previous ? { previous } : {}),
     });
   } catch (err) { next(err); }
 });

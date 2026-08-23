@@ -9143,7 +9143,8 @@ export const OwnerGetAutomationStatsParams = zod.object({
 export const OwnerGetAutomationStatsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
   "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
-  "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period')
+  "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
+  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).')
 })
 
 export const OwnerGetAutomationStatsResponse = zod.object({
@@ -9167,7 +9168,13 @@ export const OwnerGetAutomationStatsResponse = zod.object({
   "smsSentCount": zod.number(),
   "smsDeliveredCount": zod.number(),
   "smsFailedCount": zod.number(),
-  "lastRunAt": zod.coerce.date().nullish()
+  "lastRunAt": zod.coerce.date().nullish(),
+  "previous": zod.object({
+  "attributedAppointments": zod.number(),
+  "emailDeliveredCount": zod.number(),
+  "emailOpenedCount": zod.number(),
+  "smsDeliveredCount": zod.number()
+}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.')
 })
 
 

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { OwnerGetAutomationStatsCompare } from './ownerGetAutomationStatsCompare';
 import type { OwnerGetAutomationStatsPeriod } from './ownerGetAutomationStatsPeriod';
 
 export type OwnerGetAutomationStatsParams = {
@@ -20,4 +21,8 @@ from?: Date;
  * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
  */
 to?: Date;
+/**
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ */
+compare?: OwnerGetAutomationStatsCompare;
 };

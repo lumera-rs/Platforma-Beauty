@@ -104,7 +104,7 @@ function TrendIndicator({ current, previous, testId }: { current: number; previo
  * provider webhook events. `opened: null` marks a channel whose provider does
  * not expose open tracking (SMS) — the opened step is replaced by a note.
  */
-function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensNote }: {
+function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensNote, previousDelivered, previousOpened, trendTestIdPrefix }: {
   icon: React.ReactNode;
   label: string;
   sent: number;
@@ -112,6 +112,10 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
   opened: number | null;
   failed: number;
   noOpensNote?: string;
+  /** Counts from the preceding window of the same length; when set, a trend indicator is rendered next to the matching step. */
+  previousDelivered?: number;
+  previousOpened?: number;
+  trendTestIdPrefix?: string;
 }) {
   return (
     <div className="border rounded-lg p-3 bg-muted/20" data-testid={`funnel-${label.toLowerCase()}`}>
@@ -121,12 +125,18 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
         <span className="text-muted-foreground">→</span>
         <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-900">
           Isporučeno: <strong>{delivered}</strong>{rate(delivered, sent) ? <span className="text-emerald-700 ml-1">({rate(delivered, sent)})</span> : null}
+          {previousDelivered !== undefined && (
+            <span className="ml-1.5"><TrendIndicator current={delivered} previous={previousDelivered} testId={`${trendTestIdPrefix ?? `trend-${label.toLowerCase()}`}-delivered`} /></span>
+          )}
         </span>
         {opened !== null && (
           <>
             <span className="text-muted-foreground">→</span>
             <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-900">
               Otvoreno: <strong>{opened}</strong>{rate(opened, sent) ? <span className="text-indigo-700 ml-1">({rate(opened, sent)})</span> : null}
+              {previousOpened !== undefined && (
+                <span className="ml-1.5"><TrendIndicator current={opened} previous={previousOpened} testId={`${trendTestIdPrefix ?? `trend-${label.toLowerCase()}`}-opened`} /></span>
+              )}
             </span>
           </>
         )}
@@ -394,13 +404,16 @@ export default function OwnerAutomations() {
   const [currentRuleId, setCurrentRuleId] = useState<string | null>(null);
   const [statsRuleId, setStatsRuleId] = useState<string | null>(null);
 
+  // The dialog mirrors the overview request (compare=previous for bounded
+  // preset periods only) so it shows the same trends; custom ranges and
+  // "all time" have no previous window and therefore no trend.
   const { data: statsData, isLoading: isStatsLoading } = useOwnerGetAutomationStats(
     statsRuleId ?? "",
-    activeStatsParams,
+    overviewParams,
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-stats', statsRuleId, activeStatsParams]
+        queryKey: ['owner-automation-stats', statsRuleId, overviewParams]
       }
     }
   );
@@ -752,6 +765,11 @@ export default function OwnerAutomations() {
               <div className="bg-primary/5 border border-primary/20 p-4 rounded-lg text-center">
                 <p className="text-xs text-primary uppercase font-semibold">Prihodovani termini</p>
                 <p className="text-2xl font-bold mt-1 text-primary">{statsData.attributedAppointments}</p>
+                {statsData.previous && (
+                  <div className="mt-0.5 flex justify-center">
+                    <TrendIndicator current={statsData.attributedAppointments} previous={statsData.previous.attributedAppointments} testId="stats-trend-appointments" />
+                  </div>
+                )}
                 <p className="text-sm font-semibold text-emerald-800 mt-1" data-testid="stats-attributed-revenue">
                   {(statsData.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD prihoda
                 </p>
@@ -782,6 +800,9 @@ export default function OwnerAutomations() {
                         delivered={statsData.emailDeliveredCount}
                         opened={statsData.emailOpenedCount}
                         failed={statsData.emailFailedCount}
+                        previousDelivered={statsData.previous?.emailDeliveredCount}
+                        previousOpened={statsData.previous?.emailOpenedCount}
+                        trendTestIdPrefix="stats-trend-email"
                       />
                     )}
                     {statsData.smsSentCount > 0 && (
@@ -793,9 +814,21 @@ export default function OwnerAutomations() {
                         opened={null}
                         failed={statsData.smsFailedCount}
                         noOpensNote="Provajder ne prati otvaranja SMS poruka."
+                        previousDelivered={statsData.previous?.smsDeliveredCount}
+                        trendTestIdPrefix="stats-trend-sms"
                       />
                     )}
                   </div>
+                )}
+                {statsData.previous && statsData.emailSentCount === 0 && statsData.previous.emailDeliveredCount > 0 && (
+                  <p className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5" /> Email: <TrendIndicator current={0} previous={statsData.previous.emailDeliveredCount} testId="stats-trend-email-delivered" />
+                  </p>
+                )}
+                {statsData.previous && statsData.smsSentCount === 0 && statsData.previous.smsDeliveredCount > 0 && (
+                  <p className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5" /> SMS: <TrendIndicator current={0} previous={statsData.previous.smsDeliveredCount} testId="stats-trend-sms-delivered" />
+                  </p>
                 )}
               </div>
               <div className="col-span-2 space-y-3">
@@ -848,6 +881,11 @@ export default function OwnerAutomations() {
                 <p>Preskočeno (npr. nema kontakt podataka): {statsData.skippedCount}</p>
                 <p className="mt-1">Poslednje pokretanje: {statsData.lastRunAt ? new Date(statsData.lastRunAt).toLocaleString("sr-RS") : "Nikad"}</p>
               </div>
+              {statsData.previous && (
+                <p className="col-span-2 text-xs text-muted-foreground" data-testid="stats-trend-note">
+                  Trend u odnosu na prethodni period iste dužine ({periodDescription(statsPeriod, undefined).replace("poslednjih ", "")}).
+                </p>
+              )}
             </div>
           ) : (
             <p className="p-4 text-center text-muted-foreground">Podaci nisu dostupni.</p>

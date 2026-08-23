@@ -1238,6 +1238,116 @@ async function run() {
       console.log("✓ cancelled and no-show appointments are excluded; attributed totals split into completed vs upcoming in both endpoints");
     }
 
+    // ── 8d. compare=previous: previous-window counts share the same filters ─
+    {
+      // Isolated rule so counts stay deterministic: one run in the current
+      // 7-day window (email delivered + opened) and two runs in the preceding
+      // window (one email delivered, one SMS delivered; one attributed to a
+      // confirmed appointment, one to a cancelled appointment). The cancelled
+      // appointment must not count in the previous window either — it uses
+      // the exact same non-cancelled join as the current-period aggregate.
+      const [ruleT] = await db.insert(automationRulesTable).values({
+        salonId: a.salon.id, name: `PE trend pravilo ${suffix}`, trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
+      }).returning();
+      assert.ok(ruleT);
+
+      const currentRun = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-cur");
+      await db.update(automationDeliveriesTable)
+        .set({ deliveredAt: new Date(), openedAt: new Date() })
+        .where(eq(automationDeliveriesTable.eventKey, currentRun.emailKey));
+
+      const prevDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const shiftToPreviousWindow = async (runId: string) => {
+        await db.update(automationRunsTable)
+          .set({ executedAt: prevDate, sentAt: prevDate, createdAt: prevDate })
+          .where(eq(automationRunsTable.id, runId));
+        await db.update(automationDeliveriesTable)
+          .set({ sentAt: prevDate, createdAt: prevDate })
+          .where(eq(automationDeliveriesTable.runId, runId));
+      };
+      const prevRun1 = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-prev1");
+      const prevRun2 = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-prev2");
+      await shiftToPreviousWindow(prevRun1.run.id);
+      await shiftToPreviousWindow(prevRun2.run.id);
+      await db.update(automationDeliveriesTable)
+        .set({ deliveredAt: prevDate })
+        .where(inArray(automationDeliveriesTable.eventKey, [prevRun1.emailKey, prevRun1.smsKey]));
+
+      const [trendService] = await db.insert(servicesTable).values({
+        salonId: a.salon.id, categoryName: "PE", name: `PE Trend Service ${suffix}`,
+        description: "Test", durationMinutes: 30, price: 2000, imageUrl: "/t.jpg",
+      }).returning();
+      assert.ok(trendService);
+      const makeTrendAppointment = async (status: "confirmed" | "cancelled", price: number) => {
+        const [appointment] = await db.insert(appointmentsTable).values({
+          salonId: a.salon.id, salonCustomerId: customerA.id, serviceId: trendService.id,
+          date: "2026-08-13", startTime: "11:00", endTime: "11:30",
+          durationMinutes: 30, price, status,
+        }).returning();
+        assert.ok(appointment);
+        return appointment;
+      };
+      const keptPrev = await makeTrendAppointment("confirmed", 2000);
+      const cancelledPrev = await makeTrendAppointment("cancelled", 4000);
+      await db.update(automationRunsTable).set({ attributedAppointmentId: keptPrev.id })
+        .where(eq(automationRunsTable.id, prevRun1.run.id));
+      await db.update(automationRunsTable).set({ attributedAppointmentId: cancelledPrev.id })
+        .where(eq(automationRunsTable.id, prevRun2.run.id));
+
+      const perRuleTrend = async (qs: string) => fetch(
+        `${baseUrl}/api/growth/automations/${ruleT.id}/stats${qs}`,
+        { headers: { cookie: `${sessionCookieName}=${a.token}` } },
+      );
+
+      const trendResponse = await perRuleTrend("?period=7d&compare=previous");
+      assert.equal(trendResponse.status, 200);
+      const trend = await trendResponse.json() as Record<string, unknown>;
+      assert.equal(trend["emailSentCount"], 1, "current window has exactly one email send");
+      assert.equal(trend["emailDeliveredCount"], 1);
+      assert.equal(trend["emailOpenedCount"], 1);
+      assert.equal(trend["attributedAppointments"], 0, "no attribution in the current window");
+      const previous = trend["previous"] as Record<string, number> | undefined;
+      assert.ok(previous, "compare=previous must include a previous block");
+      assert.equal(previous["emailDeliveredCount"], 1, "previous window email delivery counted");
+      assert.equal(previous["emailOpenedCount"], 0, "no opens in the previous window");
+      assert.equal(previous["smsDeliveredCount"], 1, "previous window SMS delivery counted");
+      assert.equal(previous["attributedAppointments"], 1,
+        "cancelled appointment must not count as attributed in the previous window");
+
+      // The overview endpoint must apply the same cancelled filter to its
+      // previous block, so both surfaces show the same trend direction.
+      const overviewTrendResponse = await fetch(`${baseUrl}/api/growth/automation-stats?period=7d&compare=previous`, {
+        headers: { cookie: `${sessionCookieName}=${a.token}` },
+      });
+      assert.equal(overviewTrendResponse.status, 200);
+      const overviewTrendRows = await overviewTrendResponse.json() as Array<Record<string, unknown>>;
+      const overviewTrendRow = overviewTrendRows.find((row) => row["ruleId"] === ruleT.id);
+      assert.ok(overviewTrendRow);
+      const overviewPrevious = overviewTrendRow["previous"] as Record<string, number> | undefined;
+      assert.ok(overviewPrevious, "overview compare=previous must include a previous block");
+      assert.equal(overviewPrevious["attributedAppointments"], 1,
+        "overview previous window must exclude cancelled appointments too");
+      assert.equal(overviewPrevious["emailDeliveredCount"], 1);
+      assert.equal(overviewPrevious["smsDeliveredCount"], 1);
+
+      // Without the compare flag there must be no previous block at all.
+      const plainResponse = await perRuleTrend("?period=7d");
+      assert.equal(plainResponse.status, 200);
+      const plain = await plainResponse.json() as Record<string, unknown>;
+      assert.ok(!("previous" in plain), "no compare flag → no previous block");
+
+      // Validation: compare=previous needs a bounded period; unknown compare
+      // values are rejected explicitly.
+      assert.equal((await perRuleTrend("?period=all&compare=previous")).status, 400,
+        "compare=previous with all-time must be rejected");
+      assert.equal((await perRuleTrend("?compare=previous")).status, 400,
+        "compare=previous without a period (defaults to all time) must be rejected");
+      assert.equal((await perRuleTrend("?period=7d&compare=bogus")).status, 400,
+        "unknown compare value must be rejected");
+      console.log("✓ compare=previous returns previous-window counts with the same non-cancelled attribution filter on both endpoints");
+    }
+
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────
     {
       const { output, exitCode } = await captureWebhookLogs();
