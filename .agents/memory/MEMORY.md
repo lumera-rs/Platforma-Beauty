@@ -37,3 +37,5 @@
 - [Sold package entitlement integrity](sold-package-entitlement-integrity.md) — purchased coverage is immutable; booking and cancellation must move sessions atomically.
 - [Automation delivery crash recovery](automation-delivery-crash-recovery.md) — provider sends need leased claims and event-key reconciliation so crashes cannot lose messages.
 - [Provider webhook delivery state](provider-webhook-delivery-state.md) — capability-token webhooks apply monotonic timestamp updates and never touch the worker-owned status column.
+- [Global settings test baselining](global-settings-test-baselining.md) — versioned global-config tests must watermark versions, activate an explicit baseline, and clean up by watermark.
+- [Production bootstrap schema parity](production-bootstrap-schema-parity.md) — a bootstrap version bump must mirror every merged drizzle column, with legacy ALTERs and rollout-test asserts.

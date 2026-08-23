@@ -203,6 +203,7 @@ async function run() {
       "treatment_packages", "package_service_links", "customer_package_purchases",
       "package_purchase_service_links", "package_redemptions",
       "employee_commission_settings", "employee_ratings",
+      "platform_retention_settings",
     ];
     for (const tbl of growthTables) {
       const exists = await objectExists(
@@ -226,6 +227,7 @@ async function run() {
     assert.ok(await columnExists("sms_deliveries", "claim_expires_at"), "sms_deliveries.claim_expires_at added");
     assert.ok(await columnExists("automation_runs", "sent_at"), "automation_runs.sent_at present");
     assert.ok(await columnExists("automation_deliveries", "claim_expires_at"), "automation_deliveries.claim_expires_at present");
+    assert.ok(await columnExists("automation_deliveries", "failed_at"), "automation_deliveries.failed_at present (provider webhook failure state)");
 
     // ── Key indexes ────────────────────────────────────────────────────────
     async function indexExists(name: string) {
@@ -242,6 +244,7 @@ async function run() {
       "package_redemptions_purchase_appointment_unique",
       "employee_commission_settings_employee_unique",
       "customer_package_purchases_status_idx",
+      "platform_retention_settings_version_unique",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
@@ -270,6 +273,7 @@ async function run() {
       ["package_purchase_service_links_service_idx", "service_id"],
       ["package_redemptions_reversed_by_idx", "reversed_by_user_id"],
       ["package_redemptions_customer_idx", "salon_customer_id"],
+      ["platform_retention_settings_changed_by_idx", "changed_by_user_id"],
     ];
     for (const [idxName, fkColumn] of leadingFkIndexes) {
       assert.ok(await indexExists(idxName), `leading FK index ${idxName} exists`);
@@ -337,6 +341,32 @@ async function run() {
     // Populate the new reviews.employee_id + birth_date on existing rows.
     await q(`UPDATE "${s}".reviews SET employee_id = $1`, [fixtures.employee.id]);
     await q(`UPDATE "${s}".salon_customers SET birth_date = '1990-05-01'`);
+
+    // Retention settings: an audited version row is insertable with the FK to users.
+    await q(
+      `INSERT INTO "${s}".platform_retention_settings
+         (version, new_customer_window_days, default_interval_days, at_risk_interval_percent,
+          lost_interval_percent, lost_minimum_days, vip_min_completed_visits, vip_spend_percent_of_median,
+          changed_by_user_id)
+       VALUES (1, 45, 45, 150, 250, 180, 5, 200, $1)`,
+      [fixtures.user.id],
+    );
+    const settingsRow = (await q<{ version: number; changed_by_user_id: string }>(
+      `SELECT version, changed_by_user_id FROM "${s}".platform_retention_settings WHERE version = 1`,
+    )).rows[0]!;
+    assert.equal(settingsRow.version, 1, "platform_retention_settings row insertable");
+    assert.equal(settingsRow.changed_by_user_id, fixtures.user.id, "retention settings audit FK stored");
+    // Version uniqueness enforced (append-only versioned config).
+    await assert.rejects(
+      q(
+        `INSERT INTO "${s}".platform_retention_settings
+           (version, new_customer_window_days, default_interval_days, at_risk_interval_percent,
+            lost_interval_percent, lost_minimum_days, vip_min_completed_visits, vip_spend_percent_of_median)
+         VALUES (1, 45, 45, 150, 250, 180, 5, 200)`,
+      ),
+      /duplicate key|unique/i,
+      "platform_retention_settings.version uniqueness enforced",
+    );
 
     // ── Unique constraint actually enforced ────────────────────────────────
     await assert.rejects(

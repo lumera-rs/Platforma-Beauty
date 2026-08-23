@@ -251,6 +251,20 @@ export default function OwnerRetention() {
                 </div>
               </DialogHeader>
 
+              <div className="rounded-lg border bg-muted/20 p-4 mt-4 space-y-2" data-testid="retention-explanation">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-semibold text-sm">Zašto ovaj status?</h4>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Pragovi {detailData.thresholdVersion === 0 ? "— podrazumevani" : `v${detailData.thresholdVersion}`}
+                  </span>
+                </div>
+                <p className="text-sm text-foreground">{detailData.explanation}</p>
+                <p className="text-sm text-muted-foreground flex items-start gap-1.5">
+                  <HeartHandshake className="w-4 h-4 shrink-0 mt-0.5" />
+                  {detailData.recommendedAction}
+                </p>
+              </div>
+
               <div className="grid grid-cols-3 gap-4 my-4">
                 <div className="bg-muted/30 p-3 rounded-lg text-center">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Ukupna potrošnja</p>

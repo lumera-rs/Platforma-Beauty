@@ -4067,6 +4067,54 @@ paths:
               schema: { $ref: "#/components/schemas/GrowthAdminSummary" }
         "403": { description: Admin access required }
 
+  /growth/admin/retention-settings:
+    get:
+      operationId: adminGetRetentionSettings
+      tags: [growth]
+      summary: Active platform retention classification thresholds (admin)
+      responses:
+        "200":
+          description: Active retention settings (version 0 = platform defaults)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettings" }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+    put:
+      operationId: adminUpdateRetentionSettings
+      tags: [growth]
+      summary: Update platform retention thresholds (admin); records an audited new version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionThresholds" }
+      responses:
+        "200":
+          description: Newly active retention settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettings" }
+        "400": { description: Validation error (out-of-range or inconsistent thresholds) }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
+  /growth/admin/retention-settings/history:
+    get:
+      operationId: adminGetRetentionSettingsHistory
+      tags: [growth]
+      summary: Audit history of retention threshold changes (admin), newest first
+      responses:
+        "200":
+          description: Change history with previous values per entry
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RetentionSettingsHistoryEntry" }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
 components:
   parameters:
     CityQuery:
@@ -6607,7 +6655,10 @@ components:
         typicalIntervalDays: { type: ["number", "null"] }
         totalSpend: { type: number }
         hasFutureAppointment: { type: boolean }
-      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment]
+        explanation: { type: string }
+        recommendedAction: { type: string }
+        thresholdVersion: { type: number, description: "Active platform retention settings version used for this classification (0 = platform defaults)" }
+      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment, explanation, recommendedAction, thresholdVersion]
 
     CustomerRetentionDetail:
       type: object
@@ -6624,10 +6675,13 @@ components:
         typicalIntervalDays: { type: ["number", "null"] }
         totalSpend: { type: number }
         hasFutureAppointment: { type: boolean }
+        explanation: { type: string }
+        recommendedAction: { type: string }
+        thresholdVersion: { type: number, description: "Active platform retention settings version used for this classification (0 = platform defaults)" }
         recentAppointments:
           type: array
           items: { $ref: "#/components/schemas/AppointmentSummary" }
-      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment, recentAppointments]
+      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment, explanation, recommendedAction, thresholdVersion, recentAppointments]
 
     AppointmentSummary:
       type: object
@@ -6993,6 +7047,39 @@ components:
       properties:
         remainingSessions: { type: number }
       required: [remainingSessions]
+
+    RetentionThresholds:
+      type: object
+      properties:
+        newCustomerWindowDays: { type: number, minimum: 1, maximum: 365, multipleOf: 1, description: "A single completed visit within this many days still counts as NEW" }
+        defaultIntervalDays: { type: number, minimum: 1, maximum: 365, multipleOf: 1, description: "Assumed visit interval (days) when fewer than 2 completed visits exist" }
+        atRiskIntervalPercent: { type: number, minimum: 100, maximum: 1000, multipleOf: 1, description: "AT_RISK when overdue beyond typical interval × this percent (150 = 1.5×)" }
+        lostIntervalPercent: { type: number, minimum: 100, maximum: 2000, multipleOf: 1, description: "LOST when overdue beyond typical interval × this percent (250 = 2.5×); must exceed atRiskIntervalPercent" }
+        lostMinimumDays: { type: number, minimum: 1, maximum: 1095, multipleOf: 1, description: "LOST never triggers before this many days since the last visit" }
+        vipMinCompletedVisits: { type: number, minimum: 1, maximum: 100, multipleOf: 1, description: "VIP when the customer has at least this many completed visits" }
+        vipSpendPercentOfMedian: { type: number, minimum: 100, maximum: 1000, multipleOf: 1, description: "VIP when total spend exceeds salon median × this percent (200 = 2×)" }
+      required: [newCustomerWindowDays, defaultIntervalDays, atRiskIntervalPercent, lostIntervalPercent, lostMinimumDays, vipMinCompletedVisits, vipSpendPercentOfMedian]
+
+    RetentionSettings:
+      type: object
+      properties:
+        version: { type: number, description: "Active settings version; 0 means platform defaults (no admin change yet)" }
+        thresholds: { $ref: "#/components/schemas/RetentionThresholds" }
+        changedByUserId: { type: ["string", "null"] }
+        changedAt: { type: ["string", "null"], description: "ISO timestamp of the change; null for platform defaults" }
+        isDefault: { type: boolean }
+      required: [version, thresholds, changedByUserId, changedAt, isDefault]
+
+    RetentionSettingsHistoryEntry:
+      type: object
+      properties:
+        version: { type: number }
+        thresholds: { $ref: "#/components/schemas/RetentionThresholds" }
+        previousThresholds: { $ref: "#/components/schemas/RetentionThresholds" }
+        changedByUserId: { type: ["string", "null"] }
+        changedByName: { type: ["string", "null"] }
+        changedAt: { type: string, description: "ISO timestamp of the change" }
+      required: [version, thresholds, previousThresholds, changedByUserId, changedByName, changedAt]
 
     GrowthAdminSummary:
       type: object

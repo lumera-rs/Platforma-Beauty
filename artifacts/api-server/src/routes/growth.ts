@@ -39,9 +39,16 @@ import {
   OwnerUpdateEmployeeCommissionBody,
   OwnerAskGrowthAiBody,
   CustomerPurchasePackageBody,
+  AdminUpdateRetentionSettingsBody,
 } from "@workspace/api-zod";
-import { getCurrentUser } from "../lib/auth";
-import { classifyRetention } from "../lib/retention-classification";
+import { getCurrentUser, isAdmin } from "../lib/auth";
+import { classifyRetention, computeSalonMedianSpend } from "../lib/retention-classification";
+import {
+  getActiveRetentionSettings,
+  getRetentionSettingsHistory,
+  updateRetentionSettings,
+  validateRetentionThresholds,
+} from "../lib/retention-settings";
 import { redeemPackageSession, reversePackageRedemption } from "../lib/package-entitlement";
 import { getEmployeePerformance } from "../lib/employee-performance";
 import { askGrowthAi } from "../lib/growth-ai-snapshot";
@@ -178,16 +185,9 @@ router.get("/growth/retention", async (req, res, next) => {
       .where(eq(appointmentsTable.salonId, ctx.salon.id));
 
     // Compute salon-wide median spend for VIP threshold
-    const completedSpends = allAppts
-      .filter((a) => a.status === "completed")
-      .map((a) => a.price);
-    completedSpends.sort((a, b) => a - b);
-    const mid = Math.floor(completedSpends.length / 2);
-    const salonMedianSpend = completedSpends.length
-      ? completedSpends.length % 2 === 0
-        ? ((completedSpends[mid - 1]! + completedSpends[mid]!) / 2)
-        : completedSpends[mid]!
-      : undefined;
+    const salonMedianSpend = computeSalonMedianSpend(
+      allAppts.filter((a) => a.status === "completed").map((a) => a.price),
+    );
 
     const apptsByCustomer = new Map<string, typeof allAppts>();
     for (const a of allAppts) {
@@ -196,6 +196,8 @@ router.get("/growth/retention", async (req, res, next) => {
       arr.push(a);
       apptsByCustomer.set(a.salonCustomerId, arr);
     }
+
+    const activeSettings = await getActiveRetentionSettings();
 
     const result = customers.map((c) => {
       const appts = apptsByCustomer.get(c.id) ?? [];
@@ -206,8 +208,10 @@ router.get("/growth/retention", async (req, res, next) => {
           price: a.price,
         })),
         salonMedianSpend,
+        thresholds: activeSettings.thresholds,
       });
       return {
+        thresholdVersion: activeSettings.version,
         salonCustomerId: c.id,
         firstName: c.firstName,
         lastName: c.lastName,
@@ -253,24 +257,39 @@ router.get("/growth/retention/:salonCustomerId", async (req, res, next) => {
       })
       .from(appointmentsTable)
       .where(and(eq(appointmentsTable.salonId, ctx.salon.id), eq(appointmentsTable.salonCustomerId, salonCustomerId!)))
-      .orderBy(desc(appointmentsTable.date))
-      .limit(50);
+      .orderBy(desc(appointmentsTable.date));
 
-    const serviceIds = [...new Set(appts.map((a) => a.serviceId))];
+    // Classification must see the FULL history (matching the list endpoint);
+    // only the appointments returned to the UI are capped.
+    const recentAppts = appts.slice(0, 50);
+
+    const serviceIds = [...new Set(recentAppts.map((a) => a.serviceId))];
     const services = serviceIds.length > 0
       ? await db.select({ id: servicesTable.id, name: servicesTable.name }).from(servicesTable).where(inArray(servicesTable.id, serviceIds))
       : [];
     const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
 
+    // Same salon-wide median as the retention LIST endpoint, so list and
+    // detail always agree on VIP-by-spend classification.
+    const salonSpendRows = await db
+      .select({ price: appointmentsTable.price })
+      .from(appointmentsTable)
+      .where(and(eq(appointmentsTable.salonId, ctx.salon.id), eq(appointmentsTable.status, "completed")));
+    const salonMedianSpend = computeSalonMedianSpend(salonSpendRows.map((row) => row.price));
+
+    const activeSettings = await getActiveRetentionSettings();
     const r = classifyRetention({
       appointments: appts.map((a) => ({
         date: a.date,
         status: a.status as "pending" | "confirmed" | "completed" | "cancelled" | "no-show",
         price: a.price,
       })),
+      salonMedianSpend,
+      thresholds: activeSettings.thresholds,
     });
 
     res.json({
+      thresholdVersion: activeSettings.version,
       salonCustomerId: customer.id,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -285,7 +304,7 @@ router.get("/growth/retention/:salonCustomerId", async (req, res, next) => {
       hasFutureAppointment: r.hasFutureAppointment,
       explanation: r.explanation,
       recommendedAction: r.recommendedAction,
-      recentAppointments: appts.map((a) => ({
+      recentAppointments: recentAppts.map((a) => ({
         id: a.id,
         date: a.date,
         status: a.status,
@@ -1331,6 +1350,72 @@ router.get("/growth/admin/summary", async (req, res, next) => {
         pendingPayment: purchaseStats?.pendingPurchases ?? 0,
       },
     });
+  } catch (err) { next(err); }
+});
+
+// ---------------------------------------------------------------------------
+// ADMIN — PLATFORM RETENTION SETTINGS (versioned, audited)
+// ---------------------------------------------------------------------------
+
+function settingsView(s: Awaited<ReturnType<typeof getActiveRetentionSettings>>) {
+  return {
+    version: s.version,
+    thresholds: s.thresholds,
+    changedByUserId: s.changedByUserId,
+    changedAt: s.changedAt ? s.changedAt.toISOString() : null,
+    isDefault: s.version === 0,
+  };
+}
+
+router.get("/growth/admin/retention-settings", async (req, res, next) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user || !isAdmin(user)) {
+      res.status(403).json({ error: "Admin access required.", code: "FORBIDDEN" }); return;
+    }
+    res.json(settingsView(await getActiveRetentionSettings()));
+  } catch (err) { next(err); }
+});
+
+router.put("/growth/admin/retention-settings", async (req, res, next) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user || !isAdmin(user)) {
+      res.status(403).json({ error: "Admin access required.", code: "FORBIDDEN" }); return;
+    }
+
+    const parsed = AdminUpdateRetentionSettingsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation error.", code: "VALIDATION_ERROR", issues: parsed.error.issues });
+      return;
+    }
+
+    const problems = validateRetentionThresholds(parsed.data);
+    if (problems.length > 0) {
+      res.status(400).json({ error: problems.join(" "), code: "VALIDATION_ERROR", problems });
+      return;
+    }
+
+    const updated = await updateRetentionSettings(user.id, parsed.data);
+    res.json(settingsView(updated));
+  } catch (err) { next(err); }
+});
+
+router.get("/growth/admin/retention-settings/history", async (req, res, next) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user || !isAdmin(user)) {
+      res.status(403).json({ error: "Admin access required.", code: "FORBIDDEN" }); return;
+    }
+    const history = await getRetentionSettingsHistory();
+    res.json(history.map((h) => ({
+      version: h.version,
+      thresholds: h.thresholds,
+      previousThresholds: h.previousThresholds,
+      changedByUserId: h.changedByUserId,
+      changedByName: h.changedByName,
+      changedAt: h.changedAt.toISOString(),
+    })));
   } catch (err) { next(err); }
 });
 

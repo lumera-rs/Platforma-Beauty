@@ -5,7 +5,8 @@
  * based solely on their appointment history within the SAME salon.
  * Never infers cross-salon data.
  *
- * Semantics:
+ * Semantics (numbers below are the platform DEFAULTS — administrators tune the
+ * actual values via platform retention settings, passed in as `thresholds`):
  *   NEW      — never had a completed visit, or exactly 1 completed visit with no prior
  *              repeat pattern (first-timer / very recent first visit ≤ 45 days ago).
  *   ACTIVE   — repeat customer (≥ 2 completed) returning within their typical window.
@@ -29,12 +30,59 @@ export interface AppointmentRecord {
   price: number;
 }
 
+/**
+ * Admin-tunable classification thresholds. Multipliers are expressed as
+ * integer percents (150 = 1.5×) so stored settings stay exactly deterministic.
+ */
+export interface RetentionThresholds {
+  /** A single completed visit within this many days still counts as NEW. */
+  newCustomerWindowDays: number;
+  /** Assumed visit interval (days) when fewer than 2 completed visits exist. */
+  defaultIntervalDays: number;
+  /** AT_RISK when overdue beyond typicalInterval × this percent. */
+  atRiskIntervalPercent: number;
+  /** LOST when overdue beyond typicalInterval × this percent. */
+  lostIntervalPercent: number;
+  /** LOST never triggers before this many days since the last visit. */
+  lostMinimumDays: number;
+  /** VIP when the customer has at least this many completed visits. */
+  vipMinCompletedVisits: number;
+  /** VIP when total spend exceeds salon median × this percent. */
+  vipSpendPercentOfMedian: number;
+}
+
+/** Platform defaults — must match the pre-settings hardcoded behaviour. */
+export const DEFAULT_RETENTION_THRESHOLDS: RetentionThresholds = {
+  newCustomerWindowDays: 45,
+  defaultIntervalDays: 45,
+  atRiskIntervalPercent: 150,
+  lostIntervalPercent: 250,
+  lostMinimumDays: 180,
+  vipMinCompletedVisits: 5,
+  vipSpendPercentOfMedian: 200,
+};
+
+/**
+ * Median of completed-appointment prices for a salon. Centralized so the
+ * retention LIST and DETAIL endpoints (and any snapshot) always feed the SAME
+ * median into classifyRetention — otherwise a VIP-by-spend customer could
+ * show different statuses on different screens.
+ */
+export function computeSalonMedianSpend(completedPrices: number[]): number | undefined {
+  if (completedPrices.length === 0) return undefined;
+  const sorted = [...completedPrices].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
 export interface RetentionInput {
   appointments: AppointmentRecord[];
   /** today for determinism in tests */
   today?: Date;
   /** per-salon median spend for VIP calculation */
   salonMedianSpend?: number;
+  /** active platform thresholds; defaults preserve historical behaviour */
+  thresholds?: RetentionThresholds;
 }
 
 export interface RetentionResult {
@@ -65,6 +113,7 @@ function medianInterval(dates: Date[]): number | null {
 export function classifyRetention(input: RetentionInput): RetentionResult {
   const today = input.today ?? new Date();
   const todayTime = today.getTime();
+  const t = input.thresholds ?? DEFAULT_RETENTION_THRESHOLDS;
 
   const completed = input.appointments.filter((a) => a.status === "completed");
   const future = input.appointments.filter(
@@ -97,7 +146,7 @@ export function classifyRetention(input: RetentionInput): RetentionResult {
   const typicalIntervalDays = medianInterval(completedDates);
 
   // First-time with very recent single visit → still NEW
-  if (completedCount === 1 && lastVisitDaysAgo <= 45 && !hasFutureAppointment) {
+  if (completedCount === 1 && lastVisitDaysAgo <= t.newCustomerWindowDays && !hasFutureAppointment) {
     return {
       status: "NEW",
       completedCount,
@@ -110,17 +159,19 @@ export function classifyRetention(input: RetentionInput): RetentionResult {
     };
   }
 
-  // Risk thresholds based on typical interval or sensible defaults
-  const baseInterval = typicalIntervalDays ?? 45;
-  const atRiskThreshold = baseInterval * 1.5;
-  const lostThreshold = Math.max(baseInterval * 2.5, 180);
+  // Risk thresholds based on typical interval or admin-tuned defaults
+  const baseInterval = typicalIntervalDays ?? t.defaultIntervalDays;
+  const atRiskThreshold = (baseInterval * t.atRiskIntervalPercent) / 100;
+  const lostThreshold = Math.max((baseInterval * t.lostIntervalPercent) / 100, t.lostMinimumDays);
 
   const isOverdue = lastVisitDaysAgo > atRiskThreshold;
   const isLost = lastVisitDaysAgo > lostThreshold;
 
   // Future appointment rescues AT_RISK/LOST → treat as returning ACTIVE
   if (hasFutureAppointment) {
-    const isVip = completedCount >= 5 || (input.salonMedianSpend !== undefined && totalSpend > input.salonMedianSpend * 2);
+    const isVip =
+      completedCount >= t.vipMinCompletedVisits ||
+      (input.salonMedianSpend !== undefined && totalSpend > (input.salonMedianSpend * t.vipSpendPercentOfMedian) / 100);
     if (isVip) {
       return {
         status: "VIP",
@@ -158,8 +209,10 @@ export function classifyRetention(input: RetentionInput): RetentionResult {
   }
 
   // ── VIP ───────────────────────────────────────────────────────────────────
-  const isHighSpend = input.salonMedianSpend !== undefined && totalSpend > input.salonMedianSpend * 2;
-  if (completedCount >= 5 || isHighSpend) {
+  const isHighSpend =
+    input.salonMedianSpend !== undefined &&
+    totalSpend > (input.salonMedianSpend * t.vipSpendPercentOfMedian) / 100;
+  if (completedCount >= t.vipMinCompletedVisits || isHighSpend) {
     return {
       status: "VIP",
       completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment,

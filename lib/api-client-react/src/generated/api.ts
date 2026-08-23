@@ -193,6 +193,9 @@ import type {
   RedeemSessionBody,
   RedeemSessionResult,
   RegisterInput,
+  RetentionSettings,
+  RetentionSettingsHistoryEntry,
+  RetentionThresholds,
   ReversalResult,
   SalonAppointmentCreate,
   SalonAppointmentSeriesInput,
@@ -16732,6 +16735,231 @@ export function useAdminGetGrowthSummary<TData = Awaited<ReturnType<typeof admin
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetGrowthSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetRetentionSettingsUrl = () => {
+
+
+
+
+  return `/api/growth/admin/retention-settings`
+}
+
+/**
+ * @summary Active platform retention classification thresholds (admin)
+ */
+export const adminGetRetentionSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettings> => {
+
+  return customFetch<RetentionSettings>(getAdminGetRetentionSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetRetentionSettingsQueryKey = () => {
+    return [
+    `/api/growth/admin/retention-settings`
+    ] as const;
+    }
+
+
+export const getAdminGetRetentionSettingsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetRetentionSettings>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetRetentionSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetRetentionSettings>>> = ({ signal }) => adminGetRetentionSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetRetentionSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetRetentionSettings>>>
+export type AdminGetRetentionSettingsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Active platform retention classification thresholds (admin)
+ */
+
+export function useAdminGetRetentionSettings<TData = Awaited<ReturnType<typeof adminGetRetentionSettings>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetRetentionSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateRetentionSettingsUrl = () => {
+
+
+
+
+  return `/api/growth/admin/retention-settings`
+}
+
+/**
+ * @summary Update platform retention thresholds (admin); records an audited new version
+ */
+export const adminUpdateRetentionSettings = async (retentionThresholds: RetentionThresholds, options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettings> => {
+
+  return customFetch<RetentionSettings>(getAdminUpdateRetentionSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retentionThresholds)
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateRetentionSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext> => {
+
+const mutationKey = ['adminUpdateRetentionSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, {data: BodyType<RetentionThresholds>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminUpdateRetentionSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateRetentionSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>>
+    export type AdminUpdateRetentionSettingsMutationBody = BodyType<RetentionThresholds>
+    export type AdminUpdateRetentionSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Update platform retention thresholds (admin); records an audited new version
+ */
+export const useAdminUpdateRetentionSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateRetentionSettings>>,
+        TError,
+        {data: BodyType<RetentionThresholds>},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateRetentionSettingsMutationOptions(options));
+    }
+
+export const getAdminGetRetentionSettingsHistoryUrl = () => {
+
+
+
+
+  return `/api/growth/admin/retention-settings/history`
+}
+
+/**
+ * @summary Audit history of retention threshold changes (admin), newest first
+ */
+export const adminGetRetentionSettingsHistory = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettingsHistoryEntry[]> => {
+
+  return customFetch<RetentionSettingsHistoryEntry[]>(getAdminGetRetentionSettingsHistoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetRetentionSettingsHistoryQueryKey = () => {
+    return [
+    `/api/growth/admin/retention-settings/history`
+    ] as const;
+    }
+
+
+export const getAdminGetRetentionSettingsHistoryQueryOptions = <TData = Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetRetentionSettingsHistoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>> = ({ signal }) => adminGetRetentionSettingsHistory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetRetentionSettingsHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>>
+export type AdminGetRetentionSettingsHistoryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Audit history of retention threshold changes (admin), newest first
+ */
+
+export function useAdminGetRetentionSettingsHistory<TData = Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetentionSettingsHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetRetentionSettingsHistoryQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

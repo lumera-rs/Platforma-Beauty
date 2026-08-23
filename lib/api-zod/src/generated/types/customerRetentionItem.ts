@@ -23,4 +23,8 @@ export interface CustomerRetentionItem {
   typicalIntervalDays: number | null;
   totalSpend: number;
   hasFutureAppointment: boolean;
+  explanation: string;
+  recommendedAction: string;
+  /** Active platform retention settings version used for this classification (0 = platform defaults) */
+  thresholdVersion: number;
 }

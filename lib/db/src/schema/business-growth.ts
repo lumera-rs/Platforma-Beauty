@@ -77,10 +77,32 @@ export const packagePaymentMethodEnum = pgEnum("package_payment_method", [
   "bank_transfer",
 ]);
 
-// ---------------------------------------------------------------------------
-// Salon automation rules
-// ---------------------------------------------------------------------------
-
+export const platformRetentionSettingsTable = pgTable("platform_retention_settings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** Monotonically increasing version; highest version is the active one. */
+  version: integer("version").notNull(),
+  /** A single completed visit within this many days still counts as NEW. */
+  newCustomerWindowDays: integer("new_customer_window_days").notNull(),
+  /** Assumed visit interval (days) when a customer has < 2 completed visits. */
+  defaultIntervalDays: integer("default_interval_days").notNull(),
+  /** AT_RISK when overdue beyond typicalInterval × this percent (150 = 1.5×). */
+  atRiskIntervalPercent: integer("at_risk_interval_percent").notNull(),
+  /** LOST when overdue beyond typicalInterval × this percent (250 = 2.5×). */
+  lostIntervalPercent: integer("lost_interval_percent").notNull(),
+  /** LOST never triggers before this many days since the last visit. */
+  lostMinimumDays: integer("lost_minimum_days").notNull(),
+  /** VIP when the customer has at least this many completed visits. */
+  vipMinCompletedVisits: integer("vip_min_completed_visits").notNull(),
+  /** VIP when total spend exceeds salon median × this percent (200 = 2×). */
+  vipSpendPercentOfMedian: integer("vip_spend_percent_of_median").notNull(),
+  changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  /** One row per version; concurrent updates serialize on this constraint. */
+  uniqueIndex("platform_retention_settings_version_unique").on(table.version),
+  /** Leading FK coverage: changedByUserId (audit by changing admin). */
+  index("platform_retention_settings_changed_by_idx").on(table.changedByUserId),
+]);
 export const automationRulesTable = pgTable("automation_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),

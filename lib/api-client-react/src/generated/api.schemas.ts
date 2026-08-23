@@ -3613,6 +3613,10 @@ export interface CustomerRetentionItem {
   typicalIntervalDays: number | null;
   totalSpend: number;
   hasFutureAppointment: boolean;
+  explanation: string;
+  recommendedAction: string;
+  /** Active platform retention settings version used for this classification (0 = platform defaults) */
+  thresholdVersion: number;
 }
 
 export type CustomerRetentionDetailStatus = typeof CustomerRetentionDetailStatus[keyof typeof CustomerRetentionDetailStatus];
@@ -3655,6 +3659,10 @@ export interface CustomerRetentionDetail {
   typicalIntervalDays: number | null;
   totalSpend: number;
   hasFutureAppointment: boolean;
+  explanation: string;
+  recommendedAction: string;
+  /** Active platform retention settings version used for this classification (0 = platform defaults) */
+  thresholdVersion: number;
   recentAppointments: AppointmentSummary[];
 }
 
@@ -4193,6 +4201,77 @@ export type RetentionCustomerDetail = RetentionCustomer & {
 
 export interface ReversalResult {
   remainingSessions: number;
+}
+
+export interface RetentionThresholds {
+  /**
+     * A single completed visit within this many days still counts as NEW
+     * @minimum 1
+     * @maximum 365
+     */
+  newCustomerWindowDays: number;
+  /**
+     * Assumed visit interval (days) when fewer than 2 completed visits exist
+     * @minimum 1
+     * @maximum 365
+     */
+  defaultIntervalDays: number;
+  /**
+     * AT_RISK when overdue beyond typical interval × this percent (150 = 1.5×)
+     * @minimum 100
+     * @maximum 1000
+     */
+  atRiskIntervalPercent: number;
+  /**
+     * LOST when overdue beyond typical interval × this percent (250 = 2.5×); must exceed atRiskIntervalPercent
+     * @minimum 100
+     * @maximum 2000
+     */
+  lostIntervalPercent: number;
+  /**
+     * LOST never triggers before this many days since the last visit
+     * @minimum 1
+     * @maximum 1095
+     */
+  lostMinimumDays: number;
+  /**
+     * VIP when the customer has at least this many completed visits
+     * @minimum 1
+     * @maximum 100
+     */
+  vipMinCompletedVisits: number;
+  /**
+     * VIP when total spend exceeds salon median × this percent (200 = 2×)
+     * @minimum 100
+     * @maximum 1000
+     */
+  vipSpendPercentOfMedian: number;
+}
+
+export interface RetentionSettings {
+  /** Active settings version; 0 means platform defaults (no admin change yet) */
+  version: number;
+  thresholds: RetentionThresholds;
+  /** @nullable */
+  changedByUserId: string | null;
+  /**
+     * ISO timestamp of the change; null for platform defaults
+     * @nullable
+     */
+  changedAt: string | null;
+  isDefault: boolean;
+}
+
+export interface RetentionSettingsHistoryEntry {
+  version: number;
+  thresholds: RetentionThresholds;
+  previousThresholds: RetentionThresholds;
+  /** @nullable */
+  changedByUserId: string | null;
+  /** @nullable */
+  changedByName: string | null;
+  /** ISO timestamp of the change */
+  changedAt: string;
 }
 
 export type GrowthAdminSummaryAutomationByStatus = {[key: string]: number};

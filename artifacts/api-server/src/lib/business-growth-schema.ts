@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 3;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 4;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -147,6 +147,26 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS sms_deliveries_retry_index ON ${s}.sms_deliveries (status, next_retry_at)`,
     `CREATE INDEX IF NOT EXISTS sms_deliveries_claim_expiry_idx ON ${s}.sms_deliveries (status, claim_expires_at)`,
 
+    // ── platform_retention_settings (v4: admin-tunable retention thresholds) ─
+    // Append-only versioned platform config; highest version is active. Mirrors
+    // lib/db/src/schema/business-growth.ts platformRetentionSettingsTable.
+    `CREATE TABLE IF NOT EXISTS ${s}.platform_retention_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      version integer NOT NULL,
+      new_customer_window_days integer NOT NULL,
+      default_interval_days integer NOT NULL,
+      at_risk_interval_percent integer NOT NULL,
+      lost_interval_percent integer NOT NULL,
+      lost_minimum_days integer NOT NULL,
+      vip_min_completed_visits integer NOT NULL,
+      vip_spend_percent_of_median integer NOT NULL,
+      changed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS platform_retention_settings_version_unique ON ${s}.platform_retention_settings (version)`,
+    // Leading FK coverage (DB standards audit): changed_by_user_id.
+    `CREATE INDEX IF NOT EXISTS platform_retention_settings_changed_by_idx ON ${s}.platform_retention_settings (changed_by_user_id)`,
+
     // ── automation_rules ───────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS ${s}.automation_rules (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -217,12 +237,15 @@ function tableStatements(s: string): string[] {
       error_message text,
       delivered_at timestamptz,
       opened_at timestamptz,
+      failed_at timestamptz,
       sent_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE ${s}.automation_deliveries ADD COLUMN IF NOT EXISTS processing_started_at timestamptz`,
     `ALTER TABLE ${s}.automation_deliveries ADD COLUMN IF NOT EXISTS claim_expires_at timestamptz`,
     `ALTER TABLE ${s}.automation_deliveries ADD COLUMN IF NOT EXISTS sent_at timestamptz`,
+    // v4: provider-reported terminal failure timestamp (webhook delivery state).
+    `ALTER TABLE ${s}.automation_deliveries ADD COLUMN IF NOT EXISTS failed_at timestamptz`,
     `DO $$ BEGIN
        IF NOT EXISTS (
          SELECT 1 FROM pg_constraint WHERE conname = 'automation_deliveries_event_key_unique'

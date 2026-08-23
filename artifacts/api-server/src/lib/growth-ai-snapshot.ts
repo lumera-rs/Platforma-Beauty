@@ -18,6 +18,7 @@ import {
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { logger } from "./logger";
 import { classifyRetention } from "./retention-classification";
+import { getActiveRetentionSettings } from "./retention-settings";
 
 // ---------------------------------------------------------------------------
 // Snapshot types
@@ -154,6 +155,7 @@ export async function buildSalonSnapshot(salonId: string, periodDays = 90): Prom
       apptsByCustomer.set(appt.salonCustomerId, arr);
     }
 
+    const activeSettings = await getActiveRetentionSettings();
     for (const customer of allCustomers) {
       const appts = apptsByCustomer.get(customer.id) ?? [];
       const result = classifyRetention({
@@ -162,6 +164,7 @@ export async function buildSalonSnapshot(salonId: string, periodDays = 90): Prom
           status: a.status as "pending" | "confirmed" | "completed" | "cancelled" | "no-show",
           price: a.price,
         })),
+        thresholds: activeSettings.thresholds,
       });
       retentionCounts[result.status]++;
     }
