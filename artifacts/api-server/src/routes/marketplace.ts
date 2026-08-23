@@ -3226,7 +3226,10 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
   // derived from verifiable evidence (secret age vs. accepted real reports
   // vs. report silence). See smsWebhookRegistrationState.
   const smsWebhookRegistration = await smsWebhookRegistrationStatus(deliveryReportsByProvider.infobip);
-  const origin = requestOrigin(req);
+  const origin = normalizedRequestOrigin(req);
+  const redirectUriWarning = isDevelopmentBrowsingOrigin(origin)
+    ? `Ove OAuth redirect adrese sadrže razvojnu adresu sa koje trenutno pristupate (${origin}). Ne unosite ih u Google ili Facebook podešavanja za objavljenu aplikaciju — time biste pokvarili prijavu u produkciji. Za produkcioni URL otvorite ovu stranicu iz objavljene aplikacije.`
+    : null;
   res.json({
     integrations: Object.fromEntries(entries),
     deliveryReports: {
@@ -3245,6 +3248,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
       google: `${origin}/api/auth/oauth/google/callback`,
       facebook: `${origin}/api/auth/oauth/facebook/callback`,
     },
+    ...(redirectUriWarning ? { redirectUriWarning } : {}),
     smsReminder: {
       command: "pnpm --filter @workspace/scripts run sms-reminders",
       active: false,
