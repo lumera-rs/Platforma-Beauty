@@ -402,7 +402,10 @@ export const PREVIEW_TOP_AFFECTED_SALONS_LIMIT = 10;
  * Without a floor, a salon whose single customer flips would rank at 100% and
  * crowd out salons where the change genuinely hits a meaningful clientele.
  */
-export const PREVIEW_SHARE_RANKING_MIN_CUSTOMERS = 5;
+export const RETENTION_PREVIEW_DEFAULT_SHARE_RANKING_MIN_CUSTOMERS = 5;
+/** @deprecated Use retentionPreviewGuardLimits().shareRankingMinCustomers for the active value. */
+export const PREVIEW_SHARE_RANKING_MIN_CUSTOMERS =
+  RETENTION_PREVIEW_DEFAULT_SHARE_RANKING_MIN_CUSTOMERS;
 
 const RETENTION_STATUSES: RetentionStatus[] = ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"];
 
@@ -485,7 +488,13 @@ export async function previewRetentionThresholds(
     throw new Error(`Invalid retention thresholds: ${problems.join(" ")}`);
   }
 
-  const { maxCustomers, timeBudgetMs, appointmentRowBudget, sampleSize } =
+  const {
+    maxCustomers,
+    timeBudgetMs,
+    appointmentRowBudget,
+    sampleSize,
+    shareRankingMinCustomers,
+  } =
     retentionPreviewGuardLimits();
   const deadlineAt = Date.now() + timeBudgetMs;
   const remainingMs = () => deadlineAt - Date.now();
@@ -866,7 +875,7 @@ export async function previewRetentionThresholds(
       shifts: estimatedShifts,
       topAffectedSalons: [],
       topShareAffectedSalons: [],
-      shareRankingMinCustomers: PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+      shareRankingMinCustomers,
       isEstimate: true,
       sampleSize: sampledCount,
     };
@@ -891,7 +900,7 @@ export async function previewRetentionThresholds(
   const topByShare = [...reclassifiedBySalon.entries()]
     .filter(
       ([salonId]) =>
-        (totalCustomersBySalon.get(salonId) ?? 0) >= PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+        (totalCustomersBySalon.get(salonId) ?? 0) >= shareRankingMinCustomers,
     )
     .sort(
       (a, b) =>
@@ -940,7 +949,7 @@ export async function previewRetentionThresholds(
     shifts,
     topAffectedSalons,
     topShareAffectedSalons,
-    shareRankingMinCustomers: PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+    shareRankingMinCustomers,
     isEstimate: false,
     sampleSize: null,
   };
@@ -1063,6 +1072,7 @@ export function retentionPreviewGuardLimits(): {
   timeBudgetMs: number;
   appointmentRowBudget: number;
   sampleSize: number;
+  shareRankingMinCustomers: number;
 } {
   return {
     maxCustomers:
@@ -1077,6 +1087,9 @@ export function retentionPreviewGuardLimits(): {
     sampleSize:
       readPositiveIntEnv("RETENTION_PREVIEW_SAMPLE_SIZE") ??
       RETENTION_PREVIEW_DEFAULT_SAMPLE_SIZE,
+    shareRankingMinCustomers:
+      readPositiveIntEnv("RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS") ??
+      RETENTION_PREVIEW_DEFAULT_SHARE_RANKING_MIN_CUSTOMERS,
   };
 }
 

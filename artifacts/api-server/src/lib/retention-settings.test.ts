@@ -27,6 +27,8 @@
  *     503 — including when a SINGLE (final) batch overruns the budget after
  *     its work (deterministic fault-injected batch delay); the preview
  *     returns to exact mode once the guards are lifted
+ * 11e. Preview share-ranking floor reads a positive integer env override,
+ *      reports the effective value, and falls back to the default when invalid
  * 11d. Preview building blocks: the database-side statement_timeout cancels a
  *     slow query and surfaces as the friendly overload error, and SQL
  *     percentile_cont agrees exactly with computeSalonMedianSpend for odd and
@@ -473,6 +475,39 @@ async function integrationTests() {
     const sumCurrent = Object.values(identity.currentCounts as Record<string, number>)
       .reduce((s, n) => s + n, 0);
     assert.equal(sumCurrent, identity.totalCustomers, "every customer lands in exactly one status");
+
+    // The share-ranking floor is operator-tunable like the other preview
+    // guards. A valid override makes the 3-customer fixture salon eligible,
+    // while an invalid value falls back to the safe default.
+    try {
+      process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS = "3";
+      const overriddenFloorRes = await postPreview({
+        ...DEFAULT_RETENTION_THRESHOLDS,
+        vipMinCompletedVisits: 3,
+      });
+      assert.equal(overriddenFloorRes.status, 200);
+      const overriddenFloor = (await overriddenFloorRes.json()) as any;
+      assert.equal(overriddenFloor.shareRankingMinCustomers, 3, "preview reports the env-configured floor");
+      assert.ok(
+        (overriddenFloor.topShareAffectedSalons as any[]).some((s) => s.salonId === salon.id),
+        "a 3-customer salon enters the share ranking when the floor is lowered to 3",
+      );
+
+      process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS = "0";
+      const invalidFloorRes = await postPreview({
+        ...DEFAULT_RETENTION_THRESHOLDS,
+        vipMinCompletedVisits: 3,
+      });
+      assert.equal(invalidFloorRes.status, 200);
+      const invalidFloor = (await invalidFloorRes.json()) as any;
+      assert.equal(invalidFloor.shareRankingMinCustomers, 5, "invalid floor override uses the default");
+      assert.ok(
+        !(invalidFloor.topShareAffectedSalons as any[]).some((s) => s.salonId === salon.id),
+        "invalid floor override does not loosen share-ranking eligibility",
+      );
+    } finally {
+      delete process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS;
+    }
 
     // Tuned candidate: lowering vipMinCompletedVisits to 3 moves customer A
     // (3 completed visits, ACTIVE under defaults) into VIP. The platform DB may
