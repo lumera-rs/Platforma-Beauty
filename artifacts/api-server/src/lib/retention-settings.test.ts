@@ -362,12 +362,17 @@ async function integrationTests() {
     console.log("✓ Non-admin rejected (403)");
 
     // ── 10. Invalid updates are rejected without recording a version ────────
+    // Each body carries the CORRECT expectedVersion so the 400 is attributable
+    // to the threshold problem itself, never to the concurrency precondition.
     const invalidBodies: [string, Record<string, unknown>][] = [
-      ["lost ≤ atRisk", { ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 300, lostIntervalPercent: 300 }],
-      ["below minimum", { ...DEFAULT_RETENTION_THRESHOLDS, newCustomerWindowDays: 0 }],
-      ["above maximum", { ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 1000 }],
-      ["non-integer", { ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 150.5 }],
-      ["missing field", (() => { const { lostMinimumDays: _omit, ...rest } = DEFAULT_RETENTION_THRESHOLDS; return rest; })()],
+      ["lost ≤ atRisk", { ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 300, lostIntervalPercent: 300, expectedVersion: initialVersion }],
+      ["below minimum", { ...DEFAULT_RETENTION_THRESHOLDS, newCustomerWindowDays: 0, expectedVersion: initialVersion }],
+      ["above maximum", { ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 1000, expectedVersion: initialVersion }],
+      ["non-integer", { ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 150.5, expectedVersion: initialVersion }],
+      ["missing field", (() => { const { lostMinimumDays: _omit, ...rest } = DEFAULT_RETENTION_THRESHOLDS; return { ...rest, expectedVersion: initialVersion }; })()],
+      ["missing expectedVersion", { ...DEFAULT_RETENTION_THRESHOLDS }],
+      ["non-integer expectedVersion", { ...DEFAULT_RETENTION_THRESHOLDS, expectedVersion: 1.5 }],
+      ["negative expectedVersion", { ...DEFAULT_RETENTION_THRESHOLDS, expectedVersion: -1 }],
     ];
     for (const [label, body] of invalidBodies) {
       const res = await putSettings(body);
@@ -380,7 +385,7 @@ async function integrationTests() {
     // ── 11a. Baseline: explicitly activate the defaults ─────────────────────
     // Makes every later classification assertion deterministic even if the
     // development database already carried tuned settings.
-    const baselineRes = await putSettings(DEFAULT_RETENTION_THRESHOLDS);
+    const baselineRes = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, expectedVersion: initialVersion });
     assert.equal(baselineRes.status, 200);
     const baseline = (await baselineRes.json()) as any;
     assert.equal(baseline.version, initialVersion + 1, "versions increment sequentially");
@@ -388,6 +393,31 @@ async function integrationTests() {
     assert.equal(baseline.changedByUserId, admin.id, "change records who made it");
     assert.ok(baseline.changedAt, "change records when it was made");
     console.log("✓ Valid update creates a new audited version");
+
+    // ── 11c. Optimistic concurrency: stale expectedVersion → 409 ────────────
+    // Simulates the second of two admins who both loaded the page at
+    // initialVersion: the first save (baseline above) succeeded, so this save
+    // based on the same stale version must be rejected — not silently applied.
+    const staleRes = await putSettings({
+      ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 7, expectedVersion: initialVersion,
+    });
+    assert.equal(staleRes.status, 409, "stale expectedVersion is rejected with 409");
+    const staleBody = (await staleRes.json()) as any;
+    assert.equal(staleBody.code, "VERSION_CONFLICT");
+    assert.equal(staleBody.expectedVersion, initialVersion, "conflict echoes the client's version");
+    assert.equal(staleBody.activeVersion, initialVersion + 1, "conflict reports the winning version");
+
+    const afterStale = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    const afterStaleBody = (await afterStale.json()) as any;
+    assert.equal(afterStaleBody.version, initialVersion + 1, "conflicting update records no version");
+    assert.deepEqual(afterStaleBody.thresholds, DEFAULT_RETENTION_THRESHOLDS, "first admin's values survive the conflicting save");
+
+    // A future expectedVersion is just as stale — only an exact match passes.
+    const futureRes = await putSettings({
+      ...DEFAULT_RETENTION_THRESHOLDS, expectedVersion: initialVersion + 99,
+    });
+    assert.equal(futureRes.status, 409, "non-matching (future) expectedVersion is rejected with 409");
+    console.log("✓ Stale expectedVersion → 409 VERSION_CONFLICT, first write preserved");
 
     // ── 11b. Preview: dry-run counts, never records a version ───────────────
     const postPreview = (body: unknown) =>
@@ -484,7 +514,7 @@ async function integrationTests() {
     assert.equal(detailC.status, "VIP", "detail agrees with the list for VIP-by-spend classification");
     console.log("✓ List and detail agree on VIP-by-spend (shared salon median)");
 
-    const v2Res = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 });
+    const v2Res = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3, expectedVersion: initialVersion + 1 });
     assert.equal(v2Res.status, 200);
     assert.equal(((await v2Res.json()) as any).version, initialVersion + 2);
 
@@ -507,6 +537,7 @@ async function integrationTests() {
       vipMinCompletedVisits: 3,
       defaultIntervalDays: 30,
       lostMinimumDays: 90,
+      expectedVersion: initialVersion + 2,
     };
     const v3Res = await putSettings(v3Body);
     assert.equal(v3Res.status, 200);
@@ -567,7 +598,7 @@ async function integrationTests() {
     }));
     await db.insert(appointmentsTable).values(bulkVisits);
 
-    const v4Res = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 100 });
+    const v4Res = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 100, expectedVersion: initialVersion + 3 });
     assert.equal(v4Res.status, 200);
     assert.equal(((await v4Res.json()) as any).version, initialVersion + 4);
 
@@ -603,6 +634,7 @@ async function integrationTests() {
     const v2Thresholds = { ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 };
     const restoreRes = await putSettings({
       ...v2Thresholds, changeSource: "restore_version", restoredFromVersion: initialVersion + 2,
+      expectedVersion: initialVersion + 4,
     });
     assert.equal(restoreRes.status, 200);
     assert.equal(((await restoreRes.json()) as any).version, initialVersion + 5);
@@ -616,6 +648,7 @@ async function integrationTests() {
     // Restore platform defaults.
     const restoreDefaultsRes = await putSettings({
       ...DEFAULT_RETENTION_THRESHOLDS, changeSource: "restore_defaults",
+      expectedVersion: initialVersion + 5,
     });
     assert.equal(restoreDefaultsRes.status, 200);
     assert.equal(((await restoreDefaultsRes.json()) as any).version, initialVersion + 6);
@@ -636,6 +669,7 @@ async function integrationTests() {
     // "no values changed" history entry.
     const noopDefaultsRes = await putSettings({
       ...DEFAULT_RETENTION_THRESHOLDS, changeSource: "restore_defaults",
+      expectedVersion: initialVersion + 6,
     });
     assert.equal(noopDefaultsRes.status, 400, "no-op defaults restore is rejected");
     assert.equal(
@@ -650,6 +684,7 @@ async function integrationTests() {
       ...DEFAULT_RETENTION_THRESHOLDS,
       changeSource: "restore_version",
       restoredFromVersion: initialVersion + 1,
+      expectedVersion: initialVersion + 6,
     });
     assert.equal(noopVersionRes.status, 400, "no-op version restore is rejected");
     assert.equal(((await noopVersionRes.json()) as any).code, "NO_OP_RESTORE");
@@ -658,14 +693,17 @@ async function integrationTests() {
     assert.equal(((await afterNoopRestores.json()) as any).version, initialVersion + 6, "no-op restores record no version");
     console.log("✓ No-op restores rejected (NO_OP_RESTORE), no version recorded");
 
-    // Lying restore metadata is rejected without recording a version.
+    // Lying restore metadata is rejected without recording a version. Each
+    // body carries the CORRECT expectedVersion so the 400 is attributable to
+    // the restore metadata itself, never to the concurrency precondition.
+    const expectedNow = initialVersion + 6;
     const badRestores: [string, Record<string, unknown>][] = [
-      ["restore_version without source", { ...v2Thresholds, changeSource: "restore_version" }],
-      ["source version on manual change", { ...v2Thresholds, changeSource: "manual", restoredFromVersion: initialVersion + 2 }],
-      ["nonexistent source version", { ...v2Thresholds, changeSource: "restore_version", restoredFromVersion: 999_999 }],
-      ["thresholds mismatch source version", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_version", restoredFromVersion: initialVersion + 2 }],
-      ["restore_defaults with non-default values", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_defaults" }],
-      ["unknown change source", { ...v2Thresholds, changeSource: "rollback" }],
+      ["restore_version without source", { ...v2Thresholds, changeSource: "restore_version", expectedVersion: expectedNow }],
+      ["source version on manual change", { ...v2Thresholds, changeSource: "manual", restoredFromVersion: initialVersion + 2, expectedVersion: expectedNow }],
+      ["nonexistent source version", { ...v2Thresholds, changeSource: "restore_version", restoredFromVersion: 999_999, expectedVersion: expectedNow }],
+      ["thresholds mismatch source version", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_version", restoredFromVersion: initialVersion + 2, expectedVersion: expectedNow }],
+      ["restore_defaults with non-default values", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_defaults", expectedVersion: expectedNow }],
+      ["unknown change source", { ...v2Thresholds, changeSource: "rollback", expectedVersion: expectedNow }],
     ];
     for (const [label, body] of badRestores) {
       const res = await putSettings(body);
@@ -680,7 +718,7 @@ async function integrationTests() {
 
     // The no-op guard applies only to restores: a manual save of identical
     // values still records an audited version (deliberate re-confirmation).
-    const manualIdenticalRes = await putSettings(DEFAULT_RETENTION_THRESHOLDS);
+    const manualIdenticalRes = await putSettings({ ...DEFAULT_RETENTION_THRESHOLDS, expectedVersion: initialVersion + 6 });
     assert.equal(manualIdenticalRes.status, 200, "identical manual save is still allowed");
     assert.equal(((await manualIdenticalRes.json()) as any).version, initialVersion + 7);
     console.log("✓ Manual saves are unaffected by the no-op restore guard");

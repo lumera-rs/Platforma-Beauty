@@ -77,6 +77,12 @@ function changedFields(entry: RetentionSettingsHistoryEntry): FieldKey[] {
 type RestoreTarget =
   | { kind: "history"; entry: RetentionSettingsHistoryEntry }
   | { kind: "defaults"; thresholds: RetentionThresholds };
+
+/** Restore provenance sent alongside an update (audit labels for the history). */
+type UpdateOrigin =
+  | { changeSource: "manual" }
+  | { changeSource: "restore_version"; restoredFromVersion: number }
+  | { changeSource: "restore_defaults" };
 export default function AdminRetentionSettings() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -98,6 +104,7 @@ export default function AdminRetentionSettings() {
   });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
+  const [conflict, setConflict] = useState<VersionConflict | null>(null);
 
   useEffect(() => {
     if (settings) {
@@ -161,45 +168,57 @@ export default function AdminRetentionSettings() {
     });
   };
 
-  const handleSave = () => {
-    const values = parseForm();
-    if (!values) {
-      toast.error("Proverite označena polja pre čuvanja.");
-      return;
-    }
+  /**
+   * Refetch the active settings + history after a version conflict, so the
+   * page shows the values the other admin just saved (the form is reset from
+   * the fresh settings by the effect above).
+   */
+  const refreshAfterConflict = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() }),
+    ]);
 
-    updateMutation.mutate({ data: values }, {
-      onSuccess: (updated) => {
-        toast.success(`Pragovi retencije sačuvani (verzija ${updated.version}).`);
-        setPreview(null);
-        invalidateAfterSave();
-      },
-      onError: (err) => {
-        toast.error(extractApiError(err, "Greška prilikom čuvanja pragova."));
-      },
-    });
-  };
-
-  const handleRestore = (target: RestoreTarget) => {
-    const thresholds = target.kind === "history" ? target.entry.thresholds : target.thresholds;
-    // Label the new version as a restore so the audit history can tell
-    // deliberate rollbacks apart from hand-tuned edits.
-    const body =
-      target.kind === "history"
-        ? { ...thresholds, changeSource: "restore_version" as const, restoredFromVersion: target.entry.version }
-        : { ...thresholds, changeSource: "restore_defaults" as const };
+  /**
+   * Single write path for save, restore, and conflict re-confirmation.
+   * Sends the version the edit was based on; a 409 means another admin saved
+   * a newer version in the meantime — refetch and ask the admin to re-confirm.
+   * `origin` labels restores in the audit history.
+   */
+  const performUpdate = (thresholds: RetentionThresholds, origin: UpdateOrigin) => {
+    if (!settings) return;
+    const body = {
+      ...thresholds,
+      expectedVersion: settings.version,
+      ...(origin.changeSource === "restore_version"
+        ? { changeSource: origin.changeSource, restoredFromVersion: origin.restoredFromVersion }
+        : origin.changeSource === "restore_defaults"
+          ? { changeSource: origin.changeSource }
+          : {}),
+    };
     updateMutation.mutate({ data: body }, {
       onSuccess: (updated) => {
         toast.success(
-          target.kind === "history"
-            ? `Vrednosti verzije ${target.entry.version} su vraćene kao nova verzija ${updated.version}.`
-            : `Podrazumevane vrednosti platforme su vraćene kao nova verzija ${updated.version}.`,
+          origin.changeSource === "restore_version"
+            ? `Vrednosti verzije ${origin.restoredFromVersion} su vraćene kao nova verzija ${updated.version}.`
+            : origin.changeSource === "restore_defaults"
+              ? `Podrazumevane vrednosti platforme su vraćene kao nova verzija ${updated.version}.`
+              : `Pragovi retencije sačuvani (verzija ${updated.version}).`,
         );
         setPreview(null);
-        invalidateAfterSave();
         setRestoreTarget(null);
+        setConflict(null);
+        invalidateAfterSave();
       },
       onError: (err) => {
+        setRestoreTarget(null);
+        if (isVersionConflict(err)) {
+          setPreview(null);
+          setConflict({ pending: thresholds, origin });
+          void refreshAfterConflict();
+          toast.error("Drugi administrator je u međuvremenu sačuvao izmene. Proverite nove vrednosti i potvrdite ponovo.");
+          return;
+        }
         // The server blocks restores whose values equal the active thresholds
         // (e.g. another admin already made them active while the dialog was
         // open). Explain why nothing was recorded and refresh the stale view.
@@ -211,13 +230,48 @@ export default function AdminRetentionSettings() {
           toast.info(
             "Vrednosti su identične trenutno aktivnim pragovima — nova verzija nije zabeležena.",
           );
+          setConflict(null);
           invalidateAfterSave();
-        } else {
-          toast.error(extractApiError(err, "Greška prilikom vraćanja verzije."));
+          return;
         }
-        setRestoreTarget(null);
+        toast.error(extractApiError(
+          err,
+          origin.changeSource === "manual"
+            ? "Greška prilikom čuvanja pragova."
+            : "Greška prilikom vraćanja verzije.",
+        ));
       },
     });
+  };
+
+  const handleSave = () => {
+    const values = parseForm();
+    if (!values) {
+      toast.error("Proverite označena polja pre čuvanja.");
+      return;
+    }
+    performUpdate(values, { changeSource: "manual" });
+  };
+
+  const handleRestore = (target: RestoreTarget) => {
+    // Label the new version as a restore so the audit history can tell
+    // deliberate rollbacks apart from hand-tuned edits.
+    if (target.kind === "history") {
+      performUpdate(target.entry.thresholds, {
+        changeSource: "restore_version",
+        restoredFromVersion: target.entry.version,
+      });
+    } else {
+      performUpdate(target.thresholds, { changeSource: "restore_defaults" });
+    }
+  };
+
+  const handleConfirmConflict = () => {
+    if (!conflict) return;
+    // Re-confirm against the refreshed version. A restore label is only kept
+    // when it is still truthful (restoring version N is unaffected by the
+    // concurrent change; restoring defaults still matches the defaults).
+    performUpdate(conflict.pending, conflict.origin);
   };
 
   // A restore whose values equal the active thresholds would only clutter the
@@ -575,7 +629,74 @@ export default function AdminRetentionSettings() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <AlertDialog open={conflict !== null} onOpenChange={(open) => { if (!open) setConflict(null); }}>
+          <AlertDialogContent data-testid="retention-conflict-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Drugi administrator je sačuvao novije izmene</AlertDialogTitle>
+              <AlertDialogDescription>
+                Dok ste uređivali pragove, sačuvana je novija verzija
+                {settings && !settings.isDefault ? ` (verzija ${settings.version})` : ""}.
+                Ispod je poređenje trenutno aktivnih vrednosti i vrednosti koje ste pokušali da sačuvate —
+                potvrdite ponovo ako i dalje želite svoje vrednosti.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {conflict && settings && (() => {
+              const diffKeys = (Object.keys(conflict.pending) as FieldKey[]).filter(
+                (k) => conflict.pending[k] !== settings.thresholds[k],
+              );
+              return (
+                <div className="text-sm" data-testid="retention-conflict-diff">
+                  {diffKeys.length === 0 ? (
+                    <p className="text-muted-foreground italic">
+                      Vaše vrednosti su identične novoj aktivnoj verziji — ponovno čuvanje neće promeniti ponašanje.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {diffKeys.map((key) => (
+                        <li key={key} className="text-muted-foreground">
+                          <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
+                          <span className="line-through">{settings.thresholds[key]}</span>
+                          {" → "}
+                          <span className="font-semibold text-foreground">{conflict.pending[key]}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-retention-conflict">
+                Zadrži novije vrednosti
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleConfirmConflict();
+                }}
+                disabled={updateMutation.isPending}
+                data-testid="confirm-retention-conflict"
+              >
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                Sačuvaj moje vrednosti
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );
+}
+
+/** True when the server rejected the update because a newer version exists (409). */
+function isVersionConflict(err: unknown): boolean {
+  const e = err as { status?: number; data?: { code?: string } } | null;
+  return e?.status === 409 || e?.data?.code === "VERSION_CONFLICT";
+}
+
+/** Values the admin tried to save when another admin's newer version was found. */
+interface VersionConflict {
+  pending: RetentionThresholds;
+  origin: UpdateOrigin;
 }

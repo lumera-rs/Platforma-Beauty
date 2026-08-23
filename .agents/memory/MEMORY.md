@@ -41,5 +41,6 @@
 - [Production bootstrap schema parity](production-bootstrap-schema-parity.md) — a bootstrap version bump must mirror every merged drizzle column, with legacy ALTERs and rollout-test asserts.
 - [Rebase and generated codegen](rebase-generated-codegen.md) — after a rebase touching the OpenAPI spec, re-run codegen and full typecheck once the rebase completes; mid-rebase regeneration can still commit scrambled output.
 - [Webhook self-check semantics](webhook-self-check-semantics.md) — synthetic verification events stay unmatched and never count toward delivery-report freshness.
+- [Retention settings write preconditions](retention-settings-write-preconditions.md) — restore truthfulness → 409 version conflict → no-op guard; stale pages must see the conflict first.
 - [Webhook registration verification](webhook-registration-verification.md) — provider-side listing proves registration; compare secrets timing-safe server-side and echo only masked URLs.
 - [Calendar date validation](calendar-date-validation.md) — V8 rolls over impossible ISO dates (2026-02-30 → March 2); YYYY-MM-DD inputs need a round-trip check to reject them explicitly.

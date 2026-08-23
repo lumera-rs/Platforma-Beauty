@@ -16,4 +16,9 @@ export type RetentionSettingsUpdate = RetentionThresholds & {
      * @minimum 1
      */
   restoredFromVersion?: number;
+  /**
+     * Active settings version this edit was based on (0 = platform defaults); the server rejects with 409 when a newer version exists
+     * @minimum 0
+     */
+  expectedVersion: number;
 };

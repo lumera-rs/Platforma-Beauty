@@ -4153,7 +4153,7 @@ paths:
     put:
       operationId: adminUpdateRetentionSettings
       tags: [growth]
-      summary: Update platform retention thresholds (admin); records an audited new version
+      summary: Update platform retention thresholds (admin); records an audited new version. Requires the expected active version (optimistic concurrency) — a stale version is rejected with 409.
       requestBody:
         required: true
         content:
@@ -4168,6 +4168,11 @@ paths:
         "400": { description: Validation error (out-of-range or inconsistent thresholds) }
         "401": { description: Authentication required }
         "403": { description: Admin access required }
+        "409":
+          description: Another admin saved a newer version since the client last loaded the settings; refetch and re-confirm
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettingsVersionConflict" }
 
   /growth/admin/retention-settings/preview:
     post:
@@ -7273,6 +7278,21 @@ components:
               minimum: 1
               multipleOf: 1
               description: "Version whose values are being restored; only allowed (and required) when changeSource is restore_version"
+            expectedVersion:
+              type: number
+              minimum: 0
+              multipleOf: 1
+              description: "Active settings version this edit was based on (0 = platform defaults); the server rejects with 409 when a newer version exists"
+          required: [expectedVersion]
+
+    RetentionSettingsVersionConflict:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [VERSION_CONFLICT] }
+        expectedVersion: { type: number, description: "Version the client based its edit on" }
+        activeVersion: { type: number, description: "Version currently active on the server" }
+      required: [error, code, expectedVersion, activeVersion]
 
     RetentionSettingsHistoryEntry:
       type: object

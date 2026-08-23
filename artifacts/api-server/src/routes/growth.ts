@@ -1710,7 +1710,7 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
       return;
     }
 
-    const { changeSource, restoredFromVersion, ...thresholds } = parsed.data;
+    const { changeSource, restoredFromVersion, expectedVersion, ...thresholds } = parsed.data;
     const problems = validateRetentionThresholds(thresholds);
     if (problems.length > 0) {
       res.status(400).json({ error: problems.join(" "), code: "VALIDATION_ERROR", problems });
@@ -1718,11 +1718,22 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
     }
 
     try {
-      const updated = await updateRetentionSettings(user.id, thresholds, {
+      const result = await updateRetentionSettings(user.id, thresholds, expectedVersion, {
         changeSource: changeSource ?? "manual",
         restoredFromVersion,
       });
-      res.json(settingsView(updated));
+      if (!result.ok) {
+        // Another admin recorded a newer version since this client loaded the
+        // settings — surface the conflict instead of silently overwriting.
+        res.status(409).json({
+          error: "Podešavanja je u međuvremenu izmenio drugi administrator. Osvežite vrednosti i potvrdite ponovo.",
+          code: "VERSION_CONFLICT",
+          expectedVersion: result.conflict.expectedVersion,
+          activeVersion: result.conflict.activeVersion,
+        });
+        return;
+      }
+      res.json(settingsView(result.settings));
     } catch (err) {
       if (err instanceof RetentionNoOpRestoreError) {
         // Distinct code so the client can explain why nothing was recorded.

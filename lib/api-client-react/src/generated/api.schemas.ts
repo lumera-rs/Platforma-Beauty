@@ -4417,7 +4417,28 @@ export type RetentionSettingsUpdate = RetentionThresholds & {
      * @minimum 1
      */
   restoredFromVersion?: number;
+  /**
+     * Active settings version this edit was based on (0 = platform defaults); the server rejects with 409 when a newer version exists
+     * @minimum 0
+     */
+  expectedVersion: number;
 };
+
+export type RetentionSettingsVersionConflictCode = typeof RetentionSettingsVersionConflictCode[keyof typeof RetentionSettingsVersionConflictCode];
+
+
+export const RetentionSettingsVersionConflictCode = {
+  VERSION_CONFLICT: 'VERSION_CONFLICT',
+} as const;
+
+export interface RetentionSettingsVersionConflict {
+  error: string;
+  code: RetentionSettingsVersionConflictCode;
+  /** Version the client based its edit on */
+  expectedVersion: number;
+  /** Version currently active on the server */
+  activeVersion: number;
+}
 
 /**
  * How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults

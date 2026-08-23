@@ -9595,7 +9595,7 @@ export const AdminGetRetentionSettingsResponse = zod.object({
 
 
 /**
- * @summary Update platform retention thresholds (admin); records an audited new version
+ * @summary Update platform retention thresholds (admin); records an audited new version. Requires the expected active version (optimistic concurrency) — a stale version is rejected with 409.
  */
 export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMax = 365;
 export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMultipleOf = 1;
@@ -9623,6 +9623,9 @@ export const adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleO
 
 export const adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf = 1;
 
+export const adminUpdateRetentionSettingsBodyTwoExpectedVersionMin = 0;
+export const adminUpdateRetentionSettingsBodyTwoExpectedVersionMultipleOf = 1;
+
 
 export const AdminUpdateRetentionSettingsBody = zod.object({
   "newCustomerWindowDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMax).multipleOf(adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMultipleOf).describe('A single completed visit within this many days still counts as NEW'),
@@ -9634,7 +9637,8 @@ export const AdminUpdateRetentionSettingsBody = zod.object({
   "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
 }).and(zod.object({
   "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).optional().describe('How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults'),
-  "restoredFromVersion": zod.number().min(1).multipleOf(adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf).optional().describe('Version whose values are being restored; only allowed (and required) when changeSource is restore_version')
+  "restoredFromVersion": zod.number().min(1).multipleOf(adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf).optional().describe('Version whose values are being restored; only allowed (and required) when changeSource is restore_version'),
+  "expectedVersion": zod.number().min(adminUpdateRetentionSettingsBodyTwoExpectedVersionMin).multipleOf(adminUpdateRetentionSettingsBodyTwoExpectedVersionMultipleOf).describe('Active settings version this edit was based on (0 = platform defaults); the server rejects with 409 when a newer version exists')
 }))
 
 export const adminUpdateRetentionSettingsResponseThresholdsNewCustomerWindowDaysMax = 365;

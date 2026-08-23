@@ -201,6 +201,7 @@ import type {
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
   RetentionSettingsUpdate,
+  RetentionSettingsVersionConflict,
   RetentionThresholds,
   ReversalResult,
   SalonAppointmentCreate,
@@ -17012,7 +17013,7 @@ export const getAdminUpdateRetentionSettingsUrl = () => {
 }
 
 /**
- * @summary Update platform retention thresholds (admin); records an audited new version
+ * @summary Update platform retention thresholds (admin); records an audited new version. Requires the expected active version (optimistic concurrency) — a stale version is rejected with 409.
  */
 export const adminUpdateRetentionSettings = async (retentionSettingsUpdate: RetentionSettingsUpdate, options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettings> => {
 
@@ -17029,7 +17030,7 @@ export const adminUpdateRetentionSettings = async (retentionSettingsUpdate: Rete
 
 
 
-export const getAdminUpdateRetentionSettingsMutationOptions = <TError = ErrorType<void>,
+export const getAdminUpdateRetentionSettingsMutationOptions = <TError = ErrorType<void | RetentionSettingsVersionConflict>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext> => {
 
@@ -17058,12 +17059,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type AdminUpdateRetentionSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>>
     export type AdminUpdateRetentionSettingsMutationBody = BodyType<RetentionSettingsUpdate>
-    export type AdminUpdateRetentionSettingsMutationError = ErrorType<void>
+    export type AdminUpdateRetentionSettingsMutationError = ErrorType<void | RetentionSettingsVersionConflict>
 
     /**
- * @summary Update platform retention thresholds (admin); records an audited new version
+ * @summary Update platform retention thresholds (admin); records an audited new version. Requires the expected active version (optimistic concurrency) — a stale version is rejected with 409.
  */
-export const useAdminUpdateRetentionSettings = <TError = ErrorType<void>,
+export const useAdminUpdateRetentionSettings = <TError = ErrorType<void | RetentionSettingsVersionConflict>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateRetentionSettings>>,

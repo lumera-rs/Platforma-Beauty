@@ -131,19 +131,36 @@ export async function getActiveRetentionSettings(): Promise<ActiveRetentionSetti
   };
 }
 
+export type UpdateRetentionSettingsResult =
+  | { ok: true; settings: ActiveRetentionSettings }
+  | { ok: false; conflict: { expectedVersion: number; activeVersion: number } };
 /**
  * Record a new settings version. Caller must have validated the candidate
  * (this function re-validates defensively and throws on invalid input).
- * Returns the newly active settings.
+ *
+ * Optimistic concurrency: `expectedVersion` is the active version the caller
+ * based its edit on. The precondition is checked under the same advisory lock
+ * that serializes writers, so two admins editing from the same version can
+ * never both succeed — the second save observes the first one's version and
+ * gets a conflict instead of silently overwriting it.
+ *
+ * `origin` carries restore provenance for the audit history (manual edit,
+ * restore of a prior version, or restore of the platform defaults).
+ *
+ * Returns the newly active settings, or the conflicting versions.
  */
 export async function updateRetentionSettings(
   changedByUserId: string,
   candidate: RetentionThresholds,
+  expectedVersion: number,
   origin: RetentionChangeOrigin = { changeSource: "manual" },
-): Promise<ActiveRetentionSettings> {
+): Promise<UpdateRetentionSettingsResult> {
   const problems = validateRetentionThresholds(candidate);
   if (problems.length > 0) {
     throw new Error(`Invalid retention thresholds: ${problems.join(" ")}`);
+  }
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    throw new Error("expectedVersion must be a non-negative integer.");
   }
 
   // Restore labels must be truthful — the audit log is only useful if a
@@ -167,8 +184,9 @@ export async function updateRetentionSettings(
     }
   }
 
-  const inserted = await db.transaction(async (tx) => {
-    // Serialize concurrent updates so version numbers are strictly sequential.
+  const outcome = await db.transaction(async (tx) => {
+    // Serialize concurrent updates so version numbers are strictly sequential
+    // and the expected-version precondition cannot race another writer.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${RETENTION_SETTINGS_LOCK_KEY}))`);
     if (origin.changeSource === "restore_version") {
       const [sourceRow] = await tx
@@ -195,10 +213,16 @@ export async function updateRetentionSettings(
       .from(platformRetentionSettingsTable)
       .orderBy(desc(platformRetentionSettingsTable.version))
       .limit(1);
+    const activeVersion = current?.version ?? 0;
+    if (activeVersion !== expectedVersion) {
+      return { kind: "conflict", expectedVersion, activeVersion } as const;
+    }
     // A restore whose values equal the currently active thresholds would only
     // add audit noise ("no values changed" history entries), so it is blocked
     // here — inside the advisory lock, where "currently active" cannot race
-    // with a concurrent update.
+    // with a concurrent update. The version precondition is checked first: a
+    // stale page gets a conflict (409) before a no-op verdict that might be
+    // based on values the admin has not seen yet.
     if (origin.changeSource !== "manual") {
       const activeThresholds = current
         ? rowToThresholds(current)
@@ -212,7 +236,7 @@ export async function updateRetentionSettings(
         );
       }
     }
-    const nextVersion = (current?.version ?? 0) + 1;
+    const nextVersion = activeVersion + 1;
     const [row] = await tx
       .insert(platformRetentionSettingsTable)
       .values({
@@ -231,16 +255,26 @@ export async function updateRetentionSettings(
       })
       .returning();
     if (!row) throw new Error("Failed to insert retention settings version.");
-    return row;
+    return { kind: "inserted", row } as const;
   });
 
+  if (outcome.kind === "conflict") {
+    return {
+      ok: false,
+      conflict: { expectedVersion: outcome.expectedVersion, activeVersion: outcome.activeVersion },
+    };
+  }
+  const inserted = outcome.row;
   return {
-    version: inserted.version,
-    thresholds: rowToThresholds(inserted),
-    changedByUserId: inserted.changedByUserId,
-    changedAt: inserted.createdAt,
-    changeSource: (inserted.changeSource as RetentionChangeSource) ?? "manual",
-    restoredFromVersion: inserted.restoredFromVersion,
+    ok: true,
+    settings: {
+      version: inserted.version,
+      thresholds: rowToThresholds(inserted),
+      changedByUserId: inserted.changedByUserId,
+      changedAt: inserted.createdAt,
+      changeSource: (inserted.changeSource as RetentionChangeSource) ?? "manual",
+      restoredFromVersion: inserted.restoredFromVersion,
+    },
   };
 }
 

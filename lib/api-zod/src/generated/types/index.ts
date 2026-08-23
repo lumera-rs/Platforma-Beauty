@@ -346,6 +346,8 @@ export * from './retentionSettingsHistoryEntryChangeSource';
 export * from './retentionSettingsPreview';
 export * from './retentionSettingsUpdate';
 export * from './retentionSettingsUpdateChangeSource';
+export * from './retentionSettingsVersionConflict';
+export * from './retentionSettingsVersionConflictCode';
 export * from './retentionStatusCounts';
 export * from './retentionThresholds';
 export * from './reversalResult';
