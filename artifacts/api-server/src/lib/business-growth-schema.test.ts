@@ -190,10 +190,21 @@ async function run() {
     )).rows.map((r) => r.enumlabel);
     for (const label of [
       "appointment_confirmation", "appointment_reminder", "education_session_reminder",
-      "education_waitlist_offer", "education_session_cancelled", "automation",
+      "education_waitlist_offer", "education_session_cancelled", "automation", "admin_alert",
     ]) {
       assert.ok(messageTypeLabels.includes(label), `sms_message_type now includes '${label}'`);
     }
+    // v7: a platform-level admin alert SMS (no salon) is insertable with the
+    // new label — exactly what the delivery-report silence SMS fallback writes.
+    await q(
+      `INSERT INTO "${s}".sms_deliveries (event_key, salon_id, message_type, recipient_phone, body, status)
+       VALUES ('new-admin-alert-sms', NULL, 'admin_alert', '+381600000002', 'Upozorenje', 'queued')`,
+    );
+    const adminAlertSms = (await q<{ message_type: string; salon_id: string | null }>(
+      `SELECT message_type, salon_id FROM "${s}".sms_deliveries WHERE event_key = 'new-admin-alert-sms'`,
+    )).rows[0]!;
+    assert.equal(adminAlertSms.message_type, "admin_alert", "new admin_alert SMS delivery insertable");
+    assert.equal(adminAlertSms.salon_id, null, "admin alert SMS carries no salon");
     // A new SMS delivery with message_type='automation' can be inserted...
     await q(
       `INSERT INTO "${s}".sms_deliveries (event_key, salon_id, message_type, recipient_phone, body, status)

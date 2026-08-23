@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
 import { infobipBaseUrl, integrationSettings, integrationValue } from "./integrations";
 
-export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation";
+export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert";
 
 /** Lease duration for an SMS delivery claim (5 minutes). */
 const SMS_LEASE_MS = 5 * 60 * 1000;
@@ -165,7 +165,8 @@ export async function sendPhoneVerificationCode(phone: string, code: string) {
 export async function sendSms(
   input: {
     eventKey: string;
-    salonId: string;
+    /** Owning salon, or null for platform-level messages (e.g. admin alerts). */
+    salonId: string | null;
     appointmentId: string | null;
     type: SmsMessageType;
     phone: string | null | undefined;

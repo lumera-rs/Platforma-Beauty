@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 6;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 7;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -70,6 +70,8 @@ const ENUM_LABELS: Record<string, string[]> = {
     "education_waitlist_offer",
     "education_session_cancelled",
     "automation",
+    // v7: platform-level admin alerts (delivery-report silence SMS fallback).
+    "admin_alert",
   ],
 };
 

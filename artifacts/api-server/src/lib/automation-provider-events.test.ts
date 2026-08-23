@@ -51,11 +51,13 @@ import {
 } from "./provider-events";
 import {
   DELIVERY_REPORT_ALERT_COOLDOWN_MS,
+  DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX,
   runDeliveryReportRecoveryAlerts,
   runDeliveryReportSilenceAlerts,
   staleDeliveryReportProviders,
 } from "./delivery-report-alerts";
 import type { TransactionalEmailTransport } from "./brevo";
+import type { SmsProvider } from "./sms";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = {
@@ -708,10 +710,16 @@ async function run() {
         "probe stays inside the rolling cooldown",
       );
       const afterCooldown = new Date(alertNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+      // Anchors for the total-email-outage SMS fallback runs below — each a
+      // full rolling cooldown apart so alert emails are attempted again.
+      const fallbackNow = new Date(afterCooldown.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+      const partialFailureNow = new Date(fallbackNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+      const allSkippedNow = new Date(partialFailureNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
 
       // One qualifying (grace-aged, receipt-less) email send per evaluation
-      // time, so brevo reads silent at alertNow, boundaryProbe AND
-      // afterCooldown — each probe then genuinely exercises the cooldown.
+      // time, so brevo reads silent at alertNow, boundaryProbe, afterCooldown
+      // AND the fallback anchors — each probe then genuinely exercises the
+      // cooldown / fallback decision.
       const staleRunKey = `pe-run-stale-${suffix}`;
       const firstStaleSentAt = new Date(alertNow.getTime() - 35 * 60_000);
       const [staleRun] = await db.insert(automationRunsTable).values({
@@ -721,7 +729,10 @@ async function run() {
       assert.ok(staleRun);
       const staleSentAts = [firstStaleSentAt,
         new Date(boundaryProbe.getTime() - 35 * 60_000),
-        new Date(afterCooldown.getTime() - 35 * 60_000)];
+        new Date(afterCooldown.getTime() - 35 * 60_000),
+        new Date(fallbackNow.getTime() - 35 * 60_000),
+        new Date(partialFailureNow.getTime() - 35 * 60_000),
+        new Date(allSkippedNow.getTime() - 35 * 60_000)];
       for (const [index, sentAt] of staleSentAts.entries()) {
         const [staleDelivery] = await db.insert(automationDeliveriesTable).values({
           runId: staleRun.id, salonId: c.salon.id, eventKey: `${staleRunKey}:email:${index}`, channel: "email",
@@ -733,10 +744,14 @@ async function run() {
       // Dedicated admin recipient (other admins may exist in the shared dev
       // DB; assertions below only require ours to be among the recipients).
       const alertAdminEmail = `pe-alert-admin-${suffix}@bg.test`;
+      // Unique phone so the SMS fallback has a recipient (users_phone_normalized
+      // is unique; derive digits from the random suffix + time).
+      const alertAdminPhone = `+38160${String(Date.now()).slice(-7)}`;
       const [alertAdmin] = await db.insert(usersTable).values({
         firstName: "Admin", lastName: "Alerts",
         email: alertAdminEmail, passwordHash: await hashPassword(`pe-alert-${suffix}`),
         passwordSetAt: new Date(), role: "SUPER_ADMIN",
+        phone: alertAdminPhone, phoneNormalized: alertAdminPhone.replace(/\D/g, ""),
       }).returning();
       assert.ok(alertAdmin);
       cleanup.userIds.push(alertAdmin.id);
@@ -765,6 +780,7 @@ async function run() {
       assert.equal(first.calls.length, firstRun.recipientCount, "every recipient got exactly one provider call");
       assert.ok(first.calls.some((call) => call.email === alertAdminEmail), "our admin is a recipient");
       assert.ok(first.calls.every((call) => call.subject.includes("Brevo")), "alert names the silent provider");
+      assert.equal(firstRun.smsFallback.triggered, false, "successful emails never trigger the SMS fallback");
 
       // Immediate repeat tick: suppressed by the rolling cooldown — no
       // outbox attempt, no provider contact.
@@ -799,6 +815,7 @@ async function run() {
       for (const eventKey of renewedRun.attemptedEventKeys) {
         assert.ok(!firstRun.attemptedEventKeys.includes(eventKey), "renewed alerts use fresh outbox keys");
       }
+      assert.equal(renewedRun.smsFallback.triggered, false, "renewed successful emails trigger no SMS fallback");
 
       // Healthy statuses (evaluated at the real current time, where the
       // crafted future send is not yet grace-aged and receipts are fresh)
@@ -823,6 +840,119 @@ async function run() {
       }
       assert.deepEqual(summaryBody.deliveryReportStaleProviders, [], "fresh receipts read healthy on the dashboard");
       console.log("✓ silence alerts email admins once per cooldown window and feed the dashboard summary");
+
+      // ── 7g. Total-email-outage SMS fallback ──────────────────────────────
+      // When Brevo SENDING is down too, every alert email fails — admins must
+      // still be paged over the independent SMS channel (Infobip), with the
+      // same cooldown-window dedup so the fallback can never spam.
+      {
+        const makeFakeSms = () => {
+          const calls: { to: string; text: string }[] = [];
+          const provider: SmsProvider = {
+            async send(input) {
+              calls.push({ to: input.to, text: input.text });
+              return { messageId: `pe-fake-sms-${calls.length}` };
+            },
+          };
+          return { calls, provider };
+        };
+        const failingTransport: TransactionalEmailTransport = {
+          async send() { throw new Error("Brevo 503: send API unavailable"); },
+        };
+
+        // Total outage: every alert email fails → fallback SMS to admins
+        // with phone numbers.
+        const outageSms = makeFakeSms();
+        const outageRun = await runDeliveryReportSilenceAlerts(fallbackNow, failingTransport, outageSms.provider);
+        cleanup.emailEventKeys.push(...outageRun.attemptedEventKeys);
+        cleanup.smsEventKeys.push(...outageRun.smsFallback.attemptedEventKeys);
+        assert.deepEqual(outageRun.staleProviders, ["brevo"], "brevo still silent at the outage probe");
+        assert.ok(outageRun.attemptedEventKeys.length >= 1, "cooldown elapsed → emails attempted again");
+        assert.equal(outageRun.failedDeliveryCount, outageRun.attemptedEventKeys.length, "every alert email failed");
+        assert.equal(outageRun.smsFallback.triggered, true, "total email failure triggers the SMS fallback");
+        assert.ok(outageRun.smsFallback.recipientCount >= 1, "at least our phone-carrying admin is an SMS recipient");
+        assert.equal(
+          outageRun.smsFallback.attemptedEventKeys.length,
+          outageRun.smsFallback.recipientCount,
+          "one fallback SMS per phone-carrying admin",
+        );
+        for (const eventKey of outageRun.smsFallback.attemptedEventKeys) {
+          assert.ok(
+            eventKey.startsWith(`${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:brevo:`),
+            "fallback SMS keys are namespaced per provider",
+          );
+        }
+        assert.ok(outageSms.calls.some((call) => call.to === alertAdminPhone), "our admin's phone is paged");
+        assert.ok(outageSms.calls.every((call) => call.text.includes("Brevo")), "SMS names the affected channel");
+        assert.equal(outageRun.smsFallback.sentCount, outageSms.calls.length, "every fallback SMS was accepted");
+        assert.equal(outageRun.smsFallback.failedCount, 0);
+
+        // The fallback rows live in the durable SMS outbox as platform-level
+        // admin alerts (no salon), so racing instances dedup on eventKey.
+        const fallbackRows = await db.select().from(smsDeliveriesTable)
+          .where(inArray(smsDeliveriesTable.eventKey, outageRun.smsFallback.attemptedEventKeys));
+        assert.equal(fallbackRows.length, outageRun.smsFallback.attemptedEventKeys.length, "every fallback SMS is persisted");
+        for (const row of fallbackRows) {
+          assert.equal(row.messageType, "admin_alert", "fallback SMS is an admin alert");
+          assert.equal(row.salonId, null, "fallback SMS belongs to no salon");
+          assert.equal(row.status, "sent", "fallback SMS reached the provider");
+        }
+
+        // Immediate repeat tick: the email cooldown suppresses all attempts,
+        // so the fallback is never evaluated — no second SMS (no spam).
+        const repeatSms = makeFakeSms();
+        const repeatRun = await runDeliveryReportSilenceAlerts(fallbackNow, failingTransport, repeatSms.provider);
+        assert.equal(repeatRun.attemptedEventKeys.length, 0, "repeat tick attempts no emails");
+        assert.equal(repeatRun.smsFallback.triggered, false, "suppressed tick never evaluates the fallback");
+        assert.equal(repeatSms.calls.length, 0, "no repeat SMS inside the cooldown window");
+
+        // Partial failure: at least one alert email still goes through → the
+        // primary path worked for someone, so no SMS fallback fires.
+        const partialAdminEmail = `pe-partial-admin-${suffix}@bg.test`;
+        const [partialAdmin] = await db.insert(usersTable).values({
+          firstName: "Admin", lastName: "Partial",
+          email: partialAdminEmail, passwordHash: await hashPassword(`pe-partial-${suffix}`),
+          passwordSetAt: new Date(), role: "ADMIN",
+        }).returning();
+        assert.ok(partialAdmin);
+        cleanup.userIds.push(partialAdmin.id);
+        const partialTransport: TransactionalEmailTransport = {
+          async send(input) {
+            if (input.to.email === partialAdminEmail) throw new Error("Brevo 503: send API unavailable");
+            return { messageId: `pe-partial-${input.to.email}` };
+          },
+        };
+        const partialSms = makeFakeSms();
+        const partialRun = await runDeliveryReportSilenceAlerts(partialFailureNow, partialTransport, partialSms.provider);
+        cleanup.emailEventKeys.push(...partialRun.attemptedEventKeys);
+        assert.ok(partialRun.failedDeliveryCount >= 1, "the new admin's alert email failed");
+        assert.ok(
+          partialRun.failedDeliveryCount < partialRun.attemptedEventKeys.length,
+          "other alert emails still succeeded",
+        );
+        assert.equal(partialRun.smsFallback.triggered, false, "a partially working email path fires no SMS fallback");
+        assert.equal(partialSms.calls.length, 0, "no SMS while email still reaches someone");
+
+        // All skipped (e.g. Brevo integration unconfigured) counts as a total
+        // primary-path failure too, and a fresh window mints fresh SMS keys.
+        const skippingTransport: TransactionalEmailTransport = {
+          async send() { return { skipped: true, errorMessage: "Brevo nije podešen." }; },
+        };
+        const skippedSms = makeFakeSms();
+        const skippedRun = await runDeliveryReportSilenceAlerts(allSkippedNow, skippingTransport, skippedSms.provider);
+        cleanup.emailEventKeys.push(...skippedRun.attemptedEventKeys);
+        cleanup.smsEventKeys.push(...skippedRun.smsFallback.attemptedEventKeys);
+        assert.ok(skippedRun.skippedDeliveryCount >= 1, "alert emails were skipped");
+        assert.equal(skippedRun.smsFallback.triggered, true, "all-skipped emails trigger the SMS fallback");
+        assert.ok(skippedSms.calls.some((call) => call.to === alertAdminPhone), "our admin's phone is paged again");
+        for (const eventKey of skippedRun.smsFallback.attemptedEventKeys) {
+          assert.ok(
+            !outageRun.smsFallback.attemptedEventKeys.includes(eventKey),
+            "a new cooldown window mints fresh fallback SMS keys",
+          );
+        }
+        console.log("✓ SMS fallback pages admins exactly when the alert email path is fully down, once per window");
+      }
     }
 
     // ── 7g. Recovery → one-time "reports arriving again" notice ────────────

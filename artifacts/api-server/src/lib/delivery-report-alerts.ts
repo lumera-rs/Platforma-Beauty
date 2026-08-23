@@ -29,9 +29,21 @@
  *
  * Failure notes: the alert email itself goes out via Brevo's SEND API, which
  * is independent of the (possibly broken) delivery-report WEBHOOK — a silent
- * webhook does not prevent the alert from sending. If Brevo sending is
- * unavailable too, the send is logged as failed/skipped and the dashboard
- * alert remains the fallback surface.
+ * webhook does not prevent the alert from sending.
+ *
+ * Total-email-outage fallback: if Brevo SENDING is down too, every alert
+ * email about the brevo provider fails (or is skipped) and admins would only
+ * find out from the dashboard. In exactly that case — at least one brevo
+ * alert email was attempted this tick AND every attempted one failed or was
+ * skipped — a fallback SMS (via Infobip, when the SMS integration is
+ * configured) goes to administrators who have a phone number on file.
+ * Rate limiting is inherited from the email path: email attempts only happen
+ * once per rolling cooldown window (cooldown-suppressed ticks attempt
+ * nothing, so the fallback is never even evaluated), and the SMS outbox
+ * eventKey embeds the same per-window alert SEQUENCE, so racing instances
+ * and repeats collapse onto the same unique sms_deliveries row. The fallback
+ * never fires when the primary email path worked (sent or deduplicated by a
+ * racing instance that will evaluate its own outcomes).
  *
  * Recovery notices (runDeliveryReportRecoveryAlerts): once a provider that
  * previously triggered a silence alert receives verified events again, each
@@ -61,8 +73,12 @@ import {
   type DeliveryReportProvider,
   type DeliveryReportStatus,
 } from "./provider-events";
+import { sendSms, type SmsProvider } from "./sms";
 
 const DELIVERY_REPORT_ALERT_EMAIL_TYPE = "delivery_report_silence_alert";
+
+/** Outbox eventKey prefix of the total-email-outage fallback SMS. */
+export const DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX = "delivery-report-silence-alert-sms";
 const DELIVERY_REPORT_RECOVERY_EMAIL_TYPE = "delivery_report_recovery_alert";
 /** Rolling cooldown: at least this long between two alerts to the same admin about the same provider. */
 export const DELIVERY_REPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
@@ -109,6 +125,8 @@ function formatBelgradeTime(iso: string | null): string {
 export async function runDeliveryReportSilenceAlerts(
   now = new Date(),
   transport?: TransactionalEmailTransport,
+  /** Optional SMS provider override for the fallback path — used in tests. */
+  smsProvider?: SmsProvider,
 ): Promise<{
   staleProviders: DeliveryReportProvider[];
   recipientCount: number;
@@ -116,6 +134,7 @@ export async function runDeliveryReportSilenceAlerts(
   cooldownSuppressedCount: number;
   failedDeliveryCount: number;
   skippedDeliveryCount: number;
+  smsFallback: SmsFallbackSummary;
 }> {
   const statuses = await deliveryReportStatuses(now);
   const staleProviders = staleDeliveryReportProviders(statuses);
@@ -126,10 +145,11 @@ export async function runDeliveryReportSilenceAlerts(
     cooldownSuppressedCount: 0,
     failedDeliveryCount: 0,
     skippedDeliveryCount: 0,
+    smsFallback: emptySmsFallbackSummary(),
   };
   if (!staleProviders.length) return empty;
 
-  const recipients = await db.select({ email: usersTable.email })
+  const recipients = await db.select({ email: usersTable.email, phone: usersTable.phone })
     .from(usersTable)
     .where(and(
       eq(usersTable.active, true),
@@ -161,7 +181,11 @@ export async function runDeliveryReportSilenceAlerts(
 
   let cooldownSuppressedCount = 0;
   const attemptedEventKeys: string[] = [];
-  const sends: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>[] = [];
+  const sends: {
+    provider: DeliveryReportProvider;
+    sequence: number;
+    promise: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>;
+  }[] = [];
   for (const provider of staleProviders) {
     const status = statuses[provider];
     const label = DELIVERY_REPORT_PROVIDER_LABELS[provider];
@@ -190,25 +214,33 @@ export async function runDeliveryReportSilenceAlerts(
       // unique outbox key collapses them into one provider send.
       const eventKey = `delivery-report-silence-alert:${provider}:${recipientKey}:${sequence}`;
       attemptedEventKeys.push(eventKey);
-      sends.push(sendTransactionalEmail({
-        eventKey,
-        emailType: DELIVERY_REPORT_ALERT_EMAIL_TYPE,
-        to: { email: recipient.email },
-        subject,
-        htmlContent,
-        metadata: {
-          provider,
-          alertAt: now.toISOString(),
-          sequence,
-          recentSendCount: status.recentSendCount,
-          lastAutomationSentAt: status.lastAutomationSentAt,
-          lastEventAt: status.lastEventAt,
-        },
-      }, transport));
+      sends.push({
+        provider,
+        sequence,
+        promise: sendTransactionalEmail({
+          eventKey,
+          emailType: DELIVERY_REPORT_ALERT_EMAIL_TYPE,
+          to: { email: recipient.email },
+          subject,
+          htmlContent,
+          metadata: {
+            provider,
+            alertAt: now.toISOString(),
+            sequence,
+            recentSendCount: status.recentSendCount,
+            lastAutomationSentAt: status.lastAutomationSentAt,
+            lastEventAt: status.lastEventAt,
+          },
+        }, transport),
+      });
     }
   }
 
-  const results = await Promise.allSettled(sends);
+  const results = await Promise.allSettled(sends.map((send) => send.promise));
+  const emailFailedOrSkipped = (result: (typeof results)[number]) =>
+    result.status === "rejected"
+    || ("failed" in result.value && result.value.failed)
+    || ("skipped" in result.value && result.value.skipped);
   const failedDeliveryCount = results.filter(
     (result) => result.status === "rejected" || ("failed" in result.value && result.value.failed),
   ).length;
@@ -233,6 +265,30 @@ export async function runDeliveryReportSilenceAlerts(
       "Delivery-report silence alert delivery queued",
     );
   }
+
+  // ── Total-email-outage SMS fallback (brevo alert only) ────────────────────
+  // The alert about the brevo provider travels over Brevo's own SEND API. If
+  // EVERY alert email attempted about brevo this tick failed or was skipped,
+  // email sending itself is down and admins would never see the warning —
+  // page them over the independent SMS channel instead. `deduplicated` and
+  // in-flight outcomes do NOT count as failures (a racing instance owns that
+  // delivery and evaluates its own fallback), so the fallback fires only when
+  // the primary email path actually failed.
+  const brevoResults = results.filter((_, index) => sends[index]?.provider === "brevo");
+  const brevoSequences = sends.filter((send) => send.provider === "brevo").map((send) => send.sequence);
+  let smsFallback = emptySmsFallbackSummary();
+  if (brevoResults.length && brevoResults.every(emailFailedOrSkipped)) {
+    smsFallback = await sendSilenceAlertSmsFallback({
+      // The highest alert sequence attempted this tick identifies the current
+      // cooldown window deterministically across racing instances (they read
+      // the same history), so their SMS eventKeys collide in the outbox.
+      sequence: Math.max(...brevoSequences),
+      status: statuses.brevo,
+      admins: recipients,
+      smsProvider,
+    });
+  }
+
   return {
     staleProviders,
     recipientCount: recipients.length,
@@ -240,7 +296,20 @@ export async function runDeliveryReportSilenceAlerts(
     cooldownSuppressedCount,
     failedDeliveryCount,
     skippedDeliveryCount,
+    smsFallback,
   };
+}
+
+export interface SmsFallbackSummary {
+  /** True when the brevo alert email failed/skipped for every attempted recipient. */
+  triggered: boolean;
+  /** Administrators with a phone number on file (fallback audience). */
+  recipientCount: number;
+  attemptedEventKeys: string[];
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  deduplicatedCount: number;
 }
 
 /**
@@ -416,4 +485,92 @@ export async function runDeliveryReportRecoveryAlerts(
     failedDeliveryCount,
     skippedDeliveryCount,
   };
+}
+
+function emptySmsFallbackSummary(): SmsFallbackSummary {
+  return {
+    triggered: false,
+    recipientCount: 0,
+    attemptedEventKeys: [],
+    sentCount: 0,
+    failedCount: 0,
+    skippedCount: 0,
+    deduplicatedCount: 0,
+  };
+}
+
+/**
+ * Page administrators over SMS because the brevo silence-alert email could
+ * not be sent to anyone (total email outage). Reuses the durable SMS outbox
+ * (sendSms): the eventKey embeds the alert sequence of the current cooldown
+ * window, so repeats and racing instances collapse onto one unique
+ * sms_deliveries row per admin per window — the fallback can never spam.
+ * Never throws — individual send outcomes are tallied and logged.
+ */
+async function sendSilenceAlertSmsFallback(input: {
+  sequence: number;
+  status: DeliveryReportStatus;
+  admins: { email: string; phone: string | null }[];
+  smsProvider?: SmsProvider;
+}): Promise<SmsFallbackSummary> {
+  const label = DELIVERY_REPORT_PROVIDER_LABELS.brevo;
+  const phoneAdmins = input.admins.filter(
+    (admin): admin is { email: string; phone: string } => !!admin.phone && admin.phone.trim().length > 0,
+  );
+  if (!phoneAdmins.length) {
+    logger.warn(
+      { provider: "brevo", sequence: input.sequence },
+      "Delivery-report silence alert email failed for every administrator and no administrator has a phone number for the SMS fallback",
+    );
+    return { ...emptySmsFallbackSummary(), triggered: true };
+  }
+
+  const text = `LUMERA upozorenje: izveštaji o isporuci ne stižu (${label}), a upozorenje e-poštom nije moglo da se pošalje (slanje e-pošte ne radi). Proverite Integracije u admin panelu.`;
+  const attemptedEventKeys: string[] = [];
+  const sends = phoneAdmins.map((admin) => {
+    const recipientKey = createHash("sha256")
+      .update(admin.phone.replace(/\s+/g, ""))
+      .digest("hex")
+      .slice(0, 16);
+    const eventKey = `${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:brevo:${recipientKey}:${input.sequence}`;
+    attemptedEventKeys.push(eventKey);
+    return sendSms({
+      eventKey,
+      salonId: null,
+      appointmentId: null,
+      type: "admin_alert",
+      phone: admin.phone,
+      text,
+    }, input.smsProvider);
+  });
+  const results = await Promise.allSettled(sends);
+
+  const has = (key: "skipped" | "deduplicated" | "failed") => (result: (typeof results)[number]) =>
+    result.status === "fulfilled" && key in result.value && (result.value as Record<string, unknown>)[key] === true;
+  const summary: SmsFallbackSummary = {
+    triggered: true,
+    recipientCount: phoneAdmins.length,
+    attemptedEventKeys,
+    sentCount: results.filter(
+      (result) => result.status === "fulfilled" && "messageId" in result.value,
+    ).length,
+    failedCount: results.filter(
+      (result) => result.status === "rejected" || has("failed")(result),
+    ).length,
+    skippedCount: results.filter(has("skipped")).length,
+    deduplicatedCount: results.filter(has("deduplicated")).length,
+  };
+
+  if (summary.failedCount || summary.skippedCount) {
+    logger.warn(
+      { provider: "brevo", sequence: input.sequence, ...summary, attemptedEventKeys: undefined },
+      "Delivery-report silence SMS fallback did not reach every administrator",
+    );
+  } else if (summary.sentCount) {
+    logger.warn(
+      { provider: "brevo", sequence: input.sequence, recipientCount: summary.recipientCount, sentCount: summary.sentCount },
+      "Delivery-report silence alert emails all failed — SMS fallback sent to administrators",
+    );
+  }
+  return summary;
 }

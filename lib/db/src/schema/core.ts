@@ -46,6 +46,9 @@ export const smsMessageTypeEnum = pgEnum("sms_message_type", [
   "education_waitlist_offer",
   "education_session_cancelled",
   "automation",
+  // Platform-level administrator alert (e.g. the delivery-report silence
+  // fallback SMS when alert emails cannot be sent). Not tied to any salon.
+  "admin_alert",
 ]);
 export const integrationKeyEnum = pgEnum("integration_key", ["sms", "brevo", "google_oauth", "facebook_oauth"]);
 export const imageAssetStatusEnum = pgEnum("image_asset_status", ["pending", "processing", "ready", "failed"]);
