@@ -396,16 +396,43 @@ export default function OwnerAutomations() {
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>(initialSelection.period);
   const [customRange, setCustomRange] = useState<DateRange | undefined>(initialSelection.range);
 
+  // Deep link into one campaign's detailed stats: ?rule=<id> mirrors the open
+  // dialog. An id arriving from a shared URL is held as "pending" until the
+  // rules list loads, then validated — an unknown/stale id is dropped silently
+  // so the shared link degrades to the overview instead of a dialog that can
+  // only error.
+  const [statsRuleId, setStatsRuleId] = useState<string | null>(null);
+  const [pendingRuleId, setPendingRuleId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get("rule"),
+  );
+
+  useEffect(() => {
+    if (pendingRuleId === null || !rules) return;
+    if (rules.some((rule: any) => rule.id === pendingRuleId)) {
+      setStatsRuleId(pendingRuleId);
+    }
+    setPendingRuleId(null);
+  }, [pendingRuleId, rules]);
+
   // Mirror the complete selection into the query string so the view is
   // bookmarkable and shareable. Incomplete custom ranges are not written
-  // (nothing valid to restore yet); the default "all time" keeps a clean URL,
-  // which also strips invalid params that fell back to the default.
+  // (`null`: nothing valid to restore yet, so the URL must not change); the
+  // default "all time" keeps a clean URL, which also strips invalid params
+  // that fell back to the default. The open stats dialog rides along as
+  // ?rule= (kept while a shared id still awaits validation) so the exact
+  // view is shareable.
   useEffect(() => {
-    const next = serializePeriodSelection(searchString, statsPeriod, customRange);
-    if (next !== null && next !== searchString) {
+    const serialized = serializePeriodSelection(searchString, statsPeriod, customRange);
+    if (serialized === null) return;
+    const params = new URLSearchParams(serialized);
+    params.delete("rule");
+    const urlRuleId = statsRuleId ?? pendingRuleId;
+    if (urlRuleId) params.set("rule", urlRuleId);
+    const next = params.toString();
+    if (next !== searchString) {
       setLocation(`${pathname}${next ? `?${next}` : ""}`, { replace: true });
     }
-  }, [statsPeriod, customRange, searchString, pathname, setLocation]);
+  }, [statsPeriod, customRange, statsRuleId, pendingRuleId, searchString, pathname, setLocation]);
 
   // Custom mode queries with exact from/to dates; presets use ?period=.
   // While a custom range is incomplete (only start picked) there is nothing
@@ -451,7 +478,6 @@ export default function OwnerAutomations() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentRuleId, setCurrentRuleId] = useState<string | null>(null);
-  const [statsRuleId, setStatsRuleId] = useState<string | null>(null);
 
   // The dialog mirrors the overview request (compare=previous for bounded
   // preset periods only) so it shows the same trends; custom ranges and
@@ -1069,4 +1095,3 @@ export default function OwnerAutomations() {
     </BusinessLayout>
   );
 }
-
