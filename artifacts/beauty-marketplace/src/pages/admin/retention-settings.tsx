@@ -31,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight, Store } from "lucide-react";
+import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight, Store, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { format } from "date-fns";
@@ -485,7 +485,16 @@ export default function AdminRetentionSettings() {
                           className="text-sm text-muted-foreground flex items-center gap-1.5"
                           data-testid={`retention-preview-salon-${salon.salonId}`}
                         >
-                          <span className="text-foreground">{salon.salonName}</span>
+                          <a
+                            href={`${import.meta.env.BASE_URL}admin/saloni/${salon.salonId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-foreground hover:text-primary hover:underline inline-flex items-center gap-1"
+                            data-testid={`retention-preview-salon-link-${salon.salonId}`}
+                          >
+                            {salon.salonName}
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                          </a>
                           <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
                           {salon.reclassifiedCount === 1 ? "klijent menja status" : "klijenata menja status"}
                         </li>
