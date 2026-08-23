@@ -9,7 +9,7 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, gte, inArray, isNull, lte, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, notInArray, sql, type SQL } from "drizzle-orm";
 import {
   db,
   automationRulesTable,
@@ -909,11 +909,12 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
 
-    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
-    if (cutoff === undefined) {
-      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+    const parsedWindow = parseStatsWindow(req.query);
+    if ("error" in parsedWindow) {
+      res.status(400).json({ error: parsedWindow.error, code: "VALIDATION" });
       return;
     }
+    const { window } = parsedWindow;
 
     let limit = ATTRIBUTED_APPOINTMENTS_DEFAULT_LIMIT;
     if (req.query["limit"] !== undefined) {
@@ -947,15 +948,16 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     // Inner joins drop runs without an attributed appointment, and cancelled
     // appointments are excluded exactly like the stats endpoints, so `total`
     // matches the attributedAppointments count shown above the list.
+    // salon_customers is left-joined: walk-in/legacy appointments may have a
+    // null salonCustomerId, in which case the client name fields stay null.
     const attributedAppointmentJoin = and(
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
       ne(appointmentsTable.status, "cancelled"),
     );
     // Same run-window filter as the stats endpoints, so the paginated total
     // agrees with the attributedAppointments count for every period choice.
-    const runScope = cutoff
-      ? and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(cutoff))
-      : eq(automationRunsTable.ruleId, rule.id);
+    // statsRunPeriodCondition returns undefined for all time; and() drops it.
+    const runScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window));
 
     const [countRow] = await db
       .select({ total: sql<number>`count(*)::int` })
@@ -972,10 +974,13 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
         date: appointmentsTable.date,
         serviceName: servicesTable.name,
         price: appointmentsTable.price,
+        clientFirstName: salonCustomersTable.firstName,
+        clientLastName: salonCustomersTable.lastName,
       })
       .from(automationRunsTable)
       .innerJoin(appointmentsTable, attributedAppointmentJoin)
       .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .leftJoin(salonCustomersTable, eq(salonCustomersTable.id, appointmentsTable.salonCustomerId))
       .where(runScope)
       .orderBy(desc(appointmentsTable.date), desc(appointmentsTable.startTime), desc(appointmentsTable.id))
       .limit(limit)

@@ -3709,6 +3709,14 @@ paths:
           in: query
           description: Time window for run attribution, matching the stats endpoints (defaults to all time)
           schema: { type: string, enum: [7d, 30d, 90d, all] }
+        - name: from
+          in: query
+          description: Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+          schema: { type: string, format: date }
         - name: limit
           in: query
           description: Page size (defaults to 25, maximum 100)
@@ -6917,7 +6925,13 @@ components:
         price:
           type: number
           description: Appointment price in RSD.
-      required: [appointmentId, date, serviceName, price]
+        clientFirstName:
+          type: ["string", "null"]
+          description: First name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+        clientLastName:
+          type: ["string", "null"]
+          description: Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+      required: [appointmentId, date, serviceName, price, clientFirstName, clientLastName]
 
     AutomationAttributedAppointmentsPage:
       type: object

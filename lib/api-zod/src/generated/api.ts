@@ -9141,7 +9141,9 @@ export const OwnerGetAutomationStatsParams = zod.object({
 })
 
 export const OwnerGetAutomationStatsQueryParams = zod.object({
-  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)')
+  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
+  "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
+  "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period')
 })
 
 export const OwnerGetAutomationStatsResponse = zod.object({
@@ -9184,6 +9186,8 @@ export const ownerListAutomationAttributedAppointmentsQueryOffsetMin = 0;
 
 export const OwnerListAutomationAttributedAppointmentsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run attribution, matching the stats endpoints (defaults to all time)'),
+  "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
+  "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
   "limit": zod.coerce.number().int().min(1).max(ownerListAutomationAttributedAppointmentsQueryLimitMax).optional().describe('Page size (defaults to 25, maximum 100)'),
   "offset": zod.coerce.number().int().min(ownerListAutomationAttributedAppointmentsQueryOffsetMin).optional().describe('Number of rows to skip (defaults to 0)')
 })
@@ -9193,7 +9197,9 @@ export const OwnerListAutomationAttributedAppointmentsResponse = zod.object({
   "appointmentId": zod.string(),
   "date": zod.string().describe('Appointment date (YYYY-MM-DD)'),
   "serviceName": zod.string(),
-  "price": zod.number().describe('Appointment price in RSD.')
+  "price": zod.number().describe('Appointment price in RSD.'),
+  "clientFirstName": zod.string().nullable().describe('First name of the salon client who booked the appointment; null when the appointment has no linked salon customer.'),
+  "clientLastName": zod.string().nullable().describe('Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.')
 })),
   "total": zod.number().describe('Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count.'),
   "limit": zod.number().describe('Page size actually applied by the server.'),
@@ -9206,6 +9212,8 @@ export const OwnerListAutomationAttributedAppointmentsResponse = zod.object({
  */
 export const OwnerListAutomationStatsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
+  "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
+  "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
   "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).')
 })
 
@@ -9845,7 +9853,7 @@ export const AdminGetRetentionSettingsResponse = zod.object({
 
 
 /**
- * @summary Update platform retention thresholds (admin); records an audited new version
+ * @summary Update platform retention thresholds (admin); records an audited new version. Requires the expected active version (optimistic concurrency) — a stale version is rejected with 409.
  */
 export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMax = 365;
 export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMultipleOf = 1;
@@ -9873,6 +9881,9 @@ export const adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleO
 
 export const adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf = 1;
 
+export const adminUpdateRetentionSettingsBodyTwoExpectedVersionMin = 0;
+export const adminUpdateRetentionSettingsBodyTwoExpectedVersionMultipleOf = 1;
+
 
 
 export const AdminUpdateRetentionSettingsBody = zod.object({
@@ -9885,7 +9896,8 @@ export const AdminUpdateRetentionSettingsBody = zod.object({
   "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
 }).and(zod.object({
   "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).optional().describe('How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults'),
-  "restoredFromVersion": zod.number().min(1).multipleOf(adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf).optional().describe('Version whose values are being restored; only allowed (and required) when changeSource is restore_version')
+  "restoredFromVersion": zod.number().min(1).multipleOf(adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf).optional().describe('Version whose values are being restored; only allowed (and required) when changeSource is restore_version'),
+  "expectedVersion": zod.number().min(adminUpdateRetentionSettingsBodyTwoExpectedVersionMin).multipleOf(adminUpdateRetentionSettingsBodyTwoExpectedVersionMultipleOf).describe('Active settings version this edit was based on (0 = platform defaults); the server rejects with 409 when a newer version exists')
 }))
 
 export const adminUpdateRetentionSettingsResponseThresholdsNewCustomerWindowDaysMax = 365;

@@ -13,4 +13,14 @@ export interface AutomationAttributedAppointment {
   serviceName: string;
   /** Appointment price in RSD. */
   price: number;
+  /**
+     * First name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  clientFirstName: string | null;
+  /**
+     * Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  clientLastName: string | null;
 }

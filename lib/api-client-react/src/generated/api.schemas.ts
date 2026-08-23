@@ -3906,6 +3906,16 @@ export interface AutomationAttributedAppointment {
   serviceName: string;
   /** Appointment price in RSD. */
   price: number;
+  /**
+     * First name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  clientFirstName: string | null;
+  /**
+     * Last name of the salon client who booked the appointment; null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  clientLastName: string | null;
 }
 
 export interface AutomationAttributedAppointmentsPage {
@@ -3917,6 +3927,7 @@ export interface AutomationAttributedAppointmentsPage {
   /** Offset actually applied by the server. */
   offset: number;
 }
+
 /**
  * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
  */
@@ -4476,12 +4487,7 @@ export const RetentionSettingsHistoryEntryChangeSource = {
   restore_version: 'restore_version',
   restore_defaults: 'restore_defaults',
 } as const;
-export const OwnerListAutomationAttributedAppointmentsPeriod = {
-  '7d': '7d',
-  '30d': '30d',
-  '90d': '90d',
-  all: 'all',
-} as const;
+
 export interface RetentionSettingsHistoryEntry {
   version: number;
   thresholds: RetentionThresholds;
@@ -5169,6 +5175,14 @@ export type OwnerListAutomationAttributedAppointmentsParams = {
  */
 period?: OwnerListAutomationAttributedAppointmentsPeriod;
 /**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: string;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: string;
+/**
  * Page size (defaults to 25, maximum 100)
  * @minimum 1
  * @maximum 100
@@ -5182,6 +5196,15 @@ offset?: number;
 };
 
 export type OwnerListAutomationAttributedAppointmentsPeriod = typeof OwnerListAutomationAttributedAppointmentsPeriod[keyof typeof OwnerListAutomationAttributedAppointmentsPeriod];
+
+
+export const OwnerListAutomationAttributedAppointmentsPeriod = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  all: 'all',
+} as const;
+
 export type OwnerListAutomationStatsParams = {
 /**
  * Time window for run/delivery aggregation (defaults to all time)

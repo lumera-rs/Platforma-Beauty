@@ -25,11 +25,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
-import { useState, useMemo, useEffect } from "react";
+import type { AutomationAttributedAppointment } from "@workspace/api-client-react";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -412,13 +412,15 @@ export default function OwnerAutomations() {
   const [attributedItems, setAttributedItems] = useState<AutomationAttributedAppointment[]>([]);
   const [attributedTotal, setAttributedTotal] = useState<number | null>(null);
 
+  // The drill-down follows the same window as the stats above it: preset
+  // periods send ?period=, a complete custom range sends ?from=&?to=.
   const { data: attributedPage, isLoading: isAttributedLoading, isFetching: isAttributedFetching } = useOwnerListAutomationAttributedAppointments(
     statsRuleId ?? "",
-    { period: statsPeriod, limit: ATTRIBUTED_PAGE_SIZE, offset: attributedOffset },
+    { ...activeStatsParams, limit: ATTRIBUTED_PAGE_SIZE, offset: attributedOffset },
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-attributed-appointments', statsRuleId, statsPeriod, attributedOffset]
+        queryKey: ['owner-automation-attributed-appointments', statsRuleId, activeStatsParams, attributedOffset]
       }
     }
   );
@@ -429,7 +431,7 @@ export default function OwnerAutomations() {
     setAttributedOffset(0);
     setAttributedItems([]);
     setAttributedTotal(null);
-  }, [statsRuleId, statsPeriod]);
+  }, [statsRuleId, activeStatsParams]);
 
   // Merge each arriving page at its offset — idempotent if a page refetches.
   useEffect(() => {
@@ -809,7 +811,15 @@ export default function OwnerAutomations() {
                         <div key={appt.appointmentId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-testid={`attributed-appointment-${appt.appointmentId}`}>
                           <div className="min-w-0">
                             <p className="font-medium truncate">{appt.serviceName}</p>
-                            <p className="text-xs text-muted-foreground">{new Date(appt.date).toLocaleDateString("sr-RS")}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(appt.date).toLocaleDateString("sr-RS")}
+                              {" · "}
+                              <span data-testid={`attributed-appointment-client-${appt.appointmentId}`}>
+                                {appt.clientFirstName || appt.clientLastName
+                                  ? [appt.clientFirstName, appt.clientLastName].filter(Boolean).join(" ")
+                                  : "Nepoznat klijent"}
+                              </span>
+                            </p>
                           </div>
                           <span className="font-semibold text-emerald-800 whitespace-nowrap">{appt.price.toLocaleString("sr-RS")} RSD</span>
                         </div>

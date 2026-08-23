@@ -13,6 +13,14 @@ export type OwnerListAutomationAttributedAppointmentsParams = {
  */
 period?: OwnerListAutomationAttributedAppointmentsPeriod;
 /**
+ * Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+from?: Date;
+/**
+ * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
+ */
+to?: Date;
+/**
  * Page size (defaults to 25, maximum 100)
  * @minimum 1
  * @maximum 100
