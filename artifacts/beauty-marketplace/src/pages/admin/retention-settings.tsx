@@ -704,8 +704,9 @@ export default function AdminRetentionSettings() {
 
                 {preview.isEstimate && (
                   <p className="text-xs text-muted-foreground italic" data-testid="retention-preview-no-salons-note">
-                    Pregled najpogođenijih salona nije dostupan u proceni — uzorak je premali za
-                    pouzdane brojeve po pojedinačnom salonu.
+                    {preview.shareRankingMinCustomers !== undefined && preview.shareRankingMinCustomers !== null
+                      ? `Podešeni prag od najmanje ${preview.shareRankingMinCustomers.toLocaleString("sr-Latn-RS")} klijenata i dalje važi za tačna rangiranja po salonu, ali uzorkovani pregled ne prikazuje rangiranja po salonima — uzorak je premali za pouzdane brojeve po pojedinačnom salonu.`
+                      : "Rangiranja po salonima nisu dostupna u uzorkovanoj proceni — uzorak je premali za pouzdane brojeve po pojedinačnom salonu."}
                   </p>
                 )}
                 {preview.topAffectedSalons.length > 0 && (
