@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 13;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 14;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -184,6 +184,79 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    // v14: PostgreSQL's legacy unique index treated NULL variant values as
+    // distinct. Merge those duplicate no-variant cart lines before replacing
+    // it, so the stricter invariant preserves each cart's aggregate quantity.
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1
+         FROM pg_index index_definition
+         JOIN pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+         JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+         WHERE index_schema.nspname = current_schema()
+           AND index_relation.relname = 'retail_cart_items_cart_product_variant_unique'
+           AND NOT index_definition.indnullsnotdistinct
+       ) THEN
+         IF EXISTS (
+           SELECT 1
+           FROM ${s}.retail_cart_items
+           WHERE variant_value IS NULL
+           GROUP BY cart_id, product_id
+           HAVING sum(quantity)::bigint > 2147483647
+         ) THEN
+           RAISE EXCEPTION 'Cannot consolidate duplicate retail cart items: aggregate quantity exceeds integer range';
+         END IF;
+
+         WITH ranked_items AS (
+           SELECT
+             id,
+             sum(quantity) OVER (PARTITION BY cart_id, product_id) AS aggregate_quantity,
+             row_number() OVER (PARTITION BY cart_id, product_id ORDER BY created_at, id) AS row_number
+           FROM ${s}.retail_cart_items
+           WHERE variant_value IS NULL
+         )
+         UPDATE ${s}.retail_cart_items AS item
+         SET quantity = ranked_items.aggregate_quantity::integer,
+             updated_at = now()
+         FROM ranked_items
+         WHERE item.id = ranked_items.id
+           AND ranked_items.row_number = 1;
+
+         WITH ranked_items AS (
+           SELECT
+             id,
+             row_number() OVER (PARTITION BY cart_id, product_id ORDER BY created_at, id) AS row_number
+           FROM ${s}.retail_cart_items
+           WHERE variant_value IS NULL
+         )
+         DELETE FROM ${s}.retail_cart_items AS item
+         USING ranked_items
+         WHERE item.id = ranked_items.id
+           AND ranked_items.row_number > 1;
+
+         IF EXISTS (
+           SELECT 1
+           FROM pg_constraint constraint_definition
+           JOIN pg_namespace constraint_schema ON constraint_schema.oid = constraint_definition.connamespace
+           WHERE constraint_schema.nspname = current_schema()
+             AND constraint_definition.conname = 'retail_cart_items_cart_product_variant_unique'
+         ) THEN
+           EXECUTE format(
+             'ALTER TABLE %I.%I DROP CONSTRAINT %I',
+             current_schema(),
+             'retail_cart_items',
+             'retail_cart_items_cart_product_variant_unique'
+           );
+         ELSE
+           EXECUTE format(
+             'DROP INDEX %I.%I',
+             current_schema(),
+             'retail_cart_items_cart_product_variant_unique'
+           );
+         END IF;
+       END IF;
+     END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS retail_cart_items_cart_product_variant_unique
        ON ${s}.retail_cart_items (cart_id, product_id, variant_value) NULLS NOT DISTINCT`,
     `CREATE INDEX IF NOT EXISTS retail_cart_items_cart_idx ON ${s}.retail_cart_items (cart_id)`,

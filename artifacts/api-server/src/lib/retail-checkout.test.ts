@@ -340,6 +340,7 @@ test("updating one duplicate cart row cannot exceed the product's aggregate stoc
   await db.insert(retailCartItemsTable).values({
     cartId: cart.id,
     productId: createdProductId,
+    variantValue: "test-duplicate",
     productName: "Duplicirana retail stavka",
     productImageUrl: "/retail-checkout-test.jpg",
     unitPrice: 2_000,
@@ -367,6 +368,7 @@ test("duplicate cart rows cannot create a quote or order above aggregate stock",
   await db.insert(retailCartItemsTable).values({
     cartId: cart.id,
     productId: createdProductId,
+    variantValue: "test-duplicate",
     productName: "Duplicirana retail stavka",
     productImageUrl: "/retail-checkout-test.jpg",
     unitPrice: 2_000,

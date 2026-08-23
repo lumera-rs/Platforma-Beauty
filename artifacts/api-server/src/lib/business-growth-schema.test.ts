@@ -65,6 +65,30 @@ async function seedLegacySchema(schema: string) {
     active boolean NOT NULL DEFAULT true,
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
+  // Legacy retail carts used a unique index that treated NULL variant values as
+  // distinct, so the same un-varianted product could be stored twice.
+  await q(`CREATE TABLE "${schema}".retail_carts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    token_hash text NOT NULL UNIQUE,
+    user_id uuid REFERENCES "${schema}".users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await q(`CREATE TABLE "${schema}".retail_cart_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_id uuid NOT NULL REFERENCES "${schema}".retail_carts(id) ON DELETE CASCADE,
+    product_id uuid NOT NULL REFERENCES "${schema}".products(id) ON DELETE CASCADE,
+    variant_value text,
+    product_name text NOT NULL,
+    product_image_url text NOT NULL,
+    unit_price integer NOT NULL,
+    quantity integer NOT NULL,
+    weight_grams integer NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  await q(`CREATE UNIQUE INDEX retail_cart_items_cart_product_variant_unique
+    ON "${schema}".retail_cart_items (cart_id, product_id, variant_value)`);
   // Existing core commerce dependency used by phase-3 inventory movements.
   await q(`CREATE TABLE "${schema}".orders (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid()
@@ -148,6 +172,20 @@ async function seedLegacySchema(schema: string) {
   const service = (await q<{ id: string }>(`INSERT INTO "${schema}".services (salon_id, name) VALUES ($1, 'Svc') RETURNING id`, [salon.id])).rows[0]!;
   const customer = (await q<{ id: string }>(`INSERT INTO "${schema}".salon_customers (salon_id, display_name) VALUES ($1, 'Cust') RETURNING id`, [salon.id])).rows[0]!;
   const appointment = (await q<{ id: string }>(`INSERT INTO "${schema}".appointments (salon_id) VALUES ($1) RETURNING id`, [salon.id])).rows[0]!;
+  const retailProduct = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".products (name, description) VALUES ('Legacy retail product', 'Legacy retail description') RETURNING id`,
+  )).rows[0]!;
+  const retailCart = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".retail_carts (token_hash) VALUES ('legacy-retail-cart') RETURNING id`,
+  )).rows[0]!;
+  await q(
+    `INSERT INTO "${schema}".retail_cart_items
+       (cart_id, product_id, product_name, product_image_url, unit_price, quantity)
+     VALUES
+       ($1, $2, 'Legacy retail product', '/legacy-retail.jpg', 1000, 2),
+       ($1, $2, 'Legacy retail product', '/legacy-retail.jpg', 1000, 3)`,
+    [retailCart.id, retailProduct.id],
+  );
   await q(`INSERT INTO "${schema}".reviews (salon_id, customer_id, service_name, rating, text) VALUES ($1, $2, 'Svc', 5, 'Great')`, [salon.id, user.id]);
   // Legacy row uses an OLD message_type label (automation did not exist yet).
   await q(`INSERT INTO "${schema}".sms_deliveries (event_key, salon_id, message_type, recipient_phone, body, status) VALUES ('legacy-sms-1', $1, 'appointment_confirmation', '+381600000000', 'Zdravo', 'sent')`, [salon.id]);
@@ -167,7 +205,7 @@ async function seedLegacySchema(schema: string) {
     [user.id],
   );
 
-  return { salon, user, employee, service, customer, appointment };
+  return { salon, user, employee, service, customer, appointment, retailCart, retailProduct };
 }
 
 async function run() {
@@ -197,6 +235,19 @@ async function run() {
     assert.equal(custCount, "1", "legacy salon_customers row preserved");
     const emailCount = (await q<{ n: string }>(`SELECT count(*)::text AS n FROM "${s}".email_deliveries`)).rows[0]!.n;
     assert.equal(emailCount, "1", "legacy email_deliveries row preserved");
+    const consolidatedRetailItems = (await q<{ quantity: number }>(
+      `SELECT quantity
+       FROM "${s}".retail_cart_items
+       WHERE cart_id = $1
+         AND product_id = $2
+         AND variant_value IS NULL`,
+      [fixtures.retailCart.id, fixtures.retailProduct.id],
+    )).rows;
+    assert.deepEqual(
+      consolidatedRetailItems,
+      [{ quantity: 5 }],
+      "legacy duplicate null-variant cart lines consolidate without losing quantity",
+    );
 
     // ── Enum now accepts `processing` ──────────────────────────────────────
     const enumLabels = (await q<{ enumlabel: string }>(
@@ -337,6 +388,7 @@ async function run() {
       "reviews_employee_visible_idx",
       "products_retail_active_created_idx",
       "products_professional_active_created_idx",
+      "retail_cart_items_cart_product_variant_unique",
       "sms_deliveries_claim_expiry_idx",
       "automation_runs_cooldown_idx",
       "automation_deliveries_claim_expiry_idx",
@@ -349,6 +401,30 @@ async function run() {
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
+    const retailCartUniqueIndex = (await q<{ indnullsnotdistinct: boolean }>(
+      `SELECT index_definition.indnullsnotdistinct
+       FROM pg_index index_definition
+       JOIN pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+       JOIN pg_namespace index_schema ON index_schema.oid = index_relation.relnamespace
+       WHERE index_schema.nspname = $1
+         AND index_relation.relname = 'retail_cart_items_cart_product_variant_unique'`,
+      [s],
+    )).rows[0];
+    assert.equal(
+      retailCartUniqueIndex?.indnullsnotdistinct,
+      true,
+      "retail cart uniqueness treats a NULL variant value as a real cart-line key",
+    );
+    await assert.rejects(
+      q(
+        `INSERT INTO "${s}".retail_cart_items
+           (cart_id, product_id, product_name, product_image_url, unit_price, quantity)
+         VALUES ($1, $2, 'Legacy retail product', '/legacy-retail.jpg', 1000, 1)`,
+        [fixtures.retailCart.id, fixtures.retailProduct.id],
+      ),
+      /duplicate key|unique/i,
+      "the rollout rejects a second null-variant line for the same product and cart",
+    );
 
     // ── Public product rollout query proof ─────────────────────────────────
     // Insert both an approved public product and a private B2B product after

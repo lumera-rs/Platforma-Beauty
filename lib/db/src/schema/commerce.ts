@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -323,7 +324,9 @@ export const retailCartItemsTable = pgTable("retail_cart_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("retail_cart_items_cart_product_variant_unique").on(table.cartId, table.productId, table.variantValue),
+  unique("retail_cart_items_cart_product_variant_unique")
+    .on(table.cartId, table.productId, table.variantValue)
+    .nullsNotDistinct(),
   index("retail_cart_items_cart_idx").on(table.cartId),
   index("retail_cart_items_product_idx").on(table.productId),
 ]);
