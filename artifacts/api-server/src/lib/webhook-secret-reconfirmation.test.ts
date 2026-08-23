@@ -227,6 +227,22 @@ async function run() {
       assert.equal(saved.webhookSecretPendingReconfirmation, true, "changed brevo secret raises the reminder");
 
       const registeredUrl = `${prodOrigin}/api/webhooks/brevo/${encodeURIComponent(brevoSecret)}`;
+
+      // A production registration with the current URL and secret is still
+      // incomplete when it subscribes to only one event. It must not clear
+      // the persisted reminder until every consumed event is covered.
+      brevoQueue.push({
+        method: "GET", pathIncludes: "/webhooks?type=transactional", status: 200,
+        body: [{ id: 489, url: registeredUrl, events: ["delivered"] }],
+      });
+      const incomplete = await verifyBrevoRegistration(prodHost);
+      assert.equal(incomplete.response.status, 409,
+        `incomplete production registration must remain unsuccessful: ${incomplete.response.raw}`);
+      assert.ok(incomplete.body.error?.includes("ne prati sve potrebne događaje"),
+        `incomplete registration must explain the missing event coverage: ${incomplete.response.raw}`);
+      assert.equal((await getCards())["brevo"]?.webhookSecretPendingReconfirmation, true,
+        "incomplete production registration must keep the reminder visible after a fresh integrations read");
+
       brevoQueue.push({
         method: "GET", pathIncludes: "/webhooks?type=transactional", status: 200,
         body: [{ id: 490, url: registeredUrl, events: [...BREVO_WEBHOOK_EVENTS] }],
