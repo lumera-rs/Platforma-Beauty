@@ -52,6 +52,42 @@ function toDateParam(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * One-click shortcuts for the most common custom windows. Each returns an
+ * inclusive local-calendar range (same semantics as manual picking, which
+ * `toDateParam` then serializes without UTC conversion). "This month" and
+ * "last 14 days" end today because future days are not selectable anyway.
+ */
+const rangePresets: { key: string; label: string; getRange: () => DateRange }[] = [
+  {
+    key: "last-month",
+    label: "Prošli mesec",
+    getRange: () => {
+      const now = new Date();
+      return {
+        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+        to: new Date(now.getFullYear(), now.getMonth(), 0),
+      };
+    },
+  },
+  {
+    key: "this-month",
+    label: "Ovaj mesec",
+    getRange: () => {
+      const now = new Date();
+      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: now };
+    },
+  },
+  {
+    key: "last-14d",
+    label: "Poslednjih 14 dana",
+    getRange: () => {
+      const now = new Date();
+      return { from: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13), to: now };
+    },
+  },
+];
+
 function formatRangeLabel(range: DateRange | undefined): string | null {
   if (!range?.from || !range?.to) return null;
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
@@ -213,6 +249,22 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="end">
+                <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid="overview-range-presets">
+                  {rangePresets.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      data-testid={`range-preset-${preset.key}`}
+                      className="px-2 py-1 rounded-md border bg-muted/30 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      onClick={() => {
+                        onCustomRangeChange(preset.getRange());
+                        setRangeOpen(false);
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
                 <Calendar
                   mode="range"
                   numberOfMonths={1}
