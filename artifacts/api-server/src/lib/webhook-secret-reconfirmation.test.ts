@@ -40,7 +40,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, integrationSettingsTable, pool, usersTable } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { integrationSettings } from "./integrations";
+import { integrationSettings, markWebhookReconfirmed, webhookVerificationIsStale, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS } from "./integrations";
 import { BREVO_WEBHOOK_EVENTS } from "./brevo";
 
 const suffix = randomUUID().slice(0, 8);
@@ -66,7 +66,7 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
   return realFetch(input, init);
 }) as typeof fetch;
 
-type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null };
+type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
 
 async function run() {
   const server = app.listen(0, "127.0.0.1");
@@ -88,6 +88,12 @@ async function run() {
   process.env["BREVO_API_KEY"] ??= `wsr-fake-api-key-${suffix}`;
 
   try {
+    const now = new Date("2026-08-23T12:00:00.000Z");
+    const exactlyAtLimit = new Date(now.getTime() - WEBHOOK_CONFIRMATION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+    assert.equal(webhookVerificationIsStale(null, now), false, "never-confirmed webhook is not classified as an old confirmation");
+    assert.equal(webhookVerificationIsStale(new Date(now.getTime() - 60_000), now), false, "confirmation inside the safe age is fresh");
+    assert.equal(webhookVerificationIsStale(exactlyAtLimit, now), true, "confirmation exactly at the safe-age boundary is stale");
+
     const [admin] = await db.insert(usersTable).values({
       firstName: "Admin", lastName: "WSR",
       email: `wsr-admin-${suffix}@bg.test`, passwordHash: await hashPassword(`wsr-admin-${suffix}`),
@@ -157,6 +163,10 @@ async function run() {
       assert.equal(cards["brevo"]?.webhookSecretPendingReconfirmation, false, "brevo baseline: no reminder");
       assert.equal(cards["sms"]?.webhookVerifiedAt, null, "sms baseline: no successful confirmation");
       assert.equal(cards["brevo"]?.webhookVerifiedAt, null, "brevo baseline: no successful confirmation");
+      assert.equal(cards["sms"]?.webhookVerificationStale, false, "never-confirmed SMS is distinct from stale");
+      assert.equal(cards["brevo"]?.webhookVerificationStale, false, "never-confirmed Brevo is distinct from stale");
+      assert.equal(cards["sms"]?.webhookConfirmationMaxAgeDays, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, "SMS exposes the shared confirmation age");
+      assert.equal(cards["brevo"]?.webhookConfirmationMaxAgeDays, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, "Brevo exposes the shared confirmation age");
       assert.ok(!("webhookSecretPendingReconfirmation" in (cards["google_oauth"] ?? {})),
         "OAuth cards never carry the webhook reminder flag");
       assert.ok(!("webhookVerifiedAt" in (cards["google_oauth"] ?? {})),
@@ -193,11 +203,25 @@ async function run() {
       assert.equal(cards["sms"]?.webhookSecretPendingReconfirmation, false,
         "a successful self-check must clear the persisted reminder");
       assert.ok(cards["sms"]?.webhookVerifiedAt, "successful self-check exposes its confirmation timestamp");
+      assert.equal(cards["sms"]?.webhookVerificationStale, false, "a successful self-check is fresh");
       assert.ok(!Number.isNaN(new Date(cards["sms"]!.webhookVerifiedAt!).getTime()), "confirmation timestamp is ISO date-like");
       console.log("✓ successful self-check clears the reminder persistently");
     }
 
-    // ── 5. Re-saving the SAME confirmed secret never re-raises the flag ────
+    // ── 5. An old confirmation warns, but never-confirmed stays separate ───
+    {
+      await markWebhookReconfirmed("sms", admin.id, new Date(Date.now() - (WEBHOOK_CONFIRMATION_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000));
+      const cards = await getCards();
+      assert.equal(cards["sms"]?.webhookVerificationStale, true, "an old SMS confirmation is surfaced as stale");
+      assert.ok(cards["sms"]?.webhookVerifiedAt, "stale confirmations retain their timestamp");
+      assert.equal(cards["brevo"]?.webhookVerifiedAt, null, "Brevo remains visibly never confirmed");
+      assert.equal(cards["brevo"]?.webhookVerificationStale, false, "never-confirmed Brevo is not called stale");
+      const refreshed = await verifyWebhook("sms");
+      assert.equal(refreshed.webhookVerificationStale, false, "a successful re-check clears stale state");
+      console.log("✓ stale confirmation is flagged while never-confirmed remains distinct");
+    }
+
+    // ── 6. Re-saving the SAME confirmed secret never re-raises the flag ────
     {
       const saved = await putIntegration("sms", { webhookSecret: smsSecret1 });
       assert.equal(saved.webhookSecretPendingReconfirmation, false,

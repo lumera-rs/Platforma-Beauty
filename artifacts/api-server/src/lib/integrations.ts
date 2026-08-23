@@ -20,6 +20,9 @@ export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth
 const WEBHOOK_MARKER_KEYS = ["webhookSecretChangedAt", "webhookVerifiedAt"] as const;
 type WebhookMarkerKey = (typeof WEBHOOK_MARKER_KEYS)[number];
 const WEBHOOK_MARKER_KEY_SET: ReadonlySet<string> = new Set(WEBHOOK_MARKER_KEYS);
+/** A confirmation is a point-in-time health check, not permanent proof. */
+export const WEBHOOK_CONFIRMATION_MAX_AGE_DAYS = 7;
+const WEBHOOK_CONFIRMATION_MAX_AGE_MS = WEBHOOK_CONFIRMATION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
 
 const key = () => {
   const secret = process.env["SESSION_SECRET"];
@@ -155,6 +158,12 @@ export async function markWebhookReconfirmed(integration: "sms" | "brevo", updat
  * storage details or any integration secret. */
 export async function webhookVerifiedAt(integration: "sms" | "brevo"): Promise<Date | null> {
   return integrationMarker(integration, "webhookVerifiedAt");
+}
+
+/** Return whether an existing webhook confirmation is past its safe age. */
+export function webhookVerificationIsStale(verifiedAt: Date | null, now = new Date()): boolean {
+  if (!verifiedAt) return false;
+  return verifiedAt.getTime() <= now.getTime() - WEBHOOK_CONFIRMATION_MAX_AGE_MS;
 }
 
 /**

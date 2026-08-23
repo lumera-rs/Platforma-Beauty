@@ -364,7 +364,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerifiedAt, type IntegrationName } from "../lib/integrations";
+import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
@@ -3199,6 +3199,15 @@ function integrationName(value: string): value is IntegrationName {
   return value in integrationDefinitions;
 }
 
+async function webhookConfirmationMetadata(integration: "sms" | "brevo") {
+  const verifiedAt = await webhookVerifiedAt(integration);
+  return {
+    webhookVerifiedAt: verifiedAt?.toISOString() ?? null,
+    webhookVerificationStale: webhookVerificationIsStale(verifiedAt),
+    webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
+  };
+}
+
 function requestOrigin(req: Request) {
   const host = req.get("host") ?? "localhost";
   return `${req.protocol}://${host}`;
@@ -3207,20 +3216,23 @@ function requestOrigin(req: Request) {
 router.get("/admin/integrations", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const [entries, deliveryReportsByProvider, reachableAdmins] = await Promise.all([
-    Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
-      name,
-      {
-        ...(await integrationDisplay(name as IntegrationName, definition.keys, definition.required)),
-        // Persisted server-side, so the "secret changed, registration not yet
-        // re-confirmed" reminder survives page reloads and later sessions.
-        ...(name === "sms" || name === "brevo"
-          ? {
-            webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(name),
-            webhookVerifiedAt: (await webhookVerifiedAt(name))?.toISOString() ?? null,
-          }
-          : {}),
-      },
-    ])),
+    Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => {
+      const webhookIntegration = name === "sms" || name === "brevo" ? name : null;
+      return [
+        name,
+        {
+          ...(await integrationDisplay(name as IntegrationName, definition.keys, definition.required)),
+          // Persisted server-side, so the "secret changed, registration not yet
+          // re-confirmed" reminder survives page reloads and later sessions.
+          ...(webhookIntegration
+            ? {
+              webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(webhookIntegration),
+              ...(await webhookConfirmationMetadata(webhookIntegration)),
+            }
+            : {}),
+        },
+      ];
+    })),
     deliveryReportStatuses(),
     smsFallbackReachableAdmins(),
   ]);
@@ -3298,7 +3310,7 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
     ...(webhookIntegration
       ? {
         webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(webhookIntegration),
-        webhookVerifiedAt: (await webhookVerifiedAt(webhookIntegration))?.toISOString() ?? null,
+        ...(await webhookConfirmationMetadata(webhookIntegration)),
       }
       : {}),
   });
@@ -3412,6 +3424,8 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
       ? "Infobip webhook radi: sačuvana tajna se poklapa i endpoint prihvata izveštaje o isporuci. Probni događaj nije promenio nijednu isporuku."
       : "Brevo webhook radi: sačuvana tajna se poklapa i endpoint prihvata događaje. Probni događaj nije promenio nijednu isporuku.",
     webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
+    webhookVerificationStale: false,
+    webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
   });
 });
 
@@ -3837,6 +3851,8 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
       message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.${staleNote}`,
       staleWebhooks,
       webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
+      webhookVerificationStale: false,
+      webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
     }); return;
   }
   res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}` });

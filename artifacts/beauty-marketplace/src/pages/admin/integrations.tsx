@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
-type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null };
+type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
@@ -88,10 +88,11 @@ export default function AdminIntegrations() {
   const clearPendingReconfirmation = (integration: Integration) => setData((previous) => previous
     ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookSecretPendingReconfirmation: false } } }
     : previous);
-  const updateWebhookVerifiedAt = (integration: Integration, value: unknown) => {
+  const updateWebhookVerifiedAt = (integration: Integration, value: unknown, stale: unknown = false) => {
     if (typeof value !== "string" && value !== null) return;
+    if (typeof stale !== "boolean") return;
     setData((previous) => previous
-      ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookVerifiedAt: value } } }
+      ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookVerifiedAt: value, webhookVerificationStale: stale } } }
       : previous);
   };
   const save = async (integration: Integration) => {
@@ -140,7 +141,7 @@ export default function AdminIntegrations() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
       clearPendingReconfirmation(integration);
-      updateWebhookVerifiedAt(integration, result.webhookVerifiedAt);
+      updateWebhookVerifiedAt(integration, result.webhookVerifiedAt, result.webhookVerificationStale);
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Provera webhook-a nije uspela.");
@@ -226,7 +227,7 @@ export default function AdminIntegrations() {
       // One-click registration re-verified the provider registration with the
       // current secret — the server cleared the reminder; mirror it here.
       clearPendingReconfirmation("brevo");
-      updateWebhookVerifiedAt("brevo", result.webhookVerifiedAt);
+      updateWebhookVerifiedAt("brevo", result.webhookVerifiedAt, result.webhookVerificationStale);
       // The server lists stale LUMERA-format duplicates (masked URLs) still
       // registered at Brevo after a successful repair; render them with the
       // cleanup action below.
@@ -345,7 +346,17 @@ export default function AdminIntegrations() {
             <p className="mt-1 text-xs text-muted-foreground">{integration === "sms" ? "Svaka SMS poruka sa sačuvanom webhook tajnom automatski nosi aktuelni Infobip delivery-report URL. Portal-level registracija je i dalje podržana; za nju" : "Registrujte kod provajdera (Brevo transactional webhooks); za nju"} zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
              {isDevelopmentPreview && <p className="mt-1.5 text-xs font-medium text-amber-700" data-testid={`development-webhook-url-caveat-${integration}`}><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Ovo je URL razvojne probe. Nemojte ga registrovati kod provajdera za produkciju.</p>}
-            <p className="mt-2 text-xs text-muted-foreground">Poslednja uspešna potvrda: <span className="font-medium">{formatTimestamp(card.webhookVerifiedAt ?? null) ?? "nikada potvrđeno"}</span></p>
+            <div className={`mt-2 rounded-lg border p-3 ${card.webhookVerifiedAt && card.webhookVerificationStale ? "border-amber-300 bg-amber-50" : "bg-muted/30"}`} data-testid={`webhook-confirmation-status-${integration}`}>
+              <p className={`text-xs ${card.webhookVerificationStale ? "font-semibold text-amber-800" : "text-muted-foreground"}`}>
+                {card.webhookVerificationStale && <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />}
+                Poslednja uspešna potvrda: <span className="font-medium">{formatTimestamp(card.webhookVerifiedAt ?? null) ?? "nikada potvrđeno"}</span>
+                {card.webhookVerifiedAt && !card.webhookVerificationStale && <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">sveža potvrda</span>}
+                {card.webhookVerifiedAt && card.webhookVerificationStale && <span className="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">potvrda je zastarela</span>}
+              </p>
+              {card.webhookVerifiedAt && card.webhookVerificationStale && <p className="mt-1 text-xs font-medium text-amber-800" role="alert" data-testid={`stale-webhook-confirmation-${integration}`}>
+                Ova potvrda je starija od {card.webhookConfirmationMaxAgeDays ?? 7} dana. Pokrenite {integration === "sms" ? "„Proveri webhook“ da potvrdite da endpoint i sačuvana tajna i dalje rade" : "„Proveri registraciju na Brevo“ da potvrdite da Brevo koristi aktuelni URL, tajnu i sve potrebne događaje"}.
+              </p>}
+            </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled={copyingWebhookUrl[integration]} onClick={() => copyWebhookUrl(integration)}>
                 {copyingWebhookUrl[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
