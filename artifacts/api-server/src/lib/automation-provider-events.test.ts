@@ -30,6 +30,7 @@ import {
   automationRunsTable,
   db,
   emailDeliveriesTable,
+  observeDatabaseQueries,
   pool,
   providerWebhookReceiptsTable,
   salonCustomersTable,
@@ -160,10 +161,15 @@ async function webhookReceipt(provider: DeliveryReportProvider): Promise<Date | 
   return row?.lastEventAt ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
+async function countDatabaseQueries<T>(operation: () => Promise<T>): Promise<{ result: T; queries: number }> {
+  let queries = 0;
+  const stopObserving = observeDatabaseQueries(() => { queries += 1; });
+  try {
+    return { result: await operation(), queries };
+  } finally {
+    stopObserving();
+  }
+}
 /**
  * Spawn the logcheck helper as a real child process and capture everything it
  * writes (the app's pino-http + slow-request logs go to its stdout). Returns
@@ -619,11 +625,40 @@ async function run() {
       const largeFirst = await applyBrevoEvents(largePayload, largeEventAt);
       assert.equal(largeFirst.updated, largeBatchSize, "large distinct batch must complete every state transition");
       assert.equal(largeFirst.duplicates, 0);
-      const largeReplay = await applyBrevoEvents(largePayload, largeEventAt);
+      const largeReplayRun = await countDatabaseQueries(() => applyBrevoEvents(largePayload, largeEventAt));
+      const largeReplay = largeReplayRun.result;
       assert.equal(largeReplay.updated, 0);
       assert.equal(largeReplay.duplicates, largeBatchSize, "large replay must complete without per-event SQL failures");
+      assert.ok(
+        largeReplayRun.queries <= 6,
+        `large duplicate-heavy Brevo replay used ${largeReplayRun.queries} queries; expected a bounded batched count`,
+      );
       assert.equal((await automationDelivery(largeEvents[0]!.eventKey)).openedAt?.getTime(), largeEventAt.getTime());
       assert.equal((await automationDelivery(largeEvents.at(-1)!.eventKey)).openedAt?.getTime(), largeEventAt.getTime());
+
+      const largeInfobipReplay = Array.from({ length: largeBatchSize }, () => ({
+        messageId: runA4.smsMessageId,
+        status: { groupName: "DELIVERED" },
+        doneAt: new Date(largeEventAt.getTime() + 60_000).toISOString(),
+      }));
+      const largeInfobipReplayRun = await countDatabaseQueries(() =>
+        applyInfobipReports(largeInfobipReplay, largeEventAt),
+      );
+      assert.equal(largeInfobipReplayRun.result.updated, 0);
+      assert.equal(
+        largeInfobipReplayRun.result.duplicates,
+        largeBatchSize,
+        "large duplicate-heavy Infobip replay must report every event as a duplicate",
+      );
+      assert.ok(
+        largeInfobipReplayRun.queries <= 6,
+        `large duplicate-heavy Infobip replay used ${largeInfobipReplayRun.queries} queries; expected a bounded batched count`,
+      );
+      assert.equal(
+        (await automationDelivery(runA4.smsKey)).deliveredAt?.getTime(),
+        smsDoneAt.getTime(),
+        "large Infobip replay must preserve the first delivery timestamp",
+      );
 
       const largeUnknownSms = await applyInfobipReports(
         Array.from({ length: largeBatchSize }, () => ({
