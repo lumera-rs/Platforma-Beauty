@@ -23,6 +23,7 @@ import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
 import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
+import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
 
 const rawPort = process.env["PORT"];
 
@@ -38,13 +39,13 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-// Production does not run drizzle-kit push. Roll out the Phase 2 (Business
-// Growth) schema additively/idempotently BEFORE the media schema, any DB
-// listeners, listen(), and every scheduler/worker (notably the automation
-// worker) so the very first query the workers make sees the required objects.
+// Production does not run drizzle-kit push. Roll out additive schema changes
+// before DB listeners, listen(), and every scheduler/worker so the very first
+// query sees the required objects.
 await ensureBusinessGrowthSchema();
 await ensureMediaSchema();
 await ensureShippingConfigSchema();
+await ensureMarketplacePerformanceIndexes();
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");

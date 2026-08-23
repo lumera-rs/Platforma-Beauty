@@ -86,6 +86,17 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
 
     const categorySalons = await countedRequest(`${baseUrl}/salons?category=Frizerski%20saloni&page=1&pageSize=6`);
     assert.equal(categorySalons.response.status, 200, "public category filtering must support JSONB service tags");
+    assert.ok(
+      !categorySalons.queries.some((query) => query.sql.includes("generate_series")),
+      "ordinary salon browsing must not evaluate the rolling availability expression",
+    );
+
+    const firstAvailableSalons = await countedRequest(`${baseUrl}/salons?sort=first-available&page=1&pageSize=6`);
+    assert.equal(firstAvailableSalons.response.status, 200, "first-available salon sorting must remain available");
+    assert.ok(
+      firstAvailableSalons.queries.some((query) => query.sql.includes("generate_series")),
+      "first-available sorting must retain its canonical availability expression",
+    );
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

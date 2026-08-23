@@ -554,6 +554,9 @@ export const appointmentsTable = pgTable("appointments", {
   index("appointments_schedule_lookup_index").on(table.salonId, table.date, table.employeeId, table.status),
   // Leading FK coverage for remaining FKs not covered as leading columns above.
   index("appointments_employee_idx").on(table.employeeId),
+  // First-available directory ranking checks each employee's booked slots in
+  // date order across a rolling 30-day horizon.
+  index("appointments_employee_date_status_idx").on(table.employeeId, table.date, table.status),
   index("appointments_customer_idx").on(table.customerId),
   index("appointments_salon_customer_idx").on(table.salonCustomerId),
   index("appointments_service_idx").on(table.serviceId),

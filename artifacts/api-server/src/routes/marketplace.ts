@@ -4283,19 +4283,32 @@ router.get("/salons", async (req, res): Promise<void> => {
     }
   };
 
-  // Select ONE page with the canonical availability expression used both for
-  // global ordering and for the card payload, so rank and advertised slot can
-  // never diverge.
-  const pageRows = await db.select({
-    salon: salonsTable,
-    earliestSlot: sql<string | null>`to_char(${earliestAvailabilityExpr}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
-  }).from(salonsTable)
-    .where(where)
-    .orderBy(...orderByForSort())
-    .limit(pageSize)
-    .offset(offset);
-  const pageSalons = pageRows.map((row) => row.salon);
-  const earliestSlotBySalon = new Map(pageRows.map((row) => [row.salon.id, row.earliestSlot]));
+  // Availability is only needed when it is the requested global sort key.
+  // Ordinary directory browsing does not display or order by a live slot, so
+  // avoid evaluating the 30-day hourly expression for every matching salon.
+  // The first-available branch still selects the exact same expression used by
+  // orderByForSort(), keeping ranking and the advertised slot canonical.
+  let pageSalons: (typeof salonsTable.$inferSelect)[];
+  let earliestSlotBySalon = new Map<string, string | null>();
+  if (query.sort === "first-available") {
+    const pageRows = await db.select({
+      salon: salonsTable,
+      earliestSlot: sql<string | null>`to_char(${earliestAvailabilityExpr}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+    }).from(salonsTable)
+      .where(where)
+      .orderBy(...orderByForSort())
+      .limit(pageSize)
+      .offset(offset);
+    pageSalons = pageRows.map((row) => row.salon);
+    earliestSlotBySalon = new Map(pageRows.map((row) => [row.salon.id, row.earliestSlot]));
+  } else {
+    const pageRows = await db.select({ salon: salonsTable }).from(salonsTable)
+      .where(where)
+      .orderBy(...orderByForSort())
+      .limit(pageSize)
+      .offset(offset);
+    pageSalons = pageRows.map((row) => row.salon);
+  }
 
   // Assemble supporting card data only for the page that survived SQL filters.
   const cards = await salonCards(pageSalons, earliestSlotBySalon);
