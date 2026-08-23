@@ -261,17 +261,15 @@ test("switching the time period never leaves stale attributed rows in the list",
     // to one fresh first page whose counter uses the period-filtered total,
     // with zero rows attributed to runs outside the period.
     //
-    // The stats dialog is modal, so its overlay intercepts real pointer input
-    // to the period selector behind it. Dispatch the click event directly:
-    // React's onClick still runs, while Radix (which dismisses only on real
-    // pointerdown outside) keeps the dialog open. That produces exactly the
-    // state combination this spec guards — the period changing while the
-    // dialog still holds accumulated pages — without the statsRuleId
-    // close/reopen reset masking a dropped period dependency.
+    // The in-dialog selector must keep the accumulated stats dialog open while
+    // changing the period, so the period dependency cannot be masked by a
+    // close/reopen reset.
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
-    await page.getByTestId("overview-period-selector").getByTestId("period-30d").dispatchEvent("click");
+    await dialog.getByTestId("stats-period-selector").getByTestId("period-30d").click();
     expect((await thirtyResponse).status()).toBe(200);
     await expect(dialog, "The stats dialog must stay open across a period switch.").toBeVisible();
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => new URL(page.url()).searchParams.get("period")).toBe("30d");
     await expect(rows).toHaveCount(PAGE_SIZE);
     await expect(recentRows).toHaveCount(PAGE_SIZE);
     await expect(oldRows).toHaveCount(0);
@@ -280,9 +278,11 @@ test("switching the time period never leaves stale attributed rows in the list",
     // Back to "Sve vreme": the counter restores the unfiltered total and old
     // rows reappear.
     const allResponse = nextFirstPageResponse(page, fixture.ruleId, "all");
-    await page.getByTestId("overview-period-selector").getByTestId("period-all").dispatchEvent("click");
+    await dialog.getByTestId("stats-period-selector").getByTestId("period-all").click();
     expect((await allResponse).status()).toBe(200);
     await expect(dialog).toBeVisible();
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-all")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => new URL(page.url()).searchParams.get("period")).toBeNull();
     await expect(rows).toHaveCount(PAGE_SIZE);
     await expect(loadMore).toContainText(`Učitaj još (${PAGE_SIZE} od ${TOTAL})`);
     expect(await recentRows.count(), "Restored unfiltered page must contain recent-run rows.").toBeGreaterThan(0);

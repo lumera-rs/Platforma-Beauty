@@ -234,6 +234,98 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
   );
 }
 
+function PeriodSelector({
+  period,
+  onPeriodChange,
+  customRange,
+  onCustomRangeChange,
+  testId,
+}: {
+  period: StatsPeriod;
+  onPeriodChange: (period: StatsPeriod) => void;
+  customRange: DateRange | undefined;
+  onCustomRangeChange: (range: DateRange | undefined) => void;
+  testId: string;
+}) {
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const rangeLabel = formatRangeLabel(customRange);
+
+  return (
+    <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0 flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
+      {periodOptions.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onPeriodChange(opt.value)}
+          aria-pressed={period === opt.value}
+          data-testid={`period-${opt.value}`}
+          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+            period === opt.value
+              ? "bg-background text-foreground shadow-sm border"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+      <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            onClick={() => onPeriodChange("custom")}
+            aria-pressed={period === "custom"}
+            data-testid="period-custom"
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+              period === "custom"
+                ? "bg-background text-foreground shadow-sm border"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <CalendarRange className="w-3.5 h-3.5" />
+            {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="end">
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid={`${testId}-range-presets`}>
+            {rangePresets.map((preset) => (
+              <button
+                key={preset.key}
+                type="button"
+                data-testid={`range-preset-${preset.key}`}
+                className="px-2 py-1 rounded-md border bg-muted/30 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                onClick={() => {
+                  onPeriodChange("custom");
+                  onCustomRangeChange(preset.getRange());
+                  setRangeOpen(false);
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <Calendar
+            mode="range"
+            numberOfMonths={1}
+            defaultMonth={customRange?.from}
+            selected={customRange}
+            disabled={{ after: new Date() }}
+            onSelect={(range) => {
+              onPeriodChange("custom");
+              onCustomRangeChange(range);
+              if (range?.from && range?.to) setRangeOpen(false);
+            }}
+            data-testid={`${testId}-range-calendar`}
+          />
+          <p className="px-3 pb-3 text-xs text-muted-foreground">
+            {customRange?.from && !customRange?.to
+              ? "Izaberite i krajnji datum perioda."
+              : "Izaberite početni i krajnji datum perioda."}
+          </p>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
 /**
  * At-a-glance performance comparison across every automation rule: per-channel
  * sent → delivered → opened rates plus attributed appointments, from the same
@@ -249,8 +341,6 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
   onShowStats: (ruleId: string) => void;
 }) {
   const anySms = items.some((i) => i.smsSentCount > 0);
-  const [rangeOpen, setRangeOpen] = useState(false);
-  const rangeLabel = formatRangeLabel(customRange);
   return (
     <Card data-testid="campaign-overview">
       <CardHeader className="pb-3">
@@ -263,77 +353,13 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
               Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama. Otkazani termini se ne računaju u prihod, već su prikazani zasebno.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0 flex-wrap" role="group" aria-label="Period prikaza" data-testid="overview-period-selector">
-            {periodOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => onPeriodChange(opt.value)}
-                aria-pressed={period === opt.value}
-                data-testid={`period-${opt.value}`}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  period === opt.value
-                    ? "bg-background text-foreground shadow-sm border"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => onPeriodChange("custom")}
-                  aria-pressed={period === "custom"}
-                  data-testid="period-custom"
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
-                    period === "custom"
-                      ? "bg-background text-foreground shadow-sm border"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <CalendarRange className="w-3.5 h-3.5" />
-                  {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid="overview-range-presets">
-                  {rangePresets.map((preset) => (
-                    <button
-                      key={preset.key}
-                      type="button"
-                      data-testid={`range-preset-${preset.key}`}
-                      className="px-2 py-1 rounded-md border bg-muted/30 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                      onClick={() => {
-                        onCustomRangeChange(preset.getRange());
-                        setRangeOpen(false);
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-                <Calendar
-                  mode="range"
-                  numberOfMonths={1}
-                  defaultMonth={customRange?.from}
-                  selected={customRange}
-                  disabled={{ after: new Date() }}
-                  onSelect={(range) => {
-                    onCustomRangeChange(range);
-                    if (range?.from && range?.to) setRangeOpen(false);
-                  }}
-                  data-testid="overview-range-calendar"
-                />
-                <p className="px-3 pb-3 text-xs text-muted-foreground">
-                  {customRange?.from && !customRange?.to
-                    ? "Izaberite i krajnji datum perioda."
-                    : "Izaberite početni i krajnji datum perioda."}
-                </p>
-              </PopoverContent>
-            </Popover>
-          </div>
+            <PeriodSelector
+              period={period}
+              onPeriodChange={onPeriodChange}
+              customRange={customRange}
+              onCustomRangeChange={onCustomRangeChange}
+              testId="overview-period-selector"
+            />
         </div>
       </CardHeader>
       <CardContent className="pt-0">
@@ -1015,6 +1041,13 @@ export default function OwnerAutomations() {
             </div>
             <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescription(statsPeriod, customRange)}.</DialogDescription>
           </DialogHeader>
+          <PeriodSelector
+            period={statsPeriod}
+            onPeriodChange={setStatsPeriod}
+            customRange={customRange}
+            onCustomRangeChange={setCustomRange}
+            testId="stats-period-selector"
+          />
           {isStatsLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
           ) : statsData ? (
