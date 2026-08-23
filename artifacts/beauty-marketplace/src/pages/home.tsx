@@ -18,7 +18,11 @@ import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { useState, useEffect, useMemo } from "react";
 import { HomeSalonCard, HomeDiscountSalonCard } from "@/components/home-salon-card";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
-import { getPublicCategoryPath, PUBLIC_CATEGORY_PAGES } from "@/lib/public-category-pages";
+import {
+  getPublicCategoryPath,
+  HOME_SEARCH_CATEGORIES,
+  PUBLIC_CATEGORY_PAGES,
+} from "@/lib/public-category-pages";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -61,13 +65,6 @@ export default function Home() {
   const { data: discovery, isLoading } = useGetMarketplaceHomeDiscovery(
     sessionCity ? { city: sessionCity } : undefined
   );
-
-  const categories = [
-    ...PUBLIC_CATEGORY_PAGES.map((page) => page.apiCategory),
-    "Kozmetički saloni",
-    "Depilacija",
-    "Wellness",
-  ].filter((category, index, allCategories) => allCategories.indexOf(category) === index);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,7 +133,7 @@ export default function Home() {
                 aria-label="Izaberite kategoriju"
               >
                 <option value="">Koju uslugu tražite?</option>
-                {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+                {HOME_SEARCH_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
               </select>
             </div>
 
