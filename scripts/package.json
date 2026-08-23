@@ -29,6 +29,7 @@
     "cleanup:salon-notifications": "tsx ./src/run-salon-notification-release.ts --recover-interrupted-databases",
     "test:service-library": "playwright test browser/service-library.spec.ts",
     "test:service-availability": "playwright test browser/owner-service-availability.spec.ts",
+    "test:campaign-client-filter": "playwright test browser/campaign-client-filter.spec.ts",
     "test:multi-location": "playwright test browser/multi-location-owner.spec.ts",
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts"
   },
