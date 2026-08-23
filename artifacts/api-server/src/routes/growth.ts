@@ -614,19 +614,43 @@ type StatsScope = { ruleIds: string[] } | { ruleId: string };
  */
 const NON_REALIZED_APPOINTMENT_STATUSES = ["cancelled", "no-show"] satisfies (typeof appointmentsTable.status.enumValues)[number][];
 
+type CampaignAppointmentBucket = "completed" | "upcoming" | "cancelledAttributed" | "excluded";
+type AppointmentStatus = (typeof appointmentsTable.status.enumValues)[number];
+
+/**
+ * Every appointment status must be assigned to exactly one campaign bucket.
+ * Keep this exhaustive map explicit: a complement-based upcoming bucket would
+ * silently treat a newly added status as expected revenue.
+ */
+export const CAMPAIGN_APPOINTMENT_STATUS_BUCKETS = {
+  completed: ["completed"],
+  upcoming: ["pending", "confirmed"],
+  cancelledAttributed: ["cancelled"],
+  excluded: ["no-show"],
+} as const satisfies Record<CampaignAppointmentBucket, readonly AppointmentStatus[]>;
+
 /**
  * Attributed appointment counts as realized (money earned or still expected).
  * NULL for rows without an attributed appointment, so `case when` aggregates
  * over the left join fall through to their else/0 branch as before.
  */
-const appointmentCountsAsRealized = notInArray(appointmentsTable.status, NON_REALIZED_APPOINTMENT_STATUSES);
+const appointmentCountsAsRealized = and(
+  notInArray(appointmentsTable.status, NON_REALIZED_APPOINTMENT_STATUSES),
+  inArray(appointmentsTable.status, [
+    ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.completed,
+    ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
+  ]),
+);
 
 /**
- * Realized but not yet completed (pending/confirmed) — the "upcoming" bucket,
- * kept as the exact realized complement of completed so the two buckets
- * always sum to the attributed totals.
+ * Realized but not yet completed (pending/confirmed) — the "upcoming" bucket.
+ * This list is intentionally explicit instead of using a complement so a new
+ * appointment status cannot silently become expected revenue.
  */
-const appointmentIsUpcomingRealized = notInArray(appointmentsTable.status, ["completed", ...NON_REALIZED_APPOINTMENT_STATUSES]);
+const appointmentIsUpcomingRealized = inArray(
+  appointmentsTable.status,
+  CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
+);
 
 function statsScopeRunCondition(scope: StatsScope) {
   return "ruleId" in scope
@@ -662,9 +686,9 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
       attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} then 1 else 0 end)::int`,
       attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentCountsAsRealized} then ${appointmentsTable.price} end), 0)::int`,
-      // Completed vs upcoming split of the realized rows. "Upcoming" is the
-      // realized complement of completed (pending/confirmed), so the two
-      // buckets always sum exactly to the attributed totals above.
+      // Completed vs upcoming split of the realized rows. Both status lists
+      // are explicit, so the two buckets sum exactly to the attributed totals
+      // without absorbing an unclassified future status.
       completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
       completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
       upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentIsUpcomingRealized} then 1 else 0 end)::int`,

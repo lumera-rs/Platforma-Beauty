@@ -39,6 +39,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import app, { safePathname, redactPathSecrets } from "../app";
+import { CAMPAIGN_APPOINTMENT_STATUS_BUCKETS } from "../routes/growth";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
   applyBrevoEvents,
@@ -1562,6 +1563,28 @@ async function run() {
 
     // ── 8c. Attribution excludes cancelled appointments ─────────────────────
     {
+      const statusesByBucket = new Map<string, string[]>();
+      for (const [bucket, statuses] of Object.entries(CAMPAIGN_APPOINTMENT_STATUS_BUCKETS)) {
+        for (const status of statuses) {
+          const buckets = statusesByBucket.get(status) ?? [];
+          buckets.push(bucket);
+          statusesByBucket.set(status, buckets);
+        }
+      }
+      for (const status of appointmentsTable.status.enumValues) {
+        const buckets = statusesByBucket.get(status) ?? [];
+        assert.equal(
+          buckets.length,
+          1,
+          `appointment status "${status}" must be explicitly classified into exactly one campaign bucket (completed, upcoming, cancelled-attributed, or excluded); update CAMPAIGN_APPOINTMENT_STATUS_BUCKETS`,
+        );
+      }
+      assert.deepEqual(
+        [...statusesByBucket.keys()].sort(),
+        [...appointmentsTable.status.enumValues].sort(),
+        "campaign bucket classification must not contain statuses outside appointmentsTable.status.enumValues",
+      );
+
       // A confirmed appointment counts toward both the attributed count and
       // the attributed revenue; a cancelled one contributes to neither.
       const [service] = await db.insert(servicesTable).values({
