@@ -1008,7 +1008,8 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     // endpoints, so `total` matches the attributedAppointments count shown
     // above the list.
     // salon_customers is left-joined: walk-in/legacy appointments may have a
-    // null salonCustomerId, in which case the client name fields stay null.
+    // null salonCustomerId, in which case the client name fields (and the
+    // salonCustomerId used by the client to link into the CRM view) stay null.
     const attributedAppointmentJoin = and(
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
       appointmentCountsAsRealized,
@@ -1090,6 +1091,7 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
         clientFirstName: salonCustomersTable.firstName,
         clientLastName: salonCustomersTable.lastName,
         isReturning: isReturningExpr,
+        salonCustomerId: salonCustomersTable.id,
       })
       .from(automationRunsTable)
       .innerJoin(appointmentsTable, attributedAppointmentJoin)

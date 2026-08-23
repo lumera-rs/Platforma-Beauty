@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { useOwnerListRetention, useOwnerGetRetentionDetail, useUpdateSalonCustomer } from "@workspace/api-client-react";
@@ -28,6 +29,25 @@ export default function OwnerRetention() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Deep link: /vlasnik/klijenti?klijent=<salonCustomerId> opens the client
+  // detail dialog directly (used by the campaign drill-down in automations).
+  // useSearch() (not useLocation()) so same-path ?klijent= navigations re-render.
+  const searchString = useSearch();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    const linkedCustomerId = new URLSearchParams(searchString).get("klijent");
+    if (linkedCustomerId) setSelectedCustomerId(linkedCustomerId);
+  }, [searchString]);
+
+  const closeCustomerDetail = () => {
+    setSelectedCustomerId(null);
+    // Drop the ?klijent= param so closing the dialog doesn't reopen it on
+    // re-render and the URL reflects the closed state.
+    if (new URLSearchParams(searchString).get("klijent")) {
+      navigate("/vlasnik/klijenti", { replace: true });
+    }
+  };
 
   const { data: detailData, isLoading: isDetailLoading } = useOwnerGetRetentionDetail(
     selectedCustomerId ?? "",
@@ -230,7 +250,7 @@ export default function OwnerRetention() {
         </div>
       </div>
 
-      <Dialog open={!!selectedCustomerId} onOpenChange={(open) => !open && setSelectedCustomerId(null)}>
+      <Dialog open={!!selectedCustomerId} onOpenChange={(open) => !open && closeCustomerDetail()}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           {isDetailLoading ? (
              <div className="flex justify-center p-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
@@ -330,7 +350,11 @@ export default function OwnerRetention() {
                 )}
               </div>
             </>
-          ) : null}
+          ) : (
+            <p className="text-sm text-muted-foreground p-6 text-center" data-testid="text-customer-not-found">
+              Klijent nije pronađen.
+            </p>
+          )}
         </DialogContent>
       </Dialog>
 

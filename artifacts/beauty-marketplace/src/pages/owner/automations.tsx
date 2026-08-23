@@ -32,6 +32,7 @@ import type { DateRange } from "react-day-picker";
 import { rangePresets, toDateParam } from "@/lib/date-range-presets";
 import type { AutomationAttributedAppointment } from "@workspace/api-client-react";
 import { useLocation, useSearch } from "wouter";
+import { Link } from "wouter";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -993,9 +994,22 @@ export default function OwnerAutomations() {
                               <span>{new Date(appt.date).toLocaleDateString("sr-RS")}</span>
                               <span>·</span>
                               <span data-testid={`attributed-appointment-client-${appt.appointmentId}`}>
-                                {appt.clientFirstName || appt.clientLastName
-                                  ? [appt.clientFirstName, appt.clientLastName].filter(Boolean).join(" ")
-                                  : "Nepoznat klijent"}
+                                {appt.salonCustomerId ? (
+                                  <Link
+                                    href={`/vlasnik/klijenti?klijent=${appt.salonCustomerId}`}
+                                    className="text-primary hover:underline font-medium"
+                                    title="Otvori istoriju klijenta"
+                                    data-testid={`link-attributed-client-${appt.appointmentId}`}
+                                  >
+                                    {appt.clientFirstName || appt.clientLastName
+                                      ? [appt.clientFirstName, appt.clientLastName].filter(Boolean).join(" ")
+                                      : "Nepoznat klijent"}
+                                  </Link>
+                                ) : appt.clientFirstName || appt.clientLastName ? (
+                                  [appt.clientFirstName, appt.clientLastName].filter(Boolean).join(" ")
+                                ) : (
+                                  "Nepoznat klijent"
+                                )}
                               </span>
                               {appt.isReturning !== null && appt.isReturning !== undefined && (
                                 <Badge

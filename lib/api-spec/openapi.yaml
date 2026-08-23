@@ -6961,7 +6961,10 @@ components:
         isReturning:
           type: ["boolean", "null"]
           description: True when the salon client had at least one completed appointment before this campaign message was sent (returning client), false when this is their first appointment at the salon (new client), null when the appointment has no linked salon customer.
-      required: [appointmentId, date, serviceName, price, clientFirstName, clientLastName, isReturning]
+        salonCustomerId:
+          type: ["string", "null"]
+          description: Id of the linked salon customer, for jumping to the owner's client detail view; null when the appointment has no linked salon customer.
+      required: [appointmentId, date, serviceName, price, clientFirstName, clientLastName, isReturning, salonCustomerId]
 
     AutomationAttributedAppointmentsPage:
       type: object

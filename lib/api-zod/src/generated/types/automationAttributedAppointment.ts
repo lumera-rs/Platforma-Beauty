@@ -28,4 +28,9 @@ export interface AutomationAttributedAppointment {
      * @nullable
      */
   isReturning: boolean | null;
+  /**
+     * Id of the linked salon customer, for jumping to the owner's client detail view; null when the appointment has no linked salon customer.
+     * @nullable
+     */
+  salonCustomerId: string | null;
 }

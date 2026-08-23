@@ -133,6 +133,10 @@ async function main() {
     assert.equal(first.body.total, TOTAL, "total excludes cancelled appointments");
     assert.equal(first.body.limit, 25);
     assert.equal(first.body.offset, 0);
+    assert.equal(
+      first.body.items[0].salonCustomerId, cust.id,
+      "rows expose the linked salon customer id for the CRM deep link",
+    );
     console.log("✓ default page size and cancelled-exclusive total");
 
     // ── 2. Total matches the stats count for every period choice ───────────
