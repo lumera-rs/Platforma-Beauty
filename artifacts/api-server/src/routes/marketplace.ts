@@ -3638,19 +3638,21 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
     respondBrevoListingFailure(res, error); return;
   }
   const context = brevoVerdictContext(req);
-  const verdict = brevoRegistrationVerdict(
-    brevoRegistrationCandidates(webhooks, secret),
-    context,
-  );
+  const candidates = brevoRegistrationCandidates(webhooks, secret);
+  const verdict = brevoRegistrationVerdict(candidates, context);
+  const staleWebhooks = staleBrevoRegistrations(candidates, context);
   if (verdict.ok) {
     // A development-origin verdict is intentionally softened: it can
     // recognize the production registration, but the preview cannot prove
     // that this deployment's public origin is the one Brevo will call.
     // Only a strict production-origin success re-confirms the new secret.
     if (!context.developmentOrigin) await markWebhookReconfirmed("brevo", user.id);
-    res.json({ message: verdict.message, reconfirmed: !context.developmentOrigin }); return;
+    res.json({ message: verdict.message, reconfirmed: !context.developmentOrigin, staleWebhooks }); return;
   }
-  res.status(409).json({ error: verdict.error });
+  // Keep the response structured so the admin-error normalizer preserves the
+  // stale list alongside the Serbian conflict message. This lets the page
+  // offer cleanup even when the current registration itself still needs repair.
+  res.status(409).json({ error: verdict.error, code: "CONFLICT", staleWebhooks });
 });
 
 /**

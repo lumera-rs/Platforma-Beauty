@@ -152,6 +152,7 @@ export default function AdminIntegrations() {
     try {
       const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
       const result = await response.json();
+      if (Array.isArray(result.staleWebhooks)) setStaleBrevoWebhooks(result.staleWebhooks);
       if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
       // A development/preview verdict may be successful only in the softened
       // sense that it found the current secret elsewhere (likely production).

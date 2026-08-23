@@ -9,9 +9,9 @@
  * DELETE /v3/webhooks/{id}.
  *
  * The safety properties this suite locks down:
- *   1. after a successful repair, staleWebhooks lists exactly the stale
- *      LUMERA-format duplicates — never the freshly repaired registration
- *      and never non-LUMERA webhooks — with tokens masked
+ *   1. after a successful repair OR registration check, staleWebhooks lists
+ *      exactly the stale LUMERA-format duplicates — never the freshly repaired
+ *      registration and never non-LUMERA webhooks — with tokens masked
  *   2. the cleanup deletes ONLY ids that a FRESH provider listing still
  *      classifies as stale: requested ids pointing at the healthy
  *      registration, non-LUMERA webhooks, or unknown ids are skipped, and no
@@ -227,7 +227,37 @@ async function run() {
       console.log("✓ repair response lists exactly the stale LUMERA duplicates, masked, in Serbian");
     }
 
-    // ── 3. Cleanup deletes only stale ids; healthy/non-LUMERA/unknown skipped ─
+    // ── 3. Registration check also lists the same stale duplicates ──────────
+    {
+      resetStore();
+      const failedCheck = await post("/api/admin/integrations/brevo/verify-registration", { cookie: adminCookie });
+      assert.equal(failedCheck.status, 409, `stale-only registration check must report a conflict (got: ${failedCheck.raw})`);
+      const staleOnly = staleOf(failedCheck);
+      assert.ok(staleOnly, "conflicting registration check must carry a staleWebhooks list");
+      assert.deepEqual(staleOnly!.map((hook) => hook.id).sort(), [sameOriginStaleSecretId, oldDomainCurrentSecretId, oldDomainOldSecretId],
+        `conflicting registration check contains every stale LUMERA registration (got: ${failedCheck.raw})`);
+      assert.equal(failedCheck.body?.["code"], "CONFLICT",
+        "conflicting registration check keeps a structured error contract so the stale list survives normalization");
+      assert.ok(staleOnly!.every((hook) => hook.maskedUrl.endsWith("/api/webhooks/brevo/…")),
+        "conflicting registration-check entries carry masked URLs only");
+
+      const repaired = await post("/api/admin/integrations/brevo/register-webhook", { cookie: adminCookie });
+      assert.equal(repaired.status, 200, `setup repair must succeed (got: ${repaired.raw})`);
+
+      const checked = await post("/api/admin/integrations/brevo/verify-registration", { cookie: adminCookie });
+      assert.equal(checked.status, 200, `registration check must succeed (got: ${checked.raw})`);
+      const stale = staleOf(checked);
+      assert.ok(stale, "registration check must carry a staleWebhooks list");
+      assert.deepEqual(stale!.map((hook) => hook.id).sort(), [oldDomainCurrentSecretId, oldDomainOldSecretId],
+        `registration check contains exactly the stale duplicates (got: ${checked.raw})`);
+      assert.ok(stale!.every((hook) => hook.maskedUrl.endsWith("/api/webhooks/brevo/…")),
+        "registration-check stale entries carry masked URLs only");
+      assert.ok(String(checked.body?.["message"]).includes("Webhook je registrovan na Brevo"),
+        `registration check reports the healthy verdict (got: ${checked.raw})`);
+      console.log("✓ registration check also lists exactly the stale LUMERA duplicates");
+    }
+
+    // ── 4. Cleanup deletes only stale ids; healthy/non-LUMERA/unknown skipped ─
     {
       // Ask for everything, including the healthy registration (2), the
       // non-LUMERA webhook (1) and an unknown id — only 3 and 4 may go.
@@ -249,7 +279,7 @@ async function run() {
       console.log("✓ cleanup removes only stale duplicates; healthy, non-LUMERA and unknown ids are skipped");
     }
 
-    // ── 4. Second run is a polite no-op ──────────────────────────────────────
+    // ── 5. Second run is a polite no-op ──────────────────────────────────────
     {
       deleteCalls.length = 0;
       const again = await post("/api/admin/integrations/brevo/cleanup-webhooks", {
@@ -263,7 +293,7 @@ async function run() {
       console.log("✓ repeat cleanup is a no-op without provider deletes");
     }
 
-    // ── 5. Invalid bodies rejected locally ──────────────────────────────────
+    // ── 6. Invalid bodies rejected locally ──────────────────────────────────
     {
       deleteCalls.length = 0;
       for (const body of [undefined, {}, { ids: [] }, { ids: ["3"] }, { ids: [3.5] }]) {
@@ -275,9 +305,14 @@ async function run() {
       console.log("✓ invalid id payloads are rejected locally in Serbian");
     }
 
-    // ── 6. Development address: stale list suppressed, cleanup refused ──────
+    // ── 7. Development address: stale list suppressed, cleanup refused ──────
     {
       resetStore();
+      const checkedFromDev = await post("/api/admin/integrations/brevo/verify-registration", { cookie: adminCookie, host: devHost });
+      assert.equal(checkedFromDev.status, 200, `registration check from dev must use the softened verdict (got: ${checkedFromDev.raw})`);
+      assert.deepEqual(staleOf(checkedFromDev) ?? [], [],
+        "registration-check stale list is suppressed from a development address");
+
       const repairedFromDev = await post("/api/admin/integrations/brevo/register-webhook", { cookie: adminCookie, host: devHost });
       if (repairedFromDev.status === 200) {
         assert.deepEqual(staleOf(repairedFromDev) ?? [], [],
@@ -301,7 +336,7 @@ async function run() {
       console.log("✓ development address: stale list suppressed and cleanup refused before any provider call");
     }
 
-    // ── 7. Partial failures reported; provider 404 counts as removed ────────
+    // ── 8. Partial failures reported; provider 404 counts as removed ────────
     {
       resetStore();
       // Repair from production so 3 and 4 are stale again (store was reset,
@@ -338,7 +373,7 @@ async function run() {
       console.log("✓ partial provider failures are reported and retryable; 404 counts as removed");
     }
 
-    // ── 8. The saved secret never appeared in ANY response body ─────────────
+    // ── 9. The saved secret never appeared in ANY response body ─────────────
     {
       assert.ok(responseBodies.length >= 12, "the suite must have exercised the routes");
       for (const raw of responseBodies) {
