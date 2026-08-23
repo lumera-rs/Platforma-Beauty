@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { courierServicesTable, shippingRulesTable } from "@workspace/db";
+import { courierServicesTable } from "@workspace/db";
 import {
   appointmentsTable,
   beautyGlossaryTable,
@@ -42,6 +42,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "./auth";
+import { getOrCreateShippingConfig } from "./shipping-config";
 
 let seedPromise: Promise<void> | undefined;
 
@@ -249,6 +250,7 @@ async function seed(): Promise<void> {
     await seedFutureBookingAvailability();
     await backfillSalonCustomers();
     await setDemoLotosActiveSalon();
+    await seedShippingConfig();
     return;
   }
 
@@ -849,9 +851,7 @@ async function seedB2BShopTaxonomy(): Promise<void> {
 }
 
 async function seedShippingConfig(): Promise<void> {
-  const [existing] = await db.select().from(shippingRulesTable).limit(1);
-  if (existing) return;
-  await db.insert(shippingRulesTable).values({
+  await getOrCreateShippingConfig({
     freeShippingThreshold: 15000,
     tiers: [
       { maxWeightGrams: 1000, price: 390, label: "do 1 kg" },

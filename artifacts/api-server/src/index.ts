@@ -13,6 +13,7 @@ import { runMediaUploadCleanup } from "./routes/media";
 import { migrateLegacyMediaReferences } from "./lib/media-migration";
 import { ensureMediaSchema } from "./lib/media-schema";
 import { ensureBusinessGrowthSchema } from "./lib/business-growth-schema";
+import { ensureShippingConfigSchema } from "./lib/shipping-config";
 import {
   catalogCacheStats,
   startCatalogCacheInvalidationListener,
@@ -43,6 +44,7 @@ if (Number.isNaN(port) || port <= 0) {
 // worker) so the very first query the workers make sees the required objects.
 await ensureBusinessGrowthSchema();
 await ensureMediaSchema();
+await ensureShippingConfigSchema();
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");

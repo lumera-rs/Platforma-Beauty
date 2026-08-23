@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   productCategoriesTable,
@@ -17,6 +17,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureShippingConfigSchema } from "./shipping-config";
 
 type RetailCart = {
   id: string;
@@ -124,6 +125,7 @@ async function checkoutAndAssertSavedAmount(
 }
 
 test.before(async () => {
+  await ensureShippingConfigSchema();
   server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address() as AddressInfo;
@@ -243,6 +245,11 @@ test("retail checkout saves the exact courier and personal-delivery previews", a
 test("checkout and admin settings keep the canonical shipping rule after it is updated beside a duplicate", async () => {
   assert.ok(createdProductId);
   const canonicalShippingRuleId = "00000000-0000-0000-0000-000000000001";
+  const [replacedShippingRule] = await db.select().from(shippingRulesTable)
+    .orderBy(asc(shippingRulesTable.id))
+    .limit(1);
+  assert.ok(replacedShippingRule);
+  await db.execute(sql`drop index if exists "shipping_rules_singleton_unique"`);
   await db.insert(shippingRulesTable).values({
     id: canonicalShippingRuleId,
     freeShippingThreshold: 10_000,
@@ -253,6 +260,7 @@ test("checkout and admin settings keep the canonical shipping rule after it is u
     personalDeliveryDescription: "Test lična dostava.",
     updatedAt: new Date(),
   });
+  await ensureShippingConfigSchema();
   const [admin] = await db.insert(usersTable).values({
     firstName: "Retail",
     lastName: "Admin",
@@ -292,6 +300,11 @@ test("checkout and admin settings keep the canonical shipping rule after it is u
   } finally {
     await db.delete(usersTable).where(eq(usersTable.id, admin.id));
     await db.delete(shippingRulesTable).where(eq(shippingRulesTable.id, canonicalShippingRuleId));
+    const [restoredShippingRule] = await db.select({ id: shippingRulesTable.id }).from(shippingRulesTable)
+      .where(eq(shippingRulesTable.id, replacedShippingRule.id))
+      .limit(1);
+    if (!restoredShippingRule) await db.insert(shippingRulesTable).values(replacedShippingRule);
+    await ensureShippingConfigSchema();
   }
 });
 

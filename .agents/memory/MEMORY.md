@@ -127,3 +127,4 @@
 - [Shipping rule row order](shipping-rule-row-order.md) — the retail shipping config is an unordered first-row read; extra shipping_rules rows make checkout and its browser fixtures order-dependent.
 - [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
 - [Retail cart summary safety](retail-cart-summary-safety.md) — passive cart indicators must never create empty carts or poll them globally.
+- [Drizzle expression indexes](drizzle-expression-indexes.md) — raw expression indexes need their own parentheses, and disposable schema setup must reject reported SQL errors.

@@ -187,21 +187,33 @@ function runCommand(
   args: string[],
   environment: NodeJS.ProcessEnv,
   label: string,
+  options?: { failOnOutput?: RegExp },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    let output = "";
     const child = spawn(command, args, {
       cwd: workspaceRoot,
       env: environment,
-      stdio: "inherit",
+      stdio: options?.failOnOutput ? ["ignore", "pipe", "pipe"] : "inherit",
     });
+    if (options?.failOnOutput) {
+      const writeOutput = (stream: NodeJS.WriteStream, chunk: Buffer) => {
+        output += chunk.toString();
+        stream.write(chunk);
+      };
+      child.stdout?.on("data", (chunk: Buffer) => writeOutput(process.stdout, chunk));
+      child.stderr?.on("data", (chunk: Buffer) => writeOutput(process.stderr, chunk));
+    }
 
     child.once("error", () => reject(new Error(`${label} could not be started.`)));
     child.once("exit", (code, signal) => {
-      if (code === 0) {
+      if (code === 0 && (!options?.failOnOutput || !options.failOnOutput.test(output))) {
         resolve();
       } else {
         reject(new Error(
-          `${label} failed${signal ? ` after ${signal}` : ` with exit code ${code ?? "unknown"}`}.`,
+          `${label} failed${
+            signal ? ` after ${signal}` : ` with exit code ${code ?? "unknown"}`
+          }${code === 0 ? " after reporting an error" : ""}.`,
         ));
       }
     });
@@ -420,6 +432,7 @@ export async function runIsolatedBrowserSuite(
       ["--filter", "@workspace/db", "run", "push-force"],
       testEnvironment,
       "Preparing the disposable browser test schema",
+      { failOnOutput: /(?:^|\n)error(?: response from server)?:/i },
     );
 
     apiProcess = startProcess(
@@ -519,6 +532,7 @@ export async function runIsolatedApiSuite(
       ["--filter", "@workspace/db", "run", "push-force"],
       testEnvironment,
       "Preparing the disposable API test schema",
+      { failOnOutput: /(?:^|\n)error(?: response from server)?:/i },
     );
     await runCommand(
       "pnpm",

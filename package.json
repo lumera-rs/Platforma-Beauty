@@ -18,6 +18,7 @@
     "test:education-sessions": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-sessions.test.ts",
     "test:retail-checkout-api": "pnpm --filter @workspace/scripts run test:retail-checkout-api",
     "test:retail-checkout": "pnpm run test:retail-checkout-api && pnpm --filter @workspace/scripts run test:retail-checkout",
+    "test:shipping-config": "pnpm --filter @workspace/scripts run test:shipping-config",
     "test:education-extras": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/education-extras.test.ts",
     "test:query-budgets": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/routes/marketplace-query-budget.test.ts",
     "test:crm-backfill": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/seed.test.ts",

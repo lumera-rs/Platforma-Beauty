@@ -118,7 +118,11 @@ export const shippingRulesTable = pgTable("shipping_rules", {
   personalDeliveryPrice: integer("personal_delivery_price").notNull().default(0),
   personalDeliveryDescription: text("personal_delivery_description").notNull().default("Dostava na adresu u Beogradu."),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, () => [
+  // This legacy table is a singleton. A constant-expression unique index
+  // enforces that invariant without changing the existing row shape.
+  uniqueIndex("shipping_rules_singleton_unique").on(sql`(true)`),
+]);
 
 export const courierServicesTable = pgTable("courier_services", {
   id: uuid("id").defaultRandom().primaryKey(),

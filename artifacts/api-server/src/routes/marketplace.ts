@@ -86,6 +86,7 @@ import {
   smsDeliveriesTable,
   usersTable,
 } from "@workspace/db";
+import { getOrCreateShippingConfig } from "../lib/shipping-config";
 import {
   AdminBulkUpdateProductsBody,
   AdminListServiceCategoriesResponse,
@@ -8116,14 +8117,7 @@ router.post("/shop/products/:productId/reviews", async (req, res): Promise<void>
 // ── Shipping calculation ─────────────────────────────────────────────────────
 
 async function getShippingConfig() {
-  // shipping_rules is a legacy singleton. Its lowest immutable UUID is
-  // canonical if an interrupted fixture or migration leaves a duplicate behind.
-  const [config] = await db.select().from(shippingRulesTable)
-    .orderBy(asc(shippingRulesTable.id))
-    .limit(1);
-  if (config) return config;
-  const [created] = await db.insert(shippingRulesTable).values({ freeShippingThreshold: 0, tiers: [] }).returning();
-  return created!;
+  return getOrCreateShippingConfig({ freeShippingThreshold: 0, tiers: [] });
 }
 
 function calculateShipping(
