@@ -59,14 +59,14 @@ export function RetailCartPage() {
   // and bumping the generation discards any poll response that started earlier.
   const localOpsRef = useRef(0);
   const generationRef = useRef(0);
-  const loadCart = () => retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null));
-  const runLocalCartOp = async (op: () => Promise<unknown>, failureMessage: string) => {
+  const loadCart = () => retail<Cart>("/retail/cart").then((latest) => { setCart(latest); return latest; }).catch(() => { setCart(null); return null; });
+  const runLocalCartOp = async (op: () => Promise<Cart>, failureMessage: string) => {
     generationRef.current += 1;
     localOpsRef.current += 1;
     try {
-      await op();
-      await loadCart();
-      notifyRetailCartChanged();
+      const latest = await op();
+      setCart(latest);
+      notifyRetailCartChanged(latest.itemCount);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : failureMessage);
     } finally {
@@ -74,11 +74,11 @@ export function RetailCartPage() {
     }
   };
   const change = (id: string, quantity: number) => void runLocalCartOp(
-    () => retail(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
+    () => retail<Cart>(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
     "Promena nije uspela.",
   );
   const remove = (id: string) => void runLocalCartOp(
-    () => retail(`/retail/cart/items/${id}`, { method: "DELETE" }),
+    () => retail<Cart>(`/retail/cart/items/${id}`, { method: "DELETE" }),
     "Brisanje nije uspelo.",
   );
   useEffect(() => { void loadCart(); }, []);
@@ -267,7 +267,7 @@ export function RetailCheckoutPage() {
         expectedTotal: preview?.total,
       }),
     });
-    sessionStorage.setItem("retail-order", JSON.stringify(order)); notifyRetailCartChanged(); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
+    sessionStorage.setItem("retail-order", JSON.stringify(order)); notifyRetailCartChanged(0); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
   } catch (error) {
     if (error instanceof RetailApiError && error.code === "CHECKOUT_QUOTE_CHANGED") {
       await refreshCheckoutQuote(preview);

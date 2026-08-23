@@ -2,9 +2,8 @@ import { Link, useLocation } from "wouter";
 import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag } from "lucide-react";
 import { Button } from "./ui/button";
 import { getGetRetailCartSummaryQueryKey, useGetCurrentUser, useGetRetailCartSummary, useLogout } from "@workspace/api-client-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { RETAIL_CART_CHANGED_EVENT, RETAIL_CART_SYNC_STORAGE_KEY } from "@/lib/retail-cart-events";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,31 +19,10 @@ export function Navbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { data: cartSummary, refetch: refetchCartSummary } = useGetRetailCartSummary({
+  const { data: cartSummary } = useGetRetailCartSummary({
     query: { queryKey: getGetRetailCartSummaryQueryKey(), staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
   });
   const cartItemCount = cartSummary?.itemCount ?? 0;
-
-  useEffect(() => {
-    const refreshCartSummary = () => { void refetchCartSummary(); };
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refreshCartSummary();
-    };
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === RETAIL_CART_SYNC_STORAGE_KEY) refreshCartSummary();
-    };
-    window.addEventListener("focus", onVisible);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener(RETAIL_CART_CHANGED_EVENT, refreshCartSummary);
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      window.removeEventListener("focus", onVisible);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener(RETAIL_CART_CHANGED_EVENT, refreshCartSummary);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [refetchCartSummary]);
 
   const handleLogout = () => {
     logout.mutate(undefined, {

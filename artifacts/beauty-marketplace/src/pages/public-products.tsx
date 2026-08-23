@@ -33,7 +33,8 @@ function PublicProductCard({ product }: { product: PublicProduct }) {
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId: product.id, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
-    notifyRetailCartChanged();
+    const cart = await response.json() as { itemCount: number };
+    notifyRetailCartChanged(cart.itemCount);
     toast.success("Proizvod je dodat u korpu.");
   };
   return (
@@ -140,7 +141,8 @@ export function PublicProductDetailPage() {
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
-    notifyRetailCartChanged();
+    const cart = await response.json() as { itemCount: number };
+    notifyRetailCartChanged(cart.itemCount);
     toast.success("Proizvod je dodat u korpu.");
   };
 
