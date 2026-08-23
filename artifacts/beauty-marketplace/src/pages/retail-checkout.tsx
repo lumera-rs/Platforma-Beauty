@@ -123,6 +123,7 @@ export function RetailCheckoutPage() {
   const [previewLoading, setPreviewLoading] = useState(true);
   const [quoteRefreshMessage, setQuoteRefreshMessage] = useState<string | null>(null);
   const [quoteRefreshError, setQuoteRefreshError] = useState<string | null>(null);
+  const [unavailableCartItem, setUnavailableCartItem] = useState(false);
   const [cartChangedElsewhere, setCartChangedElsewhere] = useState(false);
   const [idempotencyKey] = useState(() => `retail-${crypto.randomUUID()}-${crypto.randomUUID()}`);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", street: "", city: "", postalCode: "", note: "", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier" });
@@ -135,6 +136,7 @@ export function RetailCheckoutPage() {
     setPreview(null);
     setQuoteRefreshMessage(null);
     setQuoteRefreshError(null);
+    setUnavailableCartItem(false);
     setCartChangedElsewhere(false);
     const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
     void retail<CheckoutPreview>(`/retail/checkout-preview?${query}`, { signal: controller.signal })
@@ -146,7 +148,11 @@ export function RetailCheckoutPage() {
       .catch((error: unknown) => {
         if (!active || (error instanceof DOMException && error.name === "AbortError")) return;
         setPreview(null);
-        setQuoteRefreshError(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se učita.");
+        if (error instanceof RetailApiError && error.code === "CHECKOUT_QUOTE_CHANGED") {
+          setUnavailableCartItem(true);
+        } else {
+          setQuoteRefreshError(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se učita.");
+        }
       })
       .finally(() => {
         if (active) setPreviewLoading(false);
@@ -200,6 +206,7 @@ export function RetailCheckoutPage() {
     setPreview(null);
     setQuoteRefreshMessage(null);
     setQuoteRefreshError(null);
+    setUnavailableCartItem(false);
     setCartChangedElsewhere(false);
     setPreviewLoading(true);
     try {
@@ -224,8 +231,12 @@ export function RetailCheckoutPage() {
       );
     } catch (error) {
       setPreview(null);
-      setQuoteRefreshError(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se osveži.");
-      toast.error(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se osveži.");
+      if (error instanceof RetailApiError && error.code === "CHECKOUT_QUOTE_CHANGED") {
+        setUnavailableCartItem(true);
+      } else {
+        setQuoteRefreshError(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se osveži.");
+        toast.error(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se osveži.");
+      }
     } finally {
       setPreviewLoading(false);
     }
@@ -252,6 +263,9 @@ export function RetailCheckoutPage() {
   const personalAvailable = /beograd/i.test(form.city);
   if (cart?.items.length === 0) {
     return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1><div className="mt-10 rounded-2xl border p-8 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3">Korpa je prazna.</p><Button asChild className="mt-5"><Link href="/proizvodi">Pregledajte proizvode</Link></Button></div></main></Layout>;
+  }
+  if (unavailableCartItem) {
+    return <Layout><main className="mx-auto min-h-screen max-w-2xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1><div data-testid="unavailable-item-recovery" role="alert" aria-live="assertive" className="mt-10 rounded-2xl border border-destructive/30 bg-destructive/5 p-8"><h2 className="text-xl font-semibold">Proizvod više nije dostupan</h2><p className="mt-3 text-muted-foreground">Jedan od proizvoda u vašoj korpi je rasprodat ili više nije aktivan. Porudžbina nije kreirana.</p><p className="mt-2 text-muted-foreground">Vratite se u korpu da uklonite proizvod ili nastavite sa pregledom drugih proizvoda.</p><div className="mt-6 flex flex-wrap gap-3"><Button variant="outline" asChild><Link href="/korpa">Vrati se u korpu</Link></Button><Button asChild><Link href="/proizvodi">Nastavi sa kupovinom</Link></Button></div></div></main></Layout>;
   }
   return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <p className="mt-6">Korpa je prazna.</p> : <form onSubmit={submit} className="mt-7 grid gap-8 lg:grid-cols-[1fr_340px]"><div className="space-y-5"><section className="rounded-xl border p-5"><h2 className="font-semibold">Kontakt</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{[["firstName","Ime"],["lastName","Prezime"],["email","Email"],["phone","Telefon"],["street","Adresa"],["city","Grad"],["postalCode","Poštanski broj"]].map(([key,label]) => <div key={key} className={key === "street" ? "sm:col-span-2" : ""}><Label>{label}</Label><Input required type={key === "email" ? "email" : "text"} value={(form as Record<string,string>)[key]} onChange={(e) => update(key,e.target.value)} /></div>)}</div><div className="mt-3"><Label>Napomena za dostavu</Label><Input value={form.note} onChange={(e) => update("note", e.target.value)} /></div></section><section className="rounded-xl border p-5"><h2 className="font-semibold">Dostava</h2><label className="mt-3 flex gap-2 text-sm"><input type="radio" checked={form.deliveryMethod === "courier"} onChange={() => update("deliveryMethod","courier")} />Kurirska dostava</label><label className="mt-3 flex gap-2 text-sm"><input type="radio" disabled={!personalAvailable} checked={form.deliveryMethod === "personal_belgrade"} onChange={() => update("deliveryMethod","personal_belgrade")} />Lična dostava — Beograd</label>{!personalAvailable && <p className="mt-2 text-xs text-muted-foreground">Unesite Beograd kao grad da biste izabrali ličnu dostavu.</p>}</section><section className="rounded-xl border p-5"><h2 className="font-semibold">Plaćanje</h2>{[["BANK_TRANSFER","Uplata na račun"],["CASH_ON_DELIVERY","Plaćanje pouzećem"]].map(([value,label]) => <label className="mt-3 flex gap-2 text-sm" key={value}><input type="radio" checked={form.paymentMethod === value} onChange={() => update("paymentMethod",value)} />{label}</label>)}<p className="mt-3 text-xs text-muted-foreground">Plaćanje karticom će biti dostupno nakon uključivanja sigurnog payment handoff-a.</p></section></div><aside className="h-fit rounded-xl border p-5"><h2 className="font-semibold">Pregled</h2><p className="mt-4 text-sm text-muted-foreground">{cart.itemCount} stavki</p>{cartChangedElsewhere && <div role="alert" aria-live="assertive" className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"><p className="font-medium">Korpa je u međuvremenu izmenjena</p><p className="mt-1 text-muted-foreground">Sadržaj korpe je promenjen u drugom tabu ili na drugom uređaju. Osvežite pregled da bi prikazani iznosi odgovarali aktuelnoj korpi.</p><Button type="button" variant="outline" size="sm" className="mt-3" disabled={previewLoading} onClick={() => void refreshCheckoutQuote(preview)}>Osveži pregled</Button></div>}{quoteRefreshMessage && <div role="status" aria-live="polite" className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p className="font-medium">Promena iznosa je osvežena</p><p className="mt-1 text-muted-foreground">{quoteRefreshMessage}</p></div>}{quoteRefreshError && <div role="alert" aria-live="assertive" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"><p className="font-medium">Pregled nije osvežen</p><p className="mt-1 text-muted-foreground">{quoteRefreshError}</p><Button type="button" variant="outline" size="sm" className="mt-3" disabled={previewLoading} onClick={() => void refreshCheckoutQuote(null)}>Pokušaj ponovo</Button></div>}<div className="mt-3 flex justify-between text-sm"><span>Proizvodi</span><span>{money(cart.subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Dostava</span><span>{preview ? money(preview.shipping.shippingCost) : "…"}</span></div><div className="mt-3 flex justify-between border-t pt-3"><span className="font-semibold">Ukupno</span><strong className="text-2xl">{preview ? money(preview.total) : "…"}</strong></div><Button className="mt-5 w-full" size="lg" disabled={submitting || previewLoading || !preview || cartChangedElsewhere}>{submitting ? "Potvrđivanje…" : previewLoading ? "Osvežavanje pregleda…" : "Potvrdi porudžbinu"}</Button></aside></form>}</main></Layout>;
 }

@@ -565,7 +565,7 @@ test("retail cart page ignores a stale poll response while a local edit is in fl
   }
 });
 
-test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
+test("retail checkout explains unavailable items and offers recovery without creating an order", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
   const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
@@ -584,8 +584,32 @@ test("retail checkout cannot submit an old preview after the item becomes unavai
     const response = await checkoutResponse;
     expect(response.status()).toBe(409);
     expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
-    await expect(confirmButton).toBeDisabled();
+
+    const checkoutCartId = createdCartIds.at(-1);
+    expect(checkoutCartId).toBeTruthy();
+    const [createdOrder] = await db.select({ id: retailOrdersTable.id }).from(retailOrdersTable)
+      .where(eq(retailOrdersTable.cartId, checkoutCartId!)).limit(1);
+    expect(createdOrder).toBeUndefined();
+
+    const recovery = page.getByTestId("unavailable-item-recovery");
+    await expect(recovery).toBeVisible();
+    await expect(recovery.getByRole("heading", { name: "Proizvod više nije dostupan" })).toBeVisible();
+    await expect(recovery).toContainText("rasprodat ili više nije aktivan");
+    await expect(recovery).toContainText("Porudžbina nije kreirana");
+    await expect(recovery.getByRole("link", { name: "Vrati se u korpu" })).toHaveAttribute("href", "/korpa");
+    await expect(recovery.getByRole("link", { name: "Nastavi sa kupovinom" })).toHaveAttribute("href", "/proizvodi");
+    await expect(page.getByRole("button", { name: "Potvrdi porudžbinu" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Porudžbina je primljena" })).not.toBeVisible();
+
+    await recovery.getByRole("link", { name: "Vrati se u korpu" }).click();
+    await expect(page).toHaveURL(/\/korpa$/);
+    await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+
+    await page.goto("/korpa/placanje");
+    const refreshedRecovery = page.getByTestId("unavailable-item-recovery");
+    await expect(refreshedRecovery).toBeVisible();
+    await refreshedRecovery.getByRole("link", { name: "Nastavi sa kupovinom" }).click();
+    await expect(page).toHaveURL(/\/proizvodi$/);
   } finally {
     await db.update(productsTable).set({ stock: product!.stock }).where(eq(productsTable.id, productId!));
   }
