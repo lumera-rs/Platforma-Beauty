@@ -559,6 +559,11 @@ export const appointmentsTable = pgTable("appointments", {
   index("appointments_employee_date_status_idx").on(table.employeeId, table.date, table.status),
   index("appointments_customer_idx").on(table.customerId),
   index("appointments_salon_customer_idx").on(table.salonCustomerId),
+  // Returning-client attribution probes completed history by customer and
+  // date. Keep cancelled/upcoming rows out of this hot lookup index.
+  index("appointments_salon_customer_completed_date_idx")
+    .on(table.salonCustomerId, table.date)
+    .where(sql`${table.status} = 'completed'`),
   index("appointments_service_idx").on(table.serviceId),
   index("appointments_series_idx").on(table.seriesId),
 ]);

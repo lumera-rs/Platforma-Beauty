@@ -100,7 +100,10 @@ async function seedLegacySchema(schema: string) {
   )`);
   await q(`CREATE TABLE "${schema}".appointments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE
+    salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
+    salon_customer_id uuid,
+    appointment_date date,
+    status text
   )`);
   await q(`CREATE TABLE "${schema}".reviews (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -398,9 +401,21 @@ async function run() {
       "platform_retention_settings_version_unique",
       "email_deliveries_report_alert_history_idx",
       "email_deliveries_provider_message_idx",
+      "appointments_salon_customer_completed_date_idx",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
+    const attributionIndex = (await q<{ indexdef: string }>(
+      `SELECT indexdef
+       FROM pg_indexes
+       WHERE schemaname = $1 AND indexname = 'appointments_salon_customer_completed_date_idx'`,
+      [s],
+    )).rows[0]?.indexdef;
+    assert.match(
+      attributionIndex ?? "",
+      /ON .*appointments USING btree \(salon_customer_id, appointment_date\).*WHERE \(status = 'completed'::text\)/i,
+      "attribution index covers customer/date and only completed history",
+    );
     const retailCartUniqueIndex = (await q<{ indnullsnotdistinct: boolean }>(
       `SELECT index_definition.indnullsnotdistinct
        FROM pg_index index_definition

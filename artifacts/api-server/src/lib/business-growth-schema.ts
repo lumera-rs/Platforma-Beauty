@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 14;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 15;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -333,6 +333,16 @@ function tableStatements(s: string): string[] {
        END IF;
      END $$`,
     `CREATE INDEX IF NOT EXISTS reviews_employee_visible_idx ON ${s}.reviews (employee_id, visible)`,
+
+    // Returning-client attribution checks completed appointment history by
+    // customer and date for every attributed campaign appointment. Keep this
+    // partial index aligned with the correlated EXISTS predicate; excluding
+    // non-completed appointments makes the hot history probe smaller. The
+    // statement is autocommitted so CONCURRENTLY avoids blocking appointment
+    // writes while an existing production table is indexed.
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS appointments_salon_customer_completed_date_idx
+       ON ${s}.appointments (salon_customer_id, appointment_date)
+       WHERE status = 'completed'`,
 
     // sms_deliveries Phase-2 lease/reconciliation columns + claim index. The
     // sms_delivery_status enum (incl. `processing`) is ensured by ENUM_LABELS.

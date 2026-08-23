@@ -12,6 +12,8 @@
  *   4. null (unknown) when the appointment has no linked salon customer
  *   5. the attributed appointment itself never counts as its own prior visit,
  *      even if completed and dated before the send
+ *   6. sentAt falls back to executedAt, then createdAt, while keeping the
+ *      comparison strictly before the selected campaign timestamp
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-returning.test.ts
  */
@@ -91,11 +93,17 @@ async function main() {
   };
   const SENT_AT = new Date("2026-02-01T10:00:00Z");
   let runSeq = 0;
-  const makeRun = async (customerId: string, attributedAppointmentId: string, opts?: { noSentAt?: boolean }) => {
+  const makeRun = async (
+    customerId: string,
+    attributedAppointmentId: string,
+    opts?: { noSentAt?: boolean; noExecutedAt?: boolean; createdAt?: Date },
+  ) => {
     await db.insert(automationRunsTable).values({
       eventKey: `ret-run-${runSeq++}-${suffix}`, ruleId: rule.id, salonId: salon.id, salonCustomerId: customerId,
       status: "sent",
-      executedAt: SENT_AT, sentAt: opts?.noSentAt ? null : SENT_AT,
+      executedAt: opts?.noExecutedAt ? null : SENT_AT,
+      sentAt: opts?.noSentAt ? null : SENT_AT,
+      createdAt: opts?.createdAt,
       attributedAppointmentId,
     });
   };
@@ -135,6 +143,23 @@ async function main() {
   const selfOnlyAppt = await makeAppointment({ customerId: selfOnly.id, date: "2026-01-20", status: "completed" });
   await makeRun(selfOnly.id, selfOnlyAppt.id, { noSentAt: true });
 
+  // 6. executedAt is the anchor when a legacy run has no sentAt.
+  const executedFallback = await makeCustomer("executed-fallback");
+  await makeAppointment({ customerId: executedFallback.id, date: "2026-01-10", status: "completed" });
+  const executedFallbackAppt = await makeAppointment({ customerId: executedFallback.id, date: "2026-02-05", status: "confirmed" });
+  await makeRun(executedFallback.id, executedFallbackAppt.id, { noSentAt: true });
+
+  // 7. createdAt is the final fallback. A completed visit ON its date is not
+  // prior: date comparison must remain strictly before the coalesced value.
+  const createdFallback = await makeCustomer("created-fallback");
+  await makeAppointment({ customerId: createdFallback.id, date: "2026-03-01", status: "completed" });
+  const createdFallbackAppt = await makeAppointment({ customerId: createdFallback.id, date: "2026-03-02", status: "confirmed" });
+  await makeRun(createdFallback.id, createdFallbackAppt.id, {
+    noSentAt: true,
+    noExecutedAt: true,
+    createdAt: new Date("2026-03-01T10:00:00Z"),
+  });
+
   const server = app.listen(0);
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -146,7 +171,7 @@ async function main() {
     );
     assert.equal(response.status, 200);
     const body = await response.json() as any;
-    assert.equal(body.total, 6, "all six attributed appointments present");
+    assert.equal(body.total, 8, "all eight attributed appointments present");
     const byId = new Map<string, any>(body.items.map((i: any) => [i.appointmentId, i]));
 
     assert.equal(byId.get(returningAppt.id)?.isReturning, true, "prior completed appointment → returning");
@@ -155,12 +180,15 @@ async function main() {
     assert.equal(byId.get(laterOnlyAppt.id)?.isReturning, false, "completed on/after the send date does not count → new");
     assert.equal(byId.get(walkInAppt.id)?.isReturning, null, "no linked salon customer → unknown");
     assert.equal(byId.get(selfOnlyAppt.id)?.isReturning, false, "attributed appointment never counts as its own prior visit");
-    console.log("✓ isReturning derived correctly for all six scenarios");
+    assert.equal(byId.get(executedFallbackAppt.id)?.isReturning, true, "executedAt fallback finds a strictly prior completed appointment");
+    assert.equal(byId.get(createdFallbackAppt.id)?.isReturning, false, "createdAt fallback keeps same-day completed appointment new");
+    console.log("✓ isReturning derived correctly for all coalesce fallback scenarios");
 
     // Summary aggregates: same derivation as the per-row field, over the whole
-    // attributed set. new = brandNew, cancelledPrior, laterOnly, selfOnly.
-    assert.equal(body.newClientCount, 4, "four new clients");
-    assert.equal(body.returningClientCount, 1, "one returning client");
+    // attributed set. new = brandNew, cancelledPrior, laterOnly, selfOnly,
+    // createdFallback; returning = priorCompleted, executedFallback.
+    assert.equal(body.newClientCount, 5, "five new clients");
+    assert.equal(body.returningClientCount, 2, "two returning clients");
     assert.equal(body.unknownClientCount, 1, "one unknown (no linked salon customer)");
     assert.equal(
       body.newClientCount + body.returningClientCount + body.unknownClientCount,
@@ -214,9 +242,9 @@ async function main() {
     assert.equal(pagedResponse.status, 200);
     const pagedBody = await pagedResponse.json() as any;
     assert.equal(pagedBody.items.length, 2, "page size respected");
-    assert.equal(pagedBody.total, 6, "paged total unchanged");
-    assert.equal(pagedBody.newClientCount, 4, "paged newClientCount covers the full set");
-    assert.equal(pagedBody.returningClientCount, 1, "paged returningClientCount covers the full set");
+    assert.equal(pagedBody.total, 8, "paged total unchanged");
+    assert.equal(pagedBody.newClientCount, 5, "paged newClientCount covers the full set");
+    assert.equal(pagedBody.returningClientCount, 2, "paged returningClientCount covers the full set");
     assert.equal(pagedBody.unknownClientCount, 1, "paged unknownClientCount covers the full set");
     console.log("✓ new/returning/unknown summary counts aggregate the full attributed set");
 
@@ -227,18 +255,22 @@ async function main() {
     );
     assert.equal(returningResp.status, 200);
     const returningBody = await returningResp.json() as any;
-    assert.equal(returningBody.total, 1, "clientType=returning total counts only returning rows");
-    assert.equal(returningBody.items.length, 1, "clientType=returning returns only returning rows");
-    assert.equal(returningBody.items[0]?.appointmentId, returningAppt.id, "returning row is the prior-completed customer");
-    assert.equal(returningBody.items[0]?.isReturning, true);
+    assert.equal(returningBody.total, 2, "clientType=returning total counts only returning rows");
+    assert.equal(returningBody.items.length, 2, "clientType=returning returns only returning rows");
+    assert.deepEqual(
+      new Set(returningBody.items.map((item: any) => item.appointmentId)),
+      new Set([returningAppt.id, executedFallbackAppt.id]),
+      "returning segment includes sentAt and executedAt-anchor cases",
+    );
+    assert.ok(returningBody.items.every((item: any) => item.isReturning === true));
     // The mix summary describes the whole window, not the filtered segment,
     // so the "X novih · Y vraćenih" line stays stable while filtering.
-    assert.equal(returningBody.newClientCount, 4, "summary newClientCount ignores clientType filter");
-    assert.equal(returningBody.returningClientCount, 1, "summary returningClientCount ignores clientType filter");
+    assert.equal(returningBody.newClientCount, 5, "summary newClientCount ignores clientType filter");
+    assert.equal(returningBody.returningClientCount, 2, "summary returningClientCount ignores clientType filter");
     assert.equal(returningBody.unknownClientCount, 1, "summary unknownClientCount ignores clientType filter");
-    console.log("✓ clientType=returning filters to the single returning client");
+    console.log("✓ clientType=returning filters to both returning clients");
 
-    // clientType=new: the four isReturning=false rows; the walk-in (null)
+    // clientType=new: the five isReturning=false rows; the walk-in (null)
     // matches neither segment.
     const newResp = await fetch(
       `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?limit=100&clientType=new`,
@@ -246,18 +278,18 @@ async function main() {
     );
     assert.equal(newResp.status, 200);
     const newBody = await newResp.json() as any;
-    assert.equal(newBody.total, 4, "clientType=new total counts only new rows");
+    assert.equal(newBody.total, 5, "clientType=new total counts only new rows");
     const newIds = new Set(newBody.items.map((i: any) => i.appointmentId));
     assert.deepEqual(
       newIds,
-      new Set([newAppt.id, cancelledPriorAppt.id, laterOnlyAppt.id, selfOnlyAppt.id]),
-      "clientType=new returns exactly the four new-client rows",
+      new Set([newAppt.id, cancelledPriorAppt.id, laterOnlyAppt.id, selfOnlyAppt.id, createdFallbackAppt.id]),
+      "clientType=new returns exactly the five new-client rows",
     );
     assert.ok(!newIds.has(walkInAppt.id), "unknown (no salon customer) row excluded from new segment");
     assert.ok(newBody.items.every((i: any) => i.isReturning === false), "every new-segment row has isReturning=false");
-    assert.equal(newBody.newClientCount, 4, "summary newClientCount ignores clientType filter");
-    assert.equal(newBody.returningClientCount, 1, "summary returningClientCount ignores clientType filter");
-    console.log("✓ clientType=new filters to the four new clients and excludes the unknown row");
+    assert.equal(newBody.newClientCount, 5, "summary newClientCount ignores clientType filter");
+    assert.equal(newBody.returningClientCount, 2, "summary returningClientCount ignores clientType filter");
+    console.log("✓ clientType=new filters to the five new clients and excludes the unknown row");
 
     // Invalid clientType is rejected.
     const badResp = await fetch(
