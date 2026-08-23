@@ -22,7 +22,11 @@ export interface RetentionSettingsPreview {
      */
   reclassifiedCountMarginOfError: number | null;
   currentCounts: RetentionStatusCounts;
+  /** Approximate 95% Wilson margin of error for each current status count when isEstimate is true; null in exact mode */
+  currentCountMarginsOfError: RetentionStatusCounts | null;
   candidateCounts: RetentionStatusCounts;
+  /** Approximate 95% Wilson margin of error for each candidate status count when isEstimate is true; null in exact mode */
+  candidateCountMarginsOfError: RetentionStatusCounts | null;
   /** Status moves under the candidate thresholds, largest first */
   shifts: RetentionReclassificationShift[];
   /** Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample */

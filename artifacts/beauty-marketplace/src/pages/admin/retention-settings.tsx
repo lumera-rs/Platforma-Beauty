@@ -71,6 +71,17 @@ const STATUS_LABELS: Record<StatusKey, string> = {
   LOST: "Izgubljeni",
 };
 
+function formatEstimatedStatusRange(
+  estimate: number,
+  marginOfError: number,
+  totalCustomers: number,
+): string {
+  const lower = Math.max(0, estimate - marginOfError);
+  const upper = Math.min(totalCustomers, estimate + marginOfError);
+  const locale = "sr-Latn-RS";
+  return `${lower.toLocaleString(locale)}–${upper.toLocaleString(locale)}`;
+}
+
 function changedFields(entry: RetentionSettingsHistoryEntry): FieldKey[] {
   return (Object.keys(entry.thresholds) as FieldKey[]).filter(
     (k) => entry.thresholds[k] !== entry.previousThresholds[k],
@@ -613,13 +624,39 @@ export default function AdminRetentionSettings() {
                         const current = preview.currentCounts[status];
                         const candidate = preview.candidateCounts[status];
                         const delta = candidate - current;
+                        const currentMargin = preview.isEstimate
+                          ? preview.currentCountMarginsOfError?.[status]
+                          : undefined;
+                        const candidateMargin = preview.isEstimate
+                          ? preview.candidateCountMarginsOfError?.[status]
+                          : undefined;
                         // Estimates are never rendered as exact numbers.
                         const approx = preview.isEstimate ? "~" : "";
                         return (
                           <tr key={status} className="border-b border-border/30 last:border-0" data-testid={`retention-preview-row-${status}`}>
                             <td className="py-1.5 pr-4 text-foreground">{STATUS_LABELS[status]}</td>
-                            <td className="py-1.5 pr-4">{approx}{current}</td>
-                            <td className="py-1.5 pr-4 font-medium text-foreground">{approx}{candidate}</td>
+                            <td className="py-1.5 pr-4 align-top">
+                              <span>{approx}{current}</span>
+                              {currentMargin !== undefined && (
+                                <span
+                                  className="block text-xs text-amber-600 dark:text-amber-500"
+                                  data-testid={`retention-preview-range-current-${status}`}
+                                >
+                                  Raspon: {formatEstimatedStatusRange(current, currentMargin, preview.totalCustomers)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-1.5 pr-4 align-top font-medium text-foreground">
+                              <span>{approx}{candidate}</span>
+                              {candidateMargin !== undefined && (
+                                <span
+                                  className="block text-xs font-normal text-amber-600 dark:text-amber-500"
+                                  data-testid={`retention-preview-range-candidate-${status}`}
+                                >
+                                  Raspon: {formatEstimatedStatusRange(candidate, candidateMargin, preview.totalCustomers)}
+                                </span>
+                              )}
+                            </td>
                             <td className={`py-1.5 font-medium ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                               {approx}{delta > 0 ? `+${delta}` : delta}
                             </td>

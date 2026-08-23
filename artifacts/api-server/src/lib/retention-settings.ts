@@ -368,8 +368,18 @@ export interface RetentionPreviewResult {
   reclassifiedCountMarginOfError: number | null;
 
   currentCounts: RetentionStatusCounts;
+  /**
+   * Approximate 95% margin of error for each current status count when the
+   * preview is estimated; null when the preview is exact.
+   */
+  currentCountMarginsOfError: RetentionStatusCounts | null;
 
   candidateCounts: RetentionStatusCounts;
+  /**
+   * Approximate 95% margin of error for each candidate status count when the
+   * preview is estimated; null when the preview is exact.
+   */
+  candidateCountMarginsOfError: RetentionStatusCounts | null;
   /** Status moves under the candidate thresholds, largest first. */
 
   shifts: RetentionPreviewShift[];
@@ -899,6 +909,19 @@ export async function previewRetentionThresholds(
       for (const status of RETENTION_STATUSES) scaled[status] = scale(counts[status]);
       return scaled;
     };
+    const estimatedCountMargins = (
+      counts: RetentionStatusCounts,
+    ): RetentionStatusCounts => {
+      const margins = emptyStatusCounts();
+      for (const status of RETENTION_STATUSES) {
+        margins[status] = calculateEstimatedCountMarginOfError(
+          counts[status],
+          sampledCount,
+          customerCount,
+        );
+      }
+      return margins;
+    };
     assertWithinBudget();
     return {
       currentVersion: active.version,
@@ -910,7 +933,9 @@ export async function previewRetentionThresholds(
         customerCount,
       ),
       currentCounts: estimatedCounts(currentCounts),
+      currentCountMarginsOfError: estimatedCountMargins(currentCounts),
       candidateCounts: estimatedCounts(candidateCounts),
+      candidateCountMarginsOfError: estimatedCountMargins(candidateCounts),
       shifts: estimatedShifts,
       topAffectedSalons: [],
       topShareAffectedSalons: [],
@@ -985,7 +1010,9 @@ export async function previewRetentionThresholds(
     reclassifiedCount,
     reclassifiedCountMarginOfError: null,
     currentCounts,
+    currentCountMarginsOfError: null,
     candidateCounts,
+    candidateCountMarginsOfError: null,
     shifts,
     topAffectedSalons,
     topShareAffectedSalons,

@@ -234,6 +234,10 @@ test("marks sampled retention counts as approximate and keeps exact counts unmar
       await expect(cells.nth(2)).toHaveText(/~/);
       await expect(cells.nth(3)).toHaveText(/~/);
     }
+    for (const status of ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"]) {
+      await expect(page.getByTestId(`retention-preview-range-current-${status}`)).toHaveText(/^Raspon: \d+–\d+$/);
+      await expect(page.getByTestId(`retention-preview-range-candidate-${status}`)).toHaveText(/^Raspon: \d+–\d+$/);
+    }
 
     await expect(shiftRows).toHaveCount(1);
     await expect(shiftRows.first().locator("span.font-semibold")).toHaveText(/^~/);
@@ -250,6 +254,10 @@ test("marks sampled retention counts as approximate and keeps exact counts unmar
       await expect(cells.nth(1)).not.toHaveText(/~/);
       await expect(cells.nth(2)).not.toHaveText(/~/);
       await expect(cells.nth(3)).not.toHaveText(/~/);
+    }
+    for (const status of ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"]) {
+      await expect(page.getByTestId(`retention-preview-range-current-${status}`)).toHaveCount(0);
+      await expect(page.getByTestId(`retention-preview-range-candidate-${status}`)).toHaveCount(0);
     }
 
     await expect(shiftRows).toHaveCount(2);

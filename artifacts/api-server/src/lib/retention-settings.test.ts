@@ -641,6 +641,16 @@ async function integrationTests() {
         null,
         "exact mode reports no margin of error",
       );
+      assert.equal(
+        exactBaseline.currentCountMarginsOfError,
+        null,
+        "exact mode reports no current-status margins",
+      );
+      assert.equal(
+        exactBaseline.candidateCountMarginsOfError,
+        null,
+        "exact mode reports no candidate-status margins",
+      );
       const platformCustomers = exactBaseline.totalCustomers as number;
       assert.ok(platformCustomers >= 3, "fixtures guarantee at least 3 customers");
 
@@ -671,6 +681,18 @@ async function integrationTests() {
           overCap.reclassifiedCountMarginOfError >= 0,
         "estimate reports a non-negative integer margin of error",
       );
+      for (const status of Object.keys(overCap.currentCounts as Record<string, number>)) {
+        assert.ok(
+          Number.isInteger(overCap.currentCountMarginsOfError?.[status]) &&
+            overCap.currentCountMarginsOfError[status] >= 0,
+          `estimate reports a current ${status} margin`,
+        );
+        assert.ok(
+          Number.isInteger(overCap.candidateCountMarginsOfError?.[status]) &&
+            overCap.candidateCountMarginsOfError[status] >= 0,
+          `estimate reports a candidate ${status} margin`,
+        );
+      }
       assert.equal(overCap.reclassifiedCount, 0, "identity thresholds reclassify nobody, even sampled");
       assert.deepEqual(overCap.shifts, [], "no shifts under identity thresholds");
       assert.deepEqual(overCap.topAffectedSalons, [], "per-salon breakdown is never extrapolated");
@@ -697,6 +719,20 @@ async function integrationTests() {
       assert.equal(tiny.totalCustomers, platformCustomers);
       const tinyShiftSum = (tiny.shifts as any[]).reduce((s: number, x: any) => s + x.count, 0);
       assert.equal(tinyShiftSum, tiny.reclassifiedCount, "estimated shifts add up to the estimated total");
+      for (const status of Object.keys(tiny.currentCounts as Record<string, number>)) {
+        const sampledCurrentCount = tiny.currentCounts[status] === platformCustomers ? 1 : 0;
+        const sampledCandidateCount = tiny.candidateCounts[status] === platformCustomers ? 1 : 0;
+        assert.equal(
+          tiny.currentCountMarginsOfError[status],
+          calculateEstimatedCountMarginOfError(sampledCurrentCount, 1, platformCustomers),
+          `current ${status} margin uses the shared Wilson methodology`,
+        );
+        assert.equal(
+          tiny.candidateCountMarginsOfError[status],
+          calculateEstimatedCountMarginOfError(sampledCandidateCount, 1, platformCustomers),
+          `candidate ${status} margin uses the shared Wilson methodology`,
+        );
+      }
       delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
       delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
       console.log("✓ Over-cap preview falls back to a clearly-flagged sampled estimate (boundary inclusive)");
@@ -1153,6 +1189,18 @@ async function integrationTests() {
           est.reclassifiedCountMarginOfError >= 0,
         "volume estimate reports a non-negative integer margin of error",
       );
+      for (const status of Object.keys(est.currentCounts as Record<string, number>)) {
+        assert.ok(
+          Number.isInteger(est.currentCountMarginsOfError?.[status]) &&
+            est.currentCountMarginsOfError[status] >= 0,
+          `volume estimate reports a current ${status} margin`,
+        );
+        assert.ok(
+          Number.isInteger(est.candidateCountMarginsOfError?.[status]) &&
+            est.candidateCountMarginsOfError[status] >= 0,
+          `volume estimate reports a candidate ${status} margin`,
+        );
+      }
       assert.ok(
         estElapsedMs <= PERF_RESPONSE_BOUND_MS,
         `estimate over ${est.totalCustomers} customers answered in ${estElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,

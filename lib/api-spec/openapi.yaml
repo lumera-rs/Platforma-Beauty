@@ -8170,7 +8170,17 @@ components:
           type: ["number", "null"]
           description: "Approximate 95% margin of error for reclassifiedCount when isEstimate is true; null in exact mode"
         currentCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
+        currentCountMarginsOfError:
+          oneOf:
+            - $ref: "#/components/schemas/RetentionStatusCounts"
+            - type: "null"
+          description: "Approximate 95% Wilson margin of error for each current status count when isEstimate is true; null in exact mode"
         candidateCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
+        candidateCountMarginsOfError:
+          oneOf:
+            - $ref: "#/components/schemas/RetentionStatusCounts"
+            - type: "null"
+          description: "Approximate 95% Wilson margin of error for each candidate status count when isEstimate is true; null in exact mode"
         shifts:
           type: array
           description: "Status moves under the candidate thresholds, largest first"
@@ -8190,7 +8200,7 @@ components:
         sampleSize:
           type: ["number", "null"]
           description: "Customers actually classified when isEstimate is true; null in exact mode"
-      required: [currentVersion, totalCustomers, reclassifiedCount, reclassifiedCountMarginOfError, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
+      required: [currentVersion, totalCustomers, reclassifiedCount, reclassifiedCountMarginOfError, currentCounts, currentCountMarginsOfError, candidateCounts, candidateCountMarginsOfError, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
 
     RetentionSettingsUpdate:
       allOf:

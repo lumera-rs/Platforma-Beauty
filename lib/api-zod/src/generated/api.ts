@@ -10242,6 +10242,13 @@ export const AdminPreviewRetentionSettingsResponse = zod.object({
   "AT_RISK": zod.number(),
   "LOST": zod.number()
 }),
+  "currentCountMarginsOfError": zod.union([zod.object({
+  "NEW": zod.number(),
+  "ACTIVE": zod.number(),
+  "VIP": zod.number(),
+  "AT_RISK": zod.number(),
+  "LOST": zod.number()
+}),zod.null()]).describe('Approximate 95% Wilson margin of error for each current status count when isEstimate is true; null in exact mode'),
   "candidateCounts": zod.object({
   "NEW": zod.number(),
   "ACTIVE": zod.number(),
@@ -10249,6 +10256,13 @@ export const AdminPreviewRetentionSettingsResponse = zod.object({
   "AT_RISK": zod.number(),
   "LOST": zod.number()
 }),
+  "candidateCountMarginsOfError": zod.union([zod.object({
+  "NEW": zod.number(),
+  "ACTIVE": zod.number(),
+  "VIP": zod.number(),
+  "AT_RISK": zod.number(),
+  "LOST": zod.number()
+}),zod.null()]).describe('Approximate 95% Wilson margin of error for each candidate status count when isEstimate is true; null in exact mode'),
   "shifts": zod.array(zod.object({
   "fromStatus": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
   "toStatus": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
