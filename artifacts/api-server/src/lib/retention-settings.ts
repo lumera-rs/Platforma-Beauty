@@ -154,7 +154,15 @@ export async function getActiveRetentionSettings(
 
 export type UpdateRetentionSettingsResult =
   | { ok: true; settings: ActiveRetentionSettings }
-  | { ok: false; conflict: { expectedVersion: number; activeVersion: number } };
+  | {
+      ok: false;
+      conflict: {
+        expectedVersion: number;
+        activeVersion: number;
+        changedByName: string | null;
+        changedAt: Date | null;
+      };
+    };
 /**
  * Record a new settings version. Caller must have validated the candidate
  * (this function re-validates defensively and throws on invalid input).
@@ -236,7 +244,20 @@ export async function updateRetentionSettings(
       .limit(1);
     const activeVersion = current?.version ?? 0;
     if (activeVersion !== expectedVersion) {
-      return { kind: "conflict", expectedVersion, activeVersion } as const;
+      const [changer] = current?.changedByUserId
+        ? await tx
+            .select({ firstName: usersTable.firstName, lastName: usersTable.lastName })
+            .from(usersTable)
+            .where(eq(usersTable.id, current.changedByUserId))
+            .limit(1)
+        : [];
+      return {
+        kind: "conflict",
+        expectedVersion,
+        activeVersion,
+        changedByName: formatChangedByName(changer?.firstName, changer?.lastName),
+        changedAt: current?.createdAt ?? null,
+      } as const;
     }
     // A restore whose values equal the currently active thresholds would only
     // add audit noise ("no values changed" history entries), so it is blocked
@@ -293,7 +314,12 @@ export async function updateRetentionSettings(
   if (outcome.kind === "conflict") {
     return {
       ok: false,
-      conflict: { expectedVersion: outcome.expectedVersion, activeVersion: outcome.activeVersion },
+      conflict: {
+        expectedVersion: outcome.expectedVersion,
+        activeVersion: outcome.activeVersion,
+        changedByName: outcome.changedByName,
+        changedAt: outcome.changedAt,
+      },
     };
   }
   const inserted = outcome.row;

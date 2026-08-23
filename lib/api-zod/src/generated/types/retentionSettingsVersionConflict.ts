@@ -14,4 +14,14 @@ export interface RetentionSettingsVersionConflict {
   expectedVersion: number;
   /** Version currently active on the server */
   activeVersion: number;
+  /**
+     * Display name of the administrator who saved the winning version; null when platform defaults are active or the user is unknown
+     * @nullable
+     */
+  changedByName: string | null;
+  /**
+     * ISO timestamp of the winning version; null when platform defaults are active
+     * @nullable
+     */
+  changedAt: string | null;
 }

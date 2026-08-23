@@ -8182,7 +8182,9 @@ components:
         code: { type: string, enum: [VERSION_CONFLICT] }
         expectedVersion: { type: number, description: "Version the client based its edit on" }
         activeVersion: { type: number, description: "Version currently active on the server" }
-      required: [error, code, expectedVersion, activeVersion]
+        changedByName: { type: ["string", "null"], description: "Display name of the administrator who saved the winning version; null when platform defaults are active or the user is unknown" }
+        changedAt: { type: ["string", "null"], description: "ISO timestamp of the winning version; null when platform defaults are active" }
+      required: [error, code, expectedVersion, activeVersion, changedByName, changedAt]
 
     RetentionSettingsHistoryEntry:
       type: object

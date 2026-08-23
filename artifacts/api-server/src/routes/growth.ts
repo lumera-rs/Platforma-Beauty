@@ -1978,6 +1978,8 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
           code: "VERSION_CONFLICT",
           expectedVersion: result.conflict.expectedVersion,
           activeVersion: result.conflict.activeVersion,
+          changedByName: result.conflict.changedByName,
+          changedAt: result.conflict.changedAt ? result.conflict.changedAt.toISOString() : null,
         });
         return;
       }

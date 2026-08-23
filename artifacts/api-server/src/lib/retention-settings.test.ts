@@ -436,6 +436,9 @@ async function integrationTests() {
     assert.equal(staleBody.code, "VERSION_CONFLICT");
     assert.equal(staleBody.expectedVersion, initialVersion, "conflict echoes the client's version");
     assert.equal(staleBody.activeVersion, initialVersion + 1, "conflict reports the winning version");
+    assert.equal(staleBody.changedByName, "Retention Admin", "conflict identifies the winning admin");
+    assert.ok(staleBody.changedAt, "conflict reports when the winning version was saved");
+    assert.equal(staleBody.changedAt, baseline.changedAt, "conflict reports the winning version timestamp");
 
     const afterStale = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
     const afterStaleBody = (await afterStale.json()) as any;

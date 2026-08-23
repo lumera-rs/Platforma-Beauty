@@ -269,7 +269,13 @@ export default function AdminRetentionSettings() {
         setIdenticalSavePending(null);
         if (isVersionConflict(err)) {
           setPreview(null);
-          setConflict({ pending: thresholds, origin });
+          const conflictDetails = getVersionConflictDetails(err);
+          setConflict({
+            pending: thresholds,
+            origin,
+            changedByName: conflictDetails.changedByName,
+            changedAt: conflictDetails.changedAt,
+          });
           void refreshAfterConflict();
           toast.error("Drugi administrator je u međuvremenu sačuvao izmene. Proverite nove vrednosti i potvrdite ponovo.");
           return;
@@ -855,6 +861,12 @@ export default function AdminRetentionSettings() {
                 Ispod je poređenje trenutno aktivnih vrednosti i vrednosti koje ste pokušali da sačuvate —
                 potvrdite ponovo ako i dalje želite svoje vrednosti.
               </AlertDialogDescription>
+            {conflict && (conflict.changedByName || conflict.changedAt) && (
+              <p className="text-sm text-muted-foreground" data-testid="retention-conflict-changed-by">
+                Izmenio: {conflict.changedByName ?? "Nepoznat administrator"}
+                {conflict.changedAt ? `, ${format(new Date(conflict.changedAt), "dd.MM.yyyy. HH:mm")}` : ""}
+              </p>
+            )}
             </AlertDialogHeader>
             {conflict && settings && (() => {
               const diffKeys = (Object.keys(conflict.pending) as FieldKey[]).filter(
@@ -914,4 +926,18 @@ function isVersionConflict(err: unknown): boolean {
 interface VersionConflict {
   pending: RetentionThresholds;
   origin: UpdateOrigin;
+  changedByName: string | null;
+  changedAt: string | null;
+}
+
+function getVersionConflictDetails(err: unknown): Pick<VersionConflict, "changedByName" | "changedAt"> {
+  const e = err as {
+    response?: { data?: { changedByName?: unknown; changedAt?: unknown } };
+    data?: { changedByName?: unknown; changedAt?: unknown };
+  } | null;
+  const data = e?.response?.data ?? e?.data;
+  return {
+    changedByName: typeof data?.changedByName === "string" ? data.changedByName : null,
+    changedAt: typeof data?.changedAt === "string" ? data.changedAt : null,
+  };
 }
