@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "./layout";
+import { armHistoryTraversalGuard } from "@/lib/unsaved-changes-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
@@ -26,13 +27,55 @@ export default function AdminIntegrations() {
   const [data, setData] = useState<Data | null>(null);
   const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {} });
   const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "" });
+  const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
   const load = async () => {
     const response = await fetch("/api/admin/integrations", { credentials: "include" });
     if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
-    setData(await response.json());
+    const payload: Data = await response.json();
+    setData(payload);
+    setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled });
   };
   useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
+  // Unsaved-changes guard: generated or typed values and toggled "enabled" switches take
+  // effect only after "Sačuvaj", so leaving the page with a dirty form (e.g. a freshly
+  // generated webhook secret) would silently discard it. Saving an integration clears its
+  // form fields and re-baselines its enabled flag, which removes the guard.
+  const hasUnsavedChanges = useMemo(() => {
+    if (Object.values(form).some((values) => Object.values(values).some((value) => value.trim() !== ""))) return true;
+    if (!data || !savedEnabled) return false;
+    return (Object.keys(savedEnabled) as Integration[]).some((integration) => data.integrations[integration].enabled !== savedEnabled[integration]);
+  }, [form, data, savedEnabled]);
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const message = "Imate nesačuvane izmene u podešavanjima integracija (npr. generisanu webhook tajnu ili promenjen prekidač). One važe tek kada kliknete „Sačuvaj“. Da li ipak želite da napustite stranicu?";
+    // Reload / tab close / external navigation.
+    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = message; return message; };
+    // In-app link navigation (wouter <Link> renders plain anchors).
+    const onClickCapture = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = (event.target as Element | null)?.closest?.("a[href]");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      const target = anchor.getAttribute("target");
+      if (!href || href.startsWith("#") || (target && target !== "_self")) return;
+      const destination = new URL(href, window.location.href);
+      if (destination.origin === window.location.origin && destination.pathname === window.location.pathname) return;
+      if (!window.confirm(message)) { event.preventDefault(); event.stopPropagation(); }
+    };
+    // Browser Back/Forward is guarded by the module-level popstate listener
+    // (see lib/unsaved-changes-guard.ts): a page-local listener would be
+    // removed by React's cleanup mid-dispatch when the router unmounts this
+    // component, so it must run ahead of the router's subscription instead.
+    const disarmHistoryGuard = armHistoryTraversalGuard(message);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClickCapture, true);
+    return () => {
+      disarmHistoryGuard();
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClickCapture, true);
+    };
+  }, [hasUnsavedChanges]);
   // The "secret changed, registration not re-confirmed" state is persisted
   // server-side (webhookSecretPendingReconfirmation on each card), so the
   // reminder survives reloads; a successful re-confirmation clears it there
@@ -50,6 +93,7 @@ export default function AdminIntegrations() {
     if (!response.ok) throw new Error(result.error ?? "Čuvanje nije uspelo.");
     setData({ ...data!, integrations: { ...data!.integrations, [integration]: result } });
     setForm({ ...form, [integration]: {} });
+    setSavedEnabled((previous) => previous ? { ...previous, [integration]: (result as Card).enabled } : previous);
     // The server marks the change only when the saved secret actually differs
     // from the effective one — re-saving an identical secret stays a plain save.
     if ("webhookSecret" in trimmedValues && result.webhookSecretPendingReconfirmation) {
@@ -153,11 +197,11 @@ export default function AdminIntegrations() {
         const card = data.integrations[integration]; const [label, color] = status(card);
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{titles[integration]}</h2><p className="text-sm text-muted-foreground">{card.configuredInDatabase ? "Baza je izvor konfiguracije." : "Koristi environment fallback dok ne sačuvate vrednosti."}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${color}`}>{label}</span></div>
-          <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
+          <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" data-testid={`toggle-enabled-${integration}`} checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
           {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.key === "webhookSecret" && (integration === "sms" || integration === "brevo") ? <>
             <div className="flex gap-2">
-              <div className="flex-1"><PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>
-              <Button type="button" variant="outline" onClick={() => generateWebhookSecret(integration)}><KeyRound className="mr-2 h-4 w-4" />Generiši tajnu</Button>
+              <div className="flex-1"><PasswordInput data-testid={`input-webhook-secret-${integration}`} value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /></div>
+              <Button type="button" variant="outline" data-testid={`generate-webhook-secret-${integration}`} onClick={() => generateWebhookSecret(integration)}><KeyRound className="mr-2 h-4 w-4" />Generiši tajnu</Button>
             </div>
             <p className="text-xs text-muted-foreground">Generisana tajna počinje da važi tek kada kliknete „Sačuvaj“.</p>
           </> : field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}

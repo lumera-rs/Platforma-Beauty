@@ -20,6 +20,7 @@
     "test:admin-review-feedback": "playwright test browser/admin-review-feedback.spec.ts",
     "test:retention-conflict": "playwright test browser/retention-conflict.spec.ts",
     "test:retention-restore-conflict": "playwright test browser/retention-restore-conflict.spec.ts",
+    "test:integrations-unsaved-guard": "playwright test browser/integrations-unsaved-guard.spec.ts",
     "test:admin-salon-designations": "playwright test browser/admin-salon-designations.spec.ts",
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
