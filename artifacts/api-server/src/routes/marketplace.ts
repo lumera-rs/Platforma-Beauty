@@ -11767,14 +11767,48 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets, deliveryReports, reachableAdminCount] = await Promise.all([
-    db.select().from(usersTable),
-    db.select().from(salonsTable),
-    db.select().from(appointmentsTable),
-    db.select().from(ordersTable),
-    db.select().from(reviewsTable),
-    db.select({ status: subscriptionsTable.status }).from(subscriptionsTable),
-    db.select({ id: servicesTable.id, categoryName: servicesTable.categoryName }).from(servicesTable),
+  const [
+    userSummary,
+    salonSummary,
+    appointmentSummary,
+    orderSummary,
+    reviewSummary,
+    subscriptionSummary,
+    topCategories,
+    eligibleGalleryUploadTickets,
+    deliveryReports,
+    reachableAdminCount,
+  ] = await Promise.all([
+    db.select({ total: count() }).from(usersTable),
+    db.select({
+      total: count(),
+      active: sql<number>`count(*) filter (where ${salonsTable.active})::int`,
+      newThisMonth: sql<number>`count(*) filter (where ${salonsTable.createdAt} >= ${thisMonthStart})::int`,
+    }).from(salonsTable),
+    db.select({
+      thisMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${thisMonthStart})::int`,
+      lastMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${lastMonthStart} and ${appointmentsTable.createdAt} < ${thisMonthStart})::int`,
+    }).from(appointmentsTable),
+    db.select({
+      total: sql<number>`coalesce(sum(${ordersTable.total}), 0)::double precision`,
+    }).from(ordersTable),
+    db.select({
+      total: count(),
+      hidden: sql<number>`count(*) filter (where not ${reviewsTable.visible})::int`,
+    }).from(reviewsTable),
+    db.select({ total: count() })
+      .from(subscriptionsTable)
+      .where(inArray(subscriptionsTable.status, ["active", "free_via_loyalty"])),
+    db.select({
+      name: servicesTable.categoryName,
+      count: count(),
+    })
+      .from(appointmentsTable)
+      .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .where(ne(servicesTable.categoryName, ""))
+      .groupBy(servicesTable.categoryName)
+      .orderBy(desc(count()), asc(servicesTable.categoryName))
+      .limit(5),
     db.select({
       cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
       createdAt: educationMediaUploadsTable.createdAt,
@@ -11785,12 +11819,12 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     smsFallbackReachableAdminCount(),
   ]);
 
-  const bookingsThisMonth = allAppointments.filter((a) => a.createdAt >= thisMonthStart).length;
-  const bookingsLastMonth = allAppointments.filter((a) => a.createdAt >= lastMonthStart && a.createdAt < thisMonthStart).length;
+  const bookingsThisMonth = Number(appointmentSummary[0]?.thisMonth ?? 0);
+  const bookingsLastMonth = Number(appointmentSummary[0]?.lastMonth ?? 0);
   const bookingsTrend = bookingsLastMonth > 0 ? Math.round(((bookingsThisMonth - bookingsLastMonth) / bookingsLastMonth) * 100) : 0;
-  const newSalonsThisMonth = salons.filter((s) => s.createdAt >= thisMonthStart).length;
-  const hiddenReviews = reviews.filter((r) => !r.visible).length;
-  const activeSubscriptions = subscriptions.filter((s) => s.status === "active" || s.status === "free_via_loyalty").length;
+  const newSalonsThisMonth = Number(salonSummary[0]?.newThisMonth ?? 0);
+  const hiddenReviews = Number(reviewSummary[0]?.hidden ?? 0);
+  const activeSubscriptions = Number(subscriptionSummary[0]?.total ?? 0);
   const galleryCleanupFailedTickets = eligibleGalleryUploadTickets.filter((ticket) => ticket.cleanupFailureCount > 0);
   const oldestEligibleGalleryUploadTicket = eligibleGalleryUploadTickets.reduce<Date | null>(
     (oldest, ticket) => !oldest || ticket.createdAt < oldest ? ticket.createdAt : oldest,
@@ -11800,27 +11834,16 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
     : null;
 
-  const categoryCount: Record<string, number> = {};
-  const categoryByService = new Map(services.map((service) => [service.id, service.categoryName]));
-  for (const appointment of allAppointments) {
-    const categoryName = categoryByService.get(appointment.serviceId);
-    if (categoryName) categoryCount[categoryName] = (categoryCount[categoryName] ?? 0) + 1;
-  }
-  const topCategories = Object.entries(categoryCount)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([name, cnt]) => ({ name, count: cnt }));
-
   res.json(GetAdminSummaryResponse.parse({
-    totalUsers: users.length,
-    totalSalons: salons.length,
-    activeSalons: salons.filter((s) => s.active).length,
+    totalUsers: Number(userSummary[0]?.total ?? 0),
+    totalSalons: Number(salonSummary[0]?.total ?? 0),
+    activeSalons: Number(salonSummary[0]?.active ?? 0),
     bookingsThisMonth,
     bookingsLastMonth,
     bookingsTrend,
-    grossMerchandiseValue: orders.reduce((sum, item) => sum + item.total, 0),
+    grossMerchandiseValue: Number(orderSummary[0]?.total ?? 0),
     newSalonsThisMonth,
-    totalReviews: reviews.length,
+    totalReviews: Number(reviewSummary[0]?.total ?? 0),
     hiddenReviews,
     activeSubscriptions,
     galleryCleanupFailedTickets: galleryCleanupFailedTickets.length,
