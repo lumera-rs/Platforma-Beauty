@@ -1,0 +1,10 @@
+---
+name: Mainline merge damage
+description: The main branch can itself be broken by concurrent semantic auto-merges; conflict resolution must repair, not just resolve.
+---
+
+The "ours" (main) side of a task rebase is not guaranteed to compile: concurrent semantic auto-merges have shipped main with missing helper functions, duplicate import lines, missing type imports, and calls using a superseded function signature.
+
+**Why:** Merge tooling resolves conflicts function-by-function, so one task's refactor (e.g. cutoff → window-based filtering) can land while another task's caller of the old signature also lands; typecheck is not re-run on main after every merge.
+
+**How to apply:** After resolving conflict markers, always run the full typecheck and the affected test suite *before* continuing the merge — and treat errors located in "ours" code as damage to repair (recover deleted helpers from `git log -S`, or adopt main's newer replacement and delete the stale helper). Expect multiple conflict rounds when sibling tasks keep merging; re-verify after every round and after post-rebase codegen. Semantics chosen for aggregates (e.g. which statuses count as "realized") must be applied consistently to every sibling surface main added meanwhile (previous-window trends, drill-down lists), or completion review will reject the merge for cross-surface disagreement.

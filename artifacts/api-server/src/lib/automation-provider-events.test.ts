@@ -1334,6 +1334,15 @@ async function run() {
       const attributionStats = await statsResponse.json() as Record<string, number>;
       assert.equal(attributionStats["attributedAppointments"], 2, "cancelled and no-show appointments must not count as attributed");
       assert.equal(attributionStats["attributedRevenue"], 5000, "cancelled and no-show appointment revenue must be excluded");
+      // The cancelled line ("otkazano") reports the fallen-through bookings
+      // separately: count and lost revenue, without touching realized numbers.
+      assert.equal(attributionStats["cancelledAttributedAppointments"], 1, "cancelled appointment must be reported in the separate cancelled count");
+      assert.equal(attributionStats["cancelledAttributedRevenue"], 5000, "cancelled revenue must be reported separately as lost revenue");
+      assert.equal(
+        (attributionStats["attributedAppointments"] ?? 0) + (attributionStats["cancelledAttributedAppointments"] ?? 0),
+        3,
+        "realized + cancelled must reconcile with attributed runs (no-show excluded from both)",
+      );
       // Completed vs upcoming split: completed money is separated from the
       // still-upcoming (confirmed) appointment, the no-show lands in neither
       // bucket, and the buckets sum exactly to the attributed totals.
@@ -1365,17 +1374,19 @@ async function run() {
       assert.equal(overviewRow["completedRevenue"], 2000, "overview must expose the same completed revenue");
       assert.equal(overviewRow["upcomingAppointments"], 1, "overview must expose the same upcoming count — never the no-show");
       assert.equal(overviewRow["upcomingRevenue"], 3000, "overview must expose the same upcoming revenue — no-show money is excluded");
-      console.log("✓ cancelled and no-show appointments are excluded; attributed totals split into completed vs upcoming in both endpoints");
+      assert.equal(overviewRow["cancelledAttributedAppointments"], 1, "overview must report the cancelled count separately");
+      assert.equal(overviewRow["cancelledAttributedRevenue"], 5000, "overview must report cancelled (lost) revenue separately");
+      console.log("✓ cancelled and no-show appointments are excluded from realized numbers; completed/upcoming split and the separate cancelled line reconcile in both endpoints");
     }
 
     // ── 8d. compare=previous: previous-window counts share the same filters ─
     {
       // Isolated rule so counts stay deterministic: one run in the current
-      // 7-day window (email delivered + opened) and two runs in the preceding
-      // window (one email delivered, one SMS delivered; one attributed to a
-      // confirmed appointment, one to a cancelled appointment). The cancelled
-      // appointment must not count in the previous window either — it uses
-      // the exact same non-cancelled join as the current-period aggregate.
+      // 7-day window (email delivered + opened) and three runs in the
+      // preceding window (one email delivered, one SMS delivered; attributed
+      // to a confirmed, a cancelled, and a no-show appointment). Cancelled
+      // and no-show appointments must not count in the previous window either
+      // — it uses the exact same realized join as the current-period aggregate.
       const [ruleT] = await db.insert(automationRulesTable).values({
         salonId: a.salon.id, name: `PE trend pravilo ${suffix}`, trigger: "inactive_days",
         triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
@@ -1398,8 +1409,10 @@ async function run() {
       };
       const prevRun1 = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-prev1");
       const prevRun2 = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-prev2");
+      const prevRun3 = await makeSentRun(a.salon.id, ruleT.id, customerA.id, "t-prev3");
       await shiftToPreviousWindow(prevRun1.run.id);
       await shiftToPreviousWindow(prevRun2.run.id);
+      await shiftToPreviousWindow(prevRun3.run.id);
       await db.update(automationDeliveriesTable)
         .set({ deliveredAt: prevDate })
         .where(inArray(automationDeliveriesTable.eventKey, [prevRun1.emailKey, prevRun1.smsKey]));
@@ -1409,7 +1422,7 @@ async function run() {
         description: "Test", durationMinutes: 30, price: 2000, imageUrl: "/t.jpg",
       }).returning();
       assert.ok(trendService);
-      const makeTrendAppointment = async (status: "confirmed" | "cancelled", price: number) => {
+      const makeTrendAppointment = async (status: "confirmed" | "cancelled" | "no-show", price: number) => {
         const [appointment] = await db.insert(appointmentsTable).values({
           salonId: a.salon.id, salonCustomerId: customerA.id, serviceId: trendService.id,
           date: "2026-08-13", startTime: "11:00", endTime: "11:30",
@@ -1420,10 +1433,13 @@ async function run() {
       };
       const keptPrev = await makeTrendAppointment("confirmed", 2000);
       const cancelledPrev = await makeTrendAppointment("cancelled", 4000);
+      const missedPrev = await makeTrendAppointment("no-show", 6000);
       await db.update(automationRunsTable).set({ attributedAppointmentId: keptPrev.id })
         .where(eq(automationRunsTable.id, prevRun1.run.id));
       await db.update(automationRunsTable).set({ attributedAppointmentId: cancelledPrev.id })
         .where(eq(automationRunsTable.id, prevRun2.run.id));
+      await db.update(automationRunsTable).set({ attributedAppointmentId: missedPrev.id })
+        .where(eq(automationRunsTable.id, prevRun3.run.id));
 
       const perRuleTrend = async (qs: string) => fetch(
         `${baseUrl}/api/growth/automations/${ruleT.id}/stats${qs}`,
@@ -1443,10 +1459,10 @@ async function run() {
       assert.equal(previous["emailOpenedCount"], 0, "no opens in the previous window");
       assert.equal(previous["smsDeliveredCount"], 1, "previous window SMS delivery counted");
       assert.equal(previous["attributedAppointments"], 1,
-        "cancelled appointment must not count as attributed in the previous window");
+        "cancelled and no-show appointments must not count as attributed in the previous window");
 
-      // The overview endpoint must apply the same cancelled filter to its
-      // previous block, so both surfaces show the same trend direction.
+      // The overview endpoint must apply the same cancelled/no-show filter to
+      // its previous block, so both surfaces show the same trend direction.
       const overviewTrendResponse = await fetch(`${baseUrl}/api/growth/automation-stats?period=7d&compare=previous`, {
         headers: { cookie: `${sessionCookieName}=${a.token}` },
       });
@@ -1457,7 +1473,7 @@ async function run() {
       const overviewPrevious = overviewTrendRow["previous"] as Record<string, number> | undefined;
       assert.ok(overviewPrevious, "overview compare=previous must include a previous block");
       assert.equal(overviewPrevious["attributedAppointments"], 1,
-        "overview previous window must exclude cancelled appointments too");
+        "overview previous window must exclude cancelled and no-show appointments too");
       assert.equal(overviewPrevious["emailDeliveredCount"], 1);
       assert.equal(overviewPrevious["smsDeliveredCount"], 1);
 
@@ -1475,7 +1491,7 @@ async function run() {
         "compare=previous without a period (defaults to all time) must be rejected");
       assert.equal((await perRuleTrend("?period=7d&compare=bogus")).status, 400,
         "unknown compare value must be rejected");
-      console.log("✓ compare=previous returns previous-window counts with the same non-cancelled attribution filter on both endpoints");
+      console.log("✓ compare=previous returns previous-window counts with the same realized (non-cancelled, non-no-show) attribution filter on both endpoints");
     }
 
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────

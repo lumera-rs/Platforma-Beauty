@@ -667,26 +667,28 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        // Realized attribution only: the join below excludes cancelled and
-        // no-show appointments (neither is money earned or still expected),
-        // so both the count and the revenue derive from the same joined row.
-        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
-        attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
-        // Completed vs upcoming split of the same joined rows. "Upcoming" is
-        // the complement (joined but not completed — i.e. pending/confirmed,
-        // since cancelled and no-show never join), so the two buckets always
-        // sum exactly to the attributed totals above.
+        // Realized attribution: cancelled and no-show appointments never
+        // count as realized (neither is money earned or still expected). The
+        // join brings in every attributed appointment and the conditional
+        // aggregates split it, so the cancelled line can be reported
+        // separately without changing the realized numbers.
+        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
+        attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+        // Completed vs upcoming split of the realized rows. "Upcoming" is the
+        // realized complement of completed (pending/confirmed), so the two
+        // buckets always sum exactly to the attributed totals above.
         completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
         completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
-        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} <> 'completed' then 1 else 0 end)::int`,
-        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} <> 'completed' then ${appointmentsTable.price} end), 0)::int`,
+        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
+        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+        // Cancelled-attributed line ("otkazano"): appointments the campaign
+        // booked that later fell through — revenue lost to cancellations.
+        cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
+        cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
-      .leftJoin(appointmentsTable, and(
-        eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-        notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
-      ))
+      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
       .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(window)))
       .groupBy(automationRunsTable.ruleId);
 
@@ -721,14 +723,14 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         .select({
           ruleId: automationRunsTable.ruleId,
           // Same realized-attribution semantics as the current window: the
-          // join excludes cancelled appointments so trend arrows compare
-          // like-for-like counts.
+          // join excludes cancelled and no-show appointments so trend arrows
+          // compare like-for-like counts.
           attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
         })
         .from(automationRunsTable)
         .leftJoin(appointmentsTable, and(
           eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-          ne(appointmentsTable.status, "cancelled"),
+          notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
         ))
         .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, window.start)))
         .groupBy(automationRunsTable.ruleId);
@@ -782,6 +784,8 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         completedRevenue: runs?.completedRevenue ?? 0,
         upcomingAppointments: runs?.upcomingAppointments ?? 0,
         upcomingRevenue: runs?.upcomingRevenue ?? 0,
+        cancelledAttributedAppointments: runs?.cancelledAttributedAppointments ?? 0,
+        cancelledAttributedRevenue: runs?.cancelledAttributedRevenue ?? 0,
         emailSentCount: deliveries?.emailSentCount ?? 0,
         emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: deliveries?.emailOpenedCount ?? 0,
@@ -840,26 +844,28 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        // Realized attribution only: cancelled and no-show appointments are
-        // excluded via the join condition (neither is money earned or still
-        // expected) so count and revenue share the same filter.
-        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
-        attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
-        // Completed vs upcoming split of the same joined rows. "Upcoming" is
-        // the complement (joined but not completed — i.e. pending/confirmed,
-        // since cancelled and no-show never join), so the two buckets always
-        // sum exactly to the attributed totals above.
+        // Realized attribution: cancelled and no-show appointments never
+        // count as realized (neither is money earned or still expected). The
+        // join brings in every attributed appointment and the conditional
+        // aggregates split it, so the cancelled line can be reported
+        // separately without changing the realized numbers.
+        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
+        attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+        // Completed vs upcoming split of the realized rows. "Upcoming" is the
+        // realized complement of completed (pending/confirmed), so the two
+        // buckets always sum exactly to the attributed totals above.
         completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
         completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
-        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} <> 'completed' then 1 else 0 end)::int`,
-        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} <> 'completed' then ${appointmentsTable.price} end), 0)::int`,
+        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
+        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+        // Cancelled-attributed line ("otkazano"): appointments the campaign
+        // booked that later fell through — revenue lost to cancellations.
+        cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
+        cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
-      .leftJoin(appointmentsTable, and(
-        eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-        notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
-      ))
+      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
       .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window)));
 
     // Delivery stats (delivered / opened / provider-failed, updated from
@@ -891,9 +897,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       | { attributedAppointments: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
       | undefined;
     if (prevCutoff && window.start) {
-      // Same non-cancelled join as the current-period aggregate: a cancelled
-      // appointment is not campaign-earned, so it must not count in either
-      // window or the trend direction would be wrong.
+      // Same realized-attribution join as the current-period aggregate: a
+      // cancelled or no-show appointment is not campaign-earned, so it must
+      // not count in either window or the trend direction would be wrong.
       const [prevRuns] = await db
         .select({
           attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
@@ -901,7 +907,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         .from(automationRunsTable)
         .leftJoin(appointmentsTable, and(
           eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-          ne(appointmentsTable.status, "cancelled"),
+          notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
         ))
         .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodRangeCondition(prevCutoff, window.start)));
 
@@ -935,6 +941,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       completedRevenue: stats?.completedRevenue ?? 0,
       upcomingAppointments: stats?.upcomingAppointments ?? 0,
       upcomingRevenue: stats?.upcomingRevenue ?? 0,
+      cancelledAttributedAppointments: stats?.cancelledAttributedAppointments ?? 0,
+      cancelledAttributedRevenue: stats?.cancelledAttributedRevenue ?? 0,
       deliveredCount: deliveryStats?.deliveredCount ?? 0,
       openedCount: deliveryStats?.openedCount ?? 0,
       emailSentCount: deliveryStats?.emailSentCount ?? 0,
@@ -1010,13 +1018,14 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
     if (!rule) { res.status(404).json({ error: "Automation not found.", code: "NOT_FOUND" }); return; }
 
     // Inner joins drop runs without an attributed appointment, and cancelled
-    // appointments are excluded exactly like the stats endpoints, so `total`
-    // matches the attributedAppointments count shown above the list.
+    // and no-show appointments are excluded exactly like the realized numbers
+    // in the stats endpoints, so `total` matches the attributedAppointments
+    // count shown above the list.
     // salon_customers is left-joined: walk-in/legacy appointments may have a
     // null salonCustomerId, in which case the client name fields stay null.
     const attributedAppointmentJoin = and(
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-      ne(appointmentsTable.status, "cancelled"),
+      notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
     );
     // Same run-window filter as the stats endpoints, so the paginated total
     // agrees with the attributedAppointments count for every period choice

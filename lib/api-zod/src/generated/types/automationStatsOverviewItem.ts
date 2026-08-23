@@ -27,6 +27,10 @@ export interface AutomationStatsOverviewItem {
   upcomingAppointments: number;
   /** Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue. */
   upcomingRevenue: number;
+  /** Attributed appointments that were cancelled (excluded from realized numbers). */
+  cancelledAttributedAppointments: number;
+  /** Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations. */
+  cancelledAttributedRevenue: number;
   emailSentCount: number;
   emailDeliveredCount: number;
   emailOpenedCount: number;

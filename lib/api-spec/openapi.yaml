@@ -6909,6 +6909,12 @@ components:
         upcomingRevenue:
           type: number
           description: Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue.
+        cancelledAttributedAppointments:
+          type: number
+          description: Attributed appointments that were cancelled (excluded from realized numbers).
+        cancelledAttributedRevenue:
+          type: number
+          description: Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.
         deliveredCount: { type: number }
         openedCount: { type: number }
         emailSentCount: { type: number }
@@ -6928,7 +6934,7 @@ components:
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
           required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:
       type: object
@@ -6991,6 +6997,12 @@ components:
         upcomingRevenue:
           type: number
           description: Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue.
+        cancelledAttributedAppointments:
+          type: number
+          description: Attributed appointments that were cancelled (excluded from realized numbers).
+        cancelledAttributedRevenue:
+          type: number
+          description: Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.
         emailSentCount: { type: number }
         emailDeliveredCount: { type: number }
         emailOpenedCount: { type: number }
@@ -7008,7 +7020,7 @@ components:
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
           required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object
