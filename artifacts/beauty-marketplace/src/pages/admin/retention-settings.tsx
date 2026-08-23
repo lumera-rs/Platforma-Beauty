@@ -200,11 +200,41 @@ export default function AdminRetentionSettings() {
         setRestoreTarget(null);
       },
       onError: (err) => {
-        toast.error(extractApiError(err, "Greška prilikom vraćanja verzije."));
+        // The server blocks restores whose values equal the active thresholds
+        // (e.g. another admin already made them active while the dialog was
+        // open). Explain why nothing was recorded and refresh the stale view.
+        const code =
+          (err as { response?: { data?: { code?: string } }; data?: { code?: string } })
+            ?.response?.data?.code ??
+          (err as { data?: { code?: string } })?.data?.code;
+        if (code === "NO_OP_RESTORE") {
+          toast.info(
+            "Vrednosti su identične trenutno aktivnim pragovima — nova verzija nije zabeležena.",
+          );
+          invalidateAfterSave();
+        } else {
+          toast.error(extractApiError(err, "Greška prilikom vraćanja verzije."));
+        }
         setRestoreTarget(null);
       },
     });
   };
+
+  // A restore whose values equal the active thresholds would only clutter the
+  // history ("no values changed"), so the confirm button is disabled and the
+  // dialog explains why — the server rejects such restores as a backstop.
+  const restoreTargetThresholds = restoreTarget
+    ? restoreTarget.kind === "history"
+      ? restoreTarget.entry.thresholds
+      : restoreTarget.thresholds
+    : null;
+  const restoreDiffKeys: FieldKey[] =
+    restoreTargetThresholds && settings
+      ? (Object.keys(restoreTargetThresholds) as FieldKey[]).filter(
+          (k) => restoreTargetThresholds[k] !== settings.thresholds[k],
+        )
+      : [];
+  const isNoOpRestore = !!restoreTargetThresholds && !!settings && restoreDiffKeys.length === 0;
 
   const isAtDefaults =
     !!settings &&
@@ -506,33 +536,27 @@ export default function AdminRetentionSettings() {
                   : "Biće kreirana nova verzija sa vrednostima izabrane verzije — istorija izmena ostaje netaknuta, a promena se beleži sa vašim imenom."}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            {restoreTarget && settings && (() => {
-              const targetThresholds =
-                restoreTarget.kind === "history" ? restoreTarget.entry.thresholds : restoreTarget.thresholds;
-              const diffKeys = (Object.keys(targetThresholds) as FieldKey[]).filter(
-                (k) => targetThresholds[k] !== settings.thresholds[k],
-              );
-              return (
-                <div className="text-sm">
-                  {diffKeys.length === 0 ? (
-                    <p className="text-muted-foreground italic">
-                      Vrednosti su identične trenutno aktivnim — vraćanje neće promeniti ponašanje.
-                    </p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {diffKeys.map((key) => (
-                        <li key={key} className="text-muted-foreground">
-                          <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
-                          <span className="line-through">{settings.thresholds[key]}</span>
-                          {" → "}
-                          <span className="font-semibold text-foreground">{targetThresholds[key]}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })()}
+            {restoreTargetThresholds && settings && (
+              <div className="text-sm">
+                {isNoOpRestore ? (
+                  <p className="text-muted-foreground italic" data-testid="restore-retention-noop-notice">
+                    Vrednosti su identične trenutno aktivnim — nova verzija ne bi ništa promenila,
+                    pa se vraćanje ne beleži u istoriju.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {restoreDiffKeys.map((key) => (
+                      <li key={key} className="text-muted-foreground">
+                        <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
+                        <span className="line-through">{settings.thresholds[key]}</span>
+                        {" → "}
+                        <span className="font-semibold text-foreground">{restoreTargetThresholds[key]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-restore-retention">
                 Otkaži
@@ -542,7 +566,7 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   if (restoreTarget) handleRestore(restoreTarget);
                 }}
-                disabled={updateMutation.isPending}
+                disabled={updateMutation.isPending || isNoOpRestore}
                 data-testid="confirm-restore-retention"
               >
                 {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}

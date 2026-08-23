@@ -25,6 +25,9 @@
  * 13. Owner CRM detail turns AT_RISK → LOST under tuned lost thresholds and
  *     its explanation quotes the tuned threshold value
  * 14. History is newest-first and pairs every entry with the previous values
+ * 16. Restore provenance is labelled truthfully; dishonest metadata rejected;
+ *     no-op restores (values identical to active) → 400 NO_OP_RESTORE with no
+ *     version recorded, while identical manual saves stay allowed
  */
 
 import assert from "node:assert/strict";
@@ -627,6 +630,34 @@ async function integrationTests() {
     assert.equal(restoredVersion.restoredFromVersion, initialVersion + 2, "version restore records its source");
     assert.deepEqual(restoredVersion.thresholds, v2Thresholds, "restored entry carries the restored values");
 
+    // No-op restores are blocked: the active thresholds already equal the
+    // platform defaults (initialVersion + 6), so restoring the defaults again
+    // — or any version carrying the same values — must not record another
+    // "no values changed" history entry.
+    const noopDefaultsRes = await putSettings({
+      ...DEFAULT_RETENTION_THRESHOLDS, changeSource: "restore_defaults",
+    });
+    assert.equal(noopDefaultsRes.status, 400, "no-op defaults restore is rejected");
+    assert.equal(
+      ((await noopDefaultsRes.json()) as any).code,
+      "NO_OP_RESTORE",
+      "no-op restore carries its own error code so the client can explain it",
+    );
+
+    // initialVersion + 1 was a manual save of the default values — restoring
+    // it would change nothing either.
+    const noopVersionRes = await putSettings({
+      ...DEFAULT_RETENTION_THRESHOLDS,
+      changeSource: "restore_version",
+      restoredFromVersion: initialVersion + 1,
+    });
+    assert.equal(noopVersionRes.status, 400, "no-op version restore is rejected");
+    assert.equal(((await noopVersionRes.json()) as any).code, "NO_OP_RESTORE");
+
+    const afterNoopRestores = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    assert.equal(((await afterNoopRestores.json()) as any).version, initialVersion + 6, "no-op restores record no version");
+    console.log("✓ No-op restores rejected (NO_OP_RESTORE), no version recorded");
+
     // Lying restore metadata is rejected without recording a version.
     const badRestores: [string, Record<string, unknown>][] = [
       ["restore_version without source", { ...v2Thresholds, changeSource: "restore_version" }],
@@ -646,6 +677,13 @@ async function integrationTests() {
     assert.equal(activeAfterBadRestores.changeSource, "restore_defaults", "active settings label a defaults restore");
     assert.equal(activeAfterBadRestores.restoredFromVersion, null, "defaults restore carries no source version");
     console.log("✓ Restores are labelled in history; dishonest restore metadata rejected");
+
+    // The no-op guard applies only to restores: a manual save of identical
+    // values still records an audited version (deliberate re-confirmation).
+    const manualIdenticalRes = await putSettings(DEFAULT_RETENTION_THRESHOLDS);
+    assert.equal(manualIdenticalRes.status, 200, "identical manual save is still allowed");
+    assert.equal(((await manualIdenticalRes.json()) as any).version, initialVersion + 7);
+    console.log("✓ Manual saves are unaffected by the no-op restore guard");
   } finally {
     // Remove only rows created by this run; earlier versions stay untouched.
     await db.delete(platformRetentionSettingsTable)

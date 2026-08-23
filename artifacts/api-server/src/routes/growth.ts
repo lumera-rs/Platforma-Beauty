@@ -52,6 +52,7 @@ import {
   getActiveRetentionSettings,
   getRetentionSettingsHistory,
   previewRetentionThresholds,
+  RetentionNoOpRestoreError,
   RetentionRestoreError,
   updateRetentionSettings,
   validateRetentionThresholds,
@@ -1672,6 +1673,11 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
       });
       res.json(settingsView(updated));
     } catch (err) {
+      if (err instanceof RetentionNoOpRestoreError) {
+        // Distinct code so the client can explain why nothing was recorded.
+        res.status(400).json({ error: err.message, code: "NO_OP_RESTORE" });
+        return;
+      }
       if (err instanceof RetentionRestoreError) {
         res.status(400).json({ error: err.message, code: "VALIDATION_ERROR" });
         return;

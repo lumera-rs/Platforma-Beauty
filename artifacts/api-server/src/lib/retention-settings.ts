@@ -191,10 +191,27 @@ export async function updateRetentionSettings(
       }
     }
     const [current] = await tx
-      .select({ version: platformRetentionSettingsTable.version })
+      .select()
       .from(platformRetentionSettingsTable)
       .orderBy(desc(platformRetentionSettingsTable.version))
       .limit(1);
+    // A restore whose values equal the currently active thresholds would only
+    // add audit noise ("no values changed" history entries), so it is blocked
+    // here — inside the advisory lock, where "currently active" cannot race
+    // with a concurrent update.
+    if (origin.changeSource !== "manual") {
+      const activeThresholds = current
+        ? rowToThresholds(current)
+        : { ...DEFAULT_RETENTION_THRESHOLDS };
+      const identical = (
+        Object.keys(activeThresholds) as (keyof RetentionThresholds)[]
+      ).every((key) => candidate[key] === activeThresholds[key]);
+      if (identical) {
+        throw new RetentionNoOpRestoreError(
+          "The values to restore are identical to the currently active thresholds, so no new version was recorded.",
+        );
+      }
+    }
     const nextVersion = (current?.version ?? 0) + 1;
     const [row] = await tx
       .insert(platformRetentionSettingsTable)
@@ -458,5 +475,17 @@ export class RetentionRestoreError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RetentionRestoreError";
+  }
+}
+
+/**
+ * Restore that would not change any value — rejected so the append-only
+ * history never fills with "no values changed" entries. Mapped to HTTP 400
+ * (code NO_OP_RESTORE) by the route layer.
+ */
+export class RetentionNoOpRestoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetentionNoOpRestoreError";
   }
 }
