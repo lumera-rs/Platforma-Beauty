@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 8;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 9;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -157,6 +157,19 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS email_deliveries_report_alert_history_idx
        ON ${s}.email_deliveries (email_type, recipient_email)
        WHERE email_type IN ('delivery_report_silence_alert', 'delivery_report_recovery_alert')`,
+
+    // email_deliveries provider message-id matching (v9). Every verified Brevo
+    // delivery-report webhook event matches back to its outbound email via
+    // provider_message_id + email_type = 'automation'; this partial index keeps
+    // that per-event lookup cheap as sent email history grows. Legacy databases
+    // may predate the provider_message_id column, so ensure it exists first.
+    // Built CONCURRENTLY (statements run in autocommit, so this is legal) to
+    // avoid a write-blocking lock on the large, actively written table.
+    // Mirrors email_deliveries_provider_message_idx in lib/db/src/schema/core.ts.
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS provider_message_id text`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_provider_message_idx
+       ON ${s}.email_deliveries (provider_message_id)
+       WHERE email_type = 'automation'`,
 
     // ── platform_retention_settings (v4: admin-tunable retention thresholds) ─
     // Append-only versioned platform config; highest version is active. Mirrors

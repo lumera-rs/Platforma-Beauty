@@ -173,6 +173,7 @@ const REQUIRED_INDEXES = [
   "sms_deliveries_retry_index",
   "email_deliveries_retry_index",
   "email_deliveries_report_alert_history_idx",
+  "email_deliveries_provider_message_idx",
   "salons_city_active_rating_idx",
   "salons_municipality_active_idx",
   // commerce.ts

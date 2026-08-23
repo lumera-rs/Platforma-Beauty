@@ -327,6 +327,7 @@ async function run() {
       "customer_package_purchases_status_idx",
       "platform_retention_settings_version_unique",
       "email_deliveries_report_alert_history_idx",
+      "email_deliveries_provider_message_idx",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }

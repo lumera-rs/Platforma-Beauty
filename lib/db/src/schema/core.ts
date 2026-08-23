@@ -222,6 +222,13 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   index("email_deliveries_report_alert_history_idx")
     .on(table.emailType, table.recipientEmail)
     .where(sql`${table.emailType} IN ('delivery_report_silence_alert', 'delivery_report_recovery_alert')`),
+  // Incoming provider delivery-report events (Brevo webhooks) match back to
+  // their outbound email by provider_message_id, restricted to automation
+  // emails. This partial index keeps that hot per-event lookup cheap no matter
+  // how large the overall sent-email history grows.
+  index("email_deliveries_provider_message_idx")
+    .on(table.providerMessageId)
+    .where(sql`${table.emailType} = 'automation'`),
 ]);
 
 export const emailCampaignsTable = pgTable("email_campaigns", {
