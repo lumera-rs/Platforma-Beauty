@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 10;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 11;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -136,6 +136,17 @@ function tableStatements(s: string): string[] {
   return [
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+
+    // v11: Customer-safe public storefront fields. These deliberately remain
+    // separate from the owner-only B2B description and prices in `products`.
+    // Production does not run drizzle push, so legacy catalogs need the same
+    // additive rollout before anonymous catalog queries can be served.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_enabled boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_description text`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
+    `CREATE INDEX IF NOT EXISTS products_public_active_created_idx
+       ON ${s}.products (public_enabled, active, created_at)`,
 
     `ALTER TABLE ${s}.reviews ADD COLUMN IF NOT EXISTS employee_id uuid`,
     `DO $$ BEGIN

@@ -57,6 +57,10 @@ const emptyForm: AdminProductInput = {
   images: [],
   price: 0,
   discountPrice: null,
+  publicEnabled: false,
+  publicDescription: null,
+  publicPrice: null,
+  publicDiscountPrice: null,
   stock: 0,
   sku: "",
   unit: "kom",
@@ -106,6 +110,10 @@ function ProductFormDialog({
           images: editing.images ?? [],
           price: editing.price,
           discountPrice: editing.discountPrice ?? null,
+          publicEnabled: editing.publicEnabled,
+          publicDescription: editing.publicDescription ?? null,
+          publicPrice: editing.publicPrice ?? null,
+          publicDiscountPrice: editing.publicDiscountPrice ?? null,
           stock: editing.stock,
           sku: editing.sku,
           unit: editing.unit,
@@ -123,6 +131,8 @@ function ProductFormDialog({
   const [rawNums, setRawNums] = useState(() => ({
     price: editing ? String(editing.price) : "0",
     discountPrice: editing?.discountPrice != null ? String(editing.discountPrice) : "",
+    publicPrice: editing?.publicPrice != null ? String(editing.publicPrice) : "",
+    publicDiscountPrice: editing?.publicDiscountPrice != null ? String(editing.publicDiscountPrice) : "",
     stock: editing ? String(editing.stock) : "0",
     weightDisplay: editing ? (weightUnit === "kg" ? String((editing.weightGrams ?? 0) / 1000) : String(editing.weightGrams ?? 0)) : "0",
   }));
@@ -288,6 +298,23 @@ function ProductFormDialog({
     if (discountParsed.value !== null && discountParsed.value >= priceParsed.value) {
       toast.error("Greška", { description: "Akcijska cena mora biti niža od redovne." }); return;
     }
+    const publicPriceParsed = rawNums.publicPrice.trim() === ""
+      ? { ok: true as const, value: null }
+      : parseStrictInt(rawNums.publicPrice, { label: "Javna redovna cena", allowNegative: false, allowZero: false });
+    if (!publicPriceParsed.ok) { toast.error("Greška", { description: publicPriceParsed.message }); return; }
+    const publicDiscountParsed = rawNums.publicDiscountPrice.trim() === ""
+      ? { ok: true as const, value: null }
+      : parseStrictInt(rawNums.publicDiscountPrice, { label: "Javna akcijska cena", allowNegative: false, allowZero: false });
+    if (!publicDiscountParsed.ok) { toast.error("Greška", { description: publicDiscountParsed.message }); return; }
+    if (form.publicEnabled && !form.publicDescription?.trim()) {
+      toast.error("Greška", { description: "Javni proizvod mora imati poseban opis za kupce." }); return;
+    }
+    if (form.publicEnabled && publicPriceParsed.value === null) {
+      toast.error("Greška", { description: "Javni proizvod mora imati javnu cenu za kupce." }); return;
+    }
+    if (publicDiscountParsed.value !== null && (publicPriceParsed.value === null || publicDiscountParsed.value >= publicPriceParsed.value)) {
+      toast.error("Greška", { description: "Javna akcijska cena mora biti niža od javne redovne cene." }); return;
+    }
 
     let stockParsed = { ok: true as const, value: form.stock };
     if (variantInventoryMode !== "per-variant") {
@@ -305,6 +332,9 @@ function ProductFormDialog({
       ...form,
       price: priceParsed.value,
       discountPrice: discountParsed.value,
+      publicDescription: form.publicDescription?.trim() || null,
+      publicPrice: publicPriceParsed.value,
+      publicDiscountPrice: publicDiscountParsed.value,
       stock: variantInventoryMode === "per-variant" ? variantStockTotal : stockParsed.value,
       weightGrams,
       images: form.images?.length ? form.images : [form.imageUrl],
@@ -437,6 +467,40 @@ function ProductFormDialog({
                   placeholder="Detaljan opis proizvoda..."
                   data-testid="input-product-description"
                 />
+              </div>
+              <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+                <div>
+                  <p className="font-medium">Javni storefront za kupce</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Javne informacije su odvojene od B2B kataloga. Kupci i pretraživači vide samo opis i cene koje unesete ovde.</p>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <Label className="cursor-pointer">Objavi proizvod na javnoj prodavnici</Label>
+                  <Switch checked={form.publicEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, publicEnabled: checked })} data-testid="switch-product-public" />
+                </div>
+                {form.publicEnabled && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Javni opis za kupce *</Label>
+                      <textarea
+                        value={form.publicDescription ?? ""}
+                        onChange={(event) => setForm({ ...form, publicDescription: event.target.value || null })}
+                        placeholder="Opis bez B2B uslova, marži, SKU oznaka i internih napomena."
+                        className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        data-testid="input-product-public-description"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Javna redovna cena (RSD) *</Label>
+                        <Input value={rawNums.publicPrice} inputMode="numeric" onChange={(event) => setRawNums({ ...rawNums, publicPrice: event.target.value })} data-testid="input-product-public-price" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Javna akcijska cena (RSD)</Label>
+                        <Input value={rawNums.publicDiscountPrice} inputMode="numeric" onChange={(event) => setRawNums({ ...rawNums, publicDiscountPrice: event.target.value })} data-testid="input-product-public-discount-price" />
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -914,6 +978,7 @@ export default function AdminProducts() {
                       <td className="p-3 hidden sm:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {!p.active && <Badge variant="secondary" className="text-[10px]">Neaktivan</Badge>}
+                          {p.publicEnabled && <Badge className="bg-emerald-600 text-white border-none text-[10px]">Javno</Badge>}
                           {p.isNew && <Badge className="bg-sky-500 text-white border-none text-[10px]">Novo</Badge>}
                           {p.discountPercent != null && <Badge className="bg-destructive text-white border-none text-[10px]">-{p.discountPercent}%</Badge>}
                           {p.stock <= 0 && <Badge variant="outline" className="text-[10px] text-destructive border-destructive/40">Nema</Badge>}

@@ -1480,6 +1480,46 @@ export interface ProductList {
   totalPages: number;
 }
 
+/**
+ * Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
+ */
+export interface PublicProduct {
+  id: string;
+  name: string;
+  category: string;
+  /** @nullable */
+  subcategory?: string | null;
+  /** @nullable */
+  brand?: string | null;
+  description: string;
+  imageUrl: string;
+  images: string[];
+  /** @minimum 1 */
+  price: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  discountPrice?: number | null;
+  /** @nullable */
+  discountPercent?: number | null;
+  unit: string;
+  isNew: boolean;
+  isBestseller: boolean;
+}
+
+export interface PublicProductList {
+  items: PublicProduct[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export type PublicProductDetail = PublicProduct & {
+  relatedProducts: PublicProduct[];
+};
+
 export interface ProductReview {
   id: string;
   salonName: string;
@@ -3263,6 +3303,19 @@ export interface AdminProduct {
   price: number;
   /** @nullable */
   discountPrice?: number | null;
+  publicEnabled: boolean;
+  /** @nullable */
+  publicDescription?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  publicPrice?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  publicDiscountPrice?: number | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */
@@ -3321,6 +3374,24 @@ export interface AdminProductInput {
      * @nullable
      */
   discountPrice?: number | null;
+  publicEnabled?: boolean;
+  /**
+     * @maxLength 10000
+     * @nullable
+     */
+  publicDescription?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicPrice?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicDiscountPrice?: number | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -3376,6 +3447,24 @@ export interface AdminProductUpdate {
      * @nullable
      */
   discountPrice?: number | null;
+  publicEnabled?: boolean;
+  /**
+     * @maxLength 10000
+     * @nullable
+     */
+  publicDescription?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicPrice?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicDiscountPrice?: number | null;
   /**
      * @minimum 0
      * @maximum 100000000
@@ -5110,6 +5199,25 @@ subcategory?: string;
 
 export type DeleteSalonService409 = {
   error: string;
+};
+
+export type ListPublicProductsParams = {
+category?: string;
+subcategory?: string;
+brand?: string;
+search?: string;
+onSale?: boolean;
+isNew?: boolean;
+isBestseller?: boolean;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
 };
 
 export type ListProductsParams = {

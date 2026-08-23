@@ -30,6 +30,8 @@ const EducationMarketplace = lazy(() => import('./pages/education-marketplace'))
 const EducationPublicCenterPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCenterPage })));
 const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCourseDetail })));
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
+
+const PublicProducts = lazy(() => import('./pages/public-products'));
 const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
 const CustomerDashboard = lazy(() => import('./pages/customer-dashboard'));
@@ -181,6 +183,8 @@ function Router() {
         <Route path="/saloni" component={Salons} />
         <Route path="/saloni/kategorija/:categorySlug" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
+        <Route path="/proizvodi" component={PublicProducts} />
+        <Route path="/proizvodi/:productId" component={PublicProductDetail} />
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
@@ -320,3 +324,5 @@ function App() {
 }
 
 export default App;
+
+const PublicProductDetail = lazy(() => import('./pages/public-products').then((module) => ({ default: module.PublicProductDetailPage })));

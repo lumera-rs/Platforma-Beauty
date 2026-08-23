@@ -31,6 +31,7 @@ function staticMetadata(pathname: string): SeoPayload | null {
     '/': { title: 'LUMERA | Saloni, tretmani i edukacije', description: defaultDescription, indexable: true },
     '/za-biznise': { title: 'LUMERA za biznise | Rast vašeg salona', description: 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', indexable: true },
     '/saloni': { title: 'Saloni i beauty tretmani | LUMERA', description: 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', indexable: true },
+    '/proizvodi': { title: 'Beauty proizvodi za kupce | LUMERA', description: 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', indexable: true },
     '/inspiracija': { title: 'Beauty inspiracija | LUMERA vodič', description: 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', indexable: true },
     '/recnik': { title: 'Rečnik beauty pojmova | LUMERA', description: 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', indexable: true },
     '/brendovi': { title: 'Profesionalni beauty brendovi | LUMERA', description: 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', indexable: true },
@@ -79,6 +80,19 @@ function applySeo(pathname: string, payload: SeoPayload) {
 }
 
 async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
+  const product = pathname.match(/^\/proizvodi\/([^/]+)$/);
+  if (product) {
+    const response = await fetch(`/api/shop/public/products/${encodeURIComponent(product[1])}`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const name = text(item.name, 'Beauty proizvod');
+    return {
+      title: `${name} | LUMERA proizvodi`,
+      description: text(item.description, `${name} — javno dostupan beauty proizvod na LUMERA platformi.`),
+      image: item.images?.[0] ?? item.imageUrl,
+      indexable: true,
+    };
+  }
   const salon = pathname.match(/^\/saloni\/([^/]+)$/);
   if (salon) {
     const response = await fetch(`/api/salons/${encodeURIComponent(salon[1])}`);

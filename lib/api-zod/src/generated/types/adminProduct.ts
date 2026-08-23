@@ -25,6 +25,19 @@ export interface AdminProduct {
   price: number;
   /** @nullable */
   discountPrice?: number | null;
+  publicEnabled: boolean;
+  /** @nullable */
+  publicDescription?: string | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  publicPrice?: number | null;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  publicDiscountPrice?: number | null;
   /** @nullable */
   discountPercent?: number | null;
   /** @minimum 0 */

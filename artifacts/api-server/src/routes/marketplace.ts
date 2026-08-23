@@ -134,6 +134,8 @@ import {
   GetShippingQuoteQueryParams,
   GetOrderParams,
   GetOrderResponse,
+  GetPublicProductParams,
+  GetPublicProductResponse,
   GetShopProductParams,
   GetShopProductResponse,
   GetShopCartResponse,
@@ -252,6 +254,8 @@ import {
   ListProductCategoriesResponse,
   ListProductsQueryParams,
   ListProductsResponse,
+  ListPublicProductsQueryParams,
+  ListPublicProductsResponse,
   ListSalonAppointmentsQueryParams,
   ListSalonAppointmentsResponse,
   ListSalonCustomersResponse,
@@ -7352,6 +7356,33 @@ function productDtoWithAggregate(
   };
 }
 
+// This allowlist is the public-store security boundary. Do not spread the
+// database product row here: B2B fields (SKU, stock, weight, variants, terms,
+// and wholesale prices) must never reach unauthenticated clients.
+function publicProductDto(item: typeof productsTable.$inferSelect) {
+  const price = item.publicPrice;
+  const discountPrice = item.publicDiscountPrice;
+  if (!item.publicEnabled || !item.publicDescription || price == null) {
+    throw new Error("Attempted to serialize a product without complete public storefront data.");
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    category: item.categoryName,
+    subcategory: item.subcategoryName ?? null,
+    brand: item.brand ?? null,
+    description: item.publicDescription,
+    imageUrl: item.imageUrl,
+    images: item.images ?? [],
+    price,
+    discountPrice: discountPrice ?? null,
+    discountPercent: discountPrice ? Math.round((1 - discountPrice / price) * 100) : null,
+    unit: item.unit,
+    isNew: item.isNew,
+    isBestseller: item.isBestseller,
+  };
+}
+
 async function productReviewViews(productId: string, currentSalonId?: string) {
   const rows = await db
     .select({ review: productReviewsTable, salonName: salonsTable.name })
@@ -7368,6 +7399,70 @@ async function productReviewViews(productId: string, currentSalonId?: string) {
     mine: review.salonId === currentSalonId,
   }));
 }
+
+router.get("/shop/public/products", async (req, res): Promise<void> => {
+  const normalized = normalizeBooleanQuery(req.query, ["onSale", "isNew", "isBestseller"]);
+  if (!normalized) { res.status(400).json({ error: "Invalid boolean filter" }); return; }
+  const parsed = ListPublicProductsQueryParams.safeParse(normalized);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const q = parsed.data;
+  const productFilters: Parameters<typeof and>[0][] = [
+    eq(productsTable.active, true),
+    eq(productsTable.publicEnabled, true),
+    isNotNull(productsTable.publicPrice),
+    isNotNull(productsTable.publicDescription),
+    activeCategoryCondition(),
+  ];
+  if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
+  if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
+  if (q.brand) productFilters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
+  if (q.search) {
+    const term = `%${q.search.trim().toLowerCase()}%`;
+    productFilters.push(sql`(lower(${productsTable.name}) like ${term} or lower(${productsTable.publicDescription}) like ${term})`);
+  }
+  if (q.onSale) productFilters.push(isNotNull(productsTable.publicDiscountPrice));
+  if (q.isNew) productFilters.push(eq(productsTable.isNew, true));
+  if (q.isBestseller) productFilters.push(eq(productsTable.isBestseller, true));
+  const whereClause = and(...productFilters);
+  const page = q.page ?? 1;
+  const pageSize = q.pageSize ?? 24;
+  const [[totals], pageProducts] = await Promise.all([
+    db.select({ total: count(productsTable.id) }).from(productsTable).where(whereClause),
+    db.select().from(productsTable).where(whereClause)
+      .orderBy(asc(productsTable.name), asc(productsTable.id))
+      .limit(pageSize).offset((page - 1) * pageSize),
+  ]);
+  const total = Number(totals?.total ?? 0);
+  res.json(ListPublicProductsResponse.parse({
+    items: pageProducts.map(publicProductDto),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  }));
+});
+
+router.get("/shop/public/products/:productId", async (req, res): Promise<void> => {
+  const parsed = GetPublicProductParams.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const publicCondition = and(
+    eq(productsTable.active, true),
+    eq(productsTable.publicEnabled, true),
+    isNotNull(productsTable.publicPrice),
+    isNotNull(productsTable.publicDescription),
+    activeCategoryCondition(),
+  );
+  const [product] = await db.select().from(productsTable)
+    .where(and(eq(productsTable.id, parsed.data.productId), publicCondition)).limit(1);
+  if (!product) { res.status(404).json({ error: "Javni proizvod nije pronađen." }); return; }
+  const related = await db.select().from(productsTable)
+    .where(and(publicCondition, eq(productsTable.categoryName, product.categoryName), ne(productsTable.id, product.id)))
+    .orderBy(asc(productsTable.name), asc(productsTable.id)).limit(4);
+  res.json(GetPublicProductResponse.parse({
+    ...publicProductDto(product),
+    relatedProducts: related.map(publicProductDto),
+  }));
+});
 
 router.get("/shop/products", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
@@ -12403,6 +12498,10 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     images: item.images ?? [],
     price: item.price,
     discountPrice: item.discountPrice ?? null,
+    publicEnabled: item.publicEnabled,
+    publicDescription: item.publicDescription ?? null,
+    publicPrice: item.publicPrice ?? null,
+    publicDiscountPrice: item.publicDiscountPrice ?? null,
     discountPercent,
     stock: item.stock,
     sku: item.sku,
@@ -12415,6 +12514,21 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     active: item.active,
     createdAt: item.createdAt.toISOString(),
   };
+}
+
+function publicStorefrontError(data: {
+  publicEnabled?: boolean;
+  publicDescription?: string | null;
+  publicPrice?: number | null;
+  publicDiscountPrice?: number | null;
+}): string | null {
+  if (!data.publicEnabled) return null;
+  if (!data.publicDescription?.trim()) return "Javni proizvod mora imati poseban opis za kupce.";
+  if (data.publicPrice == null) return "Javni proizvod mora imati javnu cenu za kupce.";
+  if (data.publicDiscountPrice != null && data.publicDiscountPrice >= data.publicPrice) {
+    return "Javna akcijska cena mora biti niža od javne redovne cene.";
+  }
+  return null;
 }
 
 function validateVariantInventory(
@@ -12510,6 +12624,8 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   if (body.discountPrice != null && body.discountPrice >= body.price) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
   }
+  const publicError = publicStorefrontError(body);
+  if (publicError) { res.status(400).json({ error: publicError }); return; }
   if (!body.categoryId) { res.status(400).json({ error: "Kategorija je obavezna." }); return; }
   const assignment = await categoryAssignment(body.categoryId);
   if (!assignment) { res.status(404).json({ error: "Kategorija nije pronađena." }); return; }
@@ -12537,6 +12653,10 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         images: body.images ?? [],
         price: body.price,
         discountPrice: body.discountPrice ?? null,
+        publicEnabled: body.publicEnabled ?? false,
+        publicDescription: body.publicDescription?.trim() || null,
+        publicPrice: body.publicPrice ?? null,
+        publicDiscountPrice: body.publicDiscountPrice ?? null,
         stock: body.stock,
         sku: body.sku,
         unit: body.unit,
@@ -12619,6 +12739,13 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (nextDiscount != null && nextDiscount >= nextPrice) {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
   }
+  const publicError = publicStorefrontError({
+    publicEnabled: body.publicEnabled ?? existing.publicEnabled,
+    publicDescription: body.publicDescription !== undefined ? body.publicDescription : existing.publicDescription,
+    publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
+    publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,
+  });
+  if (publicError) { res.status(400).json({ error: publicError }); return; }
   if (body.sku && body.sku !== existing.sku) {
     const [skuTaken] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.sku, body.sku)).limit(1);
     if (skuTaken) { res.status(409).json({ error: "Proizvod sa ovim SKU već postoji." }); return; }
@@ -12669,6 +12796,10 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         images: nextImages,
         price: nextPrice,
         discountPrice: nextDiscount,
+        publicEnabled: body.publicEnabled ?? existing.publicEnabled,
+        publicDescription: body.publicDescription !== undefined ? body.publicDescription?.trim() || null : existing.publicDescription,
+        publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
+        publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,
         stock: nextStock,
         sku: body.sku ?? existing.sku,
         unit: body.unit ?? existing.unit,

@@ -1227,6 +1227,62 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ProductBrand" }
+  /shop/public/products:
+    get:
+      operationId: listPublicProducts
+      tags: [public-shop]
+      summary: List customer-facing products that an administrator has approved for public display
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: subcategory
+          in: query
+          schema: { type: string }
+        - name: brand
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: onSale
+          in: query
+          schema: { type: boolean }
+        - name: isNew
+          in: query
+          schema: { type: boolean }
+        - name: isBestseller
+          in: query
+          schema: { type: boolean }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 24 }
+      responses:
+        "200":
+          description: Public products without B2B data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicProductList" }
+  /shop/public/products/{productId}:
+    get:
+      operationId: getPublicProduct
+      tags: [public-shop]
+      summary: Get one customer-facing product without B2B data
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Public product
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicProductDetail" }
+        "404": { description: Product is not public or is unavailable }
   /shop/products:
     get:
       operationId: listProducts
@@ -5767,6 +5823,47 @@ components:
         pageSize: { type: number }
         totalPages: { type: number }
       required: [items, total, page, pageSize, totalPages]
+    PublicProduct:
+      type: object
+      description: Customer-facing product fields only. B2B price, SKU, stock, weight, variants and salon-only review data are deliberately omitted.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        category: { type: string }
+        subcategory: { type: ["string", "null"] }
+        brand: { type: ["string", "null"] }
+        description: { type: string }
+        imageUrl: { type: string }
+        images:
+          type: array
+          items: { type: string }
+        price: { type: number, minimum: 1, multipleOf: 1 }
+        discountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
+        discountPercent: { type: ["number", "null"] }
+        unit: { type: string }
+        isNew: { type: boolean }
+        isBestseller: { type: boolean }
+      required: [id, name, category, description, imageUrl, images, price, unit, isNew, isBestseller]
+    PublicProductList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PublicProduct" }
+        total: { type: number }
+        page: { type: number }
+        pageSize: { type: number }
+        totalPages: { type: number }
+      required: [items, total, page, pageSize, totalPages]
+    PublicProductDetail:
+      allOf:
+        - $ref: "#/components/schemas/PublicProduct"
+        - type: object
+          properties:
+            relatedProducts:
+              type: array
+              items: { $ref: "#/components/schemas/PublicProduct" }
+          required: [relatedProducts]
     ProductReview:
       type: object
       properties:
@@ -6920,6 +7017,10 @@ components:
           items: { type: string }
         price: { type: number, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
+        publicEnabled: { type: boolean }
+        publicDescription: { type: ["string", "null"] }
+        publicPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
+        publicDiscountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPercent: { type: ["number", "null"] }
         stock: { type: number, minimum: 0, multipleOf: 1 }
         sku: { type: string }
@@ -6933,7 +7034,7 @@ components:
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, name, categoryName, description, imageUrl, images, price, stock, sku, unit, isNew, isBestseller, active, createdAt]
+      required: [id, name, categoryName, description, imageUrl, images, price, publicEnabled, stock, sku, unit, isNew, isBestseller, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -6962,6 +7063,10 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
+        publicEnabled: { type: boolean }
+        publicDescription: { type: ["string", "null"], maxLength: 10000 }
+        publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
+        publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         stock: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
         unit: { type: string, minLength: 1 }
@@ -6991,6 +7096,10 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
+        publicEnabled: { type: boolean }
+        publicDescription: { type: ["string", "null"], maxLength: 10000 }
+        publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
+        publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         stock: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
         unit: { type: string, minLength: 1 }

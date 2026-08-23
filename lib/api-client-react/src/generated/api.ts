@@ -169,6 +169,7 @@ import type {
   ListPopularEducationCoursesParams,
   ListProductsParams,
   ListPublicEducationCoursesParams,
+  ListPublicProductsParams,
   ListSalonAppointmentsParams,
   ListSalonClockEntriesParams,
   ListSalonCustomersParams,
@@ -199,6 +200,8 @@ import type {
   ProductList,
   ProductReview,
   ProductReviewInput,
+  PublicProductDetail,
+  PublicProductList,
   PurchasePackageBody,
   RedeemSessionBody,
   RedeemSessionResult,
@@ -5166,6 +5169,167 @@ export function useListProductBrands<TData = Awaited<ReturnType<typeof listProdu
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListProductBrandsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListPublicProductsUrl = (params?: ListPublicProductsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/shop/public/products?${stringifiedParams}` : `/api/shop/public/products`
+}
+
+/**
+ * @summary List customer-facing products that an administrator has approved for public display
+ */
+export const listPublicProducts = async (params?: ListPublicProductsParams, options?: Parameters<typeof customFetch>[1]): Promise<PublicProductList> => {
+
+  return customFetch<PublicProductList>(getListPublicProductsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPublicProductsQueryKey = (params?: ListPublicProductsParams,) => {
+    return [
+    `/api/shop/public/products`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListPublicProductsQueryOptions = <TData = Awaited<ReturnType<typeof listPublicProducts>>, TError = ErrorType<unknown>>(params?: ListPublicProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPublicProductsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPublicProducts>>> = ({ signal }) => listPublicProducts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPublicProducts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPublicProductsQueryResult = NonNullable<Awaited<ReturnType<typeof listPublicProducts>>>
+export type ListPublicProductsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List customer-facing products that an administrator has approved for public display
+ */
+
+export function useListPublicProducts<TData = Awaited<ReturnType<typeof listPublicProducts>>, TError = ErrorType<unknown>>(
+ params?: ListPublicProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPublicProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPublicProductsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetPublicProductUrl = (productId: string,) => {
+
+
+
+
+  return `/api/shop/public/products/${productId}`
+}
+
+/**
+ * @summary Get one customer-facing product without B2B data
+ */
+export const getPublicProduct = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicProductDetail> => {
+
+  return customFetch<PublicProductDetail>(getGetPublicProductUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicProductQueryKey = (productId: string,) => {
+    return [
+    `/api/shop/public/products/${productId}`
+    ] as const;
+    }
+
+
+export const getGetPublicProductQueryOptions = <TData = Awaited<ReturnType<typeof getPublicProduct>>, TError = ErrorType<void>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicProductQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicProduct>>> = ({ signal }) => getPublicProduct(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicProduct>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicProductQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicProduct>>>
+export type GetPublicProductQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one customer-facing product without B2B data
+ */
+
+export function useGetPublicProduct<TData = Awaited<ReturnType<typeof getPublicProduct>>, TError = ErrorType<void>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicProduct>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicProductQueryOptions(productId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -12,6 +12,7 @@ const staticPages = new Map([
   ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
   ['/za-biznise', ['LUMERA za biznise | Rast vašeg salona', 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', 'Digitalni alati za salone i beauty biznise.']],
   ['/saloni', ['Saloni i beauty tretmani | LUMERA', 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', 'Pronađite salon i tretman koji vam odgovaraju.']],
+  ['/proizvodi', ['Beauty proizvodi za kupce | LUMERA', 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', 'Beauty proizvodi za kupce']],
   ['/inspiracija', ['Beauty inspiracija | LUMERA vodič', 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', 'Inspiracija za sledeći beauty termin.']],
   ['/recnik', ['Rečnik beauty pojmova | LUMERA', 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', 'Jasna objašnjenja beauty pojmova.']],
   ['/brendovi', ['Profesionalni beauty brendovi | LUMERA', 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', 'Profesionalni brendovi koje koriste LUMERA saloni.']],
@@ -73,7 +74,8 @@ async function listAll(req, endpoint, pageSize) {
   const result = [];
   for (let page = 1; page <= 100; page += 1) {
     const separator = endpoint.includes('?') ? '&' : '?';
-    const rows = await getJson(req, `${endpoint}${separator}page=${page}&pageSize=${pageSize}`);
+    const payload = await getJson(req, `${endpoint}${separator}page=${page}&pageSize=${pageSize}`);
+    const rows = Array.isArray(payload) ? payload : payload?.items;
     if (!Array.isArray(rows) || !rows.length) break;
     result.push(...rows);
     if (rows.length < pageSize) break;
@@ -126,6 +128,30 @@ async function renderPublicPage(req, pathname) {
       const cards = salons.map((salon) => card({ href: `/saloni/${salon.slug}`, title: salon.name, description: salon.shortDescription, image: salon.imageUrl, detail: `${salon.city} · Ocena ${salon.rating} (${salon.reviewCount} recenzija)` })).join('');
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Dostupni saloni</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona.</p>'}</div></section>`, origin) };
     }
+    if (pathname === '/proizvodi') {
+      const products = (await getJson(req, '/api/shop/public/products?page=1&pageSize=24'))?.items ?? [];
+      const meta = makeMeta(pathname, title, description, {
+        schema: {
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: 'LUMERA beauty proizvodi',
+          itemListElement: products.map((product, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: `${origin}/proizvodi/${encodeURIComponent(product.id)}`,
+            name: product.name,
+          })),
+        },
+      });
+      const cards = products.map((product) => card({
+        href: `/proizvodi/${product.id}`,
+        title: product.name,
+        description: product.description,
+        image: product.imageUrl,
+        detail: `${product.discountPrice ?? product.price} RSD`,
+      })).join('');
+      return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Javno dostupni proizvodi</h2><div class="seo-grid">${cards || '<p>Trenutno nema javno dostupnih proizvoda.</p>'}</div></section>`, origin) };
+    }
     if (pathname === '/edukacije') {
       const courses = await getJson(req, '/api/education/public/courses?page=1&pageSize=24') ?? [];
       const meta = makeMeta(pathname, title, description);
@@ -169,6 +195,40 @@ async function renderPublicPage(req, pathname) {
     return {
       meta,
       html: pageShell(meta, `<section><h1>${escapeHtml(categoryPage.h1)}</h1><p>${escapeHtml(categoryPage.description)}</p><p>${escapeHtml(categoryPage.intro)}</p></section><section><h2>${escapeHtml(categoryPage.label)}</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona u ovoj kategoriji.</p>'}</div></section>`, origin),
+    };
+  }
+
+  const productMatch = pathname.match(/^\/proizvodi\/([^/]+)$/);
+  if (productMatch) {
+    const product = await getJson(req, `/api/shop/public/products/${encodeURIComponent(productMatch[1])}`);
+    if (!product) return null;
+    const description = product.description || `${product.name} — javno dostupan beauty proizvod na LUMERA platformi.`;
+    const price = product.discountPrice ?? product.price;
+    const meta = makeMeta(pathname, `${product.name} | LUMERA proizvodi`, description, {
+      image: product.images?.[0] ?? product.imageUrl,
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'Product',
+        name: product.name,
+        description,
+        image: asAbsolute(origin, product.images?.[0] ?? product.imageUrl),
+        brand: product.brand ? { '@type': 'Brand', name: product.brand } : undefined,
+        category: product.category,
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'RSD',
+          price: String(price),
+          availability: 'https://schema.org/InStock',
+          url: `${origin}${pathname}`,
+        },
+      },
+    });
+    const related = (product.relatedProducts ?? []).map((item) => card({
+      href: `/proizvodi/${item.id}`, title: item.name, description: item.description, image: item.imageUrl, detail: `${item.discountPrice ?? item.price} RSD`,
+    })).join('');
+    return {
+      meta,
+      html: pageShell(meta, `<article><h1>${escapeHtml(product.name)}</h1><p>${escapeHtml(description)}</p>${product.imageUrl ? `<img src="${escapeHtml(product.imageUrl)}" width="960" height="720" alt="${escapeHtml(product.name)}">` : ''}<p><strong>Cena: ${escapeHtml(price)} RSD</strong></p><p>${escapeHtml(product.category)}${product.brand ? ` · ${escapeHtml(product.brand)}` : ''}</p><section><h2>Slični proizvodi</h2><div class="seo-grid">${related || '<p>Pogledajte druge proizvode u javnoj prodavnici.</p>'}</div></section><p><a href="/proizvodi">Svi proizvodi</a></p></article>`, origin),
     };
   }
 
@@ -243,9 +303,10 @@ function sitemapXml(origin, entries) {
 async function buildSitemap(req) {
   const origin = requestOrigin(req);
   const entries = [...staticPages.keys(), ...categoryPages.keys()].map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
-  const [salons, courses] = await Promise.all([
+  const [salons, courses, products] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
+    listAll(req, '/api/shop/public/products', 100),
   ]);
   const seenCenters = new Set();
   const seenInstructors = new Set();
@@ -254,6 +315,9 @@ async function buildSitemap(req) {
     entries.push({ pathname: `/edukacije/${encodeURIComponent(course.id)}`, priority: '0.8' });
     if (course.centerId && !seenCenters.has(course.centerId)) { seenCenters.add(course.centerId); entries.push({ pathname: `/edukacije/centri/${encodeURIComponent(course.centerId)}`, priority: '0.6' }); }
     if (course.instructorProfileId && !seenInstructors.has(course.instructorProfileId)) { seenInstructors.add(course.instructorProfileId); entries.push({ pathname: `/edukacije/instruktori/${encodeURIComponent(course.instructorProfileId)}`, priority: '0.6' }); }
+  }
+  for (const product of products) {
+    entries.push({ pathname: `/proizvodi/${encodeURIComponent(product.id)}`, priority: '0.7' });
   }
   return sitemapXml(origin, entries);
 }

@@ -39,6 +39,24 @@ export interface AdminProductInput {
      * @nullable
      */
   discountPrice?: number | null;
+  publicEnabled?: boolean;
+  /**
+     * @maxLength 10000
+     * @nullable
+     */
+  publicDescription?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicPrice?: number | null;
+  /**
+     * @minimum 1
+     * @maximum 100000000
+     * @nullable
+     */
+  publicDiscountPrice?: number | null;
   /**
      * @minimum 0
      * @maximum 100000000

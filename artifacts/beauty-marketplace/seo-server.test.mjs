@@ -137,3 +137,47 @@ test('category pages are included in the canonical sitemap', async () => {
     globalThis.fetch = previousFetch;
   }
 });
+
+test('public product pages render only approved customer data and enter the sitemap', async () => {
+  const originalFetch = global.fetch;
+  const product = {
+    id: 'public-product-1',
+    name: 'Javni beauty proizvod',
+    category: 'Nega',
+    brand: 'LUMERA Test',
+    description: 'Opis namenjen kupcima.',
+    imageUrl: '/public-product.jpg',
+    images: ['/public-product.jpg'],
+    price: 2499,
+    discountPrice: 1999,
+    unit: 'kom',
+    isNew: true,
+    isBestseller: false,
+    relatedProducts: [],
+    sku: 'B2B-SKU-PRIVATE',
+    stock: 999,
+    weightGrams: 100,
+    internalDescription: 'Interni privatni opis koji ne sme biti renderovan.',
+  };
+  global.fetch = async (url) => {
+    const pathname = new URL(url).pathname;
+    const body = pathname === '/api/shop/public/products'
+      ? { items: [product], total: 1, page: 1, pageSize: 24, totalPages: 1 }
+      : pathname === '/api/shop/public/products/public-product-1'
+        ? product
+        : [];
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const listing = await createSeoResponse(request('/proizvodi'), template);
+    const detail = await createSeoResponse(request('/proizvodi/public-product-1'), template);
+    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.match(listing.body, /<h1>Beauty proizvodi za kupce<\/h1>/);
+    assert.match(detail.body, /<title>Javni beauty proizvod \| LUMERA proizvodi<\/title>/);
+    assert.match(detail.body, /Opis namenjen kupcima/);
+    assert.doesNotMatch(detail.body, /B2B-SKU-PRIVATE|Interni privatni opis/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/proizvodi\/public-product-1/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

@@ -82,6 +82,10 @@ export const productsTable = pgTable("products", {
   images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
   discountPrice: integer("discount_price"),
+  publicEnabled: boolean("public_enabled").notNull().default(false),
+  publicDescription: text("public_description"),
+  publicPrice: integer("public_price"),
+  publicDiscountPrice: integer("public_discount_price"),
   stock: integer("stock").notNull().default(0),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
@@ -96,6 +100,7 @@ export const productsTable = pgTable("products", {
   // Product catalog: active listings by category, sorted by creation date or price.
   index("products_category_active_idx").on(table.categoryId, table.active),
   index("products_active_created_idx").on(table.active, table.createdAt),
+  index("products_public_active_created_idx").on(table.publicEnabled, table.active, table.createdAt),
   index("products_brand_active_idx").on(table.brand, table.active),
 ]);
 

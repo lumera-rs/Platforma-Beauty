@@ -28,6 +28,7 @@ export function Navbar() {
 
   const navLinks = [
     { href: "/saloni", label: "Saloni" },
+    { href: "/proizvodi", label: "Proizvodi" },
     { href: "/inspiracija", label: "Inspiracija" },
     { href: "/recnik", label: "Rečnik" },
   ];

@@ -56,6 +56,19 @@ async function seedLegacySchema(schema: string) {
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
     name text NOT NULL
   )`);
+  // Legacy catalog table before customer-safe public storefront fields.
+  // The upgrade must add those fields without exposing B2B description/prices.
+  await q(`CREATE TABLE "${schema}".products (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    description text NOT NULL,
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+  // Existing core commerce dependency used by phase-3 inventory movements.
+  await q(`CREATE TABLE "${schema}".orders (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+  )`);
   await q(`CREATE TABLE "${schema}".salon_customers (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
@@ -280,6 +293,9 @@ async function run() {
       );
     }
     assert.ok(await columnExists("salon_customers", "birth_date"), "salon_customers.birth_date added");
+    for (const column of ["public_enabled", "public_description", "public_price", "public_discount_price"]) {
+      assert.ok(await columnExists("products", column), `products.${column} added for public storefront`);
+    }
     assert.ok(await columnExists("reviews", "employee_id"), "reviews.employee_id added");
     assert.ok(await columnExists("sms_deliveries", "processing_started_at"), "sms_deliveries.processing_started_at added");
     assert.ok(await columnExists("sms_deliveries", "submission_started_at"), "sms_deliveries.submission_started_at added");
@@ -319,6 +335,7 @@ async function run() {
     }
     for (const idx of [
       "reviews_employee_visible_idx",
+      "products_public_active_created_idx",
       "sms_deliveries_claim_expiry_idx",
       "automation_runs_cooldown_idx",
       "automation_deliveries_claim_expiry_idx",
@@ -331,6 +348,57 @@ async function run() {
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
+
+    // ── Public product rollout query proof ─────────────────────────────────
+    // Insert both an approved public product and a private B2B product after
+    // upgrading the old catalog table. The anonymous selection mirrors the
+    // public storefront's eligibility predicate and explicit public fields.
+    const publicProduct = (await q<{ id: string }>(
+      `INSERT INTO "${s}".products
+         (name, description, public_enabled, public_description, public_price, public_discount_price)
+       VALUES ('Javni proizvod', 'Interni B2B opis', true, 'Opis za kupce', 2499, 1999)
+       RETURNING id`,
+    )).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".products (name, description, public_enabled, public_price)
+       VALUES ('Privatni B2B proizvod', 'Ne sme biti javan', false, 999)`,
+    );
+    const publicList = (await q<{
+      id: string;
+      name: string;
+      description: string;
+      price: number;
+      discount_price: number | null;
+    }>(
+      `SELECT id, name, public_description AS description, public_price AS price,
+              public_discount_price AS discount_price
+       FROM "${s}".products
+       WHERE active = true
+         AND public_enabled = true
+         AND public_description IS NOT NULL
+         AND public_price IS NOT NULL
+       ORDER BY created_at, id`,
+    )).rows;
+    assert.equal(publicList.length, 1, "public eligibility query excludes private B2B products");
+    assert.deepEqual(publicList[0], {
+      id: publicProduct.id,
+      name: "Javni proizvod",
+      description: "Opis za kupce",
+      price: 2499,
+      discount_price: 1999,
+    }, "public list can select only customer-facing catalog fields after upgrade");
+    const publicDetail = (await q<{ description: string; price: number }>(
+      `SELECT public_description AS description, public_price AS price
+       FROM "${s}".products
+       WHERE id = $1
+         AND active = true
+         AND public_enabled = true
+         AND public_description IS NOT NULL
+         AND public_price IS NOT NULL`,
+      [publicProduct.id],
+    )).rows[0]!;
+    assert.deepEqual(publicDetail, { description: "Opis za kupce", price: 2499 },
+      "public detail eligibility query succeeds after legacy schema upgrade");
 
     // ── Leading FK-column indexes (DB standards audit requirement) ──────────
     // Each FK column below must have an index whose LEADING (0-based position 0)
