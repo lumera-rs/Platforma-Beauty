@@ -74,7 +74,10 @@ export default function Home() {
       sessionStorage.setItem("lumera_home_city", city);
       setSessionCity(city);
     }
-    if (searchCategory) params.append("category", searchCategory);
+    if (searchCategory) {
+      setLocation(getCategoryHref(searchCategory, city));
+      return;
+    }
     if (city) params.append("city", city);
     setLocation(`/saloni?${params.toString()}`);
   };
@@ -94,13 +97,16 @@ export default function Home() {
     return `/saloni?${params.toString()}`;
   };
 
-  const getCategoryHref = (category: string) => {
+  const getCategoryHref = (category: string, cityOverride = sessionCity) => {
     const publicCategory = PUBLIC_CATEGORY_PAGES.find((page) => page.apiCategory === category || page.label === category);
-    if (publicCategory) return getPublicCategoryPath(publicCategory);
+    if (publicCategory) {
+      const city = cityOverride.trim();
+      return city ? `${getPublicCategoryPath(publicCategory)}?city=${encodeURIComponent(city)}` : getPublicCategoryPath(publicCategory);
+    }
 
     const params = new URLSearchParams();
     params.append("category", category);
-    if (sessionCity) params.append("city", sessionCity);
+    if (cityOverride) params.append("city", cityOverride);
     return `/saloni?${params.toString()}`;
   };
 
