@@ -185,6 +185,14 @@ export default function AdminIntegrations() {
   };
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [staleBrevoWebhooks, setStaleBrevoWebhooks] = useState<Array<{ id: number; maskedUrl: string }>>([]);
+  const [selectedStaleBrevoWebhookIds, setSelectedStaleBrevoWebhookIds] = useState<number[]>([]);
+  const updateStaleBrevoWebhooks = (
+    webhooks: Array<{ id: number; maskedUrl: string }>,
+    selectedIds: number[] = webhooks.map((hook) => hook.id),
+  ) => {
+    setStaleBrevoWebhooks(webhooks);
+    setSelectedStaleBrevoWebhookIds(webhooks.filter((hook) => selectedIds.includes(hook.id)).map((hook) => hook.id));
+  };
   const registerBrevoWebhook = async () => {
     setRegisteringWebhook(true);
     try {
@@ -197,7 +205,7 @@ export default function AdminIntegrations() {
       // The server lists stale LUMERA-format duplicates (masked URLs) still
       // registered at Brevo after a successful repair; render them with the
       // cleanup action below.
-      setStaleBrevoWebhooks(Array.isArray(result.staleWebhooks) ? result.staleWebhooks : []);
+      updateStaleBrevoWebhooks(Array.isArray(result.staleWebhooks) ? result.staleWebhooks : []);
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Registracija webhook-a na Brevo nije uspela.");
@@ -207,13 +215,14 @@ export default function AdminIntegrations() {
   };
   const [cleaningStaleWebhooks, setCleaningStaleWebhooks] = useState(false);
   const cleanupStaleBrevoWebhooks = async () => {
-    if (!staleBrevoWebhooks.length) return;
-    if (!window.confirm(`Ukloniti zaostale LUMERA registracije sa Brevo (${staleBrevoWebhooks.length})? Sveža registracija i webhook-ovi koji nisu u LUMERA formatu neće biti dirani.`)) return;
+    const selectedIds = staleBrevoWebhooks.filter((hook) => selectedStaleBrevoWebhookIds.includes(hook.id)).map((hook) => hook.id);
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Ukloniti izabrane zaostale LUMERA registracije sa Brevo (${selectedIds.length})? Neoznačene registracije ostaju registrovane. Sveža registracija i webhook-ovi koji nisu u LUMERA formatu neće biti dirani.`)) return;
     setCleaningStaleWebhooks(true);
     try {
-      const response = await fetch("/api/admin/integrations/brevo/cleanup-webhooks", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: staleBrevoWebhooks.map((hook) => hook.id) }) });
+      const response = await fetch("/api/admin/integrations/brevo/cleanup-webhooks", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: selectedIds }) });
       const result = await response.json();
-      if (Array.isArray(result.staleWebhooks)) setStaleBrevoWebhooks(result.staleWebhooks);
+      if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks, selectedIds);
       if (!response.ok) throw new Error(result.error ?? "Uklanjanje zaostalih registracija nije uspelo.");
       toast.success(result.message);
     } catch (error) {
@@ -308,9 +317,20 @@ export default function AdminIntegrations() {
               <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Zaostale LUMERA registracije na Brevo ({staleBrevoWebhooks.length})</p>
               <p className="mt-1 text-xs text-amber-800">Ove registracije pokazuju na stare domene ili nose stare tajne, pa primaju događaje koji se odbacuju ili gube. Uklanjanje ne dira sveže registrovan webhook niti webhook-ove koji nisu u LUMERA formatu.</p>
               <ul className="mt-1.5 list-disc space-y-0.5 pl-4 font-mono text-xs text-amber-800 break-all">
-                {staleBrevoWebhooks.map((hook) => <li key={hook.id}>{hook.maskedUrl}</li>)}
+                {staleBrevoWebhooks.map((hook) => <li key={hook.id}>
+                  <label className="flex cursor-pointer items-start gap-2">
+                    <input
+                      type="checkbox"
+                      data-testid={`stale-brevo-webhook-checkbox-${hook.id}`}
+                      checked={selectedStaleBrevoWebhookIds.includes(hook.id)}
+                      onChange={() => setSelectedStaleBrevoWebhookIds((previous) => previous.includes(hook.id) ? previous.filter((id) => id !== hook.id) : [...previous, hook.id])}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <span>{hook.maskedUrl}</span>
+                  </label>
+                </li>)}
               </ul>
-              <Button variant="outline" size="sm" className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100" disabled={cleaningStaleWebhooks} onClick={cleanupStaleBrevoWebhooks}>
+               <Button variant="outline" size="sm" className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100" disabled={cleaningStaleWebhooks || selectedStaleBrevoWebhookIds.length === 0} onClick={cleanupStaleBrevoWebhooks}>
                 {cleaningStaleWebhooks ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <AlertTriangle className="mr-2 h-4 w-4" />}
                 {cleaningStaleWebhooks ? "Uklanjam…" : "Ukloni zaostale registracije"}
               </Button>
