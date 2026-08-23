@@ -382,3 +382,49 @@ test("shared campaign links preserve tracking tags while filtering and closing",
     await cleanUpFixture(fixture);
   }
 });
+
+test("shared campaign links restore the selected segment and tracking tags after reload", async ({ page }) => {
+  const fixture = await createFixture();
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(`/vlasnik/automatizacije?utm_source=instagram&rule=${fixture.ruleId}&clients=returning`);
+
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: "returning",
+    });
+
+    await page.reload();
+
+    const reloadedDialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(reloadedDialog).toBeVisible();
+    await expect(reloadedDialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedDialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: fixture.ruleId,
+      clients: "returning",
+    });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
