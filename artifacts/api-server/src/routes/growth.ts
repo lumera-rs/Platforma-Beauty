@@ -9,7 +9,7 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import {
   db,
   automationRulesTable,
@@ -574,12 +574,18 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        // Realized attribution only: the join below excludes cancelled
+        // appointments, so both the count and the revenue are derived from
+        // the same joined (non-cancelled) appointment row.
+        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
         attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
-      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+      .leftJoin(appointmentsTable, and(
+        eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+        ne(appointmentsTable.status, "cancelled"),
+      ))
       .where(cutoff
         ? and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(cutoff))
         : inArray(automationRunsTable.ruleId, ruleIds))
@@ -659,12 +665,17 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        // Realized attribution only: cancelled appointments are excluded via
+        // the join condition so count and revenue share the same filter.
+        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
         attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
-      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+      .leftJoin(appointmentsTable, and(
+        eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+        ne(appointmentsTable.status, "cancelled"),
+      ))
       .where(cutoff
         ? and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(cutoff))
         : eq(automationRunsTable.ruleId, rule.id));

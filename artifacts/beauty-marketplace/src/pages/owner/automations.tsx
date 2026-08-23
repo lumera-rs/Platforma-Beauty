@@ -110,7 +110,7 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
               <BarChart3 className="w-5 h-5 text-primary" /> Pregled performansi kampanja
             </CardTitle>
             <CardDescription className="mt-1.5">
-              Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama.
+              Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama. Otkazani termini se ne računaju.
             </CardDescription>
           </div>
           <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0" role="group" aria-label="Period prikaza" data-testid="overview-period-selector">
@@ -581,6 +581,7 @@ export default function OwnerAutomations() {
                 <p className="text-sm font-semibold text-emerald-800 mt-1" data-testid="stats-attributed-revenue">
                   {(statsData.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD prihoda
                 </p>
+                <p className="text-[11px] text-muted-foreground mt-1">Bez otkazanih termina</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-lg text-center col-span-2 sm:col-span-1">
                 <p className="text-xs text-emerald-700 uppercase font-semibold flex items-center justify-center gap-1"><CheckCircle2 className="w-3 h-3" /> Uspešno poslato</p>

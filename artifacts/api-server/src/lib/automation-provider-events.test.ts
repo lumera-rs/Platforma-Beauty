@@ -24,6 +24,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { eq, inArray } from "drizzle-orm";
 import {
+  appointmentsTable,
   automationDeliveriesTable,
   automationRulesTable,
   automationRunsTable,
@@ -33,6 +34,7 @@ import {
   providerWebhookReceiptsTable,
   salonCustomersTable,
   salonsTable,
+  servicesTable,
   smsDeliveriesTable,
   usersTable,
 } from "@workspace/db";
@@ -712,6 +714,53 @@ async function run() {
       });
       assert.equal(invalid.status, 400, "unknown period value must be rejected explicitly");
       console.log("✓ ?period= windows run/delivery aggregation on both stats endpoints; unknown values rejected");
+    }
+
+    // ── 8c. Attribution excludes cancelled appointments ─────────────────────
+    {
+      // A confirmed appointment counts toward both the attributed count and
+      // the attributed revenue; a cancelled one contributes to neither.
+      const [service] = await db.insert(servicesTable).values({
+        salonId: a.salon.id, categoryName: "PE", name: `PE Service ${suffix}`,
+        description: "Test", durationMinutes: 30, price: 3000, imageUrl: "/t.jpg",
+      }).returning();
+      assert.ok(service);
+
+      const makeAppointment = async (status: "confirmed" | "cancelled", price: number) => {
+        const [appointment] = await db.insert(appointmentsTable).values({
+          salonId: a.salon.id, salonCustomerId: customerA.id, serviceId: service.id,
+          date: "2026-08-20", startTime: "10:00", endTime: "10:30",
+          durationMinutes: 30, price, status,
+        }).returning();
+        assert.ok(appointment);
+        return appointment;
+      };
+      const kept = await makeAppointment("confirmed", 3000);
+      const cancelled = await makeAppointment("cancelled", 5000);
+
+      await db.update(automationRunsTable).set({ attributedAppointmentId: kept.id })
+        .where(eq(automationRunsTable.id, runA.run.id));
+      await db.update(automationRunsTable).set({ attributedAppointmentId: cancelled.id })
+        .where(eq(automationRunsTable.id, runA2.run.id));
+
+      const statsResponse = await fetch(`${baseUrl}/api/growth/automations/${ruleA.id}/stats`, {
+        headers: { cookie: `${sessionCookieName}=${a.token}` },
+      });
+      assert.equal(statsResponse.status, 200);
+      const attributionStats = await statsResponse.json() as Record<string, number>;
+      assert.equal(attributionStats["attributedAppointments"], 1, "cancelled appointment must not count as attributed");
+      assert.equal(attributionStats["attributedRevenue"], 3000, "cancelled appointment revenue must be excluded");
+
+      const overviewResponse = await fetch(`${baseUrl}/api/growth/automation-stats`, {
+        headers: { cookie: `${sessionCookieName}=${a.token}` },
+      });
+      assert.equal(overviewResponse.status, 200);
+      const overviewRows = await overviewResponse.json() as Array<Record<string, unknown>>;
+      const overviewRow = overviewRows.find((row) => row["ruleId"] === ruleA.id);
+      assert.ok(overviewRow);
+      assert.equal(overviewRow["attributedAppointments"], 1, "overview must apply the same cancelled filter");
+      assert.equal(overviewRow["attributedRevenue"], 3000, "overview revenue must match the per-rule stats");
+      console.log("✓ cancelled appointments are excluded from attributed counts and revenue in both endpoints");
     }
 
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────
