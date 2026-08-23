@@ -15,10 +15,17 @@ export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth
  *   - webhookVerifiedAt — set when a webhook re-confirmation succeeds (the
  *     loopback self-check, or Brevo one-click registration whose re-check
  *     passed)
+ *   - brevoRegistrationMissingEvents — the last provider-verified list of
+ *     delivery event groups missing from an otherwise matching Brevo webhook
  * The reminder is pending while changedAt exists and verifiedAt is older.
  */
-const WEBHOOK_MARKER_KEYS = ["webhookSecretChangedAt", "webhookVerifiedAt"] as const;
+const WEBHOOK_MARKER_KEYS = [
+  "webhookSecretChangedAt",
+  "webhookVerifiedAt",
+  "brevoRegistrationMissingEvents",
+] as const;
 type WebhookMarkerKey = (typeof WEBHOOK_MARKER_KEYS)[number];
+type WebhookTimestampMarkerKey = Exclude<WebhookMarkerKey, "brevoRegistrationMissingEvents">;
 const WEBHOOK_MARKER_KEY_SET: ReadonlySet<string> = new Set(WEBHOOK_MARKER_KEYS);
 /** A confirmation is a point-in-time health check, not permanent proof. */
 export const WEBHOOK_CONFIRMATION_MAX_AGE_DAYS = 7;
@@ -123,7 +130,7 @@ export async function saveIntegrationSettings(input: {
   if (rows.length) await db.update(integrationSettingsTable).set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId }).where(eq(integrationSettingsTable.integration, input.integration));
 }
 
-async function integrationMarker(integration: IntegrationName, settingKey: WebhookMarkerKey): Promise<Date | null> {
+async function integrationMarker(integration: IntegrationName, settingKey: WebhookTimestampMarkerKey): Promise<Date | null> {
   const [row] = await db.select().from(integrationSettingsTable)
     .where(and(eq(integrationSettingsTable.integration, integration), eq(integrationSettingsTable.settingKey, settingKey)))
     .limit(1);
@@ -133,13 +140,24 @@ async function integrationMarker(integration: IntegrationName, settingKey: Webho
   return Number.isNaN(at.getTime()) ? null : at;
 }
 
-async function setIntegrationMarker(integration: IntegrationName, settingKey: WebhookMarkerKey, updatedByUserId: string, at: Date) {
+async function setIntegrationMetadata(integration: IntegrationName, settingKey: WebhookMarkerKey, value: string, updatedByUserId: string) {
   await db.insert(integrationSettingsTable).values({
-    integration, settingKey, encryptedValue: encrypt(at.toISOString()), enabled: true, updatedByUserId,
+    integration, settingKey, encryptedValue: encrypt(value), enabled: true, updatedByUserId,
   }).onConflictDoUpdate({
     target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
-    set: { encryptedValue: encrypt(at.toISOString()), updatedByUserId, updatedAt: new Date() },
+    set: { encryptedValue: encrypt(value), updatedByUserId, updatedAt: new Date() },
   });
+}
+
+async function setIntegrationMarker(integration: IntegrationName, settingKey: WebhookTimestampMarkerKey, updatedByUserId: string, at: Date) {
+  await setIntegrationMetadata(integration, settingKey, at.toISOString(), updatedByUserId);
+}
+
+async function clearIntegrationMetadata(integration: IntegrationName, settingKey: WebhookMarkerKey) {
+  await db.delete(integrationSettingsTable).where(and(
+    eq(integrationSettingsTable.integration, integration),
+    eq(integrationSettingsTable.settingKey, settingKey),
+  ));
 }
 
 /** Persist that the effective webhook secret changed — the URL registered at
@@ -152,6 +170,41 @@ export async function markWebhookSecretChanged(integration: "sms" | "brevo", upd
  * Brevo one-click registration whose provider-side re-check passed). */
 export async function markWebhookReconfirmed(integration: "sms" | "brevo", updatedByUserId: string, at = new Date()) {
   await setIntegrationMarker(integration, "webhookVerifiedAt", updatedByUserId, at);
+}
+
+/** Persist actionable missing Brevo registration coverage so the admin card
+ * keeps the exact repair instruction after the page is reopened. */
+export async function markBrevoRegistrationIncomplete(missingEvents: string[], updatedByUserId: string) {
+  const normalized = [...new Set(missingEvents.filter((event) => typeof event === "string" && event.trim()))];
+  if (!normalized.length) {
+    await clearBrevoRegistrationIncomplete();
+    return;
+  }
+  await setIntegrationMetadata("brevo", "brevoRegistrationMissingEvents", JSON.stringify(normalized), updatedByUserId);
+}
+
+/** Read the last provider-verified incomplete-event verdict without exposing
+ * any provider URL, secret, or other integration setting. */
+export async function brevoRegistrationMissingEvents(): Promise<string[]> {
+  const [row] = await db.select({
+    encryptedValue: integrationSettingsTable.encryptedValue,
+  }).from(integrationSettingsTable).where(and(
+    eq(integrationSettingsTable.integration, "brevo"),
+    eq(integrationSettingsTable.settingKey, "brevoRegistrationMissingEvents"),
+  )).limit(1);
+  if (!row) return [];
+  try {
+    const parsed: unknown = JSON.parse(decrypt(row.encryptedValue));
+    return Array.isArray(parsed)
+      ? [...new Set(parsed.filter((event): event is string => typeof event === "string" && event.trim().length > 0))]
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function clearBrevoRegistrationIncomplete() {
+  await clearIntegrationMetadata("brevo", "brevoRegistrationMissingEvents");
 }
 
 /** Return the last successful webhook confirmation without exposing marker

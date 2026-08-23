@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
-type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
+type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
@@ -130,6 +130,18 @@ export default function AdminIntegrations() {
       ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookVerifiedAt: value, webhookVerificationStale: stale } } }
       : previous);
   };
+  const updateBrevoRegistrationMissingEvents = (events: unknown) => {
+    if (!Array.isArray(events) || !events.every((event) => typeof event === "string")) return;
+    setData((previous) => previous
+      ? {
+        ...previous,
+        integrations: {
+          ...previous.integrations,
+          brevo: { ...previous.integrations.brevo, brevoRegistrationMissingEvents: events },
+        },
+      }
+      : previous);
+  };
   const save = async (integration: Integration) => {
     const trimmedValues: Record<string, string> = {};
     for (const [k, v] of Object.entries(form[integration])) {
@@ -209,6 +221,8 @@ export default function AdminIntegrations() {
       const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
       const result = await response.json();
       if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks);
+      if (Array.isArray(result.missingEvents)) updateBrevoRegistrationMissingEvents(result.missingEvents);
+      else if (response.ok || response.status === 409) updateBrevoRegistrationMissingEvents([]);
       if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
       // A development/preview verdict may be successful only in the softened
       // sense that it found the current secret elsewhere (likely production).
@@ -412,6 +426,11 @@ export default function AdminIntegrations() {
                 </>}
               </ol>
             </div>}
+             {integration === "brevo" && (card.brevoRegistrationMissingEvents?.length ?? 0) > 0 && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="brevo-missing-event-coverage">
+               <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Brevo registracija ne prati sve potrebne događaje.</p>
+               <p className="mt-1 text-xs text-amber-800">Nedostaju: {card.brevoRegistrationMissingEvents!.join(", ")}.</p>
+               <p className="mt-1 text-xs text-amber-800">Ažurirajte registraciju u Brevo (Transactional → Settings → Webhooks) ili kliknite „Registruj webhook“, pa ponovo proverite registraciju.</p>
+             </div>}
             <p className="mt-1 text-xs text-muted-foreground">{integration === "sms" ? "Svaka SMS poruka sa sačuvanom webhook tajnom automatski nosi aktuelni Infobip delivery-report URL. Portal-level registracija je i dalje podržana; za nju" : "Registrujte kod provajdera (Brevo transactional webhooks); za nju"} zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
              {isDevelopmentPreview && <p className="mt-1.5 text-xs font-medium text-amber-700" data-testid={`development-webhook-url-caveat-${integration}`}><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Ovo je URL razvojne probe. Nemojte ga registrovati kod provajdera za produkciju.</p>}

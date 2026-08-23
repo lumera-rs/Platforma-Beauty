@@ -364,7 +364,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
+import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { schedulerHealthSnapshot, withSchedulerDependency } from "../lib/scheduler-resilience";
@@ -3215,6 +3215,7 @@ async function webhookConfirmationMetadata(integration: "sms" | "brevo") {
     webhookVerifiedAt: verifiedAt?.toISOString() ?? null,
     webhookVerificationStale: webhookVerificationIsStale(verifiedAt),
     webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
+    ...(integration === "brevo" ? { brevoRegistrationMissingEvents: await brevoRegistrationMissingEvents() } : {}),
   };
 }
 
@@ -3323,6 +3324,9 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   await saveIntegrationSettings({ integration: req.params.integration, enabled: body.enabled, values, updatedByUserId: user.id });
   if (webhookIntegration && savedWebhookSecret && savedWebhookSecret !== previousWebhookSecret) {
     await markWebhookSecretChanged(webhookIntegration, user.id);
+    // A new secret invalidates the previous provider comparison. Do not carry
+    // old missing-event advice forward until Brevo verifies this URL + secret.
+    if (webhookIntegration === "brevo") await clearBrevoRegistrationIncomplete();
   }
   res.json({
     ...(await integrationDisplay(req.params.integration, definition.keys, definition.required)),
@@ -3576,7 +3580,7 @@ function brevoVerdictContext(req: Request): { origin: string; acceptedOrigins: S
 function brevoRegistrationVerdict(
   candidates: ReturnType<typeof brevoRegistrationCandidates>,
   context: { origin: string; acceptedOrigins: Set<string>; developmentOrigin: boolean },
-): { ok: true; message: string } | { ok: false; error: string } {
+): { ok: true; message: string } | { ok: false; error: string; missingEvents?: string[] } {
   const { origin, acceptedOrigins, developmentOrigin } = context;
   const expectedUrlHint = developmentOrigin
     ? "https://<domen-objavljene-aplikacije>/api/webhooks/brevo/<tajna>"
@@ -3587,6 +3591,7 @@ function brevoRegistrationVerdict(
   const missingEventsError = (maskedUrl: string | null, missingEvents: string[]) => ({
     ok: false as const,
     error: `Webhook je registrovan na Brevo${maskedUrl ? ` (${maskedUrl})` : " sa ispravnim URL-om i tajnom"}, ali registracija ne prati sve potrebne događaje. Nedostaju: ${missingEvents.join(", ")}. Bez njih se praćenje otvaranja i upozorenja o neisporučenim porukama tiho gube. Ažurirajte registraciju webhook-a na Brevo (Transactional → Settings → Webhooks) i uključite navedene događaje.`,
+    missingEvents,
   });
   const matching = candidates.filter((candidate) => candidate.secretMatches && acceptedOrigins.has(candidate.origin));
   if (matching.length) {
@@ -3722,13 +3727,24 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
     // recognize the production registration, but the preview cannot prove
     // that this deployment's public origin is the one Brevo will call.
     // Only a strict production-origin success re-confirms the new secret.
+    await clearBrevoRegistrationIncomplete();
     if (!context.developmentOrigin) await markWebhookReconfirmed("brevo", user.id);
     res.json({ message: verdict.message, reconfirmed: !context.developmentOrigin, staleWebhooks }); return;
+  }
+  if (verdict.missingEvents) {
+    await markBrevoRegistrationIncomplete(verdict.missingEvents, user.id);
+  } else {
+    await clearBrevoRegistrationIncomplete();
   }
   // Keep the response structured so the admin-error normalizer preserves the
   // stale list alongside the Serbian conflict message. This lets the page
   // offer cleanup even when the current registration itself still needs repair.
-  res.status(409).json({ error: verdict.error, code: "CONFLICT", staleWebhooks });
+  res.status(409).json({
+    error: verdict.error,
+    code: "CONFLICT",
+    staleWebhooks,
+    ...("missingEvents" in verdict ? { missingEvents: verdict.missingEvents } : {}),
+  });
 });
 
 /**
@@ -3886,7 +3902,10 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
   if (verdict.ok) {
     // One-click registration wrote the current secret to the provider and the
     // re-check confirmed it — clear the persisted re-registration reminder.
-    await markWebhookReconfirmed("brevo", user.id);
+    await Promise.all([
+      markWebhookReconfirmed("brevo", user.id),
+      clearBrevoRegistrationIncomplete(),
+    ]);
     const confirmedAt = await webhookVerifiedAt("brevo");
     // Surface any stale LUMERA-format duplicates still registered at Brevo
     // (old domains, old secrets) so the admin can remove them — they keep
@@ -3904,7 +3923,15 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
       webhookConfirmationMaxAgeDays: WEBHOOK_CONFIRMATION_MAX_AGE_DAYS,
     }); return;
   }
-  res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}` });
+  if (verdict.missingEvents) {
+    await markBrevoRegistrationIncomplete(verdict.missingEvents, user.id);
+  } else {
+    await clearBrevoRegistrationIncomplete();
+  }
+  res.status(502).json({
+    error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}`,
+    ...("missingEvents" in verdict ? { missingEvents: verdict.missingEvents } : {}),
+  });
 });
 
 /**

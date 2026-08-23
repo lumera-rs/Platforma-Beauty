@@ -44,7 +44,7 @@ import { integrationSettings, markWebhookReconfirmed, webhookVerificationIsStale
 import { BREVO_WEBHOOK_EVENTS } from "./brevo";
 
 const suffix = randomUUID().slice(0, 8);
-const MARKER_KEYS = ["webhookSecretChangedAt", "webhookVerifiedAt"];
+const MARKER_KEYS = ["webhookSecretChangedAt", "webhookVerifiedAt", "brevoRegistrationMissingEvents"];
 const cleanup = { userIds: [] as string[] };
 
 // ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
   return realFetch(input, init);
 }) as typeof fetch;
 
-type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
+type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 
 async function run() {
   const server = app.listen(0, "127.0.0.1");
@@ -158,7 +158,7 @@ async function run() {
       const response = await requestWithHost("/api/admin/integrations/brevo/verify-registration", {
         method: "POST", host,
       });
-      const body = JSON.parse(response.raw) as { message?: string; error?: string; reconfirmed?: boolean };
+      const body = JSON.parse(response.raw) as { message?: string; error?: string; reconfirmed?: boolean; missingEvents?: string[] };
       return { response, body };
     };
 
@@ -277,6 +277,10 @@ async function run() {
         `incomplete production registration must remain unsuccessful: ${incomplete.response.raw}`);
       assert.ok(incomplete.body.error?.includes("ne prati sve potrebne događaje"),
         `incomplete registration must explain the missing event coverage: ${incomplete.response.raw}`);
+      assert.ok(incomplete.body.missingEvents?.some((event) => event.includes("otvaranja")),
+        `incomplete registration must return missing event groups structurally: ${incomplete.response.raw}`);
+      assert.ok((await getCards())["brevo"]?.brevoRegistrationMissingEvents?.some((event) => event.includes("greška")),
+        "the exact missing Brevo event groups must survive a fresh integrations read");
       assert.equal((await getCards())["brevo"]?.webhookSecretPendingReconfirmation, true,
         "incomplete production registration must keep the reminder visible after a fresh integrations read");
 
@@ -303,6 +307,8 @@ async function run() {
         "strict production-origin success must report re-confirmation");
       assert.equal((await getCards())["brevo"]?.webhookSecretPendingReconfirmation, false,
         "strict production-origin registration check must clear the reminder after reload");
+      assert.deepEqual((await getCards())["brevo"]?.brevoRegistrationMissingEvents, [],
+        "a complete production registration must clear stale missing-event advice");
       console.log("✓ Brevo registration check keeps dev verdicts pending and clears on strict production proof");
     }
 
