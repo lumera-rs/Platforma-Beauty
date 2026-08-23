@@ -130,6 +130,12 @@ async function run() {
       const body = await response.json() as { integrations: Record<string, CardFlags> };
       return body.integrations;
     };
+    const getWebhookFreshness = async () => {
+      const response = await fetch(`${baseUrl}/api/admin/integrations/webhook-freshness`, { headers: { cookie } });
+      assert.equal(response.status, 200, "webhook freshness read must succeed");
+      const body = await response.json() as { integrations: Record<"sms" | "brevo", CardFlags> };
+      return body.integrations;
+    };
     const putIntegration = async (integration: string, values: Record<string, string>) => {
       const response = await fetch(`${baseUrl}/api/admin/integrations/${integration}`, {
         method: "PUT", headers: { cookie, "content-type": "application/json" },
@@ -167,6 +173,10 @@ async function run() {
       assert.equal(cards["brevo"]?.webhookVerificationStale, false, "never-confirmed Brevo is distinct from stale");
       assert.equal(cards["sms"]?.webhookConfirmationMaxAgeDays, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, "SMS exposes the shared confirmation age");
       assert.equal(cards["brevo"]?.webhookConfirmationMaxAgeDays, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, "Brevo exposes the shared confirmation age");
+      const freshness = await getWebhookFreshness();
+      assert.equal(freshness.sms?.webhookVerifiedAt, null, "freshness read exposes never-confirmed SMS");
+      assert.equal(freshness.sms?.webhookVerificationStale, false, "freshness read keeps never-confirmed SMS distinct from stale");
+      assert.equal(freshness.brevo?.webhookVerificationStale, false, "freshness read keeps never-confirmed Brevo distinct from stale");
       assert.ok(!("webhookSecretPendingReconfirmation" in (cards["google_oauth"] ?? {})),
         "OAuth cards never carry the webhook reminder flag");
       assert.ok(!("webhookVerifiedAt" in (cards["google_oauth"] ?? {})),
@@ -214,6 +224,9 @@ async function run() {
       const cards = await getCards();
       assert.equal(cards["sms"]?.webhookVerificationStale, true, "an old SMS confirmation is surfaced as stale");
       assert.ok(cards["sms"]?.webhookVerifiedAt, "stale confirmations retain their timestamp");
+      const freshness = await getWebhookFreshness();
+      assert.equal(freshness.sms?.webhookVerificationStale, true, "background freshness read surfaces the old SMS confirmation as stale");
+      assert.equal(freshness.brevo?.webhookVerificationStale, false, "background freshness read keeps never-confirmed Brevo distinct from stale");
       assert.equal(cards["brevo"]?.webhookVerifiedAt, null, "Brevo remains visibly never confirmed");
       assert.equal(cards["brevo"]?.webhookVerificationStale, false, "never-confirmed Brevo is not called stale");
       const refreshed = await verifyWebhook("sms");

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { armHistoryTraversalGuard } from "@/lib/unsaved-changes-guard";
@@ -11,6 +11,7 @@ import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshC
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
+type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
@@ -27,18 +28,53 @@ const fields: Record<Integration, Array<{ key: string; label: string; placeholde
   facebook_oauth: [{ key: "clientId", label: "App ID", placeholder: "Facebook App ID" }, { key: "clientSecret", label: "App Secret", placeholder: "Unesite novi App Secret", secret: true }],
 };
 const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava" };
+const WEBHOOK_FRESHNESS_POLL_INTERVAL_MS = 60_000;
 
 export default function AdminIntegrations() {
   const [data, setData] = useState<Data | null>(null);
   const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {} });
   const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
+  const freshnessRefreshController = useRef<AbortController | null>(null);
+  const freshnessRefreshSequence = useRef(0);
   const load = async () => {
     const response = await fetch("/api/admin/integrations", { credentials: "include" });
     if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
     const payload: Data = await response.json();
     setData(payload);
     setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled });
+  };
+  const refreshWebhookFreshness = async () => {
+    const sequence = ++freshnessRefreshSequence.current;
+    freshnessRefreshController.current?.abort();
+    const controller = new AbortController();
+    freshnessRefreshController.current = controller;
+    try {
+      const response = await fetch("/api/admin/integrations/webhook-freshness", { credentials: "include", signal: controller.signal });
+      if (!response.ok) throw new Error("Svežina webhook potvrde nije osvežena.");
+      const payload = await response.json() as { integrations?: Record<"sms" | "brevo", WebhookFreshness> };
+      if (sequence !== freshnessRefreshSequence.current || controller.signal.aborted) return;
+      const sms = payload.integrations?.sms;
+      const brevo = payload.integrations?.brevo;
+      if (!sms || !brevo) return;
+      // This endpoint intentionally returns only time-derived webhook metadata.
+      // Never replace the cards wholesale: an administrator may be typing a
+      // secret or changing an enabled switch while the poll completes.
+      setData((previous) => previous
+        ? {
+          ...previous,
+          integrations: {
+            ...previous.integrations,
+            sms: { ...previous.integrations.sms, ...sms },
+            brevo: { ...previous.integrations.brevo, ...brevo },
+          },
+        }
+        : previous);
+    } catch {
+      // Poll failures are transient and should not interrupt an admin's edits.
+    } finally {
+      if (freshnessRefreshController.current === controller) freshnessRefreshController.current = null;
+    }
   };
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
   // Unsaved-changes guard: generated or typed values and toggled "enabled" switches take
@@ -237,6 +273,19 @@ export default function AdminIntegrations() {
     load()
       .then(() => refreshStaleBrevoWebhooks({ notify: false }))
       .catch((error) => toast.error(error instanceof Error ? error.message : "Podešavanja integracija nisu učitana."));
+  }, []);
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshWebhookFreshness();
+    };
+    const interval = window.setInterval(refreshWhenVisible, WEBHOOK_FRESHNESS_POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      freshnessRefreshSequence.current += 1;
+      freshnessRefreshController.current?.abort();
+    };
   }, []);
   const registerBrevoWebhook = async () => {
     setRegisteringWebhook(true);

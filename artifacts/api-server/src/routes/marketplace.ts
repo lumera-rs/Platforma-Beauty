@@ -3290,6 +3290,15 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
   });
 });
 
+router.get("/admin/integrations/webhook-freshness", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [sms, brevo] = await Promise.all([
+    webhookConfirmationMetadata("sms"),
+    webhookConfirmationMetadata("brevo"),
+  ]);
+  res.json({ integrations: { sms, brevo } });
+});
+
 router.put("/admin/integrations/:integration", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   if (!integrationName(req.params.integration)) { res.status(404).json({ error: "Nepoznata integracija." }); return; }
