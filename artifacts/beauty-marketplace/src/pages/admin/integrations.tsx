@@ -223,6 +223,7 @@ export default function AdminIntegrations() {
     toast.success("Jaka tajna je generisana. Kliknite „Sačuvaj“ da bi počela da važi, zatim kopirajte kompletan URL i ponovo registrujte webhook kod provajdera.");
   };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
+  const isDevelopmentPreview = window.location.hostname === "localhost" || window.location.hostname.endsWith(".replit.dev");
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
     if (integration === "brevo") return data.deliveryReports.providers.brevo;
@@ -233,6 +234,10 @@ export default function AdminIntegrations() {
 
   return <AdminLayout><div className="space-y-6">
     <header><div className="flex items-center gap-3"><PlugZap className="h-7 w-7 text-primary" /><h1 className="font-serif text-3xl font-bold">Integracije i konektori</h1></div><p className="mt-2 text-muted-foreground">Sačuvane vrednosti su šifrovane u bazi i primenjuju se odmah, bez restarta aplikacije.</p></header>
+    {isDevelopmentPreview && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert" data-testid="development-preview-notice">
+      <p className="font-semibold text-amber-800"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Otvoreno je razvojno okruženje</p>
+      <p className="mt-1 text-sm text-amber-800">Webhook i redirect URL-ovi prikazani na ovoj stranici sadrže adresu razvojne probe. Provera i kopiranje odnose se na ovu adresu; registraciju kod provajdera obavite iz objavljene aplikacije, a ne iz preview-a.</p>
+    </div>}
     {!data ? <p className="text-muted-foreground">Učitavanje integracija…</p> : <>
       {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
         <p className="font-semibold text-destructive"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu</p>
@@ -269,6 +274,7 @@ export default function AdminIntegrations() {
             </div>}
             <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
+             {isDevelopmentPreview && <p className="mt-1.5 text-xs font-medium text-amber-700" data-testid={`development-webhook-url-caveat-${integration}`}><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Ovo je URL razvojne probe. Nemojte ga registrovati kod provajdera za produkciju.</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled={copyingWebhookUrl[integration]} onClick={() => copyWebhookUrl(integration)}>
                 {copyingWebhookUrl[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
