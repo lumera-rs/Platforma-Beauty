@@ -3350,7 +3350,18 @@ router.get("/admin/integrations/:integration/webhook-url", async (req, res): Pro
     res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
   }
   const webhookPath = integration === "sms" ? "infobip" : "brevo";
-  res.json({ url: `${requestOrigin(req)}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}` });
+  const origin = normalizedRequestOrigin(req);
+  // The URL is assembled from the address the admin is browsing from. From a
+  // development/preview address that is the development URL — registering it
+  // at the provider would redirect production delivery reports to the
+  // preview, so the response carries an explicit warning the page surfaces.
+  const warning = isDevelopmentBrowsingOrigin(origin)
+    ? `Ovaj URL sadrži razvojnu adresu sa koje trenutno pristupate (${origin}). Ne registrujte ga kod provajdera za objavljenu aplikaciju — izveštaji o isporuci bi prestali da stižu u produkciju. Za produkcioni URL otvorite ovu stranicu iz objavljene aplikacije.`
+    : null;
+  res.json({
+    url: `${origin}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}`,
+    ...(warning ? { warning } : {}),
+  });
 });
 
 /**
@@ -3390,16 +3401,78 @@ function brevoRegistrationCandidates(webhooks: Array<{ id: number; url: string; 
 }
 
 /**
+ * Origins that count as "this deployment" when comparing provider-side
+ * registrations. The admin request's own origin is always included; on top of
+ * that, REPLIT_DOMAINS lists every public domain the running deployment
+ * answers on (in production e.g. the .replit.app domain alongside a custom
+ * domain), so a webhook registered for any of them is recognized even when
+ * the admin happens to be browsing from a different one.
+ */
+function deploymentAcceptedOrigins(origin: string): Set<string> {
+  const origins = new Set([origin]);
+  for (const domain of (process.env["REPLIT_DOMAINS"] ?? "").split(",")) {
+    const trimmed = domain.trim();
+    if (!trimmed) continue;
+    try { origins.add(new URL(`https://${trimmed}`).origin); } catch { /* skip malformed entries */ }
+  }
+  return origins;
+}
+
+/**
+ * True when the admin is browsing through a development/preview address
+ * (Replit dev preview domain, localhost). Registration verdicts compare
+ * provider-side webhook URLs against the request origin, which is correct in
+ * production but from a development address would classify a healthy
+ * PRODUCTION registration as "wrong domain" — and re-registering it for the
+ * development URL would break production delivery reports. Detected from the
+ * request host so verdicts can be softened and re-registration instructions
+ * suppressed.
+ */
+function isDevelopmentBrowsingOrigin(origin: string): boolean {
+  let hostname: string;
+  try { hostname = new URL(origin).hostname; } catch { return false; }
+  const devDomain = process.env["REPLIT_DEV_DOMAIN"]?.trim();
+  if (devDomain && hostname === devDomain) return true;
+  if (hostname.endsWith(".replit.dev")) return true;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1" || hostname === "[::1]";
+}
+
+/** Per-request comparison context shared by the registration check and the
+ * one-click registration re-check. */
+function brevoVerdictContext(req: Request): { origin: string; acceptedOrigins: Set<string>; developmentOrigin: boolean } {
+  const origin = normalizedRequestOrigin(req);
+  return { origin, acceptedOrigins: deploymentAcceptedOrigins(origin), developmentOrigin: isDevelopmentBrowsingOrigin(origin) };
+}
+
+/**
  * Shared verdict for the registration check and the post-registration
  * re-check: compares the classified candidates against this deployment's
- * origin and reports the exact mismatch in Serbian.
+ * accepted origins and reports the exact mismatch in Serbian.
+ *
+ * When the admin is browsing from a development/preview address the verdict
+ * is explicitly relative to that address: a registration carrying the CURRENT
+ * secret at another domain is treated as the (most likely healthy) production
+ * registration instead of an error, and every failure instruction names the
+ * published application's domain placeholder instead of the development URL —
+ * so an admin can never be told to re-register a healthy production webhook
+ * for the development preview.
  */
 function brevoRegistrationVerdict(
   candidates: ReturnType<typeof brevoRegistrationCandidates>,
-  origin: string,
+  context: { origin: string; acceptedOrigins: Set<string>; developmentOrigin: boolean },
 ): { ok: true; message: string } | { ok: false; error: string } {
-  const expectedUrlHint = `${origin}/api/webhooks/brevo/<tajna>`;
-  const matching = candidates.filter((candidate) => candidate.secretMatches && candidate.origin === origin);
+  const { origin, acceptedOrigins, developmentOrigin } = context;
+  const expectedUrlHint = developmentOrigin
+    ? "https://<domen-objavljene-aplikacije>/api/webhooks/brevo/<tajna>"
+    : `${origin}/api/webhooks/brevo/<tajna>`;
+  const devNote = developmentOrigin
+    ? ` Napomena: proveru ste pokrenuli sa razvojne adrese (${origin}), pa se poređenje domena i sačuvane tajne odnosi na razvojno okruženje — za pouzdanu presudu pokrenite proveru iz objavljene aplikacije i nemojte registrovati webhook za razvojnu adresu.`
+    : "";
+  const missingEventsError = (maskedUrl: string | null, missingEvents: string[]) => ({
+    ok: false as const,
+    error: `Webhook je registrovan na Brevo${maskedUrl ? ` (${maskedUrl})` : " sa ispravnim URL-om i tajnom"}, ali registracija ne prati sve potrebne događaje. Nedostaju: ${missingEvents.join(", ")}. Bez njih se praćenje otvaranja i upozorenja o neisporučenim porukama tiho gube. Ažurirajte registraciju webhook-a na Brevo (Transactional → Settings → Webhooks) i uključite navedene događaje.`,
+  });
+  const matching = candidates.filter((candidate) => candidate.secretMatches && acceptedOrigins.has(candidate.origin));
   if (matching.length) {
     // URL and secret are correct — now confirm the registration subscribes to
     // every delivery event the app processes. Events are unioned across
@@ -3409,21 +3482,37 @@ function brevoRegistrationVerdict(
     // tracking and failure alerts, so it must not read as full success.
     const missingEvents = missingBrevoWebhookEvents(matching.flatMap((candidate) => candidate.events));
     if (missingEvents.length) {
-      return { ok: false, error: `Webhook je registrovan na Brevo sa ispravnim URL-om i tajnom, ali registracija ne prati sve potrebne događaje. Nedostaju: ${missingEvents.join(", ")}. Bez njih se praćenje otvaranja i upozorenja o neisporučenim porukama tiho gube. Ažurirajte registraciju webhook-a na Brevo (Transactional → Settings → Webhooks) i uključite navedene događaje.` };
+      return missingEventsError(null, missingEvents);
     }
-    return { ok: true, message: "Webhook je registrovan na Brevo: URL pokazuje na ovu aplikaciju i nosi aktuelnu webhook tajnu." };
+    const devMatchNote = developmentOrigin
+      ? ` Napomena: registracija pokazuje na razvojnu adresu sa koje trenutno pristupate (${origin}) — izveštaji o isporuci objavljene aplikacije stižu samo ako je webhook registrovan za njen domen.`
+      : "";
+    return { ok: true, message: `Webhook je registrovan na Brevo: URL pokazuje na ovu aplikaciju i nosi aktuelnu webhook tajnu.${devMatchNote}` };
   }
-  const wrongOrigin = candidates.find((candidate) => candidate.secretMatches);
+  const secretElsewhere = candidates.filter((candidate) => candidate.secretMatches);
+  const wrongOrigin = secretElsewhere[0];
   if (wrongOrigin) {
+    if (developmentOrigin) {
+      // From a development address, a foreign-origin registration carrying
+      // the CURRENT secret is in all likelihood the healthy production
+      // registration — never instruct re-registering it for the dev URL.
+      // The event subscription is still checked: that advice is
+      // origin-independent and updating events cannot break delivery.
+      const missingEvents = missingBrevoWebhookEvents(secretElsewhere.flatMap((candidate) => candidate.events));
+      if (missingEvents.length) {
+        return missingEventsError(wrongOrigin.maskedUrl, missingEvents);
+      }
+      return { ok: true, message: `Webhook sa aktuelnom tajnom je registrovan na Brevo za ${wrongOrigin.maskedUrl}. Proveru ste pokrenuli sa razvojne adrese (${origin}), pa se domen ne može potvrditi odavde — ako je to adresa objavljene aplikacije, registracija je ispravna i nemojte je ponovo registrovati za razvojnu adresu. Za konačnu potvrdu pokrenite proveru iz objavljene aplikacije.` };
+    }
     return { ok: false, error: `Webhook sa aktuelnom tajnom postoji na Brevo, ali je registrovan za drugi domen (${wrongOrigin.maskedUrl}). Na Brevo ponovo registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` };
   }
-  if (candidates.some((candidate) => candidate.origin === origin)) {
-    return { ok: false, error: `Na Brevo je registrovan webhook za ovaj domen, ali sa zastarelom tajnom — događaji će biti odbijani. Ažurirajte registraciju na Brevo tako da URL ${expectedUrlHint} nosi sačuvanu webhook tajnu.` };
+  if (candidates.some((candidate) => acceptedOrigins.has(candidate.origin))) {
+    return { ok: false, error: `Na Brevo je registrovan webhook za ovaj domen, ali sa zastarelom tajnom — događaji će biti odbijani. Ažurirajte registraciju na Brevo tako da URL ${expectedUrlHint} nosi sačuvanu webhook tajnu.${devNote}` };
   }
   if (candidates.length) {
-    return { ok: false, error: `Na Brevo postoji webhook u LUMERA formatu (${candidates[0]!.maskedUrl}), ali se ni domen ni tajna ne poklapaju sa ovom aplikacijom. Na Brevo registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` };
+    return { ok: false, error: `Na Brevo postoji webhook u LUMERA formatu (${candidates[0]!.maskedUrl}), ali se ni domen ni tajna ne poklapaju sa ovom aplikacijom. Na Brevo registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.${devNote}` };
   }
-  return { ok: false, error: `Webhook nije registrovan na Brevo. U Brevo podešavanjima (Transactional → Settings → Webhooks) registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` };
+  return { ok: false, error: `Webhook nije registrovan na Brevo. U Brevo podešavanjima (Transactional → Settings → Webhooks) registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.${devNote}` };
 }
 
 /** Normalized public origin of THIS deployment, as seen by the admin request
@@ -3458,7 +3547,7 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
   }
   const verdict = brevoRegistrationVerdict(
     brevoRegistrationCandidates(webhooks, secret),
-    normalizedRequestOrigin(req),
+    brevoVerdictContext(req),
   );
   if (verdict.ok) { res.json({ message: verdict.message }); return; }
   res.status(409).json({ error: verdict.error });
@@ -3490,7 +3579,8 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     respondBrevoListingFailure(res, error); return;
   }
 
-  const origin = normalizedRequestOrigin(req);
+  const context = brevoVerdictContext(req);
+  const origin = context.origin;
   const targetUrl = `${origin}/api/webhooks/brevo/${encodeURIComponent(secret)}`;
   const candidates = brevoRegistrationCandidates(webhooks, secret);
   const existing = candidates.find((candidate) => candidate.origin === origin)
@@ -3522,7 +3612,7 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
   } catch {
     res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera registracije nije uspela. Pokrenite „Proveri registraciju na Brevo“ da potvrdite ishod.` }); return;
   }
-  const verdict = brevoRegistrationVerdict(brevoRegistrationCandidates(refreshed, secret), origin);
+  const verdict = brevoRegistrationVerdict(brevoRegistrationCandidates(refreshed, secret), context);
   if (verdict.ok) {
     res.json({ message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.` }); return;
   }

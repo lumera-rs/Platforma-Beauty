@@ -84,6 +84,9 @@ export default function AdminIntegrations() {
       if (!response.ok) throw new Error(result.error ?? "Webhook URL nije učitan.");
       await navigator.clipboard.writeText(result.url);
       toast.success("Kompletan webhook URL sa sačuvanom tajnom je kopiran.");
+      // From the development preview the copied URL carries the dev address;
+      // the server flags it so the admin never registers it for production.
+      if (typeof result.warning === "string" && result.warning) toast.warning(result.warning, { duration: 12000 });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Kopiranje webhook URL-a nije uspelo.");
     } finally {

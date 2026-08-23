@@ -22,11 +22,22 @@
  *      response body — only masked URLs and the <tajna> placeholder
  *   4. local configuration errors (integration disabled, missing secret)
  *      surface their own message instead of a wrapped provider error
+ *   5. cross-origin verdicts: browsing from a development/preview address
+ *      (.replit.dev, localhost) must never instruct re-registering a healthy
+ *      production webhook for the dev URL — the current-secret-elsewhere case
+ *      reads as the production registration, failure instructions name the
+ *      published-domain placeholder, and the webhook-url copy helper carries
+ *      a warning; REPLIT_DOMAINS entries count as this deployment's origins
+ *
+ * The suite talks to the local test server but spoofs the Host header (and
+ * X-Forwarded-Proto, honored via trust proxy) per request, so verdicts can be
+ * exercised for both a production-looking origin and a dev-preview origin.
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/webhook-registration-verification.test.ts
  */
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
@@ -35,7 +46,7 @@ import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { resolveWebhookSecret } from "./provider-events";
 import { integrationSettings, saveIntegrationSettings } from "./integrations";
-import { listBrevoTransactionalWebhooks } from "./brevo";
+import { BREVO_WEBHOOK_EVENTS, listBrevoTransactionalWebhooks } from "./brevo";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = { userIds: [] as string[] };
@@ -69,12 +80,43 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
 async function run() {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
-  const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const port = (server.address() as AddressInfo).port;
+  const baseUrl = `http://127.0.0.1:${port}`;
   // The route derives the deployment origin from the admin request itself
-  // (protocol + host), so for this suite the expected origin IS the test
-  // server's own base URL.
-  const origin = baseUrl;
+  // (protocol + host). The suite spoofs the Host header (fetch forbids that,
+  // so requests go through node:http) and X-Forwarded-Proto (trust proxy is
+  // enabled) to simulate browsing origins: a production-looking domain for
+  // the strict verdicts and a .replit.dev preview domain for the softened
+  // development verdicts.
+  const prodHost = `lumera-prod-${suffix}.example.com`;
+  const devHost = `wrv-${suffix}.riker.replit.dev`;
+  const origin = `https://${prodHost}`;
+  const devOrigin = `https://${devHost}`;
   const expectedHint = `${origin}/api/webhooks/brevo/<tajna>`;
+  const publishedHint = "https://<domen-objavljene-aplikacije>/api/webhooks/brevo/<tajna>";
+  const fullEvents = [...BREVO_WEBHOOK_EVENTS];
+
+  const requestWithHost = (path: string, options: { method?: string; host?: string; cookie?: string }) =>
+    new Promise<{ status: number; raw: string }>((resolve, reject) => {
+      const req = httpRequest({
+        hostname: "127.0.0.1",
+        port,
+        path,
+        method: options.method ?? "GET",
+        headers: {
+          host: options.host ?? prodHost,
+          "x-forwarded-proto": "https",
+          ...(options.cookie ? { cookie: options.cookie } : {}),
+        },
+      }, (response) => {
+        let raw = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => { raw += chunk; });
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, raw }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
 
   // Snapshot the brevo integration_settings rows so the enabled-flag
   // manipulation below can restore the exact prior state.
@@ -105,18 +147,17 @@ async function run() {
     const customerCookie = `${sessionCookieName}=${await createSession(customer.id)}`;
 
     const responseBodies: string[] = [];
-    const verify = async (cookie?: string) => {
-      const response = await realFetch(`${baseUrl}/api/admin/integrations/brevo/verify-registration`, {
-        method: "POST",
-        ...(cookie ? { headers: { cookie } } : {}),
+    const verify = async (cookie?: string, host?: string) => {
+      const { status, raw } = await requestWithHost("/api/admin/integrations/brevo/verify-registration", {
+        method: "POST", cookie, host,
       });
-      const raw = await response.text();
       responseBodies.push(raw);
       let body: Record<string, unknown> | null = null;
       try { body = JSON.parse(raw) as Record<string, unknown>; } catch { /* non-JSON body */ }
-      return { status: response.status, raw, body };
+      return { status, raw, body };
     };
     const errorOf = (result: { body: Record<string, unknown> | null }) => String(result.body?.["error"] ?? "");
+    const messageOf = (result: { body: Record<string, unknown> | null }) => String(result.body?.["message"] ?? "");
 
     // ── 1. Missing secret → its own 400 message, no provider contact ───────
     // (Runs before the suite pins an env fallback secret; only assertable
@@ -167,18 +208,18 @@ async function run() {
       };
 
       const bare = await listWith({ status: 200, body: [
-        { id: 11, url: "https://a.example/api/webhooks/brevo/tok" },
+        { id: 11, url: "https://a.example/api/webhooks/brevo/tok", events: ["delivered", 42, "opened"] },
         { id: 12, url: 42 }, { url: "https://no-id.example/hook" }, { id: "13", url: "https://bad-id.example/hook" },
         { notUrl: true }, null, "junk", {},
       ] });
-      assert.deepEqual(bare, [{ id: 11, url: "https://a.example/api/webhooks/brevo/tok" }],
-        "bare-array shape yields only entries with a numeric id and string url");
+      assert.deepEqual(bare, [{ id: 11, url: "https://a.example/api/webhooks/brevo/tok", events: ["delivered", "opened"] }],
+        "bare-array shape yields only entries with a numeric id and string url; non-string events filtered");
 
       const wrapped = await listWith({ status: 200, body: { webhooks: [
-        { id: 21, url: "https://b.example/hook" }, { id: 22, url: "https://c.example/hook" }, { id: 23, url: false },
+        { id: 21, url: "https://b.example/hook", events: ["delivered"] }, { id: 22, url: "https://c.example/hook" }, { id: 23, url: false },
       ] } });
-      assert.deepEqual(wrapped, [{ id: 21, url: "https://b.example/hook" }, { id: 22, url: "https://c.example/hook" }],
-        "{webhooks: []} shape yields its entries");
+      assert.deepEqual(wrapped, [{ id: 21, url: "https://b.example/hook", events: ["delivered"] }, { id: 22, url: "https://c.example/hook", events: [] }],
+        "{webhooks: []} shape yields its entries (missing events degrade to an empty list)");
 
       assert.deepEqual(await listWith({ status: 404, body: { code: "document_not_found" } }), [],
         "Brevo 404 means no webhooks registered — an empty list, not an error");
@@ -207,17 +248,19 @@ async function run() {
 
     // ── 4. Exact match (both response shapes, trailing slash, %-encoding) ──
     {
-      brevoStub = { status: 200, body: [{ id: 101, url: exactUrl }] };
+      brevoStub = { status: 200, body: [{ id: 101, url: exactUrl, events: fullEvents }] };
       const bareShape = await verify(adminCookie);
       assert.equal(bareShape.status, 200, `exact match must succeed (got: ${bareShape.raw})`);
       assert.ok(String(bareShape.body?.["message"]).includes("Webhook je registrovan na Brevo"),
         "exact match reports the healthy verdict");
+      assert.ok(!messageOf(bareShape).includes("razvojn"),
+        "production-origin success carries no development caveat");
 
-      brevoStub = { status: 200, body: { webhooks: [{ id: 102, url: exactUrl }] } };
+      brevoStub = { status: 200, body: { webhooks: [{ id: 102, url: exactUrl, events: fullEvents }] } };
       const wrappedShape = await verify(adminCookie);
       assert.equal(wrappedShape.status, 200, "exact match must also be found in the {webhooks: []} shape");
 
-      brevoStub = { status: 200, body: [{ id: 103, url: `${exactUrl}/` }] };
+      brevoStub = { status: 200, body: [{ id: 103, url: `${exactUrl}/`, events: fullEvents }] };
       const trailingSlash = await verify(adminCookie);
       assert.equal(trailingSlash.status, 200, "trailing slash on the registered URL still matches");
 
@@ -227,7 +270,7 @@ async function run() {
       if (/^[\x21-\x7e]+$/.test(secret)) {
         const encodedToken = [...secret]
           .map((ch) => `%${ch.codePointAt(0)!.toString(16).padStart(2, "0")}`).join("");
-        brevoStub = { status: 200, body: [{ id: 104, url: `${origin}/api/webhooks/brevo/${encodedToken}` }] };
+        brevoStub = { status: 200, body: [{ id: 104, url: `${origin}/api/webhooks/brevo/${encodedToken}`, events: fullEvents }] };
         const encoded = await verify(adminCookie);
         assert.equal(encoded.status, 200, "percent-encoded token must be decoded before comparison");
       }
@@ -313,7 +356,7 @@ async function run() {
       brevoStub = { status: 200, body: [
         { id: 114, url: `${origin}/api/webhooks/brevo/stale-token` },
         { id: 115, url: `https://stara-domena.example.com/api/webhooks/brevo/${encodeURIComponent(secret)}` },
-        { id: 116, url: exactUrl },
+        { id: 116, url: exactUrl, events: fullEvents },
       ] };
       const healthy = await verify(adminCookie);
       assert.equal(healthy.status, 200, "an exact match anywhere in the listing wins");
@@ -369,7 +412,120 @@ async function run() {
       console.log("✓ disabled integration surfaces its own message without contacting Brevo");
     }
 
-    // ── 12. The saved secret never appeared in ANY response body ───────────
+    // ── 12. Development preview origin: healthy production webhook is never
+    //        called wrong, and no instruction pushes the dev URL ─────────────
+    {
+      const prodRegisteredUrl = `${origin}/api/webhooks/brevo/${encodeURIComponent(secret)}`;
+
+      // A registration carrying the CURRENT secret at another (production)
+      // domain, checked from the dev preview → recognized, not an error.
+      brevoStub = { status: 200, body: [{ id: 130, url: prodRegisteredUrl, events: fullEvents }] };
+      const recognized = await verify(adminCookie, devHost);
+      assert.equal(recognized.status, 200,
+        `healthy production webhook must not be called wrong from the dev preview (got: ${recognized.raw})`);
+      assert.ok(messageOf(recognized).includes(`${origin}/api/webhooks/brevo/…`),
+        "recognized production registration is reported with the token masked");
+      assert.ok(messageOf(recognized).includes("razvojne adrese"),
+        "verdict says it was run from the development address");
+      assert.ok(messageOf(recognized).includes("nemojte je ponovo registrovati za razvojnu adresu"),
+        "verdict explicitly warns against re-registering for the dev address");
+      assert.ok(!recognized.raw.includes(`${devOrigin}/api/webhooks`),
+        "no dev-origin webhook URL is suggested anywhere");
+
+      // Same case but the production registration misses events → the
+      // origin-independent events warning still fires.
+      brevoStub = { status: 200, body: [{ id: 131, url: prodRegisteredUrl, events: ["delivered"] }] };
+      const partialEvents = await verify(adminCookie, devHost);
+      assert.equal(partialEvents.status, 409);
+      assert.ok(errorOf(partialEvents).includes("ne prati sve potrebne događaje"),
+        `missing-events warning expected from dev preview too (got: ${partialEvents.raw})`);
+      assert.ok(!errorOf(partialEvents).includes("registrovan za drugi domen"),
+        "dev preview never reports a wrong-domain verdict for the current secret");
+
+      // Exact match at the DEV origin itself → success, but flagged as a
+      // development-address registration.
+      brevoStub = { status: 200, body: [{ id: 132, url: `${devOrigin}/api/webhooks/brevo/${encodeURIComponent(secret)}`, events: fullEvents }] };
+      const devRegistered = await verify(adminCookie, devHost);
+      assert.equal(devRegistered.status, 200);
+      assert.ok(messageOf(devRegistered).includes("pokazuje na razvojnu adresu"),
+        `dev-origin registration success must carry the development caveat (got: ${devRegistered.raw})`);
+
+      // Unrelated registration (e.g. production webhook whose secret differs
+      // from the DEV environment's saved secret) → still a complaint, but the
+      // instruction names the published-domain placeholder, never the dev URL,
+      // and the verdict is qualified as relative to the browsing address.
+      brevoStub = { status: 200, body: [{ id: 133, url: `${origin}/api/webhooks/brevo/produkciona-tajna-${suffix}` }] };
+      const unrelatedFromDev = await verify(adminCookie, devHost);
+      assert.equal(unrelatedFromDev.status, 409);
+      assert.ok(errorOf(unrelatedFromDev).includes(publishedHint),
+        `instruction must name the published-domain placeholder (got: ${unrelatedFromDev.raw})`);
+      assert.ok(!unrelatedFromDev.raw.includes(`${devOrigin}/api/webhooks`),
+        "instruction must never name the dev-origin webhook URL");
+      assert.ok(errorOf(unrelatedFromDev).includes("razvojne adrese"),
+        "verdict is qualified as relative to the development address");
+
+      // Not registered at all, checked from dev → same qualification.
+      brevoStub = { status: 200, body: [] };
+      const notRegisteredFromDev = await verify(adminCookie, devHost);
+      assert.equal(notRegisteredFromDev.status, 409);
+      assert.ok(errorOf(notRegisteredFromDev).includes(publishedHint) && !notRegisteredFromDev.raw.includes(`${devOrigin}/api/webhooks`),
+        "not-registered instruction from dev names the published-domain placeholder only");
+      assert.ok(errorOf(notRegisteredFromDev).includes("razvojne adrese"),
+        "not-registered verdict from dev is qualified as relative to the browsing address");
+
+      // localhost counts as a development address too.
+      brevoStub = { status: 200, body: [{ id: 134, url: prodRegisteredUrl, events: fullEvents }] };
+      const fromLocalhost = await verify(adminCookie, "localhost:5000");
+      assert.equal(fromLocalhost.status, 200,
+        `localhost browsing must also recognize the production registration (got: ${fromLocalhost.raw})`);
+      console.log("✓ dev-preview browsing: production webhook recognized, dev URL never suggested");
+    }
+
+    // ── 13. REPLIT_DOMAINS entries count as this deployment's origins ──────
+    {
+      const altDomain = `alt-lumera-${suffix}.example.org`;
+      const priorDomains = process.env["REPLIT_DOMAINS"];
+      process.env["REPLIT_DOMAINS"] = ` ${altDomain} , not a domain `;
+      try {
+        // Admin browses one production domain; the webhook is registered for
+        // another public domain of the SAME deployment (REPLIT_DOMAINS).
+        brevoStub = { status: 200, body: [{ id: 140, url: `https://${altDomain}/api/webhooks/brevo/${encodeURIComponent(secret)}`, events: fullEvents }] };
+        const crossDomain = await verify(adminCookie);
+        assert.equal(crossDomain.status, 200,
+          `registration on a sibling deployment domain must be healthy (got: ${crossDomain.raw})`);
+        assert.ok(!messageOf(crossDomain).includes("razvojn"),
+          "sibling-domain success is a plain healthy verdict");
+      } finally {
+        if (priorDomains === undefined) delete process.env["REPLIT_DOMAINS"];
+        else process.env["REPLIT_DOMAINS"] = priorDomains;
+      }
+      console.log("✓ webhook registered for a REPLIT_DOMAINS sibling domain reads as healthy");
+    }
+
+    // ── 14. Webhook-url copy helper warns from a development address ───────
+    // (These responses intentionally contain the secret-bearing URL for the
+    // admin to copy, so they are NOT added to the leak-scan corpus below.)
+    {
+      const fromProd = await requestWithHost("/api/admin/integrations/brevo/webhook-url", { cookie: adminCookie });
+      assert.equal(fromProd.status, 200, `webhook-url from production origin (got: ${fromProd.raw})`);
+      const prodBody = JSON.parse(fromProd.raw) as Record<string, unknown>;
+      assert.ok(String(prodBody["url"]).startsWith(`${origin}/api/webhooks/brevo/`),
+        "copy helper builds the URL from the browsing origin");
+      assert.equal(prodBody["warning"], undefined, "no warning when browsing from a production origin");
+
+      const fromDev = await requestWithHost("/api/admin/integrations/brevo/webhook-url", { cookie: adminCookie, host: devHost });
+      assert.equal(fromDev.status, 200);
+      const devBody = JSON.parse(fromDev.raw) as Record<string, unknown>;
+      assert.ok(String(devBody["url"]).startsWith(`${devOrigin}/api/webhooks/brevo/`),
+        "dev copy helper still returns the URL for the browsing origin");
+      assert.ok(String(devBody["warning"] ?? "").includes("razvojnu adresu"),
+        `dev copy helper must warn that the URL carries the development address (got: ${fromDev.raw})`);
+      assert.ok(String(devBody["warning"] ?? "").includes("objavljene aplikacije"),
+        "warning points the admin at the published application for the production URL");
+      console.log("✓ webhook-url copy helper warns when the URL carries the development address");
+    }
+
+    // ── 15. The saved secret never appeared in ANY response body ───────────
     {
       assert.ok(responseBodies.length >= 15, "the suite must have exercised the route");
       for (const raw of responseBodies) {
