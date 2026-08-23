@@ -352,6 +352,7 @@ import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
+import { staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -10650,7 +10651,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets] = await Promise.all([
+  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets, deliveryReports] = await Promise.all([
     db.select().from(usersTable),
     db.select().from(salonsTable),
     db.select().from(appointmentsTable),
@@ -10664,6 +10665,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     })
       .from(educationMediaUploadsTable)
       .where(educationMediaUploadCleanupEligibility(now)),
+    deliveryReportStatuses(now),
   ]);
 
   const bookingsThisMonth = allAppointments.filter((a) => a.createdAt >= thisMonthStart).length;
@@ -10710,6 +10712,9 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     galleryCleanupHasRepeatedFailures: galleryCleanupFailedTickets.some(
       (ticket) => ticket.cleanupFailureCount >= EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT,
     ),
+    // Same staleness signal as the integrations page — surfaces the
+    // "Potrebna je intervencija" alert on the dashboard proactively.
+    deliveryReportStaleProviders: staleDeliveryReportProviders(deliveryReports),
     topCategories,
   }));
 });

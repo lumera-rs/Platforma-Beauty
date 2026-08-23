@@ -54,6 +54,7 @@ export * from './adminServiceCategoryImageUpdate';
 export * from './adminServiceTemplateInput';
 export * from './adminServiceTemplateUpdate';
 export * from './adminSummary';
+export * from './adminSummaryDeliveryReportStaleProvidersItem';
 export * from './adminSummaryTopCategoriesItem';
 export * from './adminUser';
 export * from './adminUserRole';

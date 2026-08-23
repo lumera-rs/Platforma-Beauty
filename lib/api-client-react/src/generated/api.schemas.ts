@@ -2904,6 +2904,14 @@ export interface EducationLms {
   course: EducationCourseDetail;
 }
 
+export type AdminSummaryDeliveryReportStaleProvidersItem = typeof AdminSummaryDeliveryReportStaleProvidersItem[keyof typeof AdminSummaryDeliveryReportStaleProvidersItem];
+
+
+export const AdminSummaryDeliveryReportStaleProvidersItem = {
+  brevo: 'brevo',
+  infobip: 'infobip',
+} as const;
+
 export type AdminSummaryTopCategoriesItem = {
   name: string;
   count: number;
@@ -2932,6 +2940,8 @@ export interface AdminSummary {
   galleryCleanupOldestEligibleTicketAgeMinutes: number | null;
   /** Whether any eligible gallery upload ticket has failed cleanup three or more times. */
   galleryCleanupHasRepeatedFailures: boolean;
+  /** Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since. */
+  deliveryReportStaleProviders: AdminSummaryDeliveryReportStaleProvidersItem[];
   topCategories: AdminSummaryTopCategoriesItem[];
 }
 
@@ -3881,6 +3891,15 @@ export interface AutomationStats {
   lastRunAt?: string | null;
 }
 
+export interface AutomationAttributedAppointment {
+  appointmentId: string;
+  /** Appointment date (YYYY-MM-DD) */
+  date: string;
+  serviceName: string;
+  /** Appointment price in RSD. */
+  price: number;
+}
+
 /**
  * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
  */
@@ -3890,15 +3909,6 @@ export type AutomationStatsOverviewItemPrevious = {
   emailOpenedCount: number;
   smsDeliveredCount: number;
 };
-
-export interface AutomationAttributedAppointment {
-  appointmentId: string;
-  /** Appointment date (YYYY-MM-DD) */
-  date: string;
-  serviceName: string;
-  /** Appointment price in RSD. */
-  price: number;
-}
 
 export interface AutomationStatsOverviewItem {
   ruleId: string;
@@ -4352,6 +4362,7 @@ export interface RetentionPreviewAffectedSalon {
   /** Customers of this salon whose status would change under the candidate thresholds */
   reclassifiedCount: number;
 }
+
 export interface RetentionSettingsPreview {
   /** Settings version the current counts were computed against (0 = platform defaults) */
   currentVersion: number;
@@ -4371,6 +4382,36 @@ export interface RetentionSettingsPreview {
  * How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults
  */
 export type RetentionSettingsUpdateChangeSource = typeof RetentionSettingsUpdateChangeSource[keyof typeof RetentionSettingsUpdateChangeSource];
+
+
+export const RetentionSettingsUpdateChangeSource = {
+  manual: 'manual',
+  restore_version: 'restore_version',
+  restore_defaults: 'restore_defaults',
+} as const;
+
+export type RetentionSettingsUpdate = RetentionThresholds & {
+  /** How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults */
+  changeSource?: RetentionSettingsUpdateChangeSource;
+  /**
+     * Version whose values are being restored; only allowed (and required) when changeSource is restore_version
+     * @minimum 1
+     */
+  restoredFromVersion?: number;
+};
+
+/**
+ * How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults
+ */
+export type RetentionSettingsHistoryEntryChangeSource = typeof RetentionSettingsHistoryEntryChangeSource[keyof typeof RetentionSettingsHistoryEntryChangeSource];
+
+
+export const RetentionSettingsHistoryEntryChangeSource = {
+  manual: 'manual',
+  restore_version: 'restore_version',
+  restore_defaults: 'restore_defaults',
+} as const;
+
 export interface RetentionSettingsHistoryEntry {
   version: number;
   thresholds: RetentionThresholds;
@@ -5066,6 +5107,12 @@ export const OwnerListAutomationStatsPeriod = {
 } as const;
 
 export type OwnerListAutomationStatsCompare = typeof OwnerListAutomationStatsCompare[keyof typeof OwnerListAutomationStatsCompare];
+
+
+export const OwnerListAutomationStatsCompare = {
+  previous: 'previous',
+} as const;
+
 export type CustomerListPublicPackagesParams = {
 salonId: string;
 };
@@ -5095,34 +5142,3 @@ export type EmployeeGetMyPerformanceParams = {
 from?: string;
 to?: string;
 };
-
-export const OwnerListAutomationStatsCompare = {
-  previous: 'previous',
-} as const;
-
-export const RetentionSettingsUpdateChangeSource = {
-  manual: 'manual',
-  restore_version: 'restore_version',
-  restore_defaults: 'restore_defaults',
-} as const;
-
-export type RetentionSettingsUpdate = RetentionThresholds & {
-  /** How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults */
-  changeSource?: RetentionSettingsUpdateChangeSource;
-  /**
-     * Version whose values are being restored; only allowed (and required) when changeSource is restore_version
-     * @minimum 1
-     */
-  restoredFromVersion?: number;
-};
-
-/**
- * How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults
- */
-export type RetentionSettingsHistoryEntryChangeSource = typeof RetentionSettingsHistoryEntryChangeSource[keyof typeof RetentionSettingsHistoryEntryChangeSource];
-
-export const RetentionSettingsHistoryEntryChangeSource = {
-  manual: 'manual',
-  restore_version: 'restore_version',
-  restore_defaults: 'restore_defaults',
-} as const;

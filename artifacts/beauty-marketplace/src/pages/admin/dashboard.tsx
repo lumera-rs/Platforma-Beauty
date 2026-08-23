@@ -1,7 +1,13 @@
 import { AdminLayout } from "./layout";
+import { Link } from "wouter";
 import { useGetAdminSummary, useAdminGetGrowthSummary } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Users, Store, Calendar, TrendingUp, DollarSign, AlertCircle, ShieldCheck, Loader2, Zap, MessageSquare, Briefcase, Plus, Activity } from "lucide-react";
+
+const DELIVERY_REPORT_PROVIDER_LABELS: Record<string, string> = {
+  brevo: "Brevo (e-mail)",
+  infobip: "Infobip (SMS)",
+};
 
 function formatCleanupTicketAge(ageMinutes: number | null): string {
   if (ageMinutes === null) return "Nema";
@@ -27,6 +33,17 @@ export default function AdminDashboard() {
           <h1 className="text-3xl font-serif font-bold mb-2 text-foreground">Pregled Platforme</h1>
           <p className="text-muted-foreground">Analitika, metrika i trenutni status LUMERA sistema.</p>
         </div>
+
+        {summary.deliveryReportStaleProviders.length > 0 && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="delivery-report-alert">
+            <strong>Potrebna je intervencija.</strong> Izveštaji o isporuci ne stižu za:{" "}
+            {summary.deliveryReportStaleProviders.map((provider) => DELIVERY_REPORT_PROVIDER_LABELS[provider] ?? provider).join(", ")}.
+            {" "}Automatske poruke se šalju, ali provajder ne javlja status isporuke — webhook je verovatno neispravan ili isključen.{" "}
+            <Link href="/admin/integracije" className="font-medium underline underline-offset-2" data-testid="delivery-report-alert-link">
+              Proverite webhook podešavanja u sekciji Integracije
+            </Link>.
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>

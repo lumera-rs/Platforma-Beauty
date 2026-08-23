@@ -6202,6 +6202,10 @@ components:
         galleryCleanupHasRepeatedFailures:
           type: boolean
           description: Whether any eligible gallery upload ticket has failed cleanup three or more times.
+        deliveryReportStaleProviders:
+          type: array
+          description: Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since.
+          items: { type: string, enum: [brevo, infobip] }
         topCategories:
           type: array
           items:
@@ -6210,7 +6214,7 @@ components:
               name: { type: string }
               count: { type: number }
             required: [name, count]
-      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, topCategories]
+      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, topCategories]
     AdminSalon:
       type: object
       properties:

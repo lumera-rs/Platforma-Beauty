@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminSummaryDeliveryReportStaleProvidersItem } from './adminSummaryDeliveryReportStaleProvidersItem';
 import type { AdminSummaryTopCategoriesItem } from './adminSummaryTopCategoriesItem';
 
 export interface AdminSummary {
@@ -30,5 +31,7 @@ export interface AdminSummary {
   galleryCleanupOldestEligibleTicketAgeMinutes: number | null;
   /** Whether any eligible gallery upload ticket has failed cleanup three or more times. */
   galleryCleanupHasRepeatedFailures: boolean;
+  /** Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since. */
+  deliveryReportStaleProviders: AdminSummaryDeliveryReportStaleProvidersItem[];
   topCategories: AdminSummaryTopCategoriesItem[];
 }

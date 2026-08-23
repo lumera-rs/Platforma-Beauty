@@ -46,7 +46,14 @@ import {
   resolveWebhookSecret,
   WEBHOOK_VERIFICATION_REFERENCE_PREFIX,
   type DeliveryReportProvider,
+  type DeliveryReportStatus,
 } from "./provider-events";
+import {
+  DELIVERY_REPORT_ALERT_COOLDOWN_MS,
+  runDeliveryReportSilenceAlerts,
+  staleDeliveryReportProviders,
+} from "./delivery-report-alerts";
+import type { TransactionalEmailTransport } from "./brevo";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = {
@@ -614,6 +621,169 @@ async function run() {
       const unknown = await copyUrl("google_oauth", adminToken);
       assert.equal(unknown.status, 404, "webhook URL exists only for SMS and Brevo");
       console.log("✓ admin webhook-url copy endpoint returns the complete URL to admins only");
+    }
+
+    // ── 7f. Silence → dashboard stale list + rate-limited admin alert email ─
+    {
+      // Pure selector shared by the dashboard summary endpoint and the email
+      // alert — both surfaces must agree with the integrations page warning.
+      const healthy: DeliveryReportStatus = { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false };
+      assert.deepEqual(staleDeliveryReportProviders({ brevo: healthy, infobip: healthy }), []);
+      assert.deepEqual(staleDeliveryReportProviders({ brevo: { ...healthy, warning: true }, infobip: healthy }), ["brevo"]);
+      assert.deepEqual(
+        staleDeliveryReportProviders({ brevo: { ...healthy, warning: true }, infobip: { ...healthy, warning: true } }),
+        ["brevo", "infobip"],
+      );
+
+      // Isolated fixtures (own salon/rule/customer) so the extra "sent" email
+      // delivery can never distort the per-rule stats assertions in section 8.
+      const c = await makeOwnerAndSalon("alerts");
+      const [customerC] = await db.insert(salonCustomersTable).values({
+        salonId: c.salon.id, firstName: "Kupac", lastName: "C", email: `pe-cust-c-${suffix}@bg.test`,
+      }).returning();
+      const [ruleC] = await db.insert(automationRulesTable).values({
+        salonId: c.salon.id, name: `PE pravilo C ${suffix}`, trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
+      }).returning();
+      assert.ok(customerC && ruleC);
+
+      // Evaluation times. alertNow = now+40min makes a send at now+5min both
+      // grace-aged (35 min old) and newer than every receipt this suite
+      // recorded (receipts are monotonic and stay at ~now) — brevo reads
+      // silent while infobip stays healthy (its last receipt postdates every
+      // SMS send in each probed window). Nudge alertNow off an exact
+      // cooldown-bucket start so a boundary probe strictly inside the
+      // rolling cooldown is guaranteed to exist.
+      let alertNow = new Date(Date.now() + 40 * 60_000);
+      if (alertNow.getTime() % DELIVERY_REPORT_ALERT_COOLDOWN_MS < 2 * 60_000) {
+        alertNow = new Date(alertNow.getTime() + 5 * 60_000);
+      }
+      const bucketOf = (at: Date) => Math.floor(at.getTime() / DELIVERY_REPORT_ALERT_COOLDOWN_MS);
+      // One minute past the next fixed 24h bucket boundary — a fixed-window
+      // key scheme would happily alert again here, but a full rolling
+      // cooldown has NOT yet elapsed since alertNow.
+      const boundaryProbe = new Date((bucketOf(alertNow) + 1) * DELIVERY_REPORT_ALERT_COOLDOWN_MS + 60_000);
+      assert.equal(bucketOf(boundaryProbe), bucketOf(alertNow) + 1, "probe crosses the fixed bucket boundary");
+      assert.ok(
+        boundaryProbe.getTime() - alertNow.getTime() < DELIVERY_REPORT_ALERT_COOLDOWN_MS,
+        "probe stays inside the rolling cooldown",
+      );
+      const afterCooldown = new Date(alertNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+
+      // One qualifying (grace-aged, receipt-less) email send per evaluation
+      // time, so brevo reads silent at alertNow, boundaryProbe AND
+      // afterCooldown — each probe then genuinely exercises the cooldown.
+      const staleRunKey = `pe-run-stale-${suffix}`;
+      const firstStaleSentAt = new Date(alertNow.getTime() - 35 * 60_000);
+      const [staleRun] = await db.insert(automationRunsTable).values({
+        eventKey: staleRunKey, ruleId: ruleC.id, salonId: c.salon.id, salonCustomerId: customerC.id,
+        status: "sent", executedAt: firstStaleSentAt, sentAt: firstStaleSentAt,
+      }).returning();
+      assert.ok(staleRun);
+      const staleSentAts = [firstStaleSentAt,
+        new Date(boundaryProbe.getTime() - 35 * 60_000),
+        new Date(afterCooldown.getTime() - 35 * 60_000)];
+      for (const [index, sentAt] of staleSentAts.entries()) {
+        const [staleDelivery] = await db.insert(automationDeliveriesTable).values({
+          runId: staleRun.id, salonId: c.salon.id, eventKey: `${staleRunKey}:email:${index}`, channel: "email",
+          recipientEmail: `pe-stale-${suffix}@bg.test`, status: "sent", sentAt,
+        }).returning();
+        assert.ok(staleDelivery);
+      }
+
+      // Dedicated admin recipient (other admins may exist in the shared dev
+      // DB; assertions below only require ours to be among the recipients).
+      const alertAdminEmail = `pe-alert-admin-${suffix}@bg.test`;
+      const [alertAdmin] = await db.insert(usersTable).values({
+        firstName: "Admin", lastName: "Alerts",
+        email: alertAdminEmail, passwordHash: await hashPassword(`pe-alert-${suffix}`),
+        passwordSetAt: new Date(), role: "SUPER_ADMIN",
+      }).returning();
+      assert.ok(alertAdmin);
+      cleanup.userIds.push(alertAdmin.id);
+
+      const makeFakeTransport = () => {
+        const calls: { email: string; subject: string }[] = [];
+        const transport: TransactionalEmailTransport = {
+          async send(input) {
+            calls.push({ email: input.to.email, subject: input.subject });
+            return { messageId: `pe-fake-${calls.length}` };
+          },
+        };
+        return { calls, transport };
+      };
+
+      // First tick while silent: exactly one email per admin, brevo only.
+      const first = makeFakeTransport();
+      const firstRun = await runDeliveryReportSilenceAlerts(alertNow, first.transport);
+      cleanup.emailEventKeys.push(...firstRun.attemptedEventKeys);
+      assert.deepEqual(firstRun.staleProviders, ["brevo"], "only the silent provider alerts");
+      assert.ok(firstRun.recipientCount >= 1, "at least our admin receives the alert");
+      assert.equal(firstRun.attemptedEventKeys.length, firstRun.recipientCount, "one alert per admin per stale provider");
+      assert.equal(firstRun.cooldownSuppressedCount, 0, "no prior alerts → nothing suppressed");
+      assert.equal(firstRun.failedDeliveryCount, 0);
+      assert.equal(firstRun.skippedDeliveryCount, 0);
+      assert.equal(first.calls.length, firstRun.recipientCount, "every recipient got exactly one provider call");
+      assert.ok(first.calls.some((call) => call.email === alertAdminEmail), "our admin is a recipient");
+      assert.ok(first.calls.every((call) => call.subject.includes("Brevo")), "alert names the silent provider");
+
+      // Immediate repeat tick: suppressed by the rolling cooldown — no
+      // outbox attempt, no provider contact.
+      const second = makeFakeTransport();
+      const secondRun = await runDeliveryReportSilenceAlerts(alertNow, second.transport);
+      assert.deepEqual(secondRun.staleProviders, ["brevo"], "still silent");
+      assert.equal(secondRun.attemptedEventKeys.length, 0, "repeat tick attempts no outbox writes");
+      assert.ok(secondRun.cooldownSuppressedCount >= 1, "repeat tick is cooldown-suppressed");
+      assert.equal(second.calls.length, 0, "repeat tick within the cooldown sends nothing");
+      assert.equal(secondRun.failedDeliveryCount, 0);
+
+      // Boundary regression: one minute past the next FIXED 24h bucket
+      // boundary the provider is still silent, but under 24h have elapsed
+      // since the first alert — a rolling cooldown must stay quiet where a
+      // fixed-bucket key scheme would alert again minutes after the first.
+      const boundary = makeFakeTransport();
+      const boundaryRun = await runDeliveryReportSilenceAlerts(boundaryProbe, boundary.transport);
+      assert.deepEqual(boundaryRun.staleProviders, ["brevo"], "still silent across the bucket boundary");
+      assert.equal(boundaryRun.attemptedEventKeys.length, 0, "no outbox attempt across the bucket boundary");
+      assert.ok(boundaryRun.cooldownSuppressedCount >= 1, "bucket-boundary tick is cooldown-suppressed");
+      assert.equal(boundary.calls.length, 0, "no second email until a full cooldown has elapsed");
+
+      // Once a full rolling cooldown HAS elapsed and the provider is still
+      // silent, each admin gets exactly one fresh alert under new event keys.
+      const renewed = makeFakeTransport();
+      const renewedRun = await runDeliveryReportSilenceAlerts(afterCooldown, renewed.transport);
+      cleanup.emailEventKeys.push(...renewedRun.attemptedEventKeys);
+      assert.deepEqual(renewedRun.staleProviders, ["brevo"], "still silent after the cooldown");
+      assert.equal(renewedRun.cooldownSuppressedCount, 0, "cooldown fully elapsed for every recipient");
+      assert.equal(renewed.calls.length, renewedRun.recipientCount, "one renewed alert per admin");
+      assert.ok(renewed.calls.some((call) => call.email === alertAdminEmail), "our admin gets the renewed alert");
+      for (const eventKey of renewedRun.attemptedEventKeys) {
+        assert.ok(!firstRun.attemptedEventKeys.includes(eventKey), "renewed alerts use fresh outbox keys");
+      }
+
+      // Healthy statuses (evaluated at the real current time, where the
+      // crafted future send is not yet grace-aged and receipts are fresh)
+      // must produce no alert and touch no transport.
+      const idle = makeFakeTransport();
+      const idleRun = await runDeliveryReportSilenceAlerts(new Date(), idle.transport);
+      assert.deepEqual(idleRun.staleProviders, [], "fresh receipts → no stale providers");
+      assert.equal(idle.calls.length, 0, "healthy state never contacts the provider");
+
+      // Admin dashboard summary carries the same signal end-to-end. Receipts
+      // are fresh at the real current time, so the list must parse and read
+      // healthy here; the stale path is covered by the future-time runs above.
+      const alertAdminToken = await createSession(alertAdmin.id);
+      const summaryResponse = await fetch(`${baseUrl}/api/admin/summary`, {
+        headers: { cookie: `${sessionCookieName}=${alertAdminToken}` },
+      });
+      assert.equal(summaryResponse.status, 200);
+      const summaryBody = await summaryResponse.json() as { deliveryReportStaleProviders?: unknown };
+      assert.ok(Array.isArray(summaryBody.deliveryReportStaleProviders), "summary exposes deliveryReportStaleProviders");
+      for (const provider of summaryBody.deliveryReportStaleProviders as unknown[]) {
+        assert.ok(provider === "brevo" || provider === "infobip", "stale list only ever names known providers");
+      }
+      assert.deepEqual(summaryBody.deliveryReportStaleProviders, [], "fresh receipts read healthy on the dashboard");
+      console.log("✓ silence alerts email admins once per cooldown window and feed the dashboard summary");
     }
 
     // ── 8. Cross-salon isolation + owner stats accuracy ────────────────────

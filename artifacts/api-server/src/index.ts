@@ -21,6 +21,7 @@ import {
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
+import { runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
 
 const rawPort = process.env["PORT"];
 
@@ -127,6 +128,19 @@ const automationWorkerInterval = setInterval(() => {
 automationWorkerInterval.unref();
 void runAutomationWorker().catch((error: unknown) => {
   logger.warn({ err: error }, "Automation worker initial run failed");
+});
+
+// Delivery-report silence alerts: if automation messages went out recently but
+// no verified webhook events arrived, email administrators (deduplicated per
+// cooldown window through the email outbox — never one email per tick).
+const deliveryReportAlertInterval = setInterval(() => {
+  void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
+    logger.warn({ err: error }, "Delivery-report silence alert scheduler failed");
+  });
+}, 15 * 60_000);
+deliveryReportAlertInterval.unref();
+void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
+  logger.warn({ err: error }, "Delivery-report silence alert initial run failed");
 });
 compatibilityImageCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
