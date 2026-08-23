@@ -431,6 +431,9 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
 
   // The poll must drop the stale quote and leave the payment form entirely.
   await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  const browseProductsLink = page.getByRole("link", { name: "Pregledajte proizvode" });
+  await expect(browseProductsLink).toBeVisible();
+  await expect(browseProductsLink).toHaveAttribute("href", "/proizvodi");
   await expect(paymentForm).toHaveCount(0);
   await expect(confirmButton).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
