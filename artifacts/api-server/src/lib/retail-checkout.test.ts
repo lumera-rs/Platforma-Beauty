@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   productCategoriesTable,
@@ -13,8 +13,10 @@ import {
   retailOrderItemsTable,
   retailOrdersTable,
   shippingRulesTable,
+  usersTable,
 } from "@workspace/db";
 import app from "../app";
+import { createSession, hashPassword, sessionCookieName } from "./auth";
 
 type RetailCart = {
   id: string;
@@ -126,7 +128,9 @@ test.before(async () => {
   const address = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${address.port}/api`;
 
-  previousShippingRule = (await db.select().from(shippingRulesTable).limit(1))[0];
+  previousShippingRule = (await db.select().from(shippingRulesTable)
+    .orderBy(asc(shippingRulesTable.id))
+    .limit(1))[0];
   const shippingValues = {
     freeShippingThreshold: 10_000,
     tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
@@ -202,6 +206,61 @@ test("retail checkout saves the exact courier and personal-delivery previews", a
   assert.ok(createdProductId);
   await checkoutAndAssertSavedAmount(createdProductId, "courier", "Novi Sad");
   await checkoutAndAssertSavedAmount(createdProductId, "personal_belgrade", "Beograd");
+});
+
+test("checkout and admin settings keep the canonical shipping rule after it is updated beside a duplicate", async () => {
+  assert.ok(createdProductId);
+  const canonicalShippingRuleId = "00000000-0000-0000-0000-000000000001";
+  await db.insert(shippingRulesTable).values({
+    id: canonicalShippingRuleId,
+    freeShippingThreshold: 10_000,
+    tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
+    personalDeliveryEnabled: true,
+    personalDeliveryName: "Lična dostava u Beogradu",
+    personalDeliveryPrice: 700,
+    personalDeliveryDescription: "Test lična dostava.",
+    updatedAt: new Date(),
+  });
+  const [admin] = await db.insert(usersTable).values({
+    firstName: "Retail",
+    lastName: "Admin",
+    email: `retail-admin-${randomUUID()}@example.test`,
+    passwordHash: await hashPassword("retail-admin-test"),
+    passwordSetAt: new Date(),
+    role: "ADMIN",
+  }).returning();
+  assert.ok(admin);
+  const adminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
+  const getAdminShipping = () => fetch(`${baseUrl}/admin/shipping`, {
+    headers: { cookie: adminCookie },
+  });
+  try {
+    const request = retailClient();
+    assert.equal((await addRetailItem(request, createdProductId, 1)).status, 201);
+    const beforeUpdateResponse = await request("/retail/checkout-preview?deliveryMethod=personal_belgrade&city=Beograd");
+    assert.equal(beforeUpdateResponse.status, 200);
+    assert.equal((await beforeUpdateResponse.json() as RetailCheckoutPreview).shipping.shippingCost, 700);
+    const beforeUpdateAdminResponse = await getAdminShipping();
+    assert.equal(beforeUpdateAdminResponse.status, 200);
+    assert.equal((await beforeUpdateAdminResponse.json() as { personalDeliveryPrice: number }).personalDeliveryPrice, 700);
+
+    await db.update(shippingRulesTable).set({
+      personalDeliveryPrice: 800,
+      updatedAt: new Date(),
+    }).where(eq(shippingRulesTable.id, canonicalShippingRuleId));
+
+    const updatedRequest = retailClient();
+    assert.equal((await addRetailItem(updatedRequest, createdProductId, 1)).status, 201);
+    const afterUpdateResponse = await updatedRequest("/retail/checkout-preview?deliveryMethod=personal_belgrade&city=Beograd");
+    assert.equal(afterUpdateResponse.status, 200);
+    assert.equal((await afterUpdateResponse.json() as RetailCheckoutPreview).shipping.shippingCost, 800);
+    const afterUpdateAdminResponse = await getAdminShipping();
+    assert.equal(afterUpdateAdminResponse.status, 200);
+    assert.equal((await afterUpdateAdminResponse.json() as { personalDeliveryPrice: number }).personalDeliveryPrice, 800);
+  } finally {
+    await db.delete(usersTable).where(eq(usersTable.id, admin.id));
+    await db.delete(shippingRulesTable).where(eq(shippingRulesTable.id, canonicalShippingRuleId));
+  }
 });
 
 test("adding a second cart quantity above available stock returns 409", async () => {
@@ -349,7 +408,9 @@ test("checkout marks a displayed-quote delivery change with the stable conflict 
   const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
   assert.equal(previewResponse.status, 200);
   const preview = await previewResponse.json() as RetailCheckoutPreview;
-  const [shippingRule] = await db.select().from(shippingRulesTable).limit(1);
+  const [shippingRule] = await db.select().from(shippingRulesTable)
+    .orderBy(asc(shippingRulesTable.id))
+    .limit(1);
   assert.ok(shippingRule);
   const originalTiers = shippingRule.tiers;
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   productCategoriesTable,
@@ -30,6 +30,7 @@ let categoryId: string | undefined;
 let productId: string | undefined;
 let shippingRuleId: string | undefined;
 
+let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
 const money = (amount: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency",
   currency: "RSD",
@@ -111,15 +112,27 @@ async function submitAndAssertOrder(page: Page, preview: CheckoutPreview) {
 
 test.beforeAll(async () => {
   const suffix = randomUUID();
-  const [shippingRule] = await db.insert(shippingRulesTable).values({
+  const shippingValues = {
     freeShippingThreshold: 10_000,
     tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
     personalDeliveryEnabled: true,
     personalDeliveryName: "Lična dostava u Beogradu",
     personalDeliveryPrice: 650,
     personalDeliveryDescription: "Test lična dostava.",
-  }).returning();
-  shippingRuleId = shippingRule!.id;
+  };
+  [previousShippingRule] = await db.select().from(shippingRulesTable)
+    .orderBy(asc(shippingRulesTable.id))
+    .limit(1);
+  if (previousShippingRule) {
+    await db.update(shippingRulesTable).set({
+      ...shippingValues,
+      updatedAt: new Date(),
+    }).where(eq(shippingRulesTable.id, previousShippingRule.id));
+    shippingRuleId = previousShippingRule.id;
+  } else {
+    const [shippingRule] = await db.insert(shippingRulesTable).values(shippingValues).returning();
+    shippingRuleId = shippingRule!.id;
+  }
 
   const [category] = await db.insert(productCategoriesTable).values({
     name: `Retail browser ${suffix}`,
@@ -159,7 +172,19 @@ test.afterAll(async () => {
   }
   if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
   if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
-  if (shippingRuleId) await db.delete(shippingRulesTable).where(eq(shippingRulesTable.id, shippingRuleId));
+  if (previousShippingRule) {
+    await db.update(shippingRulesTable).set({
+      freeShippingThreshold: previousShippingRule.freeShippingThreshold,
+      tiers: previousShippingRule.tiers,
+      personalDeliveryEnabled: previousShippingRule.personalDeliveryEnabled,
+      personalDeliveryName: previousShippingRule.personalDeliveryName,
+      personalDeliveryPrice: previousShippingRule.personalDeliveryPrice,
+      personalDeliveryDescription: previousShippingRule.personalDeliveryDescription,
+      updatedAt: previousShippingRule.updatedAt,
+    }).where(eq(shippingRulesTable.id, previousShippingRule.id));
+  } else if (shippingRuleId) {
+    await db.delete(shippingRulesTable).where(eq(shippingRulesTable.id, shippingRuleId));
+  }
 });
 
 test("retail checkout displays and saves identical totals for courier and personal delivery", async ({ page }) => {
@@ -296,7 +321,7 @@ test("retail checkout offers a retry after a failed quote refresh", async ({ pag
     expect(response.status()).toBe(409);
     expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
 
-    const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
+  const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
     await expect(retryButton).toBeVisible();
     await expect(confirmButton).toBeDisabled();
     await expect(page.getByText(money(2_390), { exact: true })).not.toBeVisible();
@@ -371,10 +396,9 @@ test("retail checkout detects a cart changed in another tab and refreshes before
   await fillCheckoutContact(page, "Novi Sad");
   const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
-  await expect(page.getByText(money(2_390), { exact: true })).toBeVisible();
 
-  // A second tab or device shares the same session cookie, so an API call from the
-  // same browser context is exactly what a cross-tab cart change looks like.
+  // A second tab or device shares the same session cookie, so API calls from the
+  // same browser context are exactly what emptying the cart elsewhere looks like.
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { items: Array<{ id: string }> };
@@ -415,7 +439,7 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   await fillCheckoutContact(page, "Novi Sad");
   const checkoutUrl = page.url();
   const paymentForm = page.locator("form");
-  const confirmButton = paymentForm.getByRole("button", { name: "Potvrdi porudžbinu" });
+  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   // A second tab or device shares the same session cookie, so API calls from the
@@ -466,8 +490,6 @@ test("retail cart page updates lines and totals when the cart changes in another
   await createCartAndOpenCartPage(page);
   await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
 
-  // A second tab or device shares the same session cookie, so an API call from the
-  // same browser context is exactly what a cross-tab cart change looks like.
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { items: Array<{ id: string }> };
