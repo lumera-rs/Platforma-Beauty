@@ -213,3 +213,79 @@ test("retail checkout refreshes a changed quote before allowing confirmation aga
     await db.update(productsTable).set({ publicDiscountPrice: 2_000 }).where(eq(productsTable.id, productId!));
   }
 });
+
+test("retail checkout refreshes a changed delivery fee before allowing confirmation again", async ({ page }) => {
+  let holdRefreshedPreview = false;
+  let notifyRefreshStarted: (() => void) | undefined;
+  let releaseRefreshedPreview: (() => void) | undefined;
+  const refreshStarted = new Promise<void>((resolve) => { notifyRefreshStarted = resolve; });
+  const releasePreview = new Promise<void>((resolve) => { releaseRefreshedPreview = resolve; });
+  await page.route("**/api/retail/checkout-preview?**", async (route) => {
+    if (holdRefreshedPreview) {
+      notifyRefreshStarted?.();
+      await releasePreview;
+    }
+    await route.continue();
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const confirmButton = page.locator("form").getByRole("button");
+  await expect(confirmButton).toBeEnabled();
+
+  expect(shippingRuleId).toBeTruthy();
+  await db.update(shippingRulesTable).set({
+    tiers: [{ maxWeightGrams: 1_000, price: 590, label: "do 1 kg" }],
+  }).where(eq(shippingRulesTable.id, shippingRuleId!));
+  holdRefreshedPreview = true;
+  try {
+    const checkoutResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/retail/checkout" && response.request().method() === "POST",
+    );
+    await confirmButton.click();
+    const response = await checkoutResponse;
+    expect(response.status()).toBe(409);
+    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+
+    await refreshStarted;
+    await expect(confirmButton).toBeDisabled();
+    releaseRefreshedPreview?.();
+
+    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+    await expect(page.getByRole("status")).toContainText(`Dostava je sada ${money(590)}`);
+    await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(2_590)}`);
+    await expect(page.getByText(money(2_590), { exact: true })).toBeVisible();
+    await expect(confirmButton).toBeEnabled();
+  } finally {
+    releaseRefreshedPreview?.();
+    await db.update(shippingRulesTable).set({
+      tiers: [{ maxWeightGrams: 1_000, price: 390, label: "do 1 kg" }],
+    }).where(eq(shippingRulesTable.id, shippingRuleId!));
+  }
+});
+
+test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const confirmButton = page.locator("form").getByRole("button");
+  await expect(confirmButton).toBeEnabled();
+
+  expect(productId).toBeTruthy();
+  const [product] = await db.select({ stock: productsTable.stock }).from(productsTable)
+    .where(eq(productsTable.id, productId!)).limit(1);
+  expect(product).toBeTruthy();
+  await db.update(productsTable).set({ stock: 0 }).where(eq(productsTable.id, productId!));
+  try {
+    const checkoutResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/retail/checkout" && response.request().method() === "POST",
+    );
+    await confirmButton.click();
+    const response = await checkoutResponse;
+    expect(response.status()).toBe(409);
+    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+    await expect(confirmButton).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Porudžbina je primljena" })).not.toBeVisible();
+  } finally {
+    await db.update(productsTable).set({ stock: product!.stock }).where(eq(productsTable.id, productId!));
+  }
+});

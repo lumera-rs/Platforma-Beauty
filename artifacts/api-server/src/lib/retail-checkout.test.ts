@@ -339,3 +339,89 @@ test("checkout marks a displayed-quote mismatch so shoppers can refresh it in pl
     await db.update(productsTable).set({ publicDiscountPrice: 2_000 }).where(eq(productsTable.id, createdProductId));
   }
 });
+
+test("checkout marks a displayed-quote delivery change with the stable conflict code", async () => {
+  assert.ok(createdProductId);
+  const request = retailClient();
+  const addResponse = await addRetailItem(request, createdProductId, 1);
+  assert.equal(addResponse.status, 201);
+
+  const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview;
+  const [shippingRule] = await db.select().from(shippingRulesTable).limit(1);
+  assert.ok(shippingRule);
+  const originalTiers = shippingRule.tiers;
+
+  await db.update(shippingRulesTable).set({
+    tiers: [{ maxWeightGrams: 1_000, price: 590, label: "do 1 kg" }],
+    updatedAt: new Date(),
+  }).where(eq(shippingRulesTable.id, shippingRule.id));
+  try {
+    const checkoutResponse = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-delivery-conflict-${randomUUID()}`,
+        firstName: "Retail",
+        lastName: "Kupac",
+        email: `delivery-conflict-${randomUUID()}@example.test`,
+        phone: "+381601234567",
+        street: "Test ulica 1",
+        city: "Novi Sad",
+        postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER",
+        deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal,
+        expectedShippingCost: preview.shipping.shippingCost,
+        expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(checkoutResponse.status, 409);
+    const error = await checkoutResponse.json() as ApiError;
+    assert.equal(error.code, "CHECKOUT_QUOTE_CHANGED");
+  } finally {
+    await db.update(shippingRulesTable).set({ tiers: originalTiers, updatedAt: new Date() })
+      .where(eq(shippingRulesTable.id, shippingRule.id));
+  }
+});
+
+test("checkout marks an unavailable displayed-quote item with the stable conflict code", async () => {
+  assert.ok(createdProductId);
+  const request = retailClient();
+  const addResponse = await addRetailItem(request, createdProductId, 1);
+  assert.equal(addResponse.status, 201);
+
+  const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview;
+  const [product] = await db.select({ stock: productsTable.stock }).from(productsTable)
+    .where(eq(productsTable.id, createdProductId)).limit(1);
+  assert.ok(product);
+
+  await db.update(productsTable).set({ stock: 0 }).where(eq(productsTable.id, createdProductId));
+  try {
+    const checkoutResponse = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-stock-conflict-${randomUUID()}`,
+        firstName: "Retail",
+        lastName: "Kupac",
+        email: `stock-conflict-${randomUUID()}@example.test`,
+        phone: "+381601234567",
+        street: "Test ulica 1",
+        city: "Novi Sad",
+        postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER",
+        deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal,
+        expectedShippingCost: preview.shipping.shippingCost,
+        expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(checkoutResponse.status, 409);
+    const error = await checkoutResponse.json() as ApiError;
+    assert.equal(error.code, "CHECKOUT_QUOTE_CHANGED");
+  } finally {
+    await db.update(productsTable).set({ stock: product.stock }).where(eq(productsTable.id, createdProductId));
+  }
+});
