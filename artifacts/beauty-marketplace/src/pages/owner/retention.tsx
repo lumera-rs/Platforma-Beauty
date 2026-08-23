@@ -37,8 +37,15 @@ export default function OwnerRetention() {
   const [, navigate] = useLocation();
   useEffect(() => {
     const linkedCustomerId = new URLSearchParams(searchString).get("klijent");
-    if (linkedCustomerId) setSelectedCustomerId(linkedCustomerId);
+    // The URL is the source of truth for this dialog. Clearing the query on
+    // Back/Forward must also clear the selected customer, otherwise the
+    // previous dialog stays open on the plain CRM list URL.
+    setSelectedCustomerId(linkedCustomerId);
   }, [searchString]);
+
+  const openCustomerDetail = (customerId: string) => {
+    navigate(`/vlasnik/klijenti?klijent=${encodeURIComponent(customerId)}`);
+  };
 
   const closeCustomerDetail = () => {
     setSelectedCustomerId(null);
@@ -126,7 +133,7 @@ export default function OwnerRetention() {
   };
 
   const handleEditBirthDate = (customer: any) => {
-    setSelectedCustomerId(customer.salonCustomerId);
+    openCustomerDetail(customer.salonCustomerId);
     setBirthDate(customer.birthDate || "");
     setIsEditingBirthDate(true);
   };
@@ -239,7 +246,7 @@ export default function OwnerRetention() {
                             <p className="text-muted-foreground">Nema poseta</p>
                           )}
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => setSelectedCustomerId(customer.salonCustomerId)}>Detalji</Button>
+                        <Button variant="outline" size="sm" onClick={() => openCustomerDetail(customer.salonCustomerId)}>Detalji</Button>
                       </div>
                     </div>
                   ))}

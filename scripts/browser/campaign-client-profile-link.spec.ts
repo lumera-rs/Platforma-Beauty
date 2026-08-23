@@ -261,13 +261,28 @@ test("direct CRM client links survive a hard refresh and close cleanly", async (
     // visit the campaign page, so the dialog can only be restored from the
     // authenticated session and the URL query parameter.
     const clientUrl = `/vlasnik/klijenti?klijent=${fixture.customerId}`;
+    await page.goto("/vlasnik/klijenti");
     await page.goto(clientUrl);
-    await page.reload();
 
     const customerDialog = page.getByRole("dialog");
     await expect(customerDialog).toBeVisible();
     await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/vlasnik/klijenti\\?klijent=${fixture.customerId}$`));
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/vlasnik\/klijenti\/?$/);
+    await expect(customerDialog).toBeHidden();
+    expect(new URL(page.url()).searchParams.has("klijent")).toBe(false);
+
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/vlasnik\/klijenti\\?klijent=${fixture.customerId}$`));
+    await expect(customerDialog).toBeVisible();
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toBeVisible();
+
+    // The copied link must also keep restoring the dialog after a reload.
+    await page.reload();
+    await expect(customerDialog).toBeVisible();
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toBeVisible();
 
     await customerDialog.getByRole("button", { name: "Close" }).click();
     await expect(customerDialog).toBeHidden();
