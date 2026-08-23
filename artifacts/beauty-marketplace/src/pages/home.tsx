@@ -62,7 +62,12 @@ export default function Home() {
     sessionCity ? { city: sessionCity } : undefined
   );
 
-  const categories = ["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija", "Wellness"];
+  const categories = [
+    ...PUBLIC_CATEGORY_PAGES.map((page) => page.apiCategory),
+    "Kozmetički saloni",
+    "Depilacija",
+    "Wellness",
+  ].filter((category, index, allCategories) => allCategories.indexOf(category) === index);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
