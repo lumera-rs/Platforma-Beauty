@@ -7,6 +7,8 @@
  * retain that choice rather than silently reselecting every registration.
  */
 import { expect, test, type Page } from "@playwright/test";
+import * as apiSchemas from "../../lib/api-zod/src/generated/api";
+import { checkedApiFixture } from "../src/browser-api-fixtures";
 
 const admin = {
   id: "00000000-0000-4000-8000-000000000081",
@@ -25,11 +27,28 @@ const staleWebhooks = [
 
 function integrationsPayload() {
   const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
-  return {
-    integrations: { sms: card, brevo: card, google_oauth: card, facebook_oauth: card },
+  const webhookCard = {
+    ...card,
+    webhookSecretPendingReconfirmation: false,
+    webhookVerifiedAt: null,
+    webhookVerificationStale: false,
+    webhookConfirmationMaxAgeDays: 7,
+  };
+  return checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
+    integrations: { sms: webhookCard, brevo: webhookCard, google_oauth: card, facebook_oauth: card },
+    deliveryReports: {
+      providers: {
+        brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+        infobip: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+      },
+      windowHours: 24,
+      graceMinutes: 30,
+    },
+    smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
+    smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
     redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
     smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
-  };
+  });
 }
 
 async function mockIntegrationsApi(page: Page) {

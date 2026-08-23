@@ -215,6 +215,105 @@ export interface AdminListEmailCampaignsResponse {
   campaigns: EmailMarketingCampaign[];
 }
 
+export type AdminIntegrationCardValues = {[key: string]: string | null};
+
+export interface AdminIntegrationCard {
+  enabled: boolean;
+  configuredInDatabase: boolean;
+  complete: boolean;
+  values: AdminIntegrationCardValues;
+}
+
+export type AdminWebhookIntegrationCard = AdminIntegrationCard & ({
+  webhookSecretPendingReconfirmation: boolean;
+  /** @nullable */
+  webhookVerifiedAt: string | null;
+  webhookVerificationStale: boolean;
+  /** @minimum 0 */
+  webhookConfirmationMaxAgeDays: number;
+});
+
+export interface AdminDeliveryReportStatus {
+  /** @nullable */
+  lastEventAt: string | null;
+  /** @nullable */
+  lastAutomationSentAt: string | null;
+  /** @minimum 0 */
+  recentSendCount: number;
+  warning: boolean;
+}
+
+export type AdminDeliveryReportsProviders = {
+  brevo: AdminDeliveryReportStatus;
+  infobip: AdminDeliveryReportStatus;
+};
+
+export interface AdminDeliveryReports {
+  providers: AdminDeliveryReportsProviders;
+  /** @minimum 1 */
+  windowHours: number;
+  /** @minimum 0 */
+  graceMinutes: number;
+}
+
+export interface AdminSmsFallbackReachableAdmin {
+  firstName: string;
+  lastName: string;
+}
+
+export interface AdminSmsFallback {
+  /** @minimum 0 */
+  reachableAdminCount: number;
+  reachableAdmins: AdminSmsFallbackReachableAdmin[];
+}
+
+export type AdminSmsWebhookRegistrationState = typeof AdminSmsWebhookRegistrationState[keyof typeof AdminSmsWebhookRegistrationState];
+
+
+export const AdminSmsWebhookRegistrationState = {
+  no_secret: 'no_secret',
+  confirmed: 'confirmed',
+  misconfigured: 'misconfigured',
+  stale_secret: 'stale_secret',
+  unconfirmed: 'unconfirmed',
+} as const;
+
+export interface AdminSmsWebhookRegistration {
+  state: AdminSmsWebhookRegistrationState;
+  /** @nullable */
+  secretSavedAt: string | null;
+  /** @nullable */
+  lastReportAt: string | null;
+}
+
+export interface AdminSmsReminder {
+  command: string;
+  active: boolean;
+  instructions: string[];
+}
+
+export type AdminGetIntegrationsResponseIntegrations = {
+  sms: AdminWebhookIntegrationCard;
+  brevo: AdminWebhookIntegrationCard;
+  google_oauth: AdminIntegrationCard;
+  facebook_oauth: AdminIntegrationCard;
+};
+
+export type AdminGetIntegrationsResponseRedirectUris = {
+  google: string;
+  facebook: string;
+};
+
+export interface AdminGetIntegrationsResponse {
+  integrations: AdminGetIntegrationsResponseIntegrations;
+  deliveryReports: AdminDeliveryReports;
+  smsFallback: AdminSmsFallback;
+  smsWebhookRegistration: AdminSmsWebhookRegistration;
+  redirectUris: AdminGetIntegrationsResponseRedirectUris;
+  redirectUriWarning?: string;
+  smsReminder: AdminSmsReminder;
+}
+
 export type AdminCreateEmailCampaignInputAudience = typeof AdminCreateEmailCampaignInputAudience[keyof typeof AdminCreateEmailCampaignInputAudience];
 
 

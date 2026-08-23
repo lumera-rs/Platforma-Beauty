@@ -184,6 +184,18 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/SmsDelivery" }
+  /admin/integrations:
+    get:
+      operationId: adminGetIntegrations
+      tags: [admin]
+      summary: Get administrator integration settings and delivery health
+      responses:
+        "200":
+          description: Integration settings, OAuth redirect URIs, and reminder status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminGetIntegrationsResponse"
   /salons:
     get:
       operationId: listSalons
@@ -5050,6 +5062,101 @@ components:
           type: array
           items: { $ref: "#/components/schemas/EmailMarketingCampaign" }
       required: [campaigns]
+    AdminIntegrationCard:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        configuredInDatabase: { type: boolean }
+        complete: { type: boolean }
+        values:
+          type: object
+          additionalProperties: { type: ["string", "null"] }
+      required: [enabled, configuredInDatabase, complete, values]
+    AdminWebhookIntegrationCard:
+      allOf:
+        - $ref: "#/components/schemas/AdminIntegrationCard"
+        - type: object
+          properties:
+            webhookSecretPendingReconfirmation: { type: boolean }
+            webhookVerifiedAt: { type: ["string", "null"], format: date-time }
+            webhookVerificationStale: { type: boolean }
+            webhookConfirmationMaxAgeDays: { type: number, minimum: 0, multipleOf: 1 }
+          required: [webhookSecretPendingReconfirmation, webhookVerifiedAt, webhookVerificationStale, webhookConfirmationMaxAgeDays]
+    AdminDeliveryReportStatus:
+      type: object
+      properties:
+        lastEventAt: { type: ["string", "null"], format: date-time }
+        lastAutomationSentAt: { type: ["string", "null"], format: date-time }
+        recentSendCount: { type: number, minimum: 0, multipleOf: 1 }
+        warning: { type: boolean }
+      required: [lastEventAt, lastAutomationSentAt, recentSendCount, warning]
+    AdminDeliveryReports:
+      type: object
+      properties:
+        providers:
+          type: object
+          properties:
+            brevo: { $ref: "#/components/schemas/AdminDeliveryReportStatus" }
+            infobip: { $ref: "#/components/schemas/AdminDeliveryReportStatus" }
+          required: [brevo, infobip]
+        windowHours: { type: number, minimum: 1, multipleOf: 1 }
+        graceMinutes: { type: number, minimum: 0, multipleOf: 1 }
+      required: [providers, windowHours, graceMinutes]
+    AdminSmsFallbackReachableAdmin:
+      type: object
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+      required: [firstName, lastName]
+    AdminSmsFallback:
+      type: object
+      properties:
+        reachableAdminCount: { type: number, minimum: 0, multipleOf: 1 }
+        reachableAdmins:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSmsFallbackReachableAdmin" }
+      required: [reachableAdminCount, reachableAdmins]
+    AdminSmsWebhookRegistration:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [no_secret, confirmed, misconfigured, stale_secret, unconfirmed]
+        secretSavedAt: { type: ["string", "null"], format: date-time }
+        lastReportAt: { type: ["string", "null"], format: date-time }
+      required: [state, secretSavedAt, lastReportAt]
+    AdminSmsReminder:
+      type: object
+      properties:
+        command: { type: string }
+        active: { type: boolean }
+        instructions:
+          type: array
+          items: { type: string }
+      required: [command, active, instructions]
+    AdminGetIntegrationsResponse:
+      type: object
+      properties:
+        integrations:
+          type: object
+          properties:
+            sms: { $ref: "#/components/schemas/AdminWebhookIntegrationCard" }
+            brevo: { $ref: "#/components/schemas/AdminWebhookIntegrationCard" }
+            google_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
+            facebook_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
+          required: [sms, brevo, google_oauth, facebook_oauth]
+        deliveryReports: { $ref: "#/components/schemas/AdminDeliveryReports" }
+        smsFallback: { $ref: "#/components/schemas/AdminSmsFallback" }
+        smsWebhookRegistration: { $ref: "#/components/schemas/AdminSmsWebhookRegistration" }
+        redirectUris:
+          type: object
+          properties:
+            google: { type: string, format: uri }
+            facebook: { type: string, format: uri }
+          required: [google, facebook]
+        redirectUriWarning: { type: string }
+        smsReminder: { $ref: "#/components/schemas/AdminSmsReminder" }
+      required: [integrations, deliveryReports, smsFallback, smsWebhookRegistration, redirectUris, smsReminder]
     AdminCreateEmailCampaignInput:
       type: object
       properties:

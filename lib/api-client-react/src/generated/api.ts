@@ -25,6 +25,7 @@ import type {
   AdminBrandUpdate,
   AdminBulkResult,
   AdminCreateEmailCampaignInput,
+  AdminGetIntegrationsResponse,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
   AdminListProductsParams,
@@ -1110,6 +1111,83 @@ export function useAdminListSmsDeliveries<TData = Awaited<ReturnType<typeof admi
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListSmsDeliveriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetIntegrationsUrl = () => {
+
+
+
+
+  return `/api/admin/integrations`
+}
+
+/**
+ * @summary Get administrator integration settings and delivery health
+ */
+export const adminGetIntegrations = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetIntegrationsResponse> => {
+
+  return customFetch<AdminGetIntegrationsResponse>(getAdminGetIntegrationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetIntegrationsQueryKey = () => {
+    return [
+    `/api/admin/integrations`
+    ] as const;
+    }
+
+
+export const getAdminGetIntegrationsQueryOptions = <TData = Awaited<ReturnType<typeof adminGetIntegrations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetIntegrations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetIntegrationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetIntegrations>>> = ({ signal }) => adminGetIntegrations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetIntegrations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetIntegrationsQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetIntegrations>>>
+export type AdminGetIntegrationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get administrator integration settings and delivery health
+ */
+
+export function useAdminGetIntegrations<TData = Awaited<ReturnType<typeof adminGetIntegrations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetIntegrations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetIntegrationsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

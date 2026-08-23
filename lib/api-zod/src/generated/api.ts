@@ -298,6 +298,111 @@ export const AdminListSmsDeliveriesResponse = zod.array(AdminListSmsDeliveriesRe
 
 
 /**
+ * @summary Get administrator integration settings and delivery health
+ */
+export const adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMin = 0;
+export const adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
+
+export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMin = 0;
+export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMin = 0;
+export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMin = 0;
+export const adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsWindowHoursMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsGraceMinutesMin = 0;
+export const adminGetIntegrationsResponseDeliveryReportsGraceMinutesMultipleOf = 1;
+
+export const adminGetIntegrationsResponseSmsFallbackReachableAdminCountMin = 0;
+export const adminGetIntegrationsResponseSmsFallbackReachableAdminCountMultipleOf = 1;
+
+
+
+export const AdminGetIntegrationsResponse = zod.object({
+  "integrations": zod.object({
+  "sms": zod.object({
+  "enabled": zod.boolean(),
+  "configuredInDatabase": zod.boolean(),
+  "complete": zod.boolean(),
+  "values": zod.record(zod.string(), zod.string().nullable())
+}).and(zod.object({
+  "webhookSecretPendingReconfirmation": zod.boolean(),
+  "webhookVerifiedAt": zod.coerce.date().nullable(),
+  "webhookVerificationStale": zod.boolean(),
+  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMultipleOf)
+})),
+  "brevo": zod.object({
+  "enabled": zod.boolean(),
+  "configuredInDatabase": zod.boolean(),
+  "complete": zod.boolean(),
+  "values": zod.record(zod.string(), zod.string().nullable())
+}).and(zod.object({
+  "webhookSecretPendingReconfirmation": zod.boolean(),
+  "webhookVerifiedAt": zod.coerce.date().nullable(),
+  "webhookVerificationStale": zod.boolean(),
+  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMultipleOf)
+})),
+  "google_oauth": zod.object({
+  "enabled": zod.boolean(),
+  "configuredInDatabase": zod.boolean(),
+  "complete": zod.boolean(),
+  "values": zod.record(zod.string(), zod.string().nullable())
+}),
+  "facebook_oauth": zod.object({
+  "enabled": zod.boolean(),
+  "configuredInDatabase": zod.boolean(),
+  "complete": zod.boolean(),
+  "values": zod.record(zod.string(), zod.string().nullable())
+})
+}),
+  "deliveryReports": zod.object({
+  "providers": zod.object({
+  "brevo": zod.object({
+  "lastEventAt": zod.coerce.date().nullable(),
+  "lastAutomationSentAt": zod.coerce.date().nullable(),
+  "recentSendCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf),
+  "warning": zod.boolean()
+}),
+  "infobip": zod.object({
+  "lastEventAt": zod.coerce.date().nullable(),
+  "lastAutomationSentAt": zod.coerce.date().nullable(),
+  "recentSendCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf),
+  "warning": zod.boolean()
+})
+}),
+  "windowHours": zod.number().min(1).multipleOf(adminGetIntegrationsResponseDeliveryReportsWindowHoursMultipleOf),
+  "graceMinutes": zod.number().min(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMultipleOf)
+}),
+  "smsFallback": zod.object({
+  "reachableAdminCount": zod.number().min(adminGetIntegrationsResponseSmsFallbackReachableAdminCountMin).multipleOf(adminGetIntegrationsResponseSmsFallbackReachableAdminCountMultipleOf),
+  "reachableAdmins": zod.array(zod.object({
+  "firstName": zod.string(),
+  "lastName": zod.string()
+}))
+}),
+  "smsWebhookRegistration": zod.object({
+  "state": zod.enum(['no_secret', 'confirmed', 'misconfigured', 'stale_secret', 'unconfirmed']),
+  "secretSavedAt": zod.coerce.date().nullable(),
+  "lastReportAt": zod.coerce.date().nullable()
+}),
+  "redirectUris": zod.object({
+  "google": zod.string().url(),
+  "facebook": zod.string().url()
+}),
+  "redirectUriWarning": zod.string().optional(),
+  "smsReminder": zod.object({
+  "command": zod.string(),
+  "active": zod.boolean(),
+  "instructions": zod.array(zod.string())
+})
+})
+
+
+/**
  * @summary Search salons
  */
 export const listSalonsQuerySortDefault = `recommended`;

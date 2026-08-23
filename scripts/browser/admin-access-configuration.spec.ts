@@ -350,17 +350,34 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       }
       if (path === "/api/admin/integrations" && method === "GET") {
         const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+        const webhookCard = {
+          ...card,
+          webhookSecretPendingReconfirmation: false,
+          webhookVerifiedAt: null,
+          webhookVerificationStale: false,
+          webhookConfirmationMaxAgeDays: 7,
+        };
         await route.fulfill({
-          json: {
+          json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
             integrations: {
-              sms: card,
-              brevo: card,
+              sms: webhookCard,
+              brevo: webhookCard,
               google_oauth: card,
               facebook_oauth: card,
             },
+            deliveryReports: {
+              providers: {
+                brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+                infobip: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+              },
+              windowHours: 24,
+              graceMinutes: 30,
+            },
+            smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
+            smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
             redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
             smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
-          },
+          }),
         });
         return;
       }
