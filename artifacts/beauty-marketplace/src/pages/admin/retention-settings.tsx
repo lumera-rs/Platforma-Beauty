@@ -113,6 +113,9 @@ export default function AdminRetentionSettings() {
   });
   const { data: history = [], isLoading: isHistoryLoading } = useAdminGetRetentionSettingsHistory();
   const updateMutation = useAdminUpdateRetentionSettings();
+  const updateRequestInFlight = useRef(false);
+  const [isUpdateSubmitting, setIsUpdateSubmitting] = useState(false);
+  const isUpdatePending = isUpdateSubmitting || updateMutation.isPending;
   const previewMutation = useAdminPreviewRetentionSettings();
   const [preview, setPreview] = useState<RetentionSettingsPreview | null>(null);
   // How the "most affected salons" list is ranked: by absolute reclassified
@@ -267,7 +270,12 @@ export default function AdminRetentionSettings() {
    * `origin` labels restores in the audit history.
    */
   const performUpdate = (thresholds: RetentionThresholds, origin: UpdateOrigin) => {
-    if (!settings || formBaseVersion === null) return;
+    // React may not have committed the disabled state yet when two click
+    // events arrive in the same turn. Keep the write boundary synchronous so
+    // an identical-save confirmation can never append two versions.
+    if (!settings || formBaseVersion === null || updateRequestInFlight.current) return;
+    updateRequestInFlight.current = true;
+    setIsUpdateSubmitting(true);
     const body = {
       ...thresholds,
       expectedVersion: formBaseVersion,
@@ -333,6 +341,10 @@ export default function AdminRetentionSettings() {
             ? "Greška prilikom čuvanja pragova."
             : "Greška prilikom vraćanja verzije.",
         ));
+      },
+      onSettled: () => {
+        updateRequestInFlight.current = false;
+        setIsUpdateSubmitting(false);
       },
     });
   };
@@ -469,7 +481,7 @@ export default function AdminRetentionSettings() {
                   // The history list is missing the newer entries too.
                   queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
                 }}
-                disabled={updateMutation.isPending}
+                disabled={isUpdatePending}
                 data-testid="load-stale-retention-settings"
               >
                 <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -542,7 +554,7 @@ export default function AdminRetentionSettings() {
                   <Button
                     variant="outline"
                     onClick={() => setRestoreTarget({ kind: "defaults", thresholds: settings.defaults })}
-                    disabled={updateMutation.isPending}
+                    disabled={isUpdatePending}
                     data-testid="restore-retention-defaults"
                   >
                     <RotateCcw className="w-4 h-4 mr-2" />
@@ -552,14 +564,14 @@ export default function AdminRetentionSettings() {
                 <Button
                   variant="outline"
                   onClick={handlePreview}
-                  disabled={previewMutation.isPending || updateMutation.isPending}
+                  disabled={previewMutation.isPending || isUpdatePending}
                   data-testid="preview-retention-settings"
                 >
                   {previewMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
                   Proveri uticaj
                 </Button>
-                <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="save-retention-settings">
-                  {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                <Button onClick={handleSave} disabled={isUpdatePending} data-testid="save-retention-settings">
+                  {isUpdatePending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                   Sačuvaj izmene
                 </Button>
               </div>
@@ -823,7 +835,7 @@ export default function AdminRetentionSettings() {
                             size="sm"
                             className="ml-auto"
                             onClick={() => setRestoreTarget({ kind: "history", entry })}
-                            disabled={updateMutation.isPending}
+                            disabled={isUpdatePending}
                             data-testid={`restore-retention-v${entry.version}`}
                           >
                             <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
@@ -889,7 +901,7 @@ export default function AdminRetentionSettings() {
               </div>
             )}
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-restore-retention">
+              <AlertDialogCancel disabled={isUpdatePending} data-testid="cancel-restore-retention">
                 Otkaži
               </AlertDialogCancel>
               <AlertDialogAction
@@ -897,10 +909,10 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   if (restoreTarget) handleRestore(restoreTarget);
                 }}
-                disabled={updateMutation.isPending || isNoOpRestore}
+                disabled={isUpdatePending || isNoOpRestore}
                 data-testid="confirm-restore-retention"
               >
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
+                {isUpdatePending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
                 {restoreTarget?.kind === "defaults" ? "Vrati podrazumevane vrednosti" : "Vrati ovu verziju"}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -921,7 +933,7 @@ export default function AdminRetentionSettings() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-identical-retention-save">
+              <AlertDialogCancel disabled={isUpdatePending} data-testid="cancel-identical-retention-save">
                 Otkaži
               </AlertDialogCancel>
               <AlertDialogAction
@@ -929,10 +941,10 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   if (identicalSavePending) performUpdate(identicalSavePending, { changeSource: "manual" });
                 }}
-                disabled={updateMutation.isPending}
+                disabled={isUpdatePending}
                 data-testid="confirm-identical-retention-save"
               >
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                {isUpdatePending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                 Ipak sačuvaj
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -988,7 +1000,7 @@ export default function AdminRetentionSettings() {
             })()}
             <AlertDialogFooter>
               <AlertDialogCancel
-                disabled={updateMutation.isPending || isDiscardingConflict}
+                disabled={isUpdatePending || isDiscardingConflict}
                 data-testid="cancel-retention-conflict"
               >
                 {isDiscardingConflict && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -999,10 +1011,10 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   handleConfirmConflict();
                 }}
-                disabled={updateMutation.isPending || isDiscardingConflict}
+                disabled={isUpdatePending || isDiscardingConflict}
                 data-testid="confirm-retention-conflict"
               >
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                {isUpdatePending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
                 Sačuvaj moje vrednosti
               </AlertDialogAction>
             </AlertDialogFooter>

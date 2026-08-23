@@ -137,12 +137,41 @@ test("identical save asks before recording history, while changed save is direct
   // that creates a new "Bez promene vrednosti" history version.
   await page.getByTestId("save-retention-settings").click();
   await expect(identicalDialog).toBeVisible();
+  let releaseIdenticalSave!: () => void;
+  let identicalSaveStarted!: () => void;
+  let identicalSaveRequestCount = 0;
+  const identicalSaveRequestStarted = new Promise<void>((resolve) => {
+    identicalSaveStarted = resolve;
+  });
+  const identicalSaveRequestRelease = new Promise<void>((resolve) => {
+    releaseIdenticalSave = resolve;
+  });
+  await page.route(`**${settingsPath}`, async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.continue();
+      return;
+    }
+    identicalSaveRequestCount += 1;
+    identicalSaveStarted();
+    if (identicalSaveRequestCount === 1) {
+      await identicalSaveRequestRelease;
+    }
+    await route.continue();
+  });
   const identicalSave = page.waitForResponse((response) =>
     response.request().method() === "PUT"
     && new URL(response.url()).pathname === settingsPath,
   );
-  await page.getByTestId("confirm-identical-retention-save").click();
+  const confirmIdenticalSave = page.getByTestId("confirm-identical-retention-save");
+  await confirmIdenticalSave.dispatchEvent("click");
+  await confirmIdenticalSave.dispatchEvent("click");
+  await identicalSaveRequestStarted;
+  expect(identicalSaveRequestCount, "rapid confirmation must issue one update request").toBe(1);
+  await expect(confirmIdenticalSave).toBeDisabled();
+  await expect(page.getByTestId("cancel-identical-retention-save")).toBeDisabled();
+  releaseIdenticalSave();
   expect((await identicalSave).status(), "the confirmed identical save must succeed").toBe(200);
+  await page.unroute(`**${settingsPath}`);
   await expect(identicalDialog).not.toBeVisible();
   await expect(page.getByTestId("retention-settings-version"))
     .toHaveText(`Verzija ${baselineVersion + 1}`);
@@ -153,6 +182,10 @@ test("identical save asks before recording history, while changed save is direct
   const activeAfterIdenticalConfirm = await (await page.request.get(settingsPath)).json();
   expect(activeAfterIdenticalConfirm.version).toBe(baselineVersion + 1);
   expect(activeAfterIdenticalConfirm.thresholds).toEqual(BASELINE_THRESHOLDS);
+  const historyAfterIdenticalConfirm = await (await page.request.get(historyPath)).json();
+  expect(
+    historyAfterIdenticalConfirm.filter((entry: { version: number }) => entry.version === baselineVersion + 1),
+  ).toHaveLength(1);
 
   // A real edit bypasses the identical-value warning and writes directly.
   await page.getByTestId("input-newCustomerWindowDays").fill(String(CHANGED_WINDOW_DAYS));
