@@ -511,15 +511,29 @@ export async function sendBrevoCampaignNow(campaignId: number) {
   await brevoJson(`/emailCampaigns/${campaignId}/sendNow`, {});
 }
 
-export type BrevoTransactionalWebhook = { id: number; url: string };
+/** One transactional webhook registration as reported by Brevo. */
+export type BrevoTransactionalWebhook = {
+  id: number;
+  url: string;
+  /**
+   * Event names the registration subscribes to, exactly as Brevo reports
+   * them (camelCase in the API, e.g. "hardBounce"). Missing or malformed
+   * arrays degrade to [] — the caller then reports every required event as
+   * unconfirmed rather than silently treating the webhook as fully covered.
+   */
+  events: string[];
+};
 
 /**
- * List the transactional webhooks currently registered at Brevo (id + URL),
- * using the saved apiKey. Powers the admin registration check that confirms
- * the app's webhook URL (with the current secret token) actually exists at
- * the provider — the loopback self-check alone cannot see a webhook that was
- * deleted at Brevo, points at a stale domain, or still carries an old secret
- * — and the one-click repair, which needs the webhook id to update in place.
+ * List the transactional webhooks currently registered at Brevo (id, URL and
+ * subscribed events), using the saved apiKey. Powers the admin registration
+ * check that confirms the app's webhook URL (with the current secret token)
+ * actually exists at the provider AND subscribes to every delivery event the
+ * app processes — the loopback self-check alone cannot see a webhook that was
+ * deleted at Brevo, points at a stale domain, still carries an old secret, or
+ * was registered with only a subset of events (e.g. "delivered" only, which
+ * silently drops opens and bounces) — and the one-click repair, which needs
+ * the webhook id to update in place.
  * Brevo answers 404 when no webhook is registered; treated as an empty list.
  */
 export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransactionalWebhook[]> {
@@ -540,8 +554,12 @@ export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransaction
       : [];
   return entries.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
-    const { id, url } = entry as { id?: unknown; url?: unknown };
-    return typeof id === "number" && typeof url === "string" ? [{ id, url }] : [];
+    const record = entry as { id?: unknown; url?: unknown; events?: unknown };
+    if (typeof record.id !== "number" || typeof record.url !== "string") return [];
+    const events = Array.isArray(record.events)
+      ? record.events.filter((event): event is string => typeof event === "string")
+      : [];
+    return [{ id: record.id, url: record.url, events }];
   });
 }
 
@@ -557,6 +575,7 @@ export const BREVO_WEBHOOK_EVENTS = [
   "hardBounce",
   "softBounce",
   "blocked",
+  "invalid", // registration name for the "invalid_email" payload event
   "error",
 ] as const;
 

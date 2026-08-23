@@ -42,6 +42,7 @@ import app, { safePathname, redactPathSecrets } from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
   deliveryReportWarning,
+  missingBrevoWebhookEvents,
   recordWebhookReceipt,
   resolveWebhookSecret,
   WEBHOOK_VERIFICATION_REFERENCE_PREFIX,
@@ -201,6 +202,43 @@ async function run() {
       assert.equal(redactPathSecrets("/api/webhooks/brevo/abc"), "/api/webhooks/brevo/:token");
       assert.equal(safePathname("/api/growth/automations/x/stats"), "/api/growth/automations/x/stats", "non-webhook paths untouched");
       console.log("✓ log path redaction masks webhook capability tokens");
+    }
+
+    // ── 0a'. Registration event coverage (missingBrevoWebhookEvents) ───────
+    {
+      // Fully subscribed, Brevo API camelCase names → nothing missing.
+      assert.deepEqual(
+        missingBrevoWebhookEvents(["delivered", "uniqueOpened", "hardBounce", "softBounce", "blocked", "invalid", "error"]),
+        [],
+        "camelCase registration names must fully cover the required events",
+      );
+      // Payload-style snake_case names must count as equivalent.
+      assert.deepEqual(
+        missingBrevoWebhookEvents(["delivered", "unique_opened", "hard_bounce", "soft_bounce", "blocked", "invalid_email", "error"]),
+        [],
+        "snake_case event names must fully cover the required events",
+      );
+      // ANY opened-family event covers the open capability.
+      assert.ok(
+        !missingBrevoWebhookEvents(["delivered", "opened", "hardBounce", "softBounce", "blocked", "invalid", "error"]).length,
+        "plain 'opened' must cover the open capability",
+      );
+      // "delivered"-only registration silently drops opens and every failure.
+      const deliveredOnly = missingBrevoWebhookEvents(["delivered"]);
+      assert.equal(deliveredOnly.length, 6, "'delivered' only must miss opens and all five failure events");
+      assert.ok(deliveredOnly.some((label) => label.includes("opened")), "missing labels must include opens");
+      assert.ok(deliveredOnly.some((label) => label.includes("hardBounce")), "missing labels must include hard bounces");
+      // Each failure event is its own capability — hardBounce alone is not enough.
+      const partialFailures = missingBrevoWebhookEvents(["delivered", "opened", "hardBounce"]);
+      assert.ok(partialFailures.some((label) => label.includes("softBounce")), "softBounce must be reported missing");
+      assert.ok(partialFailures.some((label) => label.includes("blocked")), "blocked must be reported missing");
+      assert.ok(partialFailures.some((label) => label.includes("error")), "error must be reported missing");
+      assert.ok(!partialFailures.some((label) => label.includes("hardBounce")), "subscribed hardBounce must not be reported");
+      // Empty events array (missing/malformed at Brevo) → everything reported.
+      assert.equal(missingBrevoWebhookEvents([]).length, 7, "no events must report every required capability");
+      // Irrelevant subscriptions (clicks, spam, …) cover nothing.
+      assert.equal(missingBrevoWebhookEvents(["click", "spam", "deferred", "request"]).length, 7, "unrelated events cover nothing");
+      console.log("✓ registration event coverage flags missing delivery subscriptions");
     }
 
     // ── 0b. Unconfigured secret → 503, events never accepted open ──────────

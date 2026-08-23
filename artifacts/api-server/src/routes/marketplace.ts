@@ -353,7 +353,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
-import { deliveryReportStatuses, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
+import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
@@ -3361,15 +3361,17 @@ router.get("/admin/integrations/:integration/webhook-url", async (req, res): Pro
  * the loopback self-check above — that proves the app's own endpoint accepts
  * the saved secret, while this catches the failure modes the loopback cannot
  * see: webhook deleted at Brevo, registered for a stale domain, or still
- * carrying an old secret. The saved secret is never returned; tokens found at
- * Brevo are compared timing-safe and reported only with the token masked.
+ * carrying an old secret, or subscribed to only a subset of delivery events
+ * (a webhook registered with only "delivered" silently drops opens and
+ * bounces). The saved secret is never returned; tokens found at Brevo are
+ * compared timing-safe and reported only with the token masked.
  */
 /**
  * Keep only registrations that look like a LUMERA Brevo webhook URL and
  * classify each by origin + timing-safe secret comparison. The token itself
  * is never echoed back — masked URLs only.
  */
-function brevoRegistrationCandidates(webhooks: Array<{ id: number; url: string }>, secret: string) {
+function brevoRegistrationCandidates(webhooks: Array<{ id: number; url: string; events: string[] }>, secret: string) {
   return webhooks.flatMap((hook) => {
     let parsed: URL;
     try { parsed = new URL(hook.url); } catch { return []; }
@@ -3382,6 +3384,7 @@ function brevoRegistrationCandidates(webhooks: Array<{ id: number; url: string }
       origin: parsed.origin,
       maskedUrl: `${parsed.origin}/api/webhooks/brevo/…`,
       secretMatches: webhookTokenMatches(secret, token),
+      events: hook.events,
     }];
   });
 }
@@ -3396,7 +3399,18 @@ function brevoRegistrationVerdict(
   origin: string,
 ): { ok: true; message: string } | { ok: false; error: string } {
   const expectedUrlHint = `${origin}/api/webhooks/brevo/<tajna>`;
-  if (candidates.some((candidate) => candidate.secretMatches && candidate.origin === origin)) {
+  const matching = candidates.filter((candidate) => candidate.secretMatches && candidate.origin === origin);
+  if (matching.length) {
+    // URL and secret are correct — now confirm the registration subscribes to
+    // every delivery event the app processes. Events are unioned across
+    // matching registrations: each event only needs ONE registration to
+    // deliver it. A partial subscription is a warning, not a hard failure —
+    // delivered events may still flow — but it silently degrades open
+    // tracking and failure alerts, so it must not read as full success.
+    const missingEvents = missingBrevoWebhookEvents(matching.flatMap((candidate) => candidate.events));
+    if (missingEvents.length) {
+      return { ok: false, error: `Webhook je registrovan na Brevo sa ispravnim URL-om i tajnom, ali registracija ne prati sve potrebne događaje. Nedostaju: ${missingEvents.join(", ")}. Bez njih se praćenje otvaranja i upozorenja o neisporučenim porukama tiho gube. Ažurirajte registraciju webhook-a na Brevo (Transactional → Settings → Webhooks) i uključite navedene događaje.` };
+    }
     return { ok: true, message: "Webhook je registrovan na Brevo: URL pokazuje na ovu aplikaciju i nosi aktuelnu webhook tajnu." };
   }
   const wrongOrigin = candidates.find((candidate) => candidate.secretMatches);

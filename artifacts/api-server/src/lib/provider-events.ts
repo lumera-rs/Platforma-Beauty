@@ -315,6 +315,49 @@ function brevoEventKind(event: string): DeliveryEventKind | null {
   return null; // requests, deferred, clicks, spam complaints, … — no state change
 }
 
+/**
+ * Registration-event coverage for the admin registration check.
+ *
+ * Brevo's GET /v3/webhooks reports which event names a registration
+ * subscribes to, but the API/dashboard use camelCase names ("hardBounce")
+ * while webhook payloads arrive snake_case ("hard_bounce") — comparison
+ * therefore normalizes case and underscores on both sides.
+ *
+ * Each entry is ONE delivery capability the webhook handler above depends on
+ * (see brevoEventKind): the capability counts as covered when ANY of its
+ * accepted registration names is subscribed, and its Serbian label is what
+ * admins see when it is missing. Opens are a single capability (any open
+ * event sets openedAt), while each failure event is its own capability — a
+ * registration with only hardBounce still silently drops soft bounces,
+ * blocks, invalid addresses, and send errors.
+ */
+const REQUIRED_BREVO_WEBHOOK_EVENTS: ReadonlyArray<{ label: string; names: readonly string[] }> = [
+  { label: "isporučeno (delivered)", names: ["delivered"] },
+  { label: "otvaranja (opened / uniqueOpened)", names: [...BREVO_OPENED_EVENTS] },
+  { label: "trajno odbijeno (hardBounce)", names: ["hard_bounce"] },
+  { label: "privremeno odbijeno (softBounce)", names: ["soft_bounce"] },
+  { label: "blokirano (blocked)", names: ["blocked"] },
+  { label: "nevažeća adresa (invalid)", names: ["invalid_email", "invalid"] },
+  { label: "greška u slanju (error)", names: ["error"] },
+];
+
+/** Normalize a Brevo event name so camelCase and snake_case variants compare equal. */
+function normalizeBrevoEventName(name: string): string {
+  return name.toLowerCase().replace(/[_\s-]/g, "");
+}
+
+/**
+ * Given the event names a Brevo webhook registration subscribes to, return
+ * the Serbian labels of the delivery capabilities the app processes but the
+ * registration does NOT cover (empty array = fully subscribed).
+ */
+export function missingBrevoWebhookEvents(subscribed: readonly string[]): string[] {
+  const normalized = new Set(subscribed.map(normalizeBrevoEventName));
+  return REQUIRED_BREVO_WEBHOOK_EVENTS
+    .filter((capability) => !capability.names.some((name) => normalized.has(normalizeBrevoEventName(name))))
+    .map((capability) => capability.label);
+}
+
 function brevoEventDate(event: BrevoWebhookEvent): Date | null {
   if (typeof event.ts_event === "number" && Number.isFinite(event.ts_event)) {
     return new Date(event.ts_event * 1000);
