@@ -4238,6 +4238,418 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Admin access required }
 
+  # ── Phase 3: before/after treatment photos ────────────────────────────────
+  /employee/appointments/{appointmentId}/treatment-photos:
+    get:
+      operationId: listEmployeeAppointmentTreatmentPhotos
+      tags: [salon-management]
+      summary: List before/after photos for an own appointment (employee)
+      parameters:
+        - { name: appointmentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Photos for the appointment
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TreatmentPhoto" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "404": { description: Appointment not found }
+    post:
+      operationId: createEmployeeTreatmentPhoto
+      tags: [salon-management]
+      summary: Attach a before/after photo to a completed own appointment (employee)
+      parameters:
+        - { name: appointmentId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TreatmentPhotoCreate" }
+      responses:
+        "201":
+          description: Photo saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TreatmentPhoto" }
+        "400": { description: "Missing consent, invalid photo or appointment not completed" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "404": { description: Appointment not found }
+        "409": { description: Photo already attached elsewhere }
+  /appointments/{appointmentId}/treatment-photos:
+    get:
+      operationId: listCustomerAppointmentTreatmentPhotos
+      tags: [appointments]
+      summary: List before/after photos of an own appointment (customer)
+      parameters:
+        - { name: appointmentId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Photos for the customer's own appointment
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TreatmentPhoto" }
+        "401": { description: Authentication required }
+        "404": { description: Appointment not found }
+  /salon/customers/{customerId}/treatment-photos:
+    get:
+      operationId: listSalonCustomerTreatmentPhotos
+      tags: [salon-management]
+      summary: List a CRM client's before/after photos chronologically (owner)
+      parameters:
+        - { name: customerId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Photos grouped chronologically by treatment
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TreatmentPhoto" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Client not found }
+
+  # ── Phase 3: service consumption mapping + salon inventory ────────────────
+  /salon/services/{serviceId}/consumptions:
+    get:
+      operationId: getServiceConsumptions
+      tags: [salon-management]
+      summary: List product consumption mappings for a service (owner)
+      parameters:
+        - { name: serviceId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Consumption mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceConsumption" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Service not found }
+    put:
+      operationId: putServiceConsumptions
+      tags: [salon-management]
+      summary: Replace product consumption mappings for a service (owner)
+      parameters:
+        - { name: serviceId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ServiceConsumptionsPut" }
+      responses:
+        "200":
+          description: Updated consumption mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ServiceConsumption" }
+        "400": { description: Invalid mapping payload }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Service or product not found }
+  /salon/inventory:
+    get:
+      operationId: listSalonInventory
+      tags: [salon-management]
+      summary: List salon-owned product inventory with low-stock flags (owner)
+      responses:
+        "200":
+          description: Inventory items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonInventoryItem" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+  /salon/inventory/{productId}:
+    patch:
+      operationId: updateSalonInventoryItem
+      tags: [salon-management]
+      summary: Adjust quantity, threshold or unit settings of an inventory item (owner)
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonInventoryItemUpdate" }
+      responses:
+        "200":
+          description: Updated inventory item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonInventoryItem" }
+        "400": { description: Invalid values }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Inventory item not found }
+
+  # ── Phase 3: employee time clock ───────────────────────────────────────────
+  /employee/clock:
+    get:
+      operationId: getEmployeeClock
+      tags: [salon-management]
+      summary: Current clock status and recent entries (employee)
+      responses:
+        "200":
+          description: Clock status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeClockStatus" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+  /employee/clock-in:
+    post:
+      operationId: employeeClockIn
+      tags: [salon-management]
+      summary: Start a shift (employee)
+      responses:
+        "201":
+          description: Shift started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeClockEntry" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "409": { description: A shift is already open }
+  /employee/clock-out:
+    post:
+      operationId: employeeClockOut
+      tags: [salon-management]
+      summary: End the open shift (employee)
+      responses:
+        "200":
+          description: Shift closed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeClockEntry" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "409": { description: No open shift }
+  /salon/clock-entries:
+    get:
+      operationId: listSalonClockEntries
+      tags: [salon-management]
+      summary: Work-hour records per employee for a period, with appointment counts (owner)
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string } }
+        - { name: to, in: query, required: true, schema: { type: string } }
+        - { name: employeeId, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Per-employee work-hour summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonClockEmployeeSummary" }
+        "400": { description: Invalid period }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+  /salon/clock-entries/{entryId}:
+    patch:
+      operationId: updateSalonClockEntry
+      tags: [salon-management]
+      summary: Manually correct or close a clock entry (owner)
+      parameters:
+        - { name: entryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonClockEntryUpdate" }
+      responses:
+        "200":
+          description: Corrected entry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeClockEntry" }
+        "400": { description: Invalid correction }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Entry not found }
+
+  # ── Phase 3: shift swapping ────────────────────────────────────────────────
+  /employee/shift-swaps:
+    get:
+      operationId: listEmployeeShiftSwaps
+      tags: [salon-management]
+      summary: Own outgoing/incoming shift-swap requests and colleagues (employee)
+      responses:
+        "200":
+          description: Shift swap overview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeShiftSwapOverview" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+    post:
+      operationId: createEmployeeShiftSwap
+      tags: [salon-management]
+      summary: Propose swapping a working day with a colleague (employee)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShiftSwapCreate" }
+      responses:
+        "201":
+          description: Swap request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        "400": { description: Invalid colleague or date }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "409": { description: An open request for that day already exists }
+  /employee/shift-swaps/{requestId}/respond:
+    post:
+      operationId: respondEmployeeShiftSwap
+      tags: [salon-management]
+      summary: Accept or decline a colleague's swap proposal (employee)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShiftSwapRespondBody" }
+      responses:
+        "200":
+          description: Updated request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "404": { description: Request not found }
+        "409": { description: Request no longer awaiting your response }
+  /employee/shift-swaps/{requestId}/cancel:
+    post:
+      operationId: cancelEmployeeShiftSwap
+      tags: [salon-management]
+      summary: Cancel an own pending swap request (employee)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Cancelled request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
+        "404": { description: Request not found }
+        "409": { description: Request can no longer be cancelled }
+  /salon/shift-swaps:
+    get:
+      operationId: listSalonShiftSwaps
+      tags: [salon-management]
+      summary: Shift-swap requests awaiting approval and history, with both employees' appointments (owner)
+      responses:
+        "200":
+          description: Swap requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonShiftSwapRequest" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+  /salon/shift-swaps/{requestId}/review:
+    post:
+      operationId: reviewSalonShiftSwap
+      tags: [salon-management]
+      summary: Approve or decline an accepted swap; approval reassigns that day's appointments (owner)
+      parameters:
+        - { name: requestId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ShiftSwapReviewBody" }
+      responses:
+        "200":
+          description: Reviewed request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonShiftSwapRequest" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+        "404": { description: Request not found }
+        "409": { description: Request not awaiting owner review }
+
+  # ── Phase 3: public booking widget (CORS-open, rate limited) ──────────────
+  /widget/salons/{slug}:
+    get:
+      operationId: getWidgetSalon
+      tags: [widget]
+      summary: Public widget bootstrap — salon identity, services and employees
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Widget bootstrap data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WidgetSalon" }
+        "404": { description: Salon not found or not bookable }
+        "429": { description: Too many requests }
+  /widget/salons/{slug}/availability:
+    get:
+      operationId: getWidgetAvailability
+      tags: [widget]
+      summary: Public widget availability slots for a service and date
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+        - { name: serviceId, in: query, required: true, schema: { type: string } }
+        - { name: date, in: query, required: true, schema: { type: string } }
+        - { name: employeeId, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Available slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WidgetSlot" }
+        "400": { description: Invalid parameters }
+        "404": { description: Salon or service not found }
+        "429": { description: Too many requests }
+  /widget/salons/{slug}/appointments:
+    post:
+      operationId: createWidgetAppointment
+      tags: [widget]
+      summary: Public widget booking — creates a pending appointment for the salon
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WidgetAppointmentCreate" }
+      responses:
+        "201":
+          description: Appointment request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WidgetAppointmentCreated" }
+        "400": { description: Invalid booking data }
+        "404": { description: Salon or service not found }
+        "409": { description: Slot no longer available }
+        "429": { description: Too many requests }
+
 components:
   parameters:
     CityQuery:
@@ -4599,7 +5011,7 @@ components:
       properties:
         scope:
           type: string
-          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category]
+          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo]
         resourceId:
           type: ["string", "null"]
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
@@ -7463,3 +7875,253 @@ components:
             pendingPayment: { type: number }
           required: [total, active, pendingPayment]
       required: [automation, packages, purchases]
+
+    # ── Phase 3 schemas ──────────────────────────────────────────────────────
+    TreatmentPhoto:
+      type: object
+      properties:
+        id: { type: string }
+        appointmentId: { type: string }
+        salonCustomerId: { type: string }
+        employeeId: { type: ["string", "null"] }
+        employeeName: { type: ["string", "null"] }
+        kind: { type: string, enum: [before, after] }
+        url: { type: string }
+        consentConfirmed: { type: boolean }
+        createdAt: { type: string }
+        appointmentDate: { type: ["string", "null"] }
+        serviceName: { type: ["string", "null"] }
+      required: [id, appointmentId, salonCustomerId, kind, url, consentConfirmed, createdAt]
+    TreatmentPhotoCreate:
+      type: object
+      properties:
+        kind: { type: string, enum: [before, after] }
+        url: { type: string, minLength: 1, maxLength: 500 }
+        consentConfirmed: { type: boolean }
+      required: [kind, url, consentConfirmed]
+    ServiceConsumption:
+      type: object
+      properties:
+        serviceId: { type: string }
+        productId: { type: string }
+        quantityPerUse: { type: number }
+        productName: { type: string }
+        productUnit: { type: string }
+      required: [serviceId, productId, quantityPerUse, productName, productUnit]
+    ServiceConsumptionsPut:
+      type: object
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              quantityPerUse: { type: number, minimum: 0.01, maximum: 1000000 }
+            required: [productId, quantityPerUse]
+      required: [items]
+    SalonInventoryItem:
+      type: object
+      properties:
+        productId: { type: string }
+        productName: { type: string }
+        productSku: { type: string }
+        productImageUrl: { type: string }
+        quantity: { type: number }
+        unit: { type: string }
+        unitContentAmount: { type: number }
+        usageUnit: { type: ["string", "null"] }
+        lowStockThreshold: { type: ["number", "null"] }
+        effectiveThreshold: { type: number }
+        lowStock: { type: boolean }
+        updatedAt: { type: string }
+      required: [productId, productName, productSku, productImageUrl, quantity, unit, unitContentAmount, effectiveThreshold, lowStock, updatedAt]
+    SalonInventoryItemUpdate:
+      type: object
+      properties:
+        quantity: { type: number, minimum: 0, maximum: 100000000 }
+        lowStockThreshold: { type: ["number", "null"], minimum: 0, maximum: 100000000 }
+        unitContentAmount: { type: number, minimum: 0.01, maximum: 100000000 }
+        usageUnit: { type: ["string", "null"], maxLength: 20 }
+    EmployeeClockEntry:
+      type: object
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        clockInAt: { type: string }
+        clockOutAt: { type: ["string", "null"] }
+        editedByOwner: { type: boolean }
+        note: { type: ["string", "null"] }
+        durationMinutes: { type: ["number", "null"] }
+      required: [id, employeeId, clockInAt, editedByOwner]
+    EmployeeClockStatus:
+      type: object
+      properties:
+        openEntry:
+          oneOf:
+            - $ref: "#/components/schemas/EmployeeClockEntry"
+            - type: "null"
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeeClockEntry" }
+        weekMinutes: { type: number }
+        monthMinutes: { type: number }
+      required: [entries, weekMinutes, monthMinutes]
+    SalonClockEmployeeSummary:
+      type: object
+      properties:
+        employeeId: { type: string }
+        employeeName: { type: string }
+        totalMinutes: { type: number }
+        appointmentCount: { type: number }
+        openEntry: { type: boolean }
+        staleOpenEntry: { type: boolean }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/EmployeeClockEntry" }
+      required: [employeeId, employeeName, totalMinutes, appointmentCount, openEntry, staleOpenEntry, entries]
+    SalonClockEntryUpdate:
+      type: object
+      properties:
+        clockOutAt: { type: string, minLength: 1 }
+        note: { type: ["string", "null"], maxLength: 300 }
+      required: [clockOutAt]
+    ShiftSwapRequest:
+      type: object
+      properties:
+        id: { type: string }
+        requesterEmployeeId: { type: string }
+        requesterName: { type: string }
+        targetEmployeeId: { type: string }
+        targetName: { type: string }
+        swapDate: { type: string }
+        note: { type: ["string", "null"] }
+        status: { type: string, enum: [pending_colleague, colleague_declined, pending_owner, owner_declined, approved, cancelled] }
+        colleagueRespondedAt: { type: ["string", "null"] }
+        ownerReviewedAt: { type: ["string", "null"] }
+        createdAt: { type: string }
+      required: [id, requesterEmployeeId, requesterName, targetEmployeeId, targetName, swapDate, status, createdAt]
+    EmployeeShiftSwapOverview:
+      type: object
+      properties:
+        outgoing:
+          type: array
+          items: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        incoming:
+          type: array
+          items: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        colleagues:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+            required: [id, name]
+      required: [outgoing, incoming, colleagues]
+    ShiftSwapCreate:
+      type: object
+      properties:
+        targetEmployeeId: { type: string }
+        swapDate: { type: string }
+        note: { type: ["string", "null"], maxLength: 300 }
+      required: [targetEmployeeId, swapDate]
+    ShiftSwapRespondBody:
+      type: object
+      properties:
+        accept: { type: boolean }
+      required: [accept]
+    ShiftSwapReviewBody:
+      type: object
+      properties:
+        approve: { type: boolean }
+      required: [approve]
+    ShiftSwapAppointmentPreview:
+      type: object
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        serviceName: { type: string }
+        customerName: { type: ["string", "null"] }
+        status: { type: string }
+      required: [id, employeeId, startTime, endTime, serviceName, status]
+    SalonShiftSwapRequest:
+      type: object
+      properties:
+        request: { $ref: "#/components/schemas/ShiftSwapRequest" }
+        requesterAppointments:
+          type: array
+          items: { $ref: "#/components/schemas/ShiftSwapAppointmentPreview" }
+        targetAppointments:
+          type: array
+          items: { $ref: "#/components/schemas/ShiftSwapAppointmentPreview" }
+      required: [request, requesterAppointments, targetAppointments]
+    WidgetSalon:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        city: { type: string }
+        address: { type: string }
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              durationMinutes: { type: number }
+              price: { type: number }
+              promoPrice: { type: ["number", "null"] }
+              categoryName: { type: string }
+            required: [id, name, durationMinutes, price, categoryName]
+        employees:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              role: { type: string }
+              serviceIds:
+                type: array
+                items: { type: string }
+            required: [id, name, role, serviceIds]
+      required: [id, name, slug, city, address, services, employees]
+    WidgetSlot:
+      type: object
+      properties:
+        start: { type: string }
+        end: { type: string }
+        employeeId: { type: string }
+        employeeName: { type: string }
+      required: [start, end, employeeId, employeeName]
+    WidgetAppointmentCreate:
+      type: object
+      properties:
+        serviceId: { type: string }
+        employeeId: { type: ["string", "null"] }
+        date: { type: string }
+        startTime: { type: string }
+        firstName: { type: string, minLength: 1, maxLength: 80 }
+        lastName: { type: string, minLength: 1, maxLength: 80 }
+        phone: { type: string, minLength: 5, maxLength: 30 }
+        email: { type: ["string", "null"], maxLength: 160 }
+        note: { type: ["string", "null"], maxLength: 500 }
+      required: [serviceId, date, startTime, firstName, lastName, phone]
+    WidgetAppointmentCreated:
+      type: object
+      properties:
+        appointmentId: { type: string }
+        status: { type: string }
+        date: { type: string }
+        startTime: { type: string }
+        endTime: { type: string }
+        employeeName: { type: string }
+        serviceName: { type: string }
+        salonName: { type: string }
+      required: [appointmentId, status, date, startTime, endTime, employeeName, serviceName, salonName]

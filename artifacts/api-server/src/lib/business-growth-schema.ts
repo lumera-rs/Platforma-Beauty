@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 9;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 10;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -72,6 +72,17 @@ const ENUM_LABELS: Record<string, string[]> = {
     "automation",
     // v7: platform-level admin alerts (delivery-report silence SMS fallback).
     "admin_alert",
+  ],
+  // v10 — Phase 3 enums. Mirror lib/db/src/schema/phase3.ts exactly.
+  treatment_photo_kind: ["before", "after"],
+  salon_inventory_movement_type: ["purchase", "consumption", "adjustment"],
+  shift_swap_status: [
+    "pending_colleague",
+    "colleague_declined",
+    "pending_owner",
+    "owner_declined",
+    "approved",
+    "cancelled",
   ],
 };
 
@@ -407,6 +418,115 @@ function tableStatements(s: string): string[] {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS employee_ratings_employee_unique ON ${s}.employee_ratings (employee_id)`,
     `CREATE INDEX IF NOT EXISTS employee_ratings_salon_idx ON ${s}.employee_ratings (salon_id)`,
+
+    // ═══════════════════════ v10 — Phase 3 tables ═══════════════════════════
+    // Mirrors lib/db/src/schema/phase3.ts exactly (tables, defaults, indexes).
+
+    // ── treatment_photos (before/after photos on completed appointments) ────
+    `CREATE TABLE IF NOT EXISTS ${s}.treatment_photos (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      salon_customer_id uuid NOT NULL REFERENCES ${s}.salon_customers(id) ON DELETE CASCADE,
+      appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE CASCADE,
+      employee_id uuid REFERENCES ${s}.employees(id) ON DELETE SET NULL,
+      uploaded_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      kind ${s}.treatment_photo_kind NOT NULL,
+      media_asset_id uuid NOT NULL,
+      consent_confirmed boolean NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS treatment_photos_salon_customer_created_idx ON ${s}.treatment_photos (salon_customer_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS treatment_photos_appointment_idx ON ${s}.treatment_photos (appointment_id)`,
+    `CREATE INDEX IF NOT EXISTS treatment_photos_salon_created_idx ON ${s}.treatment_photos (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS treatment_photos_employee_idx ON ${s}.treatment_photos (employee_id)`,
+    `CREATE INDEX IF NOT EXISTS treatment_photos_uploaded_by_idx ON ${s}.treatment_photos (uploaded_by_user_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS treatment_photos_media_asset_unique ON ${s}.treatment_photos (media_asset_id)`,
+
+    // ── service_product_consumptions (service → product usage mapping) ──────
+    `CREATE TABLE IF NOT EXISTS ${s}.service_product_consumptions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      quantity_per_use double precision NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS service_product_consumptions_service_product_unique ON ${s}.service_product_consumptions (service_id, product_id)`,
+    `CREATE INDEX IF NOT EXISTS service_product_consumptions_salon_idx ON ${s}.service_product_consumptions (salon_id)`,
+    `CREATE INDEX IF NOT EXISTS service_product_consumptions_product_idx ON ${s}.service_product_consumptions (product_id)`,
+
+    // ── salon_inventory (salon-owned stock in usage units) ──────────────────
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_inventory (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      quantity double precision NOT NULL DEFAULT 0,
+      unit_content_amount double precision NOT NULL DEFAULT 1,
+      usage_unit text,
+      low_stock_threshold double precision,
+      peak_quantity double precision NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS salon_inventory_salon_product_unique ON ${s}.salon_inventory (salon_id, product_id)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_product_idx ON ${s}.salon_inventory (product_id)`,
+
+    // ── salon_inventory_movements (append-only ledger, idempotent debits) ───
+    `CREATE TABLE IF NOT EXISTS ${s}.salon_inventory_movements (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      inventory_id uuid NOT NULL REFERENCES ${s}.salon_inventory(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      type ${s}.salon_inventory_movement_type NOT NULL,
+      quantity_delta double precision NOT NULL,
+      appointment_id uuid REFERENCES ${s}.appointments(id) ON DELETE SET NULL,
+      service_id uuid REFERENCES ${s}.services(id) ON DELETE SET NULL,
+      order_id uuid REFERENCES ${s}.orders(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_salon_created_idx ON ${s}.salon_inventory_movements (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_inventory_created_idx ON ${s}.salon_inventory_movements (inventory_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_product_idx ON ${s}.salon_inventory_movements (product_id)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_appointment_idx ON ${s}.salon_inventory_movements (appointment_id)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_service_idx ON ${s}.salon_inventory_movements (service_id)`,
+    `CREATE INDEX IF NOT EXISTS salon_inventory_movements_order_idx ON ${s}.salon_inventory_movements (order_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS salon_inventory_movements_consumption_unique
+       ON ${s}.salon_inventory_movements (appointment_id, product_id)
+       WHERE type = 'consumption'`,
+
+    // ── employee_clock_entries (time clock; one open entry per employee) ────
+    `CREATE TABLE IF NOT EXISTS ${s}.employee_clock_entries (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE CASCADE,
+      clock_in_at timestamptz NOT NULL,
+      clock_out_at timestamptz,
+      edited_by_owner boolean NOT NULL DEFAULT false,
+      note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS employee_clock_entries_salon_in_idx ON ${s}.employee_clock_entries (salon_id, clock_in_at)`,
+    `CREATE INDEX IF NOT EXISTS employee_clock_entries_employee_in_idx ON ${s}.employee_clock_entries (employee_id, clock_in_at)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS employee_clock_entries_one_open_per_employee
+       ON ${s}.employee_clock_entries (employee_id)
+       WHERE clock_out_at IS NULL`,
+
+    // ── shift_swap_requests (colleague accept → owner approve → swap) ───────
+    `CREATE TABLE IF NOT EXISTS ${s}.shift_swap_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      requester_employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE CASCADE,
+      target_employee_id uuid NOT NULL REFERENCES ${s}.employees(id) ON DELETE CASCADE,
+      swap_date date NOT NULL,
+      note text,
+      status ${s}.shift_swap_status NOT NULL DEFAULT 'pending_colleague',
+      colleague_responded_at timestamptz,
+      owner_reviewed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS shift_swap_requests_salon_status_idx ON ${s}.shift_swap_requests (salon_id, status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS shift_swap_requests_requester_idx ON ${s}.shift_swap_requests (requester_employee_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS shift_swap_requests_target_idx ON ${s}.shift_swap_requests (target_employee_id, created_at)`,
   ];
 }
 

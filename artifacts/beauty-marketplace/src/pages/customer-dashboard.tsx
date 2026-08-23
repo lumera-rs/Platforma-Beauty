@@ -6,6 +6,7 @@ import {
   getGetCustomerDashboardQueryKey,
   getListFavoritesQueryKey,
   getListMyAppointmentsQueryKey,
+  getListCustomerAppointmentTreatmentPhotosQueryKey,
   useCancelAppointment,
   useDisconnectAuthSignInMethod,
   useGetAuthSignInMethods,
@@ -15,6 +16,7 @@ import {
   useListFavorites,
   useListMyAppointments,
   useCustomerListMyPurchases,
+  useListCustomerAppointmentTreatmentPhotos,
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,7 +33,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Camera, Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box, ChevronDown } from "lucide-react";
 import { useLocation, useSearch, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -111,6 +114,54 @@ function CustomerPackages() {
         </Card>
       ))}
     </div>
+  );
+}
+
+function AppointmentPhotos({ appointmentId }: { appointmentId: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const { data: photos, isLoading } = useListCustomerAppointmentTreatmentPhotos(appointmentId, {
+    query: {
+      enabled: isOpen,
+      queryKey: getListCustomerAppointmentTreatmentPhotosQueryKey(appointmentId),
+    },
+  });
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full mt-4">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full flex justify-between text-muted-foreground hover:text-foreground bg-muted/30 hover:bg-muted/50 border border-transparent hover:border-border/50 transition-colors" data-testid={`button-toggle-photos-${appointmentId}`}>
+          <span className="flex items-center gap-2"><Camera className="h-4 w-4" /> Fotografije tretmana</span>
+          <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-4 pb-2">
+        {isLoading ? (
+          <div className="flex justify-center p-4"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+        ) : !photos || photos.length === 0 ? (
+          <div className="text-center p-4 text-sm text-muted-foreground bg-muted/20 rounded-md border border-dashed">
+            Nema fotografija za ovaj termin.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {photos.map(photo => (
+              <div key={photo.id} className="space-y-2">
+                <div className="aspect-square relative overflow-hidden rounded-md border bg-muted">
+                  <OptimizedImage src={photo.url} alt={`Fotografija ${photo.kind === 'before' ? 'pre' : 'posle'} tretmana`} className="object-cover w-full h-full" width={400} height={400} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Badge variant="outline" className="text-xs uppercase tracking-wider font-medium">
+                    {photo.kind === 'before' ? 'Pre' : 'Posle'}
+                  </Badge>
+                  <span className="text-[10px] text-muted-foreground">
+                    {format(parseISO(photo.createdAt), 'dd.MM.yyyy')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -468,6 +519,10 @@ export default function CustomerDashboard() {
                             </Button>
                           )}
                         </div>
+                        {/* Photos for past or completed appointments */}
+                        {appt.status === 'completed' && (
+                           <AppointmentPhotos appointmentId={appt.id} />
+                        )}
                       </div>
                     </div>
                   </Card>

@@ -15,7 +15,9 @@ import {
   mediaUploadTicketsTable,
   mediaVariantsTable,
   productsTable,
+  salonCustomersTable,
   salonsTable,
+  treatmentPhotosTable,
   usersTable,
 } from "@workspace/db";
 import {
@@ -96,7 +98,8 @@ type MediaScope =
   | "education-center"
   | "instructor-avatar"
   | "service-category"
-  | "product-category";
+  | "product-category"
+  | "treatment-photo";
 
 type MediaVariantInsert = typeof mediaVariantsTable.$inferInsert;
 
@@ -194,6 +197,17 @@ async function authorizeUploadScope(
   scope: MediaScope,
   requestedResourceId: string | null | undefined,
 ): Promise<{ resourceId: string | null; visibility: "public" | "private" | "education" } | null> {
+  if (scope === "treatment-photo") {
+    // Employees upload before/after photos of their own completed treatments.
+    // The asset stays PRIVATE and unattached (resourceId null) until the
+    // treatment-photo row is created and claims it; reads are authorized in
+    // mayReadAsset via the treatment_photos row.
+    if (user.role !== "SALON_EMPLOYEE") return null;
+    const [employee] = await db.select({ id: employeesTable.id }).from(employeesTable)
+      .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
+    if (!employee) return null;
+    return { resourceId: null, visibility: "private" };
+  }
   if (scope === "employee-avatar" && user.role === "SALON_EMPLOYEE") {
     const [employee] = await db.select({ id: employeesTable.id }).from(employeesTable)
       .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true))).limit(1);
@@ -692,6 +706,20 @@ async function mayReadAsset(req: Request, asset: typeof mediaAssetsTable.$inferS
   if (!user) return false;
   if (isAdmin(user)) return true;
   if (asset.ownerUserId === user.id) return true;
+  if (asset.scope === "treatment-photo" && asset.resourceId) {
+    // resourceId is the treatment_photos row id after claim. Readable by the
+    // salon owner (CRM profile view) and the customer the photo belongs to
+    // (their own appointment view). The uploader is covered above.
+    const [photo] = await db.select({
+      salonOwnerId: salonsTable.ownerId,
+      customerUserId: salonCustomersTable.userId,
+    }).from(treatmentPhotosTable)
+      .innerJoin(salonsTable, eq(salonsTable.id, treatmentPhotosTable.salonId))
+      .innerJoin(salonCustomersTable, eq(salonCustomersTable.id, treatmentPhotosTable.salonCustomerId))
+      .where(eq(treatmentPhotosTable.mediaAssetId, asset.id))
+      .limit(1);
+    if (photo && (photo.salonOwnerId === user.id || photo.customerUserId === user.id)) return true;
+  }
   return false;
 }
 

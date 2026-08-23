@@ -124,6 +124,8 @@ export function BusinessNavbar() {
           { href: "/vlasnik/kalendar", label: "Kalendar" },
           { href: "/vlasnik/usluge", label: "Usluge" },
           { href: "/vlasnik/zaposleni", label: "Zaposleni" },
+          { href: "/vlasnik/radno-vreme", label: "Radno vreme" },
+          { href: "/vlasnik/inventar", label: "Zalihe" },
           { href: "/vlasnik/shop", label: "Shop" },
           { href: "/vlasnik/porudzbine", label: "Porudžbine" },
           { href: "/vlasnik/obavestenja", label: "Obaveštenja" },

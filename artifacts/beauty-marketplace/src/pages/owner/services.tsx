@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OptimizedImage } from "@/components/optimized-image";
 import { OwnerSidebar } from "./dashboard";
@@ -13,10 +13,14 @@ import {
   useCreateSalonServicesBatch,
   useListSalonResources,
   getListSalonResourcesQueryKey,
+  useGetServiceConsumptions,
+  usePutServiceConsumptions,
+  useListProducts,
+  getGetServiceConsumptionsQueryKey
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Edit2, Trash2, Loader2, Image as ImageIcon, House, Library, Search, FileText, Check, AlertCircle } from "lucide-react";
+import { Plus, Edit2, Trash2, Loader2, Image as ImageIcon, House, Library, Search, FileText, Check, AlertCircle, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface ServiceTemplate {
   id: string;
@@ -256,6 +261,159 @@ function TemplateLibrary({ onBatchCreated }: { onBatchCreated: () => void }) {
   );
 }
 
+function ConsumptionDialog({ 
+  serviceId, 
+  serviceName,
+  open, 
+  onOpenChange 
+}: { 
+  serviceId: string;
+  serviceName: string;
+  open: boolean; 
+  onOpenChange: (o: boolean) => void;
+}) {
+  const { data: consumptions, isLoading: isConsumptionsLoading } = useGetServiceConsumptions(serviceId, {
+    query: {
+      enabled: open && !!serviceId,
+      queryKey: getGetServiceConsumptionsQueryKey(serviceId)
+    }
+  });
+
+  const { data: productsData, isLoading: isProductsLoading } = useListProducts({ page: 1, pageSize: 1000 });
+  const products = productsData?.items || [];
+
+  const putMutation = usePutServiceConsumptions();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [items, setItems] = useState<{ productId: string; quantityPerUse: string }[]>([]);
+
+  useEffect(() => {
+    if (consumptions && open) {
+      setItems(consumptions.map(c => ({
+        productId: c.productId,
+        quantityPerUse: c.quantityPerUse.toString()
+      })));
+    }
+  }, [consumptions, open]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const validItems = items
+      .filter(i => i.productId && Number(i.quantityPerUse) > 0)
+      .map(i => ({ productId: i.productId, quantityPerUse: Number(i.quantityPerUse) }));
+
+    putMutation.mutate({
+      serviceId,
+      data: { items: validItems }
+    }, {
+      onSuccess: () => {
+        toast.success("Potrošnja sačuvana");
+        queryClient.invalidateQueries({ queryKey: getGetServiceConsumptionsQueryKey(serviceId) });
+        onOpenChange(false);
+      },
+      onError: (error) => {
+        toast.error("Greška", { description: error instanceof Error ? error.message : "Pokušajte ponovo." });
+      }
+    });
+  };
+
+  const addRow = () => setItems([...items, { productId: "", quantityPerUse: "" }]);
+  const removeRow = (index: number) => setItems(items.filter((_, i) => i !== index));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+        <DialogHeader>
+          <DialogTitle>Potrošnja materijala</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Konfigurišite koje proizvode troši usluga <strong>{serviceName}</strong>. 
+            Zalihe u inventaru će se automatski smanjivati po završetku termina.
+          </p>
+        </DialogHeader>
+
+        {isConsumptionsLoading || isProductsLoading ? (
+          <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+            {items.length === 0 ? (
+              <div className="text-center p-8 border rounded-lg bg-muted/20 text-muted-foreground text-sm">
+                Nije mapiran nijedan proizvod.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-[1fr_120px_40px] gap-2 px-2 pb-1 border-b text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <div>Proizvod (B2B Shop)</div>
+                  <div>Količina po tretmanu</div>
+                  <div></div>
+                </div>
+                {items.map((item, index) => (
+                  <div key={index} className="grid grid-cols-[1fr_120px_40px] gap-2 items-center">
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      value={item.productId}
+                      onChange={(e) => {
+                        const newItems = [...items];
+                        newItems[index].productId = e.target.value;
+                        setItems(newItems);
+                      }}
+                      required
+                    >
+                      <option value="" disabled>Izaberite proizvod...</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id} disabled={items.some((it, i) => it.productId === p.id && i !== index)}>
+                          {p.name} ({p.unit})
+                        </option>
+                      ))}
+                    </select>
+                    
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder="npr. 50"
+                      className="h-9"
+                      value={item.quantityPerUse}
+                      onChange={(e) => {
+                        const newItems = [...items];
+                        newItems[index].quantityPerUse = e.target.value;
+                        setItems(newItems);
+                      }}
+                      required
+                    />
+                    
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-destructive"
+                      onClick={() => removeRow(index)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button type="button" variant="outline" size="sm" onClick={addRow} className="w-full mt-2">
+              <Plus className="w-4 h-4 mr-2" /> Dodaj proizvod
+            </Button>
+
+            <div className="pt-4 border-t mt-6 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Otkaži</Button>
+              <Button type="submit" disabled={putMutation.isPending}>
+                {putMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Sačuvaj potrošnju
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function OwnerServices() {
   const { data: userResp } = useGetCurrentUser();
   const { data: services, isLoading, refetch } = useListSalonServices({ query: { enabled: !!userResp?.user, queryKey: getListSalonServicesQueryKey() }});
@@ -265,6 +423,7 @@ export default function OwnerServices() {
   const deleteMutation = useDeleteSalonService();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [consumptionTarget, setConsumptionTarget] = useState<NonNullable<typeof services>[number] | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("my-services");
   const [deleteTarget, setDeleteTarget] = useState<NonNullable<typeof services>[number] | null>(null);
@@ -561,6 +720,9 @@ export default function OwnerServices() {
                         </div>
                       </div>
                       <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+                        <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setConsumptionTarget(service)}>
+                          <Package className="w-4 h-4 mr-2" /> Potrošnja
+                        </Button>
                         <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => editService(service)}><Edit2 className="w-4 h-4 mr-2" /> Izmeni</Button>
                         <Button
                           variant="outline"

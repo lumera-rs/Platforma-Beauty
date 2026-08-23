@@ -7,7 +7,7 @@ The workspace uses Zod v3 while the installed Orval release can emit Zod v4-only
 
 **Why:** Generated Zod output otherwise fails the shared typecheck before the frontend or API can build.
 
-**How to apply:** After every OpenAPI regeneration, run the library typecheck. The generated API Zod barrel must export runtime validation schemas without duplicate parameter-type exports; preserve that arrangement if Orval rewrites the barrel.
+**How to apply:** After every OpenAPI regeneration, run the library typecheck. The generated API Zod barrel must export runtime validation schemas without duplicate parameter-type exports; preserve that arrangement if Orval rewrites the barrel. Concretely: never add `format: uuid` to the spec (it emits `zod.uuid()`, a Zod v4-only call) — the spec convention is plain `type: string` ids and `type: ["string","null"]` for nullable fields instead of `nullable: true`; also quote flow-style descriptions containing commas.
 
 OpenAPI `format: date` schemas currently generate `zod.coerce.date()`. Using a parsed response object directly in `res.json()` therefore serializes date-only values as ISO timestamps, despite the contract declaring a `YYYY-MM-DD` date.
 

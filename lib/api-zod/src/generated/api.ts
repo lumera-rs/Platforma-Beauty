@@ -1419,7 +1419,7 @@ export const requestMediaUploadBodySizeMultipleOf = 1;
 
 
 export const RequestMediaUploadBody = zod.object({
-  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category']),
+  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo']),
   "resourceId": zod.string().regex(requestMediaUploadBodyResourceIdRegExp).nullish(),
   "name": zod.string().min(1).max(requestMediaUploadBodyNameMax),
   "size": zod.number().min(1).max(requestMediaUploadBodySizeMax).multipleOf(requestMediaUploadBodySizeMultipleOf),
@@ -10159,3 +10159,621 @@ export const AdminGetRetentionSettingsHistoryResponseItem = zod.object({
   "restoredFromVersion": zod.number().nullable().describe('Source version when changeSource is restore_version; null otherwise')
 })
 export const AdminGetRetentionSettingsHistoryResponse = zod.array(AdminGetRetentionSettingsHistoryResponseItem)
+
+
+/**
+ * @summary List before/after photos for an own appointment (employee)
+ */
+export const ListEmployeeAppointmentTreatmentPhotosParams = zod.object({
+  "appointmentId": zod.coerce.string()
+})
+
+export const ListEmployeeAppointmentTreatmentPhotosResponseItem = zod.object({
+  "id": zod.string(),
+  "appointmentId": zod.string(),
+  "salonCustomerId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "employeeName": zod.string().nullish(),
+  "kind": zod.enum(['before', 'after']),
+  "url": zod.string(),
+  "consentConfirmed": zod.boolean(),
+  "createdAt": zod.string(),
+  "appointmentDate": zod.string().nullish(),
+  "serviceName": zod.string().nullish()
+})
+export const ListEmployeeAppointmentTreatmentPhotosResponse = zod.array(ListEmployeeAppointmentTreatmentPhotosResponseItem)
+
+
+/**
+ * @summary Attach a before/after photo to a completed own appointment (employee)
+ */
+export const CreateEmployeeTreatmentPhotoParams = zod.object({
+  "appointmentId": zod.coerce.string()
+})
+
+export const createEmployeeTreatmentPhotoBodyUrlMax = 500;
+
+
+
+export const CreateEmployeeTreatmentPhotoBody = zod.object({
+  "kind": zod.enum(['before', 'after']),
+  "url": zod.string().min(1).max(createEmployeeTreatmentPhotoBodyUrlMax),
+  "consentConfirmed": zod.boolean()
+})
+
+export const CreateEmployeeTreatmentPhotoResponse = zod.object({
+  "id": zod.string(),
+  "appointmentId": zod.string(),
+  "salonCustomerId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "employeeName": zod.string().nullish(),
+  "kind": zod.enum(['before', 'after']),
+  "url": zod.string(),
+  "consentConfirmed": zod.boolean(),
+  "createdAt": zod.string(),
+  "appointmentDate": zod.string().nullish(),
+  "serviceName": zod.string().nullish()
+})
+
+
+/**
+ * @summary List before/after photos of an own appointment (customer)
+ */
+export const ListCustomerAppointmentTreatmentPhotosParams = zod.object({
+  "appointmentId": zod.coerce.string()
+})
+
+export const ListCustomerAppointmentTreatmentPhotosResponseItem = zod.object({
+  "id": zod.string(),
+  "appointmentId": zod.string(),
+  "salonCustomerId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "employeeName": zod.string().nullish(),
+  "kind": zod.enum(['before', 'after']),
+  "url": zod.string(),
+  "consentConfirmed": zod.boolean(),
+  "createdAt": zod.string(),
+  "appointmentDate": zod.string().nullish(),
+  "serviceName": zod.string().nullish()
+})
+export const ListCustomerAppointmentTreatmentPhotosResponse = zod.array(ListCustomerAppointmentTreatmentPhotosResponseItem)
+
+
+/**
+ * @summary List a CRM client's before/after photos chronologically (owner)
+ */
+export const ListSalonCustomerTreatmentPhotosParams = zod.object({
+  "customerId": zod.coerce.string()
+})
+
+export const ListSalonCustomerTreatmentPhotosResponseItem = zod.object({
+  "id": zod.string(),
+  "appointmentId": zod.string(),
+  "salonCustomerId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "employeeName": zod.string().nullish(),
+  "kind": zod.enum(['before', 'after']),
+  "url": zod.string(),
+  "consentConfirmed": zod.boolean(),
+  "createdAt": zod.string(),
+  "appointmentDate": zod.string().nullish(),
+  "serviceName": zod.string().nullish()
+})
+export const ListSalonCustomerTreatmentPhotosResponse = zod.array(ListSalonCustomerTreatmentPhotosResponseItem)
+
+
+/**
+ * @summary List product consumption mappings for a service (owner)
+ */
+export const GetServiceConsumptionsParams = zod.object({
+  "serviceId": zod.coerce.string()
+})
+
+export const GetServiceConsumptionsResponseItem = zod.object({
+  "serviceId": zod.string(),
+  "productId": zod.string(),
+  "quantityPerUse": zod.number(),
+  "productName": zod.string(),
+  "productUnit": zod.string()
+})
+export const GetServiceConsumptionsResponse = zod.array(GetServiceConsumptionsResponseItem)
+
+
+/**
+ * @summary Replace product consumption mappings for a service (owner)
+ */
+export const PutServiceConsumptionsParams = zod.object({
+  "serviceId": zod.coerce.string()
+})
+
+export const putServiceConsumptionsBodyItemsItemQuantityPerUseMin = 0.01;
+export const putServiceConsumptionsBodyItemsItemQuantityPerUseMax = 1000000;
+
+export const putServiceConsumptionsBodyItemsMax = 50;
+
+
+
+export const PutServiceConsumptionsBody = zod.object({
+  "items": zod.array(zod.object({
+  "productId": zod.string(),
+  "quantityPerUse": zod.number().min(putServiceConsumptionsBodyItemsItemQuantityPerUseMin).max(putServiceConsumptionsBodyItemsItemQuantityPerUseMax)
+})).max(putServiceConsumptionsBodyItemsMax)
+})
+
+export const PutServiceConsumptionsResponseItem = zod.object({
+  "serviceId": zod.string(),
+  "productId": zod.string(),
+  "quantityPerUse": zod.number(),
+  "productName": zod.string(),
+  "productUnit": zod.string()
+})
+export const PutServiceConsumptionsResponse = zod.array(PutServiceConsumptionsResponseItem)
+
+
+/**
+ * @summary List salon-owned product inventory with low-stock flags (owner)
+ */
+export const ListSalonInventoryResponseItem = zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productSku": zod.string(),
+  "productImageUrl": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string(),
+  "unitContentAmount": zod.number(),
+  "usageUnit": zod.string().nullish(),
+  "lowStockThreshold": zod.number().nullish(),
+  "effectiveThreshold": zod.number(),
+  "lowStock": zod.boolean(),
+  "updatedAt": zod.string()
+})
+export const ListSalonInventoryResponse = zod.array(ListSalonInventoryResponseItem)
+
+
+/**
+ * @summary Adjust quantity, threshold or unit settings of an inventory item (owner)
+ */
+export const UpdateSalonInventoryItemParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const updateSalonInventoryItemBodyQuantityMin = 0;
+export const updateSalonInventoryItemBodyQuantityMax = 100000000;
+
+export const updateSalonInventoryItemBodyLowStockThresholdMin = 0;
+export const updateSalonInventoryItemBodyLowStockThresholdMax = 100000000;
+
+export const updateSalonInventoryItemBodyUnitContentAmountMin = 0.01;
+export const updateSalonInventoryItemBodyUnitContentAmountMax = 100000000;
+
+export const updateSalonInventoryItemBodyUsageUnitMax = 20;
+
+
+
+export const UpdateSalonInventoryItemBody = zod.object({
+  "quantity": zod.number().min(updateSalonInventoryItemBodyQuantityMin).max(updateSalonInventoryItemBodyQuantityMax).optional(),
+  "lowStockThreshold": zod.number().min(updateSalonInventoryItemBodyLowStockThresholdMin).max(updateSalonInventoryItemBodyLowStockThresholdMax).nullish(),
+  "unitContentAmount": zod.number().min(updateSalonInventoryItemBodyUnitContentAmountMin).max(updateSalonInventoryItemBodyUnitContentAmountMax).optional(),
+  "usageUnit": zod.string().max(updateSalonInventoryItemBodyUsageUnitMax).nullish()
+})
+
+export const UpdateSalonInventoryItemResponse = zod.object({
+  "productId": zod.string(),
+  "productName": zod.string(),
+  "productSku": zod.string(),
+  "productImageUrl": zod.string(),
+  "quantity": zod.number(),
+  "unit": zod.string(),
+  "unitContentAmount": zod.number(),
+  "usageUnit": zod.string().nullish(),
+  "lowStockThreshold": zod.number().nullish(),
+  "effectiveThreshold": zod.number(),
+  "lowStock": zod.boolean(),
+  "updatedAt": zod.string()
+})
+
+
+/**
+ * @summary Current clock status and recent entries (employee)
+ */
+export const GetEmployeeClockResponse = zod.object({
+  "openEntry": zod.union([zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+}),zod.null()]).optional(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+})),
+  "weekMinutes": zod.number(),
+  "monthMinutes": zod.number()
+})
+
+
+/**
+ * @summary Start a shift (employee)
+ */
+export const EmployeeClockInResponse = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+})
+
+
+/**
+ * @summary End the open shift (employee)
+ */
+export const EmployeeClockOutResponse = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+})
+
+
+/**
+ * @summary Work-hour records per employee for a period, with appointment counts (owner)
+ */
+export const ListSalonClockEntriesQueryParams = zod.object({
+  "from": zod.coerce.string(),
+  "to": zod.coerce.string(),
+  "employeeId": zod.coerce.string().optional()
+})
+
+export const ListSalonClockEntriesResponseItem = zod.object({
+  "employeeId": zod.string(),
+  "employeeName": zod.string(),
+  "totalMinutes": zod.number(),
+  "appointmentCount": zod.number(),
+  "openEntry": zod.boolean(),
+  "staleOpenEntry": zod.boolean(),
+  "entries": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+}))
+})
+export const ListSalonClockEntriesResponse = zod.array(ListSalonClockEntriesResponseItem)
+
+
+/**
+ * @summary Manually correct or close a clock entry (owner)
+ */
+export const UpdateSalonClockEntryParams = zod.object({
+  "entryId": zod.coerce.string()
+})
+
+
+export const updateSalonClockEntryBodyNoteMax = 300;
+
+
+
+export const UpdateSalonClockEntryBody = zod.object({
+  "clockOutAt": zod.string().min(1),
+  "note": zod.string().max(updateSalonClockEntryBodyNoteMax).nullish()
+})
+
+export const UpdateSalonClockEntryResponse = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "clockInAt": zod.string(),
+  "clockOutAt": zod.string().nullish(),
+  "editedByOwner": zod.boolean(),
+  "note": zod.string().nullish(),
+  "durationMinutes": zod.number().nullish()
+})
+
+
+/**
+ * @summary Own outgoing/incoming shift-swap requests and colleagues (employee)
+ */
+export const ListEmployeeShiftSwapsResponse = zod.object({
+  "outgoing": zod.array(zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})),
+  "incoming": zod.array(zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})),
+  "colleagues": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}))
+})
+
+
+/**
+ * @summary Propose swapping a working day with a colleague (employee)
+ */
+export const createEmployeeShiftSwapBodyNoteMax = 300;
+
+
+
+export const CreateEmployeeShiftSwapBody = zod.object({
+  "targetEmployeeId": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().max(createEmployeeShiftSwapBodyNoteMax).nullish()
+})
+
+export const CreateEmployeeShiftSwapResponse = zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Accept or decline a colleague's swap proposal (employee)
+ */
+export const RespondEmployeeShiftSwapParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const RespondEmployeeShiftSwapBody = zod.object({
+  "accept": zod.boolean()
+})
+
+export const RespondEmployeeShiftSwapResponse = zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Cancel an own pending swap request (employee)
+ */
+export const CancelEmployeeShiftSwapParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const CancelEmployeeShiftSwapResponse = zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Shift-swap requests awaiting approval and history, with both employees' appointments (owner)
+ */
+export const ListSalonShiftSwapsResponseItem = zod.object({
+  "request": zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+}),
+  "requesterAppointments": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "serviceName": zod.string(),
+  "customerName": zod.string().nullish(),
+  "status": zod.string()
+})),
+  "targetAppointments": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "serviceName": zod.string(),
+  "customerName": zod.string().nullish(),
+  "status": zod.string()
+}))
+})
+export const ListSalonShiftSwapsResponse = zod.array(ListSalonShiftSwapsResponseItem)
+
+
+/**
+ * @summary Approve or decline an accepted swap; approval reassigns that day's appointments (owner)
+ */
+export const ReviewSalonShiftSwapParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const ReviewSalonShiftSwapBody = zod.object({
+  "approve": zod.boolean()
+})
+
+export const ReviewSalonShiftSwapResponse = zod.object({
+  "request": zod.object({
+  "id": zod.string(),
+  "requesterEmployeeId": zod.string(),
+  "requesterName": zod.string(),
+  "targetEmployeeId": zod.string(),
+  "targetName": zod.string(),
+  "swapDate": zod.string(),
+  "note": zod.string().nullish(),
+  "status": zod.enum(['pending_colleague', 'colleague_declined', 'pending_owner', 'owner_declined', 'approved', 'cancelled']),
+  "colleagueRespondedAt": zod.string().nullish(),
+  "ownerReviewedAt": zod.string().nullish(),
+  "createdAt": zod.string()
+}),
+  "requesterAppointments": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "serviceName": zod.string(),
+  "customerName": zod.string().nullish(),
+  "status": zod.string()
+})),
+  "targetAppointments": zod.array(zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "serviceName": zod.string(),
+  "customerName": zod.string().nullish(),
+  "status": zod.string()
+}))
+})
+
+
+/**
+ * @summary Public widget bootstrap — salon identity, services and employees
+ */
+export const GetWidgetSalonParams = zod.object({
+  "slug": zod.coerce.string()
+})
+
+export const GetWidgetSalonResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "city": zod.string(),
+  "address": zod.string(),
+  "services": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "promoPrice": zod.number().nullish(),
+  "categoryName": zod.string()
+})),
+  "employees": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "serviceIds": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary Public widget availability slots for a service and date
+ */
+export const GetWidgetAvailabilityParams = zod.object({
+  "slug": zod.coerce.string()
+})
+
+export const GetWidgetAvailabilityQueryParams = zod.object({
+  "serviceId": zod.coerce.string(),
+  "date": zod.coerce.string(),
+  "employeeId": zod.coerce.string().optional()
+})
+
+export const GetWidgetAvailabilityResponseItem = zod.object({
+  "start": zod.string(),
+  "end": zod.string(),
+  "employeeId": zod.string(),
+  "employeeName": zod.string()
+})
+export const GetWidgetAvailabilityResponse = zod.array(GetWidgetAvailabilityResponseItem)
+
+
+/**
+ * @summary Public widget booking — creates a pending appointment for the salon
+ */
+export const CreateWidgetAppointmentParams = zod.object({
+  "slug": zod.coerce.string()
+})
+
+export const createWidgetAppointmentBodyFirstNameMax = 80;
+
+export const createWidgetAppointmentBodyLastNameMax = 80;
+
+export const createWidgetAppointmentBodyPhoneMin = 5;
+export const createWidgetAppointmentBodyPhoneMax = 30;
+
+export const createWidgetAppointmentBodyEmailMax = 160;
+
+export const createWidgetAppointmentBodyNoteMax = 500;
+
+
+
+export const CreateWidgetAppointmentBody = zod.object({
+  "serviceId": zod.string(),
+  "employeeId": zod.string().nullish(),
+  "date": zod.string(),
+  "startTime": zod.string(),
+  "firstName": zod.string().min(1).max(createWidgetAppointmentBodyFirstNameMax),
+  "lastName": zod.string().min(1).max(createWidgetAppointmentBodyLastNameMax),
+  "phone": zod.string().min(createWidgetAppointmentBodyPhoneMin).max(createWidgetAppointmentBodyPhoneMax),
+  "email": zod.string().max(createWidgetAppointmentBodyEmailMax).nullish(),
+  "note": zod.string().max(createWidgetAppointmentBodyNoteMax).nullish()
+})
+
+export const CreateWidgetAppointmentResponse = zod.object({
+  "appointmentId": zod.string(),
+  "status": zod.string(),
+  "date": zod.string(),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "employeeName": zod.string(),
+  "serviceName": zod.string(),
+  "salonName": zod.string()
+})

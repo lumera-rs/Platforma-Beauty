@@ -446,6 +446,7 @@ export const MediaUploadInputScope = {
   'instructor-avatar': 'instructor-avatar',
   'service-category': 'service-category',
   'product-category': 'product-category',
+  'treatment-photo': 'treatment-photo',
 } as const;
 
 export type MediaUploadInputContentType = typeof MediaUploadInputContentType[keyof typeof MediaUploadInputContentType];
@@ -4590,6 +4591,306 @@ export interface GrowthAdminSummary {
   purchases: GrowthAdminSummaryPurchases;
 }
 
+export type TreatmentPhotoKind = typeof TreatmentPhotoKind[keyof typeof TreatmentPhotoKind];
+
+
+export const TreatmentPhotoKind = {
+  before: 'before',
+  after: 'after',
+} as const;
+
+export interface TreatmentPhoto {
+  id: string;
+  appointmentId: string;
+  salonCustomerId: string;
+  /** @nullable */
+  employeeId?: string | null;
+  /** @nullable */
+  employeeName?: string | null;
+  kind: TreatmentPhotoKind;
+  url: string;
+  consentConfirmed: boolean;
+  createdAt: string;
+  /** @nullable */
+  appointmentDate?: string | null;
+  /** @nullable */
+  serviceName?: string | null;
+}
+
+export type TreatmentPhotoCreateKind = typeof TreatmentPhotoCreateKind[keyof typeof TreatmentPhotoCreateKind];
+
+
+export const TreatmentPhotoCreateKind = {
+  before: 'before',
+  after: 'after',
+} as const;
+
+export interface TreatmentPhotoCreate {
+  kind: TreatmentPhotoCreateKind;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  url: string;
+  consentConfirmed: boolean;
+}
+
+export interface ServiceConsumption {
+  serviceId: string;
+  productId: string;
+  quantityPerUse: number;
+  productName: string;
+  productUnit: string;
+}
+
+export type ServiceConsumptionsPutItemsItem = {
+  productId: string;
+  /**
+     * @minimum 0.01
+     * @maximum 1000000
+     */
+  quantityPerUse: number;
+};
+
+export interface ServiceConsumptionsPut {
+  /** @maxItems 50 */
+  items: ServiceConsumptionsPutItemsItem[];
+}
+
+export interface SalonInventoryItem {
+  productId: string;
+  productName: string;
+  productSku: string;
+  productImageUrl: string;
+  quantity: number;
+  unit: string;
+  unitContentAmount: number;
+  /** @nullable */
+  usageUnit?: string | null;
+  /** @nullable */
+  lowStockThreshold?: number | null;
+  effectiveThreshold: number;
+  lowStock: boolean;
+  updatedAt: string;
+}
+
+export interface SalonInventoryItemUpdate {
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     */
+  quantity?: number;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  lowStockThreshold?: number | null;
+  /**
+     * @minimum 0.01
+     * @maximum 100000000
+     */
+  unitContentAmount?: number;
+  /**
+     * @maxLength 20
+     * @nullable
+     */
+  usageUnit?: string | null;
+}
+
+export interface EmployeeClockEntry {
+  id: string;
+  employeeId: string;
+  clockInAt: string;
+  /** @nullable */
+  clockOutAt?: string | null;
+  editedByOwner: boolean;
+  /** @nullable */
+  note?: string | null;
+  /** @nullable */
+  durationMinutes?: number | null;
+}
+
+export interface EmployeeClockStatus {
+  openEntry?: EmployeeClockEntry | null;
+  entries: EmployeeClockEntry[];
+  weekMinutes: number;
+  monthMinutes: number;
+}
+
+export interface SalonClockEmployeeSummary {
+  employeeId: string;
+  employeeName: string;
+  totalMinutes: number;
+  appointmentCount: number;
+  openEntry: boolean;
+  staleOpenEntry: boolean;
+  entries: EmployeeClockEntry[];
+}
+
+export interface SalonClockEntryUpdate {
+  /** @minLength 1 */
+  clockOutAt: string;
+  /**
+     * @maxLength 300
+     * @nullable
+     */
+  note?: string | null;
+}
+
+export type ShiftSwapRequestStatus = typeof ShiftSwapRequestStatus[keyof typeof ShiftSwapRequestStatus];
+
+
+export const ShiftSwapRequestStatus = {
+  pending_colleague: 'pending_colleague',
+  colleague_declined: 'colleague_declined',
+  pending_owner: 'pending_owner',
+  owner_declined: 'owner_declined',
+  approved: 'approved',
+  cancelled: 'cancelled',
+} as const;
+
+export interface ShiftSwapRequest {
+  id: string;
+  requesterEmployeeId: string;
+  requesterName: string;
+  targetEmployeeId: string;
+  targetName: string;
+  swapDate: string;
+  /** @nullable */
+  note?: string | null;
+  status: ShiftSwapRequestStatus;
+  /** @nullable */
+  colleagueRespondedAt?: string | null;
+  /** @nullable */
+  ownerReviewedAt?: string | null;
+  createdAt: string;
+}
+
+export type EmployeeShiftSwapOverviewColleaguesItem = {
+  id: string;
+  name: string;
+};
+
+export interface EmployeeShiftSwapOverview {
+  outgoing: ShiftSwapRequest[];
+  incoming: ShiftSwapRequest[];
+  colleagues: EmployeeShiftSwapOverviewColleaguesItem[];
+}
+
+export interface ShiftSwapCreate {
+  targetEmployeeId: string;
+  swapDate: string;
+  /**
+     * @maxLength 300
+     * @nullable
+     */
+  note?: string | null;
+}
+
+export interface ShiftSwapRespondBody {
+  accept: boolean;
+}
+
+export interface ShiftSwapReviewBody {
+  approve: boolean;
+}
+
+export interface ShiftSwapAppointmentPreview {
+  id: string;
+  employeeId: string;
+  startTime: string;
+  endTime: string;
+  serviceName: string;
+  /** @nullable */
+  customerName?: string | null;
+  status: string;
+}
+
+export interface SalonShiftSwapRequest {
+  request: ShiftSwapRequest;
+  requesterAppointments: ShiftSwapAppointmentPreview[];
+  targetAppointments: ShiftSwapAppointmentPreview[];
+}
+
+export type WidgetSalonServicesItem = {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  price: number;
+  /** @nullable */
+  promoPrice?: number | null;
+  categoryName: string;
+};
+
+export type WidgetSalonEmployeesItem = {
+  id: string;
+  name: string;
+  role: string;
+  serviceIds: string[];
+};
+
+export interface WidgetSalon {
+  id: string;
+  name: string;
+  slug: string;
+  city: string;
+  address: string;
+  services: WidgetSalonServicesItem[];
+  employees: WidgetSalonEmployeesItem[];
+}
+
+export interface WidgetSlot {
+  start: string;
+  end: string;
+  employeeId: string;
+  employeeName: string;
+}
+
+export interface WidgetAppointmentCreate {
+  serviceId: string;
+  /** @nullable */
+  employeeId?: string | null;
+  date: string;
+  startTime: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  lastName: string;
+  /**
+     * @minLength 5
+     * @maxLength 30
+     */
+  phone: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  email?: string | null;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  note?: string | null;
+}
+
+export interface WidgetAppointmentCreated {
+  appointmentId: string;
+  status: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  employeeName: string;
+  serviceName: string;
+  salonName: string;
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -5350,4 +5651,16 @@ to?: string;
 export type EmployeeGetMyPerformanceParams = {
 from?: string;
 to?: string;
+};
+
+export type ListSalonClockEntriesParams = {
+from: string;
+to: string;
+employeeId?: string;
+};
+
+export type GetWidgetAvailabilityParams = {
+serviceId: string;
+date: string;
+employeeId?: string;
 };

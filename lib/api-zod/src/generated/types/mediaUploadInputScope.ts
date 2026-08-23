@@ -20,4 +20,5 @@ export const MediaUploadInputScope = {
   'instructor-avatar': 'instructor-avatar',
   'service-category': 'service-category',
   'product-category': 'product-category',
+  'treatment-photo': 'treatment-photo',
 } as const;

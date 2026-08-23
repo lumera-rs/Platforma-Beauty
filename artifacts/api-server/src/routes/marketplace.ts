@@ -359,6 +359,7 @@ import { smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "..
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
+import { consumeInventoryForAppointmentInTx, creditInventoryForOrderInTx } from "../lib/salon-inventory";
 import { redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx } from "../lib/package-entitlement";
 import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
 import {
@@ -564,7 +565,7 @@ function parsePagination(query: PaginationInput, defaultPageSize: number): { pag
   return { page, pageSize, limit: pageSize, offset: (page - 1) * pageSize };
 }
 
-function calendarDate(value: string | Date): string {
+export function calendarDate(value: string | Date): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
@@ -653,7 +654,7 @@ async function employeeInSalon(employeeId: string, salonId: string) {
   return employee ?? null;
 }
 
-function appointmentEndTime(startTime: string, durationMinutes: number) {
+export function appointmentEndTime(startTime: string, durationMinutes: number) {
   const [hours, minutes] = startTime.split(":").map(Number);
   const end = hours * 60 + minutes + durationMinutes;
   if (!Number.isFinite(end) || end > 24 * 60) return null;
@@ -687,7 +688,7 @@ function employeeWorksAt(
     && !(item.breakStart && item.breakEnd && startTime < item.breakEnd && endTime > item.breakStart));
 }
 
-async function eligibleEmployees(salonId: string, serviceId: string, preferredEmployeeId?: string | null) {
+export async function eligibleEmployees(salonId: string, serviceId: string, preferredEmployeeId?: string | null) {
   const employees = await db.select().from(employeesTable).where(and(eq(employeesTable.salonId, salonId), eq(employeesTable.active, true)));
   const ids = employees.map((employee) => employee.id);
   const links = ids.length ? await db.select().from(employeeServicesTable).where(and(inArray(employeeServicesTable.employeeId, ids), eq(employeeServicesTable.serviceId, serviceId))) : [];
@@ -754,7 +755,7 @@ async function availableEmployeeWithDb(
   })[0]!;
 }
 
-async function availableEmployee(
+export async function availableEmployee(
   salonId: string,
   serviceId: string,
   date: string,
@@ -987,7 +988,7 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
  * transaction rolls back before any rows are committed.  Caught by callers
  * outside the transaction and converted to a 409 response.
  */
-class ResourceCapacityError extends Error {
+export class ResourceCapacityError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ResourceCapacityError";
@@ -1166,7 +1167,7 @@ class PackageRedemptionError extends Error {
   }
 }
 
-async function createAllocatedAppointment(input: {
+export async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
@@ -1588,7 +1589,7 @@ async function sendSeriesUpdates(input: {
   }
 }
 
-function normalizedPhone(phone: string) {
+export function normalizedPhone(phone: string) {
   const digits = phone.replace(/[^\d]/g, "").replace(/^00/, "");
   if (!digits) return "";
   // Serbian local numbers become the same stored form as +381 numbers.
@@ -2485,7 +2486,7 @@ async function requireCustomer(req: Request, res: Response) {
   return user;
 }
 
-async function requireSalonOwner(req: Request, res: Response) {
+export async function requireSalonOwner(req: Request, res: Response) {
   const user = await current(req, res);
   if (!user) return null;
   if (user.role !== "SALON_OWNER") {
@@ -2526,13 +2527,13 @@ class AppointmentSeriesError extends Error {
   }
 }
 
-type SalonEmployeeAccess = {
+export type SalonEmployeeAccess = {
   user: typeof usersTable.$inferSelect;
   employee: typeof employeesTable.$inferSelect;
   salon: typeof salonsTable.$inferSelect;
 };
 
-async function requireSalonEmployee(req: Request, res: Response): Promise<SalonEmployeeAccess | null> {
+export async function requireSalonEmployee(req: Request, res: Response): Promise<SalonEmployeeAccess | null> {
   const user = await current(req, res);
   if (!user) return null;
   if (user.role !== "SALON_EMPLOYEE") {
@@ -5868,7 +5869,14 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     if (updated.status === "cancelled" && target.status !== "cancelled") {
       await handleAppointmentCancellationReversalsInTx(tx, updated.id, salon.id);
     }
-    return { updated };
+    // On transition INTO completed, auto-decrement mapped salon inventory
+    // (idempotent per appointment/product via the consumption ledger).
+    let lowStockWarned = false;
+    if (updated.status === "completed" && target.status !== "completed") {
+      const warnings = await consumeInventoryForAppointmentInTx(tx, { id: updated.id, salonId: salon.id, serviceId: updated.serviceId });
+      lowStockWarned = warnings.length > 0;
+    }
+    return { updated, lowStockWarned };
   }).catch((error: unknown) => {
     if (error instanceof ResourceCapacityError) return { error: "resource-unavailable" as const };
     throw error;
@@ -5884,6 +5892,7 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
     return;
   }
   const { updated } = result;
+  if ("lowStockWarned" in result && result.lowStockWarned) await publishSalonNotificationUpdate(salon.id);
   const view = (await appointmentList(and(eq(appointmentsTable.id, updated.id), eq(appointmentsTable.salonId, salon.id)), true))[0];
   UpdateSalonAppointmentResponse.parse(view);
   res.json(view);
@@ -6756,7 +6765,14 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
       eq(appointmentsTable.salonId, access.salon.id),
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
     )).returning();
-    return appointment ? { appointment } : { error: "changed" as const };
+    if (!appointment) return { error: "changed" as const };
+    // Completed treatment → auto-decrement mapped salon inventory (idempotent).
+    let lowStockWarned = false;
+    if (appointment.status === "completed") {
+      const warnings = await consumeInventoryForAppointmentInTx(tx, { id: appointment.id, salonId: access.salon.id, serviceId: appointment.serviceId });
+      lowStockWarned = warnings.length > 0;
+    }
+    return { appointment, lowStockWarned };
   });
   if ("error" in result) {
     res.status(result.error === "not-found" ? 404 : 409).json({
@@ -6765,6 +6781,7 @@ router.patch("/employee/appointments/:appointmentId", async (req, res): Promise<
     return;
   }
   const { appointment } = result;
+  if (result.lowStockWarned) await publishSalonNotificationUpdate(access.salon.id);
   res.json({ id: appointment.id, status: appointment.status, notes: appointment.notes });
 });
 
@@ -7809,6 +7826,12 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
       price: line.price,
     }));
     await tx.insert(orderItemsTable).values(orderItems);
+    // Credit salon-owned inventory for the purchase (usage units per piece).
+    await creditInventoryForOrderInTx(tx, {
+      salonId: salon.id,
+      orderId: order!.id,
+      items: orderItems.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+    });
     await tx.delete(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id));
     await tx.update(shoppingCartsTable).set({ updatedAt: new Date() }).where(eq(shoppingCartsTable.id, cart.id));
     await tx.insert(salonNotificationsTable).values({

@@ -52,6 +52,9 @@ const OwnerCartPage = lazy(() => import('./pages/owner/checkout').then((module) 
 const OwnerCheckoutDeliveryPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutDeliveryPage })));
 const OwnerCheckoutReviewPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutReviewPage })));
 const OwnerOrderConfirmationPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerOrderConfirmationPage })));
+const OwnerInventory = lazy(() => import('./pages/owner/inventory'));
+const OwnerStaffOps = lazy(() => import('./pages/owner/staff-ops'));
+const WidgetBooking = lazy(() => import('./pages/widget-booking'));
 const EmployeePortal = lazy(() => import('./pages/employee/portal'));
 const EmployeePasswordChange = lazy(() => import('./pages/employee/portal').then((module) => ({ default: module.EmployeePasswordChange })));
 const AdminDashboard = lazy(() => import('./pages/admin/dashboard'));
@@ -230,6 +233,9 @@ function Router() {
         <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
         <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
         <Route path="/vlasnik/klijenti"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerRetention /></RoleGuard></Route>
+        <Route path="/vlasnik/inventar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerInventory /></RoleGuard></Route>
+        <Route path="/vlasnik/radno-vreme"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerStaffOps /></RoleGuard></Route>
+        <Route path="/widget/:slug"><WidgetBooking /></Route>
         <Route path="/vlasnik/automatizacije"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerAutomations /></RoleGuard></Route>
         <Route path="/vlasnik/paketi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPackages /></RoleGuard></Route>
         <Route path="/vlasnik/performanse"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPerformance /></RoleGuard></Route>

@@ -137,6 +137,8 @@ import type {
   EmailMarketingCampaign,
   Employee,
   EmployeeAppointmentSeriesInput,
+  EmployeeClockEntry,
+  EmployeeClockStatus,
   EmployeeCommissionSettings,
   EmployeeDeactivationPreview,
   EmployeeDeactivationResult,
@@ -144,6 +146,7 @@ import type {
   EmployeeLeaveRequest,
   EmployeeLeaveRequestCreate,
   EmployeePerformanceMetrics,
+  EmployeeShiftSwapOverview,
   FavoriteInput,
   FavoriteResult,
   GetMarketplaceHomeDiscoveryParams,
@@ -151,6 +154,7 @@ import type {
   GetSalonAvailabilityParams,
   GetSalonDashboardParams,
   GetShippingQuoteParams,
+  GetWidgetAvailabilityParams,
   GrowthAdminSummary,
   GrowthAiAnswer,
   GrowthAiQuestionBody,
@@ -166,6 +170,7 @@ import type {
   ListProductsParams,
   ListPublicEducationCoursesParams,
   ListSalonAppointmentsParams,
+  ListSalonClockEntriesParams,
   ListSalonCustomersParams,
   ListSalonNotificationsParams,
   ListSalonsParams,
@@ -209,10 +214,14 @@ import type {
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
   SalonCard,
+  SalonClockEmployeeSummary,
+  SalonClockEntryUpdate,
   SalonCustomer,
   SalonCustomerUpdate,
   SalonDashboard,
   SalonFirstAvailable,
+  SalonInventoryItem,
+  SalonInventoryItemUpdate,
   SalonLeaveRequest,
   SalonManagedService,
   SalonNotification,
@@ -222,12 +231,19 @@ import type {
   SalonResource,
   SalonResourceInput,
   SalonResourceUpdate,
+  SalonShiftSwapRequest,
   Service,
   ServiceCategoryImageUploadInput,
+  ServiceConsumption,
+  ServiceConsumptionsPut,
   ServiceInput,
   ServiceTemplate,
   ServiceTemplateBatchInput,
   ServiceTemplateBatchResult,
+  ShiftSwapCreate,
+  ShiftSwapRequest,
+  ShiftSwapRespondBody,
+  ShiftSwapReviewBody,
   ShippingConfig,
   ShippingConfigInput,
   ShippingQuote,
@@ -246,9 +262,15 @@ import type {
   TimeSlot,
   TreatmentPackage,
   TreatmentPackagePublic,
+  TreatmentPhoto,
+  TreatmentPhotoCreate,
   UpdateAutomationRuleBody,
   UpdateCommissionBody,
-  UpdateTreatmentPackageBody
+  UpdateTreatmentPackageBody,
+  WidgetAppointmentCreate,
+  WidgetAppointmentCreated,
+  WidgetSalon,
+  WidgetSlot
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -17229,3 +17251,1663 @@ export function useAdminGetRetentionSettingsHistory<TData = Awaited<ReturnType<t
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export const getListEmployeeAppointmentTreatmentPhotosUrl = (appointmentId: string,) => {
+
+
+
+
+  return `/api/employee/appointments/${appointmentId}/treatment-photos`
+}
+
+/**
+ * @summary List before/after photos for an own appointment (employee)
+ */
+export const listEmployeeAppointmentTreatmentPhotos = async (appointmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPhoto[]> => {
+
+  return customFetch<TreatmentPhoto[]>(getListEmployeeAppointmentTreatmentPhotosUrl(appointmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmployeeAppointmentTreatmentPhotosQueryKey = (appointmentId: string,) => {
+    return [
+    `/api/employee/appointments/${appointmentId}/treatment-photos`
+    ] as const;
+    }
+
+
+export const getListEmployeeAppointmentTreatmentPhotosQueryOptions = <TData = Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>, TError = ErrorType<void>>(appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmployeeAppointmentTreatmentPhotosQueryKey(appointmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>> = ({ signal }) => listEmployeeAppointmentTreatmentPhotos(appointmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: appointmentId !== null && appointmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmployeeAppointmentTreatmentPhotosQueryResult = NonNullable<Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>>
+export type ListEmployeeAppointmentTreatmentPhotosQueryError = ErrorType<void>
+
+
+/**
+ * @summary List before/after photos for an own appointment (employee)
+ */
+
+export function useListEmployeeAppointmentTreatmentPhotos<TData = Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>, TError = ErrorType<void>>(
+ appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeAppointmentTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmployeeAppointmentTreatmentPhotosQueryOptions(appointmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateEmployeeTreatmentPhotoUrl = (appointmentId: string,) => {
+
+
+
+
+  return `/api/employee/appointments/${appointmentId}/treatment-photos`
+}
+
+/**
+ * @summary Attach a before/after photo to a completed own appointment (employee)
+ */
+export const createEmployeeTreatmentPhoto = async (appointmentId: string,
+    treatmentPhotoCreate: TreatmentPhotoCreate, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPhoto> => {
+
+  return customFetch<TreatmentPhoto>(getCreateEmployeeTreatmentPhotoUrl(appointmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(treatmentPhotoCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateEmployeeTreatmentPhotoMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>, TError,{appointmentId: string;data: BodyType<TreatmentPhotoCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>, TError,{appointmentId: string;data: BodyType<TreatmentPhotoCreate>}, TContext> => {
+
+const mutationKey = ['createEmployeeTreatmentPhoto'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>, {appointmentId: string;data: BodyType<TreatmentPhotoCreate>}> = (props) => {
+          const {appointmentId,data} = props ?? {};
+
+          return  createEmployeeTreatmentPhoto(appointmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmployeeTreatmentPhotoMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>>
+    export type CreateEmployeeTreatmentPhotoMutationBody = BodyType<TreatmentPhotoCreate>
+    export type CreateEmployeeTreatmentPhotoMutationError = ErrorType<void>
+
+    /**
+ * @summary Attach a before/after photo to a completed own appointment (employee)
+ */
+export const useCreateEmployeeTreatmentPhoto = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>, TError,{appointmentId: string;data: BodyType<TreatmentPhotoCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmployeeTreatmentPhoto>>,
+        TError,
+        {appointmentId: string;data: BodyType<TreatmentPhotoCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateEmployeeTreatmentPhotoMutationOptions(options));
+    }
+
+export const getListCustomerAppointmentTreatmentPhotosUrl = (appointmentId: string,) => {
+
+
+
+
+  return `/api/appointments/${appointmentId}/treatment-photos`
+}
+
+/**
+ * @summary List before/after photos of an own appointment (customer)
+ */
+export const listCustomerAppointmentTreatmentPhotos = async (appointmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPhoto[]> => {
+
+  return customFetch<TreatmentPhoto[]>(getListCustomerAppointmentTreatmentPhotosUrl(appointmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCustomerAppointmentTreatmentPhotosQueryKey = (appointmentId: string,) => {
+    return [
+    `/api/appointments/${appointmentId}/treatment-photos`
+    ] as const;
+    }
+
+
+export const getListCustomerAppointmentTreatmentPhotosQueryOptions = <TData = Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>, TError = ErrorType<void>>(appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCustomerAppointmentTreatmentPhotosQueryKey(appointmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>> = ({ signal }) => listCustomerAppointmentTreatmentPhotos(appointmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: appointmentId !== null && appointmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCustomerAppointmentTreatmentPhotosQueryResult = NonNullable<Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>>
+export type ListCustomerAppointmentTreatmentPhotosQueryError = ErrorType<void>
+
+
+/**
+ * @summary List before/after photos of an own appointment (customer)
+ */
+
+export function useListCustomerAppointmentTreatmentPhotos<TData = Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>, TError = ErrorType<void>>(
+ appointmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerAppointmentTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCustomerAppointmentTreatmentPhotosQueryOptions(appointmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListSalonCustomerTreatmentPhotosUrl = (customerId: string,) => {
+
+
+
+
+  return `/api/salon/customers/${customerId}/treatment-photos`
+}
+
+/**
+ * @summary List a CRM client's before/after photos chronologically (owner)
+ */
+export const listSalonCustomerTreatmentPhotos = async (customerId: string, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPhoto[]> => {
+
+  return customFetch<TreatmentPhoto[]>(getListSalonCustomerTreatmentPhotosUrl(customerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonCustomerTreatmentPhotosQueryKey = (customerId: string,) => {
+    return [
+    `/api/salon/customers/${customerId}/treatment-photos`
+    ] as const;
+    }
+
+
+export const getListSalonCustomerTreatmentPhotosQueryOptions = <TData = Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>, TError = ErrorType<void>>(customerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonCustomerTreatmentPhotosQueryKey(customerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>> = ({ signal }) => listSalonCustomerTreatmentPhotos(customerId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: customerId !== null && customerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonCustomerTreatmentPhotosQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>>
+export type ListSalonCustomerTreatmentPhotosQueryError = ErrorType<void>
+
+
+/**
+ * @summary List a CRM client's before/after photos chronologically (owner)
+ */
+
+export function useListSalonCustomerTreatmentPhotos<TData = Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>, TError = ErrorType<void>>(
+ customerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonCustomerTreatmentPhotos>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonCustomerTreatmentPhotosQueryOptions(customerId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetServiceConsumptionsUrl = (serviceId: string,) => {
+
+
+
+
+  return `/api/salon/services/${serviceId}/consumptions`
+}
+
+/**
+ * @summary List product consumption mappings for a service (owner)
+ */
+export const getServiceConsumptions = async (serviceId: string, options?: Parameters<typeof customFetch>[1]): Promise<ServiceConsumption[]> => {
+
+  return customFetch<ServiceConsumption[]>(getGetServiceConsumptionsUrl(serviceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetServiceConsumptionsQueryKey = (serviceId: string,) => {
+    return [
+    `/api/salon/services/${serviceId}/consumptions`
+    ] as const;
+    }
+
+
+export const getGetServiceConsumptionsQueryOptions = <TData = Awaited<ReturnType<typeof getServiceConsumptions>>, TError = ErrorType<void>>(serviceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getServiceConsumptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetServiceConsumptionsQueryKey(serviceId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getServiceConsumptions>>> = ({ signal }) => getServiceConsumptions(serviceId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: serviceId !== null && serviceId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getServiceConsumptions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetServiceConsumptionsQueryResult = NonNullable<Awaited<ReturnType<typeof getServiceConsumptions>>>
+export type GetServiceConsumptionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List product consumption mappings for a service (owner)
+ */
+
+export function useGetServiceConsumptions<TData = Awaited<ReturnType<typeof getServiceConsumptions>>, TError = ErrorType<void>>(
+ serviceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getServiceConsumptions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetServiceConsumptionsQueryOptions(serviceId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPutServiceConsumptionsUrl = (serviceId: string,) => {
+
+
+
+
+  return `/api/salon/services/${serviceId}/consumptions`
+}
+
+/**
+ * @summary Replace product consumption mappings for a service (owner)
+ */
+export const putServiceConsumptions = async (serviceId: string,
+    serviceConsumptionsPut: ServiceConsumptionsPut, options?: Parameters<typeof customFetch>[1]): Promise<ServiceConsumption[]> => {
+
+  return customFetch<ServiceConsumption[]>(getPutServiceConsumptionsUrl(serviceId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(serviceConsumptionsPut)
+  }
+);}
+
+
+
+
+
+export const getPutServiceConsumptionsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putServiceConsumptions>>, TError,{serviceId: string;data: BodyType<ServiceConsumptionsPut>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof putServiceConsumptions>>, TError,{serviceId: string;data: BodyType<ServiceConsumptionsPut>}, TContext> => {
+
+const mutationKey = ['putServiceConsumptions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof putServiceConsumptions>>, {serviceId: string;data: BodyType<ServiceConsumptionsPut>}> = (props) => {
+          const {serviceId,data} = props ?? {};
+
+          return  putServiceConsumptions(serviceId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PutServiceConsumptionsMutationResult = NonNullable<Awaited<ReturnType<typeof putServiceConsumptions>>>
+    export type PutServiceConsumptionsMutationBody = BodyType<ServiceConsumptionsPut>
+    export type PutServiceConsumptionsMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace product consumption mappings for a service (owner)
+ */
+export const usePutServiceConsumptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof putServiceConsumptions>>, TError,{serviceId: string;data: BodyType<ServiceConsumptionsPut>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof putServiceConsumptions>>,
+        TError,
+        {serviceId: string;data: BodyType<ServiceConsumptionsPut>},
+        TContext
+      > => {
+      return useMutation(getPutServiceConsumptionsMutationOptions(options));
+    }
+
+export const getListSalonInventoryUrl = () => {
+
+
+
+
+  return `/api/salon/inventory`
+}
+
+/**
+ * @summary List salon-owned product inventory with low-stock flags (owner)
+ */
+export const listSalonInventory = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonInventoryItem[]> => {
+
+  return customFetch<SalonInventoryItem[]>(getListSalonInventoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonInventoryQueryKey = () => {
+    return [
+    `/api/salon/inventory`
+    ] as const;
+    }
+
+
+export const getListSalonInventoryQueryOptions = <TData = Awaited<ReturnType<typeof listSalonInventory>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonInventoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonInventory>>> = ({ signal }) => listSalonInventory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonInventory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonInventoryQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonInventory>>>
+export type ListSalonInventoryQueryError = ErrorType<void>
+
+
+/**
+ * @summary List salon-owned product inventory with low-stock flags (owner)
+ */
+
+export function useListSalonInventory<TData = Awaited<ReturnType<typeof listSalonInventory>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonInventoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSalonInventoryItemUrl = (productId: string,) => {
+
+
+
+
+  return `/api/salon/inventory/${productId}`
+}
+
+/**
+ * @summary Adjust quantity, threshold or unit settings of an inventory item (owner)
+ */
+export const updateSalonInventoryItem = async (productId: string,
+    salonInventoryItemUpdate: SalonInventoryItemUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SalonInventoryItem> => {
+
+  return customFetch<SalonInventoryItem>(getUpdateSalonInventoryItemUrl(productId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonInventoryItemUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateSalonInventoryItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonInventoryItem>>, TError,{productId: string;data: BodyType<SalonInventoryItemUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalonInventoryItem>>, TError,{productId: string;data: BodyType<SalonInventoryItemUpdate>}, TContext> => {
+
+const mutationKey = ['updateSalonInventoryItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalonInventoryItem>>, {productId: string;data: BodyType<SalonInventoryItemUpdate>}> = (props) => {
+          const {productId,data} = props ?? {};
+
+          return  updateSalonInventoryItem(productId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalonInventoryItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonInventoryItem>>>
+    export type UpdateSalonInventoryItemMutationBody = BodyType<SalonInventoryItemUpdate>
+    export type UpdateSalonInventoryItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Adjust quantity, threshold or unit settings of an inventory item (owner)
+ */
+export const useUpdateSalonInventoryItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonInventoryItem>>, TError,{productId: string;data: BodyType<SalonInventoryItemUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalonInventoryItem>>,
+        TError,
+        {productId: string;data: BodyType<SalonInventoryItemUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalonInventoryItemMutationOptions(options));
+    }
+
+export const getGetEmployeeClockUrl = () => {
+
+
+
+
+  return `/api/employee/clock`
+}
+
+/**
+ * @summary Current clock status and recent entries (employee)
+ */
+export const getEmployeeClock = async ( options?: Parameters<typeof customFetch>[1]): Promise<EmployeeClockStatus> => {
+
+  return customFetch<EmployeeClockStatus>(getGetEmployeeClockUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmployeeClockQueryKey = () => {
+    return [
+    `/api/employee/clock`
+    ] as const;
+    }
+
+
+export const getGetEmployeeClockQueryOptions = <TData = Awaited<ReturnType<typeof getEmployeeClock>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmployeeClock>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmployeeClockQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmployeeClock>>> = ({ signal }) => getEmployeeClock({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmployeeClock>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmployeeClockQueryResult = NonNullable<Awaited<ReturnType<typeof getEmployeeClock>>>
+export type GetEmployeeClockQueryError = ErrorType<void>
+
+
+/**
+ * @summary Current clock status and recent entries (employee)
+ */
+
+export function useGetEmployeeClock<TData = Awaited<ReturnType<typeof getEmployeeClock>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmployeeClock>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmployeeClockQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getEmployeeClockInUrl = () => {
+
+
+
+
+  return `/api/employee/clock-in`
+}
+
+/**
+ * @summary Start a shift (employee)
+ */
+export const employeeClockIn = async ( options?: Parameters<typeof customFetch>[1]): Promise<EmployeeClockEntry> => {
+
+  return customFetch<EmployeeClockEntry>(getEmployeeClockInUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getEmployeeClockInMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeeClockIn>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeeClockIn>>, TError,void, TContext> => {
+
+const mutationKey = ['employeeClockIn'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeeClockIn>>, void> = () => {
+
+
+          return  employeeClockIn(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeeClockInMutationResult = NonNullable<Awaited<ReturnType<typeof employeeClockIn>>>
+
+    export type EmployeeClockInMutationError = ErrorType<void>
+
+    /**
+ * @summary Start a shift (employee)
+ */
+export const useEmployeeClockIn = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeeClockIn>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof employeeClockIn>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getEmployeeClockInMutationOptions(options));
+    }
+
+export const getEmployeeClockOutUrl = () => {
+
+
+
+
+  return `/api/employee/clock-out`
+}
+
+/**
+ * @summary End the open shift (employee)
+ */
+export const employeeClockOut = async ( options?: Parameters<typeof customFetch>[1]): Promise<EmployeeClockEntry> => {
+
+  return customFetch<EmployeeClockEntry>(getEmployeeClockOutUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getEmployeeClockOutMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeeClockOut>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof employeeClockOut>>, TError,void, TContext> => {
+
+const mutationKey = ['employeeClockOut'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof employeeClockOut>>, void> = () => {
+
+
+          return  employeeClockOut(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EmployeeClockOutMutationResult = NonNullable<Awaited<ReturnType<typeof employeeClockOut>>>
+
+    export type EmployeeClockOutMutationError = ErrorType<void>
+
+    /**
+ * @summary End the open shift (employee)
+ */
+export const useEmployeeClockOut = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof employeeClockOut>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof employeeClockOut>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getEmployeeClockOutMutationOptions(options));
+    }
+
+export const getListSalonClockEntriesUrl = (params: ListSalonClockEntriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/salon/clock-entries?${stringifiedParams}` : `/api/salon/clock-entries`
+}
+
+/**
+ * @summary Work-hour records per employee for a period, with appointment counts (owner)
+ */
+export const listSalonClockEntries = async (params: ListSalonClockEntriesParams, options?: Parameters<typeof customFetch>[1]): Promise<SalonClockEmployeeSummary[]> => {
+
+  return customFetch<SalonClockEmployeeSummary[]>(getListSalonClockEntriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonClockEntriesQueryKey = (params?: ListSalonClockEntriesParams,) => {
+    return [
+    `/api/salon/clock-entries`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSalonClockEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listSalonClockEntries>>, TError = ErrorType<void>>(params: ListSalonClockEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonClockEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonClockEntriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonClockEntries>>> = ({ signal }) => listSalonClockEntries(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonClockEntries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonClockEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonClockEntries>>>
+export type ListSalonClockEntriesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Work-hour records per employee for a period, with appointment counts (owner)
+ */
+
+export function useListSalonClockEntries<TData = Awaited<ReturnType<typeof listSalonClockEntries>>, TError = ErrorType<void>>(
+ params: ListSalonClockEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonClockEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonClockEntriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateSalonClockEntryUrl = (entryId: string,) => {
+
+
+
+
+  return `/api/salon/clock-entries/${entryId}`
+}
+
+/**
+ * @summary Manually correct or close a clock entry (owner)
+ */
+export const updateSalonClockEntry = async (entryId: string,
+    salonClockEntryUpdate: SalonClockEntryUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeClockEntry> => {
+
+  return customFetch<EmployeeClockEntry>(getUpdateSalonClockEntryUrl(entryId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonClockEntryUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateSalonClockEntryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonClockEntry>>, TError,{entryId: string;data: BodyType<SalonClockEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSalonClockEntry>>, TError,{entryId: string;data: BodyType<SalonClockEntryUpdate>}, TContext> => {
+
+const mutationKey = ['updateSalonClockEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSalonClockEntry>>, {entryId: string;data: BodyType<SalonClockEntryUpdate>}> = (props) => {
+          const {entryId,data} = props ?? {};
+
+          return  updateSalonClockEntry(entryId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSalonClockEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updateSalonClockEntry>>>
+    export type UpdateSalonClockEntryMutationBody = BodyType<SalonClockEntryUpdate>
+    export type UpdateSalonClockEntryMutationError = ErrorType<void>
+
+    /**
+ * @summary Manually correct or close a clock entry (owner)
+ */
+export const useUpdateSalonClockEntry = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSalonClockEntry>>, TError,{entryId: string;data: BodyType<SalonClockEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSalonClockEntry>>,
+        TError,
+        {entryId: string;data: BodyType<SalonClockEntryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSalonClockEntryMutationOptions(options));
+    }
+
+export const getListEmployeeShiftSwapsUrl = () => {
+
+
+
+
+  return `/api/employee/shift-swaps`
+}
+
+/**
+ * @summary Own outgoing/incoming shift-swap requests and colleagues (employee)
+ */
+export const listEmployeeShiftSwaps = async ( options?: Parameters<typeof customFetch>[1]): Promise<EmployeeShiftSwapOverview> => {
+
+  return customFetch<EmployeeShiftSwapOverview>(getListEmployeeShiftSwapsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmployeeShiftSwapsQueryKey = () => {
+    return [
+    `/api/employee/shift-swaps`
+    ] as const;
+    }
+
+
+export const getListEmployeeShiftSwapsQueryOptions = <TData = Awaited<ReturnType<typeof listEmployeeShiftSwaps>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeShiftSwaps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmployeeShiftSwapsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmployeeShiftSwaps>>> = ({ signal }) => listEmployeeShiftSwaps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmployeeShiftSwaps>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmployeeShiftSwapsQueryResult = NonNullable<Awaited<ReturnType<typeof listEmployeeShiftSwaps>>>
+export type ListEmployeeShiftSwapsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Own outgoing/incoming shift-swap requests and colleagues (employee)
+ */
+
+export function useListEmployeeShiftSwaps<TData = Awaited<ReturnType<typeof listEmployeeShiftSwaps>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmployeeShiftSwaps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmployeeShiftSwapsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateEmployeeShiftSwapUrl = () => {
+
+
+
+
+  return `/api/employee/shift-swaps`
+}
+
+/**
+ * @summary Propose swapping a working day with a colleague (employee)
+ */
+export const createEmployeeShiftSwap = async (shiftSwapCreate: ShiftSwapCreate, options?: Parameters<typeof customFetch>[1]): Promise<ShiftSwapRequest> => {
+
+  return customFetch<ShiftSwapRequest>(getCreateEmployeeShiftSwapUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shiftSwapCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateEmployeeShiftSwapMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeShiftSwap>>, TError,{data: BodyType<ShiftSwapCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeShiftSwap>>, TError,{data: BodyType<ShiftSwapCreate>}, TContext> => {
+
+const mutationKey = ['createEmployeeShiftSwap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeShiftSwap>>, {data: BodyType<ShiftSwapCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createEmployeeShiftSwap(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmployeeShiftSwapMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeShiftSwap>>>
+    export type CreateEmployeeShiftSwapMutationBody = BodyType<ShiftSwapCreate>
+    export type CreateEmployeeShiftSwapMutationError = ErrorType<void>
+
+    /**
+ * @summary Propose swapping a working day with a colleague (employee)
+ */
+export const useCreateEmployeeShiftSwap = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeShiftSwap>>, TError,{data: BodyType<ShiftSwapCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmployeeShiftSwap>>,
+        TError,
+        {data: BodyType<ShiftSwapCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateEmployeeShiftSwapMutationOptions(options));
+    }
+
+export const getRespondEmployeeShiftSwapUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/employee/shift-swaps/${requestId}/respond`
+}
+
+/**
+ * @summary Accept or decline a colleague's swap proposal (employee)
+ */
+export const respondEmployeeShiftSwap = async (requestId: string,
+    shiftSwapRespondBody: ShiftSwapRespondBody, options?: Parameters<typeof customFetch>[1]): Promise<ShiftSwapRequest> => {
+
+  return customFetch<ShiftSwapRequest>(getRespondEmployeeShiftSwapUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shiftSwapRespondBody)
+  }
+);}
+
+
+
+
+
+export const getRespondEmployeeShiftSwapMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof respondEmployeeShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapRespondBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof respondEmployeeShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapRespondBody>}, TContext> => {
+
+const mutationKey = ['respondEmployeeShiftSwap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof respondEmployeeShiftSwap>>, {requestId: string;data: BodyType<ShiftSwapRespondBody>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  respondEmployeeShiftSwap(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RespondEmployeeShiftSwapMutationResult = NonNullable<Awaited<ReturnType<typeof respondEmployeeShiftSwap>>>
+    export type RespondEmployeeShiftSwapMutationBody = BodyType<ShiftSwapRespondBody>
+    export type RespondEmployeeShiftSwapMutationError = ErrorType<void>
+
+    /**
+ * @summary Accept or decline a colleague's swap proposal (employee)
+ */
+export const useRespondEmployeeShiftSwap = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof respondEmployeeShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapRespondBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof respondEmployeeShiftSwap>>,
+        TError,
+        {requestId: string;data: BodyType<ShiftSwapRespondBody>},
+        TContext
+      > => {
+      return useMutation(getRespondEmployeeShiftSwapMutationOptions(options));
+    }
+
+export const getCancelEmployeeShiftSwapUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/employee/shift-swaps/${requestId}/cancel`
+}
+
+/**
+ * @summary Cancel an own pending swap request (employee)
+ */
+export const cancelEmployeeShiftSwap = async (requestId: string, options?: Parameters<typeof customFetch>[1]): Promise<ShiftSwapRequest> => {
+
+  return customFetch<ShiftSwapRequest>(getCancelEmployeeShiftSwapUrl(requestId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelEmployeeShiftSwapMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>, TError,{requestId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>, TError,{requestId: string}, TContext> => {
+
+const mutationKey = ['cancelEmployeeShiftSwap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>, {requestId: string}> = (props) => {
+          const {requestId} = props ?? {};
+
+          return  cancelEmployeeShiftSwap(requestId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelEmployeeShiftSwapMutationResult = NonNullable<Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>>
+
+    export type CancelEmployeeShiftSwapMutationError = ErrorType<void>
+
+    /**
+ * @summary Cancel an own pending swap request (employee)
+ */
+export const useCancelEmployeeShiftSwap = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>, TError,{requestId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelEmployeeShiftSwap>>,
+        TError,
+        {requestId: string},
+        TContext
+      > => {
+      return useMutation(getCancelEmployeeShiftSwapMutationOptions(options));
+    }
+
+export const getListSalonShiftSwapsUrl = () => {
+
+
+
+
+  return `/api/salon/shift-swaps`
+}
+
+/**
+ * @summary Shift-swap requests awaiting approval and history, with both employees' appointments (owner)
+ */
+export const listSalonShiftSwaps = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonShiftSwapRequest[]> => {
+
+  return customFetch<SalonShiftSwapRequest[]>(getListSalonShiftSwapsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonShiftSwapsQueryKey = () => {
+    return [
+    `/api/salon/shift-swaps`
+    ] as const;
+    }
+
+
+export const getListSalonShiftSwapsQueryOptions = <TData = Awaited<ReturnType<typeof listSalonShiftSwaps>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonShiftSwaps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonShiftSwapsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonShiftSwaps>>> = ({ signal }) => listSalonShiftSwaps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonShiftSwaps>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonShiftSwapsQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonShiftSwaps>>>
+export type ListSalonShiftSwapsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Shift-swap requests awaiting approval and history, with both employees' appointments (owner)
+ */
+
+export function useListSalonShiftSwaps<TData = Awaited<ReturnType<typeof listSalonShiftSwaps>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonShiftSwaps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonShiftSwapsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReviewSalonShiftSwapUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/salon/shift-swaps/${requestId}/review`
+}
+
+/**
+ * @summary Approve or decline an accepted swap; approval reassigns that day's appointments (owner)
+ */
+export const reviewSalonShiftSwap = async (requestId: string,
+    shiftSwapReviewBody: ShiftSwapReviewBody, options?: Parameters<typeof customFetch>[1]): Promise<SalonShiftSwapRequest> => {
+
+  return customFetch<SalonShiftSwapRequest>(getReviewSalonShiftSwapUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(shiftSwapReviewBody)
+  }
+);}
+
+
+
+
+
+export const getReviewSalonShiftSwapMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewSalonShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapReviewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewSalonShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapReviewBody>}, TContext> => {
+
+const mutationKey = ['reviewSalonShiftSwap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewSalonShiftSwap>>, {requestId: string;data: BodyType<ShiftSwapReviewBody>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  reviewSalonShiftSwap(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewSalonShiftSwapMutationResult = NonNullable<Awaited<ReturnType<typeof reviewSalonShiftSwap>>>
+    export type ReviewSalonShiftSwapMutationBody = BodyType<ShiftSwapReviewBody>
+    export type ReviewSalonShiftSwapMutationError = ErrorType<void>
+
+    /**
+ * @summary Approve or decline an accepted swap; approval reassigns that day's appointments (owner)
+ */
+export const useReviewSalonShiftSwap = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewSalonShiftSwap>>, TError,{requestId: string;data: BodyType<ShiftSwapReviewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewSalonShiftSwap>>,
+        TError,
+        {requestId: string;data: BodyType<ShiftSwapReviewBody>},
+        TContext
+      > => {
+      return useMutation(getReviewSalonShiftSwapMutationOptions(options));
+    }
+
+export const getGetWidgetSalonUrl = (slug: string,) => {
+
+
+
+
+  return `/api/widget/salons/${slug}`
+}
+
+/**
+ * @summary Public widget bootstrap — salon identity, services and employees
+ */
+export const getWidgetSalon = async (slug: string, options?: Parameters<typeof customFetch>[1]): Promise<WidgetSalon> => {
+
+  return customFetch<WidgetSalon>(getGetWidgetSalonUrl(slug),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWidgetSalonQueryKey = (slug: string,) => {
+    return [
+    `/api/widget/salons/${slug}`
+    ] as const;
+    }
+
+
+export const getGetWidgetSalonQueryOptions = <TData = Awaited<ReturnType<typeof getWidgetSalon>>, TError = ErrorType<void>>(slug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWidgetSalon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWidgetSalonQueryKey(slug);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWidgetSalon>>> = ({ signal }) => getWidgetSalon(slug, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: slug !== null && slug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWidgetSalon>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWidgetSalonQueryResult = NonNullable<Awaited<ReturnType<typeof getWidgetSalon>>>
+export type GetWidgetSalonQueryError = ErrorType<void>
+
+
+/**
+ * @summary Public widget bootstrap — salon identity, services and employees
+ */
+
+export function useGetWidgetSalon<TData = Awaited<ReturnType<typeof getWidgetSalon>>, TError = ErrorType<void>>(
+ slug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWidgetSalon>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWidgetSalonQueryOptions(slug,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWidgetAvailabilityUrl = (slug: string,
+    params: GetWidgetAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/widget/salons/${slug}/availability?${stringifiedParams}` : `/api/widget/salons/${slug}/availability`
+}
+
+/**
+ * @summary Public widget availability slots for a service and date
+ */
+export const getWidgetAvailability = async (slug: string,
+    params: GetWidgetAvailabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<WidgetSlot[]> => {
+
+  return customFetch<WidgetSlot[]>(getGetWidgetAvailabilityUrl(slug,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWidgetAvailabilityQueryKey = (slug: string,
+    params?: GetWidgetAvailabilityParams,) => {
+    return [
+    `/api/widget/salons/${slug}/availability`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWidgetAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof getWidgetAvailability>>, TError = ErrorType<void>>(slug: string,
+    params: GetWidgetAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWidgetAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWidgetAvailabilityQueryKey(slug,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWidgetAvailability>>> = ({ signal }) => getWidgetAvailability(slug,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: slug !== null && slug !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWidgetAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWidgetAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof getWidgetAvailability>>>
+export type GetWidgetAvailabilityQueryError = ErrorType<void>
+
+
+/**
+ * @summary Public widget availability slots for a service and date
+ */
+
+export function useGetWidgetAvailability<TData = Awaited<ReturnType<typeof getWidgetAvailability>>, TError = ErrorType<void>>(
+ slug: string,
+    params: GetWidgetAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWidgetAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWidgetAvailabilityQueryOptions(slug,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateWidgetAppointmentUrl = (slug: string,) => {
+
+
+
+
+  return `/api/widget/salons/${slug}/appointments`
+}
+
+/**
+ * @summary Public widget booking — creates a pending appointment for the salon
+ */
+export const createWidgetAppointment = async (slug: string,
+    widgetAppointmentCreate: WidgetAppointmentCreate, options?: Parameters<typeof customFetch>[1]): Promise<WidgetAppointmentCreated> => {
+
+  return customFetch<WidgetAppointmentCreated>(getCreateWidgetAppointmentUrl(slug),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(widgetAppointmentCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateWidgetAppointmentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext> => {
+
+const mutationKey = ['createWidgetAppointment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWidgetAppointment>>, {slug: string;data: BodyType<WidgetAppointmentCreate>}> = (props) => {
+          const {slug,data} = props ?? {};
+
+          return  createWidgetAppointment(slug,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWidgetAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createWidgetAppointment>>>
+    export type CreateWidgetAppointmentMutationBody = BodyType<WidgetAppointmentCreate>
+    export type CreateWidgetAppointmentMutationError = ErrorType<void>
+
+    /**
+ * @summary Public widget booking — creates a pending appointment for the salon
+ */
+export const useCreateWidgetAppointment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWidgetAppointment>>, TError,{slug: string;data: BodyType<WidgetAppointmentCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWidgetAppointment>>,
+        TError,
+        {slug: string;data: BodyType<WidgetAppointmentCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateWidgetAppointmentMutationOptions(options));
+    }

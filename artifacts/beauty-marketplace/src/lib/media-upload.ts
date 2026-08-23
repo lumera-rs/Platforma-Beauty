@@ -8,7 +8,8 @@ export type MediaUploadScope =
   | "education-center"
   | "instructor-avatar"
   | "service-category"
-  | "product-category";
+  | "product-category"
+  | "treatment-photo";
 
 export type FinalizedMediaAsset = {
   id: string;

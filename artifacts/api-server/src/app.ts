@@ -1,6 +1,5 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -95,7 +94,9 @@ export function makeSlowRequestMiddleware(
 }
 
 app.use(makeSlowRequestMiddleware(slowRequestThresholdMs, logger));
-app.use(cors());
+// CORS: intentionally NOT enabled globally. The web app reaches this API
+// same-origin through the path-routing proxy; only the public booking-widget
+// routes opt into cross-origin access (see routes/widget.ts).
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
