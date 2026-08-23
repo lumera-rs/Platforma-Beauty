@@ -33,6 +33,7 @@ export default function AdminIntegrations() {
   };
   useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
+  const [webhookSecretChanged, setWebhookSecretChanged] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false });
   const save = async (integration: Integration) => {
     const trimmedValues: Record<string, string> = {};
     for (const [k, v] of Object.entries(form[integration])) {
@@ -43,7 +44,13 @@ export default function AdminIntegrations() {
     if (!response.ok) throw new Error(result.error ?? "Čuvanje nije uspelo.");
     setData({ ...data!, integrations: { ...data!.integrations, [integration]: result } });
     setForm({ ...form, [integration]: {} });
-    toast.success("Podešavanja su sačuvana i odmah aktivna.");
+    const changedWebhookSecret = (integration === "sms" || integration === "brevo") && "webhookSecret" in trimmedValues;
+    if (changedWebhookSecret) {
+      setWebhookSecretChanged((previous) => ({ ...previous, [integration]: true }));
+      toast.warning("Sačuvano — nova webhook tajna važi odmah, pa stara registracija kod provajdera više ne radi.", { description: "Kliknite „Kopiraj kompletan URL“, ponovo registrujte URL kod provajdera, pa pokrenite „Proveri webhook“.", duration: 12000 });
+    } else {
+      toast.success("Podešavanja su sačuvana i odmah aktivna.");
+    }
   };
   const test = async (integration: Integration) => {
     const recipient = testRecipient[integration].trim();
@@ -60,6 +67,7 @@ export default function AdminIntegrations() {
       const response = await fetch(`/api/admin/integrations/${integration}/verify-webhook`, { method: "POST", credentials: "include" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
+      setWebhookSecretChanged((previous) => ({ ...previous, [integration]: false }));
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Provera webhook-a nije uspela.");
@@ -131,6 +139,14 @@ export default function AdminIntegrations() {
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label><div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">
             <Label>Webhook URL za statuse isporuke</Label>
+            {webhookSecretChanged[integration] && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Webhook tajna je promenjena — URL registrovan kod provajdera više ne važi.</p>
+              <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-xs text-amber-800">
+                <li>Kliknite „Kopiraj kompletan URL“ da dobijete URL sa novom tajnom.</li>
+                <li>Ponovo registrujte taj URL kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo — ili upotrebite „Registruj webhook“ ispod"}).</li>
+                <li>Pokrenite „Proveri webhook“ da potvrdite da sve radi.</li>
+              </ol>
+            </div>}
             <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
             <div className="mt-3 flex flex-wrap gap-2">
