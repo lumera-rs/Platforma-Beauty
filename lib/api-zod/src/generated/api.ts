@@ -9139,6 +9139,10 @@ export const OwnerGetAutomationStatsParams = zod.object({
   "automationId": zod.coerce.string()
 })
 
+export const OwnerGetAutomationStatsQueryParams = zod.object({
+  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)')
+})
+
 export const OwnerGetAutomationStatsResponse = zod.object({
   "ruleId": zod.string(),
   "totalRuns": zod.number(),
@@ -9163,6 +9167,10 @@ export const OwnerGetAutomationStatsResponse = zod.object({
 /**
  * @summary List performance stats for every automation rule of the active salon (owner)
  */
+export const OwnerListAutomationStatsQueryParams = zod.object({
+  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)')
+})
+
 export const OwnerListAutomationStatsResponseItem = zod.object({
   "ruleId": zod.string(),
   "ruleName": zod.string(),

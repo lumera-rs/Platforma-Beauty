@@ -4936,6 +4936,40 @@ mainCategory?: string;
 subcategory?: string;
 };
 
+export type OwnerGetAutomationStatsParams = {
+/**
+ * Time window for run/delivery aggregation (defaults to all time)
+ */
+period?: OwnerGetAutomationStatsPeriod;
+};
+
+export type OwnerGetAutomationStatsPeriod = typeof OwnerGetAutomationStatsPeriod[keyof typeof OwnerGetAutomationStatsPeriod];
+
+
+export const OwnerGetAutomationStatsPeriod = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  all: 'all',
+} as const;
+
+export type OwnerListAutomationStatsParams = {
+/**
+ * Time window for run/delivery aggregation (defaults to all time)
+ */
+period?: OwnerListAutomationStatsPeriod;
+};
+
+export type OwnerListAutomationStatsPeriod = typeof OwnerListAutomationStatsPeriod[keyof typeof OwnerListAutomationStatsPeriod];
+
+
+export const OwnerListAutomationStatsPeriod = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  all: 'all',
+} as const;
+
 export type CustomerListPublicPackagesParams = {
 salonId: string;
 };

@@ -598,6 +598,63 @@ async function run() {
       console.log("✓ aggregate campaign overview matches per-rule counts and is salon-scoped");
     }
 
+    // ── 8b. ?period= windows filter run/delivery aggregation ───────────────
+    {
+      // A run sent ~100 days ago must show up for all time but stay outside
+      // every 7/30/90-day window on both stats endpoints.
+      const old = await makeSentRun(a.salon.id, ruleA.id, customerA.id, "a-old");
+      const oldDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+      await db.update(automationRunsTable)
+        .set({ executedAt: oldDate, sentAt: oldDate, createdAt: oldDate })
+        .where(eq(automationRunsTable.id, old.run.id));
+      await db.update(automationDeliveriesTable)
+        .set({ sentAt: oldDate, createdAt: oldDate })
+        .where(eq(automationDeliveriesTable.runId, old.run.id));
+
+      const getOverviewRow = async (period?: string) => {
+        const qs = period ? `?period=${period}` : "";
+        const response = await fetch(`${baseUrl}/api/growth/automation-stats${qs}`, {
+          headers: { cookie: `${sessionCookieName}=${a.token}` },
+        });
+        assert.equal(response.status, 200);
+        const rows = await response.json() as Array<Record<string, unknown>>;
+        const row = rows.find((r) => r["ruleId"] === ruleA.id);
+        assert.ok(row, "overview must include salon A's rule");
+        return row;
+      };
+
+      const allTimeDefault = await getOverviewRow();
+      const allTimeExplicit = await getOverviewRow("all");
+      assert.equal(allTimeDefault["totalRuns"], 4, "all-time includes the 100-day-old run");
+      assert.equal(allTimeDefault["emailSentCount"], 4, "all-time includes the old email delivery");
+      assert.equal(allTimeExplicit["totalRuns"], 4, "period=all matches the default");
+
+      for (const period of ["7d", "30d", "90d"]) {
+        const windowed = await getOverviewRow(period);
+        assert.equal(windowed["totalRuns"], 3, `${period} window excludes the 100-day-old run`);
+        assert.equal(windowed["emailSentCount"], 3, `${period} window excludes the old email delivery`);
+      }
+
+      const perRuleStats = async (period: string) => {
+        const response = await fetch(`${baseUrl}/api/growth/automations/${ruleA.id}/stats?period=${period}`, {
+          headers: { cookie: `${sessionCookieName}=${a.token}` },
+        });
+        assert.equal(response.status, 200);
+        return response.json() as Promise<Record<string, number>>;
+      };
+      const perRule30 = await perRuleStats("30d");
+      assert.equal(perRule30["totalRuns"], 3, "per-rule 30d window excludes the old run");
+      assert.equal(perRule30["emailSentCount"], 3, "per-rule 30d window excludes the old delivery");
+      const perRuleAll = await perRuleStats("all");
+      assert.equal(perRuleAll["totalRuns"], 4, "per-rule all-time includes the old run");
+
+      const invalid = await fetch(`${baseUrl}/api/growth/automation-stats?period=14d`, {
+        headers: { cookie: `${sessionCookieName}=${a.token}` },
+      });
+      assert.equal(invalid.status, 400, "unknown period value must be rejected explicitly");
+      console.log("✓ ?period= windows run/delivery aggregation on both stats endpoints; unknown values rejected");
+    }
+
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────
     {
       const { output, exitCode } = await captureWebhookLogs();

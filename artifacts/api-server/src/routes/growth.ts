@@ -508,6 +508,33 @@ router.post("/growth/automations/:automationId/pause", async (req, res, next) =>
 // AUTOMATIONS — Stats
 // ---------------------------------------------------------------------------
 
+const STATS_PERIOD_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+/**
+ * Parse the optional ?period= window for stats endpoints.
+ * Returns the cutoff Date (null = all time), or undefined for an invalid value.
+ */
+function parseStatsPeriodCutoff(raw: unknown): Date | null | undefined {
+  if (raw === undefined || raw === "all") return null;
+  if (typeof raw !== "string") return undefined;
+  const days = STATS_PERIOD_DAYS[raw];
+  if (days === undefined) return undefined;
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Period filters for stats aggregation. Runs are windowed on executedAt and
+ * deliveries on sentAt; both fall back to createdAt so pending/queued/failed
+ * rows (which never got their execution/send timestamp) stay attributable to
+ * the window in which they were created instead of silently disappearing.
+ */
+function statsRunPeriodCondition(cutoff: Date) {
+  return sql`coalesce(${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}) >= ${cutoff}`;
+}
+function statsDeliveryPeriodCondition(cutoff: Date) {
+  return sql`coalesce(${automationDeliveriesTable.sentAt}, ${automationDeliveriesTable.createdAt}) >= ${cutoff}`;
+}
+
 /**
  * Aggregate campaign overview: one row per automation rule of the active
  * salon, with run counts and per-channel delivery/open counts sourced from
@@ -517,6 +544,12 @@ router.get("/growth/automation-stats", async (req, res, next) => {
   try {
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
+
+    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
+    if (cutoff === undefined) {
+      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+      return;
+    }
 
     const rules = await db
       .select({
@@ -545,7 +578,9 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       })
       .from(automationRunsTable)
       .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
-      .where(inArray(automationRunsTable.ruleId, ruleIds))
+      .where(cutoff
+        ? and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(cutoff))
+        : inArray(automationRunsTable.ruleId, ruleIds))
       .groupBy(automationRunsTable.ruleId);
 
     const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
@@ -563,7 +598,9 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       })
       .from(automationDeliveriesTable)
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(inArray(automationRunsTable.ruleId, ruleIds))
+      .where(cutoff
+        ? and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodCondition(cutoff))
+        : inArray(automationRunsTable.ruleId, ruleIds))
       .groupBy(automationRunsTable.ruleId);
 
     const runsByRule = new Map(runAgg.map((r) => [r.ruleId, r]));
@@ -601,6 +638,12 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
 
+    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
+    if (cutoff === undefined) {
+      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+      return;
+    }
+
     const [rule] = await db
       .select({ id: automationRulesTable.id })
       .from(automationRulesTable)
@@ -620,7 +663,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       })
       .from(automationRunsTable)
       .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
-      .where(eq(automationRunsTable.ruleId, rule.id));
+      .where(cutoff
+        ? and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(cutoff))
+        : eq(automationRunsTable.ruleId, rule.id));
 
     // Delivery stats (delivered / opened / provider-failed, updated from
     // verified provider webhooks). Broken down per channel so the UI can show
@@ -641,7 +686,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       })
       .from(automationDeliveriesTable)
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(eq(automationRunsTable.ruleId, rule.id));
+      .where(cutoff
+        ? and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(cutoff))
+        : eq(automationRunsTable.ruleId, rule.id));
 
     res.json({
       ruleId: rule.id,

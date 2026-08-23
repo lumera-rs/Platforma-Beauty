@@ -180,6 +180,8 @@ import type {
   MediaUploadInput,
   MediaUploadTicket,
   Order,
+  OwnerGetAutomationStatsParams,
+  OwnerListAutomationStatsParams,
   OwnerListCustomerPackagesParams,
   OwnerListEmployeePerformanceParams,
   PackagePurchase,
@@ -15240,20 +15242,29 @@ export const useOwnerPauseAutomation = <TError = ErrorType<void>,
       return useMutation(getOwnerPauseAutomationMutationOptions(options));
     }
 
-export const getOwnerGetAutomationStatsUrl = (automationId: string,) => {
+export const getOwnerGetAutomationStatsUrl = (automationId: string,
+    params?: OwnerGetAutomationStatsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/growth/automations/${automationId}/stats`
+  return stringifiedParams.length > 0 ? `/api/growth/automations/${automationId}/stats?${stringifiedParams}` : `/api/growth/automations/${automationId}/stats`
 }
 
 /**
  * @summary Get run statistics for an automation rule (owner)
  */
-export const ownerGetAutomationStats = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationStats> => {
+export const ownerGetAutomationStats = async (automationId: string,
+    params?: OwnerGetAutomationStatsParams, options?: Parameters<typeof customFetch>[1]): Promise<AutomationStats> => {
 
-  return customFetch<AutomationStats>(getOwnerGetAutomationStatsUrl(automationId),
+  return customFetch<AutomationStats>(getOwnerGetAutomationStatsUrl(automationId,params),
   {
     ...options,
     method: 'GET'
@@ -15266,23 +15277,25 @@ export const ownerGetAutomationStats = async (automationId: string, options?: Pa
 
 
 
-export const getOwnerGetAutomationStatsQueryKey = (automationId: string,) => {
+export const getOwnerGetAutomationStatsQueryKey = (automationId: string,
+    params?: OwnerGetAutomationStatsParams,) => {
     return [
-    `/api/growth/automations/${automationId}/stats`
+    `/api/growth/automations/${automationId}/stats`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getOwnerGetAutomationStatsQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError = ErrorType<void>>(automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getOwnerGetAutomationStatsQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError = ErrorType<void>>(automationId: string,
+    params?: OwnerGetAutomationStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getOwnerGetAutomationStatsQueryKey(automationId);
+  const queryKey =  queryOptions?.queryKey ?? getOwnerGetAutomationStatsQueryKey(automationId,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetAutomationStats>>> = ({ signal }) => ownerGetAutomationStats(automationId, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetAutomationStats>>> = ({ signal }) => ownerGetAutomationStats(automationId,params, { signal, ...requestOptions });
 
 
 
@@ -15300,11 +15313,12 @@ export type OwnerGetAutomationStatsQueryError = ErrorType<void>
  */
 
 export function useOwnerGetAutomationStats<TData = Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError = ErrorType<void>>(
- automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ automationId: string,
+    params?: OwnerGetAutomationStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getOwnerGetAutomationStatsQueryOptions(automationId,options)
+  const queryOptions = getOwnerGetAutomationStatsQueryOptions(automationId,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -15317,20 +15331,27 @@ export function useOwnerGetAutomationStats<TData = Awaited<ReturnType<typeof own
 
 
 
-export const getOwnerListAutomationStatsUrl = () => {
+export const getOwnerListAutomationStatsUrl = (params?: OwnerListAutomationStatsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/growth/automation-stats`
+  return stringifiedParams.length > 0 ? `/api/growth/automation-stats?${stringifiedParams}` : `/api/growth/automation-stats`
 }
 
 /**
  * @summary List performance stats for every automation rule of the active salon (owner)
  */
-export const ownerListAutomationStats = async ( options?: Parameters<typeof customFetch>[1]): Promise<AutomationStatsOverviewItem[]> => {
+export const ownerListAutomationStats = async (params?: OwnerListAutomationStatsParams, options?: Parameters<typeof customFetch>[1]): Promise<AutomationStatsOverviewItem[]> => {
 
-  return customFetch<AutomationStatsOverviewItem[]>(getOwnerListAutomationStatsUrl(),
+  return customFetch<AutomationStatsOverviewItem[]>(getOwnerListAutomationStatsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -15343,23 +15364,23 @@ export const ownerListAutomationStats = async ( options?: Parameters<typeof cust
 
 
 
-export const getOwnerListAutomationStatsQueryKey = () => {
+export const getOwnerListAutomationStatsQueryKey = (params?: OwnerListAutomationStatsParams,) => {
     return [
-    `/api/growth/automation-stats`
+    `/api/growth/automation-stats`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getOwnerListAutomationStatsQueryOptions = <TData = Awaited<ReturnType<typeof ownerListAutomationStats>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getOwnerListAutomationStatsQueryOptions = <TData = Awaited<ReturnType<typeof ownerListAutomationStats>>, TError = ErrorType<void>>(params?: OwnerListAutomationStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getOwnerListAutomationStatsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListAutomationStatsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListAutomationStats>>> = ({ signal }) => ownerListAutomationStats({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListAutomationStats>>> = ({ signal }) => ownerListAutomationStats(params, { signal, ...requestOptions });
 
 
 
@@ -15377,11 +15398,11 @@ export type OwnerListAutomationStatsQueryError = ErrorType<void>
  */
 
 export function useOwnerListAutomationStats<TData = Awaited<ReturnType<typeof ownerListAutomationStats>>, TError = ErrorType<void>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: OwnerListAutomationStatsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getOwnerListAutomationStatsQueryOptions(options)
+  const queryOptions = getOwnerListAutomationStatsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

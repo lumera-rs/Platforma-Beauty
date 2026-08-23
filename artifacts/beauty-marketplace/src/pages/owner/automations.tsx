@@ -31,6 +31,22 @@ function rate(part: number, total: number) {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+type StatsPeriod = "7d" | "30d" | "90d" | "all";
+
+const periodOptions: { value: StatsPeriod; label: string }[] = [
+  { value: "7d", label: "7 dana" },
+  { value: "30d", label: "30 dana" },
+  { value: "90d", label: "90 dana" },
+  { value: "all", label: "Sve vreme" },
+];
+
+const periodDescriptionLabels: Record<StatsPeriod, string> = {
+  "7d": "poslednjih 7 dana",
+  "30d": "poslednjih 30 dana",
+  "90d": "poslednjih 90 dana",
+  all: "sve vreme",
+};
+
 /**
  * Live per-channel delivery funnel: sent → delivered → opened, fed by verified
  * provider webhook events. `opened: null` marks a channel whose provider does
@@ -77,20 +93,44 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
  * verified provider-event counts as the per-rule stats dialog. SMS providers
  * do not report opens, so the SMS column shows delivery only.
  */
-function CampaignOverview({ items, onShowStats }: {
+function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
   items: any[];
+  period: StatsPeriod;
+  onPeriodChange: (period: StatsPeriod) => void;
   onShowStats: (ruleId: string) => void;
 }) {
   const anySms = items.some((i) => i.smsSentCount > 0);
   return (
     <Card data-testid="campaign-overview">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-primary" /> Pregled performansi kampanja
-        </CardTitle>
-        <CardDescription>
-          Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama.
-        </CardDescription>
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-primary" /> Pregled performansi kampanja
+            </CardTitle>
+            <CardDescription className="mt-1.5">
+              Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0" role="group" aria-label="Period prikaza" data-testid="overview-period-selector">
+            {periodOptions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onPeriodChange(opt.value)}
+                aria-pressed={period === opt.value}
+                data-testid={`period-${opt.value}`}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  period === opt.value
+                    ? "bg-background text-foreground shadow-sm border"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="overflow-x-auto">
@@ -184,10 +224,12 @@ export default function OwnerAutomations() {
     }
   });
 
-  const { data: overviewStats } = useOwnerListAutomationStats({
+  const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("all");
+
+  const { data: overviewStats } = useOwnerListAutomationStats({ period: statsPeriod }, {
     query: {
       enabled: !!userResp?.user,
-      queryKey: getOwnerListAutomationStatsQueryKey()
+      queryKey: getOwnerListAutomationStatsQueryKey({ period: statsPeriod })
     }
   });
 
@@ -204,10 +246,11 @@ export default function OwnerAutomations() {
 
   const { data: statsData, isLoading: isStatsLoading } = useOwnerGetAutomationStats(
     statsRuleId ?? "",
+    { period: statsPeriod },
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-stats', statsRuleId]
+        queryKey: ['owner-automation-stats', statsRuleId, statsPeriod]
       }
     }
   );
@@ -362,7 +405,7 @@ export default function OwnerAutomations() {
           </div>
 
           {overviewStats && overviewStats.length > 0 && (
-            <CampaignOverview items={overviewStats} onShowStats={setStatsRuleId} />
+            <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} onShowStats={setStatsRuleId} />
           )}
 
           <div className="space-y-4">
@@ -511,7 +554,7 @@ export default function OwnerAutomations() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Statistika automatizacije</DialogTitle>
-            <DialogDescription>Pregled uspešnosti ovog pravila.</DialogDescription>
+            <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescriptionLabels[statsPeriod]}.</DialogDescription>
           </DialogHeader>
           {isStatsLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>

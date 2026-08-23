@@ -3673,6 +3673,10 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: period
+          in: query
+          description: Time window for run/delivery aggregation (defaults to all time)
+          schema: { type: string, enum: [7d, 30d, 90d, all] }
       responses:
         "200":
           description: Automation stats
@@ -3686,6 +3690,11 @@ paths:
       operationId: ownerListAutomationStats
       tags: [growth]
       summary: List performance stats for every automation rule of the active salon (owner)
+      parameters:
+        - name: period
+          in: query
+          description: Time window for run/delivery aggregation (defaults to all time)
+          schema: { type: string, enum: [7d, 30d, 90d, all] }
       responses:
         "200":
           description: Per-rule campaign performance overview
