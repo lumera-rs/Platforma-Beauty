@@ -127,6 +127,7 @@ export function RetailCheckoutPage() {
   const [cartChangedElsewhere, setCartChangedElsewhere] = useState(false);
   const [idempotencyKey] = useState(() => `retail-${crypto.randomUUID()}-${crypto.randomUUID()}`);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", street: "", city: "", postalCode: "", note: "", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier" });
+  const cartFingerprint = cart ? cartItemsFingerprint(cart) : null;
   useEffect(() => { void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null)); }, []);
   useEffect(() => {
     if (!cart) return;
@@ -138,6 +139,13 @@ export function RetailCheckoutPage() {
     setQuoteRefreshError(null);
     setUnavailableCartItem(false);
     setCartChangedElsewhere(false);
+    if (!cart.items.length) {
+      setPreviewLoading(false);
+      return () => {
+        active = false;
+        controller.abort();
+      };
+    }
     const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
     void retail<CheckoutPreview>(`/retail/checkout-preview?${query}`, { signal: controller.signal })
       .then((nextPreview) => {
@@ -161,26 +169,33 @@ export function RetailCheckoutPage() {
       active = false;
       controller.abort();
     };
-  }, [cart?.id, form.deliveryMethod, form.city]);
+  }, [cart?.id, cartFingerprint, form.deliveryMethod, form.city]);
   useEffect(() => {
     if (form.deliveryMethod === "personal_belgrade" && !/beograd/i.test(form.city)) {
       setForm((current) => ({ ...current, deliveryMethod: "courier" }));
     }
   }, [form.city, form.deliveryMethod]);
   useEffect(() => {
-    if (!preview || cartChangedElsewhere) return;
-    const quotedFingerprint = cartItemsFingerprint(preview.cart);
+    if (!cart || cartChangedElsewhere) return;
     let active = true;
     let checking = false;
     const check = async () => {
-      if (checking) return;
+      if (checking || cartChangedElsewhere) return;
       checking = true;
       try {
         const latest = await retail<Cart>("/retail/cart");
-        if (!active || cartItemsFingerprint(latest) === quotedFingerprint) return;
+        if (!active || cartItemsFingerprint(latest) === cartFingerprint) return;
         if (!latest.items.length) {
           setCart(latest);
           setPreview(null);
+          return;
+        }
+        if (!cart?.items.length) {
+          setCart(latest);
+          setPreview(null);
+          setQuoteRefreshMessage(null);
+          setQuoteRefreshError(null);
+          setPreviewLoading(true);
           return;
         }
         setCartChangedElsewhere(true);
@@ -200,7 +215,7 @@ export function RetailCheckoutPage() {
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [preview, cartChangedElsewhere]);
+  }, [cart, cartChangedElsewhere, cartFingerprint]);
   const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const refreshCheckoutQuote = async (previousPreview: CheckoutPreview | null) => {
     setPreview(null);

@@ -397,8 +397,8 @@ test("retail checkout detects a cart changed in another tab and refreshes before
   const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
-  // A second tab or device shares the same session cookie, so API calls from the
-  // same browser context are exactly what emptying the cart elsewhere looks like.
+  // A second tab or device shares the same session cookie, so an API call from the
+  // same browser context is exactly what a cross-tab cart change looks like.
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { items: Array<{ id: string }> };
@@ -466,6 +466,71 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   expect(checkoutSubmissions).toEqual([]);
   expect(page.url()).toBe(checkoutUrl);
   expect(mainFrameNavigations).toBe(1);
+});
+
+test("retail checkout recovers when an item is added after the cart was emptied elsewhere", async ({ page }) => {
+  let holdRecoveryPreview = false;
+  let notifyRecoveryPreviewStarted: (() => void) | undefined;
+  let releaseRecoveryPreview: (() => void) | undefined;
+  const recoveryPreviewStarted = new Promise<void>((resolve) => { notifyRecoveryPreviewStarted = resolve; });
+  const releasePreview = new Promise<void>((resolve) => { releaseRecoveryPreview = resolve; });
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+  await page.route("**/api/retail/checkout-preview?**", async (route) => {
+    if (holdRecoveryPreview) {
+      notifyRecoveryPreviewStarted?.();
+      await releasePreview;
+    }
+    await route.continue();
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const checkoutUrl = page.url();
+  const paymentForm = page.locator("form");
+  const confirmButton = paymentForm.getByRole("button");
+  await expect(confirmButton).toBeEnabled();
+
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+  expect(cart.items.length).toBeGreaterThan(0);
+  for (const item of cart.items) {
+    const deleteResponse = await page.request.delete(`/api/retail/cart/items/${item.id}`);
+    expect(deleteResponse.ok()).toBe(true);
+  }
+
+  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  await expect(paymentForm).toHaveCount(0);
+
+  holdRecoveryPreview = true;
+  try {
+    const recoveryPreviewRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname === "/api/retail/checkout-preview"
+        && url.searchParams.get("deliveryMethod") === "courier"
+        && url.searchParams.get("city") === "Novi Sad";
+    });
+    const addResponse = await page.request.post("/api/retail/cart/items", {
+      data: { productId, quantity: 1 },
+    });
+    expect(addResponse.status()).toBe(201);
+
+    await expect(paymentForm).toBeVisible({ timeout: 15_000 });
+    await recoveryPreviewRequest;
+    await recoveryPreviewStarted;
+    await expect(confirmButton).toBeDisabled();
+    expect(page.url()).toBe(checkoutUrl);
+
+    releaseRecoveryPreview?.();
+    await expect(confirmButton).toBeEnabled();
+    await expect(page.getByText(money(2_390), { exact: true })).toBeVisible();
+    expect(mainFrameNavigations).toBe(1);
+  } finally {
+    releaseRecoveryPreview?.();
+  }
 });
 
 async function createCartAndOpenCartPage(page: Page) {
