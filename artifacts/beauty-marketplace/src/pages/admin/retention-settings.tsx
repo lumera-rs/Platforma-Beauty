@@ -237,6 +237,18 @@ export default function AdminRetentionSettings() {
               <Badge variant="secondary" data-testid="retention-settings-version">
                 {settings?.isDefault ? "Podrazumevano (v0)" : `Verzija ${settings?.version}`}
               </Badge>
+              {settings?.changeSource === "restore_version" && (
+                <Badge variant="outline" className="gap-1" data-testid="retention-settings-source">
+                  <RotateCcw className="w-3 h-3" />
+                  Vraćeno iz verzije {settings.restoredFromVersion}
+                </Badge>
+              )}
+              {settings?.changeSource === "restore_defaults" && (
+                <Badge variant="outline" className="gap-1" data-testid="retention-settings-source">
+                  <RotateCcw className="w-3 h-3" />
+                  Vraćene podrazumevane vrednosti
+                </Badge>
+              )}
             </CardTitle>
             {settings && !settings.isDefault && settings.changedAt && (
               <CardDescription>

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { RetentionSettingsChangeSource } from './retentionSettingsChangeSource';
 import type { RetentionThresholds } from './retentionThresholds';
 
 export interface RetentionSettings {
@@ -20,4 +21,11 @@ export interface RetentionSettings {
   changedAt: string | null;
   isDefault: boolean;
   defaults: RetentionThresholds;
+  /** How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults */
+  changeSource: RetentionSettingsChangeSource;
+  /**
+     * Source version when changeSource is restore_version; null otherwise
+     * @nullable
+     */
+  restoredFromVersion: number | null;
 }

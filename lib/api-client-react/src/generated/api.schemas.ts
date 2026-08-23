@@ -4304,6 +4304,18 @@ export interface RetentionThresholds {
   vipSpendPercentOfMedian: number;
 }
 
+/**
+ * How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults
+ */
+export type RetentionSettingsChangeSource = typeof RetentionSettingsChangeSource[keyof typeof RetentionSettingsChangeSource];
+
+
+export const RetentionSettingsChangeSource = {
+  manual: 'manual',
+  restore_version: 'restore_version',
+  restore_defaults: 'restore_defaults',
+} as const;
+
 export interface RetentionSettings {
   /** Active settings version; 0 means platform defaults (no admin change yet) */
   version: number;
@@ -4317,6 +4329,13 @@ export interface RetentionSettings {
   changedAt: string | null;
   isDefault: boolean;
   defaults: RetentionThresholds;
+  /** How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults */
+  changeSource: RetentionSettingsChangeSource;
+  /**
+     * Source version when changeSource is restore_version; null otherwise
+     * @nullable
+     */
+  restoredFromVersion: number | null;
 }
 
 export interface RetentionStatusCounts {

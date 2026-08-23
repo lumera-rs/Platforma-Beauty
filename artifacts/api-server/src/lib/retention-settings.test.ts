@@ -604,6 +604,12 @@ async function integrationTests() {
     assert.equal(restoreRes.status, 200);
     assert.equal(((await restoreRes.json()) as any).version, initialVersion + 5);
 
+    // The active-settings endpoint exposes the restore provenance too, so the
+    // admin card can label a rollback without consulting the history list.
+    const activeAfterVersionRestore = (await (await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders })).json()) as any;
+    assert.equal(activeAfterVersionRestore.changeSource, "restore_version", "active settings expose restore provenance");
+    assert.equal(activeAfterVersionRestore.restoredFromVersion, initialVersion + 2, "active settings expose the source version");
+
     // Restore platform defaults.
     const restoreDefaultsRes = await putSettings({
       ...DEFAULT_RETENTION_THRESHOLDS, changeSource: "restore_defaults",
@@ -635,7 +641,10 @@ async function integrationTests() {
       assert.equal(res.status, 400, `dishonest restore (${label}) must be rejected`);
     }
     const afterBadRestores = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
-    assert.equal(((await afterBadRestores.json()) as any).version, initialVersion + 6, "rejected restores record no version");
+    const activeAfterBadRestores = (await afterBadRestores.json()) as any;
+    assert.equal(activeAfterBadRestores.version, initialVersion + 6, "rejected restores record no version");
+    assert.equal(activeAfterBadRestores.changeSource, "restore_defaults", "active settings label a defaults restore");
+    assert.equal(activeAfterBadRestores.restoredFromVersion, null, "defaults restore carries no source version");
     console.log("✓ Restores are labelled in history; dishonest restore metadata rejected");
   } finally {
     // Remove only rows created by this run; earlier versions stay untouched.

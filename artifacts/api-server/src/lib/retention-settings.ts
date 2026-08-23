@@ -43,6 +43,10 @@ export interface ActiveRetentionSettings {
   thresholds: RetentionThresholds;
   changedByUserId: string | null;
   changedAt: Date | null;
+  /** How the active version came to be — manual edit or a labelled restore. */
+  changeSource: RetentionChangeSource;
+  /** Source version when changeSource is "restore_version"; null otherwise. */
+  restoredFromVersion: number | null;
 }
 
 /** Field-level bounds — single source of truth for validation and tests. */
@@ -113,6 +117,8 @@ export async function getActiveRetentionSettings(): Promise<ActiveRetentionSetti
       thresholds: { ...DEFAULT_RETENTION_THRESHOLDS },
       changedByUserId: null,
       changedAt: null,
+      changeSource: "manual",
+      restoredFromVersion: null,
     };
   }
   return {
@@ -120,6 +126,8 @@ export async function getActiveRetentionSettings(): Promise<ActiveRetentionSetti
     thresholds: rowToThresholds(row),
     changedByUserId: row.changedByUserId,
     changedAt: row.createdAt,
+    changeSource: (row.changeSource as RetentionChangeSource) ?? "manual",
+    restoredFromVersion: row.restoredFromVersion,
   };
 }
 
@@ -214,6 +222,8 @@ export async function updateRetentionSettings(
     thresholds: rowToThresholds(inserted),
     changedByUserId: inserted.changedByUserId,
     changedAt: inserted.createdAt,
+    changeSource: (inserted.changeSource as RetentionChangeSource) ?? "manual",
+    restoredFromVersion: inserted.restoredFromVersion,
   };
 }
 

@@ -340,6 +340,7 @@ export * from './retentionReclassificationShift';
 export * from './retentionReclassificationShiftFromStatus';
 export * from './retentionReclassificationShiftToStatus';
 export * from './retentionSettings';
+export * from './retentionSettingsChangeSource';
 export * from './retentionSettingsHistoryEntry';
 export * from './retentionSettingsHistoryEntryChangeSource';
 export * from './retentionSettingsPreview';

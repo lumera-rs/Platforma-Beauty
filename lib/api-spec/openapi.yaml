@@ -7192,7 +7192,9 @@ components:
         changedAt: { type: ["string", "null"], description: "ISO timestamp of the change; null for platform defaults" }
         isDefault: { type: boolean }
         defaults: { $ref: "#/components/schemas/RetentionThresholds" }
-      required: [version, thresholds, changedByUserId, changedAt, isDefault, defaults]
+        changeSource: { type: string, enum: [manual, restore_version, restore_defaults], description: "How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults" }
+        restoredFromVersion: { type: ["number", "null"], description: "Source version when changeSource is restore_version; null otherwise" }
+      required: [version, thresholds, changedByUserId, changedAt, isDefault, defaults, changeSource, restoredFromVersion]
 
     RetentionStatusCounts:
       type: object

@@ -1630,6 +1630,8 @@ function settingsView(s: Awaited<ReturnType<typeof getActiveRetentionSettings>>)
     changedAt: s.changedAt ? s.changedAt.toISOString() : null,
     isDefault: s.version === 0,
     defaults: { ...DEFAULT_RETENTION_THRESHOLDS },
+    changeSource: s.changeSource,
+    restoredFromVersion: s.restoredFromVersion,
   };
 }
 

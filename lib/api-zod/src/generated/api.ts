@@ -9814,7 +9814,9 @@ export const AdminGetRetentionSettingsResponse = zod.object({
   "lostMinimumDays": zod.number().min(1).max(adminGetRetentionSettingsResponseDefaultsLostMinimumDaysMax).multipleOf(adminGetRetentionSettingsResponseDefaultsLostMinimumDaysMultipleOf).describe('LOST never triggers before this many days since the last visit'),
   "vipMinCompletedVisits": zod.number().min(1).max(adminGetRetentionSettingsResponseDefaultsVipMinCompletedVisitsMax).multipleOf(adminGetRetentionSettingsResponseDefaultsVipMinCompletedVisitsMultipleOf).describe('VIP when the customer has at least this many completed visits'),
   "vipSpendPercentOfMedian": zod.number().min(adminGetRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMin).max(adminGetRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMax).multipleOf(adminGetRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
-})
+}),
+  "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).describe('How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults'),
+  "restoredFromVersion": zod.number().nullable().describe('Source version when changeSource is restore_version; null otherwise')
 })
 
 
@@ -9934,7 +9936,9 @@ export const AdminUpdateRetentionSettingsResponse = zod.object({
   "lostMinimumDays": zod.number().min(1).max(adminUpdateRetentionSettingsResponseDefaultsLostMinimumDaysMax).multipleOf(adminUpdateRetentionSettingsResponseDefaultsLostMinimumDaysMultipleOf).describe('LOST never triggers before this many days since the last visit'),
   "vipMinCompletedVisits": zod.number().min(1).max(adminUpdateRetentionSettingsResponseDefaultsVipMinCompletedVisitsMax).multipleOf(adminUpdateRetentionSettingsResponseDefaultsVipMinCompletedVisitsMultipleOf).describe('VIP when the customer has at least this many completed visits'),
   "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsResponseDefaultsVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
-})
+}),
+  "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).describe('How the active version came to be: hand-edited, restored from an earlier version, or restored platform defaults'),
+  "restoredFromVersion": zod.number().nullable().describe('Source version when changeSource is restore_version; null otherwise')
 })
 
 
