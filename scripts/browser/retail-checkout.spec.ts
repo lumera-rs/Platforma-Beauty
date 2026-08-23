@@ -28,6 +28,7 @@ const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
 let categoryId: string | undefined;
 let productId: string | undefined;
+let productName: string | undefined;
 
 let secondProductId: string | undefined;
 let shippingRuleId: string | undefined;
@@ -163,6 +164,7 @@ test.beforeAll(async () => {
     active: true,
   }).returning();
   productId = product!.id;
+  productName = product!.name;
 
   const [secondProduct] = await db.insert(productsTable).values({
     categoryId: category!.id,
@@ -255,9 +257,10 @@ test("retail checkout refreshes a changed quote before allowing confirmation aga
     await expect(confirmButton).toBeDisabled();
     releaseRefreshedPreview?.();
 
-    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
-    await expect(page.getByRole("status")).toContainText(`Dostava je sada ${money(390)}`);
-    await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(2_190)}`);
+    const quoteStatus = page.locator('[role="status"]').filter({ hasText: "Promena iznosa je osvežena" });
+    await expect(quoteStatus).toContainText("Promena iznosa je osvežena");
+    await expect(quoteStatus).toContainText(`Dostava je sada ${money(390)}`);
+    await expect(quoteStatus).toContainText(`ukupno za plaćanje ${money(2_190)}`);
     await expect(page.getByText(money(2_190), { exact: true })).toBeVisible();
     await expect(confirmButton).toBeEnabled();
   } finally {
@@ -305,9 +308,10 @@ test("retail checkout refreshes a changed delivery fee before allowing confirmat
     await expect(confirmButton).toBeDisabled();
     releaseRefreshedPreview?.();
 
-    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
-    await expect(page.getByRole("status")).toContainText(`Dostava je sada ${money(590)}`);
-    await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(2_590)}`);
+    const quoteStatus = page.locator('[role="status"]').filter({ hasText: "Promena iznosa je osvežena" });
+    await expect(quoteStatus).toContainText("Promena iznosa je osvežena");
+    await expect(quoteStatus).toContainText(`Dostava je sada ${money(590)}`);
+    await expect(quoteStatus).toContainText(`ukupno za plaćanje ${money(2_590)}`);
     await expect(page.getByText(money(2_590), { exact: true })).toBeVisible();
     await expect(confirmButton).toBeEnabled();
   } finally {
@@ -359,7 +363,7 @@ test("retail checkout offers a retry after a failed quote refresh", async ({ pag
 
     await retryButton.click();
     await expect(retryButton).not.toBeVisible();
-    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+    await expect(page.locator('[role="status"]').filter({ hasText: "Promena iznosa je osvežena" })).toContainText("Promena iznosa je osvežena");
     await expect(page.getByText(money(2_190), { exact: true })).toBeVisible();
     await expect(confirmButton).toBeEnabled();
   } finally {
@@ -410,7 +414,7 @@ test("retail checkout offers a retry after the initial quote fails without reloa
   await retriedPreview;
 
   await expect(retryButton).not.toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+  await expect(page.locator('[role="status"]').filter({ hasText: "Promena iznosa je osvežena" })).toContainText("Promena iznosa je osvežena");
   await expect(confirmButton).toBeEnabled();
   expect(page.url()).toBe(checkoutUrl);
   expect(mainFrameNavigations).toBe(1);
@@ -443,8 +447,9 @@ test("retail checkout detects a cart changed in another tab and refreshes before
   await expect(confirmButton).toBeDisabled();
 
   await changeAlert.getByRole("button", { name: "Osveži pregled" }).click();
-  await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
-  await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(4_390)}`);
+  const quoteStatus = page.locator('[role="status"]').filter({ hasText: "Promena iznosa je osvežena" });
+  await expect(quoteStatus).toContainText("Promena iznosa je osvežena");
+  await expect(quoteStatus).toContainText(`ukupno za plaćanje ${money(4_390)}`);
   await expect(page.getByText(money(4_390), { exact: true })).toBeVisible();
   await expect(changeAlert).not.toBeVisible();
   await expect(confirmButton).toBeEnabled();
@@ -715,4 +720,68 @@ test("retail checkout explains unavailable items and offers recovery without cre
   } finally {
     await db.update(productsTable).set({ stock: secondProduct!.stock }).where(eq(productsTable.id, secondProductId!));
   }
+});
+
+test("retail cart announces every shopper mutation through completed checkout", async ({ page }) => {
+  expect(productId).toBeTruthy();
+  expect(productName).toBeTruthy();
+
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { id: string };
+  createdCartIds.push(cart.id);
+
+  const expectCartAnnouncement = async (itemCount: number) => {
+    const announcement = itemCount === 0
+      ? "Korpa je prazna."
+      : `Korpa sada ima ${itemCount} ${itemCount === 1 ? "stavku" : "stavki"}.`;
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText(announcement);
+    if (itemCount === 0) {
+      await expect(page.getByTestId("status-cart-count")).toHaveCount(0);
+    } else {
+      await expect(page.getByTestId("status-cart-count")).toHaveText(String(itemCount));
+    }
+  };
+
+  await page.goto("/proizvodi");
+  const productSearch = page.getByTestId("public-product-search");
+  await productSearch.fill(productName!);
+  const productCard = page.getByRole("article").filter({
+    has: page.getByRole("heading", { name: productName!, exact: true }),
+  });
+  await expect(productCard).toBeVisible();
+  await productCard.getByRole("button", { name: "Dodaj u korpu" }).click();
+  await expectCartAnnouncement(1);
+
+  await page.getByTestId("link-cart").click();
+  await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+  await page.getByRole("button").filter({ has: page.locator("svg.lucide-plus") }).first().click();
+  await expectCartAnnouncement(2);
+
+  await page.getByRole("button").filter({ has: page.locator("svg.lucide-trash-2") }).first().click();
+  await expectCartAnnouncement(0);
+
+  await page.goto("/proizvodi");
+  await productSearch.fill(productName!);
+  const secondProductCard = page.getByRole("article").filter({
+    has: page.getByRole("heading", { name: productName!, exact: true }),
+  });
+  await expect(secondProductCard).toBeVisible();
+  await secondProductCard.getByRole("button", { name: "Dodaj u korpu" }).click();
+  await expectCartAnnouncement(1);
+
+  await page.getByTestId("link-cart").click();
+  await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+  await page.getByRole("link", { name: "Nastavi na dostavu i plaćanje" }).click();
+  await expect(page.getByRole("heading", { name: "Dostava i plaćanje" })).toBeVisible();
+  await fillCheckoutContact(page, "Novi Sad");
+
+  const previewResponse = await page.request.get(
+    "/api/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad",
+  );
+  expect(previewResponse.ok()).toBe(true);
+  const preview = await previewResponse.json() as CheckoutPreview;
+  await expect(page.getByRole("button", { name: "Potvrdi porudžbinu" })).toBeEnabled();
+  await submitAndAssertOrder(page, preview);
+  await expectCartAnnouncement(0);
 });
