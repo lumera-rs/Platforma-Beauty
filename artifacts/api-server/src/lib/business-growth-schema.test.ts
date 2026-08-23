@@ -416,6 +416,111 @@ async function run() {
       /ON .*appointments USING btree \(salon_customer_id, appointment_date\).*WHERE \(status = 'completed'::text\)/i,
       "attribution index covers customer/date and only completed history",
     );
+
+    // ── Returning-client attribution plan proof ────────────────────────────
+    // Use a non-trivial history and several campaign attributions so this
+    // checks the lookup shape used by the overview, not just that the index
+    // definition exists. The fixture lives entirely in the temporary schema.
+    await q(
+      `INSERT INTO "${s}".appointments
+         (salon_id, salon_customer_id, appointment_date, status)
+       SELECT $1, $2, date '2024-01-01' + day, 'completed'
+       FROM generate_series(0, 127) AS history(day)`,
+      [fixtures.salon.id, fixtures.customer.id],
+    );
+    const campaignRule = (await q<{ id: string }>(
+      `INSERT INTO "${s}".automation_rules
+         (salon_id, name, trigger, action, status)
+       VALUES ($1, 'Attribution plan fixture', 'inactive_days', 'send_email', 'active')
+       RETURNING id`,
+      [fixtures.salon.id],
+    )).rows[0]!;
+    const campaignAppointments = (await q<{ id: string }>(
+      `INSERT INTO "${s}".appointments
+         (salon_id, salon_customer_id, appointment_date, status)
+       SELECT $1, $2, date '2026-02-01' + day, 'confirmed'
+       FROM generate_series(0, 3) AS campaign(day)
+       RETURNING id`,
+      [fixtures.salon.id, fixtures.customer.id],
+    )).rows;
+    assert.equal(campaignAppointments.length, 4, "campaign attribution fixture has four appointments");
+    await q(
+      `INSERT INTO "${s}".automation_runs
+         (event_key, rule_id, salon_id, salon_customer_id, status,
+          attributed_appointment_id, sent_at, executed_at)
+       SELECT 'plan-run-' || row_number() OVER (ORDER BY appointment.id),
+              $1, $2, $3, 'sent', appointment.id,
+              timestamptz '2026-01-31 10:00:00+00',
+              timestamptz '2026-01-31 10:00:00+00'
+       FROM "${s}".appointments appointment
+       WHERE appointment.id = ANY($4::uuid[])`,
+      [
+        campaignRule.id,
+        fixtures.salon.id,
+        fixtures.customer.id,
+        campaignAppointments.map((appointment) => appointment.id),
+      ],
+    );
+    const campaignRun = (await q<{ id: string }>(
+      `SELECT id
+       FROM "${s}".automation_runs
+       WHERE rule_id = $1
+       ORDER BY event_key
+       LIMIT 1`,
+      [campaignRule.id],
+    )).rows[0];
+    assert.ok(campaignRun, "campaign attribution fixture has a run");
+
+    const planClient = await pool.connect();
+    let explainResult: { rows: Array<{ "QUERY PLAN": unknown }> };
+    try {
+      await planClient.query("BEGIN");
+      // Disabling sequential scans makes the assertion independent of table
+      // size and routine planner cost changes while still requiring the
+      // partial index to be structurally usable by this predicate.
+      await planClient.query("SET LOCAL enable_seqscan = off");
+      explainResult = await planClient.query(
+        `EXPLAIN (COSTS OFF, FORMAT JSON)
+         SELECT 1
+         FROM "${s}".automation_runs AS campaign_run
+         JOIN "${s}".appointments AS attributed
+           ON attributed.id = campaign_run.attributed_appointment_id
+         WHERE campaign_run.id = $1
+           AND EXISTS (
+             SELECT 1
+             FROM "${s}".appointments AS prior
+             WHERE prior.salon_customer_id = attributed.salon_customer_id
+               AND prior.id <> attributed.id
+               AND prior.status = 'completed'
+               AND prior.appointment_date
+                   < (coalesce(
+                        campaign_run.sent_at,
+                        campaign_run.executed_at,
+                        campaign_run.created_at
+                      ))::date
+           )`,
+        [campaignRun.id],
+      );
+      await planClient.query("COMMIT");
+    } catch (error) {
+      await planClient.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      planClient.release();
+    }
+    const planText = JSON.stringify(explainResult!.rows[0]?.["QUERY PLAN"] ?? "");
+    assert.match(
+      planText,
+      /appointments_salon_customer_completed_date_idx/,
+      "returning-client lookup plan uses the completed-history index",
+    );
+    assert.match(
+      planText,
+      /Index Scan|Index Only Scan|Bitmap Index Scan/,
+      "returning-client lookup plan contains an index access",
+    );
+    console.log("Returning-client attribution plan uses the completed-history index.");
+
     const retailCartUniqueIndex = (await q<{ indnullsnotdistinct: boolean }>(
       `SELECT index_definition.indnullsnotdistinct
        FROM pg_index index_definition

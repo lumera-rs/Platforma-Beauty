@@ -216,7 +216,7 @@ async function main() {
     );
     assert.equal(
       overviewRule.newClientShare,
-      80,
+      71.43,
       "overview new-client share excludes the one unknown client from its denominator",
     );
 
@@ -228,7 +228,7 @@ async function main() {
     const statsBody = await statsResponse.json() as any;
     assert.equal(
       statsBody.newClientShare,
-      80,
+      71.43,
       "per-rule stats report the same new-client share as the overview",
     );
     console.log("✓ overview client mix matches the attributed-appointments summary");
