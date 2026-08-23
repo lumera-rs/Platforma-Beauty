@@ -1134,6 +1134,7 @@ async function integrationTests() {
     try {
       process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = "2000";
       process.env.RETENTION_PREVIEW_SAMPLE_SIZE = "1000";
+      process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS = "3";
       const estStartedAt = Date.now();
       const estRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
       const estElapsedMs = Date.now() - estStartedAt;
@@ -1142,6 +1143,11 @@ async function integrationTests() {
       assert.equal(est.isEstimate, true, "over-cap volume preview is a flagged estimate");
       assert.equal(est.sampleSize, 1000, "sample honors the configured size");
       assert.equal(est.totalCustomers, perf.totalCustomers, "estimate reports the true platform size");
+      assert.equal(
+        est.shareRankingMinCustomers,
+        3,
+        "estimate reports the env-configured share-ranking floor",
+      );
       assert.ok(
         Number.isInteger(est.reclassifiedCountMarginOfError) &&
           est.reclassifiedCountMarginOfError >= 0,
@@ -1168,6 +1174,15 @@ async function integrationTests() {
       const estShiftSum = (est.shifts as any[]).reduce((s: number, x: any) => s + x.count, 0);
       assert.equal(estShiftSum, est.reclassifiedCount, "estimated shifts add up to the estimated total");
       assert.deepEqual(est.topAffectedSalons, [], "per-salon breakdown stays empty in estimate mode");
+      assert.deepEqual(est.topShareAffectedSalons, [], "share ranking stays empty in estimate mode");
+      for (const counts of [est.currentCounts, est.candidateCounts]) {
+        const countSum = Object.values(counts as Record<string, number>)
+          .reduce((s: number, n) => s + (n as number), 0);
+        assert.ok(
+          Math.abs(countSum - est.totalCustomers) <= 3,
+          `estimated status counts cover the platform (got ${countSum} of ${est.totalCustomers})`,
+        );
+      }
       console.log(
         `✓ Oversized-platform estimate: 1,000-row sample previewed ${est.totalCustomers} customers in ${estElapsedMs} ms`,
       );
@@ -1210,6 +1225,7 @@ async function integrationTests() {
     } finally {
       delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
       delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
+      delete process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS;
       delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT;
     }
 
