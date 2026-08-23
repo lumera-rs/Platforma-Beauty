@@ -3881,6 +3881,15 @@ export interface AutomationStats {
   lastRunAt?: string | null;
 }
 
+export interface AutomationAttributedAppointment {
+  appointmentId: string;
+  /** Appointment date (YYYY-MM-DD) */
+  date: string;
+  serviceName: string;
+  /** Appointment price in RSD. */
+  price: number;
+}
+
 export interface AutomationStatsOverviewItem {
   ruleId: string;
   ruleName: string;

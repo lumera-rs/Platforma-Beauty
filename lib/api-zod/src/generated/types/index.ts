@@ -91,6 +91,7 @@ export * from './appointmentTreatmentAddress';
 export * from './appointmentTreatmentLocation';
 export * from './appointmentUpdate';
 export * from './authSession';
+export * from './automationAttributedAppointment';
 export * from './automationRule';
 export * from './automationRuleAction';
 export * from './automationRuleStatus';

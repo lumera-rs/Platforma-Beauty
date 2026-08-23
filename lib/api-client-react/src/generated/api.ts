@@ -69,6 +69,7 @@ import type {
   AppointmentSeriesResult,
   AppointmentUpdate,
   AuthSession,
+  AutomationAttributedAppointment,
   AutomationRule,
   AutomationStats,
   AutomationStatsOverviewItem,
@@ -15320,6 +15321,83 @@ export function useOwnerGetAutomationStats<TData = Awaited<ReturnType<typeof own
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getOwnerGetAutomationStatsQueryOptions(automationId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerListAutomationAttributedAppointmentsUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}/attributed-appointments`
+}
+
+/**
+ * @summary List the concrete appointments attributed to an automation rule (owner)
+ */
+export const ownerListAutomationAttributedAppointments = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationAttributedAppointment[]> => {
+
+  return customFetch<AutomationAttributedAppointment[]>(getOwnerListAutomationAttributedAppointmentsUrl(automationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListAutomationAttributedAppointmentsQueryKey = (automationId: string,) => {
+    return [
+    `/api/growth/automations/${automationId}/attributed-appointments`
+    ] as const;
+    }
+
+
+export const getOwnerListAutomationAttributedAppointmentsQueryOptions = <TData = Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>, TError = ErrorType<void>>(automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListAutomationAttributedAppointmentsQueryKey(automationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>> = ({ signal }) => ownerListAutomationAttributedAppointments(automationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: automationId !== null && automationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListAutomationAttributedAppointmentsQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>>
+export type OwnerListAutomationAttributedAppointmentsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the concrete appointments attributed to an automation rule (owner)
+ */
+
+export function useOwnerListAutomationAttributedAppointments<TData = Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>, TError = ErrorType<void>>(
+ automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomationAttributedAppointments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListAutomationAttributedAppointmentsQueryOptions(automationId,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

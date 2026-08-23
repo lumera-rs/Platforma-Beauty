@@ -714,6 +714,43 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
+/**
+ * GET /growth/automations/:automationId/attributed-appointments
+ * Drill-down list of the concrete appointments attributed to a rule:
+ * date, service name, and price (RSD). Owner-scoped; joins
+ * automation_runs.attributed_appointment_id → appointments → services.
+ */
+router.get("/growth/automations/:automationId/attributed-appointments", async (req, res, next) => {
+  try {
+    const ctx = await requireSalonOwner(req);
+    if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
+
+    const [rule] = await db
+      .select({ id: automationRulesTable.id })
+      .from(automationRulesTable)
+      .where(and(eq(automationRulesTable.id, req.params["automationId"]!), eq(automationRulesTable.salonId, ctx.salon.id)))
+      .limit(1);
+    if (!rule) { res.status(404).json({ error: "Automation not found.", code: "NOT_FOUND" }); return; }
+
+    // Inner joins drop runs without an attributed appointment, so the list
+    // matches the attributedAppointments count in the stats endpoints.
+    const appointments = await db
+      .select({
+        appointmentId: appointmentsTable.id,
+        date: appointmentsTable.date,
+        serviceName: servicesTable.name,
+        price: appointmentsTable.price,
+      })
+      .from(automationRunsTable)
+      .innerJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+      .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .where(eq(automationRunsTable.ruleId, rule.id))
+      .orderBy(desc(appointmentsTable.date), desc(appointmentsTable.startTime));
+
+    res.json(appointments);
+  } catch (err) { next(err); }
+});
+
 // ---------------------------------------------------------------------------
 // AUTOMATIONS — Real dry-run (uses actual trigger evaluator)
 // ---------------------------------------------------------------------------

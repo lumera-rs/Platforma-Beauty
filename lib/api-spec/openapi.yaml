@@ -3685,6 +3685,28 @@ paths:
               schema: { $ref: "#/components/schemas/AutomationStats" }
         "404": { description: Not found }
 
+  /growth/automations/{automationId}/attributed-appointments:
+    get:
+      operationId: ownerListAutomationAttributedAppointments
+      tags: [growth]
+      summary: List the concrete appointments attributed to an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Attributed appointments (date, service, price in RSD), newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AutomationAttributedAppointment" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "404": { description: Not found }
+
   /growth/automation-stats:
     get:
       operationId: ownerListAutomationStats
@@ -6830,6 +6852,17 @@ components:
         smsFailedCount: { type: number }
         lastRunAt: { type: ["string", "null"], format: date-time }
       required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+
+    AutomationAttributedAppointment:
+      type: object
+      properties:
+        appointmentId: { type: string }
+        date: { type: string, description: "Appointment date (YYYY-MM-DD)" }
+        serviceName: { type: string }
+        price:
+          type: number
+          description: Appointment price in RSD.
+      required: [appointmentId, date, serviceName, price]
 
     AutomationStatsOverviewItem:
       type: object

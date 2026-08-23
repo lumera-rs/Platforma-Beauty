@@ -9165,6 +9165,22 @@ export const OwnerGetAutomationStatsResponse = zod.object({
 
 
 /**
+ * @summary List the concrete appointments attributed to an automation rule (owner)
+ */
+export const OwnerListAutomationAttributedAppointmentsParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerListAutomationAttributedAppointmentsResponseItem = zod.object({
+  "appointmentId": zod.string(),
+  "date": zod.string().describe('Appointment date (YYYY-MM-DD)'),
+  "serviceName": zod.string(),
+  "price": zod.number().describe('Appointment price in RSD.')
+})
+export const OwnerListAutomationAttributedAppointmentsResponse = zod.array(OwnerListAutomationAttributedAppointmentsResponseItem)
+
+
+/**
  * @summary List performance stats for every automation rule of the active salon (owner)
  */
 export const OwnerListAutomationStatsQueryParams = zod.object({

@@ -5,6 +5,7 @@ import {
   useOwnerListAutomations, 
   useOwnerGetAutomationStats,
   useOwnerListAutomationStats,
+  useOwnerListAutomationAttributedAppointments,
   useOwnerCreateAutomation, 
   useOwnerUpdateAutomation, 
   useOwnerDeleteAutomation,
@@ -251,6 +252,16 @@ export default function OwnerAutomations() {
       query: {
         enabled: !!statsRuleId,
         queryKey: ['owner-automation-stats', statsRuleId, statsPeriod]
+      }
+    }
+  );
+
+  const { data: attributedAppointments, isLoading: isAttributedLoading } = useOwnerListAutomationAttributedAppointments(
+    statsRuleId ?? "",
+    {
+      query: {
+        enabled: !!statsRuleId,
+        queryKey: ['owner-automation-attributed-appointments', statsRuleId]
       }
     }
   );
@@ -606,6 +617,26 @@ export default function OwnerAutomations() {
                         noOpensNote="Provajder ne prati otvaranja SMS poruka."
                       />
                     )}
+                  </div>
+                )}
+              </div>
+              <div className="col-span-2 space-y-3">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Termini ostvareni ovom kampanjom</p>
+                {isAttributedLoading ? (
+                  <div className="flex justify-center p-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                ) : !attributedAppointments || attributedAppointments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Još uvek nema termina pripisanih ovoj kampanji.</p>
+                ) : (
+                  <div className="border rounded-lg divide-y max-h-56 overflow-y-auto" data-testid="attributed-appointments-list">
+                    {attributedAppointments.map((appt) => (
+                      <div key={appt.appointmentId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-testid={`attributed-appointment-${appt.appointmentId}`}>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{appt.serviceName}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(appt.date).toLocaleDateString("sr-RS")}</p>
+                        </div>
+                        <span className="font-semibold text-emerald-800 whitespace-nowrap">{appt.price.toLocaleString("sr-RS")} RSD</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
