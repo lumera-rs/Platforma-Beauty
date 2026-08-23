@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { OwnerListAutomationAttributedAppointmentsClientType } from './ownerListAutomationAttributedAppointmentsClientType';
 import type { OwnerListAutomationAttributedAppointmentsPeriod } from './ownerListAutomationAttributedAppointmentsPeriod';
 
 export type OwnerListAutomationAttributedAppointmentsParams = {
@@ -20,6 +21,10 @@ from?: Date;
  * Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
  */
 to?: Date;
+/**
+ * Restrict the list to only new or only returning clients, using the same derivation as the per-row isReturning field. Rows without a linked salon customer match neither segment. Applied to both the rows and the total.
+ */
+clientType?: OwnerListAutomationAttributedAppointmentsClientType;
 /**
  * Page size (defaults to 25, maximum 100)
  * @minimum 1

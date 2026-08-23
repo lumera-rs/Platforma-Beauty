@@ -156,6 +156,46 @@ async function main() {
     assert.equal(byId.get(walkInAppt.id)?.isReturning, null, "no linked salon customer → unknown");
     assert.equal(byId.get(selfOnlyAppt.id)?.isReturning, false, "attributed appointment never counts as its own prior visit");
     console.log("✓ isReturning derived correctly for all six scenarios");
+
+    // clientType=returning: only the customer with a prior completed visit.
+    const returningResp = await fetch(
+      `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?limit=100&clientType=returning`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(returningResp.status, 200);
+    const returningBody = await returningResp.json() as any;
+    assert.equal(returningBody.total, 1, "clientType=returning total counts only returning rows");
+    assert.equal(returningBody.items.length, 1, "clientType=returning returns only returning rows");
+    assert.equal(returningBody.items[0]?.appointmentId, returningAppt.id, "returning row is the prior-completed customer");
+    assert.equal(returningBody.items[0]?.isReturning, true);
+    console.log("✓ clientType=returning filters to the single returning client");
+
+    // clientType=new: the four isReturning=false rows; the walk-in (null)
+    // matches neither segment.
+    const newResp = await fetch(
+      `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?limit=100&clientType=new`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(newResp.status, 200);
+    const newBody = await newResp.json() as any;
+    assert.equal(newBody.total, 4, "clientType=new total counts only new rows");
+    const newIds = new Set(newBody.items.map((i: any) => i.appointmentId));
+    assert.deepEqual(
+      newIds,
+      new Set([newAppt.id, cancelledPriorAppt.id, laterOnlyAppt.id, selfOnlyAppt.id]),
+      "clientType=new returns exactly the four new-client rows",
+    );
+    assert.ok(!newIds.has(walkInAppt.id), "unknown (no salon customer) row excluded from new segment");
+    assert.ok(newBody.items.every((i: any) => i.isReturning === false), "every new-segment row has isReturning=false");
+    console.log("✓ clientType=new filters to the four new clients and excludes the unknown row");
+
+    // Invalid clientType is rejected.
+    const badResp = await fetch(
+      `${baseUrl}/api/growth/automations/${rule.id}/attributed-appointments?clientType=vip`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(badResp.status, 400, "invalid clientType → 400");
+    console.log("✓ invalid clientType rejected with 400");
   } finally {
     server.close();
     await db.delete(automationRunsTable).where(eq(automationRunsTable.ruleId, rule.id));

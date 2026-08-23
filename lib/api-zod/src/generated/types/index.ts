@@ -308,6 +308,7 @@ export * from './orderStatus';
 export * from './ownerGetAutomationStatsCompare';
 export * from './ownerGetAutomationStatsParams';
 export * from './ownerGetAutomationStatsPeriod';
+export * from './ownerListAutomationAttributedAppointmentsClientType';
 export * from './ownerListAutomationAttributedAppointmentsParams';
 export * from './ownerListAutomationAttributedAppointmentsPeriod';
 export * from './ownerListAutomationStatsCompare';

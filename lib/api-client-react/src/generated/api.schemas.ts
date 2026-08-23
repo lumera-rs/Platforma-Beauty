@@ -5230,6 +5230,10 @@ from?: string;
  */
 to?: string;
 /**
+ * Restrict the list to only new or only returning clients, using the same derivation as the per-row isReturning field. Rows without a linked salon customer match neither segment. Applied to both the rows and the total.
+ */
+clientType?: OwnerListAutomationAttributedAppointmentsClientType;
+/**
  * Page size (defaults to 25, maximum 100)
  * @minimum 1
  * @maximum 100
@@ -5250,6 +5254,14 @@ export const OwnerListAutomationAttributedAppointmentsPeriod = {
   '30d': '30d',
   '90d': '90d',
   all: 'all',
+} as const;
+
+export type OwnerListAutomationAttributedAppointmentsClientType = typeof OwnerListAutomationAttributedAppointmentsClientType[keyof typeof OwnerListAutomationAttributedAppointmentsClientType];
+
+
+export const OwnerListAutomationAttributedAppointmentsClientType = {
+  new: 'new',
+  returning: 'returning',
 } as const;
 
 export type OwnerListAutomationStatsParams = {

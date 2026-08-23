@@ -941,6 +941,12 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
  * Accepts the same `period` filter as the stats endpoints (applied to the
  * run via statsRunPeriodCondition) so the paginated total always matches
  * the attributedAppointments count shown above the list in the dialog.
+ *
+ * Also accepts an optional `clientType=new|returning` filter that reuses the
+ * exact SQL derivation behind the per-row isReturning field, applied to both
+ * the count and the page query so `total` stays consistent with the rows.
+ * Rows with no linked salon customer (isReturning = null) match neither
+ * segment.
  */
 const ATTRIBUTED_APPOINTMENTS_DEFAULT_LIMIT = 25;
 const ATTRIBUTED_APPOINTMENTS_MAX_LIMIT = 100;
@@ -979,6 +985,16 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       offset = parsed;
     }
 
+    let clientType: "new" | "returning" | undefined;
+    if (req.query["clientType"] !== undefined) {
+      const raw = req.query["clientType"];
+      if (raw !== "new" && raw !== "returning") {
+        res.status(400).json({ error: 'Invalid clientType. Expected "new" or "returning".', code: "VALIDATION" });
+        return;
+      }
+      clientType = raw;
+    }
+
     const [rule] = await db
       .select({ id: automationRulesTable.id })
       .from(automationRulesTable)
@@ -997,10 +1013,41 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
       appointmentCountsAsRealized,
     );
+    // NEW vs RETURNING derivation: true when the salon customer already had
+    // at least one completed appointment strictly before the campaign
+    // message went out (anchored on sentAt, falling back to executedAt and
+    // then createdAt like the stats windows), false when this is their
+    // first appointment at the salon, and null (unknown) when the
+    // appointment has no linked salon customer. The attributed appointment
+    // itself is excluded so it can never count as its own "prior" visit.
+    // Shared between the row projection and the clientType filter so the
+    // filter can never disagree with the badge shown on each row.
+    const isReturningExpr = sql<boolean | null>`
+      case
+        when ${appointmentsTable.salonCustomerId} is null then null
+        else exists (
+          select 1
+          from ${appointmentsTable} prior
+          where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
+            and prior.id <> ${appointmentsTable.id}
+            and prior.status = 'completed'
+            and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
+        )
+      end
+    `;
+    // Optional client-segment filter. `is true` / `is false` naturally exclude
+    // the null (no linked salon customer) rows from both segments.
+    const clientTypeCondition =
+      clientType === "new" ? sql`${isReturningExpr} is false`
+      : clientType === "returning" ? sql`${isReturningExpr} is true`
+      : undefined;
+
     // Same run-window filter as the stats endpoints, so the paginated total
     // agrees with the attributedAppointments count for every period choice
     // (statsRunPeriodCondition returns undefined for all-time; and() drops it).
-    const runScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window));
+    // The clientType filter is part of the same scope so count and page rows
+    // always agree.
+    const runScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window), clientTypeCondition);
 
     const [countRow] = await db
       .select({ total: sql<number>`count(*)::int` })
@@ -1019,26 +1066,7 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
         price: appointmentsTable.price,
         clientFirstName: salonCustomersTable.firstName,
         clientLastName: salonCustomersTable.lastName,
-        // NEW vs RETURNING indicator: true when the salon customer already had
-        // at least one completed appointment strictly before the campaign
-        // message went out (anchored on sentAt, falling back to executedAt and
-        // then createdAt like the stats windows), false when this is their
-        // first appointment at the salon, and null (unknown) when the
-        // appointment has no linked salon customer. The attributed appointment
-        // itself is excluded so it can never count as its own "prior" visit.
-        isReturning: sql<boolean | null>`
-          case
-            when ${appointmentsTable.salonCustomerId} is null then null
-            else exists (
-              select 1
-              from ${appointmentsTable} prior
-              where prior.salon_customer_id = ${appointmentsTable.salonCustomerId}
-                and prior.id <> ${appointmentsTable.id}
-                and prior.status = 'completed'
-                and prior.appointment_date < (coalesce(${automationRunsTable.sentAt}, ${automationRunsTable.executedAt}, ${automationRunsTable.createdAt}))::date
-            )
-          end
-        `,
+        isReturning: isReturningExpr,
       })
       .from(automationRunsTable)
       .innerJoin(appointmentsTable, attributedAppointmentJoin)

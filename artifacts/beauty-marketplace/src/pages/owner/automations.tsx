@@ -443,26 +443,42 @@ export default function OwnerAutomations() {
   const [attributedItems, setAttributedItems] = useState<AutomationAttributedAppointment[]>([]);
   const [attributedTotal, setAttributedTotal] = useState<number | null>(null);
 
+  // Client-segment filter for the drill-down list: all / only new / only
+  // returning clients. Server-side filter (same SQL derivation as the
+  // per-row badge) so `total` and "load more" stay consistent.
+  const [attributedClientType, setAttributedClientType] = useState<"all" | "new" | "returning">("all");
+
   // The drill-down follows the same window as the stats above it: preset
   // periods send ?period=, a complete custom range sends ?from=&?to=.
   const { data: attributedPage, isLoading: isAttributedLoading, isFetching: isAttributedFetching } = useOwnerListAutomationAttributedAppointments(
     statsRuleId ?? "",
-    { ...activeStatsParams, limit: ATTRIBUTED_PAGE_SIZE, offset: attributedOffset },
+    {
+      ...activeStatsParams,
+      ...(attributedClientType !== "all" ? { clientType: attributedClientType } : {}),
+      limit: ATTRIBUTED_PAGE_SIZE,
+      offset: attributedOffset,
+    },
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-attributed-appointments', statsRuleId, activeStatsParams, attributedOffset]
+        queryKey: ['owner-automation-attributed-appointments', statsRuleId, activeStatsParams, attributedClientType, attributedOffset]
       }
     }
   );
 
-  // Reset accumulated pages whenever the dialog switches to another rule or
-  // the owner picks a different time window (preset or completed custom range).
+  // Opening the dialog for a different rule starts from the unfiltered list.
+  useEffect(() => {
+    setAttributedClientType("all");
+  }, [statsRuleId]);
+
+  // Reset accumulated pages whenever the dialog switches to another rule, the
+  // owner picks a different time window (preset or completed custom range),
+  // or the client-segment filter changes.
   useEffect(() => {
     setAttributedOffset(0);
     setAttributedItems([]);
     setAttributedTotal(null);
-  }, [statsRuleId, activeStatsParams]);
+  }, [statsRuleId, activeStatsParams, attributedClientType]);
 
   // Merge each arriving page at its offset — idempotent if a page refetches.
   useEffect(() => {
@@ -859,11 +875,41 @@ export default function OwnerAutomations() {
                 )}
               </div>
               <div className="col-span-2 space-y-3">
-                <p className="text-xs text-muted-foreground uppercase font-semibold">Termini ostvareni ovom kampanjom</p>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-xs text-muted-foreground uppercase font-semibold">Termini ostvareni ovom kampanjom</p>
+                  <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1" role="group" aria-label="Filter po tipu klijenta" data-testid="attributed-client-type-filter">
+                    {([
+                      { value: "all", label: "Svi" },
+                      { value: "new", label: "Novi" },
+                      { value: "returning", label: "Vraćeni" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setAttributedClientType(opt.value)}
+                        aria-pressed={attributedClientType === opt.value}
+                        data-testid={`client-type-${opt.value}`}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                          attributedClientType === opt.value
+                            ? "bg-background text-foreground shadow-sm border"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {isAttributedLoading && attributedItems.length === 0 ? (
                   <div className="flex justify-center p-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
                 ) : attributedItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Još uvek nema termina pripisanih ovoj kampanji.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {attributedClientType === "new"
+                      ? "Nema termina novih klijenata za izabrani period."
+                      : attributedClientType === "returning"
+                        ? "Nema termina vraćenih klijenata za izabrani period."
+                        : "Još uvek nema termina pripisanih ovoj kampanji."}
+                  </p>
                 ) : (
                   <>
                     <div className="border rounded-lg divide-y max-h-56 overflow-y-auto" data-testid="attributed-appointments-list">

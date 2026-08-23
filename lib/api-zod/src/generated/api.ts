@@ -9198,6 +9198,7 @@ export const OwnerListAutomationAttributedAppointmentsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run attribution, matching the stats endpoints (defaults to all time)'),
   "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
   "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
+  "clientType": zod.enum(['new', 'returning']).optional().describe('Restrict the list to only new or only returning clients, using the same derivation as the per-row isReturning field. Rows without a linked salon customer match neither segment. Applied to both the rows and the total.'),
   "limit": zod.coerce.number().int().min(1).max(ownerListAutomationAttributedAppointmentsQueryLimitMax).optional().describe('Page size (defaults to 25, maximum 100)'),
   "offset": zod.coerce.number().int().min(ownerListAutomationAttributedAppointmentsQueryOffsetMin).optional().describe('Number of rows to skip (defaults to 0)')
 })

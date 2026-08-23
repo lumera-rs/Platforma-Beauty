@@ -3721,6 +3721,10 @@ paths:
           in: query
           description: Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period
           schema: { type: string, format: date }
+        - name: clientType
+          in: query
+          description: Restrict the list to only new or only returning clients, using the same derivation as the per-row isReturning field. Rows without a linked salon customer match neither segment. Applied to both the rows and the total.
+          schema: { type: string, enum: [new, returning] }
         - name: limit
           in: query
           description: Page size (defaults to 25, maximum 100)
