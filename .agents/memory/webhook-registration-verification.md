@@ -14,6 +14,8 @@ The loopback webhook self-check proves the app's own endpoint accepts the saved 
 - One-click repair (Brevo POST/PUT /v3/webhooks) must update the best-matching existing registration in place instead of creating duplicates — prefer same-origin (stale-secret case), then matching-secret (stale-domain case), then any app-format leftover — and always re-subscribe the full consumed event set.
 - After a repair write, re-run the verdict against a FRESH provider listing so the reported outcome reflects what the provider actually stored, not what was requested; a successful write with a failed re-check is reported as an error, not success.
 
+**Testing:** live provider APIs can't run in tests. Provider calls route through the Replit connector proxy unless an apiKey resolves — set the env apiKey fallback so the direct-fetch path is taken, then stub `globalThis.fetch` for the provider host (pass everything else through) to simulate listings, both response shapes, 404-empty, and error statuses end-to-end through the real route. Exercising the "integration disabled" branch needs the shared enabled flag briefly toggled — snapshot the settings rows first and restore the exact prior state in `finally`.
+
 **Why:** a stale secret or wrong-domain registration at the provider is silent — sends succeed, delivery reports simply never arrive.
 
 **How to apply:** any admin-facing check that compares locally saved credentials against provider-side registrations.
