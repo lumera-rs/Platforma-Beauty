@@ -29,7 +29,23 @@ import {
   Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getGetCurrentUserQueryKey, useEmployeeGetMyPerformance, useGetCurrentUser } from "@workspace/api-client-react";
+import {
+  getGetCurrentUserQueryKey,
+  getGetEmployeeClockQueryKey,
+  getListEmployeeAppointmentTreatmentPhotosQueryKey,
+  getListEmployeeShiftSwapsQueryKey,
+  useCancelEmployeeShiftSwap,
+  useCreateEmployeeShiftSwap,
+  useCreateEmployeeTreatmentPhoto,
+  useEmployeeClockIn,
+  useEmployeeClockOut,
+  useEmployeeGetMyPerformance,
+  useGetCurrentUser,
+  useGetEmployeeClock,
+  useListEmployeeAppointmentTreatmentPhotos,
+  useListEmployeeShiftSwaps,
+  useRespondEmployeeShiftSwap,
+} from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
 import {
   createEmployeeLeaveDraft,
@@ -317,6 +333,104 @@ function EmployeePerformanceTab() {
       </CardContent>
     </Card>
   );
+}
+
+const swapStatusLabel: Record<string, string> = {
+  pending_colleague: "Čeka kolegu",
+  colleague_declined: "Kolega je odbio",
+  pending_owner: "Čeka odobrenje vlasnika",
+  owner_declined: "Vlasnik je odbio",
+  approved: "Odobreno",
+  cancelled: "Otkazano",
+};
+
+function EmployeeOperations() {
+  const queryClient = useQueryClient();
+  const clock = useGetEmployeeClock({ query: { queryKey: getGetEmployeeClockQueryKey(), refetchInterval: 60_000 } });
+  const swaps = useListEmployeeShiftSwaps({ query: { queryKey: getListEmployeeShiftSwapsQueryKey() } });
+  const clockIn = useEmployeeClockIn();
+  const clockOut = useEmployeeClockOut();
+  const createSwap = useCreateEmployeeShiftSwap();
+  const respondSwap = useRespondEmployeeShiftSwap();
+  const cancelSwap = useCancelEmployeeShiftSwap();
+  const [targetEmployeeId, setTargetEmployeeId] = useState("");
+  const [swapDate, setSwapDate] = useState(today());
+  const [swapNote, setSwapNote] = useState("");
+  const visibleSwaps = [
+    ...(swaps.data?.incoming ?? []).map((request) => ({ request, incoming: true })),
+    ...(swaps.data?.outgoing ?? []).map((request) => ({ request, incoming: false })),
+  ];
+  const refreshClock = () => queryClient.invalidateQueries({ queryKey: getGetEmployeeClockQueryKey() });
+  const refreshSwaps = () => queryClient.invalidateQueries({ queryKey: getListEmployeeShiftSwapsQueryKey() });
+  const actClock = (clockInNow: boolean) => {
+    (clockInNow ? clockIn : clockOut).mutate(undefined, {
+      onSuccess: () => { toast.success(clockInNow ? "Smena je započeta." : "Smena je završena."); void refreshClock(); },
+      onError: (error) => toast.error(error instanceof Error ? error.message : "Akcija nije uspela."),
+    });
+  };
+  const submitSwap = (event: FormEvent) => {
+    event.preventDefault();
+    if (!targetEmployeeId) return;
+    createSwap.mutate({ data: { targetEmployeeId, swapDate, note: swapNote.trim() || null } }, {
+      onSuccess: () => { toast.success("Predlog za zamenu je poslat kolegi."); setTargetEmployeeId(""); setSwapNote(""); void refreshSwaps(); },
+      onError: (error) => toast.error(error instanceof Error ? error.message : "Predlog nije poslat."),
+    });
+  };
+  return (
+    <div className="grid gap-6 lg:grid-cols-2" data-testid="employee-operations">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Clock3 className="h-5 w-5 text-primary" />Evidencija radnog vremena</CardTitle><CardDescription>{clock.data?.openEntry ? "Smena je trenutno otvorena." : "Počnite smenu kada započnete rad."}</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Ove nedelje</p><p className="mt-1 text-xl font-bold">{Math.floor((clock.data?.weekMinutes ?? 0) / 60)} h {(clock.data?.weekMinutes ?? 0) % 60} min</p></div>
+            <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Ovog meseca</p><p className="mt-1 text-xl font-bold">{Math.floor((clock.data?.monthMinutes ?? 0) / 60)} h {(clock.data?.monthMinutes ?? 0) % 60} min</p></div>
+          </div>
+          <Button className="w-full" onClick={() => actClock(!clock.data?.openEntry)} disabled={clockIn.isPending || clockOut.isPending} data-testid="employee-clock-action">
+            {(clockIn.isPending || clockOut.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{clock.data?.openEntry ? "Završi smenu" : "Započni smenu"}
+          </Button>
+          <div className="space-y-2">
+            {(clock.data?.entries ?? []).slice(0, 4).map((entry) => <div key={entry.id} className="flex justify-between border-t pt-2 text-xs"><span>{format(new Date(entry.clockInAt), "d. MMM · HH:mm")}–{entry.clockOutAt ? format(new Date(entry.clockOutAt), "HH:mm") : "u toku"}</span><span className="text-muted-foreground">{entry.editedByOwner ? "korigovao vlasnik" : entry.durationMinutes == null ? "" : `${entry.durationMinutes} min`}</span></div>)}
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Zamena smene</CardTitle><CardDescription>Predložite kolegi; salon odobrava tek po prihvatanju kolege.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <form onSubmit={submitSwap} className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
+            <select value={targetEmployeeId} onChange={(event) => setTargetEmployeeId(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm" required data-testid="swap-colleague-select"><option value="">Izaberite kolegu</option>{swaps.data?.colleagues.map((colleague) => <option key={colleague.id} value={colleague.id}>{colleague.name}</option>)}</select>
+            <Input type="date" min={today()} value={swapDate} onChange={(event) => setSwapDate(event.target.value)} data-testid="swap-date" />
+            <Button type="submit" disabled={createSwap.isPending} data-testid="swap-create">Predloži</Button>
+            <Input className="sm:col-span-3" placeholder="Napomena (opciono)" value={swapNote} onChange={(event) => setSwapNote(event.target.value)} data-testid="swap-note" />
+          </form>
+          <div className="space-y-2">
+            {visibleSwaps.slice(0, 5).map(({ request, incoming }) => <div key={request.id} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{request.requesterName} ↔ {request.targetName} · {request.swapDate}</span><Badge variant={request.status === "pending_owner" ? "default" : "secondary"}>{swapStatusLabel[request.status]}</Badge></div>{request.note && <p className="mt-1 text-xs text-muted-foreground">{request.note}</p>}{incoming && request.status === "pending_colleague" && <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => respondSwap.mutate({ requestId: request.id, data: { accept: true } }, { onSuccess: refreshSwaps, onError: () => toast.error("Odgovor nije sačuvan.") })} data-testid={`swap-accept-${request.id}`}>Prihvati</Button><Button size="sm" variant="outline" onClick={() => respondSwap.mutate({ requestId: request.id, data: { accept: false } }, { onSuccess: refreshSwaps, onError: () => toast.error("Odgovor nije sačuvan.") })} data-testid={`swap-decline-${request.id}`}>Odbij</Button></div>}{!incoming && request.status === "pending_colleague" && <Button size="sm" variant="ghost" className="mt-2" onClick={() => cancelSwap.mutate({ requestId: request.id }, { onSuccess: refreshSwaps, onError: () => toast.error("Zahtev nije otkazan.") })} data-testid={`swap-cancel-${request.id}`}>Otkaži moj zahtev</Button>}</div>)}
+            {!swaps.data?.incoming.length && !swaps.data?.outgoing.length && <p className="text-sm text-muted-foreground">Još nema zahteva za zamenu.</p>}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CompletedAppointmentPhotos({ appointmentId }: { appointmentId: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<"before" | "after">("before");
+  const [consent, setConsent] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const photos = useListEmployeeAppointmentTreatmentPhotos(appointmentId, { query: { enabled: open, queryKey: getListEmployeeAppointmentTreatmentPhotosQueryKey(appointmentId) } });
+  const createPhoto = useCreateEmployeeTreatmentPhoto();
+  const submit = async () => {
+    if (!file || !consent) return;
+    try {
+      const asset = await uploadOptimizedImage(file, "treatment-photo");
+      createPhoto.mutate({ appointmentId, data: { kind, url: asset.imageUrl, consentConfirmed: true } }, {
+        onSuccess: () => { toast.success("Fotografija je sačuvana u CRM profilu klijenta."); setFile(null); setConsent(false); void queryClient.invalidateQueries({ queryKey: getListEmployeeAppointmentTreatmentPhotosQueryKey(appointmentId) }); },
+        onError: (error) => toast.error(error instanceof Error ? error.message : "Fotografija nije sačuvana."),
+      });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Otpremanje nije uspelo."); }
+  };
+  return <div className="mt-3"><Button size="sm" variant="outline" onClick={() => setOpen(true)} data-testid={`treatment-photos-${appointmentId}`}><ImagePlus className="mr-1 h-3.5 w-3.5" />Pre/posle fotografije</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>Fotografije tretmana</DialogTitle></DialogHeader><div className="space-y-4"><div className="grid grid-cols-2 gap-3">{photos.data?.map((photo) => <img key={photo.id} className="aspect-square w-full rounded-md object-cover" src={photo.url} alt={photo.kind === "before" ? "Pre tretmana" : "Posle tretmana"} />)}</div><div><Label>Vrsta</Label><select className="mt-1 h-10 w-full rounded-md border bg-background px-3" value={kind} onChange={(event) => setKind(event.target.value as "before" | "after")}><option value="before">Pre tretmana</option><option value="after">Posle tretmana</option></select></div><Input type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => setFile(event.target.files?.[0] ?? null)} data-testid={`treatment-photo-file-${appointmentId}`} /><label className="flex gap-2 rounded-md border p-3 text-sm"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} data-testid={`treatment-photo-consent-${appointmentId}`} /><span>Klijent je saglasan sa fotografisanjem i čuvanjem fotografija.</span></label><p className="text-xs text-muted-foreground">Bez potvrđene saglasnosti dugme za čuvanje ostaje nedostupno.</p><Button className="w-full" disabled={!file || !consent || createPhoto.isPending} onClick={submit} data-testid={`treatment-photo-save-${appointmentId}`}>{createPhoto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Sačuvaj fotografiju</Button></div></DialogContent></Dialog></div>;
 }
 
 export default function EmployeePortal() {
@@ -612,6 +726,7 @@ export default function EmployeePortal() {
                               ))}
                             </div>
                           )}
+                           {appointment.status === "completed" && <CompletedAppointmentPhotos appointmentId={appointment.id} />}
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
@@ -636,6 +751,8 @@ export default function EmployeePortal() {
             </CardContent>
           </Card>
         </div>
+
+        <EmployeeOperations />
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card>

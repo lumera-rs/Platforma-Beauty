@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
+import { Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ export default function OwnerSalonProfile() {
   const [imageUrl, setImageUrl] = useState("");
   const [gallery, setGallery] = useState<string[]>([]);
   const [uploading, setUploading] = useState<"profile" | "gallery" | null>(null);
+  const [widgetColor, setWidgetColor] = useState("#9b6b54");
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
@@ -121,6 +122,16 @@ export default function OwnerSalonProfile() {
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   );
+  const widgetUrl = salon ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/widget/${salon.slug}${widgetColor ? `?boja=${widgetColor.slice(1)}` : ""}` : "";
+  const widgetSnippet = `<iframe src="${widgetUrl}" style="border:0;width:100%;max-width:420px;height:640px" title="Zakazivanje"></iframe>`;
+  const copyWidgetSnippet = async () => {
+    try {
+      await navigator.clipboard.writeText(widgetSnippet);
+      toast.success("Kod za widget je kopiran.");
+    } catch {
+      toast.error("Kod nije moguće automatski kopirati. Označite ga i kopirajte ručno.");
+    }
+  };
 
   return (
     <BusinessLayout>
@@ -139,6 +150,24 @@ export default function OwnerSalonProfile() {
             <Card><CardContent className="p-6 text-muted-foreground">Profil salona trenutno nije dostupan.</CardContent></Card>
           ) : (
             <form className="space-y-6" onSubmit={save}>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Zap className="h-5 w-5 text-primary" />Widget za zakazivanje na vašem sajtu</CardTitle>
+                  <CardDescription>Posetioci rezervišu direktno na vašem sajtu, a zahtev stiže kao pending termin koji vi potvrđujete.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="space-y-2"><label htmlFor="widget-color" className="text-sm font-medium">Boja akcija</label><div className="flex items-center gap-2"><input id="widget-color" type="color" value={widgetColor} onChange={(event) => setWidgetColor(event.target.value)} className="h-10 w-12 rounded border p-1" data-testid="widget-color" /><Input value={widgetColor} onChange={(event) => /^#[0-9a-fA-F]{0,6}$/.test(event.target.value) && setWidgetColor(event.target.value)} className="h-10 w-28" /></div></div>
+                    <a href={widgetUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-muted" data-testid="widget-preview">Pregled widgeta <ExternalLink className="ml-2 h-3.5 w-3.5" /></a>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kod za kopiranje</p>
+                    <code className="block break-all text-xs leading-5 text-foreground">{widgetSnippet}</code>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => void copyWidgetSnippet()} data-testid="widget-copy"><Copy className="mr-2 h-4 w-4" />Kopiraj iframe kod</Button>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><ImagePlus className="h-5 w-5 text-primary" />Fotografije salona</CardTitle>

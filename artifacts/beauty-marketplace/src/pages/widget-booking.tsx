@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useSearch } from "wouter";
 import {
   useGetWidgetSalon,
@@ -63,14 +63,14 @@ export default function WidgetBooking() {
       onError: (err: any) => {
         const status = err?.response?.status;
         if (status === 409) {
-          toast({ variant: "destructive", title: "Termin je upravo zauzet", description: "Molimo izaberite drugo vreme." });
+          toast.error("Termin je upravo zauzet", { description: "Molimo izaberite drugo vreme." });
           queryClient.invalidateQueries({ queryKey: getGetWidgetAvailabilityQueryKey(slug ?? "", { serviceId: serviceId!, date: format(selectedDate, 'yyyy-MM-dd') }) });
           setStep("DATETIME");
           setStartTime(null);
         } else if (status === 429) {
-          toast({ variant: "destructive", title: "Previše zahteva", description: "Pokušajte ponovo za koji minut." });
+          toast.error("Previše zahteva", { description: "Pokušajte ponovo za koji minut." });
         } else {
-          toast({ variant: "destructive", title: "Greška", description: "Nije moguće zakazati termin. Pokušajte ponovo." });
+          toast.error("Greška", { description: "Nije moguće zakazati termin. Pokušajte ponovo." });
         }
       }
     }
