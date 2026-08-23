@@ -28,8 +28,8 @@ function assertRange(selection: PeriodSelection, from: Date, to: Date) {
 }
 
 /** Simulate the page's URL-sync effect after a restore: parse, then re-serialize. */
-function roundTripSearch(search: string): string {
-  const restored = parsePeriodSelection(search);
+function roundTripSearch(search: string, today?: Date): string {
+  const restored = parsePeriodSelection(search, today);
   const next = serializePeriodSelection(
     search.startsWith("?") ? search.slice(1) : search,
     restored.period,
@@ -76,6 +76,47 @@ test("a complete valid from/to pair wins over an also-present ?period=", () => {
 
 test("an incomplete pair falls back to a still-valid ?period=", () => {
   assert.deepEqual(parsePeriodSelection("?from=2026-01-01&period=7d"), { period: "7d" });
+});
+
+// --- Future dates: the calendar can't pick them, links must not restore them --
+
+// Pinned local "today" so the clamp/fallback boundary is deterministic.
+const TODAY = new Date(2026, 7, 23); // 2026-08-23
+
+test("a range entirely after today falls back to all time", () => {
+  assert.deepEqual(parsePeriodSelection("?from=2027-01-01&to=2027-01-31", TODAY), ALL_TIME);
+  // Even one day in the future is unreachable in the calendar.
+  assert.deepEqual(parsePeriodSelection("?from=2026-08-24&to=2026-08-24", TODAY), ALL_TIME);
+});
+
+test("a range entirely after today falls back to a still-valid ?period=", () => {
+  assert.deepEqual(
+    parsePeriodSelection("?period=7d&from=2027-01-01&to=2027-01-31", TODAY),
+    { period: "7d" },
+  );
+});
+
+test("a range ending after today is clamped to end today", () => {
+  const selection = parsePeriodSelection("?from=2026-08-01&to=2027-01-31", TODAY);
+  assertRange(selection, new Date(2026, 7, 1), new Date(2026, 7, 23));
+});
+
+test("a range ending exactly today is restored unchanged", () => {
+  const selection = parsePeriodSelection("?from=2026-08-01&to=2026-08-23", TODAY);
+  assertRange(selection, new Date(2026, 7, 1), new Date(2026, 7, 23));
+});
+
+test("a range starting today with a future end collapses to a single day", () => {
+  const selection = parsePeriodSelection("?from=2026-08-23&to=2027-08-23", TODAY);
+  assertRange(selection, new Date(2026, 7, 23), new Date(2026, 7, 23));
+});
+
+test("today is compared by local calendar day, ignoring the time of day", () => {
+  // Late in the evening a link ending today must still restore intact — the
+  // calendar allows picking today at any hour.
+  const lateToday = new Date(2026, 7, 23, 23, 59, 59);
+  const selection = parsePeriodSelection("?from=2026-08-20&to=2026-08-23", lateToday);
+  assertRange(selection, new Date(2026, 7, 20), new Date(2026, 7, 23));
 });
 
 // --- Invalid inputs must not crash and must fall back to all time -----------
@@ -129,6 +170,17 @@ test("invalid params are cleaned from the URL after falling back to all time", (
   assert.equal(roundTripSearch("?from=2026-02-30&to=2026-03-05"), "");
   assert.equal(roundTripSearch("?period=eternity"), "");
   assert.equal(roundTripSearch("?from=2026-05-10&to=2026-05-01"), "");
+});
+
+test("a fully-future range is cleaned from the URL after falling back", () => {
+  assert.equal(roundTripSearch("?from=2027-01-01&to=2027-01-31", TODAY), "");
+});
+
+test("a clamped range serializes the clamped end, so the URL matches the view", () => {
+  assert.equal(
+    roundTripSearch("?from=2026-08-01&to=2027-01-31", TODAY),
+    "from=2026-08-01&to=2026-08-23",
+  );
 });
 
 test("cleaning invalid period params preserves unrelated query params", () => {

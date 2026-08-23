@@ -12,13 +12,27 @@ export type PeriodSelection =
  * Restore the campaign period from the URL query string so the picked window
  * is bookmarkable/shareable. A complete valid from/to pair wins over ?period=;
  * anything invalid or malformed falls back to the default ("all time").
+ *
+ * The custom-range calendar never lets the owner pick a day after today
+ * (day-level comparison, so today itself is pickable), and a shared or
+ * hand-edited link must not restore what the calendar cannot: the end of the
+ * range is clamped to today, and a range that starts after today has nothing
+ * left after clamping, so it falls through to the same fallback as other
+ * invalid params. `today` is injectable for tests; callers omit it to use the
+ * current local date.
  */
-export function parsePeriodSelection(search: string): PeriodSelection {
+export function parsePeriodSelection(search: string, today: Date = new Date()): PeriodSelection {
   const params = new URLSearchParams(search);
   const from = parseDateParam(params.get("from"));
   const to = parseDateParam(params.get("to"));
   if (from && to && from.getTime() <= to.getTime()) {
-    return { period: "custom", range: { from, to } };
+    // Compare by local calendar day: a link ending today must survive intact
+    // even late in the evening.
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const clampedTo = to.getTime() > todayStart.getTime() ? todayStart : to;
+    if (from.getTime() <= clampedTo.getTime()) {
+      return { period: "custom", range: { from, to: clampedTo } };
+    }
   }
   const period = params.get("period");
   if (period === "7d" || period === "30d" || period === "90d" || period === "all") {

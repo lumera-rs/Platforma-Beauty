@@ -16,6 +16,9 @@
  *     restored range; the stats request uses the exact from/to dates.
  *  3. ?period=eternity (invalid) → falls back to "Sve vreme", the stats
  *     request uses the default window, and the URL is cleaned in place.
+ *  4. ?to= in the future → the calendar disables days after today, so the
+ *     restored range is clamped to end today; the stats request and the
+ *     rewritten URL both carry the clamped end date.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -29,6 +32,11 @@ import {
 } from "@workspace/db";
 
 const scrypt = promisify(scryptCallback);
+
+/** Local calendar date → YYYY-MM-DD, mirroring the app's own serialization. */
+function toDateParam(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 type Fixture = {
   ownerEmail: string;
@@ -213,5 +221,35 @@ test.describe("shared campaign period links restore the picked window", () => {
     // The URL-sync effect strips the invalid param in place (replace, not a
     // new history entry — going shared-link → cleaned URL must not add steps).
     await expect(page).toHaveURL(/\/vlasnik\/automatizacije$/);
+  });
+
+  test("a ?to in the future is clamped to today, and the URL reflects the clamp", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    // Dates are computed relative to the test run so they stay past/future
+    // forever: from = first day of last month, to = one year from now.
+    const now = new Date();
+    const fromParam = toDateParam(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+    const futureToParam = toDateParam(new Date(now.getFullYear() + 1, now.getMonth(), 1));
+    const todayParam = toDateParam(now);
+
+    // The stats request must already use the clamped end date — never the
+    // future one the link carried (the calendar disables days after today).
+    const statsResponse = nextOverviewStatsResponse(page, { period: null, from: fromParam, to: todayParam });
+    await page.goto(`/vlasnik/automatizacije?from=${fromParam}&to=${futureToParam}`);
+
+    expect((await statsResponse).status()).toBe(200);
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    const customButton = selector.getByTestId("period-custom");
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).not.toContainText("Izaberi datume");
+
+    // The URL-sync effect rewrites the shared link to the clamped range, so
+    // what the owner re-shares matches what is actually shown.
+    await expect(page).toHaveURL(
+      new RegExp(`/vlasnik/automatizacije\\?from=${fromParam}&to=${todayParam}$`),
+    );
   });
 });

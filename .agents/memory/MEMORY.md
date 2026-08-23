@@ -121,3 +121,4 @@
 - [Retention preview estimate mode](retention-preview-estimate-mode.md) — above the cap the preview extrapolates a flagged sample; never render estimates as exact or extrapolate per-salon numbers.
 - [Stale provider webhook cleanup](stale-provider-webhook-cleanup.md) — deletable sets must be re-derived from a fresh provider listing server-side and refused from dev origins whose secret differs from production.
 - [Batched provider event matching](batched-provider-event-matching.md) — batch only the reference→key lookup per webhook batch; state application stays per-event guarded and monotonic.
+- [URL restore picker parity](url-restore-picker-parity.md) — state restored from shared links must obey the same constraints the UI picker enforces; clamp to the reachable boundary or fall back.
