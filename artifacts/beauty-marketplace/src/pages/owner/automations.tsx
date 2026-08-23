@@ -42,6 +42,61 @@ function rate(part: number, total: number) {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+function formatClientShare(share: number): string {
+  return `${share.toLocaleString("sr-RS", { maximumFractionDigits: 1 })}%`;
+}
+
+function formatPercentagePoints(points: number): string {
+  return points.toLocaleString("sr-RS", { maximumFractionDigits: 1 });
+}
+
+/**
+ * Trend for a percentage share. Unlike count trends, this is expressed in
+ * percentage points and is unavailable when either period has no known
+ * client history.
+ */
+function ClientShareTrend({
+  current,
+  previous,
+  testId,
+}: {
+  current: number | null;
+  previous?: number | null;
+  testId: string;
+}) {
+  if (previous === undefined) return null;
+  if (current === null || previous === null) {
+    return (
+      <span className="text-xs font-medium text-muted-foreground" title="Poređenje nije dostupno bez poznatih podataka o klijentima" data-testid={testId}>
+        (bez validnog poređenja)
+      </span>
+    );
+  }
+
+  const diff = Math.round((current - previous) * 10) / 10;
+  if (diff === 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground" title="U odnosu na prethodni period iste dužine" data-testid={testId}>
+        <Minus className="w-3 h-3" /> bez promene
+      </span>
+    );
+  }
+
+  if (diff > 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700" title="U odnosu na prethodni period iste dužine" data-testid={testId}>
+        <TrendingUp className="w-3 h-3" /> +{formatPercentagePoints(diff)} pp
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-red-700" title="U odnosu na prethodni period iste dužine" data-testid={testId}>
+      <TrendingDown className="w-3 h-3" /> −{formatPercentagePoints(Math.abs(diff))} pp
+    </span>
+  );
+}
+
 /** Page size for the attributed-appointments drill-down list. */
 const ATTRIBUTED_PAGE_SIZE = 25;
 type AttributedClientType = "all" | "new" | "returning";
@@ -454,6 +509,20 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                         )}
                       </div>
                     )}
+                    <div className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid={`overview-new-client-share-${item.ruleId}`}>
+                      {item.newClientShare === null
+                        ? "Udeo novih: nema poznatih podataka"
+                        : <>Udeo novih: <strong className="text-foreground">{formatClientShare(item.newClientShare)}</strong></>}
+                      {item.previous && (
+                        <span className="ml-1.5">
+                          <ClientShareTrend
+                            current={item.newClientShare}
+                            previous={item.previous.newClientShare}
+                            testId={`trend-new-client-share-${item.ruleId}`}
+                          />
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
                       {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
                       {item.previous && <span className="ml-1.5"><TrendIndicator current={item.attributedRevenue ?? 0} previous={item.previous.attributedRevenue ?? 0} testId={`trend-revenue-${item.ruleId}`} /></span>}
@@ -1066,6 +1135,28 @@ export default function OwnerAutomations() {
               <div className="bg-red-50 border border-red-100 p-4 rounded-lg text-center col-span-2 sm:col-span-1">
                 <p className="text-xs text-red-700 uppercase font-semibold flex items-center justify-center gap-1"><XCircle className="w-3 h-3" /> Neuspešno (Greške)</p>
                 <p className="text-2xl font-bold mt-1 text-red-900">{statsData.failedCount}</p>
+              </div>
+              <div className="col-span-2 space-y-3">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="stats-new-client-share">
+                  <p className="text-xs uppercase font-semibold text-primary">Udeo novih klijenata</p>
+                  <p className="mt-1 text-sm">
+                    {statsData.newClientShare === null
+                      ? "Nije dostupan — nema poznatih podataka o klijentima."
+                      : <><strong className="text-lg text-primary">{formatClientShare(statsData.newClientShare)}</strong> pripisanih termina je od novih klijenata.</>}
+                    {statsData.previous && (
+                      <span className="ml-1.5">
+                        <ClientShareTrend
+                          current={statsData.newClientShare}
+                          previous={statsData.previous.newClientShare}
+                          testId="stats-trend-new-client-share"
+                        />
+                      </span>
+                    )}
+                  </p>
+                  {statsData.previous && (statsData.newClientShare === null || statsData.previous.newClientShare === null) && (
+                    <p className="mt-1 text-xs text-muted-foreground">Poređenje sa prethodnim periodom nije dostupno bez poznatih podataka u oba perioda.</p>
+                  )}
+                </div>
               </div>
               <div className="col-span-2 space-y-3">
                 <p className="text-xs text-muted-foreground uppercase font-semibold">Isporuka poruka (podaci provajdera)</p>

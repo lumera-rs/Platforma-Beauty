@@ -7703,11 +7703,21 @@ components:
             returningClientCount:
               type: number
               description: Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent.
+            newClientShare:
+              type: ["number", "null"]
+              minimum: 0
+              maximum: 100
+              description: Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
             emailDeliveredCount: { type: number }
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
-          required: [attributedAppointments, attributedRevenue, newClientCount, returningClientCount, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+          required: [attributedAppointments, attributedRevenue, newClientCount, returningClientCount, newClientShare, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
+        newClientShare:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 100
+          description: Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientShare, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:
       type: object
@@ -7816,11 +7826,21 @@ components:
             attributedRevenue:
               type: number
               description: Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.
+            newClientShare:
+              type: ["number", "null"]
+              minimum: 0
+              maximum: 100
+              description: Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
             emailDeliveredCount: { type: number }
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
-          required: [attributedAppointments, attributedRevenue, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientCount, returningClientCount, unknownClientCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+          required: [attributedAppointments, attributedRevenue, newClientShare, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
+        newClientShare:
+          type: ["number", "null"]
+          minimum: 0
+          maximum: 100
+          description: Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientCount, returningClientCount, unknownClientCount, newClientShare, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

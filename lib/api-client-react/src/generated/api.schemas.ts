@@ -4138,6 +4138,13 @@ export type AutomationStatsPrevious = {
   newClientCount: number;
   /** Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent. */
   returningClientCount: number;
+  /**
+     * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  newClientShare: number | null;
   emailDeliveredCount: number;
   emailOpenedCount: number;
   smsDeliveredCount: number;
@@ -4177,6 +4184,13 @@ export interface AutomationStats {
   lastRunAt?: string | null;
   /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsPrevious;
+  /**
+     * Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  newClientShare: number | null;
 }
 
 export interface AutomationAttributedAppointment {
@@ -4231,6 +4245,13 @@ export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /**
+     * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  newClientShare: number | null;
   emailDeliveredCount: number;
   emailOpenedCount: number;
   smsDeliveredCount: number;
@@ -4277,6 +4298,13 @@ export interface AutomationStatsOverviewItem {
   lastRunAt?: string | null;
   /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsOverviewItemPrevious;
+  /**
+     * Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  newClientShare: number | null;
 }
 
 export type AutomationTestRunResultTriggerBreakdown = {[key: string]: number};

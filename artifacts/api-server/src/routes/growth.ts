@@ -726,6 +726,17 @@ const isReturningExpr = sql<boolean | null>`
   end
 `;
 
+function calculateNewClientShare(
+  newClientCount: number | null | undefined,
+  returningClientCount: number | null | undefined,
+): number | null {
+  const newCount = newClientCount ?? 0;
+  const returningCount = returningClientCount ?? 0;
+  const knownClientCount = newCount + returningCount;
+  if (knownClientCount <= 0) return null;
+  return Math.round((newCount / knownClientCount) * 10000) / 100;
+}
+
 /**
  * Run/attribution aggregation shared by the overview and per-rule stats
  * endpoints, for both the current window and the preceding comparison window
@@ -883,13 +894,23 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     // [prevCutoff, window.start). Built with the same shared aggregation as
     // the current window so trend arrows always compare like-for-like
     // attribution semantics.
-    let prevRunsByRule: Map<string, { attributedAppointments: number; attributedRevenue: number }> | null = null;
+    let prevRunsByRule: Map<string, {
+      attributedAppointments: number;
+      attributedRevenue: number;
+      newClientCount: number;
+      returningClientCount: number;
+    }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
     if (previousWindow) {
       const prevRunAgg = await aggregateRunStats({ ruleIds }, previousWindow);
       const prevDeliveryAgg = await aggregateDeliveryStats({ ruleIds }, previousWindow);
 
-      prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments, attributedRevenue: r.attributedRevenue }]));
+      prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, {
+        attributedAppointments: r.attributedAppointments,
+        attributedRevenue: r.attributedRevenue,
+        newClientCount: r.newClientCount,
+        returningClientCount: r.returningClientCount,
+      }]));
       prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
         emailDeliveredCount: d.emailDeliveredCount,
         emailOpenedCount: d.emailOpenedCount,
@@ -909,6 +930,10 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         ? {
             attributedAppointments: prevRunsByRule.get(rule.id)?.attributedAppointments ?? 0,
             attributedRevenue: prevRunsByRule.get(rule.id)?.attributedRevenue ?? 0,
+            newClientShare: calculateNewClientShare(
+              prevRunsByRule.get(rule.id)?.newClientCount,
+              prevRunsByRule.get(rule.id)?.returningClientCount,
+            ),
             emailDeliveredCount: prevDeliveriesByRule.get(rule.id)?.emailDeliveredCount ?? 0,
             emailOpenedCount: prevDeliveriesByRule.get(rule.id)?.emailOpenedCount ?? 0,
             smsDeliveredCount: prevDeliveriesByRule.get(rule.id)?.smsDeliveredCount ?? 0,
@@ -934,6 +959,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
          newClientCount: clientMix?.newClientCount ?? 0,
          returningClientCount: clientMix?.returningClientCount ?? 0,
          unknownClientCount: clientMix?.unknownClientCount ?? 0,
+        newClientShare: calculateNewClientShare(clientMix?.newClientCount, clientMix?.returningClientCount),
         emailSentCount: deliveries?.emailSentCount ?? 0,
         emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: deliveries?.emailOpenedCount ?? 0,
@@ -1000,6 +1026,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
           attributedRevenue: number;
           newClientCount: number;
           returningClientCount: number;
+           newClientShare: number | null;
           emailDeliveredCount: number;
           emailOpenedCount: number;
           smsDeliveredCount: number;
@@ -1014,6 +1041,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         attributedRevenue: prevRuns?.attributedRevenue ?? 0,
         newClientCount: prevRuns?.newClientCount ?? 0,
         returningClientCount: prevRuns?.returningClientCount ?? 0,
+        newClientShare: calculateNewClientShare(prevRuns?.newClientCount, prevRuns?.returningClientCount),
         emailDeliveredCount: prevDeliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: prevDeliveries?.emailOpenedCount ?? 0,
         smsDeliveredCount: prevDeliveries?.smsDeliveredCount ?? 0,
@@ -1034,6 +1062,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       upcomingRevenue: stats?.upcomingRevenue ?? 0,
       cancelledAttributedAppointments: stats?.cancelledAttributedAppointments ?? 0,
       cancelledAttributedRevenue: stats?.cancelledAttributedRevenue ?? 0,
+      newClientShare: calculateNewClientShare(stats?.newClientCount, stats?.returningClientCount),
       deliveredCount: deliveryStats?.deliveredCount ?? 0,
       openedCount: deliveryStats?.openedCount ?? 0,
       emailSentCount: deliveryStats?.emailSentCount ?? 0,

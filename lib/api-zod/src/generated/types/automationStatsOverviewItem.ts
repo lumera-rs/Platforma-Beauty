@@ -48,4 +48,11 @@ export interface AutomationStatsOverviewItem {
   lastRunAt?: Date | null;
   /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsOverviewItemPrevious;
+  /**
+     * Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  newClientShare: number | null;
 }

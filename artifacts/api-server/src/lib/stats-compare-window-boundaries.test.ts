@@ -207,6 +207,10 @@ async function main() {
       assert.ok(row.previous, `${label}: previous block present for compare=previous`);
       assert.equal(row.previous.attributedAppointments, PREVIOUS,
         `${label}: previous window counts exactly the two edge runs plus the createdAt-fallback run`);
+      assert.equal(row.newClientShare, 0,
+        `${label}: current new-client share is calculated only from clients with known history`);
+      assert.equal(row.previous.newClientShare, 0,
+        `${label}: previous new-client share follows the exact same previous run window`);
       if (label === "per-rule") {
         assert.equal(row.previous.newClientCount, 0,
           "per-rule: previous new-client count uses the same returning derivation as the attributed-appointments summary");
@@ -234,6 +238,7 @@ async function main() {
     const short = await overviewRow("?period=7d&compare=previous");
     assert.equal(short.totalRuns, 1, "7d current window keeps only the recent run");
     assert.equal(short.previous.attributedAppointments, 0, "7d previous window contains none of the 30/60-day edge rows");
+    assert.equal(short.previous.newClientShare, null, "7d previous window has no known clients, so its share is unavailable rather than 0%");
     assert.equal(short.emailDeliveredCount, 1, "7d current window keeps only the recent delivery");
     assert.equal(short.previous.emailDeliveredCount, 0, "7d previous window contains no old deliveries");
     console.log("✓ conservation holds: no double-count, no dropped row; shifted windows exclude all old edge rows");

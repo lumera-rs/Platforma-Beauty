@@ -186,6 +186,23 @@ async function main() {
       overviewRule.attributedAppointments,
       "overview client-mix buckets partition attributed appointments",
     );
+    assert.equal(
+      overviewRule.newClientShare,
+      80,
+      "overview new-client share excludes the one unknown client from its denominator",
+    );
+
+    const statsResponse = await fetch(
+      `${baseUrl}/api/growth/automations/${rule.id}/stats?period=all`,
+      { headers: { cookie: `${sessionCookieName}=${token}` } },
+    );
+    assert.equal(statsResponse.status, 200);
+    const statsBody = await statsResponse.json() as any;
+    assert.equal(
+      statsBody.newClientShare,
+      80,
+      "per-rule stats report the same new-client share as the overview",
+    );
     console.log("✓ overview client mix matches the attributed-appointments summary");
 
     // Pagination must not change the summary: a small page still reports the
