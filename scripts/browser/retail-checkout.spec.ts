@@ -361,6 +361,44 @@ test("retail checkout offers a retry after the initial quote fails without reloa
   expect(previewRequests.length).toBeGreaterThanOrEqual(3);
 });
 
+test("retail checkout detects a cart changed in another tab and refreshes before confirmation", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
+  await expect(confirmButton).toBeEnabled();
+  await expect(page.getByText(money(2_390), { exact: true })).toBeVisible();
+
+  // A second tab or device shares the same session cookie, so an API call from the
+  // same browser context is exactly what a cross-tab cart change looks like.
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+  expect(cart.items.length).toBe(1);
+  const patchResponse = await page.request.patch(`/api/retail/cart/items/${cart.items[0]!.id}`, {
+    data: { quantity: 2 },
+  });
+  expect(patchResponse.ok()).toBe(true);
+
+  const changeAlert = page.getByRole("alert").filter({ hasText: "Korpa je u međuvremenu izmenjena" });
+  await expect(changeAlert).toBeVisible({ timeout: 15_000 });
+  await expect(changeAlert).toContainText("Osvežite pregled");
+  await expect(confirmButton).toBeDisabled();
+
+  await changeAlert.getByRole("button", { name: "Osveži pregled" }).click();
+  await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+  await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(4_390)}`);
+  await expect(page.getByText(money(4_390), { exact: true })).toBeVisible();
+  await expect(changeAlert).not.toBeVisible();
+  await expect(confirmButton).toBeEnabled();
+  expect(page.url()).toContain("/korpa/placanje");
+  expect(mainFrameNavigations).toBe(1);
+});
+
 test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
