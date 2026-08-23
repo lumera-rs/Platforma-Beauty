@@ -304,6 +304,11 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                     <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
                       {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
                     </div>
+                    {item.attributedAppointments > 0 && (
+                      <div className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid={`overview-revenue-split-${item.ruleId}`}>
+                        Ostvareno {(item.completedRevenue ?? 0).toLocaleString("sr-RS")} · Zakazano {(item.upcomingRevenue ?? 0).toLocaleString("sr-RS")}
+                      </div>
+                    )}
                     {item.previous && (
                       <div className="mt-0.5 flex justify-end">
                         <TrendIndicator current={item.attributedAppointments} previous={item.previous.attributedAppointments} testId={`trend-appointments-${item.ruleId}`} />
@@ -748,7 +753,10 @@ export default function OwnerAutomations() {
                 <p className="text-sm font-semibold text-emerald-800 mt-1" data-testid="stats-attributed-revenue">
                   {(statsData.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD prihoda
                 </p>
-                <p className="text-[11px] text-muted-foreground mt-1">Bez otkazanih termina</p>
+                <p className="text-[11px] text-muted-foreground mt-1" data-testid="stats-revenue-split">
+                  Ostvareno: {(statsData.completedRevenue ?? 0).toLocaleString("sr-RS")} RSD ({statsData.completedAppointments}) · Zakazano: {(statsData.upcomingRevenue ?? 0).toLocaleString("sr-RS")} RSD ({statsData.upcomingAppointments})
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">Bez otkazanih i propuštenih termina</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-lg text-center col-span-2 sm:col-span-1">
                 <p className="text-xs text-emerald-700 uppercase font-semibold flex items-center justify-center gap-1"><CheckCircle2 className="w-3 h-3" /> Uspešno poslato</p>

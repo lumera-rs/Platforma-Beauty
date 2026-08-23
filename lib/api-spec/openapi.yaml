@@ -6883,7 +6883,19 @@ components:
         attributedAppointments: { type: number }
         attributedRevenue:
           type: number
-          description: Total price (RSD) of appointments attributed to this rule.
+          description: Total price (RSD) of appointments attributed to this rule (cancelled and no-show excluded).
+        completedAppointments:
+          type: number
+          description: Attributed appointments already completed (money earned).
+        completedRevenue:
+          type: number
+          description: Price (RSD) of attributed appointments already completed. completedRevenue + upcomingRevenue = attributedRevenue.
+        upcomingAppointments:
+          type: number
+          description: Attributed appointments still upcoming (pending/confirmed).
+        upcomingRevenue:
+          type: number
+          description: Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue.
         deliveredCount: { type: number }
         openedCount: { type: number }
         emailSentCount: { type: number }
@@ -6894,7 +6906,7 @@ components:
         smsDeliveredCount: { type: number }
         smsFailedCount: { type: number }
         lastRunAt: { type: ["string", "null"], format: date-time }
-      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:
       type: object
@@ -6938,7 +6950,19 @@ components:
         attributedAppointments: { type: number }
         attributedRevenue:
           type: number
-          description: Total price (RSD) of appointments attributed to this rule.
+          description: Total price (RSD) of appointments attributed to this rule (cancelled and no-show excluded).
+        completedAppointments:
+          type: number
+          description: Attributed appointments already completed (money earned).
+        completedRevenue:
+          type: number
+          description: Price (RSD) of attributed appointments already completed. completedRevenue + upcomingRevenue = attributedRevenue.
+        upcomingAppointments:
+          type: number
+          description: Attributed appointments still upcoming (pending/confirmed).
+        upcomingRevenue:
+          type: number
+          description: Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue.
         emailSentCount: { type: number }
         emailDeliveredCount: { type: number }
         emailOpenedCount: { type: number }
@@ -6956,7 +6980,7 @@ components:
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
           required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
-      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

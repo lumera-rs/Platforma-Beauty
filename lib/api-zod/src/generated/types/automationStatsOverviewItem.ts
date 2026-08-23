@@ -17,8 +17,16 @@ export interface AutomationStatsOverviewItem {
   skippedCount: number;
   failedCount: number;
   attributedAppointments: number;
-  /** Total price (RSD) of appointments attributed to this rule. */
+  /** Total price (RSD) of appointments attributed to this rule (cancelled and no-show excluded). */
   attributedRevenue: number;
+  /** Attributed appointments already completed (money earned). */
+  completedAppointments: number;
+  /** Price (RSD) of attributed appointments already completed. completedRevenue + upcomingRevenue = attributedRevenue. */
+  completedRevenue: number;
+  /** Attributed appointments still upcoming (pending/confirmed). */
+  upcomingAppointments: number;
+  /** Price (RSD) of attributed appointments still upcoming (pending/confirmed). completedRevenue + upcomingRevenue = attributedRevenue. */
+  upcomingRevenue: number;
   emailSentCount: number;
   emailDeliveredCount: number;
   emailOpenedCount: number;

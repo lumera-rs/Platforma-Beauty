@@ -1029,7 +1029,7 @@ async function run() {
       }).returning();
       assert.ok(service);
 
-      const makeAppointment = async (status: "confirmed" | "cancelled", price: number) => {
+      const makeAppointment = async (status: "confirmed" | "cancelled" | "completed" | "no-show", price: number) => {
         const [appointment] = await db.insert(appointmentsTable).values({
           salonId: a.salon.id, salonCustomerId: customerA.id, serviceId: service.id,
           date: "2026-08-20", startTime: "10:00", endTime: "10:30",
@@ -1040,19 +1040,43 @@ async function run() {
       };
       const kept = await makeAppointment("confirmed", 3000);
       const cancelled = await makeAppointment("cancelled", 5000);
+      const earned = await makeAppointment("completed", 2000);
+      const missed = await makeAppointment("no-show", 7000);
 
+      const runA4 = await makeSentRun(a.salon.id, ruleA.id, customerA.id, "a4");
       await db.update(automationRunsTable).set({ attributedAppointmentId: kept.id })
         .where(eq(automationRunsTable.id, runA.run.id));
       await db.update(automationRunsTable).set({ attributedAppointmentId: cancelled.id })
         .where(eq(automationRunsTable.id, runA2.run.id));
+      await db.update(automationRunsTable).set({ attributedAppointmentId: earned.id })
+        .where(eq(automationRunsTable.id, runA3.run.id));
+      await db.update(automationRunsTable).set({ attributedAppointmentId: missed.id })
+        .where(eq(automationRunsTable.id, runA4.run.id));
 
       const statsResponse = await fetch(`${baseUrl}/api/growth/automations/${ruleA.id}/stats`, {
         headers: { cookie: `${sessionCookieName}=${a.token}` },
       });
       assert.equal(statsResponse.status, 200);
       const attributionStats = await statsResponse.json() as Record<string, number>;
-      assert.equal(attributionStats["attributedAppointments"], 1, "cancelled appointment must not count as attributed");
-      assert.equal(attributionStats["attributedRevenue"], 3000, "cancelled appointment revenue must be excluded");
+      assert.equal(attributionStats["attributedAppointments"], 2, "cancelled and no-show appointments must not count as attributed");
+      assert.equal(attributionStats["attributedRevenue"], 5000, "cancelled and no-show appointment revenue must be excluded");
+      // Completed vs upcoming split: completed money is separated from the
+      // still-upcoming (confirmed) appointment, the no-show lands in neither
+      // bucket, and the buckets sum exactly to the attributed totals.
+      assert.equal(attributionStats["completedAppointments"], 1, "only the completed appointment counts as earned");
+      assert.equal(attributionStats["completedRevenue"], 2000, "earned revenue is the completed appointment's price");
+      assert.equal(attributionStats["upcomingAppointments"], 1, "only the confirmed appointment counts as upcoming — never the no-show");
+      assert.equal(attributionStats["upcomingRevenue"], 3000, "upcoming revenue is the confirmed appointment's price — no-show money is excluded");
+      assert.equal(
+        attributionStats["completedRevenue"]! + attributionStats["upcomingRevenue"]!,
+        attributionStats["attributedRevenue"],
+        "split revenue must sum to the attributed total",
+      );
+      assert.equal(
+        attributionStats["completedAppointments"]! + attributionStats["upcomingAppointments"]!,
+        attributionStats["attributedAppointments"],
+        "split counts must sum to the attributed total",
+      );
 
       const overviewResponse = await fetch(`${baseUrl}/api/growth/automation-stats`, {
         headers: { cookie: `${sessionCookieName}=${a.token}` },
@@ -1061,9 +1085,13 @@ async function run() {
       const overviewRows = await overviewResponse.json() as Array<Record<string, unknown>>;
       const overviewRow = overviewRows.find((row) => row["ruleId"] === ruleA.id);
       assert.ok(overviewRow);
-      assert.equal(overviewRow["attributedAppointments"], 1, "overview must apply the same cancelled filter");
-      assert.equal(overviewRow["attributedRevenue"], 3000, "overview revenue must match the per-rule stats");
-      console.log("✓ cancelled appointments are excluded from attributed counts and revenue in both endpoints");
+      assert.equal(overviewRow["attributedAppointments"], 2, "overview must apply the same cancelled/no-show filter");
+      assert.equal(overviewRow["attributedRevenue"], 5000, "overview revenue must match the per-rule stats");
+      assert.equal(overviewRow["completedAppointments"], 1, "overview must expose the same completed count");
+      assert.equal(overviewRow["completedRevenue"], 2000, "overview must expose the same completed revenue");
+      assert.equal(overviewRow["upcomingAppointments"], 1, "overview must expose the same upcoming count — never the no-show");
+      assert.equal(overviewRow["upcomingRevenue"], 3000, "overview must expose the same upcoming revenue — no-show money is excluded");
+      console.log("✓ cancelled and no-show appointments are excluded; attributed totals split into completed vs upcoming in both endpoints");
     }
 
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────
