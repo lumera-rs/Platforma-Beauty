@@ -54,6 +54,7 @@
     "test:salon-notifications:release": "pnpm --filter @workspace/scripts run test:salon-notifications:release",
     "test:service-library": "pnpm --filter @workspace/scripts run test:service-library",
     "test:service-availability": "pnpm --filter @workspace/scripts run test:service-availability",
+    "test:campaign-period-preset": "pnpm --filter @workspace/scripts run test:campaign-period-preset",
     "test:business-guide-help": "pnpm --filter @workspace/scripts run test:business-guide-help",
     "test:media": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/media-routes.test.ts",
     "test:business-growth": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-growth.test.ts",

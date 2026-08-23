@@ -39,6 +39,7 @@
     "test:campaign-client-filter": "playwright test browser/campaign-client-filter.spec.ts",
     "test:campaign-client-profile-link": "playwright test browser/campaign-client-profile-link.spec.ts",
     "test:campaign-period-filter": "playwright test browser/campaign-period-filter.spec.ts",
+    "test:campaign-period-preset": "playwright test browser/campaign-period-preset.spec.ts",
     "test:campaign-period-url": "playwright test browser/campaign-period-url.spec.ts",
     "test:business-guide-help": "playwright test browser/business-guide-help-links.spec.ts",
     "test:multi-location": "playwright test browser/multi-location-owner.spec.ts",
