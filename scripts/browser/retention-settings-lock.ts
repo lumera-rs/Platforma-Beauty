@@ -1,8 +1,7 @@
 /**
  * Cross-file serialization for the retention-settings browser specs.
  *
- * retention-conflict.spec.ts, retention-restore-conflict.spec.ts, and
- * retention-restore-defaults-conflict.spec.ts all write to the single global
+ * The retention browser specs write to the single global
  * platform_retention_settings table: versions are a global sequence, and each
  * file's cleanup deletes every version above its own watermark. Playwright
  * runs spec files in parallel workers, so without coordination one file's

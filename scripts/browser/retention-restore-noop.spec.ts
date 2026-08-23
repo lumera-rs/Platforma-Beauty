@@ -76,12 +76,11 @@ async function hashPassword(value: string): Promise<string> {
   const derived = await scrypt(value, salt, 64) as Buffer;
   return `${salt}:${derived.toString("hex")}`;
 }
-
 test.beforeAll(async () => {
-  // This global append-only table is also exercised by sibling spec files.
-  // Keep the advisory lock through watermark cleanup so no file can delete
-  // versions another file still expects.
+  // A sibling retention spec may hold the lock for its full test; wait it out.
   test.setTimeout(300_000);
+  // The version sequence and watermark cleanup are global to all retention
+  // specs, so keep the advisory lock through this file's full test and cleanup.
   releaseRetentionSettingsLock = await acquireRetentionSettingsLock();
 
   // Watermark: versions recorded by this run are removed afterwards.
@@ -123,6 +122,8 @@ test.afterAll(async () => {
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }
   } finally {
+    // Only hand the table to the next retention spec once cleanup restored the
+    // pre-test state.
     await releaseRetentionSettingsLock?.();
   }
 });

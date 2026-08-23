@@ -43,6 +43,7 @@
     "test:admin-list-pagination": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/admin-list-pagination.test.ts",
     "test:booking-journey": "pnpm --filter @workspace/scripts run test:booking-journey",
     "test:browser": "pnpm --filter @workspace/scripts run test:browser",
+    "test:retention-identical-save": "pnpm --filter @workspace/scripts run test:retention-identical-save",
     "test:carousel": "pnpm --filter @workspace/scripts run test:carousel",
     "test:review-photo-privacy": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/review-photo-privacy.test.ts && pnpm --filter @workspace/scripts run test:review-photo-privacy",
     "test:admin-review-feedback": "pnpm --filter @workspace/scripts run test:admin-review-feedback",
