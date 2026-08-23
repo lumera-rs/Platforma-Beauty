@@ -32,9 +32,10 @@
  *      origin they name the published-domain placeholder and qualify the
  *      finding — and the saved secret never appears in any response body
  *   6. saveIntegrationSettings only bumps updatedAt of rows whose value was
- *      actually written — saving an unrelated field or toggling enabled must
- *      not make the webhook secret look freshly changed (that timestamp is
- *      the anchor of the stale-secret verdict)
+ *      actually written — saving an unrelated field, toggling enabled, or
+ *      re-saving the identical secret must not make the webhook secret look
+ *      freshly changed (that timestamp is the anchor of the stale-secret
+ *      verdict)
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/sms-webhook-registration.test.ts
  */
@@ -336,9 +337,9 @@ async function run() {
     }
 
     // ── 7. Stale secret: secret saved AFTER the last confirmed report ──────
+    const staleSecret = `swr-new-secret-${suffix}`;
+    secretsToScan.push(staleSecret);
     {
-      const staleSecret = `swr-new-secret-${suffix}`;
-      secretsToScan.push(staleSecret);
       await saveIntegrationSettings({
         integration: "sms", enabled: true,
         values: { webhookSecret: staleSecret }, updatedByUserId: admin.id,
@@ -372,7 +373,23 @@ async function run() {
       ));
       assert.ok(senderRow && senderRow.updatedAt.getTime() > before.getTime(),
         "the actually-written row does carry a fresh updatedAt");
-      console.log("✓ webhookSecret updatedAt moves only when the secret itself is saved");
+
+      // A real report that arrives before an identical secret re-save must
+      // continue to confirm the registration. If the no-op save bumped
+      // updatedAt, the same evidence would incorrectly become stale_secret.
+      const reportAt = new Date();
+      await setInfobipReceipt(reportAt);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await saveIntegrationSettings({
+        integration: "sms", enabled: false,
+        values: { webhookSecret: staleSecret }, updatedByUserId: admin.id,
+      });
+      const afterIdenticalSecret = await webhookSecretSavedAt("sms");
+      assert.equal(afterIdenticalSecret?.getTime(), before.getTime(),
+        "re-saving the identical secret must leave its updatedAt untouched");
+      assert.equal((await registrationBlock()).state, "confirmed",
+        "a confirmed registration must stay confirmed after an identical secret re-save");
+      console.log("✓ webhookSecret updatedAt moves only when the secret itself changes");
     }
 
     // ── 9. No response ever leaks a secret ──────────────────────────────────

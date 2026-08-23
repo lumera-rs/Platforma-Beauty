@@ -87,13 +87,28 @@ export async function saveIntegrationSettings(input: {
   values: Record<string, string>;
   updatedByUserId: string;
 }) {
+  const existingRows = await db.select({
+    settingKey: integrationSettingsTable.settingKey,
+    encryptedValue: integrationSettingsTable.encryptedValue,
+  }).from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
+  const existingValues = new Map(existingRows.map((row) => [row.settingKey, row.encryptedValue]));
+
   for (const [settingKey, value] of [...Object.entries(input.values), ["__enabled", "1"]]) {
     if (!value.trim()) continue;
+    const existingEncryptedValue = existingValues.get(settingKey);
+    if (existingEncryptedValue) {
+      try {
+        if (decrypt(existingEncryptedValue) === value.trim()) continue;
+      } catch {
+        // A corrupt stored value must be replaced rather than treated as a no-op.
+      }
+    }
+    const encryptedValue = encrypt(value.trim());
     await db.insert(integrationSettingsTable).values({
-      integration: input.integration, settingKey, encryptedValue: encrypt(value.trim()), enabled: input.enabled, updatedByUserId: input.updatedByUserId,
+      integration: input.integration, settingKey, encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId,
     }).onConflictDoUpdate({
       target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
-      set: { encryptedValue: encrypt(value.trim()), enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
+      set: { encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
     });
   }
   // Apply the integration-level enabled flag to every row WITHOUT touching
