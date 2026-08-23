@@ -600,17 +600,93 @@ function statsDeliveryPeriodCondition(window: StatsWindow) {
 }
 
 /**
- * Half-open range variants of the period conditions, used for the preceding
- * comparison window (compare=previous): [from, to) so the previous window
- * never overlaps the current one.
+ * Scope for stats aggregation: every rule of the active salon (overview
+ * endpoint) or a single rule (per-rule stats endpoint).
  */
-function statsRunPeriodRangeCondition(from: Date, to: Date) {
-  const ts = sql`coalesce(${automationRunsTable.executedAt}, ${automationRunsTable.createdAt})`;
-  return sql`${ts} >= ${from} and ${ts} < ${to}`;
+type StatsScope = { ruleIds: string[] } | { ruleId: string };
+
+function statsScopeRunCondition(scope: StatsScope) {
+  return "ruleId" in scope
+    ? eq(automationRunsTable.ruleId, scope.ruleId)
+    : inArray(automationRunsTable.ruleId, scope.ruleIds);
 }
-function statsDeliveryPeriodRangeCondition(from: Date, to: Date) {
-  const ts = sql`coalesce(${automationDeliveriesTable.sentAt}, ${automationDeliveriesTable.createdAt})`;
-  return sql`${ts} >= ${from} and ${ts} < ${to}`;
+
+/**
+ * Run/attribution aggregation shared by the overview and per-rule stats
+ * endpoints, for both the current window and the preceding comparison window
+ * (compare=previous). The selections, the attribution join, and the window
+ * condition live here in one place so the four call sites can never drift
+ * apart again — the previous-window join once excluded only cancelled
+ * appointments while the current window also excluded no-shows, which would
+ * have made trend arrows compare unlike quantities.
+ *
+ * Returns one row per rule that has runs in the window; rules without runs
+ * yield no row and callers default every count to zero.
+ *
+ * Realized attribution: cancelled and no-show appointments never count as
+ * realized (neither is money earned or still expected). The join brings in
+ * every attributed appointment and the conditional aggregates split it, so
+ * the cancelled line can be reported separately without changing the
+ * realized numbers.
+ */
+function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
+  return db
+    .select({
+      ruleId: automationRunsTable.ruleId,
+      totalRuns: sql<number>`count(*)::int`,
+      sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
+      skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
+      failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
+      attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
+      attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+      // Completed vs upcoming split of the realized rows. "Upcoming" is the
+      // realized complement of completed (pending/confirmed), so the two
+      // buckets always sum exactly to the attributed totals above.
+      completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
+      completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
+      upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
+      upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+      // Cancelled-attributed line ("otkazano"): appointments the campaign
+      // booked that later fell through — revenue lost to cancellations.
+      cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
+      cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
+      lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
+    })
+    .from(automationRunsTable)
+    .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+    .where(and(statsScopeRunCondition(scope), statsRunPeriodCondition(window)))
+    .groupBy(automationRunsTable.ruleId);
+}
+
+const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
+const smsChannel = sql`${automationDeliveriesTable.channel} = 'sms'`;
+
+/**
+ * Delivery aggregation shared by the same four call sites as
+ * aggregateRunStats (both endpoints × current and previous window).
+ * Delivered / opened / provider-failed counts come from verified provider
+ * webhooks, broken down per channel so the UI can show a real funnel and
+ * handle providers without open tracking (SMS). Returns one row per rule
+ * that has deliveries in the window; callers default missing rules to zero.
+ */
+function aggregateDeliveryStats(scope: StatsScope, window: StatsWindow) {
+  return db
+    .select({
+      ruleId: automationRunsTable.ruleId,
+      deliveredCount: sql<number>`sum(case when ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+      openedCount: sql<number>`sum(case when ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+      emailSentCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+      emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+      emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+      emailFailedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
+      smsSentCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+      smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+      smsFailedCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
+    })
+    .from(automationDeliveriesTable)
+    .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
+    .where(and(statsScopeRunCondition(scope), statsDeliveryPeriodCondition(window)))
+    .groupBy(automationRunsTable.ruleId);
 }
 
 /**
@@ -660,94 +736,21 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     if (rules.length === 0) { res.json([]); return; }
     const ruleIds = rules.map((r) => r.id);
 
-    const runAgg = await db
-      .select({
-        ruleId: automationRunsTable.ruleId,
-        totalRuns: sql<number>`count(*)::int`,
-        sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
-        skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
-        failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        // Realized attribution: cancelled and no-show appointments never
-        // count as realized (neither is money earned or still expected). The
-        // join brings in every attributed appointment and the conditional
-        // aggregates split it, so the cancelled line can be reported
-        // separately without changing the realized numbers.
-        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
-        attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
-        // Completed vs upcoming split of the realized rows. "Upcoming" is the
-        // realized complement of completed (pending/confirmed), so the two
-        // buckets always sum exactly to the attributed totals above.
-        completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
-        completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
-        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
-        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
-        // Cancelled-attributed line ("otkazano"): appointments the campaign
-        // booked that later fell through — revenue lost to cancellations.
-        cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
-        cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
-        lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
-      })
-      .from(automationRunsTable)
-      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
-      .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodCondition(window)))
-      .groupBy(automationRunsTable.ruleId);
-
-    const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
-    const smsChannel = sql`${automationDeliveriesTable.channel} = 'sms'`;
-    const deliveryAgg = await db
-      .select({
-        ruleId: automationRunsTable.ruleId,
-        emailSentCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
-        emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
-        emailFailedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
-        smsSentCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
-        smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        smsFailedCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
-      })
-      .from(automationDeliveriesTable)
-      .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodCondition(window)))
-      .groupBy(automationRunsTable.ruleId);
+    const runAgg = await aggregateRunStats({ ruleIds }, window);
+    const deliveryAgg = await aggregateDeliveryStats({ ruleIds }, window);
 
     // Preceding window of the same length (compare=previous): only the counts
     // the overview renders trends for — delivered, opened, attributed
     // appointments, and attributed revenue — aggregated over
-    // [prevCutoff, window.start).
+    // [prevCutoff, window.start). Built with the same shared aggregation as
+    // the current window so trend arrows always compare like-for-like
+    // attribution semantics.
     let prevRunsByRule: Map<string, { attributedAppointments: number; attributedRevenue: number }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
     if (prevCutoff && window.start) {
-      // Same realized-attribution join as the current-period aggregate: a
-      // cancelled or no-show appointment is not campaign-earned, so it must
-      // not count in either window or the trend direction would be wrong.
-      const prevRunAgg = await db
-        .select({
-          ruleId: automationRunsTable.ruleId,
-          // Same realized-attribution semantics as the current window: the
-          // join excludes cancelled and no-show appointments so trend arrows
-          // compare like-for-like counts and revenue.
-          attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
-          attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
-        })
-        .from(automationRunsTable)
-        .leftJoin(appointmentsTable, and(
-          eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-          notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
-        ))
-        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, window.start)))
-        .groupBy(automationRunsTable.ruleId);
-
-      const prevDeliveryAgg = await db
-        .select({
-          ruleId: automationRunsTable.ruleId,
-          emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-          emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
-          smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        })
-        .from(automationDeliveriesTable)
-        .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodRangeCondition(prevCutoff, window.start)))
-        .groupBy(automationRunsTable.ruleId);
+      const prevWindow: StatsWindow = { start: prevCutoff, end: window.start };
+      const prevRunAgg = await aggregateRunStats({ ruleIds }, prevWindow);
+      const prevDeliveryAgg = await aggregateDeliveryStats({ ruleIds }, prevWindow);
 
       prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments, attributedRevenue: r.attributedRevenue }]));
       prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
@@ -841,90 +844,26 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       .limit(1);
     if (!rule) { res.status(404).json({ error: "Automation not found.", code: "NOT_FOUND" }); return; }
 
-    const [stats] = await db
-      .select({
-        totalRuns: sql<number>`count(*)::int`,
-        sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
-        skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
-        failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-        // Realized attribution: cancelled and no-show appointments never
-        // count as realized (neither is money earned or still expected). The
-        // join brings in every attributed appointment and the conditional
-        // aggregates split it, so the cancelled line can be reported
-        // separately without changing the realized numbers.
-        attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
-        attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
-        // Completed vs upcoming split of the realized rows. "Upcoming" is the
-        // realized complement of completed (pending/confirmed), so the two
-        // buckets always sum exactly to the attributed totals above.
-        completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
-        completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
-        upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
-        upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
-        // Cancelled-attributed line ("otkazano"): appointments the campaign
-        // booked that later fell through — revenue lost to cancellations.
-        cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
-        cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
-        lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
-      })
-      .from(automationRunsTable)
-      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
-      .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window)));
+    const [stats] = await aggregateRunStats({ ruleId: rule.id }, window);
 
     // Delivery stats (delivered / opened / provider-failed, updated from
-    // verified provider webhooks). Broken down per channel so the UI can show
-    // a real funnel and handle providers without open tracking (SMS).
-    const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
-    const smsChannel = sql`${automationDeliveriesTable.channel} = 'sms'`;
-    const [deliveryStats] = await db
-      .select({
-        deliveredCount: sql<number>`sum(case when ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        openedCount: sql<number>`sum(case when ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
-        emailSentCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
-        emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
-        emailFailedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
-        smsSentCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
-        smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        smsFailedCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
-      })
-      .from(automationDeliveriesTable)
-      .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-      .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(window)));
+    // verified provider webhooks), from the same shared aggregation as the
+    // overview endpoint.
+    const [deliveryStats] = await aggregateDeliveryStats({ ruleId: rule.id }, window);
 
     // Preceding window of the same length (compare=previous): only the counts
     // the stats dialog renders trends for — delivered, opened, attributed
     // appointments, and attributed revenue — aggregated over
-    // [prevCutoff, cutoff). Same shape as the overview endpoint's `previous`
+    // [prevCutoff, cutoff). Built with the same shared aggregation as the
+    // current window and the same shape as the overview endpoint's `previous`
     // block so the UI trends stay consistent.
     let previous:
       | { attributedAppointments: number; attributedRevenue: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
       | undefined;
     if (prevCutoff && window.start) {
-      // Same realized-attribution join as the current-period aggregate: a
-      // cancelled or no-show appointment is not campaign-earned, so it must
-      // not count in either window or the trend direction would be wrong.
-      const [prevRuns] = await db
-        .select({
-          attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
-          attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
-        })
-        .from(automationRunsTable)
-        .leftJoin(appointmentsTable, and(
-          eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-          notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
-        ))
-        .where(and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodRangeCondition(prevCutoff, window.start)));
-
-      const [prevDeliveries] = await db
-        .select({
-          emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-          emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
-          smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
-        })
-        .from(automationDeliveriesTable)
-        .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
-        .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodRangeCondition(prevCutoff, window.start)));
+      const prevWindow: StatsWindow = { start: prevCutoff, end: window.start };
+      const [prevRuns] = await aggregateRunStats({ ruleId: rule.id }, prevWindow);
+      const [prevDeliveries] = await aggregateDeliveryStats({ ruleId: rule.id }, prevWindow);
 
       previous = {
         attributedAppointments: prevRuns?.attributedAppointments ?? 0,
