@@ -1,0 +1,217 @@
+/**
+ * Campaign period URL restore — browser regression for the page wiring.
+ *
+ * The pure restore/fallback logic is unit-tested in
+ * artifacts/beauty-marketplace/src/lib/campaign-period-url.test.ts. This spec
+ * guards the wiring that unit tests cannot see: the one-shot mount read of
+ * window.location.search in owner/automations.tsx, the wouter-based URL-sync
+ * effect, and the period selector actually reflecting the restored value.
+ * A regression there (e.g. the mount read moving after the selector
+ * initializes) would silently break every shared/bookmarked period link.
+ *
+ * Scenarios:
+ *  1. ?period=30d → "30 dana" is pre-selected, the overview stats request is
+ *     sent with period=30d, and the URL keeps the param (no cleanup rewrite).
+ *  2. ?from=&to= → the custom range button is pre-selected and shows the
+ *     restored range; the stats request uses the exact from/to dates.
+ *  3. ?period=eternity (invalid) → falls back to "Sve vreme", the stats
+ *     request uses the default window, and the URL is cleaned in place.
+ */
+import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
+import { promisify } from "node:util";
+import { expect, test, type Page, type Response } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import {
+  automationRulesTable,
+  db,
+  salonsTable,
+  usersTable,
+} from "@workspace/db";
+
+const scrypt = promisify(scryptCallback);
+
+type Fixture = {
+  ownerEmail: string;
+  ownerPassword: string;
+  ownerId: string;
+  salonId: string;
+  ruleId: string;
+};
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const derived = await scrypt(password, salt, 64) as Buffer;
+  return `${salt}:${derived.toString("hex")}`;
+}
+
+/**
+ * Minimal fixture: the campaign overview (which hosts the period selector)
+ * renders whenever the salon has at least one automation rule — the overview
+ * stats endpoint returns one row per rule regardless of window activity, so
+ * no runs/appointments are needed to exercise the period wiring.
+ */
+async function createFixture(): Promise<Fixture> {
+  const suffix = randomUUID();
+  const ownerEmail = `browser-period-url-owner-${suffix}@example.test`;
+  const ownerPassword = "browser-period-url-password";
+  let ownerId: string | undefined;
+  let salonId: string | undefined;
+
+  try {
+    const [owner] = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Vlasnik",
+      email: ownerEmail,
+      passwordHash: await hashPassword(ownerPassword),
+      passwordSetAt: new Date(),
+      role: "SALON_OWNER",
+    }).returning({ id: usersTable.id });
+    if (!owner) throw new Error("Period-URL browser fixture could not create its owner.");
+    ownerId = owner.id;
+
+    const [salon] = await db.insert(salonsTable).values({
+      ownerId: owner.id,
+      name: `Browser salon za period URL ${suffix}`,
+      slug: `browser-period-url-${suffix}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Test 93",
+      phone: "+381110000093",
+      email: `browser-period-url-salon-${suffix}@example.test`,
+      shortDescription: "Izolovan salon za proveru URL perioda kampanja.",
+      description: "Salon je napravljen samo za browser regresioni test deljivih linkova perioda.",
+      imageUrl: "/test-browser-period-url.jpg",
+    }).returning({ id: salonsTable.id });
+    if (!salon) throw new Error("Period-URL browser fixture could not create its salon.");
+    salonId = salon.id;
+
+    await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, owner.id));
+
+    const [rule] = await db.insert(automationRulesTable).values({
+      salonId: salon.id,
+      name: `Browser period URL kampanja ${suffix}`,
+      trigger: "inactive_days",
+      triggerConfig: { inactiveDays: 30 },
+      action: "send_email",
+      emailSubject: "Test",
+      emailBody: "Test",
+      status: "active",
+    }).returning({ id: automationRulesTable.id });
+    if (!rule) throw new Error("Period-URL browser fixture could not create its rule.");
+
+    return { ownerEmail, ownerPassword, ownerId: owner.id, salonId: salon.id, ruleId: rule.id };
+  } catch (error) {
+    if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
+    if (ownerId) await db.delete(usersTable).where(eq(usersTable.id, ownerId));
+    throw error;
+  }
+}
+
+async function cleanUpFixture(fixture: Fixture): Promise<void> {
+  // Salon delete cascades the automation rule.
+  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+  await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
+}
+
+async function signInAsFixtureOwner(page: Page, fixture: Fixture): Promise<void> {
+  const response = await page.request.post("/api/auth/login", {
+    data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+  });
+  expect(response, "The isolated salon owner fixture must be able to sign in.").toBeOK();
+}
+
+/**
+ * Resolves with the next campaign-overview stats response whose query window
+ * matches `expected` exactly (null = the param must be absent). Register it
+ * BEFORE the navigation that triggers the request.
+ */
+function nextOverviewStatsResponse(
+  page: Page,
+  expected: { period: string | null; from: string | null; to: string | null },
+): Promise<Response> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("/growth/automation-stats")
+      && url.searchParams.get("period") === expected.period
+      && url.searchParams.get("from") === expected.from
+      && url.searchParams.get("to") === expected.to;
+  });
+}
+
+test.describe("shared campaign period links restore the picked window", () => {
+  let fixture: Fixture;
+
+  test.beforeAll(async () => {
+    fixture = await createFixture();
+  });
+
+  test.afterAll(async () => {
+    await cleanUpFixture(fixture);
+  });
+
+  test("?period=30d pre-selects '30 dana' and the stats request uses period=30d", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    // Bounded presets request the previous window too (compare=previous) so
+    // the overview can render trends — the restored 30d selection must carry
+    // that through exactly like a manual click would.
+    const statsResponse = nextOverviewStatsResponse(page, { period: "30d", from: null, to: null });
+    await page.goto("/vlasnik/automatizacije?period=30d");
+
+    const response = await statsResponse;
+    expect(response.status()).toBe(200);
+    expect(new URL(response.url()).searchParams.get("compare")).toBe("previous");
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+    await expect(selector.getByTestId("period-all")).toHaveAttribute("aria-pressed", "false");
+    await expect(selector.getByTestId("period-30d")).toHaveText("30 dana");
+
+    // The valid param round-trips: the URL-sync effect must NOT rewrite it.
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?period=30d$/);
+  });
+
+  test("?from/&to pre-selects the custom range and the stats request uses those dates", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    const statsResponse = nextOverviewStatsResponse(page, { period: null, from: "2026-03-01", to: "2026-03-31" });
+    await page.goto("/vlasnik/automatizacije?from=2026-03-01&to=2026-03-31");
+
+    expect((await statsResponse).status()).toBe(200);
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    const customButton = selector.getByTestId("period-custom");
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(selector.getByTestId("period-all")).toHaveAttribute("aria-pressed", "false");
+    // The button shows the restored range instead of the "Izaberi datume"
+    // placeholder (exact formatting is locale-dependent, so match the parts).
+    await expect(customButton).not.toContainText("Izaberi datume");
+    await expect(customButton).toContainText("2026");
+    await expect(customButton).toContainText("–");
+
+    // A complete valid custom range round-trips unchanged.
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?from=2026-03-01&to=2026-03-31$/);
+  });
+
+  test("an invalid ?period falls back to 'Sve vreme' and the URL is cleaned", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    // The fallback default requests the all-time window, never the raw
+    // invalid value.
+    const statsResponse = nextOverviewStatsResponse(page, { period: "all", from: null, to: null });
+    await page.goto("/vlasnik/automatizacije?period=eternity");
+
+    expect((await statsResponse).status()).toBe(200);
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    await expect(selector.getByTestId("period-all")).toHaveAttribute("aria-pressed", "true");
+    await expect(selector.getByTestId("period-all")).toHaveText("Sve vreme");
+
+    // The URL-sync effect strips the invalid param in place (replace, not a
+    // new history entry — going shared-link → cleaned URL must not add steps).
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije$/);
+  });
+});

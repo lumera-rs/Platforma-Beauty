@@ -9,6 +9,14 @@ Repository Playwright checks need Chromium's Nix runtime libraries and must laun
 
 **How to apply:** Keep the Chromium-compatible Nix package set available, configure Playwright to use the managed executable when the environment variable is set, and run the project’s named browser-test command against the active artifact services. Treat a launch failure as an environment dependency check before investigating UI behavior.
 
+## Live-service dependency
+
+The shared (non-isolated) browser specs run against the live artifact workflows at the default base URL; a stopped workflow surfaces as HTTP 502 / `ERR_HTTP_RESPONSE_CODE_FAILURE` on the first navigation or login request.
+
+**Why:** The Playwright config only spins up a harness frontend for the isolated suites; every other spec assumes the web and API dev workflows are already serving.
+
+**How to apply:** Before running or debugging a shared browser spec, confirm the web and API workflows respond (a quick HTTP check), and restart them rather than reading a 502-driven failure as a test or application bug.
+
 ## Forced-interruption probes
 
 Do not assume the PID returned when launching a package binary such as `tsx` is the application process’s own PID.
