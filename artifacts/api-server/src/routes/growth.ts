@@ -542,6 +542,20 @@ function statsDeliveryPeriodCondition(cutoff: Date) {
 }
 
 /**
+ * Half-open range variants of the period conditions, used for the preceding
+ * comparison window (compare=previous): [from, to) so the previous window
+ * never overlaps the current one.
+ */
+function statsRunPeriodRangeCondition(from: Date, to: Date) {
+  const ts = sql`coalesce(${automationRunsTable.executedAt}, ${automationRunsTable.createdAt})`;
+  return sql`${ts} >= ${from} and ${ts} < ${to}`;
+}
+function statsDeliveryPeriodRangeCondition(from: Date, to: Date) {
+  const ts = sql`coalesce(${automationDeliveriesTable.sentAt}, ${automationDeliveriesTable.createdAt})`;
+  return sql`${ts} >= ${from} and ${ts} < ${to}`;
+}
+
+/**
  * Aggregate campaign overview: one row per automation rule of the active
  * salon, with run counts and per-channel delivery/open counts sourced from
  * the same verified provider-event data as the per-rule stats endpoint.
@@ -556,6 +570,20 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
       return;
     }
+
+    const compareRaw = req.query["compare"];
+    if (compareRaw !== undefined && compareRaw !== "previous") {
+      res.status(400).json({ error: "Invalid compare. Expected: previous.", code: "VALIDATION" });
+      return;
+    }
+    if (compareRaw === "previous" && !cutoff) {
+      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d).", code: "VALIDATION" });
+      return;
+    }
+    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
+    const prevCutoff = compareRaw === "previous" && cutoff && periodDays !== undefined
+      ? new Date(cutoff.getTime() - periodDays * 24 * 60 * 60 * 1000)
+      : null;
 
     const rules = await db
       .select({
@@ -615,12 +643,55 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         : inArray(automationRunsTable.ruleId, ruleIds))
       .groupBy(automationRunsTable.ruleId);
 
+    // Preceding window of the same length (compare=previous): only the counts
+    // the overview renders trends for — delivered, opened, and attributed
+    // appointments — aggregated over [prevCutoff, cutoff).
+    let prevRunsByRule: Map<string, { attributedAppointments: number }> | null = null;
+    let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
+    if (prevCutoff && cutoff) {
+      const prevRunAgg = await db
+        .select({
+          ruleId: automationRunsTable.ruleId,
+          attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        })
+        .from(automationRunsTable)
+        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, cutoff)))
+        .groupBy(automationRunsTable.ruleId);
+
+      const prevDeliveryAgg = await db
+        .select({
+          ruleId: automationRunsTable.ruleId,
+          emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+          emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+          smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        })
+        .from(automationDeliveriesTable)
+        .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
+        .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodRangeCondition(prevCutoff, cutoff)))
+        .groupBy(automationRunsTable.ruleId);
+
+      prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments }]));
+      prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
+        emailDeliveredCount: d.emailDeliveredCount,
+        emailOpenedCount: d.emailOpenedCount,
+        smsDeliveredCount: d.smsDeliveredCount,
+      }]));
+    }
+
     const runsByRule = new Map(runAgg.map((r) => [r.ruleId, r]));
     const deliveriesByRule = new Map(deliveryAgg.map((d) => [d.ruleId, d]));
 
     res.json(rules.map((rule) => {
       const runs = runsByRule.get(rule.id);
       const deliveries = deliveriesByRule.get(rule.id);
+      const previous = prevRunsByRule && prevDeliveriesByRule
+        ? {
+            attributedAppointments: prevRunsByRule.get(rule.id)?.attributedAppointments ?? 0,
+            emailDeliveredCount: prevDeliveriesByRule.get(rule.id)?.emailDeliveredCount ?? 0,
+            emailOpenedCount: prevDeliveriesByRule.get(rule.id)?.emailOpenedCount ?? 0,
+            smsDeliveredCount: prevDeliveriesByRule.get(rule.id)?.smsDeliveredCount ?? 0,
+          }
+        : undefined;
       return {
         ruleId: rule.id,
         ruleName: rule.name,
@@ -640,6 +711,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         smsDeliveredCount: deliveries?.smsDeliveredCount ?? 0,
         smsFailedCount: deliveries?.smsFailedCount ?? 0,
         lastRunAt: runs?.lastRunAt ?? null,
+        ...(previous ? { previous } : {}),
       };
     }));
   } catch (err) { next(err); }

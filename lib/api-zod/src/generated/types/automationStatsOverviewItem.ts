@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AutomationStatsOverviewItemPrevious } from './automationStatsOverviewItemPrevious';
 
 export interface AutomationStatsOverviewItem {
   ruleId: string;
@@ -27,4 +28,6 @@ export interface AutomationStatsOverviewItem {
   smsFailedCount: number;
   /** @nullable */
   lastRunAt?: Date | null;
+  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period. */
+  previous?: AutomationStatsOverviewItemPrevious;
 }

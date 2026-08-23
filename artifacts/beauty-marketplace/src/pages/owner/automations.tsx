@@ -23,9 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -48,6 +48,38 @@ const periodDescriptionLabels: Record<StatsPeriod, string> = {
   all: "sve vreme",
 };
 
+/**
+ * Up/down/flat indicator versus the preceding window of the same length.
+ * Percentage change is shown when the previous count is non-zero; a jump from
+ * zero is marked as "novo" since a percentage would be undefined. Rendered
+ * only for bounded periods — "all time" has no previous window to compare.
+ */
+function TrendIndicator({ current, previous, testId }: { current: number; previous: number; testId: string }) {
+  if (current === 0 && previous === 0) return null;
+  const diff = current - previous;
+  const title = "U odnosu na prethodni period iste dužine";
+  if (diff === 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground" title={title} data-testid={testId}>
+        <Minus className="w-3 h-3" /> bez promene
+      </span>
+    );
+  }
+  if (diff > 0) {
+    const pct = previous > 0 ? `+${Math.round((diff / previous) * 100)}%` : "novo";
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700" title={title} data-testid={testId}>
+        <TrendingUp className="w-3 h-3" /> {pct}
+      </span>
+    );
+  }
+  const pct = `−${Math.round((Math.abs(diff) / previous) * 100)}%`;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-red-700" title={title} data-testid={testId}>
+      <TrendingDown className="w-3 h-3" /> {pct}
+    </span>
+  );
+}
 /**
  * Live per-channel delivery funnel: sent → delivered → opened, fed by verified
  * provider webhook events. `opened: null` marks a channel whose provider does
@@ -169,15 +201,22 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
                         <div className="text-emerald-800">
                           Isporučeno: <strong>{item.emailDeliveredCount}</strong>
                           {rate(item.emailDeliveredCount, item.emailSentCount) && <span className="text-emerald-700"> ({rate(item.emailDeliveredCount, item.emailSentCount)})</span>}
+                          {item.previous && <span className="ml-1.5"><TrendIndicator current={item.emailDeliveredCount} previous={item.previous.emailDeliveredCount} testId={`trend-email-delivered-${item.ruleId}`} /></span>}
                         </div>
                         <div className="text-indigo-800">
                           Otvoreno: <strong>{item.emailOpenedCount}</strong>
                           {rate(item.emailOpenedCount, item.emailSentCount) && <span className="text-indigo-700"> ({rate(item.emailOpenedCount, item.emailSentCount)})</span>}
+                          {item.previous && <span className="ml-1.5"><TrendIndicator current={item.emailOpenedCount} previous={item.previous.emailOpenedCount} testId={`trend-email-opened-${item.ruleId}`} /></span>}
                         </div>
                         {item.emailFailedCount > 0 && <div className="text-xs text-red-700">Neisporučeno: {item.emailFailedCount}</div>}
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <div className="space-y-0.5">
+                        <span className="text-muted-foreground">—</span>
+                        {item.previous && item.previous.emailDeliveredCount > 0 && (
+                          <div><TrendIndicator current={0} previous={item.previous.emailDeliveredCount} testId={`trend-email-delivered-${item.ruleId}`} /></div>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="py-3 pr-4">
@@ -187,11 +226,17 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
                         <div className="text-emerald-800">
                           Isporučeno: <strong>{item.smsDeliveredCount}</strong>
                           {rate(item.smsDeliveredCount, item.smsSentCount) && <span className="text-emerald-700"> ({rate(item.smsDeliveredCount, item.smsSentCount)})</span>}
+                          {item.previous && <span className="ml-1.5"><TrendIndicator current={item.smsDeliveredCount} previous={item.previous.smsDeliveredCount} testId={`trend-sms-delivered-${item.ruleId}`} /></span>}
                         </div>
                         {item.smsFailedCount > 0 && <div className="text-xs text-red-700">Neisporučeno: {item.smsFailedCount}</div>}
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <div className="space-y-0.5">
+                        <span className="text-muted-foreground">—</span>
+                        {item.previous && item.previous.smsDeliveredCount > 0 && (
+                          <div><TrendIndicator current={0} previous={item.previous.smsDeliveredCount} testId={`trend-sms-delivered-${item.ruleId}`} /></div>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="py-3 text-right">
@@ -199,12 +244,22 @@ function CampaignOverview({ items, period, onPeriodChange, onShowStats }: {
                     <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
                       {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
                     </div>
+                    {item.previous && (
+                      <div className="mt-0.5 flex justify-end">
+                        <TrendIndicator current={item.attributedAppointments} previous={item.previous.attributedAppointments} testId={`trend-appointments-${item.ruleId}`} />
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {period !== "all" && (
+          <p className="text-xs text-muted-foreground mt-3" data-testid="overview-trend-note">
+            Trend u odnosu na prethodni period iste dužine ({periodDescriptionLabels[period].replace("poslednjih ", "")}).
+          </p>
+        )}
         {anySms && (
           <p className="text-xs text-muted-foreground mt-3">Provajder ne prati otvaranja SMS poruka, pa se za SMS prikazuje samo isporuka.</p>
         )}
@@ -227,10 +282,17 @@ export default function OwnerAutomations() {
 
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("all");
 
-  const { data: overviewStats } = useOwnerListAutomationStats({ period: statsPeriod }, {
+  // For bounded periods, also request counts for the preceding window of the
+  // same length so the overview can show per-rule trends. "All time" has no
+  // previous window, so no compare flag is sent and no trends are rendered.
+  const overviewParams = statsPeriod === "all"
+    ? { period: statsPeriod }
+    : { period: statsPeriod, compare: "previous" as const };
+
+  const { data: overviewStats } = useOwnerListAutomationStats(overviewParams, {
     query: {
       enabled: !!userResp?.user,
-      queryKey: getOwnerListAutomationStatsQueryKey({ period: statsPeriod })
+      queryKey: getOwnerListAutomationStatsQueryKey(overviewParams)
     }
   });
 

@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { OwnerListAutomationStatsCompare } from './ownerListAutomationStatsCompare';
 import type { OwnerListAutomationStatsPeriod } from './ownerListAutomationStatsPeriod';
 
 export type OwnerListAutomationStatsParams = {
@@ -12,4 +13,8 @@ export type OwnerListAutomationStatsParams = {
  * Time window for run/delivery aggregation (defaults to all time)
  */
 period?: OwnerListAutomationStatsPeriod;
+/**
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ */
+compare?: OwnerListAutomationStatsCompare;
 };

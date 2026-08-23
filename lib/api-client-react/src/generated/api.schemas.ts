@@ -3881,6 +3881,16 @@ export interface AutomationStats {
   lastRunAt?: string | null;
 }
 
+/**
+ * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+ */
+export type AutomationStatsOverviewItemPrevious = {
+  attributedAppointments: number;
+  emailDeliveredCount: number;
+  emailOpenedCount: number;
+  smsDeliveredCount: number;
+};
+
 export interface AutomationAttributedAppointment {
   appointmentId: string;
   /** Appointment date (YYYY-MM-DD) */
@@ -3911,6 +3921,8 @@ export interface AutomationStatsOverviewItem {
   smsFailedCount: number;
   /** @nullable */
   lastRunAt?: string | null;
+  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period. */
+  previous?: AutomationStatsOverviewItemPrevious;
 }
 
 export type AutomationTestRunResultTriggerBreakdown = {[key: string]: number};
@@ -5026,6 +5038,10 @@ export type OwnerListAutomationStatsParams = {
  * Time window for run/delivery aggregation (defaults to all time)
  */
 period?: OwnerListAutomationStatsPeriod;
+/**
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ */
+compare?: OwnerListAutomationStatsCompare;
 };
 
 export type OwnerListAutomationStatsPeriod = typeof OwnerListAutomationStatsPeriod[keyof typeof OwnerListAutomationStatsPeriod];
@@ -5038,6 +5054,7 @@ export const OwnerListAutomationStatsPeriod = {
   all: 'all',
 } as const;
 
+export type OwnerListAutomationStatsCompare = typeof OwnerListAutomationStatsCompare[keyof typeof OwnerListAutomationStatsCompare];
 export type CustomerListPublicPackagesParams = {
 salonId: string;
 };
@@ -5067,3 +5084,7 @@ export type EmployeeGetMyPerformanceParams = {
 from?: string;
 to?: string;
 };
+
+export const OwnerListAutomationStatsCompare = {
+  previous: 'previous',
+} as const;

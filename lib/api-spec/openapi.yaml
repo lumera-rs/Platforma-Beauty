@@ -3717,6 +3717,10 @@ paths:
           in: query
           description: Time window for run/delivery aggregation (defaults to all time)
           schema: { type: string, enum: [7d, 30d, 90d, all] }
+        - name: compare
+          in: query
+          description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+          schema: { type: string, enum: [previous] }
       responses:
         "200":
           description: Per-rule campaign performance overview
@@ -6887,6 +6891,15 @@ components:
         smsDeliveredCount: { type: number }
         smsFailedCount: { type: number }
         lastRunAt: { type: ["string", "null"], format: date-time }
+        previous:
+          type: object
+          description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+          properties:
+            attributedAppointments: { type: number }
+            emailDeliveredCount: { type: number }
+            emailOpenedCount: { type: number }
+            smsDeliveredCount: { type: number }
+          required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
       required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:

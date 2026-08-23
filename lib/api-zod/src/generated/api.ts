@@ -8964,7 +8964,8 @@ export const OwnerListAutomationAttributedAppointmentsResponse = zod.array(Owner
  * @summary List performance stats for every automation rule of the active salon (owner)
  */
 export const OwnerListAutomationStatsQueryParams = zod.object({
-  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)')
+  "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
+  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).')
 })
 
 export const OwnerListAutomationStatsResponseItem = zod.object({
@@ -8985,7 +8986,13 @@ export const OwnerListAutomationStatsResponseItem = zod.object({
   "smsSentCount": zod.number(),
   "smsDeliveredCount": zod.number(),
   "smsFailedCount": zod.number(),
-  "lastRunAt": zod.coerce.date().nullish()
+  "lastRunAt": zod.coerce.date().nullish(),
+  "previous": zod.object({
+  "attributedAppointments": zod.number(),
+  "emailDeliveredCount": zod.number(),
+  "emailOpenedCount": zod.number(),
+  "smsDeliveredCount": zod.number()
+}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.')
 })
 export const OwnerListAutomationStatsResponse = zod.array(OwnerListAutomationStatsResponseItem)
 
