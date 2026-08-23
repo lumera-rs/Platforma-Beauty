@@ -3652,6 +3652,36 @@ function respondBrevoListingFailure(res: Response, error: unknown) {
   res.status(502).json({ error: `Spisak webhook-ova nije učitan sa Brevo API-ja (${detail}). Proverite Brevo API ključ, pa pokušajte ponovo.` });
 }
 
+/**
+ * Read the current stale Brevo registrations for an admin-facing refresh.
+ * This intentionally shares the same provider listing, candidate filtering,
+ * origin rules, and masked response shape as the registration check.
+ */
+async function readStaleBrevoRegistrations(req: Request) {
+  const context = brevoVerdictContext(req);
+  // Development/preview must never inspect credentials or provider state:
+  // its configuration can differ from production, and a production webhook
+  // could otherwise be exposed as a removable leftover. An empty list keeps
+  // the page's destructive control unavailable even before Brevo is set up
+  // locally.
+  if (context.developmentOrigin) return [];
+  const secret = await resolveWebhookSecret("brevo");
+  if (!secret) {
+    throw new BrevoConfigurationError("Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo.");
+  }
+  const webhooks = await listBrevoTransactionalWebhooks();
+  return staleBrevoRegistrations(brevoRegistrationCandidates(webhooks, secret), context);
+}
+
+router.get("/admin/integrations/brevo/stale-webhooks", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  try {
+    res.json({ staleWebhooks: await readStaleBrevoRegistrations(req) });
+  } catch (error) {
+    respondBrevoListingFailure(res, error);
+  }
+});
+
 router.post("/admin/integrations/brevo/verify-registration", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const secret = await resolveWebhookSecret("brevo");

@@ -179,6 +179,11 @@ async function run() {
       responseBodies.push(result.raw);
       return result;
     };
+    const get = async (path: string, options: { cookie?: string; host?: string } = {}) => {
+      const result = await requestWithHost(path, { method: "GET", ...options });
+      responseBodies.push(result.raw);
+      return result;
+    };
     const staleOf = (result: { body: Record<string, unknown> | null }) =>
       (result.body?.["staleWebhooks"] ?? null) as Array<{ id: number; maskedUrl: string }> | null;
 
@@ -254,6 +259,19 @@ async function run() {
         "registration-check stale entries carry masked URLs only");
       assert.ok(String(checked.body?.["message"]).includes("Webhook je registrovan na Brevo"),
         `registration check reports the healthy verdict (got: ${checked.raw})`);
+
+      const refreshed = await get("/api/admin/integrations/brevo/stale-webhooks", { cookie: adminCookie });
+      assert.equal(refreshed.status, 200, `stale-list refresh must succeed (got: ${refreshed.raw})`);
+      assert.deepEqual(staleOf(refreshed)?.map((hook) => hook.id).sort(), [oldDomainCurrentSecretId, oldDomainOldSecretId],
+        `stale-list refresh uses the same classification as registration check (got: ${refreshed.raw})`);
+      assert.ok(staleOf(refreshed)?.every((hook) => hook.maskedUrl.endsWith("/api/webhooks/brevo/…")),
+        "stale-list refresh carries masked URLs only");
+
+      const refreshedFromDev = await get("/api/admin/integrations/brevo/stale-webhooks", {
+        cookie: adminCookie, host: `swc-${suffix}.riker.replit.dev`,
+      });
+      assert.equal(refreshedFromDev.status, 200, `stale-list refresh from dev must succeed (got: ${refreshedFromDev.raw})`);
+      assert.deepEqual(staleOf(refreshedFromDev), [], "stale-list refresh suppresses stale entries from development origins");
       console.log("✓ registration check also lists exactly the stale LUMERA duplicates");
     }
 

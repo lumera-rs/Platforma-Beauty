@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number };
@@ -40,7 +40,6 @@ export default function AdminIntegrations() {
     setData(payload);
     setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled });
   };
-  useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
   // Unsaved-changes guard: generated or typed values and toggled "enabled" switches take
   // effect only after "Sačuvaj", so leaving the page with a dirty form (e.g. a freshly
@@ -173,7 +172,7 @@ export default function AdminIntegrations() {
     try {
       const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
       const result = await response.json();
-      if (Array.isArray(result.staleWebhooks)) setStaleBrevoWebhooks(result.staleWebhooks);
+      if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks);
       if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
       // A development/preview verdict may be successful only in the softened
       // sense that it found the current secret elsewhere (likely production).
@@ -218,6 +217,27 @@ export default function AdminIntegrations() {
     setStaleBrevoWebhooks(webhooks);
     setSelectedStaleBrevoWebhookIds(webhooks.filter((hook) => selectedIds.includes(hook.id)).map((hook) => hook.id));
   };
+  const [refreshingStaleWebhooks, setRefreshingStaleWebhooks] = useState(false);
+  const refreshStaleBrevoWebhooks = async ({ notify = true }: { notify?: boolean } = {}) => {
+    setRefreshingStaleWebhooks(true);
+    try {
+      const response = await fetch("/api/admin/integrations/brevo/stale-webhooks", { credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Osvežavanje zaostalih Brevo registracija nije uspelo.");
+      const selectedIds = selectedStaleBrevoWebhookIds;
+      updateStaleBrevoWebhooks(result.staleWebhooks ?? [], selectedIds.length ? selectedIds : undefined);
+      if (notify) toast.success("Spisak zaostalih Brevo registracija je osvežen.");
+    } catch (error) {
+      if (notify) toast.error(error instanceof Error ? error.message : "Osvežavanje zaostalih Brevo registracija nije uspelo.");
+    } finally {
+      setRefreshingStaleWebhooks(false);
+    }
+  };
+  useEffect(() => {
+    load()
+      .then(() => refreshStaleBrevoWebhooks({ notify: false }))
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Podešavanja integracija nisu učitana."));
+  }, []);
   const registerBrevoWebhook = async () => {
     setRegisteringWebhook(true);
     try {
@@ -369,6 +389,10 @@ export default function AdminIntegrations() {
               {integration === "brevo" && <Button variant="outline" size="sm" disabled={verifyingRegistration} onClick={verifyBrevoRegistration}>
                 {verifyingRegistration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
                 {verifyingRegistration ? "Proveravam…" : "Proveri registraciju na Brevo"}
+              </Button>}
+              {integration === "brevo" && <Button variant="outline" size="sm" data-testid="refresh-stale-brevo-webhooks" disabled={refreshingStaleWebhooks} onClick={() => refreshStaleBrevoWebhooks()}>
+                {refreshingStaleWebhooks ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                {refreshingStaleWebhooks ? "Osvežavam…" : "Osveži zaostale registracije"}
               </Button>}
               {integration === "brevo" && <Button variant="outline" size="sm" disabled={registeringWebhook} onClick={registerBrevoWebhook}>
                 {registeringWebhook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
