@@ -333,6 +333,7 @@ async function integrationTests() {
     assert.equal(getRes.status, 200);
     const active0 = (await getRes.json()) as any;
     assert.equal(active0.version, initialVersion);
+    assert.deepEqual(active0.defaults, DEFAULT_RETENTION_THRESHOLDS, "response exposes the platform defaults");
     if (initialVersion === 0) {
       assert.equal(active0.isDefault, true);
       assert.deepEqual(active0.thresholds, DEFAULT_RETENTION_THRESHOLDS);

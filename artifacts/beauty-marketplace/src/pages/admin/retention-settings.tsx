@@ -74,6 +74,9 @@ function changedFields(entry: RetentionSettingsHistoryEntry): FieldKey[] {
   );
 }
 
+type RestoreTarget =
+  | { kind: "history"; entry: RetentionSettingsHistoryEntry }
+  | { kind: "defaults"; thresholds: RetentionThresholds };
 export default function AdminRetentionSettings() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -94,7 +97,7 @@ export default function AdminRetentionSettings() {
     vipSpendPercentOfMedian: "",
   });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
-  const [restoreTarget, setRestoreTarget] = useState<RetentionSettingsHistoryEntry | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
 
   useEffect(() => {
     if (settings) {
@@ -177,10 +180,15 @@ export default function AdminRetentionSettings() {
     });
   };
 
-  const handleRestore = (entry: RetentionSettingsHistoryEntry) => {
-    updateMutation.mutate({ data: entry.thresholds }, {
+  const handleRestore = (target: RestoreTarget) => {
+    const thresholds = target.kind === "history" ? target.entry.thresholds : target.thresholds;
+    updateMutation.mutate({ data: thresholds }, {
       onSuccess: (updated) => {
-        toast.success(`Vrednosti verzije ${entry.version} su vraćene kao nova verzija ${updated.version}.`);
+        toast.success(
+          target.kind === "history"
+            ? `Vrednosti verzije ${target.entry.version} su vraćene kao nova verzija ${updated.version}.`
+            : `Podrazumevane vrednosti platforme su vraćene kao nova verzija ${updated.version}.`,
+        );
         setPreview(null);
         invalidateAfterSave();
         setRestoreTarget(null);
@@ -191,6 +199,10 @@ export default function AdminRetentionSettings() {
       },
     });
   };
+
+  const isAtDefaults =
+    !!settings &&
+    FIELDS.every((f) => settings.thresholds[f.key] === settings.defaults[f.key]);
 
   if (isLoading) {
     return (
@@ -255,7 +267,18 @@ export default function AdminRetentionSettings() {
                 <Info className="w-3.5 h-3.5 shrink-0" />
                 Nova podešavanja odmah važe za sve salone — CRM objašnjenja vlasnika koriste aktivnu verziju pragova.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {settings && !isAtDefaults && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setRestoreTarget({ kind: "defaults", thresholds: settings.defaults })}
+                    disabled={updateMutation.isPending}
+                    data-testid="restore-retention-defaults"
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Vrati podrazumevane vrednosti
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   onClick={handlePreview}
@@ -386,7 +409,7 @@ export default function AdminRetentionSettings() {
                             variant="outline"
                             size="sm"
                             className="ml-auto"
-                            onClick={() => setRestoreTarget(entry)}
+                            onClick={() => setRestoreTarget({ kind: "history", entry })}
                             disabled={updateMutation.isPending}
                             data-testid={`restore-retention-v${entry.version}`}
                           >
@@ -420,36 +443,44 @@ export default function AdminRetentionSettings() {
         <AlertDialog open={restoreTarget !== null} onOpenChange={(open) => { if (!open) setRestoreTarget(null); }}>
           <AlertDialogContent data-testid="restore-retention-dialog">
             <AlertDialogHeader>
-              <AlertDialogTitle>Vrati vrednosti verzije {restoreTarget?.version}?</AlertDialogTitle>
+              <AlertDialogTitle>
+                {restoreTarget?.kind === "defaults"
+                  ? "Vrati podrazumevane vrednosti platforme?"
+                  : `Vrati vrednosti verzije ${restoreTarget?.kind === "history" ? restoreTarget.entry.version : ""}?`}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Biće kreirana nova verzija sa vrednostima izabrane verzije — istorija izmena ostaje netaknuta,
-                a promena se beleži sa vašim imenom.
+                {restoreTarget?.kind === "defaults"
+                  ? "Biće kreirana nova verzija sa podrazumevanim vrednostima platforme — istorija izmena ostaje netaknuta, a promena se beleži sa vašim imenom."
+                  : "Biće kreirana nova verzija sa vrednostima izabrane verzije — istorija izmena ostaje netaknuta, a promena se beleži sa vašim imenom."}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            {restoreTarget && settings && (
-              <div className="text-sm">
-                {(Object.keys(restoreTarget.thresholds) as FieldKey[]).filter(
-                  (k) => restoreTarget.thresholds[k] !== settings.thresholds[k],
-                ).length === 0 ? (
-                  <p className="text-muted-foreground italic">
-                    Vrednosti su identične trenutno aktivnim — vraćanje neće promeniti ponašanje.
-                  </p>
-                ) : (
-                  <ul className="space-y-1">
-                    {(Object.keys(restoreTarget.thresholds) as FieldKey[])
-                      .filter((k) => restoreTarget.thresholds[k] !== settings.thresholds[k])
-                      .map((key) => (
+            {restoreTarget && settings && (() => {
+              const targetThresholds =
+                restoreTarget.kind === "history" ? restoreTarget.entry.thresholds : restoreTarget.thresholds;
+              const diffKeys = (Object.keys(targetThresholds) as FieldKey[]).filter(
+                (k) => targetThresholds[k] !== settings.thresholds[k],
+              );
+              return (
+                <div className="text-sm">
+                  {diffKeys.length === 0 ? (
+                    <p className="text-muted-foreground italic">
+                      Vrednosti su identične trenutno aktivnim — vraćanje neće promeniti ponašanje.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {diffKeys.map((key) => (
                         <li key={key} className="text-muted-foreground">
                           <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
                           <span className="line-through">{settings.thresholds[key]}</span>
                           {" → "}
-                          <span className="font-semibold text-foreground">{restoreTarget.thresholds[key]}</span>
+                          <span className="font-semibold text-foreground">{targetThresholds[key]}</span>
                         </li>
                       ))}
-                  </ul>
-                )}
-              </div>
-            )}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
             <AlertDialogFooter>
               <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-restore-retention">
                 Otkaži
@@ -463,7 +494,7 @@ export default function AdminRetentionSettings() {
                 data-testid="confirm-restore-retention"
               >
                 {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
-                Vrati ovu verziju
+                {restoreTarget?.kind === "defaults" ? "Vrati podrazumevane vrednosti" : "Vrati ovu verziju"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

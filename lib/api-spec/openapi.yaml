@@ -7174,7 +7174,8 @@ components:
         changedByUserId: { type: ["string", "null"] }
         changedAt: { type: ["string", "null"], description: "ISO timestamp of the change; null for platform defaults" }
         isDefault: { type: boolean }
-      required: [version, thresholds, changedByUserId, changedAt, isDefault]
+        defaults: { $ref: "#/components/schemas/RetentionThresholds" }
+      required: [version, thresholds, changedByUserId, changedAt, isDefault, defaults]
 
     RetentionStatusCounts:
       type: object

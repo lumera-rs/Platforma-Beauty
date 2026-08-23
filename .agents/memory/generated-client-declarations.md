@@ -8,3 +8,4 @@ When a leaf artifact reports that generated API hooks are missing even though th
 **Why:** Leaf project references can resolve emitted declaration output that is older than the generated TypeScript source, producing misleading missing-export errors.
 
 **How to apply:** Run the API client composite build (or the repository’s canonical library typecheck) and then rerun the affected artifact typecheck; do not duplicate generated hooks manually.
+Additionally: when a task rebase merges another task's OpenAPI spec changes, git may textually merge the generated client files into an inconsistent state (typecheck errors in pages untouched by either task). Rerun the spec codegen from the merged openapi.yaml instead of hand-fixing generated output, then rerun leaf typechecks.

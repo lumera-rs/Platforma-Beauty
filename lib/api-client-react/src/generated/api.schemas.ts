@@ -4294,6 +4294,7 @@ export interface RetentionSettings {
      */
   changedAt: string | null;
   isDefault: boolean;
+  defaults: RetentionThresholds;
 }
 
 export interface RetentionStatusCounts {

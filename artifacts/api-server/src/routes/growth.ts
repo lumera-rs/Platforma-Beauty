@@ -43,7 +43,11 @@ import {
   AdminPreviewRetentionSettingsBody,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
-import { classifyRetention, computeSalonMedianSpend } from "../lib/retention-classification";
+import {
+  classifyRetention,
+  computeSalonMedianSpend,
+  DEFAULT_RETENTION_THRESHOLDS,
+} from "../lib/retention-classification";
 import {
   getActiveRetentionSettings,
   getRetentionSettingsHistory,
@@ -1552,6 +1556,7 @@ function settingsView(s: Awaited<ReturnType<typeof getActiveRetentionSettings>>)
     changedByUserId: s.changedByUserId,
     changedAt: s.changedAt ? s.changedAt.toISOString() : null,
     isDefault: s.version === 0,
+    defaults: { ...DEFAULT_RETENTION_THRESHOLDS },
   };
 }
 
