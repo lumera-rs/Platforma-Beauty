@@ -2,48 +2,12 @@ import { createReadStream, existsSync, promises as fs, statSync } from 'node:fs'
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
 const fallbackDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
-const categoryPages = new Map([
-  ['/saloni/kategorija/frizerski-saloni', {
-    slug: 'frizerski-saloni',
-    apiCategory: 'Frizerski saloni',
-    label: 'Frizerski saloni',
-    h1: 'Frizerski saloni u Srbiji',
-    title: 'Frizerski saloni u Srbiji | LUMERA',
-    description: 'Pronađite najbolje frizerske salone u Srbiji, pregledajte usluge, ocene i cene i rezervišite termin online.',
-    intro: 'Istražite proverene frizerske salone za šišanje, feniranje, farbanje i stilizovanje kose.',
-  }],
-  ['/saloni/kategorija/nokti', {
-    slug: 'nokti',
-    apiCategory: 'Nokti',
-    label: 'Saloni za nokte',
-    h1: 'Saloni za nokte u Srbiji',
-    title: 'Saloni za nokte u Srbiji | LUMERA',
-    description: 'Pronađite salone za manikir, gel lak i pedikir u Srbiji. Uporedite ocene i cene i rezervišite termin online.',
-    intro: 'Pronađite stručnjake za manikir, gel lak, izlivanje noktiju i pedikir u vašem gradu.',
-  }],
-  ['/saloni/kategorija/masaza', {
-    slug: 'masaza',
-    apiCategory: 'Masaža',
-    label: 'Saloni za masažu',
-    h1: 'Saloni za masažu u Srbiji',
-    title: 'Saloni za masažu u Srbiji | LUMERA',
-    description: 'Otkrijte salone za masažu u Srbiji. Izaberite relaks, terapeutsku ili sportsku masažu i rezervišite termin.',
-    intro: 'Opustite se uz relaks, terapeutsku, sportsku ili masažu celog tela u proverenom salonu.',
-  }],
-  ['/saloni/kategorija/nega-lica', {
-    slug: 'nega-lica',
-    apiCategory: 'Lice',
-    label: 'Nega lica',
-    h1: 'Saloni za negu lica u Srbiji',
-    title: 'Nega lica u Srbiji | LUMERA',
-    description: 'Pronađite salone za negu lica u Srbiji. Pregledajte tretmane, ocene i cene i zakažite svoj beauty termin.',
-    intro: 'Istražite hidratantne, anti-age i druge profesionalne tretmane za negu lica.',
-  }],
-]);
+const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
 const staticPages = new Map([
   ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
   ['/za-biznise', ['LUMERA za biznise | Rast vašeg salona', 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', 'Digitalni alati za salone i beauty biznise.']],

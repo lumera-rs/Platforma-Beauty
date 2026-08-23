@@ -541,11 +541,11 @@ export default function Home() {
             </div>
             <div>
               <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Top usluge</h4>
-              <ul className="space-y-3">
-                {["Frizerski saloni", "Masaža", "Nokti", "Nega lica", "Kozmetički saloni", "Depilacija"].map((cat) => (
-                  <li key={cat}>
-                    <Link href={getCategoryHref(cat)} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
-                      <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {cat}
+               <ul className="space-y-3">
+                 {PUBLIC_CATEGORY_PAGES.map((page) => (
+                   <li key={page.slug}>
+                     <Link href={getPublicCategoryPath(page)} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
+                       <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {page.label}
                     </Link>
                   </li>
                 ))}
