@@ -2648,9 +2648,14 @@ async function runIntegrationTests(): Promise<void> {
       const originalFetch = globalThis.fetch;
       const prevKey = process.env["SMS_PROVIDER_API_KEY"];
       const prevBase = process.env["SMS_PROVIDER_BASE_URL"];
+      const prevWebhookSecret = process.env["SMS_WEBHOOK_SECRET"];
+      const prevAppBaseUrl = process.env["APP_BASE_URL"];
       const stableKey = randomUUID();
+      const webhookSecret = "sms/notify-secret";
       process.env["SMS_PROVIDER_API_KEY"] = "test-key";
       process.env["SMS_PROVIDER_BASE_URL"] = "https://api.infobip.com";
+      process.env["SMS_WEBHOOK_SECRET"] = webhookSecret;
+      process.env["APP_BASE_URL"] = "https://beauty-partner-hub.replit.app";
       // Ensure no DB integration rows shadow/disable the env fallback: with zero
       // rows, integrationSettings() reports enabled + empty values → env fallback.
       await db.delete(integrationSettingsTable).where(eq(integrationSettingsTable.integration, "sms"));
@@ -2674,6 +2679,29 @@ async function runIntegrationTests(): Promise<void> {
         assert.equal(msg?.destinations?.[0]?.messageId, stableKey, "destination.messageId is the stable key");
         assert.equal(parsed.bulkId, msg?.destinations?.[0]?.messageId, "bulkId == destination.messageId");
         assert.equal(msg?.callbackData, stableKey, "callbackData equals the stable key");
+         assert.equal(
+           msg?.notifyUrl,
+           `https://beauty-partner-hub.replit.app/api/webhooks/infobip/${encodeURIComponent(webhookSecret)}`,
+           "Infobip messages carry the deployment webhook URL with the encoded saved secret",
+         );
+
+         // Without an effective webhook secret, no callback URL is sent.
+         delete process.env["SMS_WEBHOOK_SECRET"];
+         await infobipSmsProvider.send({ to: "+381601113344", text: "Bez tajne", idempotencyKey: randomUUID() });
+         const noSecretCall = captured[captured.length - 1];
+         assert.ok(noSecretCall?.body, "Infobip send without secret issued");
+         assert.equal(JSON.parse(noSecretCall.body!).messages?.[0]?.notifyUrl, undefined,
+           "notifyUrl is omitted when no webhook secret is configured");
+
+         // A preview/development origin must never leak into an external
+         // provider payload, even if a secret exists.
+         process.env["SMS_WEBHOOK_SECRET"] = webhookSecret;
+         process.env["APP_BASE_URL"] = "https://preview-example.replit.dev";
+         await infobipSmsProvider.send({ to: "+381601113344", text: "Bez preview URL-a", idempotencyKey: randomUUID() });
+         const developmentCall = captured[captured.length - 1];
+         assert.ok(developmentCall?.body, "Infobip send from development configuration issued");
+         assert.equal(JSON.parse(developmentCall.body!).messages?.[0]?.notifyUrl, undefined,
+           "development APP_BASE_URL is never sent as notifyUrl");
 
         // Lookup URL is messageId-encoded with limit=1; any matching log = accepted.
         const lookup = await infobipSmsProvider.lookupByMessageId!(stableKey);
@@ -2687,6 +2715,8 @@ async function runIntegrationTests(): Promise<void> {
         globalThis.fetch = originalFetch;
         if (prevKey === undefined) delete process.env["SMS_PROVIDER_API_KEY"]; else process.env["SMS_PROVIDER_API_KEY"] = prevKey;
         if (prevBase === undefined) delete process.env["SMS_PROVIDER_BASE_URL"]; else process.env["SMS_PROVIDER_BASE_URL"] = prevBase;
+         if (prevWebhookSecret === undefined) delete process.env["SMS_WEBHOOK_SECRET"]; else process.env["SMS_WEBHOOK_SECRET"] = prevWebhookSecret;
+         if (prevAppBaseUrl === undefined) delete process.env["APP_BASE_URL"]; else process.env["APP_BASE_URL"] = prevAppBaseUrl;
       }
     }
     console.log("✓ Infobip request: bulkId == destination.messageId == stable key; encoded logs lookup");

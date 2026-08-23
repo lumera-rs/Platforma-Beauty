@@ -62,6 +62,60 @@ export async function resolveWebhookSecret(provider: WebhookProvider): Promise<s
   return settings.values["webhookSecret"] ?? process.env[WEBHOOK_SECRET_ENV[provider]] ?? undefined;
 }
 
+/**
+ * Return the public HTTPS origin configured for this deployment.
+ *
+ * Outbound provider requests have no browser origin to derive a URL from.
+ * APP_BASE_URL is the deployment-owned origin used for production OAuth
+ * callbacks and must therefore be the source for per-message webhook URLs too.
+ * Never fall back to the request host or a development/preview address: an
+ * Infobip notifyUrl is sent to an external provider and must not expose a
+ * preview endpoint as the production delivery destination.
+ */
+function deploymentPublicOrigin(): string | null {
+  const configured = process.env["APP_BASE_URL"]?.trim();
+  if (!configured) return null;
+
+  let url: URL;
+  try {
+    url = new URL(configured);
+  } catch {
+    return null;
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  const developmentHost = hostname === "localhost"
+    || hostname === "127.0.0.1"
+    || hostname === "::1"
+    || hostname.endsWith(".replit.dev");
+  if (
+    url.protocol !== "https:"
+    || developmentHost
+    || url.username
+    || url.password
+    || url.port
+    || url.pathname !== "/"
+    || url.search
+    || url.hash
+  ) return null;
+
+  return url.origin;
+}
+
+/**
+ * Build Infobip's per-message delivery-report callback URL. A missing or
+ * development-only configuration deliberately returns undefined so the
+ * provider receives no notifyUrl and cannot be pointed at a preview origin.
+ */
+export async function resolveInfobipNotifyUrl(): Promise<string | undefined> {
+  const [secret, origin] = await Promise.all([
+    resolveWebhookSecret("sms"),
+    Promise.resolve(deploymentPublicOrigin()),
+  ]);
+  if (!secret || !origin) return undefined;
+  return `${origin}/api/webhooks/infobip/${encodeURIComponent(secret)}`;
+}
+
 /** Timing-safe token comparison (hash both sides to equalize lengths). */
 export function webhookTokenMatches(expected: string, provided: string): boolean {
   const a = createHash("sha256").update(expected).digest();

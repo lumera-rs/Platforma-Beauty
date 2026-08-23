@@ -106,7 +106,18 @@ export default function AdminIntegrations() {
     // The server marks the change only when the saved secret actually differs
     // from the effective one — re-saving an identical secret stays a plain save.
     if ("webhookSecret" in trimmedValues && result.webhookSecretPendingReconfirmation) {
-      toast.warning("Sačuvano — nova webhook tajna važi odmah, pa stara registracija kod provajdera više ne radi.", { description: "Kliknite „Kopiraj kompletan URL“, ponovo registrujte URL kod provajdera, pa pokrenite „Proveri webhook“.", duration: 12000 });
+      const smsSecret = integration === "sms";
+      toast.warning(
+        smsSecret
+          ? "Sačuvano — naredna SMS poruka automatski nosi novu webhook tajnu i aktuelni report URL."
+          : "Sačuvano — nova webhook tajna važi odmah, pa stara registracija kod provajdera više ne radi.",
+        {
+          description: smsSecret
+            ? "Pošaljite novu SMS poruku, zatim proverite da li je stvarni izveštaj potvrđen. Portal-level URL možete ažurirati opciono."
+            : "Kliknite „Kopiraj kompletan URL“, ponovo registrujte URL kod provajdera, pa pokrenite „Proveri webhook“.",
+          duration: 12000,
+        },
+      );
     } else {
       toast.success("Podešavanja su sačuvana i odmah aktivna.");
     }
@@ -244,7 +255,11 @@ export default function AdminIntegrations() {
     crypto.getRandomValues(bytes);
     const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
     setForm((previous) => ({ ...previous, [integration]: { ...previous[integration], webhookSecret: secret } }));
-    toast.success("Jaka tajna je generisana. Kliknite „Sačuvaj“ da bi počela da važi, zatim kopirajte kompletan URL i ponovo registrujte webhook kod provajdera.");
+    toast.success(
+      integration === "sms"
+        ? "Jaka tajna je generisana. Kliknite „Sačuvaj“ da bi počela da važi; svaka naredna SMS poruka tada automatski nosi aktuelni report URL."
+        : "Jaka tajna je generisana. Kliknite „Sačuvaj“ da bi počela da važi, zatim kopirajte kompletan URL i ponovo registrujte webhook kod provajdera.",
+    );
   };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
   const isDevelopmentPreview = window.location.hostname === "localhost" || window.location.hostname.endsWith(".replit.dev");
@@ -289,14 +304,20 @@ export default function AdminIntegrations() {
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">
             <Label>Webhook URL za statuse isporuke</Label>
             {card.webhookSecretPendingReconfirmation && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
-              <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Webhook tajna je promenjena — URL registrovan kod provajdera više ne važi.</p>
+              <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />{integration === "sms" ? "Webhook tajna je promenjena — naredna SMS poruka automatski nosi novi report URL." : "Webhook tajna je promenjena — URL registrovan kod provajdera više ne važi."}</p>
               <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-xs text-amber-800">
-                <li>Kliknite „Kopiraj kompletan URL“ da dobijete URL sa novom tajnom.</li>
-                <li>Ponovo registrujte taj URL kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo — ili upotrebite „Registruj webhook“ ispod"}).</li>
-                <li>Pokrenite „Proveri webhook“ da potvrdite da sve radi.</li>
+                {integration === "sms" ? <>
+                  <li>Pošaljite novu SMS poruku da Infobip dobije aktuelni URL i tajnu.</li>
+                  <li>Sačekajte stvarni izveštaj o isporuci, pa pokrenite „Proveri registraciju (Infobip)“.</li>
+                  <li>Po želji ažurirajte portal-level URL preko „Kopiraj kompletan URL“.</li>
+                </> : <>
+                  <li>Kliknite „Kopiraj kompletan URL“ da dobijete URL sa novom tajnom.</li>
+                  <li>Ponovo registrujte taj URL kod provajdera (Brevo — ili upotrebite „Registruj webhook“ ispod).</li>
+                  <li>Pokrenite „Proveri webhook“ da potvrdite da sve radi.</li>
+                </>}
               </ol>
             </div>}
-            <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
+            <p className="mt-1 text-xs text-muted-foreground">{integration === "sms" ? "Svaka SMS poruka sa sačuvanom webhook tajnom automatski nosi aktuelni Infobip delivery-report URL. Portal-level registracija je i dalje podržana; za nju" : "Registrujte kod provajdera (Brevo transactional webhooks); za nju"} zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
              {isDevelopmentPreview && <p className="mt-1.5 text-xs font-medium text-amber-700" data-testid={`development-webhook-url-caveat-${integration}`}><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Ovo je URL razvojne probe. Nemojte ga registrovati kod provajdera za produkciju.</p>}
             <p className="mt-2 text-xs text-muted-foreground">Poslednja uspešna potvrda: <span className="font-medium">{formatTimestamp(card.webhookVerifiedAt ?? null) ?? "nikada potvrđeno"}</span></p>
@@ -348,10 +369,10 @@ export default function AdminIntegrations() {
               const registration = data.smsWebhookRegistration;
               const panels: Record<SmsWebhookRegistrationState, { tone: "ok" | "warn" | "neutral"; badge: string; text: string }> = {
                 confirmed: { tone: "ok", badge: "Registracija potvrđena", text: `Infobip zaista dostavlja izveštaje o isporuci na ovaj endpoint sa aktuelnom tajnom — poslednji stvarni izveštaj: ${formatTimestamp(registration.lastReportAt) ?? "—"}.` },
-                unconfirmed: { tone: "neutral", badge: "Još nepotvrđena", text: "Nema nedavnih automatskih SMS poruka po kojima bi se registracija potvrdila — to NIJE znak greške. Infobip API ne omogućava očitavanje registrovanog report URL-a, pa se registracija potvrđuje tek prvim stvarnim izveštajem. Proverite u Infobip portalu da je delivery-report URL podešen (koristite „Kopiraj kompletan URL“), pa pokrenite „Proveri registraciju (Infobip)“." },
-                no_secret: { tone: "warn", badge: "Tajna nije sačuvana", text: "Webhook tajna nije sačuvana, pa endpoint odbija sve Infobip izveštaje. Generišite i sačuvajte tajnu, zatim registrujte kompletan URL u Infobip portalu." },
-                stale_secret: { tone: "warn", badge: "Verovatno stara tajna", text: `Tajna je promenjena ${formatTimestamp(registration.secretSavedAt) ?? "—"}, a poslednji potvrđeni izveštaj je stariji (${formatTimestamp(registration.lastReportAt) ?? "—"}) — registracija kod Infobip-a najverovatnije još nosi staru tajnu. Kopirajte kompletan URL sa novom tajnom i ažurirajte report URL u Infobip portalu.` },
-                misconfigured: { tone: "warn", badge: "Verovatno nije registrovan", text: "Automatske SMS poruke se šalju, ali Infobip ne dostavlja izveštaje — webhook nije registrovan kod Infobip-a, pokazuje na pogrešan domen ili nosi pogrešnu tajnu. Ovo nije problem sa saobraćajem: poruke postoje, izveštaji izostaju. Podesite report URL u Infobip portalu (koristite „Kopiraj kompletan URL“)." },
+                unconfirmed: { tone: "neutral", badge: "Još nepotvrđena", text: "Nema nedavnih automatskih SMS poruka po kojima bi se registracija potvrdila — to NIJE znak greške. Kada je webhook tajna sačuvana, svaka nova poruka sama nosi aktuelni delivery-report URL, pa prvi stvarni izveštaj potvrđuje da sve radi. Portal-level delivery-report URL je i dalje podržan ako ga želite podesiti unapred. Infobip API ne omogućava očitavanje registrovanog report URL-a." },
+                no_secret: { tone: "warn", badge: "Tajna nije sačuvana", text: "Webhook tajna nije sačuvana, pa endpoint odbija sve Infobip izveštaje i nove poruke ne mogu automatski da prijave report URL. Generišite i sačuvajte tajnu; svaka naredna SMS poruka tada nosi aktuelni URL. Portal-level URL možete podesiti opciono." },
+                stale_secret: { tone: "warn", badge: "Verovatno stara tajna", text: `Tajna je promenjena ${formatTimestamp(registration.secretSavedAt) ?? "—"}, a poslednji potvrđeni izveštaj je stariji (${formatTimestamp(registration.lastReportAt) ?? "—"}) — starija portal registracija kod Infobip-a najverovatnije još nosi staru tajnu. Naredna SMS poruka sačuvanu novu tajnu i aktuelni report URL nosi automatski; portal URL možete ažurirati za buduće portal-level izveštaje.` },
+                misconfigured: { tone: "warn", badge: "Izveštaji još ne stižu", text: "Automatske SMS poruke se šalju, ali Infobip ne dostavlja izveštaje iz očekivanog saobraćaja — portal webhook može biti pogrešan ili nositi staru tajnu. Sa sačuvanom webhook tajnom naredna poruka automatski nosi aktuelni delivery-report URL; pošaljite novu poruku ili podesite report URL u Infobip portalu (koristite „Kopiraj kompletan URL“)." },
               };
               const panel = panels[registration.state];
               const boxClass = panel.tone === "ok" ? "border-emerald-300 bg-emerald-50" : panel.tone === "warn" ? "border-amber-300 bg-amber-50" : "bg-muted/30";
@@ -370,7 +391,7 @@ export default function AdminIntegrations() {
             })()}
             <p className="mt-1.5 text-xs text-muted-foreground">Kopiranje ubacuje sačuvanu tajnu umesto {"<tajna>"} — nalepite kopirani URL direktno kod provajdera, bez ručnog sklapanja.</p>
             <p className="mt-1.5 text-xs text-muted-foreground">Šalje probni događaj na sopstveni endpoint sa sačuvanom tajnom — potvrđuje da se tajna poklapa i da endpoint prima događaje, bez uticaja na isporuke.</p>
-            {integration === "sms" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije: Infobip API ne omogućava očitavanje registrovanog report URL-a, pa provera kombinuje probni događaj na sopstveni endpoint sa dokazima iz stvarnog saobraćaja — stvarni izveštaj primljen posle poslednje promene tajne potvrđuje registraciju, a poslate poruke bez ijednog izveštaja ukazuju na nepostojeću ili zastarelu registraciju. Tajna se nikada ne prikazuje.</p>}
+            {integration === "sms" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije: Infobip API ne omogućava očitavanje registrovanog report URL-a, pa provera kombinuje probni događaj na sopstveni endpoint sa dokazima iz stvarnog saobraćaja — svaka nova poruka automatski pokušava da prijavi aktuelni URL, a stvarni izveštaj primljen posle poslednje promene tajne potvrđuje da izveštaji stižu. Portal-level registracija ostaje podržana za naloge koji je koriste. Tajna se nikada ne prikazuje.</p>}
             {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije pita Brevo API da li je webhook zaista registrovan kod provajdera: da li URL pokazuje na ovaj domen, nosi aktuelnu tajnu i prati sve potrebne događaje (isporuke, otvaranja, odbijanja i greške). Poređenje se obavlja na serveru; tajna se nikada ne prikazuje.</p>}
             {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">„Registruj webhook“ jednim klikom kreira ili ažurira transakcioni webhook direktno preko Brevo API-ja — URL ove aplikacije sa sačuvanom tajnom i pretplatom na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka — a zatim ponovo proverava registraciju. Tajna se koristi samo na serveru.</p>}
           </div>}

@@ -3,6 +3,7 @@ import { and, eq, lt, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
 import { infobipBaseUrl, integrationSettings, integrationValue } from "./integrations";
+import { resolveInfobipNotifyUrl } from "./provider-events";
 
 export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert" | "retail_order";
 
@@ -79,6 +80,8 @@ class InfobipSmsProvider implements SmsProvider {
     if (key) message["callbackData"] = key;
     const body: Record<string, unknown> = { messages: [message] };
     if (key) body["bulkId"] = key;
+    const notifyUrl = await resolveInfobipNotifyUrl();
+    if (notifyUrl) message["notifyUrl"] = notifyUrl;
     const response = await fetch(`${baseUrl}/sms/2/text/advanced`, {
       method: "POST",
       redirect: "error",

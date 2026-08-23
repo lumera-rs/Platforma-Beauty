@@ -3702,7 +3702,7 @@ router.post("/admin/integrations/sms/verify-registration", async (req, res): Pro
   const devNote = developmentOrigin
     ? ` Napomena: proveru ste pokrenuli sa razvojne adrese (${origin}), pa se nalaz odnosi na razvojno okruženje — za pouzdanu presudu pokrenite proveru iz objavljene aplikacije i nemojte registrovati razvojni URL kod Infobip-a.`
     : "";
-  const setupInstruction = `U Infobip portalu podesite delivery-report webhook (report URL) za SMS na ${expectedUrlHint} — upotrebite „Kopiraj kompletan URL“ da dobijete URL sa sačuvanom tajnom. Infobip API ne omogućava aplikaciji da tu registraciju očita ili podesi umesto vas.`;
+  const setupInstruction = `Svaka naredna SMS poruka automatski šalje Infobip-u aktuelni delivery-report URL ${expectedUrlHint} sa sačuvanom tajnom, pa će prvi stvarni izveštaj potvrditi prijem. Account-level report URL u Infobip portalu je i dalje podržan za naloge koji ga koriste — upotrebite „Kopiraj kompletan URL“ ako želite da ga podesite unapred. Infobip API ne omogućava aplikaciji da tu portal registraciju očita ili podesi umesto vas.`;
 
   const selfCheck = await runWebhookSelfCheck(req, "sms", secret);
   if (!selfCheck.ok) {
