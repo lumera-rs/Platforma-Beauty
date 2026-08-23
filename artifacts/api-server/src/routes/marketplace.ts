@@ -354,7 +354,7 @@ import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
-import { staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
+import { smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -3192,7 +3192,7 @@ function requestOrigin(req: Request) {
 
 router.get("/admin/integrations", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const [entries, deliveryReportsByProvider] = await Promise.all([
+  const [entries, deliveryReportsByProvider, reachableAdminCount] = await Promise.all([
     Promise.all(Object.entries(integrationDefinitions).map(async ([name, definition]) => [
       name,
       {
@@ -3205,6 +3205,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
       },
     ])),
     deliveryReportStatuses(),
+    smsFallbackReachableAdminCount(),
   ]);
   const origin = requestOrigin(req);
   res.json({
@@ -3214,6 +3215,12 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
       windowHours: DELIVERY_REPORT_WINDOW_HOURS,
       graceMinutes: DELIVERY_REPORT_GRACE_MINUTES,
     },
+    // Emergency-SMS audience health: how many active administrators the
+    // total-email-outage SMS fallback could reach (same audience + phone
+    // predicate as the send path). Zero → the admin panel shows a standing
+    // warning to add a phone number, because a total email outage would
+    // otherwise degrade to an unseen log line.
+    smsFallback: { reachableAdminCount },
     redirectUris: {
       google: `${origin}/api/auth/oauth/google/callback`,
       facebook: `${origin}/api/auth/oauth/facebook/callback`,

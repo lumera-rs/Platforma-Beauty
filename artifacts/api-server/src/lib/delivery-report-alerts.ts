@@ -103,6 +103,10 @@ export function staleDeliveryReportProviders(
   return (["brevo", "infobip"] as const).filter((provider) => statuses[provider].warning);
 }
 
+/** True when this phone value can actually receive the fallback SMS. */
+function hasUsablePhone(phone: string | null): phone is string {
+  return !!phone && phone.trim().length > 0;
+}
 function formatBelgradeTime(iso: string | null): string {
   if (!iso) return "nikada";
   const date = new Date(iso);
@@ -538,7 +542,7 @@ async function sendSilenceAlertSmsFallback(input: {
 }): Promise<SmsFallbackSummary> {
   const label = DELIVERY_REPORT_PROVIDER_LABELS[input.provider];
   const phoneAdmins = input.admins.filter(
-    (admin): admin is { email: string; phone: string } => !!admin.phone && admin.phone.trim().length > 0,
+    (admin): admin is { email: string; phone: string } => hasUsablePhone(admin.phone),
   );
   if (!phoneAdmins.length) {
     logger.warn(
@@ -596,4 +600,21 @@ async function sendSilenceAlertSmsFallback(input: {
     );
   }
   return summary;
+}
+
+/**
+ * How many active administrators the total-email-outage SMS fallback could
+ * actually reach. Uses the exact same audience (active ADMIN/SUPER_ADMIN) and
+ * phone predicate as the fallback send path, so the admin-panel notice fed by
+ * this count can never disagree with what the fallback would really do.
+ * Zero means a total email outage would degrade to a log line nobody sees.
+ */
+export async function smsFallbackReachableAdminCount(): Promise<number> {
+  const admins = await db.select({ phone: usersTable.phone })
+    .from(usersTable)
+    .where(and(
+      eq(usersTable.active, true),
+      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
+    ));
+  return admins.filter((admin) => hasUsablePhone(admin.phone)).length;
 }

@@ -54,3 +54,4 @@
 - [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
 - [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
 - [SPA unsaved-navigation guard](spa-unsaved-navigation-guard.md) — Back/Forward guards must hook history ahead of the router; page-local popstate listeners are removed mid-dispatch on unmount.
+- [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path's exact audience and phone predicate, never a re-derived query.

@@ -13,7 +13,7 @@ type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
-type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
+type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number }; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
 
 const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
@@ -193,6 +193,11 @@ export default function AdminIntegrations() {
   return <AdminLayout><div className="space-y-6">
     <header><div className="flex items-center gap-3"><PlugZap className="h-7 w-7 text-primary" /><h1 className="font-serif text-3xl font-bold">Integracije i konektori</h1></div><p className="mt-2 text-muted-foreground">Sačuvane vrednosti su šifrovane u bazi i primenjuju se odmah, bez restarta aplikacije.</p></header>
     {!data ? <p className="text-muted-foreground">Učitavanje integracija…</p> : <>
+      {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
+        <p className="font-semibold text-destructive"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu</p>
+        <p className="mt-1 text-sm text-destructive">Nijedan aktivan administrator nema broj telefona na nalogu. Ako slanje e-pošte potpuno otkaže, rezervni SMS je jedini kanal kojim biste saznali za prekid — bez broja telefona upozorenje završava samo u logovima servera.</p>
+        <p className="mt-1 text-sm text-destructive">Neka bar jedan administrator doda i verifikuje broj telefona na svom nalogu; ovo obaveštenje nestaje čim prvi broj bude sačuvan.</p>
+      </div>}
       <div className="grid gap-6 xl:grid-cols-2">{(Object.keys(fields) as Integration[]).map((integration) => {
         const card = data.integrations[integration]; const [label, color] = status(card);
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
