@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 5;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 6;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -161,8 +161,13 @@ function tableStatements(s: string): string[] {
       vip_min_completed_visits integer NOT NULL,
       vip_spend_percent_of_median integer NOT NULL,
       changed_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      change_source text NOT NULL DEFAULT 'manual',
+      restored_from_version integer,
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
+    // v6: audit provenance — restores are labelled, not disguised as manual edits.
+    `ALTER TABLE ${s}.platform_retention_settings ADD COLUMN IF NOT EXISTS change_source text NOT NULL DEFAULT 'manual'`,
+    `ALTER TABLE ${s}.platform_retention_settings ADD COLUMN IF NOT EXISTS restored_from_version integer`,
     `CREATE UNIQUE INDEX IF NOT EXISTS platform_retention_settings_version_unique ON ${s}.platform_retention_settings (version)`,
     // Leading FK coverage (DB standards audit): changed_by_user_id.
     `CREATE INDEX IF NOT EXISTS platform_retention_settings_changed_by_idx ON ${s}.platform_retention_settings (changed_by_user_id)`,

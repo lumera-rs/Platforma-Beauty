@@ -200,6 +200,7 @@ import type {
   RetentionSettings,
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
+  RetentionSettingsUpdate,
   RetentionThresholds,
   ReversalResult,
   SalonAppointmentCreate,
@@ -17013,14 +17014,14 @@ export const getAdminUpdateRetentionSettingsUrl = () => {
 /**
  * @summary Update platform retention thresholds (admin); records an audited new version
  */
-export const adminUpdateRetentionSettings = async (retentionThresholds: RetentionThresholds, options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettings> => {
+export const adminUpdateRetentionSettings = async (retentionSettingsUpdate: RetentionSettingsUpdate, options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettings> => {
 
   return customFetch<RetentionSettings>(getAdminUpdateRetentionSettingsUrl(),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(retentionThresholds)
+    body: JSON.stringify(retentionSettingsUpdate)
   }
 );}
 
@@ -17029,8 +17030,8 @@ export const adminUpdateRetentionSettings = async (retentionThresholds: Retentio
 
 
 export const getAdminUpdateRetentionSettingsMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext> => {
 
 const mutationKey = ['adminUpdateRetentionSettings'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -17042,7 +17043,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, {data: BodyType<RetentionThresholds>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, {data: BodyType<RetentionSettingsUpdate>}> = (props) => {
           const {data} = props ?? {};
 
           return  adminUpdateRetentionSettings(data,requestOptions)
@@ -17056,18 +17057,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminUpdateRetentionSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>>
-    export type AdminUpdateRetentionSettingsMutationBody = BodyType<RetentionThresholds>
+    export type AdminUpdateRetentionSettingsMutationBody = BodyType<RetentionSettingsUpdate>
     export type AdminUpdateRetentionSettingsMutationError = ErrorType<void>
 
     /**
  * @summary Update platform retention thresholds (admin); records an audited new version
  */
 export const useAdminUpdateRetentionSettings = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetentionSettings>>, TError,{data: BodyType<RetentionSettingsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof adminUpdateRetentionSettings>>,
         TError,
-        {data: BodyType<RetentionThresholds>},
+        {data: BodyType<RetentionSettingsUpdate>},
         TContext
       > => {
       return useMutation(getAdminUpdateRetentionSettingsMutationOptions(options));

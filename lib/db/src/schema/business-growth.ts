@@ -96,6 +96,10 @@ export const platformRetentionSettingsTable = pgTable("platform_retention_settin
   /** VIP when total spend exceeds salon median × this percent (200 = 2×). */
   vipSpendPercentOfMedian: integer("vip_spend_percent_of_median").notNull(),
   changedByUserId: uuid("changed_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  /** How the version came to be: 'manual' | 'restore_version' | 'restore_defaults'. */
+  changeSource: text("change_source").notNull().default("manual"),
+  /** Version whose values were restored; only set when changeSource = 'restore_version'. */
+  restoredFromVersion: integer("restored_from_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   /** One row per version; concurrent updates serialize on this constraint. */

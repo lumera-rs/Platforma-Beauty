@@ -52,6 +52,7 @@ import {
   getActiveRetentionSettings,
   getRetentionSettingsHistory,
   previewRetentionThresholds,
+  RetentionRestoreError,
   updateRetentionSettings,
   validateRetentionThresholds,
 } from "../lib/retention-settings";
@@ -1655,14 +1656,26 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
       return;
     }
 
-    const problems = validateRetentionThresholds(parsed.data);
+    const { changeSource, restoredFromVersion, ...thresholds } = parsed.data;
+    const problems = validateRetentionThresholds(thresholds);
     if (problems.length > 0) {
       res.status(400).json({ error: problems.join(" "), code: "VALIDATION_ERROR", problems });
       return;
     }
 
-    const updated = await updateRetentionSettings(user.id, parsed.data);
-    res.json(settingsView(updated));
+    try {
+      const updated = await updateRetentionSettings(user.id, thresholds, {
+        changeSource: changeSource ?? "manual",
+        restoredFromVersion,
+      });
+      res.json(settingsView(updated));
+    } catch (err) {
+      if (err instanceof RetentionRestoreError) {
+        res.status(400).json({ error: err.message, code: "VALIDATION_ERROR" });
+        return;
+      }
+      throw err;
+    }
   } catch (err) { next(err); }
 });
 
@@ -1705,6 +1718,8 @@ router.get("/growth/admin/retention-settings/history", async (req, res, next) =>
       changedByUserId: h.changedByUserId,
       changedByName: h.changedByName,
       changedAt: h.changedAt.toISOString(),
+      changeSource: h.changeSource,
+      restoredFromVersion: h.restoredFromVersion,
     })));
   } catch (err) { next(err); }
 });

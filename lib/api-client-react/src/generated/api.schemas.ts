@@ -4367,6 +4367,10 @@ export interface RetentionSettingsPreview {
   topAffectedSalons: RetentionPreviewAffectedSalon[];
 }
 
+/**
+ * How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults
+ */
+export type RetentionSettingsUpdateChangeSource = typeof RetentionSettingsUpdateChangeSource[keyof typeof RetentionSettingsUpdateChangeSource];
 export interface RetentionSettingsHistoryEntry {
   version: number;
   thresholds: RetentionThresholds;
@@ -4377,6 +4381,13 @@ export interface RetentionSettingsHistoryEntry {
   changedByName: string | null;
   /** ISO timestamp of the change */
   changedAt: string;
+  /** How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults */
+  changeSource: RetentionSettingsHistoryEntryChangeSource;
+  /**
+     * Source version when changeSource is restore_version; null otherwise
+     * @nullable
+     */
+  restoredFromVersion: number | null;
 }
 
 export type GrowthAdminSummaryAutomationByStatus = {[key: string]: number};
@@ -5087,4 +5098,31 @@ to?: string;
 
 export const OwnerListAutomationStatsCompare = {
   previous: 'previous',
+} as const;
+
+export const RetentionSettingsUpdateChangeSource = {
+  manual: 'manual',
+  restore_version: 'restore_version',
+  restore_defaults: 'restore_defaults',
+} as const;
+
+export type RetentionSettingsUpdate = RetentionThresholds & {
+  /** How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults */
+  changeSource?: RetentionSettingsUpdateChangeSource;
+  /**
+     * Version whose values are being restored; only allowed (and required) when changeSource is restore_version
+     * @minimum 1
+     */
+  restoredFromVersion?: number;
+};
+
+/**
+ * How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults
+ */
+export type RetentionSettingsHistoryEntryChangeSource = typeof RetentionSettingsHistoryEntryChangeSource[keyof typeof RetentionSettingsHistoryEntryChangeSource];
+
+export const RetentionSettingsHistoryEntryChangeSource = {
+  manual: 'manual',
+  restore_version: 'restore_version',
+  restore_defaults: 'restore_defaults',
 } as const;

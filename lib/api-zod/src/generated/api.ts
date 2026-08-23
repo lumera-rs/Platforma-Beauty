@@ -9590,40 +9590,45 @@ export const AdminGetRetentionSettingsResponse = zod.object({
 /**
  * @summary Update platform retention thresholds (admin); records an audited new version
  */
-export const adminUpdateRetentionSettingsBodyNewCustomerWindowDaysMax = 365;
-export const adminUpdateRetentionSettingsBodyNewCustomerWindowDaysMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMax = 365;
+export const adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyDefaultIntervalDaysMax = 365;
-export const adminUpdateRetentionSettingsBodyDefaultIntervalDaysMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneDefaultIntervalDaysMax = 365;
+export const adminUpdateRetentionSettingsBodyOneDefaultIntervalDaysMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMin = 100;
-export const adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMax = 1000;
-export const adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMin = 100;
+export const adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMax = 1000;
+export const adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyLostIntervalPercentMin = 100;
-export const adminUpdateRetentionSettingsBodyLostIntervalPercentMax = 2000;
-export const adminUpdateRetentionSettingsBodyLostIntervalPercentMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneLostIntervalPercentMin = 100;
+export const adminUpdateRetentionSettingsBodyOneLostIntervalPercentMax = 2000;
+export const adminUpdateRetentionSettingsBodyOneLostIntervalPercentMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyLostMinimumDaysMax = 1095;
-export const adminUpdateRetentionSettingsBodyLostMinimumDaysMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneLostMinimumDaysMax = 1095;
+export const adminUpdateRetentionSettingsBodyOneLostMinimumDaysMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyVipMinCompletedVisitsMax = 100;
-export const adminUpdateRetentionSettingsBodyVipMinCompletedVisitsMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneVipMinCompletedVisitsMax = 100;
+export const adminUpdateRetentionSettingsBodyOneVipMinCompletedVisitsMultipleOf = 1;
 
-export const adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMin = 100;
-export const adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMax = 1000;
-export const adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMultipleOf = 1;
+export const adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMin = 100;
+export const adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMax = 1000;
+export const adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleOf = 1;
+
+export const adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf = 1;
 
 
 export const AdminUpdateRetentionSettingsBody = zod.object({
-  "newCustomerWindowDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyNewCustomerWindowDaysMax).multipleOf(adminUpdateRetentionSettingsBodyNewCustomerWindowDaysMultipleOf).describe('A single completed visit within this many days still counts as NEW'),
-  "defaultIntervalDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyDefaultIntervalDaysMax).multipleOf(adminUpdateRetentionSettingsBodyDefaultIntervalDaysMultipleOf).describe('Assumed visit interval (days) when fewer than 2 completed visits exist'),
-  "atRiskIntervalPercent": zod.number().min(adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMin).max(adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMax).multipleOf(adminUpdateRetentionSettingsBodyAtRiskIntervalPercentMultipleOf).describe('AT_RISK when overdue beyond typical interval × this percent (150 = 1.5×)'),
-  "lostIntervalPercent": zod.number().min(adminUpdateRetentionSettingsBodyLostIntervalPercentMin).max(adminUpdateRetentionSettingsBodyLostIntervalPercentMax).multipleOf(adminUpdateRetentionSettingsBodyLostIntervalPercentMultipleOf).describe('LOST when overdue beyond typical interval × this percent (250 = 2.5×); must exceed atRiskIntervalPercent'),
-  "lostMinimumDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyLostMinimumDaysMax).multipleOf(adminUpdateRetentionSettingsBodyLostMinimumDaysMultipleOf).describe('LOST never triggers before this many days since the last visit'),
-  "vipMinCompletedVisits": zod.number().min(1).max(adminUpdateRetentionSettingsBodyVipMinCompletedVisitsMax).multipleOf(adminUpdateRetentionSettingsBodyVipMinCompletedVisitsMultipleOf).describe('VIP when the customer has at least this many completed visits'),
-  "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsBodyVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
-})
+  "newCustomerWindowDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMax).multipleOf(adminUpdateRetentionSettingsBodyOneNewCustomerWindowDaysMultipleOf).describe('A single completed visit within this many days still counts as NEW'),
+  "defaultIntervalDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyOneDefaultIntervalDaysMax).multipleOf(adminUpdateRetentionSettingsBodyOneDefaultIntervalDaysMultipleOf).describe('Assumed visit interval (days) when fewer than 2 completed visits exist'),
+  "atRiskIntervalPercent": zod.number().min(adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMin).max(adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMax).multipleOf(adminUpdateRetentionSettingsBodyOneAtRiskIntervalPercentMultipleOf).describe('AT_RISK when overdue beyond typical interval × this percent (150 = 1.5×)'),
+  "lostIntervalPercent": zod.number().min(adminUpdateRetentionSettingsBodyOneLostIntervalPercentMin).max(adminUpdateRetentionSettingsBodyOneLostIntervalPercentMax).multipleOf(adminUpdateRetentionSettingsBodyOneLostIntervalPercentMultipleOf).describe('LOST when overdue beyond typical interval × this percent (250 = 2.5×); must exceed atRiskIntervalPercent'),
+  "lostMinimumDays": zod.number().min(1).max(adminUpdateRetentionSettingsBodyOneLostMinimumDaysMax).multipleOf(adminUpdateRetentionSettingsBodyOneLostMinimumDaysMultipleOf).describe('LOST never triggers before this many days since the last visit'),
+  "vipMinCompletedVisits": zod.number().min(1).max(adminUpdateRetentionSettingsBodyOneVipMinCompletedVisitsMax).multipleOf(adminUpdateRetentionSettingsBodyOneVipMinCompletedVisitsMultipleOf).describe('VIP when the customer has at least this many completed visits'),
+  "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsBodyOneVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
+}).and(zod.object({
+  "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).optional().describe('How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults'),
+  "restoredFromVersion": zod.number().min(1).multipleOf(adminUpdateRetentionSettingsBodyTwoRestoredFromVersionMultipleOf).optional().describe('Version whose values are being restored; only allowed (and required) when changeSource is restore_version')
+}))
 
 export const adminUpdateRetentionSettingsResponseThresholdsNewCustomerWindowDaysMax = 365;
 export const adminUpdateRetentionSettingsResponseThresholdsNewCustomerWindowDaysMultipleOf = 1;
@@ -9843,6 +9848,8 @@ export const AdminGetRetentionSettingsHistoryResponseItem = zod.object({
 }),
   "changedByUserId": zod.string().nullable(),
   "changedByName": zod.string().nullable(),
-  "changedAt": zod.string().describe('ISO timestamp of the change')
+  "changedAt": zod.string().describe('ISO timestamp of the change'),
+  "changeSource": zod.enum(['manual', 'restore_version', 'restore_defaults']).describe('How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults'),
+  "restoredFromVersion": zod.number().nullable().describe('Source version when changeSource is restore_version; null otherwise')
 })
 export const AdminGetRetentionSettingsHistoryResponse = zod.array(AdminGetRetentionSettingsHistoryResponseItem)

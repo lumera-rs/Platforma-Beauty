@@ -98,6 +98,23 @@ async function seedLegacySchema(schema: string) {
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
 
+  // OLD platform_retention_settings WITHOUT the v6 change-provenance columns
+  // (change_source / restored_from_version) — the ALTER path must add them
+  // and backfill existing audit rows as 'manual'.
+  await q(`CREATE TABLE "${schema}".platform_retention_settings (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    version integer NOT NULL,
+    new_customer_window_days integer NOT NULL,
+    default_interval_days integer NOT NULL,
+    at_risk_interval_percent integer NOT NULL,
+    lost_interval_percent integer NOT NULL,
+    lost_minimum_days integer NOT NULL,
+    vip_min_completed_visits integer NOT NULL,
+    vip_spend_percent_of_median integer NOT NULL,
+    changed_by_user_id uuid REFERENCES "${schema}".users(id) ON DELETE SET NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+
   // Populate legacy rows that MUST survive the upgrade.
   const salon = (await q<{ id: string }>(`INSERT INTO "${schema}".salons (name) VALUES ('Legacy Salon') RETURNING id`)).rows[0]!;
   const user = (await q<{ id: string }>(`INSERT INTO "${schema}".users (email) VALUES ('legacy@bg.test') RETURNING id`)).rows[0]!;
@@ -108,6 +125,15 @@ async function seedLegacySchema(schema: string) {
   await q(`INSERT INTO "${schema}".reviews (salon_id, customer_id, service_name, rating, text) VALUES ($1, $2, 'Svc', 5, 'Great')`, [salon.id, user.id]);
   // Legacy row uses an OLD message_type label (automation did not exist yet).
   await q(`INSERT INTO "${schema}".sms_deliveries (event_key, salon_id, message_type, recipient_phone, body, status) VALUES ('legacy-sms-1', $1, 'appointment_confirmation', '+381600000000', 'Zdravo', 'sent')`, [salon.id]);
+  // Legacy audited settings version predating change-provenance columns.
+  await q(
+    `INSERT INTO "${schema}".platform_retention_settings
+       (version, new_customer_window_days, default_interval_days, at_risk_interval_percent,
+        lost_interval_percent, lost_minimum_days, vip_min_completed_visits, vip_spend_percent_of_median,
+        changed_by_user_id)
+     VALUES (900, 45, 45, 150, 250, 180, 5, 200, $1)`,
+    [user.id],
+  );
 
   return { salon, user, employee, service, customer, appointment };
 }
@@ -390,6 +416,28 @@ async function run() {
       /duplicate key|unique/i,
       "platform_retention_settings.version uniqueness enforced",
     );
+    // v6: change-provenance columns exist; legacy rows backfill as 'manual'.
+    assert.ok(await columnExists("platform_retention_settings", "change_source"), "platform_retention_settings.change_source added");
+    assert.ok(await columnExists("platform_retention_settings", "restored_from_version"), "platform_retention_settings.restored_from_version added");
+    const legacySettings = (await q<{ change_source: string; restored_from_version: number | null }>(
+      `SELECT change_source, restored_from_version FROM "${s}".platform_retention_settings WHERE version = 900`,
+    )).rows[0]!;
+    assert.equal(legacySettings.change_source, "manual", "pre-upgrade settings rows backfill change_source = 'manual'");
+    assert.equal(legacySettings.restored_from_version, null, "pre-upgrade settings rows have no restored_from_version");
+    // A restore-labelled version row is insertable on the rolled-out table.
+    await q(
+      `INSERT INTO "${s}".platform_retention_settings
+         (version, new_customer_window_days, default_interval_days, at_risk_interval_percent,
+          lost_interval_percent, lost_minimum_days, vip_min_completed_visits, vip_spend_percent_of_median,
+          changed_by_user_id, change_source, restored_from_version)
+       VALUES (2, 45, 45, 150, 250, 180, 5, 200, $1, 'restore_version', 900)`,
+      [fixtures.user.id],
+    );
+    const restoredRow = (await q<{ change_source: string; restored_from_version: number }>(
+      `SELECT change_source, restored_from_version FROM "${s}".platform_retention_settings WHERE version = 2`,
+    )).rows[0]!;
+    assert.equal(restoredRow.change_source, "restore_version", "restore-labelled row stores its change source");
+    assert.equal(restoredRow.restored_from_version, 900, "restore-labelled row stores the source version");
 
     // ── Unique constraint actually enforced ────────────────────────────────
     await assert.rejects(

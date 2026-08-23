@@ -587,6 +587,56 @@ async function integrationTests() {
     assert.ok(Array.isArray(detailD.recentAppointments) && detailD.recentAppointments.length === 50,
       "UI appointment list stays capped at 50");
     console.log("✓ Detail classifies from full history; list/detail agree beyond 50 visits");
+
+    // ── 16. Restore provenance: labelled truthfully, rejected when it lies ──
+    // Manual updates never carry restore metadata.
+    const historySoFar = (await (await fetch(`${baseUrl}/growth/admin/retention-settings/history`, { headers: adminHeaders })).json()) as any[];
+    for (const entry of historySoFar.filter((h) => h.version > initialVersion)) {
+      assert.equal(entry.changeSource, "manual", `hand-edited v${entry.version} is labelled manual`);
+      assert.equal(entry.restoredFromVersion, null, `hand-edited v${entry.version} has no source version`);
+    }
+
+    // Restore version (initialVersion + 2): thresholds must match that version.
+    const v2Thresholds = { ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 };
+    const restoreRes = await putSettings({
+      ...v2Thresholds, changeSource: "restore_version", restoredFromVersion: initialVersion + 2,
+    });
+    assert.equal(restoreRes.status, 200);
+    assert.equal(((await restoreRes.json()) as any).version, initialVersion + 5);
+
+    // Restore platform defaults.
+    const restoreDefaultsRes = await putSettings({
+      ...DEFAULT_RETENTION_THRESHOLDS, changeSource: "restore_defaults",
+    });
+    assert.equal(restoreDefaultsRes.status, 200);
+    assert.equal(((await restoreDefaultsRes.json()) as any).version, initialVersion + 6);
+
+    const historyWithRestores = (await (await fetch(`${baseUrl}/growth/admin/retention-settings/history`, { headers: adminHeaders })).json()) as any[];
+    const [restoredDefaults, restoredVersion] = historyWithRestores;
+    assert.equal(restoredDefaults.version, initialVersion + 6);
+    assert.equal(restoredDefaults.changeSource, "restore_defaults", "defaults restore is labelled");
+    assert.equal(restoredDefaults.restoredFromVersion, null, "defaults restore has no source version");
+    assert.equal(restoredVersion.version, initialVersion + 5);
+    assert.equal(restoredVersion.changeSource, "restore_version", "version restore is labelled");
+    assert.equal(restoredVersion.restoredFromVersion, initialVersion + 2, "version restore records its source");
+    assert.deepEqual(restoredVersion.thresholds, v2Thresholds, "restored entry carries the restored values");
+
+    // Lying restore metadata is rejected without recording a version.
+    const badRestores: [string, Record<string, unknown>][] = [
+      ["restore_version without source", { ...v2Thresholds, changeSource: "restore_version" }],
+      ["source version on manual change", { ...v2Thresholds, changeSource: "manual", restoredFromVersion: initialVersion + 2 }],
+      ["nonexistent source version", { ...v2Thresholds, changeSource: "restore_version", restoredFromVersion: 999_999 }],
+      ["thresholds mismatch source version", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_version", restoredFromVersion: initialVersion + 2 }],
+      ["restore_defaults with non-default values", { ...DEFAULT_RETENTION_THRESHOLDS, lostMinimumDays: 91, changeSource: "restore_defaults" }],
+      ["unknown change source", { ...v2Thresholds, changeSource: "rollback" }],
+    ];
+    for (const [label, body] of badRestores) {
+      const res = await putSettings(body);
+      assert.equal(res.status, 400, `dishonest restore (${label}) must be rejected`);
+    }
+    const afterBadRestores = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    assert.equal(((await afterBadRestores.json()) as any).version, initialVersion + 6, "rejected restores record no version");
+    console.log("✓ Restores are labelled in history; dishonest restore metadata rejected");
   } finally {
     // Remove only rows created by this run; earlier versions stay untouched.
     await db.delete(platformRetentionSettingsTable)

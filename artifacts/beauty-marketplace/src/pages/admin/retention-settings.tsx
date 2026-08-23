@@ -182,7 +182,13 @@ export default function AdminRetentionSettings() {
 
   const handleRestore = (target: RestoreTarget) => {
     const thresholds = target.kind === "history" ? target.entry.thresholds : target.thresholds;
-    updateMutation.mutate({ data: thresholds }, {
+    // Label the new version as a restore so the audit history can tell
+    // deliberate rollbacks apart from hand-tuned edits.
+    const body =
+      target.kind === "history"
+        ? { ...thresholds, changeSource: "restore_version" as const, restoredFromVersion: target.entry.version }
+        : { ...thresholds, changeSource: "restore_defaults" as const };
+    updateMutation.mutate({ data: body }, {
       onSuccess: (updated) => {
         toast.success(
           target.kind === "history"
@@ -420,6 +426,18 @@ export default function AdminRetentionSettings() {
                     <div key={entry.version} className="p-4" data-testid={`retention-history-v${entry.version}`}>
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <Badge variant="secondary">Verzija {entry.version}</Badge>
+                        {entry.changeSource === "restore_version" && (
+                          <Badge variant="outline" className="gap-1" data-testid={`retention-source-v${entry.version}`}>
+                            <RotateCcw className="w-3 h-3" />
+                            Vraćeno iz verzije {entry.restoredFromVersion}
+                          </Badge>
+                        )}
+                        {entry.changeSource === "restore_defaults" && (
+                          <Badge variant="outline" className="gap-1" data-testid={`retention-source-v${entry.version}`}>
+                            <RotateCcw className="w-3 h-3" />
+                            Vraćene podrazumevane vrednosti
+                          </Badge>
+                        )}
                         <span className="text-sm font-medium text-foreground">{entry.changedByName ?? "Nepoznat administrator"}</span>
                         <span className="text-xs text-muted-foreground">{format(new Date(entry.changedAt), "dd.MM.yyyy. HH:mm")}</span>
                         {isActiveVersion ? (

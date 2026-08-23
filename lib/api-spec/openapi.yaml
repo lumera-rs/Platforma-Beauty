@@ -4139,7 +4139,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RetentionThresholds" }
+            schema: { $ref: "#/components/schemas/RetentionSettingsUpdate" }
       responses:
         "200":
           description: Newly active retention settings
@@ -7234,6 +7234,21 @@ components:
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
       required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons]
 
+    RetentionSettingsUpdate:
+      allOf:
+        - $ref: "#/components/schemas/RetentionThresholds"
+        - type: object
+          properties:
+            changeSource:
+              type: string
+              enum: [manual, restore_version, restore_defaults]
+              description: "How this version came to be; defaults to manual. restore_version requires restoredFromVersion and thresholds identical to that version; restore_defaults requires thresholds identical to the platform defaults"
+            restoredFromVersion:
+              type: number
+              minimum: 1
+              multipleOf: 1
+              description: "Version whose values are being restored; only allowed (and required) when changeSource is restore_version"
+
     RetentionSettingsHistoryEntry:
       type: object
       properties:
@@ -7243,7 +7258,9 @@ components:
         changedByUserId: { type: ["string", "null"] }
         changedByName: { type: ["string", "null"] }
         changedAt: { type: string, description: "ISO timestamp of the change" }
-      required: [version, thresholds, previousThresholds, changedByUserId, changedByName, changedAt]
+        changeSource: { type: string, enum: [manual, restore_version, restore_defaults], description: "How the version came to be: hand-edited, restored from an earlier version, or restored platform defaults" }
+        restoredFromVersion: { type: ["number", "null"], description: "Source version when changeSource is restore_version; null otherwise" }
+      required: [version, thresholds, previousThresholds, changedByUserId, changedByName, changedAt, changeSource, restoredFromVersion]
 
     GrowthAdminSummary:
       type: object

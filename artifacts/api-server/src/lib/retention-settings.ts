@@ -35,6 +35,8 @@ import {
 /** Stable advisory-lock key for serializing settings updates. */
 const RETENTION_SETTINGS_LOCK_KEY = "platform_retention_settings";
 
+/** How a settings version came to be — audit provenance for the history log. */
+export type RetentionChangeSource = "manual" | "restore_version" | "restore_defaults";
 export interface ActiveRetentionSettings {
   /** 0 when platform defaults apply (no admin change recorded yet). */
   version: number;
@@ -129,15 +131,57 @@ export async function getActiveRetentionSettings(): Promise<ActiveRetentionSetti
 export async function updateRetentionSettings(
   changedByUserId: string,
   candidate: RetentionThresholds,
+  origin: RetentionChangeOrigin = { changeSource: "manual" },
 ): Promise<ActiveRetentionSettings> {
   const problems = validateRetentionThresholds(candidate);
   if (problems.length > 0) {
     throw new Error(`Invalid retention thresholds: ${problems.join(" ")}`);
   }
 
+  // Restore labels must be truthful — the audit log is only useful if a
+  // "restored" entry provably carries the values it claims to restore.
+  if (origin.changeSource === "restore_version") {
+    if (!Number.isInteger(origin.restoredFromVersion) || (origin.restoredFromVersion ?? 0) < 1) {
+      throw new RetentionRestoreError("restoredFromVersion is required when restoring a version.");
+    }
+  } else if (origin.restoredFromVersion !== undefined) {
+    throw new RetentionRestoreError(
+      "restoredFromVersion is only allowed when changeSource is restore_version.",
+    );
+  }
+  if (origin.changeSource === "restore_defaults") {
+    for (const key of Object.keys(DEFAULT_RETENTION_THRESHOLDS) as (keyof RetentionThresholds)[]) {
+      if (candidate[key] !== DEFAULT_RETENTION_THRESHOLDS[key]) {
+        throw new RetentionRestoreError(
+          "restore_defaults requires thresholds identical to the platform defaults.",
+        );
+      }
+    }
+  }
+
   const inserted = await db.transaction(async (tx) => {
     // Serialize concurrent updates so version numbers are strictly sequential.
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${RETENTION_SETTINGS_LOCK_KEY}))`);
+    if (origin.changeSource === "restore_version") {
+      const [sourceRow] = await tx
+        .select()
+        .from(platformRetentionSettingsTable)
+        .where(eq(platformRetentionSettingsTable.version, origin.restoredFromVersion!))
+        .limit(1);
+      if (!sourceRow) {
+        throw new RetentionRestoreError(
+          `Version ${origin.restoredFromVersion} does not exist, so it cannot be restored.`,
+        );
+      }
+      const sourceThresholds = rowToThresholds(sourceRow);
+      for (const key of Object.keys(sourceThresholds) as (keyof RetentionThresholds)[]) {
+        if (candidate[key] !== sourceThresholds[key]) {
+          throw new RetentionRestoreError(
+            `Submitted thresholds do not match version ${origin.restoredFromVersion}.`,
+          );
+        }
+      }
+    }
     const [current] = await tx
       .select({ version: platformRetentionSettingsTable.version })
       .from(platformRetentionSettingsTable)
@@ -156,6 +200,9 @@ export async function updateRetentionSettings(
         vipMinCompletedVisits: candidate.vipMinCompletedVisits,
         vipSpendPercentOfMedian: candidate.vipSpendPercentOfMedian,
         changedByUserId,
+        changeSource: origin.changeSource,
+        restoredFromVersion:
+          origin.changeSource === "restore_version" ? origin.restoredFromVersion! : null,
       })
       .returning();
     if (!row) throw new Error("Failed to insert retention settings version.");
@@ -349,6 +396,10 @@ export interface RetentionSettingsHistoryEntry {
   changedByUserId: string | null;
   changedByName: string | null;
   changedAt: Date;
+  /** How the version came to be — manual edit or a labelled restore. */
+  changeSource: RetentionChangeSource;
+  /** Source version when changeSource is "restore_version"; null otherwise. */
+  restoredFromVersion: number | null;
 }
 
 /** Full change history, newest first, with previous values per entry. */
@@ -377,6 +428,25 @@ export async function getRetentionSettingsHistory(): Promise<RetentionSettingsHi
           ? `${row.changedByFirstName ?? ""} ${row.changedByLastName ?? ""}`.trim()
           : null,
       changedAt: row.settings.createdAt,
+      changeSource: (row.settings.changeSource as RetentionChangeSource) ?? "manual",
+      restoredFromVersion: row.settings.restoredFromVersion,
     };
   });
+}
+
+/**
+ * Restore metadata for an update. `restoredFromVersion` is required exactly
+ * when `changeSource` is "restore_version".
+ */
+export interface RetentionChangeOrigin {
+  changeSource: RetentionChangeSource;
+  restoredFromVersion?: number;
+}
+
+/** Invalid restore metadata — mapped to HTTP 400 by the route layer. */
+export class RetentionRestoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetentionRestoreError";
+  }
 }
