@@ -44,6 +44,16 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 - Reversible favorites, B2B cart changes, and read-notification actions use serialized optimistic cache updates with exact rollback and server reconciliation. Checkout, payment, escrow, and other financial actions remain server-authoritative.
 - Slow API events contain only request ID, method, query-free pathname, status, and duration. Process-level failures use the shared logger without request bodies, query values, auth/cookies, raw provider responses, database details, or arbitrary error payloads.
 
+## Public SEO and discoverability
+
+Every new public-facing page or feature — including marketplace sections, salon pages, shop pages, and category pages — must follow these rules from the start:
+
+- Give each indexable page a unique, useful meta title and description, plus Open Graph tags. Never ship generic placeholder SEO text.
+- Use real `<a href>` links for public navigation so crawlers and users can follow the site structure without JavaScript. JavaScript-only navigation remains appropriate for actions, filters, auth redirects, and booking operations.
+- Add every eligible public URL to the dynamic `sitemap.xml`. Keep protected, private, query-only, and otherwise non-indexable routes out of the sitemap and mark them `noindex, follow`.
+- Serve meaningful server-rendered or prerendered HTML for public pages before the client mounts; do not expose an empty `div#root` shell as the crawler-facing response.
+- Keep the production SEO server's public origin and API origin explicitly configured and validated. Do not derive canonical, Open Graph, JSON-LD, or sitemap origins from untrusted host headers in production.
+
 ## Frontend performance rules
 
 These rules are enforced by `pnpm run test:bundle-budget` (part of `validate:release`).  Any change that breaks them is a release blocker.
