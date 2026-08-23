@@ -1018,8 +1018,8 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       ne(appointmentsTable.status, "cancelled"),
     );
     // Same run-window filter as the stats endpoints, so the paginated total
-    // agrees with the attributedAppointments count for every period choice.
-    // statsRunPeriodCondition returns undefined for all time; and() drops it.
+    // agrees with the attributedAppointments count for every period choice
+    // (statsRunPeriodCondition returns undefined for all-time; and() drops it).
     const runScope = and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(window));
 
     const [countRow] = await db

@@ -10050,7 +10050,8 @@ export const AdminPreviewRetentionSettingsResponse = zod.object({
   "topAffectedSalons": zod.array(zod.object({
   "salonId": zod.string(),
   "salonName": zod.string(),
-  "reclassifiedCount": zod.number().describe('Customers of this salon whose status would change under the candidate thresholds')
+  "reclassifiedCount": zod.number().describe('Customers of this salon whose status would change under the candidate thresholds'),
+  "totalCustomers": zod.number().describe('Total customers this salon has — puts the reclassified count in proportion')
 })).describe('Salons with the most reclassified customers, largest first (top 10)')
 })
 

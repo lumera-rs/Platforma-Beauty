@@ -7323,7 +7323,8 @@ components:
         salonId: { type: string }
         salonName: { type: string }
         reclassifiedCount: { type: number, description: "Customers of this salon whose status would change under the candidate thresholds" }
-      required: [salonId, salonName, reclassifiedCount]
+        totalCustomers: { type: number, description: "Total customers this salon has — puts the reclassified count in proportion" }
+      required: [salonId, salonName, reclassifiedCount, totalCustomers]
 
     RetentionSettingsPreview:
       type: object

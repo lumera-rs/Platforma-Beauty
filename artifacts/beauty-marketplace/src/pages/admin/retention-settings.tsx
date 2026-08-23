@@ -496,7 +496,12 @@ export default function AdminRetentionSettings() {
                             <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
                           </a>
                           <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
-                          {salon.reclassifiedCount === 1 ? "klijent menja status" : "klijenata menja status"}
+                          {`od ${salon.totalCustomers} ${salon.totalCustomers === 1 ? "klijenta" : "klijenata"}`}
+                          {salon.totalCustomers > 0 && (
+                            <span className="text-foreground">
+                              ({Math.round((salon.reclassifiedCount / salon.totalCustomers) * 100)}%)
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

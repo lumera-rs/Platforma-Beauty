@@ -11,4 +11,6 @@ export interface RetentionPreviewAffectedSalon {
   salonName: string;
   /** Customers of this salon whose status would change under the candidate thresholds */
   reclassifiedCount: number;
+  /** Total customers this salon has — puts the reclassified count in proportion */
+  totalCustomers: number;
 }

@@ -291,6 +291,8 @@ export interface RetentionPreviewAffectedSalon {
   salonName: string;
   /** Customers of this salon whose status would change. */
   reclassifiedCount: number;
+  /** Total customers this salon has — puts the reclassified count in proportion. */
+  totalCustomers: number;
 }
 
 export interface RetentionPreviewResult {
@@ -380,9 +382,15 @@ export async function previewRetentionThresholds(
   const candidateCounts = emptyStatusCounts();
   const shiftCounts = new Map<string, number>();
   const reclassifiedBySalon = new Map<string, number>();
+  // Total customers per salon, from the same scan — no extra queries.
+  const totalCustomersBySalon = new Map<string, number>();
   let reclassifiedCount = 0;
 
   for (const customer of customers) {
+    totalCustomersBySalon.set(
+      customer.salonId,
+      (totalCustomersBySalon.get(customer.salonId) ?? 0) + 1,
+    );
     const appointments = apptsByCustomer.get(customer.id) ?? [];
     const salonMedianSpend = medianBySalon.get(customer.salonId);
     const currentStatus = classifyRetention({
@@ -435,6 +443,7 @@ export async function previewRetentionThresholds(
       salonId,
       salonName: nameById.get(salonId) ?? "Nepoznat salon",
       reclassifiedCount: count,
+      totalCustomers: totalCustomersBySalon.get(salonId) ?? 0,
     }));
   }
 

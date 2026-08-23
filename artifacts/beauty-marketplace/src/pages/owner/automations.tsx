@@ -439,7 +439,7 @@ export default function OwnerAutomations() {
   );
 
   // Reset accumulated pages whenever the dialog switches to another rule or
-  // the owner picks a different time period.
+  // the owner picks a different time window (preset or completed custom range).
   useEffect(() => {
     setAttributedOffset(0);
     setAttributedItems([]);

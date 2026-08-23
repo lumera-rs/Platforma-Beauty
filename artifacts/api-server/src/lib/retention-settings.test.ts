@@ -470,6 +470,17 @@ async function integrationTests() {
     assert.ok(fixtureSalon, "the fixture salon appears among the most affected");
     assert.equal(fixtureSalon.salonName, salon.name, "affected salon carries its display name");
     assert.ok(fixtureSalon.reclassifiedCount >= 1, "fixture salon reports at least the moved customer");
+    for (const s of affected) {
+      assert.equal(typeof s.totalCustomers, "number", "each affected salon reports its total customers");
+      assert.ok(
+        s.totalCustomers >= s.reclassifiedCount,
+        "a salon's total customers is never below its reclassified count",
+      );
+    }
+    assert.ok(
+      fixtureSalon.totalCustomers >= 3,
+      "fixture salon's total covers all three fixture customers",
+    );
     for (let i = 1; i < affected.length; i++) {
       assert.ok(
         affected[i - 1].reclassifiedCount >= affected[i].reclassifiedCount,
