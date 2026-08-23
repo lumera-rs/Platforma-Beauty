@@ -508,6 +508,91 @@ router.post("/growth/automations/:automationId/pause", async (req, res, next) =>
 // AUTOMATIONS — Stats
 // ---------------------------------------------------------------------------
 
+/**
+ * Aggregate campaign overview: one row per automation rule of the active
+ * salon, with run counts and per-channel delivery/open counts sourced from
+ * the same verified provider-event data as the per-rule stats endpoint.
+ */
+router.get("/growth/automation-stats", async (req, res, next) => {
+  try {
+    const ctx = await requireSalonOwner(req);
+    if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
+
+    const rules = await db
+      .select({
+        id: automationRulesTable.id,
+        name: automationRulesTable.name,
+        status: automationRulesTable.status,
+        action: automationRulesTable.action,
+      })
+      .from(automationRulesTable)
+      .where(eq(automationRulesTable.salonId, ctx.salon.id))
+      .orderBy(desc(automationRulesTable.createdAt));
+
+    if (rules.length === 0) { res.json([]); return; }
+    const ruleIds = rules.map((r) => r.id);
+
+    const runAgg = await db
+      .select({
+        ruleId: automationRunsTable.ruleId,
+        totalRuns: sql<number>`count(*)::int`,
+        sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
+        skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
+        failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
+        attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
+      })
+      .from(automationRunsTable)
+      .where(inArray(automationRunsTable.ruleId, ruleIds))
+      .groupBy(automationRunsTable.ruleId);
+
+    const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
+    const smsChannel = sql`${automationDeliveriesTable.channel} = 'sms'`;
+    const deliveryAgg = await db
+      .select({
+        ruleId: automationRunsTable.ruleId,
+        emailSentCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+        emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+        emailFailedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
+        smsSentCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+        smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        smsFailedCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
+      })
+      .from(automationDeliveriesTable)
+      .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
+      .where(inArray(automationRunsTable.ruleId, ruleIds))
+      .groupBy(automationRunsTable.ruleId);
+
+    const runsByRule = new Map(runAgg.map((r) => [r.ruleId, r]));
+    const deliveriesByRule = new Map(deliveryAgg.map((d) => [d.ruleId, d]));
+
+    res.json(rules.map((rule) => {
+      const runs = runsByRule.get(rule.id);
+      const deliveries = deliveriesByRule.get(rule.id);
+      return {
+        ruleId: rule.id,
+        ruleName: rule.name,
+        ruleStatus: rule.status,
+        action: rule.action,
+        totalRuns: runs?.totalRuns ?? 0,
+        sentCount: runs?.sentCount ?? 0,
+        skippedCount: runs?.skippedCount ?? 0,
+        failedCount: runs?.failedCount ?? 0,
+        attributedAppointments: runs?.attributedAppointments ?? 0,
+        emailSentCount: deliveries?.emailSentCount ?? 0,
+        emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
+        emailOpenedCount: deliveries?.emailOpenedCount ?? 0,
+        emailFailedCount: deliveries?.emailFailedCount ?? 0,
+        smsSentCount: deliveries?.smsSentCount ?? 0,
+        smsDeliveredCount: deliveries?.smsDeliveredCount ?? 0,
+        smsFailedCount: deliveries?.smsFailedCount ?? 0,
+        lastRunAt: runs?.lastRunAt ?? null,
+      };
+    }));
+  } catch (err) { next(err); }
+});
+
 router.get("/growth/automations/:automationId/stats", async (req, res, next) => {
   try {
     const ctx = await requireSalonOwner(req);

@@ -461,6 +461,39 @@ async function run() {
       });
       assert.equal(cross.status, 404, "cross-salon stats read must 404");
       console.log("✓ cross-salon isolation holds; owner stats expose accurate per-channel counts");
+
+      // Aggregate campaign overview must mirror the per-rule counts and stay
+      // strictly scoped to the requesting owner's salon.
+      const getOverview = async (token: string) => {
+        const response = await fetch(`${baseUrl}/api/growth/automation-stats`, {
+          headers: { cookie: `${sessionCookieName}=${token}` },
+        });
+        assert.equal(response.status, 200);
+        return response.json() as Promise<Array<Record<string, unknown>>>;
+      };
+
+      const overviewA = await getOverview(a.token);
+      const overviewRowA = overviewA.find((row) => row["ruleId"] === ruleA.id);
+      assert.ok(overviewRowA, "overview must include salon A's rule");
+      assert.equal(overviewRowA["ruleName"], ruleA.name);
+      assert.equal(overviewRowA["ruleStatus"], "active");
+      assert.equal(overviewRowA["emailSentCount"], statsA["emailSentCount"]);
+      assert.equal(overviewRowA["emailDeliveredCount"], statsA["emailDeliveredCount"]);
+      assert.equal(overviewRowA["emailOpenedCount"], statsA["emailOpenedCount"]);
+      assert.equal(overviewRowA["emailFailedCount"], statsA["emailFailedCount"]);
+      assert.equal(overviewRowA["smsSentCount"], statsA["smsSentCount"]);
+      assert.equal(overviewRowA["smsDeliveredCount"], statsA["smsDeliveredCount"]);
+      assert.equal(overviewRowA["smsFailedCount"], statsA["smsFailedCount"]);
+      assert.equal(overviewRowA["attributedAppointments"], statsA["attributedAppointments"]);
+      assert.ok(!overviewA.some((row) => row["ruleId"] === ruleB.id), "overview must never include another salon's rules");
+
+      const overviewB = await getOverview(b.token);
+      assert.ok(overviewB.some((row) => row["ruleId"] === ruleB.id), "salon B sees its own rule");
+      assert.ok(!overviewB.some((row) => row["ruleId"] === ruleA.id), "salon B never sees salon A's rules");
+
+      const overviewAnon = await fetch(`${baseUrl}/api/growth/automation-stats`);
+      assert.equal(overviewAnon.status, 403, "unauthenticated overview read must be rejected");
+      console.log("✓ aggregate campaign overview matches per-rule counts and is salon-scoped");
     }
 
     // ── 9. End-to-end: authenticated webhook calls never log the token ─────

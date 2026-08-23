@@ -97,6 +97,7 @@ export * from './automationRuleStatus';
 export * from './automationRuleTrigger';
 export * from './automationRuleTriggerConfig';
 export * from './automationStats';
+export * from './automationStatsOverviewItem';
 export * from './automationTestRunResult';
 export * from './automationTestRunResultTriggerBreakdown';
 export * from './billingDetailsInput';

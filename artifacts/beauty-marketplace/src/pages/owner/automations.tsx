@@ -4,6 +4,7 @@ import { OwnerSidebar } from "./dashboard";
 import { 
   useOwnerListAutomations, 
   useOwnerGetAutomationStats,
+  useOwnerListAutomationStats,
   useOwnerCreateAutomation, 
   useOwnerUpdateAutomation, 
   useOwnerDeleteAutomation,
@@ -12,6 +13,7 @@ import {
   useOwnerTestRunAutomation,
   useGetCurrentUser,
   getOwnerListAutomationsQueryKey,
+  getOwnerListAutomationStatsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -69,6 +71,104 @@ function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensN
   );
 }
 
+/**
+ * At-a-glance performance comparison across every automation rule: per-channel
+ * sent → delivered → opened rates plus attributed appointments, from the same
+ * verified provider-event counts as the per-rule stats dialog. SMS providers
+ * do not report opens, so the SMS column shows delivery only.
+ */
+function CampaignOverview({ items, onShowStats }: {
+  items: any[];
+  onShowStats: (ruleId: string) => void;
+}) {
+  const anySms = items.some((i) => i.smsSentCount > 0);
+  return (
+    <Card data-testid="campaign-overview">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-primary" /> Pregled performansi kampanja
+        </CardTitle>
+        <CardDescription>
+          Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine ostvarene kampanjama.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase text-muted-foreground">
+                <th className="py-2 pr-4 font-semibold">Kampanja</th>
+                <th className="py-2 pr-4 font-semibold"><span className="inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Email</span></th>
+                <th className="py-2 pr-4 font-semibold"><span className="inline-flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" /> SMS</span></th>
+                <th className="py-2 font-semibold text-right"><span className="inline-flex items-center gap-1"><CalendarCheck className="w-3.5 h-3.5" /> Termini</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.ruleId} className="border-b last:border-b-0 align-top" data-testid={`overview-row-${item.ruleId}`}>
+                  <td className="py-3 pr-4">
+                    <button
+                      type="button"
+                      className="font-medium text-foreground hover:underline text-left"
+                      onClick={() => onShowStats(item.ruleId)}
+                      title="Otvori detaljnu statistiku"
+                    >
+                      {item.ruleName}
+                    </button>
+                    <div className="mt-1 flex items-center gap-2">
+                      {item.ruleStatus === 'active'
+                        ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-none">Aktivno</Badge>
+                        : <Badge variant="secondary">{item.ruleStatus === 'paused' ? 'Pauzirano' : 'Nacrt'}</Badge>}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-4">
+                    {item.emailSentCount > 0 ? (
+                      <div className="space-y-0.5">
+                        <div>Poslato: <strong>{item.emailSentCount}</strong></div>
+                        <div className="text-emerald-800">
+                          Isporučeno: <strong>{item.emailDeliveredCount}</strong>
+                          {rate(item.emailDeliveredCount, item.emailSentCount) && <span className="text-emerald-700"> ({rate(item.emailDeliveredCount, item.emailSentCount)})</span>}
+                        </div>
+                        <div className="text-indigo-800">
+                          Otvoreno: <strong>{item.emailOpenedCount}</strong>
+                          {rate(item.emailOpenedCount, item.emailSentCount) && <span className="text-indigo-700"> ({rate(item.emailOpenedCount, item.emailSentCount)})</span>}
+                        </div>
+                        {item.emailFailedCount > 0 && <div className="text-xs text-red-700">Neisporučeno: {item.emailFailedCount}</div>}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4">
+                    {item.smsSentCount > 0 ? (
+                      <div className="space-y-0.5">
+                        <div>Poslato: <strong>{item.smsSentCount}</strong></div>
+                        <div className="text-emerald-800">
+                          Isporučeno: <strong>{item.smsDeliveredCount}</strong>
+                          {rate(item.smsDeliveredCount, item.smsSentCount) && <span className="text-emerald-700"> ({rate(item.smsDeliveredCount, item.smsSentCount)})</span>}
+                        </div>
+                        {item.smsFailedCount > 0 && <div className="text-xs text-red-700">Neisporučeno: {item.smsFailedCount}</div>}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 text-right">
+                    <span className="text-lg font-bold text-primary">{item.attributedAppointments}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {anySms && (
+          <p className="text-xs text-muted-foreground mt-3">Provajder ne prati otvaranja SMS poruka, pa se za SMS prikazuje samo isporuka.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OwnerAutomations() {
   const { data: userResp } = useGetCurrentUser();
   const queryClient = useQueryClient();
@@ -78,6 +178,13 @@ export default function OwnerAutomations() {
     query: {
       enabled: !!userResp?.user,
       queryKey: getOwnerListAutomationsQueryKey()
+    }
+  });
+
+  const { data: overviewStats } = useOwnerListAutomationStats({
+    query: {
+      enabled: !!userResp?.user,
+      queryKey: getOwnerListAutomationStatsQueryKey()
     }
   });
 
@@ -170,6 +277,7 @@ export default function OwnerAutomations() {
         setIsEditing(false);
         resetForm();
         queryClient.invalidateQueries({ queryKey: getOwnerListAutomationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getOwnerListAutomationStatsQueryKey() });
       },
       onError: (err: any) => {
         toast.error(err.message || "Greška pri čuvanju.");
@@ -189,6 +297,7 @@ export default function OwnerAutomations() {
       onSuccess: () => {
         toast.success("Automatizacija obrisana.");
         queryClient.invalidateQueries({ queryKey: getOwnerListAutomationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getOwnerListAutomationStatsQueryKey() });
       }
     });
   };
@@ -198,6 +307,7 @@ export default function OwnerAutomations() {
       onSuccess: () => {
         toast.success(`Automatizacija je ${rule.status === 'active' ? 'pauzirana' : 'aktivirana'}.`);
         queryClient.invalidateQueries({ queryKey: getOwnerListAutomationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getOwnerListAutomationStatsQueryKey() });
       }
     };
 
@@ -247,6 +357,10 @@ export default function OwnerAutomations() {
             <span className="font-semibold flex items-center gap-2 mb-1"><Zap className="w-4 h-4" /> AI Nikada ne šalje sam.</span>
             Sve kampanje koje predloži AI Asistent biće kreirane u stanju "Pauzirano". Samo vi možete aktivirati slanje.
           </div>
+
+          {overviewStats && overviewStats.length > 0 && (
+            <CampaignOverview items={overviewStats} onShowStats={setStatsRuleId} />
+          )}
 
           <div className="space-y-4">
             {isLoading ? (

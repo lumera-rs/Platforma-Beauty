@@ -3681,6 +3681,22 @@ paths:
               schema: { $ref: "#/components/schemas/AutomationStats" }
         "404": { description: Not found }
 
+  /growth/automation-stats:
+    get:
+      operationId: ownerListAutomationStats
+      tags: [growth]
+      summary: List performance stats for every automation rule of the active salon (owner)
+      responses:
+        "200":
+          description: Per-rule campaign performance overview
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AutomationStatsOverviewItem" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
   /growth/automations/{automationId}/test-run:
     post:
       operationId: ownerTestRunAutomation
@@ -6782,6 +6798,28 @@ components:
         smsFailedCount: { type: number }
         lastRunAt: { type: ["string", "null"], format: date-time }
       required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+
+    AutomationStatsOverviewItem:
+      type: object
+      properties:
+        ruleId: { type: string }
+        ruleName: { type: string }
+        ruleStatus: { type: string }
+        action: { type: string }
+        totalRuns: { type: number }
+        sentCount: { type: number }
+        skippedCount: { type: number }
+        failedCount: { type: number }
+        attributedAppointments: { type: number }
+        emailSentCount: { type: number }
+        emailDeliveredCount: { type: number }
+        emailOpenedCount: { type: number }
+        emailFailedCount: { type: number }
+        smsSentCount: { type: number }
+        smsDeliveredCount: { type: number }
+        smsFailedCount: { type: number }
+        lastRunAt: { type: ["string", "null"], format: date-time }
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

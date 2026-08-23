@@ -3879,6 +3879,26 @@ export interface AutomationStats {
   lastRunAt?: string | null;
 }
 
+export interface AutomationStatsOverviewItem {
+  ruleId: string;
+  ruleName: string;
+  ruleStatus: string;
+  action: string;
+  totalRuns: number;
+  sentCount: number;
+  skippedCount: number;
+  failedCount: number;
+  attributedAppointments: number;
+  emailSentCount: number;
+  emailDeliveredCount: number;
+  emailOpenedCount: number;
+  emailFailedCount: number;
+  smsSentCount: number;
+  smsDeliveredCount: number;
+  smsFailedCount: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+}
 export type AutomationTestRunResultTriggerBreakdown = {[key: string]: number};
 
 export interface AutomationTestRunResult {
