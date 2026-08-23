@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity, CheckCircle2, XCircle, BarChart3, CalendarCheck, CalendarRange, TrendingUp, TrendingDown, Minus, AlertTriangle, Copy } from "lucide-react";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -67,6 +67,34 @@ function srCount(n: number, one: string, few: string, many: string): string {
 function formatRangeLabel(range: DateRange | undefined): string | null {
   if (!range?.from || !range?.to) return null;
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
+}
+
+async function copyTextWithFallback(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // Clipboard permissions can reject even when the API is available.
+    // Continue with the legacy fallback before reporting failure.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  try {
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    if (!document.execCommand("copy")) {
+      throw new Error("Kopiranje nije uspelo.");
+    }
+  } finally {
+    textarea.remove();
+  }
 }
 
 function getCancellationFlag(item: {
@@ -559,6 +587,7 @@ export default function OwnerAutomations() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentRuleId, setCurrentRuleId] = useState<string | null>(null);
+  const [isCopyingStatsLink, setIsCopyingStatsLink] = useState(false);
 
   // The dialog mirrors the overview request so it shows the same trends for
   // presets and complete custom ranges; "all time" has no previous window.
@@ -759,6 +788,18 @@ export default function OwnerAutomations() {
     });
   };
 
+  const handleCopyStatsLink = async () => {
+    setIsCopyingStatsLink(true);
+    try {
+      await copyTextWithFallback(window.location.href);
+      toast.success("Link kopiran.");
+    } catch {
+      toast.error("Link nije moguće kopirati. Kopirajte ga ručno iz adresne trake.");
+    } finally {
+      setIsCopyingStatsLink(false);
+    }
+  };
+
   const triggerLabels: Record<string, string> = {
     inactive_days: "Neaktivnost (N dana)",
     birthday: "Rođendan",
@@ -938,8 +979,23 @@ export default function OwnerAutomations() {
 
       <Dialog open={!!statsRuleId} onOpenChange={(open) => !open && setStatsRuleId(null)}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Statistika automatizacije</DialogTitle>
+          <DialogHeader className="pr-8">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <DialogTitle>Statistika automatizacije</DialogTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={() => void handleCopyStatsLink()}
+                disabled={isCopyingStatsLink}
+                aria-label="Kopiraj link do statistike"
+                data-testid="stats-copy-link"
+              >
+                {isCopyingStatsLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                Kopiraj link
+              </Button>
+            </div>
             <DialogDescription>Pregled uspešnosti ovog pravila — {periodDescription(statsPeriod, customRange)}.</DialogDescription>
           </DialogHeader>
           {isStatsLoading ? (
