@@ -15,7 +15,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, History, SlidersHorizontal, Info } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { format } from "date-fns";
@@ -64,6 +74,7 @@ export default function AdminRetentionSettings() {
     vipSpendPercentOfMedian: "",
   });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const [restoreTarget, setRestoreTarget] = useState<RetentionSettingsHistoryEntry | null>(null);
 
   useEffect(() => {
     if (settings) {
@@ -111,12 +122,30 @@ export default function AdminRetentionSettings() {
     updateMutation.mutate({ data: values }, {
       onSuccess: (updated) => {
         toast.success(`Pragovi retencije sačuvani (verzija ${updated.version}).`);
-        queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getOwnerListRetentionQueryKey() });
+        invalidateAfterSave();
       },
       onError: (err) => {
         toast.error(extractApiError(err, "Greška prilikom čuvanja pragova."));
+      },
+    });
+  };
+
+  const invalidateAfterSave = () => {
+    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getOwnerListRetentionQueryKey() });
+  };
+
+  const handleRestore = (entry: RetentionSettingsHistoryEntry) => {
+    updateMutation.mutate({ data: entry.thresholds }, {
+      onSuccess: (updated) => {
+        toast.success(`Vrednosti verzije ${entry.version} su vraćene kao nova verzija ${updated.version}.`);
+        invalidateAfterSave();
+        setRestoreTarget(null);
+      },
+      onError: (err) => {
+        toast.error(extractApiError(err, "Greška prilikom vraćanja verzije."));
+        setRestoreTarget(null);
       },
     });
   };
@@ -207,12 +236,30 @@ export default function AdminRetentionSettings() {
               <div className="divide-y divide-border/50">
                 {history.map((entry) => {
                   const diffs = changedFields(entry);
+                  const isActiveVersion = entry.version === settings?.version;
                   return (
                     <div key={entry.version} className="p-4" data-testid={`retention-history-v${entry.version}`}>
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <Badge variant="secondary">Verzija {entry.version}</Badge>
                         <span className="text-sm font-medium text-foreground">{entry.changedByName ?? "Nepoznat administrator"}</span>
                         <span className="text-xs text-muted-foreground">{format(new Date(entry.changedAt), "dd.MM.yyyy. HH:mm")}</span>
+                        {isActiveVersion ? (
+                          <Badge variant="outline" className="ml-auto" data-testid={`retention-active-v${entry.version}`}>
+                            Aktivna verzija
+                          </Badge>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-auto"
+                            onClick={() => setRestoreTarget(entry)}
+                            disabled={updateMutation.isPending}
+                            data-testid={`restore-retention-v${entry.version}`}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                            Vrati ovu verziju
+                          </Button>
+                        )}
                       </div>
                       {diffs.length === 0 ? (
                         <p className="text-sm text-muted-foreground italic">Bez promene vrednosti.</p>
@@ -235,6 +282,58 @@ export default function AdminRetentionSettings() {
             )}
           </CardContent>
         </Card>
+
+        <AlertDialog open={restoreTarget !== null} onOpenChange={(open) => { if (!open) setRestoreTarget(null); }}>
+          <AlertDialogContent data-testid="restore-retention-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Vrati vrednosti verzije {restoreTarget?.version}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Biće kreirana nova verzija sa vrednostima izabrane verzije — istorija izmena ostaje netaknuta,
+                a promena se beleži sa vašim imenom.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {restoreTarget && settings && (
+              <div className="text-sm">
+                {(Object.keys(restoreTarget.thresholds) as FieldKey[]).filter(
+                  (k) => restoreTarget.thresholds[k] !== settings.thresholds[k],
+                ).length === 0 ? (
+                  <p className="text-muted-foreground italic">
+                    Vrednosti su identične trenutno aktivnim — vraćanje neće promeniti ponašanje.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {(Object.keys(restoreTarget.thresholds) as FieldKey[])
+                      .filter((k) => restoreTarget.thresholds[k] !== settings.thresholds[k])
+                      .map((key) => (
+                        <li key={key} className="text-muted-foreground">
+                          <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
+                          <span className="line-through">{settings.thresholds[key]}</span>
+                          {" → "}
+                          <span className="font-semibold text-foreground">{restoreTarget.thresholds[key]}</span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-restore-retention">
+                Otkaži
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (restoreTarget) handleRestore(restoreTarget);
+                }}
+                disabled={updateMutation.isPending}
+                data-testid="confirm-restore-retention"
+              >
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
+                Vrati ovu verziju
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AdminLayout>
   );
