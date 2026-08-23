@@ -33,13 +33,12 @@ import { rangePresets, toDateParam } from "@/lib/date-range-presets";
 import type { AutomationAttributedAppointment } from "@workspace/api-client-react";
 import { useLocation, useSearch } from "wouter";
 import { Link } from "wouter";
+import { parsePeriodSelection, serializePeriodSelection, type StatsPeriod } from "@/lib/campaign-period-url";
 
 function rate(part: number, total: number) {
   if (!total) return null;
   return `${Math.round((part / total) * 100)}%`;
 }
-
-type StatsPeriod = "7d" | "30d" | "90d" | "all" | "custom";
 
 /** Page size for the attributed-appointments drill-down list. */
 const ATTRIBUTED_PAGE_SIZE = 25;
@@ -402,19 +401,8 @@ export default function OwnerAutomations() {
   // (nothing valid to restore yet); the default "all time" keeps a clean URL,
   // which also strips invalid params that fell back to the default.
   useEffect(() => {
-    const params = new URLSearchParams(searchString);
-    params.delete("period");
-    params.delete("from");
-    params.delete("to");
-    if (statsPeriod === "custom") {
-      if (!customRange?.from || !customRange?.to) return;
-      params.set("from", toDateParam(customRange.from));
-      params.set("to", toDateParam(customRange.to));
-    } else if (statsPeriod !== "all") {
-      params.set("period", statsPeriod);
-    }
-    const next = params.toString();
-    if (next !== searchString) {
+    const next = serializePeriodSelection(searchString, statsPeriod, customRange);
+    if (next !== null && next !== searchString) {
       setLocation(`${pathname}${next ? `?${next}` : ""}`, { replace: true });
     }
   }, [statsPeriod, customRange, searchString, pathname, setLocation]);
@@ -1064,37 +1052,3 @@ export default function OwnerAutomations() {
   );
 }
 
-/**
- * Restore the campaign period from the URL query string so the picked window
- * is bookmarkable/shareable. A complete valid from/to pair wins over ?period=;
- * anything invalid or malformed falls back to the default ("all time").
- */
-function parsePeriodSelection(search: string): PeriodSelection {
-  const params = new URLSearchParams(search);
-  const from = parseDateParam(params.get("from"));
-  const to = parseDateParam(params.get("to"));
-  if (from && to && from.getTime() <= to.getTime()) {
-    return { period: "custom", range: { from, to } };
-  }
-  const period = params.get("period");
-  if (period === "7d" || period === "30d" || period === "90d" || period === "all") {
-    return { period };
-  }
-  return { period: "all" };
-}
-
-/**
- * Parse a YYYY-MM-DD query value into a local Date. Rejects anything that is
- * not strictly YYYY-MM-DD, plus impossible calendar dates that V8 would
- * silently roll over (e.g. 2026-02-30 → March 2) via a round-trip check.
- */
-function parseDateParam(raw: string | null): Date | null {
-  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-  const [y, m, d] = raw.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  return toDateParam(date) === raw ? date : null;
-}
-
-type PeriodSelection =
-  | { period: Exclude<StatsPeriod, "custom">; range?: undefined }
-  | { period: "custom"; range: DateRange };
