@@ -43,9 +43,12 @@ async function sender() {
   return { email, name: await integrationValue("brevo", "senderName", process.env["BREVO_SENDER_NAME"]) || "LUMERA" };
 }
 
+/** Local Brevo configuration problem (thrown before any provider call). */
+export class BrevoConfigurationError extends Error {}
+
 async function brevoFetch(path: string, init: RequestInit): Promise<Response> {
   const settings = await integrationSettings("brevo");
-  if (!settings.enabled) throw new Error("Brevo integracija je isključena u admin podešavanjima.");
+  if (!settings.enabled) throw new BrevoConfigurationError("Brevo integracija je isključena u admin podešavanjima.");
   const apiKey = settings.values.apiKey ?? process.env["BREVO_API_KEY"];
   if (apiKey) {
     return fetch(`https://api.brevo.com/v3${path}`, {
@@ -506,4 +509,34 @@ export async function createBrevoMarketingCampaign(input: {
 
 export async function sendBrevoCampaignNow(campaignId: number) {
   await brevoJson(`/emailCampaigns/${campaignId}/sendNow`, {});
+}
+
+/**
+ * List the transactional webhook URLs currently registered at Brevo, using the
+ * saved apiKey. Powers the admin registration check that confirms the app's
+ * webhook URL (with the current secret token) actually exists at the provider
+ * — the loopback self-check alone cannot see a webhook that was deleted at
+ * Brevo, points at a stale domain, or still carries an old secret.
+ * Brevo answers 404 when no webhook is registered; treated as an empty list.
+ */
+export async function listBrevoTransactionalWebhookUrls(): Promise<string[]> {
+  const response = await brevoFetch("/webhooks?type=transactional", {
+    method: "GET",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Brevo ${response.status}: ${error.slice(0, 500)}`);
+  }
+  const body = await response.json().catch(() => null) as unknown;
+  const entries = Array.isArray(body)
+    ? body
+    : body && typeof body === "object" && Array.isArray((body as { webhooks?: unknown }).webhooks)
+      ? (body as { webhooks: unknown[] }).webhooks
+      : [];
+  return entries.flatMap((entry) =>
+    entry && typeof entry === "object" && typeof (entry as { url?: unknown }).url === "string"
+      ? [(entry as { url: string }).url]
+      : []);
 }

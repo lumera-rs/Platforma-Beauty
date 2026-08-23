@@ -337,7 +337,9 @@ import {
 } from "@workspace/api-zod";
 import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
 import {
+  BrevoConfigurationError,
   createBrevoMarketingCampaign,
+  listBrevoTransactionalWebhookUrls,
   lumeraEmailHtml,
   sendBrevoCampaignNow,
   sendEducationGalleryCleanupAlert,
@@ -349,7 +351,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
-import { deliveryReportStatuses, resolveWebhookSecret, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
+import { deliveryReportStatuses, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -3346,6 +3348,76 @@ router.get("/admin/integrations/:integration/webhook-url", async (req, res): Pro
   }
   const webhookPath = integration === "sms" ? "infobip" : "brevo";
   res.json({ url: `${requestOrigin(req)}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}` });
+});
+
+/**
+ * Admin webhook registration check ("Proveri registraciju na Brevo"): asks the
+ * Brevo API (saved apiKey) which transactional webhooks are actually
+ * registered at the provider and compares them SERVER-SIDE against this
+ * deployment's public webhook URL and the currently saved secret. Complements
+ * the loopback self-check above — that proves the app's own endpoint accepts
+ * the saved secret, while this catches the failure modes the loopback cannot
+ * see: webhook deleted at Brevo, registered for a stale domain, or still
+ * carrying an old secret. The saved secret is never returned; tokens found at
+ * Brevo are compared timing-safe and reported only with the token masked.
+ */
+router.post("/admin/integrations/brevo/verify-registration", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const secret = await resolveWebhookSecret("brevo");
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  let registeredUrls: string[];
+  try {
+    registeredUrls = await listBrevoTransactionalWebhookUrls();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 200) : "nepoznata greška";
+    // Local configuration problems (e.g. integration disabled) carry their own
+    // Serbian instruction — surface them directly instead of wrapping them in
+    // a provider-error message.
+    if (error instanceof BrevoConfigurationError) {
+      res.status(400).json({ error: error.message }); return;
+    }
+    res.status(502).json({ error: `Spisak webhook-ova nije učitan sa Brevo API-ja (${detail}). Proverite Brevo API ključ, pa pokušajte ponovo.` }); return;
+  }
+
+  // Normalized public origin of THIS deployment, as seen by the admin request
+  // (trust proxy is enabled, so this is the public domain in production).
+  let origin: string;
+  try { origin = new URL(requestOrigin(req)).origin; } catch { origin = requestOrigin(req); }
+  const expectedUrlHint = `${origin}/api/webhooks/brevo/<tajna>`;
+
+  // Keep only registrations that look like a LUMERA Brevo webhook URL and
+  // classify each by origin + timing-safe secret comparison. The token itself
+  // is never echoed back — masked URLs only.
+  const candidates = registeredUrls.flatMap((rawUrl) => {
+    let parsed: URL;
+    try { parsed = new URL(rawUrl); } catch { return []; }
+    const match = /^\/api\/webhooks\/brevo\/([^/]+)\/?$/.exec(parsed.pathname);
+    if (!match) return [];
+    let token = match[1]!;
+    try { token = decodeURIComponent(token); } catch { /* compare raw token */ }
+    return [{
+      origin: parsed.origin,
+      maskedUrl: `${parsed.origin}/api/webhooks/brevo/…`,
+      secretMatches: webhookTokenMatches(secret, token),
+    }];
+  });
+
+  if (candidates.some((candidate) => candidate.secretMatches && candidate.origin === origin)) {
+    res.json({ message: "Webhook je registrovan na Brevo: URL pokazuje na ovu aplikaciju i nosi aktuelnu webhook tajnu." }); return;
+  }
+  const wrongOrigin = candidates.find((candidate) => candidate.secretMatches);
+  if (wrongOrigin) {
+    res.status(409).json({ error: `Webhook sa aktuelnom tajnom postoji na Brevo, ali je registrovan za drugi domen (${wrongOrigin.maskedUrl}). Na Brevo ponovo registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` }); return;
+  }
+  if (candidates.some((candidate) => candidate.origin === origin)) {
+    res.status(409).json({ error: `Na Brevo je registrovan webhook za ovaj domen, ali sa zastarelom tajnom — događaji će biti odbijani. Ažurirajte registraciju na Brevo tako da URL ${expectedUrlHint} nosi sačuvanu webhook tajnu.` }); return;
+  }
+  if (candidates.length) {
+    res.status(409).json({ error: `Na Brevo postoji webhook u LUMERA formatu (${candidates[0]!.maskedUrl}), ali se ni domen ni tajna ne poklapaju sa ovom aplikacijom. Na Brevo registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` }); return;
+  }
+  res.status(409).json({ error: `Webhook nije registrovan na Brevo. U Brevo podešavanjima (Transactional → Settings → Webhooks) registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.` });
 });
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {
