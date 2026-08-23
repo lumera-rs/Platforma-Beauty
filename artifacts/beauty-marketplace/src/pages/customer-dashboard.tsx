@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box } from "lucide-react";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -115,7 +115,8 @@ function CustomerPackages() {
 }
 
 export default function CustomerDashboard() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -156,31 +157,43 @@ export default function CustomerDashboard() {
   
   const cancelMutation = useCancelAppointment();
   const disconnectMutation = useDisconnectAuthSignInMethod();
-  // Wouter navigation can update its location before the browser search string
-  // is observed by a render, so accept the query from either source.
-  const requestedTab = new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search).get("tab");
+  // Wouter's useLocation() only tracks the pathname, so navigating from
+  // /moj-nalog to /moj-nalog?tab=... never re-renders through it. useSearch()
+  // subscribes to the query string itself, which is what drives the tabs.
+  const requestedTab = new URLSearchParams(searchString).get("tab");
   const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" ? requestedTab : "appointments";
   const tabsSectionRef = useRef<HTMLDivElement>(null);
+  const tabsListRef = useRef<HTMLDivElement>(null);
   const previousTabRef = useRef<string | null>(null);
 
   // Scroll the tab panel into view whenever the active tab changes (tab click
   // or an in-app link with ?tab=...), otherwise on long pages the switch
   // happens below the fold and looks like nothing happened. Skip the initial
-  // render so plain page loads keep their normal scroll position.
+  // render so plain page loads keep their normal scroll position. Also keep
+  // the active trigger visible inside the horizontally scrollable tab strip.
   useEffect(() => {
-    if (previousTabRef.current !== null && previousTabRef.current !== activeTab) {
-      const section = tabsSectionRef.current;
-      if (section) {
-        // Offset for the sticky navbar so the tab bar stays visible.
-        window.scrollTo({ top: Math.max(0, section.getBoundingClientRect().top + window.scrollY - 88), behavior: "smooth" });
-      }
-    }
+    const isTabSwitch = previousTabRef.current !== null && previousTabRef.current !== activeTab;
     previousTabRef.current = activeTab;
+
+    if (isTabSwitch && tabsSectionRef.current) {
+      // Offset for the sticky navbar so the tab bar stays visible.
+      window.scrollTo({ top: Math.max(0, tabsSectionRef.current.getBoundingClientRect().top + window.scrollY - 88), behavior: "smooth" });
+    }
+
+    // Center the active trigger within the strip (horizontal only, so it
+    // never fights the vertical page scroll above).
+    const list = tabsListRef.current;
+    const trigger = list?.querySelector<HTMLElement>('[data-state="active"]');
+    if (list && trigger) {
+      const listRect = list.getBoundingClientRect();
+      const trigRect = trigger.getBoundingClientRect();
+      const target = list.scrollLeft + (trigRect.left - listRect.left) - (listRect.width - trigRect.width) / 2;
+      list.scrollTo({ left: Math.max(0, target), behavior: isTabSwitch ? "smooth" : "auto" });
+    }
   }, [activeTab]);
 
   useEffect(() => {
-    const search = location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search;
-    const params = new URLSearchParams(search);
+    const params = new URLSearchParams(searchString);
     const oauthStatus = params.get("oauth");
     const oauthError = params.get("oauth_error");
     if (!oauthStatus && !oauthError) return;
@@ -196,7 +209,7 @@ export default function CustomerDashboard() {
     // Navigate through wouter (not native replaceState) so the router's
     // location stays in sync and the settings tab actually activates.
     setLocation("/moj-nalog?tab=settings", { replace: true });
-  }, [location, refetchSignInMethods, setLocation, toast]);
+  }, [searchString, refetchSignInMethods, setLocation, toast]);
 
   const handleCancel = (id: string) => {
     cancelMutation.mutate(
@@ -363,20 +376,23 @@ export default function CustomerDashboard() {
 
         <div ref={tabsSectionRef} className="scroll-mt-24">
         <Tabs value={activeTab} onValueChange={(tab) => setLocation(`/moj-nalog?tab=${tab}`)} className="w-full">
-          <TabsList className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto flex-wrap">
-            <TabsTrigger value="appointments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+          <TabsList
+            ref={tabsListRef}
+            className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto flex-nowrap overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
+            <TabsTrigger value="appointments" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Termini
             </TabsTrigger>
-            <TabsTrigger value="favorites" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+            <TabsTrigger value="favorites" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Omiljeni Saloni ({dashboard?.favoriteCount || 0})
             </TabsTrigger>
-            <TabsTrigger value="packages" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+            <TabsTrigger value="packages" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Paketi
             </TabsTrigger>
-            <TabsTrigger value="education" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+            <TabsTrigger value="education" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               <GraduationCap className="mr-2 h-4 w-4" />Moje edukacije
             </TabsTrigger>
-            <TabsTrigger value="settings" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+            <TabsTrigger value="settings" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Podešavanja Naloga
             </TabsTrigger>
           </TabsList>
