@@ -29,6 +29,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
+import { rangePresets, toDateParam } from "@/lib/date-range-presets";
 import type { AutomationAttributedAppointment } from "@workspace/api-client-react";
 
 function rate(part: number, total: number) {
@@ -45,47 +46,6 @@ const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] 
   { value: "30d", label: "30 dana" },
   { value: "90d", label: "90 dana" },
   { value: "all", label: "Sve vreme" },
-];
-
-/** Local calendar date → YYYY-MM-DD (no UTC conversion, so the picked day is kept). */
-function toDateParam(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/**
- * One-click shortcuts for the most common custom windows. Each returns an
- * inclusive local-calendar range (same semantics as manual picking, which
- * `toDateParam` then serializes without UTC conversion). "This month" and
- * "last 14 days" end today because future days are not selectable anyway.
- */
-const rangePresets: { key: string; label: string; getRange: () => DateRange }[] = [
-  {
-    key: "last-month",
-    label: "Prošli mesec",
-    getRange: () => {
-      const now = new Date();
-      return {
-        from: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-        to: new Date(now.getFullYear(), now.getMonth(), 0),
-      };
-    },
-  },
-  {
-    key: "this-month",
-    label: "Ovaj mesec",
-    getRange: () => {
-      const now = new Date();
-      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: now };
-    },
-  },
-  {
-    key: "last-14d",
-    label: "Poslednjih 14 dana",
-    getRange: () => {
-      const now = new Date();
-      return { from: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13), to: now };
-    },
-  },
 ];
 
 function formatRangeLabel(range: DateRange | undefined): string | null {
