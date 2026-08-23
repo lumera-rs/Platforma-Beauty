@@ -98,6 +98,12 @@ app.use(makeSlowRequestMiddleware(slowRequestThresholdMs, logger));
 // same-origin through the path-routing proxy; only the public booking-widget
 // routes opt into cross-origin access (see routes/widget.ts).
 app.use(cookieParser());
+// Providers may replay thousands of delivery events in one request. This
+// parser must run before the general JSON parser below, whose 100 KB default
+// would reject those authenticated webhook batches before state handling.
+// Keep it bounded: webhooks need room for operational replay batches, not
+// unlimited request bodies.
+app.use("/api/webhooks", express.json({ limit: "5mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(normalizeAdminErrorResponses);

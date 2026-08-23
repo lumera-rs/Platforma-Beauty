@@ -327,6 +327,19 @@ function tally(summary: WebhookSummary, outcome: ProviderEventOutcome) {
 
 type DeliveryEventKind = "delivered" | "opened" | "failed";
 
+// An opened/failed CASE update consumes up to five PostgreSQL bind parameters
+// per delivery key. Stay well below the 65,535 protocol limit while keeping
+// large replay batches to a small number of set-based statements.
+const DELIVERY_STATE_UPDATE_CHUNK_SIZE = 10_000;
+
+function chunks<T>(items: readonly T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    result.push(items.slice(start, start + size));
+  }
+  return result;
+}
+
 /**
  * Clamp a provider timestamp: use it when plausible, otherwise fall back to
  * `now`. Future-dated events (clock skew / forgery) are clamped to now so a
@@ -337,11 +350,154 @@ function eventTime(raw: Date | null, now: Date): Date {
   return raw.getTime() > now.getTime() ? now : raw;
 }
 
+interface DeliveryStateInput {
+  channel: "email" | "sms";
+  channelEventKey: string;
+  kind: DeliveryEventKind;
+  occurredAt: Date | null;
+  failureReason?: string;
+}
+
 /**
- * Apply one delivery-state event to the automation delivery identified by its
- * channel event key. All transitions are guarded UPDATEs — a replay or an
- * out-of-order regression matches zero rows and is reported as `duplicate`.
+ * Apply a batch of delivery-state events with one guarded UPDATE per
+ * channel/kind group, while retaining the input-order semantics of the old
+ * per-event implementation.
+ *
+ * A delivery's guard can only move from true to false: deliveredAt/openedAt
+ * are never cleared, and a failure is only cleared by an event that also sets
+ * deliveredAt or openedAt. Consequently, the first event for a given
+ * channel/key/kind is the only event of that kind that could ever update.
+ * Those first events are arranged into per-delivery waves, retaining each
+ * delivery's own input order. Events for different deliveries in a wave can
+ * then share a set-based channel/kind UPDATE without affecting each other.
+ *
+ * The one existence query runs after the updates and covers every candidate
+ * key. This distinguishes a guarded no-op on an existing delivery from an
+ * unknown key without falling back to one SELECT per replay.
  */
+async function applyDeliveryStates(
+  events: readonly DeliveryStateInput[],
+  now: Date,
+): Promise<ProviderEventOutcome[]> {
+  if (!events.length) return [];
+
+  const scopeKey = (event: Pick<DeliveryStateInput, "channel" | "channelEventKey">) =>
+    `${event.channel}\u0000${event.channelEventKey}`;
+  type Candidate = { event: DeliveryStateInput; index: number };
+  const candidatesByScope = new Map<string, Candidate[]>();
+  const seenKindsByScope = new Map<string, Set<DeliveryEventKind>>();
+
+  for (const [index, event] of events.entries()) {
+    const key = scopeKey(event);
+    const seenKinds = seenKindsByScope.get(key) ?? new Set<DeliveryEventKind>();
+    if (seenKinds.has(event.kind)) continue;
+    seenKinds.add(event.kind);
+    seenKindsByScope.set(key, seenKinds);
+    const candidates = candidatesByScope.get(key) ?? [];
+    candidates.push({ event, index });
+    candidatesByScope.set(key, candidates);
+  }
+
+  const candidateEvents = [...candidatesByScope.values()].flat();
+  const candidateKeys = [...new Set(candidateEvents.map(({ event }) => event.channelEventKey))];
+  const candidateChannels = [...new Set(candidateEvents.map(({ event }) => event.channel))];
+  const updatedIndexes = new Set<number>();
+
+  const applyGroup = async (candidates: readonly Candidate[]) => {
+    const [{ event: firstEvent }] = candidates;
+    const channel = firstEvent.channel;
+    const kind = firstEvent.kind;
+    const eventKeys = candidates.map(({ event }) => event.channelEventKey);
+    const timestampCase = sql`case ${automationDeliveriesTable.eventKey} ${sql.join(
+      candidates.map(({ event }) => {
+        const at = eventTime(event.occurredAt, now);
+        return sql`when ${event.channelEventKey} then ${at}::timestamptz`;
+      }),
+      sql` `,
+    )} end`;
+    const scope = and(
+      eq(automationDeliveriesTable.channel, channel),
+      inArray(automationDeliveriesTable.eventKey, eventKeys),
+    );
+
+    let updated: Array<{ eventKey: string }> = [];
+    if (kind === "delivered") {
+      updated = await db.update(automationDeliveriesTable)
+        .set({ deliveredAt: timestampCase, failedAt: null })
+        .where(and(scope, isNull(automationDeliveriesTable.deliveredAt)))
+        .returning({ eventKey: automationDeliveriesTable.eventKey });
+    } else if (kind === "opened") {
+      updated = await db.update(automationDeliveriesTable)
+        .set({
+          openedAt: timestampCase,
+          deliveredAt: sql`coalesce(${automationDeliveriesTable.deliveredAt}, ${timestampCase})`,
+          failedAt: null,
+        })
+        .where(and(scope, isNull(automationDeliveriesTable.openedAt)))
+        .returning({ eventKey: automationDeliveriesTable.eventKey });
+    } else {
+      const reasonCase = sql`case ${automationDeliveriesTable.eventKey} ${sql.join(
+        candidates.map(({ event }) => sql`when ${event.channelEventKey} then ${
+          event.failureReason ? event.failureReason.slice(0, 500) : sql`${automationDeliveriesTable.errorMessage}`
+        }`),
+        sql` `,
+      )} end`;
+      updated = await db.update(automationDeliveriesTable)
+        .set({ failedAt: timestampCase, errorMessage: reasonCase })
+        .where(and(
+          scope,
+          isNull(automationDeliveriesTable.deliveredAt),
+          isNull(automationDeliveriesTable.openedAt),
+          isNull(automationDeliveriesTable.failedAt),
+        ))
+        .returning({ eventKey: automationDeliveriesTable.eventKey });
+    }
+
+    const updatedKeys = new Set(updated.map((row) => `${channel}\u0000${row.eventKey}`));
+    for (const { event, index } of candidates) {
+      if (updatedKeys.has(scopeKey(event))) updatedIndexes.add(index);
+    }
+  };
+
+  // A delivery has only three monotonic kinds, so this produces at most three
+  // waves and at most three set-based UPDATE groups per wave. A very large
+  // group is chunked below to stay within PostgreSQL's parameter budget.
+  for (let wave = 0; wave < 3; wave += 1) {
+    const groups = new Map<string, Candidate[]>();
+    for (const candidates of candidatesByScope.values()) {
+      const candidate = candidates[wave];
+      if (!candidate) continue;
+      const groupKey = `${candidate.event.channel}\u0000${candidate.event.kind}`;
+      const group = groups.get(groupKey) ?? [];
+      group.push(candidate);
+      groups.set(groupKey, group);
+    }
+
+    for (const group of groups.values()) {
+      for (const candidates of chunks(group, DELIVERY_STATE_UPDATE_CHUNK_SIZE)) {
+        await applyGroup(candidates);
+      }
+    }
+  }
+
+  const existing = new Set<string>();
+  for (const eventKeys of chunks(candidateKeys, DELIVERY_STATE_UPDATE_CHUNK_SIZE)) {
+    const existingRows = await db.select({
+      eventKey: automationDeliveriesTable.eventKey,
+      channel: automationDeliveriesTable.channel,
+    }).from(automationDeliveriesTable).where(and(
+      inArray(automationDeliveriesTable.eventKey, eventKeys),
+      inArray(automationDeliveriesTable.channel, candidateChannels),
+    ));
+    for (const row of existingRows) existing.add(`${row.channel}\u0000${row.eventKey}`);
+  }
+  return events.map((event, index) => {
+    if (updatedIndexes.has(index)) return "updated";
+    return existing.has(scopeKey(event)) ? "duplicate" : "unmatched";
+  });
+}
+
+/** Apply one delivery-state event through the shared batched transition path. */
 async function applyDeliveryState(
   channelEventKey: string,
   channel: "email" | "sms",
@@ -350,48 +506,14 @@ async function applyDeliveryState(
   failureReason?: string,
   now = new Date(),
 ): Promise<ProviderEventOutcome> {
-  const at = eventTime(occurredAt, now);
-  const scope = and(
-    eq(automationDeliveriesTable.eventKey, channelEventKey),
-    eq(automationDeliveriesTable.channel, channel),
-  );
-
-  if (kind === "delivered") {
-    const updated = await db.update(automationDeliveriesTable)
-      .set({ deliveredAt: at, failedAt: null })
-      .where(and(scope, isNull(automationDeliveriesTable.deliveredAt)))
-      .returning({ id: automationDeliveriesTable.id });
-    if (updated.length) return "updated";
-  } else if (kind === "opened") {
-    const updated = await db.update(automationDeliveriesTable)
-      .set({
-        openedAt: at,
-        deliveredAt: sql`coalesce(${automationDeliveriesTable.deliveredAt}, ${at})`,
-        failedAt: null,
-      })
-      .where(and(scope, isNull(automationDeliveriesTable.openedAt)))
-      .returning({ id: automationDeliveriesTable.id });
-    if (updated.length) return "updated";
-  } else {
-    const updated = await db.update(automationDeliveriesTable)
-      .set({
-        failedAt: at,
-        ...(failureReason ? { errorMessage: failureReason.slice(0, 500) } : {}),
-      })
-      .where(and(
-        scope,
-        isNull(automationDeliveriesTable.deliveredAt),
-        isNull(automationDeliveriesTable.openedAt),
-        isNull(automationDeliveriesTable.failedAt),
-      ))
-      .returning({ id: automationDeliveriesTable.id });
-    if (updated.length) return "updated";
-  }
-
-  // Nothing changed: distinguish a replay (row exists) from an unknown key.
-  const [existing] = await db.select({ id: automationDeliveriesTable.id })
-    .from(automationDeliveriesTable).where(scope).limit(1);
-  return existing ? "duplicate" : "unmatched";
+  const [outcome] = await applyDeliveryStates([{
+    channel,
+    channelEventKey,
+    kind,
+    occurredAt,
+    failureReason,
+  }], now);
+  return outcome;
 }
 
 // ---------------------------------------------------------------------------
@@ -530,21 +652,23 @@ export function parseBrevoWebhookBody(body: unknown): BrevoWebhookEvent[] | null
 async function brevoEventKeysByMessageId(messageIds: readonly string[]): Promise<Map<string, string>> {
   const unique = [...new Set(messageIds)];
   if (!unique.length) return new Map();
-  const rows = await db
-    .select({
-      providerMessageId: emailDeliveriesTable.providerMessageId,
-      eventKey: emailDeliveriesTable.eventKey,
-    })
-    .from(emailDeliveriesTable)
-    .where(and(
-      inArray(emailDeliveriesTable.providerMessageId, unique),
-      eq(emailDeliveriesTable.emailType, "automation"),
-    ));
   const byMessageId = new Map<string, string>();
-  for (const row of rows) {
-    // Mirror the old LIMIT 1: first row wins if a provider id ever repeated.
-    if (row.providerMessageId && !byMessageId.has(row.providerMessageId)) {
-      byMessageId.set(row.providerMessageId, row.eventKey);
+  for (const messageIdChunk of chunks(unique, DELIVERY_STATE_UPDATE_CHUNK_SIZE)) {
+    const rows = await db
+      .select({
+        providerMessageId: emailDeliveriesTable.providerMessageId,
+        eventKey: emailDeliveriesTable.eventKey,
+      })
+      .from(emailDeliveriesTable)
+      .where(and(
+        inArray(emailDeliveriesTable.providerMessageId, messageIdChunk),
+        eq(emailDeliveriesTable.emailType, "automation"),
+      ));
+    for (const row of rows) {
+      // Mirror the old LIMIT 1: first row wins if a provider id ever repeated.
+      if (row.providerMessageId && !byMessageId.has(row.providerMessageId)) {
+        byMessageId.set(row.providerMessageId, row.eventKey);
+      }
     }
   }
   return byMessageId;
@@ -564,9 +688,8 @@ export async function applyBrevoEvent(event: BrevoWebhookEvent, now = new Date()
 
 /**
  * Process a verified Brevo batch: classify every event first, resolve all
- * matchable message ids with one batched query, then apply delivery states
- * per event (each transition stays an individually guarded, monotonic
- * UPDATE — batching changes only the matching lookup, never the semantics).
+ * matchable message ids with one batched query, then apply delivery states in
+ * at most one set-based UPDATE per event kind.
  */
 export async function applyBrevoEvents(events: BrevoWebhookEvent[], now = new Date()): Promise<WebhookSummary> {
   const summary = emptySummary();
@@ -574,13 +697,23 @@ export async function applyBrevoEvents(events: BrevoWebhookEvent[], now = new Da
   const eventKeys = await brevoEventKeysByMessageId(
     classified.filter((entry) => entry.kind).map((entry) => entry.event["message-id"]),
   );
+  const matched: DeliveryStateInput[] = [];
   for (const { event, kind } of classified) {
     if (!kind) { tally(summary, "ignored"); continue; }
     const eventKey = eventKeys.get(event["message-id"]);
-    tally(summary, eventKey
-      ? await applyDeliveryState(eventKey, "email", kind, brevoEventDate(event), event.reason, now)
-      : "unmatched");
+    if (!eventKey) {
+      tally(summary, "unmatched");
+      continue;
+    }
+    matched.push({
+      channel: "email",
+      channelEventKey: eventKey,
+      kind,
+      occurredAt: brevoEventDate(event),
+      failureReason: event.reason,
+    });
   }
+  for (const outcome of await applyDeliveryStates(matched, now)) tally(summary, outcome);
   return summary;
 }
 
@@ -630,14 +763,20 @@ export async function applyInfobipReport(report: InfobipDeliveryReport, now = ne
   if (!reference) return "unmatched";
   const eventKey = (await smsEventKeysById([reference])).get(reference);
   if (!eventKey) return "unmatched";
-  return applyInfobipDeliveryState(report, eventKey, kind, now);
+  return applyDeliveryState(
+    eventKey,
+    "sms",
+    kind,
+    report.doneAt ? new Date(report.doneAt) : null,
+    report.status?.description ?? report.status?.name,
+    now,
+  );
 }
 
 /**
  * Process a verified Infobip batch: classify every report first, resolve all
- * valid UUID references with one batched query, then apply delivery states
- * per report (each transition stays an individually guarded, monotonic
- * UPDATE — batching changes only the matching lookup, never the semantics).
+ * valid UUID references with one batched query, then apply delivery states in
+ * at most one set-based UPDATE per event kind.
  */
 export async function applyInfobipReports(reports: InfobipDeliveryReport[], now = new Date()): Promise<WebhookSummary> {
   const summary = emptySummary();
@@ -649,11 +788,23 @@ export async function applyInfobipReports(reports: InfobipDeliveryReport[], now 
   const eventKeys = await smsEventKeysById(
     classified.flatMap((entry) => entry.kind && entry.reference ? [entry.reference] : []),
   );
+  const matched: DeliveryStateInput[] = [];
   for (const { report, kind, reference } of classified) {
     if (!kind) { tally(summary, "ignored"); continue; }
     const eventKey = reference ? eventKeys.get(reference) : undefined;
-    tally(summary, eventKey ? await applyInfobipDeliveryState(report, eventKey, kind, now) : "unmatched");
+    if (!eventKey) {
+      tally(summary, "unmatched");
+      continue;
+    }
+    matched.push({
+      channel: "sms",
+      channelEventKey: eventKey,
+      kind,
+      occurredAt: report.doneAt ? new Date(report.doneAt) : null,
+      failureReason: report.status?.description ?? report.status?.name,
+    });
   }
+  for (const outcome of await applyDeliveryStates(matched, now)) tally(summary, outcome);
   return summary;
 }
 
@@ -703,14 +854,18 @@ export function isInfobipVerificationBatch(reports: InfobipDeliveryReport[]): bo
 async function smsEventKeysById(ids: readonly string[]): Promise<Map<string, string>> {
   const unique = [...new Set(ids)];
   if (!unique.length) return new Map();
-  const rows = await db
-    .select({ id: smsDeliveriesTable.id, eventKey: smsDeliveriesTable.eventKey })
-    .from(smsDeliveriesTable)
-    .where(and(
-      inArray(smsDeliveriesTable.id, unique),
-      eq(smsDeliveriesTable.messageType, "automation"),
-    ));
-  return new Map(rows.map((row) => [row.id, row.eventKey]));
+  const byId = new Map<string, string>();
+  for (const idChunk of chunks(unique, DELIVERY_STATE_UPDATE_CHUNK_SIZE)) {
+    const rows = await db
+      .select({ id: smsDeliveriesTable.id, eventKey: smsDeliveriesTable.eventKey })
+      .from(smsDeliveriesTable)
+      .where(and(
+        inArray(smsDeliveriesTable.id, idChunk),
+        eq(smsDeliveriesTable.messageType, "automation"),
+      ));
+    for (const row of rows) byId.set(row.id, row.eventKey);
+  }
+  return byId;
 }
 
 /**
@@ -723,16 +878,4 @@ function infobipReference(report: InfobipDeliveryReport): string | null {
   const reference = report.messageId ?? report.callbackData;
   if (!reference || typeof reference !== "string" || !UUID_PATTERN.test(reference)) return null;
   return reference;
-}
-
-/** Apply one matched Infobip report to its automation delivery. */
-async function applyInfobipDeliveryState(
-  report: InfobipDeliveryReport,
-  eventKey: string,
-  kind: DeliveryEventKind,
-  now: Date,
-): Promise<ProviderEventOutcome> {
-  const doneAt = report.doneAt ? new Date(report.doneAt) : null;
-  const reason = report.status?.description ?? report.status?.name;
-  return applyDeliveryState(eventKey, "sms", kind, doneAt, reason, now);
 }

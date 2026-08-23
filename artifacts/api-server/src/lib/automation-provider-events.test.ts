@@ -41,6 +41,8 @@ import {
 import app, { safePathname, redactPathSecrets } from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
+  applyBrevoEvents,
+  applyInfobipReports,
   deliveryReportWarning,
   missingBrevoWebhookEvents,
   recordWebhookReceipt,
@@ -529,7 +531,137 @@ async function run() {
       const smsAfterMixed = await automationDelivery(runA4.smsKey);
       assert.equal(smsAfterMixed.deliveredAt?.getTime(), smsDoneAt.getTime());
       assert.equal(smsAfterMixed.status, "sent");
-      console.log("✓ mixed batches classify matched/duplicate/unmatched/ignored identically via one matching query");
+
+      // Interleaved kinds for the same key must preserve the original
+      // first-write-wins order even though the batch implementation groups
+      // guarded UPDATEs by kind. The first failure is recorded, delivery
+      // clears it, opening preserves delivery's earlier timestamp, and the
+      // later same-kind replays are duplicates.
+      const ordered = await makeSentRun(mix.salon.id, ruleMix.id, customerMix.id, "mix-ordered");
+      const orderedTs = Math.floor(Date.now() / 1000) - 240;
+      const orderedBatch = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
+        { event: "soft_bounce", "message-id": ordered.brevoMessageId, ts_event: orderedTs, reason: "mailbox full" },
+        { event: "delivered", "message-id": ordered.brevoMessageId, ts_event: orderedTs + 30 },
+        { event: "soft_bounce", "message-id": ordered.brevoMessageId, ts_event: orderedTs + 60, reason: "late replay" },
+        { event: "opened", "message-id": ordered.brevoMessageId, ts_event: orderedTs + 90 },
+        { event: "delivered", "message-id": ordered.brevoMessageId, ts_event: orderedTs + 120 },
+      ]);
+      assert.equal(orderedBatch.status, 200);
+      assert.equal(orderedBatch.body?.["updated"], 3, "failure, delivery, then open must each retain their sequential transition");
+      assert.equal(orderedBatch.body?.["duplicates"], 2, "same-kind replays in an interleaved batch must remain duplicates");
+      const afterOrderedBatch = await automationDelivery(ordered.emailKey);
+      assert.equal(afterOrderedBatch.failedAt, null, "delivery confirmation must still clear the first failure");
+      assert.equal(afterOrderedBatch.deliveredAt?.getTime(), (orderedTs + 30) * 1000, "delivery's timestamp must survive the later open");
+      assert.equal(afterOrderedBatch.openedAt?.getTime(), (orderedTs + 90) * 1000, "opened timestamp must use its own provider time");
+
+      // A different delivery can establish a kind first globally without
+      // changing another delivery's local event order. This catches an unsafe
+      // global kind grouping (delivered before opened/failed for every key).
+      const leading = await makeSentRun(mix.salon.id, ruleMix.id, customerMix.id, "mix-leading");
+      const target = await makeSentRun(mix.salon.id, ruleMix.id, customerMix.id, "mix-target");
+      const crossKeyTs = Math.floor(Date.now() / 1000) - 180;
+      const crossedEmail = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
+        { event: "delivered", "message-id": leading.brevoMessageId, ts_event: crossKeyTs },
+        { event: "opened", "message-id": target.brevoMessageId, ts_event: crossKeyTs + 20 },
+        { event: "delivered", "message-id": target.brevoMessageId, ts_event: crossKeyTs + 40 },
+      ]);
+      assert.equal(crossedEmail.status, 200);
+      assert.equal(crossedEmail.body?.["updated"], 2);
+      assert.equal(crossedEmail.body?.["duplicates"], 1, "target delivery after its open must remain a duplicate");
+      const crossedEmailTarget = await automationDelivery(target.emailKey);
+      assert.equal(crossedEmailTarget.deliveredAt?.getTime(), (crossKeyTs + 20) * 1000, "target open must backfill its own earlier delivery time");
+      assert.equal(crossedEmailTarget.openedAt?.getTime(), (crossKeyTs + 20) * 1000);
+
+      const crossedSms = await postJson(`/webhooks/infobip/${encodeURIComponent(smsSecret)}`, {
+        results: [
+          { messageId: leading.smsMessageId, status: { groupName: "DELIVERED" }, doneAt: new Date(crossKeyTs * 1000).toISOString() },
+          { messageId: target.smsMessageId, status: { groupName: "UNDELIVERABLE", description: "No coverage" }, doneAt: new Date((crossKeyTs + 20) * 1000).toISOString() },
+          { messageId: target.smsMessageId, status: { groupName: "DELIVERED" }, doneAt: new Date((crossKeyTs + 40) * 1000).toISOString() },
+        ],
+      });
+      assert.equal(crossedSms.status, 200);
+      assert.equal(crossedSms.body?.["updated"], 3, "target failure then delivery must both retain their local input order");
+      assert.equal(crossedSms.body?.["duplicates"], 0);
+      const crossedSmsTarget = await automationDelivery(target.smsKey);
+      assert.equal(crossedSmsTarget.deliveredAt?.getTime(), (crossKeyTs + 40) * 1000);
+      assert.equal(crossedSmsTarget.failedAt, null, "target delivery must clear its earlier provider failure");
+
+      // `opened` uses the per-key timestamp CASE twice, making it the largest
+      // state-update statement. More than 10,000 distinct keys proves the
+      // implementation chunks that statement below PostgreSQL's bind-parameter
+      // limit, both on the first write and a duplicate-heavy replay.
+      const largeBatchSize = 10_001;
+      const largeEventAt = new Date(Math.floor((Date.now() - 30_000) / 1_000) * 1_000);
+      const largeEvents = Array.from({ length: largeBatchSize }, (_, index) => {
+        const eventKey = `pe-large-batch-${suffix}-${index}:email`;
+        const messageId = `<pe-large-batch-${suffix}-${index}@smtp-relay.mailin.fr>`;
+        return { eventKey, messageId };
+      });
+      cleanup.emailEventKeys.push(...largeEvents.map((event) => event.eventKey));
+      for (let start = 0; start < largeEvents.length; start += 1_000) {
+        const chunk = largeEvents.slice(start, start + 1_000);
+        await db.insert(automationDeliveriesTable).values(chunk.map((event) => ({
+          runId: target.run.id, salonId: mix.salon.id, eventKey: event.eventKey, channel: "email",
+          recipientEmail: `pe-large-${suffix}@bg.test`, status: "sent", sentAt: largeEventAt,
+        })));
+        await db.insert(emailDeliveriesTable).values(chunk.map((event) => ({
+          eventKey: event.eventKey, emailType: "automation" as const, salonId: mix.salon.id,
+          recipientEmail: `pe-large-${suffix}@bg.test`, subject: "PE large batch", htmlContent: "<p>test</p>",
+          status: "sent" as const, providerMessageId: event.messageId, sentAt: largeEventAt,
+        })));
+      }
+      const largePayload = largeEvents.map((event) => ({
+        event: "opened",
+        "message-id": event.messageId,
+        ts_event: Math.floor(largeEventAt.getTime() / 1000),
+      }));
+      const largeFirst = await applyBrevoEvents(largePayload, largeEventAt);
+      assert.equal(largeFirst.updated, largeBatchSize, "large distinct batch must complete every state transition");
+      assert.equal(largeFirst.duplicates, 0);
+      const largeReplay = await applyBrevoEvents(largePayload, largeEventAt);
+      assert.equal(largeReplay.updated, 0);
+      assert.equal(largeReplay.duplicates, largeBatchSize, "large replay must complete without per-event SQL failures");
+      assert.equal((await automationDelivery(largeEvents[0]!.eventKey)).openedAt?.getTime(), largeEventAt.getTime());
+      assert.equal((await automationDelivery(largeEvents.at(-1)!.eventKey)).openedAt?.getTime(), largeEventAt.getTime());
+
+      const largeUnknownSms = await applyInfobipReports(
+        Array.from({ length: largeBatchSize }, () => ({
+          messageId: randomUUID(),
+          status: { groupName: "DELIVERED" },
+          doneAt: largeEventAt.toISOString(),
+        })),
+        largeEventAt,
+      );
+      assert.equal(largeUnknownSms.processed, largeBatchSize);
+      assert.equal(largeUnknownSms.unmatched, largeBatchSize, "large Infobip lookup must split without rejecting valid UUID references");
+
+      // These payloads exceed Express's default 100 KB JSON limit, so they
+      // confirm the real webhook route installs its bounded large-batch parser
+      // before the app-wide parser. Unknown references make this a pure
+      // ingestion/accounting test without creating another large fixture.
+      const httpLargeBatchSize = 2_000;
+      const httpLargeBrevoPayload = Array.from({ length: httpLargeBatchSize }, (_, index) => ({
+        event: "delivered",
+        "message-id": `<pe-http-limit-${suffix}-${index}@nowhere>`,
+        ts_event: Math.floor(largeEventAt.getTime() / 1_000),
+      }));
+      assert.ok(Buffer.byteLength(JSON.stringify(httpLargeBrevoPayload)) > 100 * 1_024);
+      const httpLargeBrevo = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, httpLargeBrevoPayload);
+      assert.equal(httpLargeBrevo.status, 200, "over-100 KB Brevo replay must reach the optimized handler");
+      assert.equal(httpLargeBrevo.body?.["unmatched"], httpLargeBatchSize);
+
+      const httpLargeInfobipPayload = {
+        results: Array.from({ length: httpLargeBatchSize }, () => ({
+          messageId: randomUUID(),
+          status: { groupName: "DELIVERED" },
+          doneAt: largeEventAt.toISOString(),
+        })),
+      };
+      assert.ok(Buffer.byteLength(JSON.stringify(httpLargeInfobipPayload)) > 100 * 1_024);
+      const httpLargeInfobip = await postJson(`/webhooks/infobip/${encodeURIComponent(smsSecret)}`, httpLargeInfobipPayload);
+      assert.equal(httpLargeInfobip.status, 200, "over-100 KB Infobip replay must reach the optimized handler");
+      assert.equal(httpLargeInfobip.body?.["unmatched"], httpLargeBatchSize);
+      console.log("✓ mixed batches preserve sequential monotonic updates through set-based groups");
     }
 
     // ── 7. SMS delivery reports (no opens for SMS) ──────────────────────────

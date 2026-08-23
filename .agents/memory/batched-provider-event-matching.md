@@ -1,10 +1,10 @@
 ---
 name: Batched provider event matching
-description: How webhook batch processing keeps one matching query per batch without changing per-event semantics.
+description: Preserve per-delivery event ordering when batching provider webhooks.
 ---
 
-Webhook batches (email/SMS delivery reports) resolve message references with ONE `= ANY(...)` lookup per batch, then apply each delivery-state transition as its own guarded, monotonic UPDATE.
+Set-based provider webhook processing must preserve the input order of state-changing events for each individual delivery. It can batch only events that belong to independent deliveries.
 
-**Why:** Large provider batches previously cost N sequential round-trips inside the webhook request. Batching only the matching lookup keeps response times flat while preserving replay/out-of-order semantics (duplicate detection, first-write-wins timestamps) that depend on per-event guarded updates.
+**Why:** A global event-kind order can silently change the winning timestamp or terminal state for a delivery when a mixed batch interleaves events for several deliveries.
 
-**How to apply:** When optimizing batch webhook paths, classify every event first (ignored before unmatched, exactly mirroring the single-event order), batch only the reference→key matching, and keep state application per event. Synthetic self-check references and non-UUID SMS references must be filtered before the query so they stay unmatched. Also: new fixtures added to the shared provider-events suite must use an isolated salon/rule, or later aggregate owner-stats assertions break.
+**How to apply:** Before optimizing a webhook batch, identify the state transitions that depend on prior events for the same delivery. Retain that local order and batch only transitions that cannot influence one another. Test an interleaved mixed-key sequence where a global grouping would reverse one delivery’s local order.
