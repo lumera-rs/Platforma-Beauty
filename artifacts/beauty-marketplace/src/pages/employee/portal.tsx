@@ -2,6 +2,7 @@ import { type ComponentProps, type FormEvent, type ReactNode, useEffect, useMemo
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
+import { GuideHelpLink } from "@/components/guide-help-link";
 import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -283,6 +284,7 @@ function EmployeePerformanceTab() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <CardTitle className="text-lg flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-primary" /> Moje Performanse
+            <GuideHelpLink sectionId="za-performanse" label="Moje performanse" />
           </CardTitle>
           <select
             className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground"
@@ -379,7 +381,7 @@ function EmployeeOperations() {
   return (
     <div className="grid gap-6 lg:grid-cols-2" data-testid="employee-operations">
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Clock3 className="h-5 w-5 text-primary" />Evidencija radnog vremena</CardTitle><CardDescription>{clock.data?.openEntry ? "Smena je trenutno otvorena." : "Počnite smenu kada započnete rad."}</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Clock3 className="h-5 w-5 text-primary" />Evidencija radnog vremena <GuideHelpLink sectionId="za-radno-vreme" label="Evidencija radnog vremena" /></CardTitle><CardDescription>{clock.data?.openEntry ? "Smena je trenutno otvorena." : "Počnite smenu kada započnete rad."}</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg bg-muted/50 p-3"><p className="text-xs text-muted-foreground">Ove nedelje</p><p className="mt-1 text-xl font-bold">{Math.floor((clock.data?.weekMinutes ?? 0) / 60)} h {(clock.data?.weekMinutes ?? 0) % 60} min</p></div>
@@ -394,7 +396,7 @@ function EmployeeOperations() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle className="text-lg">Zamena smene</CardTitle><CardDescription>Predložite kolegi; salon odobrava tek po prihvatanju kolege.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Zamena smene <GuideHelpLink sectionId="za-zamene" label="Zamena smene" /></CardTitle><CardDescription>Predložite kolegi; salon odobrava tek po prihvatanju kolege.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={submitSwap} className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
             <select value={targetEmployeeId} onChange={(event) => setTargetEmployeeId(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm" required data-testid="swap-colleague-select"><option value="">Izaberite kolegu</option>{swaps.data?.colleagues.map((colleague) => <option key={colleague.id} value={colleague.id}>{colleague.name}</option>)}</select>
@@ -628,8 +630,10 @@ export default function EmployeePortal() {
             <p className="text-muted-foreground">Dobro došli, {portal.employee.name}.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setProfileOpen(true)}><UserRound className="mr-2 h-4 w-4" />Moj profil</Button>
-            <Button onClick={() => setBookingOpen(true)}><Plus className="mr-2 h-4 w-4" />Zakaži termin</Button>
+             <Button variant="outline" onClick={() => setProfileOpen(true)}><UserRound className="mr-2 h-4 w-4" />Moj profil</Button>
+             <GuideHelpLink sectionId="za-profil" label="Moj profil" />
+             <Button onClick={() => setBookingOpen(true)}><Plus className="mr-2 h-4 w-4" />Zakaži termin</Button>
+             <GuideHelpLink sectionId="za-zakazivanje" label="Zakazivanje termina i serija" />
           </div>
         </div>
 
@@ -645,7 +649,8 @@ export default function EmployeePortal() {
             <CardHeader className="border-b bg-primary/[0.035] px-5 py-5 sm:px-7">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><CalendarDays className="h-5 w-5" /></span>
-                Izaberite datum
+                <span>Izaberite datum</span>
+                <GuideHelpLink sectionId="za-portal" label="Moj portal" />
               </CardTitle>
               <p className="pl-[52px] text-sm text-muted-foreground">Prikazani su samo termini koji su dodeljeni vama.</p>
             </CardHeader>
@@ -697,6 +702,7 @@ export default function EmployeePortal() {
                   <CardTitle className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xl sm:text-2xl">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><Clock3 className="h-5 w-5" /></span>
                     <span>Moji termini · {dateLabel(date)}</span>
+                    <GuideHelpLink sectionId="za-termini" label="Moji termini" />
                   </CardTitle>
                   <p className="mt-2 pl-[52px] text-sm text-muted-foreground">Raspored za izabrani dan, poređan po vremenu.</p>
                 </div>
@@ -756,20 +762,20 @@ export default function EmployeePortal() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card>
-            <CardHeader><CardTitle className="text-lg">Moje radno vreme</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Moje radno vreme <GuideHelpLink sectionId="za-odsustva" label="Moje radno vreme i zahtevi za odsustvo" /></CardTitle></CardHeader>
             <CardContent className="space-y-2">
               {portal.schedule.length ? portal.schedule.map((item) => <div key={item.id} className="flex justify-between text-sm"><span>{weekdays[item.weekday - 1]}</span><span>{item.startTime}–{item.endTime}{item.breakStart && ` · pauza ${item.breakStart}–${item.breakEnd}`}</span></div>) : <p className="text-sm text-muted-foreground">Salon još nije uneo posebno radno vreme.</p>}
               <Button className="mt-2 w-full" variant="outline" onClick={() => setLeaveOpen(true)}>Pošalji zahtev za odsustvo</Button>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="text-lg">Obaveštenja</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Obaveštenja <GuideHelpLink sectionId="za-ostalo" label="Obaveštenja, moje usluge i edukacije" /></CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {portal.notifications.length ? portal.notifications.map((notification) => <div key={notification.id} className="border-b pb-2 last:border-0"><p className="text-sm font-medium">{notification.title}</p><p className="text-xs text-muted-foreground">{new Date(notification.date).toLocaleDateString("sr-RS")}</p></div>) : <p className="text-sm text-muted-foreground">Nemate nova obaveštenja.</p>}
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="text-lg">Moje usluge</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Moje usluge <GuideHelpLink sectionId="za-ostalo" label="Obaveštenja, moje usluge i edukacije" /></CardTitle></CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {portal.services.length ? portal.services.map((service) => <Badge key={service.id} variant="secondary">{service.name} · {service.durationMinutes} min</Badge>) : <p className="text-sm text-muted-foreground">Salon vam još nije dodelio usluge.</p>}
             </CardContent>
@@ -778,7 +784,7 @@ export default function EmployeePortal() {
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardHeader><CardTitle className="text-lg">Odsustva i zahtevi</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-lg">Odsustva i zahtevi <GuideHelpLink sectionId="za-odsustva" label="Moje radno vreme i zahtevi za odsustvo" /></CardTitle></CardHeader>
             <CardContent className="space-y-2">
               {portal.leaveRequests.length ? portal.leaveRequests.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{formatEmployeeLeaveRequestSummary(item)}</span><Badge variant={item.status === "approved" ? "secondary" : item.status === "rejected" ? "destructive" : "default"}>{item.status === "pending" ? "Na čekanju" : item.status === "approved" ? "Odobreno" : "Odbijeno"}</Badge></div>) : <p className="text-sm text-muted-foreground">Nema poslatih zahteva.</p>}
             </CardContent>

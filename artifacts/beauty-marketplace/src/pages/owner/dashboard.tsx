@@ -1,9 +1,10 @@
 import { BusinessLayout } from "@/components/business-layout";
+import { GuideHelpLink } from "@/components/guide-help-link";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid, HeartHandshake, Zap, Box, BarChart3, Bot, Menu } from "lucide-react";
+import { Loader2, TrendingUp, Users, Calendar, Clock3, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid, HeartHandshake, Zap, Box, BarChart3, Bot, Menu } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,35 +12,43 @@ import { Badge } from "@/components/ui/badge";
 export function OwnerSidebar({ current }: { current: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const links = [
-    { href: "/vlasnik", label: "Dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/kalendar", label: "Kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/usluge", label: "Usluge", icon: <Settings className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/resursi", label: "Resursi", icon: <LayoutGrid className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/profil", label: "Profil salona", icon: <Store className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/zaposleni", label: "Zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/klijenti", label: "CRM & Retencija", icon: <HeartHandshake className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/automatizacije", label: "Automatizacije", icon: <Zap className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/paketi", label: "Paketi tretmana", icon: <Box className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/performanse", label: "Performanse tima", icon: <BarChart3 className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/ai-asistent", label: "AI Asistent", icon: <Bot className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/shop", label: "B2B Oprema", icon: <DollarSign className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/porudzbine", label: "Porudžbine", icon: <Package className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/obavestenja", label: "Obaveštenja", icon: <Bell className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/loyalty", label: "Loyalty Program", icon: <Star className="w-4 h-4 mr-2" /> },
-    { href: "/biznis/edukacije", label: "Edukacije", icon: <GraduationCap className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik", label: "Dashboard", guideId: "vl-dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/kalendar", label: "Kalendar", guideId: "vl-kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/usluge", label: "Usluge", guideId: "vl-usluge", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/resursi", label: "Resursi", guideId: "vl-resursi", icon: <LayoutGrid className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/profil", label: "Profil salona", guideId: "vl-profil", icon: <Store className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/zaposleni", label: "Zaposleni", guideId: "vl-zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/klijenti", label: "CRM & Retencija", guideId: "vl-klijenti", icon: <HeartHandshake className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/inventar", label: "Zalihe", guideId: "vl-inventar", icon: <Package className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/radno-vreme", label: "Radno vreme", guideId: "vl-radno-vreme", icon: <Clock3 className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/automatizacije", label: "Automatizacije", guideId: "vl-automatizacije", icon: <Zap className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/paketi", label: "Paketi tretmana", guideId: "vl-paketi", icon: <Box className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/performanse", label: "Performanse tima", guideId: "vl-performanse", icon: <BarChart3 className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/ai-asistent", label: "AI Asistent", guideId: "vl-ai", icon: <Bot className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/shop", label: "B2B Oprema", guideId: "vl-shop", icon: <DollarSign className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine", icon: <Package className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/obavestenja", label: "Obaveštenja", guideId: "vl-obavestenja", icon: <Bell className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/loyalty", label: "Loyalty Program", guideId: "vl-loyalty", icon: <Star className="w-4 h-4 mr-2" /> },
+    { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije", icon: <GraduationCap className="w-4 h-4 mr-2" /> },
   ];
 
   const sidebarContent = (
     <div className="space-y-1">
-      {links.map(l => (
-        <Link 
-          key={l.href} 
-          href={l.href}
-          onClick={() => setIsOpen(false)}
-          className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors ${current === l.href ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground/80'}`}
-        >
-          {l.icon} {l.label}
-        </Link>
+      {links.map((link) => (
+        <div key={link.href} className="flex items-center gap-1">
+          <Link
+            href={link.href}
+            onClick={() => setIsOpen(false)}
+            className={`flex min-w-0 flex-1 items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${current === link.href ? 'bg-primary text-primary-foreground' : 'text-foreground/80 hover:bg-muted'}`}
+          >
+            {link.icon} <span className="truncate">{link.label}</span>
+          </Link>
+          <GuideHelpLink
+            sectionId={link.guideId}
+            label={link.label}
+            onClick={() => setIsOpen(false)}
+          />
+        </div>
       ))}
     </div>
   );

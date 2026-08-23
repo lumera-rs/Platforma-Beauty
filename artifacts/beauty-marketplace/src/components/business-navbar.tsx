@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { LogOut, Menu, X, LayoutDashboard, BookOpen, ChevronDown, ArrowLeft, Bell, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GuideHelpLink } from "@/components/guide-help-link";
 import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -12,6 +13,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+type BusinessNavLink = {
+  href: string;
+  label: string;
+  guideId?: string;
+};
 
 export function BusinessNavbar() {
   const [location, setLocation] = useLocation();
@@ -109,7 +116,7 @@ export function BusinessNavbar() {
     window.location.assign(location.startsWith("/vlasnik") ? location : "/vlasnik");
   };
 
-  const getNavLinks = () => {
+  const getNavLinks = (): BusinessNavLink[] => {
     if (!user) {
       return [
         { href: "/za-biznise", label: "Prednosti" },
@@ -120,22 +127,22 @@ export function BusinessNavbar() {
     switch (user.role) {
       case 'SALON_OWNER':
         return [
-          { href: "/vlasnik", label: "Dashboard" },
-          { href: "/vlasnik/kalendar", label: "Kalendar" },
-          { href: "/vlasnik/usluge", label: "Usluge" },
-          { href: "/vlasnik/zaposleni", label: "Zaposleni" },
-          { href: "/vlasnik/radno-vreme", label: "Radno vreme" },
-          { href: "/vlasnik/inventar", label: "Zalihe" },
-          { href: "/vlasnik/shop", label: "Shop" },
-          { href: "/vlasnik/porudzbine", label: "Porudžbine" },
-          { href: "/vlasnik/obavestenja", label: "Obaveštenja" },
-          { href: "/biznis/edukacije", label: "Edukacije" },
+          { href: "/vlasnik", label: "Dashboard", guideId: "vl-dashboard" },
+          { href: "/vlasnik/kalendar", label: "Kalendar", guideId: "vl-kalendar" },
+          { href: "/vlasnik/usluge", label: "Usluge", guideId: "vl-usluge" },
+          { href: "/vlasnik/zaposleni", label: "Zaposleni", guideId: "vl-zaposleni" },
+          { href: "/vlasnik/radno-vreme", label: "Radno vreme", guideId: "vl-radno-vreme" },
+          { href: "/vlasnik/inventar", label: "Zalihe", guideId: "vl-inventar" },
+          { href: "/vlasnik/shop", label: "Shop", guideId: "vl-shop" },
+          { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine" },
+          { href: "/vlasnik/obavestenja", label: "Obaveštenja", guideId: "vl-obavestenja" },
+          { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije" },
           { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'SALON_EMPLOYEE':
         return [
-          { href: "/zaposleni", label: "Moj portal" },
-          { href: "/biznis/edukacije", label: "Edukacije" },
+          { href: "/zaposleni", label: "Moj portal", guideId: "za-portal" },
+          { href: "/biznis/edukacije", label: "Edukacije", guideId: "za-ostalo" },
           { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'EDUCATION_CENTER_OWNER':
@@ -296,28 +303,37 @@ export function BusinessNavbar() {
             {navLinks.map((link) => {
               const isNotificationsLink = link.href === "/vlasnik/obavestenja";
               return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "block text-sm font-medium py-2",
-                    isNotificationsLink && "flex items-center justify-between gap-3",
-                    location === link.href ? "text-accent" : "text-background"
+                <div key={link.href} className="flex items-center gap-1">
+                  <Link
+                    href={link.href}
+                    className={cn(
+                      "min-w-0 flex-1 text-sm font-medium py-2",
+                      isNotificationsLink && "flex items-center justify-between gap-3",
+                      location === link.href ? "text-accent" : "text-background"
+                    )}
+                    aria-label={isNotificationsLink ? `Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}` : undefined}
+                    data-testid={isNotificationsLink ? "link-notifications-mobile" : undefined}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <span>{link.label}</span>
+                    {isNotificationsLink && unreadNotificationCount > 0 && (
+                      <span
+                        data-testid="status-unread-notification-count-mobile"
+                        className="min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground"
+                      >
+                        {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                      </span>
+                    )}
+                  </Link>
+                  {link.guideId && (
+                    <GuideHelpLink
+                      sectionId={link.guideId}
+                      label={link.label}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="text-background/70 hover:bg-white/10 hover:text-accent focus-visible:ring-white"
+                    />
                   )}
-                  aria-label={isNotificationsLink ? `Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}` : undefined}
-                  data-testid={isNotificationsLink ? "link-notifications-mobile" : undefined}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  <span>{link.label}</span>
-                  {isNotificationsLink && unreadNotificationCount > 0 && (
-                    <span
-                      data-testid="status-unread-notification-count-mobile"
-                      className="min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground"
-                    >
-                      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
-                    </span>
-                  )}
-                </Link>
+                </div>
               );
             })}
             {user?.role === "SALON_OWNER" && managedSalons.length > 1 && (
