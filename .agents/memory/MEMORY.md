@@ -124,3 +124,4 @@
 - [URL restore picker parity](url-restore-picker-parity.md) — state restored from shared links must obey the same constraints the UI picker enforces; clamp to the reachable boundary or fall back.
 - [Browser preflight isolated flags](browser-preflight-isolated-flags.md) — new LUMERA_ISOLATED_* suites must be added to the shared Playwright preflight's skip list or they'll probe localhost:80.
 - [Retail checkout quote refresh](retail-checkout-quote-refresh.md) — one stable conflict code covers price, delivery, and availability changes so clients can safely replace stale totals.
+- [Shipping rule row order](shipping-rule-row-order.md) — the retail shipping config is an unordered first-row read; extra shipping_rules rows make checkout and its browser fixtures order-dependent.

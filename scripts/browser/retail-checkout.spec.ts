@@ -441,6 +441,105 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   expect(mainFrameNavigations).toBe(1);
 });
 
+async function createCartAndOpenCartPage(page: Page) {
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { id: string };
+  createdCartIds.push(cart.id);
+  const addResponse = await page.request.post("/api/retail/cart/items", {
+    data: { productId, quantity: 1 },
+  });
+  expect(addResponse.status()).toBe(201);
+  await page.goto("/korpa");
+  await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+}
+
+test("retail cart page updates lines and totals when the cart changes in another tab", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  // A second tab or device shares the same session cookie, so an API call from the
+  // same browser context is exactly what a cross-tab cart change looks like.
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+  expect(cart.items.length).toBe(1);
+  const patchResponse = await page.request.patch(`/api/retail/cart/items/${cart.items[0]!.id}`, {
+    data: { quantity: 3 },
+  });
+  expect(patchResponse.ok()).toBe(true);
+
+  await expect(page.getByText(money(6_000), { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  expect(mainFrameNavigations).toBe(1);
+});
+
+test("retail cart page empties without a reload when the cart is cleared in another tab", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+  expect(cart.items.length).toBe(1);
+  const deleteResponse = await page.request.delete(`/api/retail/cart/items/${cart.items[0]!.id}`);
+  expect(deleteResponse.ok()).toBe(true);
+
+  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  expect(mainFrameNavigations).toBe(1);
+});
+
+test("retail cart page ignores a stale poll response while a local edit is in flight", async ({ page }) => {
+  let holdNextCartGet = false;
+  let notifyStaleCaptured: (() => void) | undefined;
+  let releaseStaleResponse: (() => void) | undefined;
+  const staleCaptured = new Promise<void>((resolve) => { notifyStaleCaptured = resolve; });
+  const staleReleased = new Promise<void>((resolve) => { releaseStaleResponse = resolve; });
+  await page.route("**/api/retail/cart", async (route) => {
+    if (route.request().method() !== "GET" || !holdNextCartGet) {
+      await route.continue();
+      return;
+    }
+    holdNextCartGet = false;
+    // Capture the server body NOW (still quantity 1), then deliver it only after the
+    // local edit has already applied — a genuinely stale poll response.
+    const staleResponse = await route.fetch();
+    notifyStaleCaptured?.();
+    await staleReleased;
+    await route.fulfill({ response: staleResponse });
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  try {
+    holdNextCartGet = true;
+    // Trigger the focus-driven freshness check so its response is the held stale one.
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await staleCaptured;
+
+    // Local edit while the stale poll response is still pending.
+    await page.getByRole("button").filter({ has: page.locator("svg.lucide-plus") }).first().click();
+    await expect(page.getByText(money(4_000), { exact: true }).first()).toBeVisible();
+
+    releaseStaleResponse?.();
+    // The stale quantity-1 body must be discarded, not rendered.
+    await page.waitForTimeout(1_000);
+    await expect(page.getByText(money(4_000), { exact: true }).first()).toBeVisible();
+  } finally {
+    releaseStaleResponse?.();
+  }
+});
+
 test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");

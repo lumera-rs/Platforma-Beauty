@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { Layout } from "@/components/layout";
@@ -40,16 +40,7 @@ async function retail<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function CartLines({ cart, refresh }: { cart: Cart; refresh: () => void }) {
-  const { toast } = useToast();
-  const change = async (id: string, quantity: number) => {
-    try { await retail(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }); refresh(); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Promena nije uspela."); }
-  };
-  const remove = async (id: string) => {
-    try { await retail(`/retail/cart/items/${id}`, { method: "DELETE" }); refresh(); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Brisanje nije uspelo."); }
-  };
+function CartLines({ cart, change, remove }: { cart: Cart; change: (id: string, quantity: number) => void; remove: (id: string) => void }) {
   return <div className="space-y-3">{cart.items.map((item) => <div key={item.id} className="flex gap-3 rounded-xl border p-3">
     <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
     <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
@@ -60,10 +51,68 @@ function CartLines({ cart, refresh }: { cart: Cart; refresh: () => void }) {
 }
 
 export function RetailCartPage() {
+  const { toast } = useToast();
   const [cart, setCart] = useState<Cart | null>(null);
-  const refresh = () => void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null));
-  useEffect(refresh, []);
-  return <Layout><main className="mx-auto min-h-screen max-w-3xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Vaša korpa</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <div className="mt-10 rounded-2xl border p-8 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3">Korpa je prazna.</p><Button asChild className="mt-5"><Link href="/proizvodi">Pregledajte proizvode</Link></Button></div> : <><div className="mt-6"><CartLines cart={cart} refresh={refresh} /></div><div className="mt-6 flex items-center justify-between rounded-xl bg-muted p-5"><span className="font-medium">Ukupno</span><strong className="text-xl">{money(cart.subtotal)}</strong></div><Button asChild size="lg" className="mt-5 w-full"><Link href="/korpa/placanje">Nastavi na dostavu i plaćanje</Link></Button></>}</main></Layout>;
+  // Guards against cross-tab polling clobbering an in-progress local edit: while a
+  // local mutation (and its follow-up reload) is in flight the poll skips applying,
+  // and bumping the generation discards any poll response that started earlier.
+  const localOpsRef = useRef(0);
+  const generationRef = useRef(0);
+  const loadCart = () => retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null));
+  const runLocalCartOp = async (op: () => Promise<unknown>, failureMessage: string) => {
+    generationRef.current += 1;
+    localOpsRef.current += 1;
+    try {
+      await op();
+      await loadCart();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : failureMessage);
+    } finally {
+      localOpsRef.current -= 1;
+    }
+  };
+  const change = (id: string, quantity: number) => void runLocalCartOp(
+    () => retail(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
+    "Promena nije uspela.",
+  );
+  const remove = (id: string) => void runLocalCartOp(
+    () => retail(`/retail/cart/items/${id}`, { method: "DELETE" }),
+    "Brisanje nije uspelo.",
+  );
+  useEffect(() => { void loadCart(); }, []);
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+    const check = async () => {
+      if (checking || localOpsRef.current > 0) return;
+      checking = true;
+      const generation = generationRef.current;
+      try {
+        const latest = await retail<Cart>("/retail/cart");
+        if (!active || localOpsRef.current > 0 || generation !== generationRef.current) return;
+        setCart((current) =>
+          current && cartItemsFingerprint(latest) === cartItemsFingerprint(current) && latest.subtotal === current.subtotal
+            ? current
+            : latest,
+        );
+      } catch {
+        // Transient poll failures are ignored; the next tick retries.
+      } finally {
+        checking = false;
+      }
+    };
+    const interval = window.setInterval(() => { void check(); }, 4000);
+    const onVisible = () => { if (document.visibilityState === "visible") void check(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+  return <Layout><main className="mx-auto min-h-screen max-w-3xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Vaša korpa</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <div className="mt-10 rounded-2xl border p-8 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3">Korpa je prazna.</p><Button asChild className="mt-5"><Link href="/proizvodi">Pregledajte proizvode</Link></Button></div> : <><div className="mt-6"><CartLines cart={cart} change={change} remove={remove} /></div><div className="mt-6 flex items-center justify-between rounded-xl bg-muted p-5"><span className="font-medium">Ukupno</span><strong className="text-xl">{money(cart.subtotal)}</strong></div><Button asChild size="lg" className="mt-5 w-full"><Link href="/korpa/placanje">Nastavi na dostavu i plaćanje</Link></Button></>}</main></Layout>;
 }
 
 export function RetailCheckoutPage() {
