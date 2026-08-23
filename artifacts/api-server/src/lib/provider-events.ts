@@ -36,7 +36,7 @@ import {
   providerWebhookReceiptsTable,
   smsDeliveriesTable,
 } from "@workspace/db";
-import { and, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { integrationSettings, type IntegrationName } from "./integrations";
 
 // ---------------------------------------------------------------------------
@@ -519,6 +519,37 @@ export function parseBrevoWebhookBody(body: unknown): BrevoWebhookEvent[] | null
 }
 
 /**
+ * Batch the message-id → event-key matching for a whole webhook payload into
+ * ONE query: persisted outbound emails (automation type only) whose Brevo
+ * providerMessageId is among the batch's message ids. A message id absent
+ * from the map is unmatched — exactly what the previous per-event
+ * `providerMessageId = ? AND emailType = 'automation' LIMIT 1` lookup
+ * reported, including synthetic self-check references, which can never
+ * correspond to a persisted outbound send.
+ */
+async function brevoEventKeysByMessageId(messageIds: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(messageIds)];
+  if (!unique.length) return new Map();
+  const rows = await db
+    .select({
+      providerMessageId: emailDeliveriesTable.providerMessageId,
+      eventKey: emailDeliveriesTable.eventKey,
+    })
+    .from(emailDeliveriesTable)
+    .where(and(
+      inArray(emailDeliveriesTable.providerMessageId, unique),
+      eq(emailDeliveriesTable.emailType, "automation"),
+    ));
+  const byMessageId = new Map<string, string>();
+  for (const row of rows) {
+    // Mirror the old LIMIT 1: first row wins if a provider id ever repeated.
+    if (row.providerMessageId && !byMessageId.has(row.providerMessageId)) {
+      byMessageId.set(row.providerMessageId, row.eventKey);
+    }
+  }
+  return byMessageId;
+}
+/**
  * Process a single verified Brevo event. Matching goes through the persisted
  * outbound email (email_deliveries.providerMessageId, automation type only) to
  * its shared event key, which is the automation delivery's channel key.
@@ -526,23 +557,30 @@ export function parseBrevoWebhookBody(body: unknown): BrevoWebhookEvent[] | null
 export async function applyBrevoEvent(event: BrevoWebhookEvent, now = new Date()): Promise<ProviderEventOutcome> {
   const kind = brevoEventKind(event.event);
   if (!kind) return "ignored";
-
-  const [outbound] = await db
-    .select({ eventKey: emailDeliveriesTable.eventKey })
-    .from(emailDeliveriesTable)
-    .where(and(
-      eq(emailDeliveriesTable.providerMessageId, event["message-id"]),
-      eq(emailDeliveriesTable.emailType, "automation"),
-    ))
-    .limit(1);
-  if (!outbound) return "unmatched";
-
-  return applyDeliveryState(outbound.eventKey, "email", kind, brevoEventDate(event), event.reason, now);
+  const eventKey = (await brevoEventKeysByMessageId([event["message-id"]])).get(event["message-id"]);
+  if (!eventKey) return "unmatched";
+  return applyDeliveryState(eventKey, "email", kind, brevoEventDate(event), event.reason, now);
 }
 
+/**
+ * Process a verified Brevo batch: classify every event first, resolve all
+ * matchable message ids with one batched query, then apply delivery states
+ * per event (each transition stays an individually guarded, monotonic
+ * UPDATE — batching changes only the matching lookup, never the semantics).
+ */
 export async function applyBrevoEvents(events: BrevoWebhookEvent[], now = new Date()): Promise<WebhookSummary> {
   const summary = emptySummary();
-  for (const event of events) tally(summary, await applyBrevoEvent(event, now));
+  const classified = events.map((event) => ({ event, kind: brevoEventKind(event.event) }));
+  const eventKeys = await brevoEventKeysByMessageId(
+    classified.filter((entry) => entry.kind).map((entry) => entry.event["message-id"]),
+  );
+  for (const { event, kind } of classified) {
+    if (!kind) { tally(summary, "ignored"); continue; }
+    const eventKey = eventKeys.get(event["message-id"]);
+    tally(summary, eventKey
+      ? await applyDeliveryState(eventKey, "email", kind, brevoEventDate(event), event.reason, now)
+      : "unmatched");
+  }
   return summary;
 }
 
@@ -573,42 +611,49 @@ export function parseInfobipWebhookBody(body: unknown): InfobipDeliveryReport[] 
   return results as InfobipDeliveryReport[];
 }
 
+/** Terminal delivery-state kind of a report, or null (PENDING / unknown groups). */
+function infobipReportKind(report: InfobipDeliveryReport): DeliveryEventKind | null {
+  const groupName = report.status?.groupName?.toUpperCase();
+  return groupName === "DELIVERED" ? "delivered"
+    : groupName && INFOBIP_FAILED_GROUPS.has(groupName) ? "failed"
+    : null; // PENDING and unknown groups carry no terminal state
+}
 /**
  * Process a single verified Infobip delivery report. The report's messageId is
  * the stable sms_deliveries.id we submitted; matching goes through that row
  * (automation type only) to the shared event key. SMS has no open events.
  */
 export async function applyInfobipReport(report: InfobipDeliveryReport, now = new Date()): Promise<ProviderEventOutcome> {
-  const groupName = report.status?.groupName?.toUpperCase();
-  const kind: DeliveryEventKind | null =
-    groupName === "DELIVERED" ? "delivered"
-    : groupName && INFOBIP_FAILED_GROUPS.has(groupName) ? "failed"
-    : null; // PENDING and unknown groups carry no terminal state
+  const kind = infobipReportKind(report);
   if (!kind) return "ignored";
-
-  const reference = report.messageId ?? report.callbackData;
-  // sms_deliveries.id is a UUID; a non-UUID reference can never match (and
-  // would make PostgreSQL reject the cast), so classify it as unmatched.
-  if (!reference || typeof reference !== "string" || !UUID_PATTERN.test(reference)) return "unmatched";
-
-  const [outbound] = await db
-    .select({ eventKey: smsDeliveriesTable.eventKey })
-    .from(smsDeliveriesTable)
-    .where(and(
-      eq(smsDeliveriesTable.id, reference),
-      eq(smsDeliveriesTable.messageType, "automation"),
-    ))
-    .limit(1);
-  if (!outbound) return "unmatched";
-
-  const doneAt = report.doneAt ? new Date(report.doneAt) : null;
-  const reason = report.status?.description ?? report.status?.name;
-  return applyDeliveryState(outbound.eventKey, "sms", kind, doneAt, reason, now);
+  const reference = infobipReference(report);
+  if (!reference) return "unmatched";
+  const eventKey = (await smsEventKeysById([reference])).get(reference);
+  if (!eventKey) return "unmatched";
+  return applyInfobipDeliveryState(report, eventKey, kind, now);
 }
 
+/**
+ * Process a verified Infobip batch: classify every report first, resolve all
+ * valid UUID references with one batched query, then apply delivery states
+ * per report (each transition stays an individually guarded, monotonic
+ * UPDATE — batching changes only the matching lookup, never the semantics).
+ */
 export async function applyInfobipReports(reports: InfobipDeliveryReport[], now = new Date()): Promise<WebhookSummary> {
   const summary = emptySummary();
-  for (const report of reports) tally(summary, await applyInfobipReport(report, now));
+  const classified = reports.map((report) => ({
+    report,
+    kind: infobipReportKind(report),
+    reference: infobipReference(report),
+  }));
+  const eventKeys = await smsEventKeysById(
+    classified.flatMap((entry) => entry.kind && entry.reference ? [entry.reference] : []),
+  );
+  for (const { report, kind, reference } of classified) {
+    if (!kind) { tally(summary, "ignored"); continue; }
+    const eventKey = reference ? eventKeys.get(reference) : undefined;
+    tally(summary, eventKey ? await applyInfobipDeliveryState(report, eventKey, kind, now) : "unmatched");
+  }
   return summary;
 }
 
@@ -646,4 +691,48 @@ export function isBrevoVerificationBatch(events: BrevoWebhookEvent[]): boolean {
 /** True when every report in the batch is a synthetic self-check report. */
 export function isInfobipVerificationBatch(reports: InfobipDeliveryReport[]): boolean {
   return reports.length > 0 && reports.every((report) => isVerificationReference(report.messageId ?? report.callbackData));
+}
+
+/**
+ * Batch the sms_deliveries.id → event-key matching for a whole delivery
+ * report payload into ONE query (automation type only). Same unmatched
+ * semantics as the previous per-report `id = ? LIMIT 1` lookup: any
+ * reference absent from the map is unmatched. sms_deliveries.id is the
+ * primary key, so at most one row exists per reference.
+ */
+async function smsEventKeysById(ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return new Map();
+  const rows = await db
+    .select({ id: smsDeliveriesTable.id, eventKey: smsDeliveriesTable.eventKey })
+    .from(smsDeliveriesTable)
+    .where(and(
+      inArray(smsDeliveriesTable.id, unique),
+      eq(smsDeliveriesTable.messageType, "automation"),
+    ));
+  return new Map(rows.map((row) => [row.id, row.eventKey]));
+}
+
+/**
+ * The report's stable sms_deliveries.id reference, or null when it can never
+ * match. sms_deliveries.id is a UUID; a non-UUID reference (including a
+ * synthetic self-check reference) would make PostgreSQL reject the cast, so
+ * it is classified unmatched without ever reaching the database.
+ */
+function infobipReference(report: InfobipDeliveryReport): string | null {
+  const reference = report.messageId ?? report.callbackData;
+  if (!reference || typeof reference !== "string" || !UUID_PATTERN.test(reference)) return null;
+  return reference;
+}
+
+/** Apply one matched Infobip report to its automation delivery. */
+async function applyInfobipDeliveryState(
+  report: InfobipDeliveryReport,
+  eventKey: string,
+  kind: DeliveryEventKind,
+  now: Date,
+): Promise<ProviderEventOutcome> {
+  const doneAt = report.doneAt ? new Date(report.doneAt) : null;
+  const reason = report.status?.description ?? report.status?.name;
+  return applyDeliveryState(eventKey, "sms", kind, doneAt, reason, now);
 }

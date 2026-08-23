@@ -474,6 +474,64 @@ async function run() {
       console.log("✓ forged references unmatched; non-automation and non-terminal events ignored");
     }
 
+    // ── 6b. Mixed batches resolve through ONE matching query per request ───
+    {
+      // One Brevo request carrying matched + duplicate + unmatched (forged and
+      // synthetic self-check) + ignored events: the batched matching must
+      // classify each exactly like the per-event path did, and per-event
+      // guarded updates must still apply sequentially (the in-batch replay
+      // reports duplicate, not updated). Isolated salon so the owner-stats
+      // assertions later stay untouched.
+      const mix = await makeOwnerAndSalon("mix");
+      const [customerMix] = await db.insert(salonCustomersTable).values({
+        salonId: mix.salon.id, firstName: "Kupac", lastName: "Mix", email: `pe-cust-mix-${suffix}@bg.test`,
+      }).returning();
+      assert.ok(customerMix);
+      const [ruleMix] = await db.insert(automationRulesTable).values({
+        salonId: mix.salon.id, name: `PE pravilo Mix ${suffix}`, trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
+      }).returning();
+      assert.ok(ruleMix);
+      const runA4 = await makeSentRun(mix.salon.id, ruleMix.id, customerMix.id, "mix1");
+      const batchTs = Math.floor(Date.now() / 1000) - 300;
+      const mixed = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
+        { event: "delivered", "message-id": runA4.brevoMessageId, ts_event: batchTs },
+        { event: "delivered", "message-id": runA4.brevoMessageId, ts_event: batchTs + 120 },
+        { event: "delivered", "message-id": `<forged-batch-${suffix}@nowhere>`, ts_event: batchTs },
+        { event: "delivered", "message-id": `${WEBHOOK_VERIFICATION_REFERENCE_PREFIX}${suffix}` },
+        { event: "click", "message-id": runA4.brevoMessageId },
+      ]);
+      assert.equal(mixed.status, 200);
+      assert.equal(mixed.body?.["processed"], 5);
+      assert.equal(mixed.body?.["updated"], 1, "matched event in a mixed batch must update");
+      assert.equal(mixed.body?.["duplicates"], 1, "in-batch replay must stay a guarded per-event no-op");
+      assert.equal(mixed.body?.["unmatched"], 2, "forged and synthetic self-check references stay unmatched");
+      assert.equal(mixed.body?.["ignored"], 1, "non-terminal events stay ignored in a batch");
+      const afterMixed = await automationDelivery(runA4.emailKey);
+      assert.equal(afterMixed.deliveredAt?.getTime(), batchTs * 1000, "first event's provider timestamp wins");
+      assert.equal(afterMixed.status, "sent", "batched path must never change lifecycle status");
+
+      // Same mixed shape for Infobip: matched + unknown UUID + synthetic
+      // self-check (non-UUID) + PENDING in one payload.
+      const smsDoneAt = new Date(Date.now() - 60_000);
+      const mixedSms = await postJson(`/webhooks/infobip/${encodeURIComponent(smsSecret)}`, {
+        results: [
+          { messageId: runA4.smsMessageId, status: { groupName: "DELIVERED" }, doneAt: smsDoneAt.toISOString() },
+          { messageId: randomUUID(), status: { groupName: "DELIVERED" }, doneAt: smsDoneAt.toISOString() },
+          { messageId: `${WEBHOOK_VERIFICATION_REFERENCE_PREFIX}${suffix}`, status: { groupName: "DELIVERED" } },
+          { messageId: runA4.smsMessageId, status: { groupName: "PENDING", name: "PENDING_ENROUTE" } },
+        ],
+      });
+      assert.equal(mixedSms.status, 200);
+      assert.equal(mixedSms.body?.["updated"], 1);
+      assert.equal(mixedSms.body?.["unmatched"], 2, "unknown UUID and synthetic reference stay unmatched");
+      assert.equal(mixedSms.body?.["ignored"], 1, "PENDING stays ignored in a mixed batch");
+      const smsAfterMixed = await automationDelivery(runA4.smsKey);
+      assert.equal(smsAfterMixed.deliveredAt?.getTime(), smsDoneAt.getTime());
+      assert.equal(smsAfterMixed.status, "sent");
+      console.log("✓ mixed batches classify matched/duplicate/unmatched/ignored identically via one matching query");
+    }
+
     // ── 7. SMS delivery reports (no opens for SMS) ──────────────────────────
     {
       const doneAt = new Date(Date.now() - 120_000);
