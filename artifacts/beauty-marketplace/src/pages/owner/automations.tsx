@@ -29,6 +29,7 @@ import { useState, useMemo, useRef } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import type { DateRange } from "react-day-picker";
+import { useState, useMemo, useEffect } from "react";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -37,6 +38,8 @@ function rate(part: number, total: number) {
 
 type StatsPeriod = "7d" | "30d" | "90d" | "all" | "custom";
 
+/** Page size for the attributed-appointments drill-down list. */
+const ATTRIBUTED_PAGE_SIZE = 25;
 const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] = [
   { value: "7d", label: "7 dana" },
   { value: "30d", label: "30 dana" },
@@ -397,15 +400,38 @@ export default function OwnerAutomations() {
     }
   );
 
-  const { data: attributedAppointments, isLoading: isAttributedLoading } = useOwnerListAutomationAttributedAppointments(
+  // Attributed appointments are paginated (limit/offset) so long-running
+  // campaigns don't load hundreds of rows at once. Pages accumulate into
+  // `attributedItems`; "load more" advances the offset.
+  const [attributedOffset, setAttributedOffset] = useState(0);
+  const [attributedItems, setAttributedItems] = useState<AutomationAttributedAppointment[]>([]);
+  const [attributedTotal, setAttributedTotal] = useState<number | null>(null);
+
+  const { data: attributedPage, isLoading: isAttributedLoading, isFetching: isAttributedFetching } = useOwnerListAutomationAttributedAppointments(
     statsRuleId ?? "",
+    { period: statsPeriod, limit: ATTRIBUTED_PAGE_SIZE, offset: attributedOffset },
     {
       query: {
         enabled: !!statsRuleId,
-        queryKey: ['owner-automation-attributed-appointments', statsRuleId]
+        queryKey: ['owner-automation-attributed-appointments', statsRuleId, statsPeriod, attributedOffset]
       }
     }
   );
+
+  // Reset accumulated pages whenever the dialog switches to another rule or
+  // the owner picks a different time period.
+  useEffect(() => {
+    setAttributedOffset(0);
+    setAttributedItems([]);
+    setAttributedTotal(null);
+  }, [statsRuleId, statsPeriod]);
+
+  // Merge each arriving page at its offset — idempotent if a page refetches.
+  useEffect(() => {
+    if (!attributedPage) return;
+    setAttributedTotal(attributedPage.total);
+    setAttributedItems((prev) => [...prev.slice(0, attributedPage.offset), ...attributedPage.items]);
+  }, [attributedPage]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -764,22 +790,40 @@ export default function OwnerAutomations() {
               </div>
               <div className="col-span-2 space-y-3">
                 <p className="text-xs text-muted-foreground uppercase font-semibold">Termini ostvareni ovom kampanjom</p>
-                {isAttributedLoading ? (
+                {isAttributedLoading && attributedItems.length === 0 ? (
                   <div className="flex justify-center p-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-                ) : !attributedAppointments || attributedAppointments.length === 0 ? (
+                ) : attributedItems.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Još uvek nema termina pripisanih ovoj kampanji.</p>
                 ) : (
-                  <div className="border rounded-lg divide-y max-h-56 overflow-y-auto" data-testid="attributed-appointments-list">
-                    {attributedAppointments.map((appt) => (
-                      <div key={appt.appointmentId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-testid={`attributed-appointment-${appt.appointmentId}`}>
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{appt.serviceName}</p>
-                          <p className="text-xs text-muted-foreground">{new Date(appt.date).toLocaleDateString("sr-RS")}</p>
+                  <>
+                    <div className="border rounded-lg divide-y max-h-56 overflow-y-auto" data-testid="attributed-appointments-list">
+                      {attributedItems.map((appt) => (
+                        <div key={appt.appointmentId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm" data-testid={`attributed-appointment-${appt.appointmentId}`}>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{appt.serviceName}</p>
+                            <p className="text-xs text-muted-foreground">{new Date(appt.date).toLocaleDateString("sr-RS")}</p>
+                          </div>
+                          <span className="font-semibold text-emerald-800 whitespace-nowrap">{appt.price.toLocaleString("sr-RS")} RSD</span>
                         </div>
-                        <span className="font-semibold text-emerald-800 whitespace-nowrap">{appt.price.toLocaleString("sr-RS")} RSD</span>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    {attributedTotal !== null && attributedItems.length < attributedTotal && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        disabled={isAttributedFetching}
+                        onClick={() => setAttributedOffset(attributedItems.length)}
+                        data-testid="button-load-more-attributed"
+                      >
+                        {isAttributedFetching ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>Učitaj još ({attributedItems.length} od {attributedTotal})</>
+                        )}
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
               <div className="col-span-2 text-center mt-2 text-sm text-muted-foreground">

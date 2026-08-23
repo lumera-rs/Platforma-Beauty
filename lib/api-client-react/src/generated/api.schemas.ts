@@ -3900,6 +3900,15 @@ export interface AutomationAttributedAppointment {
   price: number;
 }
 
+export interface AutomationAttributedAppointmentsPage {
+  items: AutomationAttributedAppointment[];
+  /** Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count. */
+  total: number;
+  /** Page size actually applied by the server. */
+  limit: number;
+  /** Offset actually applied by the server. */
+  offset: number;
+}
 /**
  * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
  */
@@ -4451,7 +4460,12 @@ export const RetentionSettingsHistoryEntryChangeSource = {
   restore_version: 'restore_version',
   restore_defaults: 'restore_defaults',
 } as const;
-
+export const OwnerListAutomationAttributedAppointmentsPeriod = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  all: 'all',
+} as const;
 export interface RetentionSettingsHistoryEntry {
   version: number;
   thresholds: RetentionThresholds;
@@ -5133,6 +5147,25 @@ export const OwnerGetAutomationStatsPeriod = {
   all: 'all',
 } as const;
 
+export type OwnerListAutomationAttributedAppointmentsParams = {
+/**
+ * Time window for run attribution, matching the stats endpoints (defaults to all time)
+ */
+period?: OwnerListAutomationAttributedAppointmentsPeriod;
+/**
+ * Page size (defaults to 25, maximum 100)
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * Number of rows to skip (defaults to 0)
+ * @minimum 0
+ */
+offset?: number;
+};
+
+export type OwnerListAutomationAttributedAppointmentsPeriod = typeof OwnerListAutomationAttributedAppointmentsPeriod[keyof typeof OwnerListAutomationAttributedAppointmentsPeriod];
 export type OwnerListAutomationStatsParams = {
 /**
  * Time window for run/delivery aggregation (defaults to all time)

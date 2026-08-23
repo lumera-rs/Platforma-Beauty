@@ -3699,20 +3699,31 @@ paths:
     get:
       operationId: ownerListAutomationAttributedAppointments
       tags: [growth]
-      summary: List the concrete appointments attributed to an automation rule (owner)
+      summary: List the concrete appointments attributed to an automation rule (owner, paginated)
       parameters:
         - name: automationId
           in: path
           required: true
           schema: { type: string }
+        - name: period
+          in: query
+          description: Time window for run attribution, matching the stats endpoints (defaults to all time)
+          schema: { type: string, enum: [7d, 30d, 90d, all] }
+        - name: limit
+          in: query
+          description: Page size (defaults to 25, maximum 100)
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          description: Number of rows to skip (defaults to 0)
+          schema: { type: integer, minimum: 0 }
       responses:
         "200":
-          description: Attributed appointments (date, service, price in RSD), newest first
+          description: One page of attributed appointments (date, service, price in RSD), newest first, plus the total count
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/AutomationAttributedAppointment" }
+              schema: { $ref: "#/components/schemas/AutomationAttributedAppointmentsPage" }
+        "400": { description: "Invalid period, limit, or offset" }
         "401": { description: Authentication required }
         "403": { description: Salon owner required }
         "404": { description: Not found }
@@ -6895,6 +6906,23 @@ components:
           type: number
           description: Appointment price in RSD.
       required: [appointmentId, date, serviceName, price]
+
+    AutomationAttributedAppointmentsPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AutomationAttributedAppointment" }
+        total:
+          type: number
+          description: Total attributed (non-cancelled) appointments for the rule within the requested period, matching the stats count.
+        limit:
+          type: number
+          description: Page size actually applied by the server.
+        offset:
+          type: number
+          description: Offset actually applied by the server.
+      required: [items, total, limit, offset]
 
     AutomationStatsOverviewItem:
       type: object

@@ -708,9 +708,16 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       const prevRunAgg = await db
         .select({
           ruleId: automationRunsTable.ruleId,
-          attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+          // Same realized-attribution semantics as the current window: the
+          // join excludes cancelled appointments so trend arrows compare
+          // like-for-like counts.
+          attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
         })
         .from(automationRunsTable)
+        .leftJoin(appointmentsTable, and(
+          eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+          ne(appointmentsTable.status, "cancelled"),
+        ))
         .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsRunPeriodRangeCondition(prevCutoff, window.start)))
         .groupBy(automationRunsTable.ruleId);
 
@@ -859,11 +866,51 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
  * Drill-down list of the concrete appointments attributed to a rule:
  * date, service name, and price (RSD). Owner-scoped; joins
  * automation_runs.attributed_appointment_id → appointments → services.
+ *
+ * Paginated (limit/offset) so long-running campaigns with hundreds of
+ * attributed appointments stay cheap to open: the dialog fetches one page
+ * at a time and shows a "load more" control. `total` is the full count so
+ * the client can tell when everything is loaded.
+ *
+ * Accepts the same `period` filter as the stats endpoints (applied to the
+ * run via statsRunPeriodCondition) so the paginated total always matches
+ * the attributedAppointments count shown above the list in the dialog.
  */
+const ATTRIBUTED_APPOINTMENTS_DEFAULT_LIMIT = 25;
+const ATTRIBUTED_APPOINTMENTS_MAX_LIMIT = 100;
+
 router.get("/growth/automations/:automationId/attributed-appointments", async (req, res, next) => {
   try {
     const ctx = await requireSalonOwner(req);
     if (!ctx) { res.status(403).json({ error: "Salon owner required.", code: "FORBIDDEN" }); return; }
+
+    const cutoff = parseStatsPeriodCutoff(req.query["period"]);
+    if (cutoff === undefined) {
+      res.status(400).json({ error: "Invalid period. Expected one of: 7d, 30d, 90d, all.", code: "VALIDATION" });
+      return;
+    }
+
+    let limit = ATTRIBUTED_APPOINTMENTS_DEFAULT_LIMIT;
+    if (req.query["limit"] !== undefined) {
+      const parsed = Number(req.query["limit"]);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > ATTRIBUTED_APPOINTMENTS_MAX_LIMIT) {
+        res.status(400).json({
+          error: `Invalid limit. Expected an integer between 1 and ${ATTRIBUTED_APPOINTMENTS_MAX_LIMIT}.`,
+          code: "VALIDATION",
+        });
+        return;
+      }
+      limit = parsed;
+    }
+    let offset = 0;
+    if (req.query["offset"] !== undefined) {
+      const parsed = Number(req.query["offset"]);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        res.status(400).json({ error: "Invalid offset. Expected a non-negative integer.", code: "VALIDATION" });
+        return;
+      }
+      offset = parsed;
+    }
 
     const [rule] = await db
       .select({ id: automationRulesTable.id })
@@ -872,9 +919,29 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       .limit(1);
     if (!rule) { res.status(404).json({ error: "Automation not found.", code: "NOT_FOUND" }); return; }
 
-    // Inner joins drop runs without an attributed appointment, so the list
-    // matches the attributedAppointments count in the stats endpoints.
-    const appointments = await db
+    // Inner joins drop runs without an attributed appointment, and cancelled
+    // appointments are excluded exactly like the stats endpoints, so `total`
+    // matches the attributedAppointments count shown above the list.
+    const attributedAppointmentJoin = and(
+      eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
+      ne(appointmentsTable.status, "cancelled"),
+    );
+    // Same run-window filter as the stats endpoints, so the paginated total
+    // agrees with the attributedAppointments count for every period choice.
+    const runScope = cutoff
+      ? and(eq(automationRunsTable.ruleId, rule.id), statsRunPeriodCondition(cutoff))
+      : eq(automationRunsTable.ruleId, rule.id);
+
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(automationRunsTable)
+      .innerJoin(appointmentsTable, attributedAppointmentJoin)
+      .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
+      .where(runScope);
+
+    // Deterministic ordering (id as final tiebreaker) so limit/offset pages
+    // never overlap or skip rows when appointments share a date and time.
+    const items = await db
       .select({
         appointmentId: appointmentsTable.id,
         date: appointmentsTable.date,
@@ -882,12 +949,14 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
         price: appointmentsTable.price,
       })
       .from(automationRunsTable)
-      .innerJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
+      .innerJoin(appointmentsTable, attributedAppointmentJoin)
       .innerJoin(servicesTable, eq(servicesTable.id, appointmentsTable.serviceId))
-      .where(eq(automationRunsTable.ruleId, rule.id))
-      .orderBy(desc(appointmentsTable.date), desc(appointmentsTable.startTime));
+      .where(runScope)
+      .orderBy(desc(appointmentsTable.date), desc(appointmentsTable.startTime), desc(appointmentsTable.id))
+      .limit(limit)
+      .offset(offset);
 
-    res.json(appointments);
+    res.json({ items, total: countRow?.total ?? 0, limit, offset });
   } catch (err) { next(err); }
 });
 

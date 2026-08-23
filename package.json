@@ -6,7 +6,7 @@
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "validate:publish": "export CI=true && pnpm run build && pnpm run test:bundle-budget && pnpm run test:frontend-standards && pnpm run test:frontend-interactions && pnpm run test:monitoring && pnpm run test:backend-standards:static",
-    "validate:release": "export CI=true && pnpm run validate:publish && pnpm run test:backend-standards:database && pnpm run test:business-growth-schema && pnpm run test:automation-provider-events && pnpm run test:tenant-isolation && pnpm run test:query-counts && pnpm run test:catalog-cache && pnpm run test:communication-archive && pnpm run test:admin-validation && pnpm run test:admin-order-search && pnpm run test:admin-list-pagination && pnpm run test:loyalty-status && pnpm run test:admin-authz && pnpm run test:b2b-catalog && pnpm run test:education-extras && pnpm run test:admin-form-resilience && pnpm run test:salon-notifications:release && pnpm run test:retention-settings",
+    "validate:release": "export CI=true && pnpm run validate:publish && pnpm run test:backend-standards:database && pnpm run test:business-growth-schema && pnpm run test:automation-provider-events && pnpm run test:attributed-appointments-pagination && pnpm run test:tenant-isolation && pnpm run test:query-counts && pnpm run test:catalog-cache && pnpm run test:communication-archive && pnpm run test:admin-validation && pnpm run test:admin-order-search && pnpm run test:admin-list-pagination && pnpm run test:loyalty-status && pnpm run test:admin-authz && pnpm run test:b2b-catalog && pnpm run test:education-extras && pnpm run test:admin-form-resilience && pnpm run test:salon-notifications:release && pnpm run test:retention-settings",
     "bundle:check": "pnpm --filter @workspace/beauty-marketplace run bundle:check",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
@@ -53,6 +53,7 @@
     "test:retention-settings": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/retention-settings.test.ts",
     "test:business-growth-schema": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-growth-schema.test.ts",
     "test:automation-provider-events": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/automation-provider-events.test.ts",
+    "test:attributed-appointments-pagination": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-pagination.test.ts",
     "test:employee-leave": "pnpm --filter @workspace/scripts exec tsx --test ../artifacts/beauty-marketplace/src/lib/employee-leave.test.ts"
   },
   "private": true,
