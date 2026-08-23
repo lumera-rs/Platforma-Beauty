@@ -9,6 +9,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 import { businessGuide, type GuideChapter, type GuideSection } from "./business-guide-content";
 
@@ -17,12 +18,13 @@ const ACCENT = "#8a6d3b";
 const TEXT = "#1f1f1f";
 const MUTED = "#5a5a5a";
 const RULE = "#d8d0c0";
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 function resolveFont(fileName: string): Buffer {
   const candidates = [
     // dist/index.mjs → ../assets/fonts (deploy i dev pokreću dist build iz artifact dir-a)
-    path.resolve(__dirname, "../assets/fonts", fileName),
-    path.resolve(__dirname, "../../assets/fonts", fileName),
+    path.resolve(moduleDir, "../assets/fonts", fileName),
+    path.resolve(moduleDir, "../../assets/fonts", fileName),
     path.resolve(process.cwd(), "assets/fonts", fileName),
     path.resolve(process.cwd(), "artifacts/api-server/assets/fonts", fileName),
     `/usr/share/fonts/truetype/dejavu/${fileName}`,
@@ -34,6 +36,17 @@ function resolveFont(fileName: string): Buffer {
 }
 
 type TocEntry = { label: string; page: number; level: 0 | 1 };
+
+const TOC_LINES_PER_PAGE = 38;
+
+export function getBusinessGuideTocPageCount(): number {
+  const tocEntryCount =
+    businessGuide.chapters.length +
+    businessGuide.chapters.reduce((sum, chapter) => sum + chapter.sections.length, 0) +
+    1; // tabela brzog snalaženja
+
+  return Math.max(1, Math.ceil((tocEntryCount + 3) / TOC_LINES_PER_PAGE));
+}
 
 function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);
@@ -69,9 +82,20 @@ export function generateBusinessGuidePdf(): Promise<Buffer> {
   doc.registerFont("Bold", bold);
 
   const chunks: Buffer[] = [];
+  let tocOverflow = false;
   const result = new Promise<Buffer>((resolve, reject) => {
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("end", () => {
+      if (tocOverflow) {
+        reject(
+          new Error(
+            `Sadržaj vodiča prelazi rezervisanih ${tocPageCount} strana za tabelu sadržaja. Povećajte rezervu pre objavljivanja vodiča.`,
+          ),
+        );
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    });
     doc.on("error", reject);
   });
 
@@ -103,12 +127,7 @@ export function generateBusinessGuidePdf(): Promise<Buffer> {
   doc.x = PAGE_MARGIN;
 
   // ---------- Rezervacija strana za sadržaj ----------
-  const tocEntryCount =
-    businessGuide.chapters.length +
-    businessGuide.chapters.reduce((sum, chapter) => sum + chapter.sections.length, 0) +
-    1; // tabela brzog snalaženja
-  const tocLinesPerPage = 38;
-  const tocPageCount = Math.max(1, Math.ceil((tocEntryCount + 3) / tocLinesPerPage));
+  const tocPageCount = getBusinessGuideTocPageCount();
   const tocFirstPageIndex = 1;
   for (let i = 0; i < tocPageCount; i += 1) doc.addPage();
 
@@ -223,7 +242,10 @@ export function generateBusinessGuidePdf(): Promise<Buffer> {
   for (const entry of toc) {
     if (doc.y + 20 > tocBottom) {
       tocPageOffset += 1;
-      if (tocPageOffset >= tocPageCount) break; // rezerva je dimenzionisana da se ovo ne desi
+      if (tocPageOffset >= tocPageCount) {
+        tocOverflow = true;
+        break;
+      }
       doc.switchToPage(tocFirstPageIndex + tocPageOffset);
       doc.x = PAGE_MARGIN;
       doc.y = PAGE_MARGIN;
@@ -249,6 +271,10 @@ export function generateBusinessGuidePdf(): Promise<Buffer> {
     if (i === 0) continue; // naslovna strana bez podnožja
     doc.switchToPage(i);
     const footerY = doc.page.height - PAGE_MARGIN + 8;
+    const bottomMargin = doc.page.margins.bottom;
+    // Footer belongs in the reserved bottom margin. PDFKit otherwise treats it
+    // as overflowing body content and silently creates a new blank page.
+    doc.page.margins.bottom = 0;
     doc.font("Body").fontSize(8.5).fillColor(MUTED);
     doc.text(`${businessGuide.title} · v${businessGuide.version}`, PAGE_MARGIN, footerY, {
       width: width() / 2,
@@ -259,6 +285,7 @@ export function generateBusinessGuidePdf(): Promise<Buffer> {
       align: "right",
       lineBreak: false,
     });
+    doc.page.margins.bottom = bottomMargin;
   }
 
   doc.end();
