@@ -340,6 +340,7 @@ import {
   BrevoConfigurationError,
   createBrevoMarketingCampaign,
   createBrevoTransactionalWebhook,
+  deleteBrevoTransactionalWebhook,
   listBrevoTransactionalWebhooks,
   lumeraEmailHtml,
   updateBrevoTransactionalWebhook,
@@ -3545,6 +3546,28 @@ function brevoRegistrationVerdict(
   return { ok: false, error: `Webhook nije registrovan na Brevo. U Brevo podešavanjima (Transactional → Settings → Webhooks) registrujte URL ${expectedUrlHint} i zamenite <tajna> sačuvanom webhook tajnom.${devNote}` };
 }
 
+/**
+ * LUMERA-format registrations at Brevo that are NOT this deployment's healthy
+ * registration (current secret at an accepted origin): leftovers from old
+ * domains or old secrets that keep receiving events which are then rejected
+ * or lost. Listed to the admin (masked URLs only) after a successful
+ * one-click repair, and re-derived fresh before any deletion. From a
+ * development/preview address the set is always empty — the development
+ * environment's saved secret can differ from production's, so a healthy
+ * PRODUCTION registration would be misread as stale and offered for
+ * deletion. Non-LUMERA webhooks never appear here: they are filtered out by
+ * brevoRegistrationCandidates before classification.
+ */
+function staleBrevoRegistrations(
+  candidates: ReturnType<typeof brevoRegistrationCandidates>,
+  context: { acceptedOrigins: Set<string>; developmentOrigin: boolean },
+): Array<{ id: number; maskedUrl: string }> {
+  if (context.developmentOrigin) return [];
+  return candidates
+    .filter((candidate) => !(candidate.secretMatches && context.acceptedOrigins.has(candidate.origin)))
+    .map((candidate) => ({ id: candidate.id, maskedUrl: candidate.maskedUrl }));
+}
+
 /** Normalized public origin of THIS deployment, as seen by the admin request
  * (trust proxy is enabled, so this is the public domain in production). */
 function normalizedRequestOrigin(req: Request) {
@@ -3652,14 +3675,106 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
   } catch {
     res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera registracije nije uspela. Pokrenite „Proveri registraciju na Brevo“ da potvrdite ishod.` }); return;
   }
-  const verdict = brevoRegistrationVerdict(brevoRegistrationCandidates(refreshed, secret), context);
+  const refreshedCandidates = brevoRegistrationCandidates(refreshed, secret);
+  const verdict = brevoRegistrationVerdict(refreshedCandidates, context);
   if (verdict.ok) {
     // One-click registration wrote the current secret to the provider and the
     // re-check confirmed it — clear the persisted re-registration reminder.
     await markWebhookReconfirmed("brevo", user.id);
-    res.json({ message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.` }); return;
+    // Surface any stale LUMERA-format duplicates still registered at Brevo
+    // (old domains, old secrets) so the admin can remove them — they keep
+    // receiving events that are rejected or lost. The freshly repaired
+    // registration (current secret at an accepted origin) is never listed.
+    const staleWebhooks = staleBrevoRegistrations(refreshedCandidates, context);
+    const staleNote = staleWebhooks.length
+      ? ` Na Brevo su pronađene i zaostale LUMERA registracije (${staleWebhooks.length}) sa starih domena ili sa starim tajnama — možete ih ukloniti na ovoj stranici da više ne primaju događaje koji se odbacuju.`
+      : "";
+    res.json({
+      message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.${staleNote}`,
+      staleWebhooks,
+    }); return;
   }
   res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}` });
+});
+
+/**
+ * Cleanup of stale LUMERA-format webhook registrations left behind at Brevo
+ * ("Ukloni zaostale registracije"). After a one-click repair, leftovers from
+ * old domains or old secrets stay registered at Brevo and keep receiving
+ * events that are rejected or lost; Brevo supports DELETE /v3/webhooks/{id}.
+ * The route NEVER trusts the client's ids alone: it re-lists the provider's
+ * webhooks fresh and deletes only ids still classified as stale LUMERA-format
+ * registrations — never a non-LUMERA webhook (filtered out before
+ * classification) and never this deployment's healthy registration (current
+ * secret at an accepted origin). Refused from a development/preview address,
+ * where the saved secret may differ from production's and a healthy
+ * production registration would be misread as stale. Serbian messages;
+ * masked URLs only, tokens are never echoed.
+ */
+router.post("/admin/integrations/brevo/cleanup-webhooks", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const rawIds: unknown = req.body?.ids;
+  if (!Array.isArray(rawIds) || !rawIds.length || !rawIds.every((id) => typeof id === "number" && Number.isInteger(id))) {
+    res.status(400).json({ error: "Izaberite bar jednu zaostalu registraciju za uklanjanje." }); return;
+  }
+  const requestedIds = new Set<number>(rawIds as number[]);
+  const context = brevoVerdictContext(req);
+  if (context.developmentOrigin) {
+    res.status(400).json({ error: `Uklanjanje registracija nije dostupno sa razvojne adrese (${context.origin}): sačuvana tajna razvojnog okruženja može da se razlikuje od produkcione, pa bi ispravna produkciona registracija mogla biti pogrešno obrisana. Otvorite ovu stranicu iz objavljene aplikacije.` }); return;
+  }
+  const secret = await resolveWebhookSecret("brevo");
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  let webhooks: Awaited<ReturnType<typeof listBrevoTransactionalWebhooks>>;
+  try {
+    webhooks = await listBrevoTransactionalWebhooks();
+  } catch (error) {
+    respondBrevoListingFailure(res, error); return;
+  }
+  const stale = staleBrevoRegistrations(brevoRegistrationCandidates(webhooks, secret), context);
+  const deletable = stale.filter((candidate) => requestedIds.has(candidate.id));
+  // Requested ids that are no longer stale are SKIPPED, never deleted: they
+  // may be the freshly repaired registration, a non-LUMERA webhook, or
+  // already removed at Brevo.
+  const skippedCount = requestedIds.size - deletable.length;
+  if (!deletable.length) {
+    res.json({
+      message: "Nijedna od izabranih registracija više nije zaostala na Brevo — nema šta da se ukloni.",
+      removedIds: [],
+      staleWebhooks: stale,
+    }); return;
+  }
+  const removed: Array<{ id: number; maskedUrl: string }> = [];
+  const failed: Array<{ id: number; maskedUrl: string }> = [];
+  for (const candidate of deletable) {
+    try {
+      await deleteBrevoTransactionalWebhook(candidate.id);
+      removed.push(candidate);
+    } catch (error) {
+      if (error instanceof BrevoConfigurationError) {
+        res.status(400).json({ error: error.message }); return;
+      }
+      req.log.warn({ err: error, webhookId: candidate.id }, "Brevo stale webhook deletion failed");
+      failed.push(candidate);
+    }
+  }
+  const remaining = stale.filter((candidate) => !removed.some((item) => item.id === candidate.id));
+  if (failed.length) {
+    res.status(502).json({
+      error: `Uklonjeno je ${removed.length} od ${deletable.length} izabranih zaostalih registracija sa Brevo. Nije uspelo uklanjanje: ${failed.map((item) => item.maskedUrl).join(", ")}. Pokušajte ponovo.`,
+      removedIds: removed.map((item) => item.id),
+      staleWebhooks: remaining,
+    }); return;
+  }
+  const skippedNote = skippedCount
+    ? ` Preskočeno: ${skippedCount} izabranih više nije zaostalo (sveža registracija i webhook-ovi van LUMERA formata se nikada ne diraju).`
+    : "";
+  res.json({
+    message: `Uklonjene su zaostale registracije sa Brevo (${removed.length}): ${removed.map((item) => item.maskedUrl).join(", ")}. Aktuelna registracija nije dirana.${skippedNote}`,
+    removedIds: removed.map((item) => item.id),
+    staleWebhooks: remaining,
+  });
 });
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {

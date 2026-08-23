@@ -57,3 +57,4 @@
 - [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path's exact audience and phone predicate, never a re-derived query.
 - [Modal dialog background controls](modal-dialog-background-controls.md) — modal overlays block real clicks on page controls; test dialog-open state changes via dispatchEvent("click") and mutation-check the guard.
 - [Retention preview estimate mode](retention-preview-estimate-mode.md) — above the cap the preview extrapolates a flagged sample; never render estimates as exact or extrapolate per-salon numbers.
+- [Stale provider webhook cleanup](stale-provider-webhook-cleanup.md) — deletable sets must be re-derived from a fresh provider listing server-side and refused from dev origins whose secret differs from production.

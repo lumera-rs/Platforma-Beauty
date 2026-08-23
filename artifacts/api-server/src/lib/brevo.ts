@@ -609,3 +609,21 @@ export async function updateBrevoTransactionalWebhook(id: number, url: string): 
     events: BREVO_WEBHOOK_EVENTS,
   });
 }
+
+/**
+ * Delete a webhook registration at Brevo by id. Used by the admin cleanup of
+ * stale LUMERA-format duplicates left behind after a one-click repair (old
+ * domains, old secrets) — those keep receiving events that are rejected or
+ * lost. Brevo answers 404 when the webhook is already gone; treated as
+ * success so the cleanup stays idempotent under retries.
+ */
+export async function deleteBrevoTransactionalWebhook(id: number): Promise<void> {
+  const response = await brevoFetch(`/webhooks/${id}`, {
+    method: "DELETE",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok && response.status !== 404) {
+    const error = await response.text();
+    throw new Error(`Brevo ${response.status}: ${error.slice(0, 500)}`);
+  }
+}
