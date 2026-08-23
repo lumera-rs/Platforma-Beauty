@@ -605,6 +605,29 @@ function statsDeliveryPeriodCondition(window: StatsWindow) {
  */
 type StatsScope = { ruleIds: string[] } | { ruleId: string };
 
+/**
+ * Appointment statuses that never count as realized ("earned") attribution:
+ * neither is money earned or still expected. Defined once and shared by
+ * aggregateRunStats and the attributed-appointments drill-down join, so the
+ * list an owner opens can never disagree with the counts shown above it if a
+ * status is added or the realized-attribution rules change.
+ */
+const NON_REALIZED_APPOINTMENT_STATUSES = ["cancelled", "no-show"] satisfies (typeof appointmentsTable.status.enumValues)[number][];
+
+/**
+ * Attributed appointment counts as realized (money earned or still expected).
+ * NULL for rows without an attributed appointment, so `case when` aggregates
+ * over the left join fall through to their else/0 branch as before.
+ */
+const appointmentCountsAsRealized = notInArray(appointmentsTable.status, NON_REALIZED_APPOINTMENT_STATUSES);
+
+/**
+ * Realized but not yet completed (pending/confirmed) — the "upcoming" bucket,
+ * kept as the exact realized complement of completed so the two buckets
+ * always sum to the attributed totals.
+ */
+const appointmentIsUpcomingRealized = notInArray(appointmentsTable.status, ["completed", ...NON_REALIZED_APPOINTMENT_STATUSES]);
+
 function statsScopeRunCondition(scope: StatsScope) {
   return "ruleId" in scope
     ? eq(automationRunsTable.ruleId, scope.ruleId)
@@ -623,11 +646,11 @@ function statsScopeRunCondition(scope: StatsScope) {
  * Returns one row per rule that has runs in the window; rules without runs
  * yield no row and callers default every count to zero.
  *
- * Realized attribution: cancelled and no-show appointments never count as
- * realized (neither is money earned or still expected). The join brings in
- * every attributed appointment and the conditional aggregates split it, so
- * the cancelled line can be reported separately without changing the
- * realized numbers.
+ * Realized attribution: the statuses in NON_REALIZED_APPOINTMENT_STATUSES
+ * never count as realized (neither is money earned or still expected). The
+ * join brings in every attributed appointment and the conditional aggregates
+ * split it, so the cancelled line can be reported separately without changing
+ * the realized numbers.
  */
 function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
   return db
@@ -637,15 +660,15 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       sentCount: sql<number>`sum(case when ${automationRunsTable.status} = 'sent' then 1 else 0 end)::int`,
       skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
       failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
-      attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('cancelled', 'no-show') then 1 else 0 end)::int`,
-      attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+      attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} then 1 else 0 end)::int`,
+      attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentCountsAsRealized} then ${appointmentsTable.price} end), 0)::int`,
       // Completed vs upcoming split of the realized rows. "Upcoming" is the
       // realized complement of completed (pending/confirmed), so the two
       // buckets always sum exactly to the attributed totals above.
       completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
       completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
-      upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then 1 else 0 end)::int`,
-      upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} not in ('completed', 'cancelled', 'no-show') then ${appointmentsTable.price} end), 0)::int`,
+      upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentIsUpcomingRealized} then 1 else 0 end)::int`,
+      upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentIsUpcomingRealized} then ${appointmentsTable.price} end), 0)::int`,
       // Cancelled-attributed line ("otkazano"): appointments the campaign
       // booked that later fell through — revenue lost to cancellations.
       cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
@@ -963,15 +986,16 @@ router.get("/growth/automations/:automationId/attributed-appointments", async (r
       .limit(1);
     if (!rule) { res.status(404).json({ error: "Automation not found.", code: "NOT_FOUND" }); return; }
 
-    // Inner joins drop runs without an attributed appointment, and cancelled
-    // and no-show appointments are excluded exactly like the realized numbers
-    // in the stats endpoints, so `total` matches the attributedAppointments
-    // count shown above the list.
+    // Inner joins drop runs without an attributed appointment, and
+    // non-realized statuses (NON_REALIZED_APPOINTMENT_STATUSES) are excluded
+    // via the same shared condition as the realized numbers in the stats
+    // endpoints, so `total` matches the attributedAppointments count shown
+    // above the list.
     // salon_customers is left-joined: walk-in/legacy appointments may have a
     // null salonCustomerId, in which case the client name fields stay null.
     const attributedAppointmentJoin = and(
       eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId),
-      notInArray(appointmentsTable.status, ["cancelled", "no-show"]),
+      appointmentCountsAsRealized,
     );
     // Same run-window filter as the stats endpoints, so the paginated total
     // agrees with the attributedAppointments count for every period choice
