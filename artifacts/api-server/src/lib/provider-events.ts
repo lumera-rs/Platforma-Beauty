@@ -305,41 +305,71 @@ export interface BrevoWebhookEvent {
   reason?: string;
 }
 
-const BREVO_OPENED_EVENTS = new Set(["opened", "unique_opened", "first_opening", "proxy_open"]);
-const BREVO_FAILED_EVENTS = new Set(["hard_bounce", "soft_bounce", "blocked", "invalid_email", "error"]);
+/**
+ * Brevo delivery-event capability table — the SINGLE SOURCE OF TRUTH shared
+ * by all three places that must agree on which delivery events matter:
+ *
+ *   1. the webhook handler (brevoEventKind below — which payload events set
+ *      deliveredAt / openedAt / failedAt),
+ *   2. the admin registration check (missingBrevoWebhookEvents — which
+ *      subscriptions a healthy registration must carry), and
+ *   3. the one-click registration (BREVO_WEBHOOK_REGISTRATION_EVENTS — the
+ *      event names submitted to Brevo when creating/repairing the webhook).
+ *
+ * Adding a newly processed delivery event is therefore ONE row here: the
+ * handler starts consuming it, the check starts requiring it, and the next
+ * one-click registration subscribes to it — none of the three can drift.
+ *
+ * Naming: Brevo's registration API/dashboard use camelCase names
+ * ("hardBounce") while webhook payloads arrive snake_case ("hard_bounce"),
+ * so all comparisons normalize case and separators on both sides.
+ * `registrationName` is the canonical camelCase name the registration API
+ * accepts; `names` are the payload/listing variants that also count.
+ *
+ * Each entry is ONE delivery capability: it counts as covered when ANY of
+ * its accepted names is subscribed, and its Serbian label is what admins see
+ * when it is missing. Opens are a single capability (any open event sets
+ * openedAt), while each failure event is its own capability — a registration
+ * with only hardBounce still silently drops soft bounces, blocks, invalid
+ * addresses, and send errors.
+ */
+const REQUIRED_BREVO_WEBHOOK_EVENTS: ReadonlyArray<{
+  kind: DeliveryEventKind;
+  label: string;
+  registrationName: string;
+  names: readonly string[];
+}> = [
+  { kind: "delivered", label: "isporučeno (delivered)", registrationName: "delivered", names: ["delivered"] },
+  { kind: "opened", label: "otvaranja (opened / uniqueOpened)", registrationName: "opened", names: ["opened", "unique_opened", "first_opening", "proxy_open"] },
+  { kind: "failed", label: "trajno odbijeno (hardBounce)", registrationName: "hardBounce", names: ["hard_bounce"] },
+  { kind: "failed", label: "privremeno odbijeno (softBounce)", registrationName: "softBounce", names: ["soft_bounce"] },
+  { kind: "failed", label: "blokirano (blocked)", registrationName: "blocked", names: ["blocked"] },
+  { kind: "failed", label: "nevažeća adresa (invalid)", registrationName: "invalid", names: ["invalid_email", "invalid"] },
+  { kind: "failed", label: "greška u slanju (error)", registrationName: "error", names: ["error"] },
+];
+
+/** Normalized event name → delivery-state kind, derived from the table. */
+const BREVO_EVENT_KIND_BY_NAME: ReadonlyMap<string, DeliveryEventKind> = new Map(
+  REQUIRED_BREVO_WEBHOOK_EVENTS.flatMap((capability) =>
+    [capability.registrationName, ...capability.names]
+      .map((name) => [normalizeBrevoEventName(name), capability.kind] as const)),
+);
 
 function brevoEventKind(event: string): DeliveryEventKind | null {
-  if (event === "delivered") return "delivered";
-  if (BREVO_OPENED_EVENTS.has(event)) return "opened";
-  if (BREVO_FAILED_EVENTS.has(event)) return "failed";
-  return null; // requests, deferred, clicks, spam complaints, … — no state change
+  // requests, deferred, clicks, spam complaints, … carry no delivery state.
+  return BREVO_EVENT_KIND_BY_NAME.get(normalizeBrevoEventName(event)) ?? null;
 }
 
 /**
- * Registration-event coverage for the admin registration check.
- *
- * Brevo's GET /v3/webhooks reports which event names a registration
- * subscribes to, but the API/dashboard use camelCase names ("hardBounce")
- * while webhook payloads arrive snake_case ("hard_bounce") — comparison
- * therefore normalizes case and underscores on both sides.
- *
- * Each entry is ONE delivery capability the webhook handler above depends on
- * (see brevoEventKind): the capability counts as covered when ANY of its
- * accepted registration names is subscribed, and its Serbian label is what
- * admins see when it is missing. Opens are a single capability (any open
- * event sets openedAt), while each failure event is its own capability — a
- * registration with only hardBounce still silently drops soft bounces,
- * blocks, invalid addresses, and send errors.
+ * Event names the one-click registration submits to Brevo — exactly one
+ * canonical registration name per required capability above. Derived, never
+ * hand-maintained: a capability added to REQUIRED_BREVO_WEBHOOK_EVENTS is
+ * automatically subscribed by the next one-click registration/repair, and a
+ * registration created from this list can never trip the missing-events
+ * warning.
  */
-const REQUIRED_BREVO_WEBHOOK_EVENTS: ReadonlyArray<{ label: string; names: readonly string[] }> = [
-  { label: "isporučeno (delivered)", names: ["delivered"] },
-  { label: "otvaranja (opened / uniqueOpened)", names: [...BREVO_OPENED_EVENTS] },
-  { label: "trajno odbijeno (hardBounce)", names: ["hard_bounce"] },
-  { label: "privremeno odbijeno (softBounce)", names: ["soft_bounce"] },
-  { label: "blokirano (blocked)", names: ["blocked"] },
-  { label: "nevažeća adresa (invalid)", names: ["invalid_email", "invalid"] },
-  { label: "greška u slanju (error)", names: ["error"] },
-];
+export const BREVO_WEBHOOK_REGISTRATION_EVENTS: readonly string[] =
+  REQUIRED_BREVO_WEBHOOK_EVENTS.map((capability) => capability.registrationName);
 
 /** Normalize a Brevo event name so camelCase and snake_case variants compare equal. */
 function normalizeBrevoEventName(name: string): string {
@@ -354,7 +384,9 @@ function normalizeBrevoEventName(name: string): string {
 export function missingBrevoWebhookEvents(subscribed: readonly string[]): string[] {
   const normalized = new Set(subscribed.map(normalizeBrevoEventName));
   return REQUIRED_BREVO_WEBHOOK_EVENTS
-    .filter((capability) => !capability.names.some((name) => normalized.has(normalizeBrevoEventName(name))))
+    .filter((capability) =>
+      ![capability.registrationName, ...capability.names]
+        .some((name) => normalized.has(normalizeBrevoEventName(name))))
     .map((capability) => capability.label);
 }
 

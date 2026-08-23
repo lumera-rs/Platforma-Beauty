@@ -56,7 +56,7 @@ import {
   runDeliveryReportSilenceAlerts,
   staleDeliveryReportProviders,
 } from "./delivery-report-alerts";
-import type { TransactionalEmailTransport } from "./brevo";
+import { BREVO_WEBHOOK_EVENTS, type TransactionalEmailTransport } from "./brevo";
 import type { SmsProvider } from "./sms";
 
 const suffix = randomUUID().slice(0, 8);
@@ -242,6 +242,14 @@ async function run() {
       assert.equal(missingBrevoWebhookEvents([]).length, 7, "no events must report every required capability");
       // Irrelevant subscriptions (clicks, spam, …) cover nothing.
       assert.equal(missingBrevoWebhookEvents(["click", "spam", "deferred", "request"]).length, 7, "unrelated events cover nothing");
+      // Drift guard: the exact event set the one-click registration submits
+      // to Brevo must fully satisfy the registration check — a freshly
+      // one-click-registered webhook can never be warned about missing events.
+      assert.deepEqual(
+        missingBrevoWebhookEvents([...BREVO_WEBHOOK_EVENTS]),
+        [],
+        "one-click registration event set must pass the registration check with nothing missing",
+      );
       console.log("✓ registration event coverage flags missing delivery subscriptions");
     }
 

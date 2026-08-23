@@ -4,6 +4,7 @@ import { db, emailDeliveriesTable, usersTable } from "@workspace/db";
 import { and, eq, inArray, isNotNull, lt, lte } from "drizzle-orm";
 import { logger } from "./logger";
 import { integrationSettings, integrationValue } from "./integrations";
+import { BREVO_WEBHOOK_REGISTRATION_EVENTS } from "./provider-events";
 
 type Recipient = { email: string; name?: string | null };
 type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
@@ -564,20 +565,17 @@ export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransaction
 }
 
 /**
- * Delivery events the app's Brevo webhook endpoint consumes (see
- * provider-events.ts): delivery confirmations, opens, and the failure family
- * (hard/soft bounce, blocked, provider error). Subscribed on every one-click
+ * Delivery events the app's Brevo webhook endpoint consumes: delivery
+ * confirmations, opens, and the failure family (hard/soft bounce, blocked,
+ * invalid address, provider error). Subscribed on every one-click
  * registration so a repaired webhook never silently misses an event class.
+ *
+ * Derived from the registration check's required-capability table in
+ * provider-events.ts — NOT hand-maintained — so the events a one-click
+ * registration subscribes to and the events the registration check requires
+ * can never drift apart.
  */
-export const BREVO_WEBHOOK_EVENTS = [
-  "delivered",
-  "opened",
-  "hardBounce",
-  "softBounce",
-  "blocked",
-  "invalid", // registration name for the "invalid_email" payload event
-  "error",
-] as const;
+export const BREVO_WEBHOOK_EVENTS: readonly string[] = BREVO_WEBHOOK_REGISTRATION_EVENTS;
 
 const BREVO_WEBHOOK_DESCRIPTION = "LUMERA — statusi isporuke transakcionih e-mailova";
 
