@@ -45,12 +45,18 @@ function rate(part: number, total: number) {
 const ATTRIBUTED_PAGE_SIZE = 25;
 const CANCELLATION_FLAG_THRESHOLD = 1 / 3;
 const CANCELLATION_FLAG_MIN_VOLUME = 3;
+type AttributedClientType = "all" | "new" | "returning";
 const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] = [
   { value: "7d", label: "7 dana" },
   { value: "30d", label: "30 dana" },
   { value: "90d", label: "90 dana" },
   { value: "all", label: "Sve vreme" },
 ];
+
+function parseAttributedClientType(search: string): AttributedClientType {
+  const clientType = new URLSearchParams(search).get("clients");
+  return clientType === "new" || clientType === "returning" ? clientType : "all";
+}
 
 /**
  * Serbian count phrase for masculine forms: "1 nov", "2 nova", "5 novih"
@@ -514,6 +520,9 @@ export default function OwnerAutomations() {
   const [pendingRuleId, setPendingRuleId] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get("rule"),
   );
+  const [attributedClientType, setAttributedClientType] = useState<AttributedClientType>(
+    () => parseAttributedClientType(window.location.search),
+  );
 
   useEffect(() => {
     if (pendingRuleId === null || !rules) return;
@@ -529,19 +538,24 @@ export default function OwnerAutomations() {
   // default "all time" keeps a clean URL, which also strips invalid params
   // that fell back to the default. The open stats dialog rides along as
   // ?rule= (kept while a shared id still awaits validation) so the exact
-  // view is shareable.
+  // view is shareable. The client segment follows the rule and is omitted for
+  // the default "all" view.
   useEffect(() => {
     const serialized = serializePeriodSelection(searchString, statsPeriod, customRange);
     if (serialized === null) return;
     const params = new URLSearchParams(serialized);
     params.delete("rule");
+    params.delete("clients");
     const urlRuleId = statsRuleId ?? pendingRuleId;
-    if (urlRuleId) params.set("rule", urlRuleId);
+    if (urlRuleId) {
+      params.set("rule", urlRuleId);
+      if (attributedClientType !== "all") params.set("clients", attributedClientType);
+    }
     const next = params.toString();
     if (next !== searchString) {
       setLocation(`${pathname}${next ? `?${next}` : ""}`, { replace: true });
     }
-  }, [statsPeriod, customRange, statsRuleId, pendingRuleId, searchString, pathname, setLocation]);
+  }, [statsPeriod, customRange, statsRuleId, pendingRuleId, attributedClientType, searchString, pathname, setLocation]);
 
   // Custom mode queries with exact from/to dates; presets use ?period=.
   // While a custom range is incomplete (only start picked) there is nothing
@@ -617,8 +631,6 @@ export default function OwnerAutomations() {
   // Client-segment filter for the drill-down list: all / only new / only
   // returning clients. Server-side filter (same SQL derivation as the
   // per-row badge) so `total` and "load more" stay consistent.
-  const [attributedClientType, setAttributedClientType] = useState<"all" | "new" | "returning">("all");
-
   // The drill-down follows the same window as the stats above it: preset
   // periods send ?period=, a complete custom range sends ?from=&?to=.
   const { data: attributedPage, isLoading: isAttributedLoading, isFetching: isAttributedFetching } = useOwnerListAutomationAttributedAppointments(
@@ -636,11 +648,6 @@ export default function OwnerAutomations() {
       }
     }
   );
-
-  // Opening the dialog for a different rule starts from the unfiltered list.
-  useEffect(() => {
-    setAttributedClientType("all");
-  }, [statsRuleId]);
 
   // Reset accumulated pages whenever the dialog switches to another rule, the
   // owner picks a different time window (preset or completed custom range),
@@ -800,6 +807,16 @@ export default function OwnerAutomations() {
     }
   };
 
+  const openStats = (ruleId: string) => {
+    setAttributedClientType("all");
+    setStatsRuleId(ruleId);
+  };
+
+  const closeStats = () => {
+    setStatsRuleId(null);
+    setAttributedClientType("all");
+  };
+
   const triggerLabels: Record<string, string> = {
     inactive_days: "Neaktivnost (N dana)",
     birthday: "Rođendan",
@@ -832,7 +849,7 @@ export default function OwnerAutomations() {
           </div>
 
           {overviewStats && overviewStats.length > 0 && (
-            <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} customRange={customRange} onCustomRangeChange={setCustomRange} onShowStats={setStatsRuleId} />
+            <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} customRange={customRange} onCustomRangeChange={setCustomRange} onShowStats={openStats} />
           )}
 
           <div className="space-y-4">
@@ -868,7 +885,7 @@ export default function OwnerAutomations() {
                         <Button variant="outline" size="sm" onClick={() => handleTestRun(rule.id)} title="Proveri koliko klijenata ispunjava uslov (Dry-run)">
                           <Play className="w-4 h-4 mr-2" /> Probni run
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => setStatsRuleId(rule.id)}>
+                        <Button variant="outline" size="sm" onClick={() => openStats(rule.id)}>
                           <Activity className="w-4 h-4 mr-2" /> Statistika
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => handleEdit(rule)}>Izmeni</Button>
@@ -977,7 +994,7 @@ export default function OwnerAutomations() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!statsRuleId} onOpenChange={(open) => !open && setStatsRuleId(null)}>
+      <Dialog open={!!statsRuleId} onOpenChange={(open) => !open && closeStats()}>
         <DialogContent>
           <DialogHeader className="pr-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
