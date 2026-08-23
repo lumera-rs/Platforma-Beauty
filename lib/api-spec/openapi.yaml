@@ -4124,6 +4124,26 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Admin access required }
 
+  /growth/admin/retention-settings/preview:
+    post:
+      operationId: adminPreviewRetentionSettings
+      tags: [growth]
+      summary: Dry-run candidate retention thresholds against current data (admin); never persists a settings version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RetentionThresholds" }
+      responses:
+        "200":
+          description: Platform-wide per-status counts under current vs. candidate thresholds
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetentionSettingsPreview" }
+        "400": { description: Validation error (out-of-range or inconsistent thresholds) }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
   /growth/admin/retention-settings/history:
     get:
       operationId: adminGetRetentionSettingsHistory
@@ -7122,6 +7142,38 @@ components:
         changedAt: { type: ["string", "null"], description: "ISO timestamp of the change; null for platform defaults" }
         isDefault: { type: boolean }
       required: [version, thresholds, changedByUserId, changedAt, isDefault]
+
+    RetentionStatusCounts:
+      type: object
+      properties:
+        NEW: { type: number }
+        ACTIVE: { type: number }
+        VIP: { type: number }
+        AT_RISK: { type: number }
+        LOST: { type: number }
+      required: [NEW, ACTIVE, VIP, AT_RISK, LOST]
+
+    RetentionReclassificationShift:
+      type: object
+      properties:
+        fromStatus: { type: string, enum: [NEW, ACTIVE, VIP, AT_RISK, LOST] }
+        toStatus: { type: string, enum: [NEW, ACTIVE, VIP, AT_RISK, LOST] }
+        count: { type: number, description: "Customers that would move fromStatus → toStatus" }
+      required: [fromStatus, toStatus, count]
+
+    RetentionSettingsPreview:
+      type: object
+      properties:
+        currentVersion: { type: number, description: "Settings version the current counts were computed against (0 = platform defaults)" }
+        totalCustomers: { type: number, description: "Salon customers evaluated platform-wide" }
+        reclassifiedCount: { type: number, description: "Customers whose status would change under the candidate thresholds" }
+        currentCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
+        candidateCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
+        shifts:
+          type: array
+          description: "Status moves under the candidate thresholds, largest first"
+          items: { $ref: "#/components/schemas/RetentionReclassificationShift" }
+      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts]
 
     RetentionSettingsHistoryEntry:
       type: object

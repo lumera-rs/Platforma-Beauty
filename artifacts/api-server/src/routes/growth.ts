@@ -40,12 +40,14 @@ import {
   OwnerAskGrowthAiBody,
   CustomerPurchasePackageBody,
   AdminUpdateRetentionSettingsBody,
+  AdminPreviewRetentionSettingsBody,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { classifyRetention, computeSalonMedianSpend } from "../lib/retention-classification";
 import {
   getActiveRetentionSettings,
   getRetentionSettingsHistory,
+  previewRetentionThresholds,
   updateRetentionSettings,
   validateRetentionThresholds,
 } from "../lib/retention-settings";
@@ -1536,6 +1538,31 @@ router.put("/growth/admin/retention-settings", async (req, res, next) => {
 
     const updated = await updateRetentionSettings(user.id, parsed.data);
     res.json(settingsView(updated));
+  } catch (err) { next(err); }
+});
+
+// Dry-run: classify all customers under current vs. candidate thresholds.
+// Strictly read-only — never records a settings version.
+router.post("/growth/admin/retention-settings/preview", async (req, res, next) => {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user || !isAdmin(user)) {
+      res.status(403).json({ error: "Admin access required.", code: "FORBIDDEN" }); return;
+    }
+
+    const parsed = AdminPreviewRetentionSettingsBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Validation error.", code: "VALIDATION_ERROR", issues: parsed.error.issues });
+      return;
+    }
+
+    const problems = validateRetentionThresholds(parsed.data);
+    if (problems.length > 0) {
+      res.status(400).json({ error: problems.join(" "), code: "VALIDATION_ERROR", problems });
+      return;
+    }
+
+    res.json(await previewRetentionThresholds(parsed.data));
   } catch (err) { next(err); }
 });
 

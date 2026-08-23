@@ -4287,6 +4287,56 @@ export interface RetentionSettings {
   isDefault: boolean;
 }
 
+export interface RetentionStatusCounts {
+  NEW: number;
+  ACTIVE: number;
+  VIP: number;
+  AT_RISK: number;
+  LOST: number;
+}
+
+export type RetentionReclassificationShiftFromStatus = typeof RetentionReclassificationShiftFromStatus[keyof typeof RetentionReclassificationShiftFromStatus];
+
+
+export const RetentionReclassificationShiftFromStatus = {
+  NEW: 'NEW',
+  ACTIVE: 'ACTIVE',
+  VIP: 'VIP',
+  AT_RISK: 'AT_RISK',
+  LOST: 'LOST',
+} as const;
+
+export type RetentionReclassificationShiftToStatus = typeof RetentionReclassificationShiftToStatus[keyof typeof RetentionReclassificationShiftToStatus];
+
+
+export const RetentionReclassificationShiftToStatus = {
+  NEW: 'NEW',
+  ACTIVE: 'ACTIVE',
+  VIP: 'VIP',
+  AT_RISK: 'AT_RISK',
+  LOST: 'LOST',
+} as const;
+
+export interface RetentionReclassificationShift {
+  fromStatus: RetentionReclassificationShiftFromStatus;
+  toStatus: RetentionReclassificationShiftToStatus;
+  /** Customers that would move fromStatus → toStatus */
+  count: number;
+}
+
+export interface RetentionSettingsPreview {
+  /** Settings version the current counts were computed against (0 = platform defaults) */
+  currentVersion: number;
+  /** Salon customers evaluated platform-wide */
+  totalCustomers: number;
+  /** Customers whose status would change under the candidate thresholds */
+  reclassifiedCount: number;
+  currentCounts: RetentionStatusCounts;
+  candidateCounts: RetentionStatusCounts;
+  /** Status moves under the candidate thresholds, largest first */
+  shifts: RetentionReclassificationShift[];
+}
+
 export interface RetentionSettingsHistoryEntry {
   version: number;
   thresholds: RetentionThresholds;

@@ -198,6 +198,7 @@ import type {
   RegisterInput,
   RetentionSettings,
   RetentionSettingsHistoryEntry,
+  RetentionSettingsPreview,
   RetentionThresholds,
   ReversalResult,
   SalonAppointmentCreate,
@@ -16992,6 +16993,77 @@ export const useAdminUpdateRetentionSettings = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAdminUpdateRetentionSettingsMutationOptions(options));
+    }
+
+export const getAdminPreviewRetentionSettingsUrl = () => {
+
+
+
+
+  return `/api/growth/admin/retention-settings/preview`
+}
+
+/**
+ * @summary Dry-run candidate retention thresholds against current data (admin); never persists a settings version
+ */
+export const adminPreviewRetentionSettings = async (retentionThresholds: RetentionThresholds, options?: Parameters<typeof customFetch>[1]): Promise<RetentionSettingsPreview> => {
+
+  return customFetch<RetentionSettingsPreview>(getAdminPreviewRetentionSettingsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retentionThresholds)
+  }
+);}
+
+
+
+
+
+export const getAdminPreviewRetentionSettingsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminPreviewRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminPreviewRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext> => {
+
+const mutationKey = ['adminPreviewRetentionSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminPreviewRetentionSettings>>, {data: BodyType<RetentionThresholds>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  adminPreviewRetentionSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminPreviewRetentionSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof adminPreviewRetentionSettings>>>
+    export type AdminPreviewRetentionSettingsMutationBody = BodyType<RetentionThresholds>
+    export type AdminPreviewRetentionSettingsMutationError = ErrorType<void>
+
+    /**
+ * @summary Dry-run candidate retention thresholds against current data (admin); never persists a settings version
+ */
+export const useAdminPreviewRetentionSettings = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminPreviewRetentionSettings>>, TError,{data: BodyType<RetentionThresholds>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminPreviewRetentionSettings>>,
+        TError,
+        {data: BodyType<RetentionThresholds>},
+        TContext
+      > => {
+      return useMutation(getAdminPreviewRetentionSettingsMutationOptions(options));
     }
 
 export const getAdminGetRetentionSettingsHistoryUrl = () => {

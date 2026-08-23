@@ -3,12 +3,18 @@ import { AdminLayout } from "./layout";
 import {
   useAdminGetRetentionSettings,
   useAdminUpdateRetentionSettings,
+  useAdminPreviewRetentionSettings,
   useAdminGetRetentionSettingsHistory,
   getAdminGetRetentionSettingsQueryKey,
   getAdminGetRetentionSettingsHistoryQueryKey,
   getOwnerListRetentionQueryKey,
 } from "@workspace/api-client-react";
-import type { RetentionThresholds, RetentionSettingsHistoryEntry } from "@workspace/api-client-react";
+import type {
+  RetentionThresholds,
+  RetentionSettingsHistoryEntry,
+  RetentionSettingsPreview,
+  RetentionStatusCounts,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw } from "lucide-react";
+import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { format } from "date-fns";
@@ -50,6 +56,18 @@ const FIELDS: {
 
 const FIELD_LABELS = Object.fromEntries(FIELDS.map((f) => [f.key, f.label])) as Record<FieldKey, string>;
 
+type StatusKey = keyof RetentionStatusCounts;
+
+const STATUS_ORDER: StatusKey[] = ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"];
+
+const STATUS_LABELS: Record<StatusKey, string> = {
+  NEW: "Novi",
+  ACTIVE: "Aktivni",
+  VIP: "VIP",
+  AT_RISK: "U riziku",
+  LOST: "Izgubljeni",
+};
+
 function changedFields(entry: RetentionSettingsHistoryEntry): FieldKey[] {
   return (Object.keys(entry.thresholds) as FieldKey[]).filter(
     (k) => entry.thresholds[k] !== entry.previousThresholds[k],
@@ -63,6 +81,8 @@ export default function AdminRetentionSettings() {
   const { data: settings, isLoading } = useAdminGetRetentionSettings();
   const { data: history = [], isLoading: isHistoryLoading } = useAdminGetRetentionSettingsHistory();
   const updateMutation = useAdminUpdateRetentionSettings();
+  const previewMutation = useAdminPreviewRetentionSettings();
+  const [preview, setPreview] = useState<RetentionSettingsPreview | null>(null);
 
   const [form, setForm] = useState<Record<FieldKey, string>>({
     newCustomerWindowDays: "",
@@ -91,7 +111,14 @@ export default function AdminRetentionSettings() {
     }
   }, [settings]);
 
-  const handleSave = () => {
+  const invalidateAfterSave = () => {
+    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getOwnerListRetentionQueryKey() });
+  };
+
+  /** Parse + validate the form; returns null (and sets field errors) when invalid. */
+  const parseForm = (): RetentionThresholds | null => {
     const errors: Partial<Record<FieldKey, string>> = {};
     const values = {} as RetentionThresholds;
     for (const field of FIELDS) {
@@ -114,7 +141,26 @@ export default function AdminRetentionSettings() {
       errors.lostIntervalPercent = "Prag gubitka mora biti veći od praga rizika.";
     }
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    return Object.keys(errors).length > 0 ? null : values;
+  };
+
+  const handlePreview = () => {
+    const values = parseForm();
+    if (!values) {
+      toast.error("Proverite označena polja pre pregleda uticaja.");
+      return;
+    }
+    previewMutation.mutate({ data: values }, {
+      onSuccess: (result) => setPreview(result),
+      onError: (err) => {
+        toast.error(extractApiError(err, "Greška prilikom pregleda uticaja."));
+      },
+    });
+  };
+
+  const handleSave = () => {
+    const values = parseForm();
+    if (!values) {
       toast.error("Proverite označena polja pre čuvanja.");
       return;
     }
@@ -122,6 +168,7 @@ export default function AdminRetentionSettings() {
     updateMutation.mutate({ data: values }, {
       onSuccess: (updated) => {
         toast.success(`Pragovi retencije sačuvani (verzija ${updated.version}).`);
+        setPreview(null);
         invalidateAfterSave();
       },
       onError: (err) => {
@@ -130,16 +177,11 @@ export default function AdminRetentionSettings() {
     });
   };
 
-  const invalidateAfterSave = () => {
-    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
-    queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
-    queryClient.invalidateQueries({ queryKey: getOwnerListRetentionQueryKey() });
-  };
-
   const handleRestore = (entry: RetentionSettingsHistoryEntry) => {
     updateMutation.mutate({ data: entry.thresholds }, {
       onSuccess: (updated) => {
         toast.success(`Vrednosti verzije ${entry.version} su vraćene kao nova verzija ${updated.version}.`);
+        setPreview(null);
         invalidateAfterSave();
         setRestoreTarget(null);
       },
@@ -194,7 +236,11 @@ export default function AdminRetentionSettings() {
                     data-testid={`input-${field.key}`}
                     inputMode="numeric"
                     value={form[field.key]}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, [field.key]: e.target.value }));
+                      // Any edit invalidates a previously computed preview.
+                      setPreview(null);
+                    }}
                   />
                   {fieldErrors[field.key] ? (
                     <p className="text-xs text-destructive" data-testid={`error-${field.key}`}>{fieldErrors[field.key]}</p>
@@ -204,16 +250,104 @@ export default function AdminRetentionSettings() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/50">
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-border/50">
               <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                 <Info className="w-3.5 h-3.5 shrink-0" />
                 Nova podešavanja odmah važe za sve salone — CRM objašnjenja vlasnika koriste aktivnu verziju pragova.
               </p>
-              <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="save-retention-settings">
-                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                Sačuvaj izmene
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={previewMutation.isPending || updateMutation.isPending}
+                  data-testid="preview-retention-settings"
+                >
+                  {previewMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
+                  Proveri uticaj
+                </Button>
+                <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="save-retention-settings">
+                  {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                  Sačuvaj izmene
+                </Button>
+              </div>
             </div>
+
+            {preview && (
+              <div
+                className="rounded-lg border border-border/50 bg-muted/30 p-4 space-y-4"
+                data-testid="retention-preview-panel"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Eye className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-semibold text-foreground">Pregled uticaja</span>
+                  <Badge
+                    variant={preview.reclassifiedCount > 0 ? "default" : "secondary"}
+                    data-testid="retention-preview-reclassified"
+                  >
+                    {preview.reclassifiedCount === 0
+                      ? "Bez promena statusa"
+                      : `${preview.reclassifiedCount} od ${preview.totalCustomers} klijenata menja status`}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Poređenje sa trenutno aktivnim pragovima{" "}
+                  ({preview.currentVersion === 0 ? "podrazumevana podešavanja" : `verzija ${preview.currentVersion}`}),
+                  ukupno {preview.totalCustomers} klijenata na platformi. Pregled ništa ne čuva — pragovi ostaju
+                  nepromenjeni dok ne kliknete „Sačuvaj izmene“.
+                </p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground border-b border-border/50">
+                        <th className="py-1.5 pr-4 font-medium">Status</th>
+                        <th className="py-1.5 pr-4 font-medium">Trenutno</th>
+                        <th className="py-1.5 pr-4 font-medium">Sa novim pragovima</th>
+                        <th className="py-1.5 font-medium">Razlika</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {STATUS_ORDER.map((status) => {
+                        const current = preview.currentCounts[status];
+                        const candidate = preview.candidateCounts[status];
+                        const delta = candidate - current;
+                        return (
+                          <tr key={status} className="border-b border-border/30 last:border-0" data-testid={`retention-preview-row-${status}`}>
+                            <td className="py-1.5 pr-4 text-foreground">{STATUS_LABELS[status]}</td>
+                            <td className="py-1.5 pr-4">{current}</td>
+                            <td className="py-1.5 pr-4 font-medium text-foreground">{candidate}</td>
+                            <td className={`py-1.5 font-medium ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {preview.shifts.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Najveća pomeranja:</p>
+                    <ul className="space-y-1">
+                      {preview.shifts.map((shift) => (
+                        <li
+                          key={`${shift.fromStatus}-${shift.toStatus}`}
+                          className="text-sm text-muted-foreground flex items-center gap-1.5"
+                          data-testid={`retention-preview-shift-${shift.fromStatus}-${shift.toStatus}`}
+                        >
+                          <span className="text-foreground">{STATUS_LABELS[shift.fromStatus]}</span>
+                          <MoveRight className="w-3.5 h-3.5 shrink-0" />
+                          <span className="text-foreground">{STATUS_LABELS[shift.toStatus]}</span>
+                          <span className="font-semibold text-foreground">{shift.count}</span>
+                          {shift.count === 1 ? "klijent" : "klijenata"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

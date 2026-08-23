@@ -17,6 +17,9 @@
  * 10. PUT with ill-ordered percents / out-of-range / non-integer / missing
  *     field → 400 and no version recorded
  * 11. Valid PUTs create sequential audited versions (who + when recorded)
+ * 11b. Preview dry-runs candidate thresholds: identity candidate moves nobody,
+ *     a tuned candidate reports counts + shifts, and NO settings version or
+ *     row is ever recorded (including for invalid candidates → 400)
  * 12. Owner CRM list flips a 3-visit customer ACTIVE → VIP when the admin
  *     lowers vipMinCompletedVisits, and reports the active version
  * 13. Owner CRM detail turns AT_RISK → LOST under tuned lost thresholds and
@@ -343,11 +346,12 @@ async function integrationTests() {
       ["GET", "/growth/admin/retention-settings"],
       ["PUT", "/growth/admin/retention-settings"],
       ["GET", "/growth/admin/retention-settings/history"],
+      ["POST", "/growth/admin/retention-settings/preview"],
     ] as const) {
       const res = await fetch(`${baseUrl}${path}`, {
         method,
         headers: { cookie: ownerCookie, "content-type": "application/json" },
-        body: method === "PUT" ? JSON.stringify(DEFAULT_RETENTION_THRESHOLDS) : undefined,
+        body: method === "GET" ? undefined : JSON.stringify(DEFAULT_RETENTION_THRESHOLDS),
       });
       assert.equal(res.status, 403, `${method} ${path} must reject non-admin`);
     }
@@ -380,6 +384,62 @@ async function integrationTests() {
     assert.equal(baseline.changedByUserId, admin.id, "change records who made it");
     assert.ok(baseline.changedAt, "change records when it was made");
     console.log("✓ Valid update creates a new audited version");
+
+    // ── 11b. Preview: dry-run counts, never records a version ───────────────
+    const postPreview = (body: unknown) =>
+      fetch(`${baseUrl}/growth/admin/retention-settings/preview`, {
+        method: "POST", headers: adminHeaders, body: JSON.stringify(body),
+      });
+
+    // Identity candidate (== active thresholds) → nothing moves, deterministically.
+    const identityRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+    assert.equal(identityRes.status, 200);
+    const identity = (await identityRes.json()) as any;
+    assert.equal(identity.currentVersion, initialVersion + 1, "preview reports the active version");
+    assert.equal(identity.reclassifiedCount, 0, "identical thresholds reclassify nobody");
+    assert.deepEqual(identity.candidateCounts, identity.currentCounts, "counts agree for identical thresholds");
+    assert.deepEqual(identity.shifts, [], "no shifts for identical thresholds");
+    assert.ok(identity.totalCustomers >= 3, "platform-wide totals include the fixture customers");
+    const sumCurrent = Object.values(identity.currentCounts as Record<string, number>)
+      .reduce((s, n) => s + n, 0);
+    assert.equal(sumCurrent, identity.totalCustomers, "every customer lands in exactly one status");
+
+    // Tuned candidate: lowering vipMinCompletedVisits to 3 moves customer A
+    // (3 completed visits, ACTIVE under defaults) into VIP. The platform DB may
+    // hold other customers, so assertions are lower bounds where appropriate.
+    const previewRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 });
+    assert.equal(previewRes.status, 200);
+    const previewBody = (await previewRes.json()) as any;
+    assert.ok(previewBody.reclassifiedCount >= 1, "lowering the VIP threshold moves at least customer A");
+    assert.ok(
+      previewBody.candidateCounts.VIP - previewBody.currentCounts.VIP >= 1,
+      "candidate counts gain at least one VIP",
+    );
+    const activeToVip = (previewBody.shifts as any[]).find(
+      (s) => s.fromStatus === "ACTIVE" && s.toStatus === "VIP",
+    );
+    assert.ok(activeToVip && activeToVip.count >= 1, "shifts report the ACTIVE → VIP move");
+    const shiftSum = (previewBody.shifts as any[]).reduce((s: number, x: any) => s + x.count, 0);
+    assert.equal(shiftSum, previewBody.reclassifiedCount, "shift counts add up to the reclassified total");
+    const sumCandidate = Object.values(previewBody.candidateCounts as Record<string, number>)
+      .reduce((s: number, n) => s + (n as number), 0);
+    assert.equal(sumCandidate, previewBody.totalCustomers, "candidate counts cover every customer");
+
+    // Invalid candidate → 400 (same validation as PUT).
+    const badPreviewRes = await postPreview({
+      ...DEFAULT_RETENTION_THRESHOLDS, atRiskIntervalPercent: 300, lostIntervalPercent: 300,
+    });
+    assert.equal(badPreviewRes.status, 400, "ill-ordered candidate rejected");
+
+    // Preview must be strictly read-only: no version, no settings rows.
+    const afterPreviewRes = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    assert.equal(((await afterPreviewRes.json()) as any).version, initialVersion + 1, "preview records no settings version");
+    const rowsAfterPreview = await db
+      .select({ version: platformRetentionSettingsTable.version })
+      .from(platformRetentionSettingsTable)
+      .where(gt(platformRetentionSettingsTable.version, initialVersion + 1));
+    assert.equal(rowsAfterPreview.length, 0, "preview inserts no settings rows");
+    console.log("✓ Preview dry-runs candidate thresholds without persisting");
 
     // ── 12. Owner CRM flips ACTIVE → VIP under tuned visit count ────────────
     const listBefore = await getOwnerList();

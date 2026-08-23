@@ -9844,6 +9844,71 @@ export const AdminUpdateRetentionSettingsResponse = zod.object({
 
 
 /**
+ * @summary Dry-run candidate retention thresholds against current data (admin); never persists a settings version
+ */
+export const adminPreviewRetentionSettingsBodyNewCustomerWindowDaysMax = 365;
+export const adminPreviewRetentionSettingsBodyNewCustomerWindowDaysMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyDefaultIntervalDaysMax = 365;
+export const adminPreviewRetentionSettingsBodyDefaultIntervalDaysMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMin = 100;
+export const adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMax = 1000;
+export const adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyLostIntervalPercentMin = 100;
+export const adminPreviewRetentionSettingsBodyLostIntervalPercentMax = 2000;
+export const adminPreviewRetentionSettingsBodyLostIntervalPercentMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyLostMinimumDaysMax = 1095;
+export const adminPreviewRetentionSettingsBodyLostMinimumDaysMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyVipMinCompletedVisitsMax = 100;
+export const adminPreviewRetentionSettingsBodyVipMinCompletedVisitsMultipleOf = 1;
+
+export const adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMin = 100;
+export const adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMax = 1000;
+export const adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMultipleOf = 1;
+
+
+
+export const AdminPreviewRetentionSettingsBody = zod.object({
+  "newCustomerWindowDays": zod.number().min(1).max(adminPreviewRetentionSettingsBodyNewCustomerWindowDaysMax).multipleOf(adminPreviewRetentionSettingsBodyNewCustomerWindowDaysMultipleOf).describe('A single completed visit within this many days still counts as NEW'),
+  "defaultIntervalDays": zod.number().min(1).max(adminPreviewRetentionSettingsBodyDefaultIntervalDaysMax).multipleOf(adminPreviewRetentionSettingsBodyDefaultIntervalDaysMultipleOf).describe('Assumed visit interval (days) when fewer than 2 completed visits exist'),
+  "atRiskIntervalPercent": zod.number().min(adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMin).max(adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMax).multipleOf(adminPreviewRetentionSettingsBodyAtRiskIntervalPercentMultipleOf).describe('AT_RISK when overdue beyond typical interval × this percent (150 = 1.5×)'),
+  "lostIntervalPercent": zod.number().min(adminPreviewRetentionSettingsBodyLostIntervalPercentMin).max(adminPreviewRetentionSettingsBodyLostIntervalPercentMax).multipleOf(adminPreviewRetentionSettingsBodyLostIntervalPercentMultipleOf).describe('LOST when overdue beyond typical interval × this percent (250 = 2.5×); must exceed atRiskIntervalPercent'),
+  "lostMinimumDays": zod.number().min(1).max(adminPreviewRetentionSettingsBodyLostMinimumDaysMax).multipleOf(adminPreviewRetentionSettingsBodyLostMinimumDaysMultipleOf).describe('LOST never triggers before this many days since the last visit'),
+  "vipMinCompletedVisits": zod.number().min(1).max(adminPreviewRetentionSettingsBodyVipMinCompletedVisitsMax).multipleOf(adminPreviewRetentionSettingsBodyVipMinCompletedVisitsMultipleOf).describe('VIP when the customer has at least this many completed visits'),
+  "vipSpendPercentOfMedian": zod.number().min(adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMin).max(adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMax).multipleOf(adminPreviewRetentionSettingsBodyVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
+})
+
+export const AdminPreviewRetentionSettingsResponse = zod.object({
+  "currentVersion": zod.number().describe('Settings version the current counts were computed against (0 = platform defaults)'),
+  "totalCustomers": zod.number().describe('Salon customers evaluated platform-wide'),
+  "reclassifiedCount": zod.number().describe('Customers whose status would change under the candidate thresholds'),
+  "currentCounts": zod.object({
+  "NEW": zod.number(),
+  "ACTIVE": zod.number(),
+  "VIP": zod.number(),
+  "AT_RISK": zod.number(),
+  "LOST": zod.number()
+}),
+  "candidateCounts": zod.object({
+  "NEW": zod.number(),
+  "ACTIVE": zod.number(),
+  "VIP": zod.number(),
+  "AT_RISK": zod.number(),
+  "LOST": zod.number()
+}),
+  "shifts": zod.array(zod.object({
+  "fromStatus": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
+  "toStatus": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
+  "count": zod.number().describe('Customers that would move fromStatus → toStatus')
+})).describe('Status moves under the candidate thresholds, largest first')
+})
+
+
+/**
  * @summary Audit history of retention threshold changes (admin), newest first
  */
 export const adminGetRetentionSettingsHistoryResponseThresholdsNewCustomerWindowDaysMax = 365;

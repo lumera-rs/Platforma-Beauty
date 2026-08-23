@@ -15,9 +15,19 @@
  */
 
 import { desc, eq, sql } from "drizzle-orm";
-import { db, platformRetentionSettingsTable, usersTable } from "@workspace/db";
 import {
+  db,
+  appointmentsTable,
+  platformRetentionSettingsTable,
+  salonCustomersTable,
+  usersTable,
+} from "@workspace/db";
+import {
+  classifyRetention,
+  computeSalonMedianSpend,
   DEFAULT_RETENTION_THRESHOLDS,
+  type AppointmentRecord,
+  type RetentionStatus,
   type RetentionThresholds,
 } from "./retention-classification";
 
@@ -156,6 +166,138 @@ export async function updateRetentionSettings(
     thresholds: rowToThresholds(inserted),
     changedByUserId: inserted.changedByUserId,
     changedAt: inserted.createdAt,
+  };
+}
+
+export type RetentionStatusCounts = Record<RetentionStatus, number>;
+
+export interface RetentionPreviewShift {
+  fromStatus: RetentionStatus;
+  toStatus: RetentionStatus;
+  count: number;
+}
+
+export interface RetentionPreviewResult {
+  /** Version whose thresholds produced the "current" counts (0 = defaults). */
+  currentVersion: number;
+  totalCustomers: number;
+  reclassifiedCount: number;
+  currentCounts: RetentionStatusCounts;
+  candidateCounts: RetentionStatusCounts;
+  /** Status moves under the candidate thresholds, largest first. */
+  shifts: RetentionPreviewShift[];
+}
+
+const RETENTION_STATUSES: RetentionStatus[] = ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"];
+
+function emptyStatusCounts(): RetentionStatusCounts {
+  return { NEW: 0, ACTIVE: 0, VIP: 0, AT_RISK: 0, LOST: 0 };
+}
+
+/**
+ * Dry-run: classify every salon customer platform-wide under BOTH the active
+ * thresholds and a candidate, and report the per-status counts plus how many
+ * customers would move. Read-only — never records a settings version.
+ *
+ * Uses the exact same inputs per salon as the owner CRM list endpoint
+ * (full appointment history + salon-wide median of completed prices), so the
+ * preview agrees with what owners would actually see after a save.
+ */
+export async function previewRetentionThresholds(
+  candidate: RetentionThresholds,
+): Promise<RetentionPreviewResult> {
+  const problems = validateRetentionThresholds(candidate);
+  if (problems.length > 0) {
+    throw new Error(`Invalid retention thresholds: ${problems.join(" ")}`);
+  }
+
+  const active = await getActiveRetentionSettings();
+
+  const customers = await db
+    .select({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId })
+    .from(salonCustomersTable);
+
+  const appts = await db
+    .select({
+      salonId: appointmentsTable.salonId,
+      salonCustomerId: appointmentsTable.salonCustomerId,
+      date: appointmentsTable.date,
+      status: appointmentsTable.status,
+      price: appointmentsTable.price,
+    })
+    .from(appointmentsTable);
+
+  // Salon-wide median of completed prices — same basis as the CRM endpoints
+  // (all completed appointments of the salon, linked to a customer or not).
+  const completedPricesBySalon = new Map<string, number[]>();
+  const apptsByCustomer = new Map<string, AppointmentRecord[]>();
+  for (const a of appts) {
+    if (a.status === "completed") {
+      const prices = completedPricesBySalon.get(a.salonId) ?? [];
+      prices.push(a.price);
+      completedPricesBySalon.set(a.salonId, prices);
+    }
+    if (a.salonCustomerId) {
+      const records = apptsByCustomer.get(a.salonCustomerId) ?? [];
+      records.push({
+        date: a.date,
+        status: a.status as AppointmentRecord["status"],
+        price: a.price,
+      });
+      apptsByCustomer.set(a.salonCustomerId, records);
+    }
+  }
+  const medianBySalon = new Map<string, number | undefined>();
+  for (const [salonId, prices] of completedPricesBySalon) {
+    medianBySalon.set(salonId, computeSalonMedianSpend(prices));
+  }
+
+  // One fixed "today" so both passes see the same clock.
+  const today = new Date();
+
+  const currentCounts = emptyStatusCounts();
+  const candidateCounts = emptyStatusCounts();
+  const shiftCounts = new Map<string, number>();
+  let reclassifiedCount = 0;
+
+  for (const customer of customers) {
+    const appointments = apptsByCustomer.get(customer.id) ?? [];
+    const salonMedianSpend = medianBySalon.get(customer.salonId);
+    const currentStatus = classifyRetention({
+      appointments, today, salonMedianSpend, thresholds: active.thresholds,
+    }).status;
+    const candidateStatus = classifyRetention({
+      appointments, today, salonMedianSpend, thresholds: candidate,
+    }).status;
+
+    currentCounts[currentStatus] += 1;
+    candidateCounts[candidateStatus] += 1;
+    if (currentStatus !== candidateStatus) {
+      reclassifiedCount += 1;
+      const key = `${currentStatus}\u0000${candidateStatus}`;
+      shiftCounts.set(key, (shiftCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  const shifts: RetentionPreviewShift[] = [...shiftCounts.entries()]
+    .map(([key, count]) => {
+      const [fromStatus, toStatus] = key.split("\u0000") as [RetentionStatus, RetentionStatus];
+      return { fromStatus, toStatus, count };
+    })
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        RETENTION_STATUSES.indexOf(a.fromStatus) - RETENTION_STATUSES.indexOf(b.fromStatus) ||
+        RETENTION_STATUSES.indexOf(a.toStatus) - RETENTION_STATUSES.indexOf(b.toStatus),
+    );
+
+  return {
+    currentVersion: active.version,
+    totalCustomers: customers.length,
+    reclassifiedCount,
+    currentCounts,
+    candidateCounts,
+    shifts,
   };
 }
 
