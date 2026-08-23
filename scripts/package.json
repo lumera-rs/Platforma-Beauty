@@ -22,6 +22,7 @@
     "test:retention-restore-conflict": "playwright test browser/retention-restore-conflict.spec.ts",
     "test:retention-restore-noop": "playwright test browser/retention-restore-noop.spec.ts",
     "test:integrations-unsaved-guard": "playwright test browser/integrations-unsaved-guard.spec.ts",
+    "test:sms-fallback-phone-notice-browser": "playwright test browser/sms-fallback-phone-notice.spec.ts",
     "test:admin-salon-designations": "playwright test browser/admin-salon-designations.spec.ts",
     "test:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts",
     "cleanup:admin-access-configuration": "tsx ./src/run-admin-access-configuration.ts --recover-interrupted-databases",
