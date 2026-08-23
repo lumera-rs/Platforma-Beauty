@@ -10,6 +10,7 @@ import {
   getOwnerListRetentionQueryKey,
 } from "@workspace/api-client-react";
 import type {
+  RetentionSettings,
   RetentionThresholds,
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
@@ -31,7 +32,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight, Store, ExternalLink } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Loader2, Save, History, SlidersHorizontal, Info, RotateCcw, Eye, MoveRight, Store, ExternalLink, RefreshCw, TriangleAlert } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
 import { format } from "date-fns";
@@ -87,7 +89,16 @@ export default function AdminRetentionSettings() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: settings, isLoading } = useAdminGetRetentionSettings();
+  // Poll for a newer active version while the page is open (and re-check on
+  // window focus), so an admin learns the page went stale before investing
+  // time in edits — the save-time 409 stays the hard guarantee.
+  const { data: settings, isLoading } = useAdminGetRetentionSettings({
+    query: {
+      queryKey: getAdminGetRetentionSettingsQueryKey(),
+      refetchInterval: 30_000,
+      refetchOnWindowFocus: true,
+    },
+  });
   const { data: history = [], isLoading: isHistoryLoading } = useAdminGetRetentionSettingsHistory();
   const updateMutation = useAdminUpdateRetentionSettings();
   const previewMutation = useAdminPreviewRetentionSettings();
@@ -106,20 +117,48 @@ export default function AdminRetentionSettings() {
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
   const [conflict, setConflict] = useState<VersionConflict | null>(null);
 
+  /**
+   * Version the form values were loaded from. Saves send this as
+   * `expectedVersion` — NOT the live `settings.version`, which the staleness
+   * poll may silently advance past the values the admin is actually editing.
+   */
+  const [formBaseVersion, setFormBaseVersion] = useState<number | null>(null);
+
+  /** Reset the form (and its concurrency base) from a settings payload. */
+  const loadFormFromSettings = (source: RetentionSettings) => {
+    setForm({
+      newCustomerWindowDays: String(source.thresholds.newCustomerWindowDays),
+      defaultIntervalDays: String(source.thresholds.defaultIntervalDays),
+      atRiskIntervalPercent: String(source.thresholds.atRiskIntervalPercent),
+      lostIntervalPercent: String(source.thresholds.lostIntervalPercent),
+      lostMinimumDays: String(source.thresholds.lostMinimumDays),
+      vipMinCompletedVisits: String(source.thresholds.vipMinCompletedVisits),
+      vipSpendPercentOfMedian: String(source.thresholds.vipSpendPercentOfMedian),
+    });
+    setFieldErrors({});
+    setPreview(null);
+    setFormBaseVersion(source.version);
+  };
+
   useEffect(() => {
-    if (settings) {
-      setForm({
-        newCustomerWindowDays: String(settings.thresholds.newCustomerWindowDays),
-        defaultIntervalDays: String(settings.thresholds.defaultIntervalDays),
-        atRiskIntervalPercent: String(settings.thresholds.atRiskIntervalPercent),
-        lostIntervalPercent: String(settings.thresholds.lostIntervalPercent),
-        lostMinimumDays: String(settings.thresholds.lostMinimumDays),
-        vipMinCompletedVisits: String(settings.thresholds.vipMinCompletedVisits),
-        vipSpendPercentOfMedian: String(settings.thresholds.vipSpendPercentOfMedian),
-      });
-      setFieldErrors({});
+    if (!settings) return;
+    // Load the form on first fetch, and during a save-time conflict (where
+    // the refreshed values must replace the form so the admin can compare).
+    // A background poll refetch never resets the form — it only feeds the
+    // staleness banner, so in-progress edits are never silently overwritten.
+    if (formBaseVersion === null || (conflict !== null && settings.version !== formBaseVersion)) {
+      loadFormFromSettings(settings);
     }
-  }, [settings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, conflict, formBaseVersion]);
+
+  // The page is stale when the poll saw a newer active version than the one
+  // the form was loaded from (the conflict dialog already covers save time).
+  const isStale =
+    !!settings &&
+    formBaseVersion !== null &&
+    settings.version !== formBaseVersion &&
+    conflict === null;
 
   const invalidateAfterSave = () => {
     queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
@@ -186,10 +225,10 @@ export default function AdminRetentionSettings() {
    * `origin` labels restores in the audit history.
    */
   const performUpdate = (thresholds: RetentionThresholds, origin: UpdateOrigin) => {
-    if (!settings) return;
+    if (!settings || formBaseVersion === null) return;
     const body = {
       ...thresholds,
-      expectedVersion: settings.version,
+      expectedVersion: formBaseVersion,
       ...(origin.changeSource === "restore_version"
         ? { changeSource: origin.changeSource, restoredFromVersion: origin.restoredFromVersion }
         : origin.changeSource === "restore_defaults"
@@ -205,9 +244,11 @@ export default function AdminRetentionSettings() {
               ? `Podrazumevane vrednosti platforme su vraćene kao nova verzija ${updated.version}.`
               : `Pragovi retencije sačuvani (verzija ${updated.version}).`,
         );
-        setPreview(null);
         setRestoreTarget(null);
         setConflict(null);
+        // Rebase the form on the version we just created, so the refetch
+        // below neither re-triggers the staleness banner nor loses the state.
+        loadFormFromSettings(updated);
         invalidateAfterSave();
       },
       onError: (err) => {
@@ -312,6 +353,40 @@ export default function AdminRetentionSettings() {
             Svaka izmena se beleži sa autorom, vremenom i prethodnim vrednostima.
           </p>
         </div>
+
+        {isStale && settings && (
+          <Alert
+            className="border-amber-500/50 bg-amber-500/10 [&>svg]:text-amber-600"
+            data-testid="retention-stale-banner"
+          >
+            <TriangleAlert className="h-4 w-4" />
+            <AlertTitle>
+              {settings.isDefault
+                ? "Podrazumevane vrednosti su u međuvremenu vraćene — osvežite vrednosti"
+                : `Verzija ${settings.version} je u međuvremenu aktivirana — osvežite vrednosti`}
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                Drugi administrator je sačuvao novije pragove dok je ova stranica bila otvorena.
+                Učitajte nove vrednosti pre daljih izmena — učitavanje zamenjuje vrednosti u poljima.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  loadFormFromSettings(settings);
+                  // The history list is missing the newer entries too.
+                  queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsHistoryQueryKey() });
+                }}
+                disabled={updateMutation.isPending}
+                data-testid="load-stale-retention-settings"
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Učitaj nove vrednosti
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader className="pb-4 border-b border-border/50 bg-muted/30">
