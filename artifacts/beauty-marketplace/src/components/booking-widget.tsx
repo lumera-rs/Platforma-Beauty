@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState } from "react";
+import { useRef, useMemo, useEffect, useState, type RefObject } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { format, isBefore, startOfDay } from "date-fns";
 import { srLatn } from "date-fns/locale";
@@ -46,6 +46,7 @@ export interface BookingWidgetProps {
   
   className?: string;
   onCloseMobile?: () => void;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function BookingWidget(props: BookingWidgetProps) {
@@ -110,6 +111,18 @@ export function BookingWidget(props: BookingWidgetProps) {
     const hasAvailability = props.availability.length > 0;
     setDateAvailability((current) => current[key] === hasAvailability ? current : { ...current, [key]: hasAvailability });
   }, [props.availability, props.isLoadingAvailability, props.selectedDate, props.selectedService]);
+
+  const resetScrollPosition = () => {
+    const reset = () => {
+      const container = props.scrollContainerRef?.current ?? scrollRef.current;
+      if (container) container.scrollTop = 0;
+    };
+    reset();
+  };
+
+  useEffect(() => {
+    resetScrollPosition();
+  }, [props.scrollContainerRef, props.selectedDate, props.step]);
 
   if (props.isSuccess) {
     const isConfirmed = props.bookingStatus === "confirmed";
@@ -402,6 +415,7 @@ export function BookingWidget(props: BookingWidgetProps) {
                           if (date) {
                             props.setSelectedDate(date);
                             props.setSelectedSlot(null);
+                            resetScrollPosition();
                           }
                         }}
                         fromDate={today}
@@ -665,7 +679,17 @@ export function MobileBookingTrigger({ salon, selectedService, selectedSlot, onO
   );
 }
 
-export function MobileBookingDrawer({ isOpen, onClose, children }: { isOpen: boolean, onClose: () => void, children: React.ReactNode }) {
+export function MobileBookingDrawer({
+  isOpen,
+  onClose,
+  children,
+  scrollContainerRef,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+}) {
   return (
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent side="bottom" className="flex h-[90dvh] min-h-0 flex-col overflow-visible rounded-t-3xl border-0 p-0 [&>button]:right-4 [&>button]:top-4 [&>button]:z-20">
@@ -675,8 +699,9 @@ export function MobileBookingDrawer({ isOpen, onClose, children }: { isOpen: boo
           <div className="w-12 h-1.5 bg-muted rounded-full" />
         </div>
         <div
+          ref={scrollContainerRef}
           data-testid="mobile-booking-scroll-area"
-          className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y [-webkit-overflow-scrolling:touch]"
+          className="relative min-h-0 flex-1 overflow-y-auto touch-pan-y [overflow-anchor:none] [-webkit-overflow-scrolling:touch]"
         >
           {children}
         </div>

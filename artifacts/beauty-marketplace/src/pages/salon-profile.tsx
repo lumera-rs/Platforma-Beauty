@@ -87,6 +87,7 @@ export default function SalonProfile() {
   const [bookingStep, setBookingStep] = useState(1);
   const [hasInteractedWithEmployee, setHasInteractedWithEmployee] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const mobileBookingScrollRef = useRef<HTMLDivElement>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [bookingStatus, setBookingStatus] = useState<"pending" | "confirmed" | undefined>();
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
@@ -1137,7 +1138,7 @@ export default function SalonProfile() {
           selectedSlot={selectedSlot} 
           onOpen={() => setIsMobileDrawerOpen(true)} 
         />
-      <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)}>
+      <MobileBookingDrawer isOpen={isMobileDrawerOpen} onClose={() => setIsMobileDrawerOpen(false)} scrollContainerRef={mobileBookingScrollRef}>
            <BookingWidget 
               salon={salonData}
               user={user}
@@ -1168,6 +1169,7 @@ export default function SalonProfile() {
               hasInteractedWithEmployee={hasInteractedWithEmployee}
               setHasInteractedWithEmployee={setHasInteractedWithEmployee}
               onCloseMobile={() => setIsMobileDrawerOpen(false)}
+               scrollContainerRef={mobileBookingScrollRef}
               className="h-auto min-h-full border-0 rounded-none shadow-none"
             />
       </MobileBookingDrawer>

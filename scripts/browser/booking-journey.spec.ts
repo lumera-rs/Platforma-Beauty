@@ -32,6 +32,37 @@ type PendingBookingFixtureOptions = {
   homeServiceAvailable?: boolean;
 };
 
+function longAvailabilitySlots() {
+  return Array.from({ length: 84 }, (_, index) => {
+    const startMinutes = 9 * 60 + index * 5;
+    const endMinutes = startMinutes + 5;
+    const toTime = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+    return {
+      start: toTime(startMinutes),
+      end: toTime(endMinutes),
+      employeeId: "browser-scroll-fixture-employee",
+      employeeName: "Browser Terapeut",
+    };
+  });
+}
+
+async function wheelToLowerContent(page: Page, scrollArea: Locator, minimumScrollTop: number) {
+  let previousScrollTop = -1;
+  let scrollTop = 0;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    await scrollArea.hover();
+    await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(20);
+    scrollTop = await scrollArea.evaluate((node) => node.scrollTop);
+    if (scrollTop === previousScrollTop) break;
+    previousScrollTop = scrollTop;
+  }
+
+  expect(scrollTop).toBeGreaterThan(minimumScrollTop);
+  return scrollTop;
+}
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const derived = await scrypt(password, salt, 64) as Buffer;
@@ -89,6 +120,8 @@ async function createPendingBookingFixture({
       shortDescription: "Izolovan salon za proveru zahteva za termin.",
       description: "Salon je napravljen samo za browser regresioni test zahteva za termin.",
       imageUrl: "/test-browser-pending-booking.jpg",
+      active: true,
+      isVerified: true,
       instantBooking,
       homeService: homeServiceAvailable,
     }).returning();
@@ -319,6 +352,90 @@ test("customer can book from the mobile sticky trigger and the drawer remains ac
     appointmentId = await completeBooking(page, drawer);
   } finally {
     if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    await cleanUpPendingBookingFixture(fixture);
+  }
+});
+
+test("mobile booking scrolls to a lower slot and resets after date and step changes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
+
+  try {
+    await page.route("**/api/**/availability**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(longAvailabilitySlots()),
+      });
+    });
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    await page.getByRole("button", { name: "Zakaži", exact: true }).click();
+    const drawer = page.getByRole("dialog", { name: "Zakažite termin" });
+    const service = drawer.locator('[role="button"]:has(h5)').first();
+    await service.click();
+    await drawer.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
+    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+
+    const scrollArea = drawer.getByTestId("mobile-booking-scroll-area");
+    await expect.poll(() => scrollArea.evaluate((node) => node.scrollHeight > node.clientHeight)).toBeTruthy();
+    const deepScrollTop = await wheelToLowerContent(page, scrollArea, 500);
+
+    const calendar = drawer.getByTestId("booking-calendar");
+    const selectedDay = calendar.getByRole("gridcell", { selected: true });
+    const otherDay = selectedDay.locator("xpath=following::button[not(@disabled)][1]");
+    await otherDay.dispatchEvent("click");
+    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(deepScrollTop);
+
+    await wheelToLowerContent(page, scrollArea, 700);
+
+    const lowerSlot = drawer.getByRole("button", { name: "Izaberi termin u 15:30" });
+    await expect.poll(() => lowerSlot.evaluate((node) => {
+      const slot = node.getBoundingClientRect();
+      const container = document.querySelector<HTMLElement>('[data-testid="mobile-booking-scroll-area"]')?.getBoundingClientRect();
+      return Boolean(container && slot.top >= container.top && slot.bottom <= container.bottom);
+    })).toBeTruthy();
+    await lowerSlot.click();
+    await expect(drawer.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
+
+    await drawer.getByRole("button", { name: "Nazad" }).click();
+    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(2);
+  } finally {
+    await cleanUpPendingBookingFixture(fixture);
+  }
+});
+
+test("public booking widget scrolls to a lower slot before contact details", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
+
+  try {
+    await page.route("**/api/**/availability**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(longAvailabilitySlots()),
+      });
+    });
+    await page.goto(`/widget/${fixture.salonPath.split("/").at(-1)}`);
+
+    await page.locator('[data-testid^="service-select-"]').first().click();
+    await page.getByTestId("employee-select-any").click();
+    await expect(page.getByRole("heading", { name: "Kada želite termin?" })).toBeVisible();
+
+    const scrollArea = page.locator('[data-testid="widget-booking-scroll-area"] [data-radix-scroll-area-viewport]');
+    await expect.poll(() => scrollArea.evaluate((node) => node.scrollHeight > node.clientHeight)).toBeTruthy();
+    await wheelToLowerContent(page, scrollArea, 400);
+
+    await page.getByTestId("slot-15:30").click();
+    await expect(page.getByRole("heading", { name: "Vaši podaci" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Nazad" }).click();
+    await expect(page.getByRole("heading", { name: "Kada želite termin?" })).toBeVisible();
+    await expect.poll(() => scrollArea.evaluate((node) => node.scrollTop)).toBeLessThan(2);
+  } finally {
     await cleanUpPendingBookingFixture(fixture);
   }
 });

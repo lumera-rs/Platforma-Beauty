@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import {
   useGetWidgetSalon,
@@ -44,6 +44,7 @@ export default function WidgetBooking() {
   const [selectedDate, setSelectedDate] = useState<Date>(startOfToday());
   const [startTime, setStartTime] = useState<string | null>(null);
   const [finalSlotEmployeeId, setFinalSlotEmployeeId] = useState<string | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   
   const [contact, setContact] = useState({
     firstName: "",
@@ -111,6 +112,11 @@ export default function WidgetBooking() {
   const upcomingDays = useMemo(() => {
     return Array.from({ length: 7 }).map((_, i) => addDays(startOfToday(), i));
   }, []);
+
+  useEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>("[data-radix-scroll-area-viewport]");
+    viewport?.scrollTo({ top: 0, behavior: "auto" });
+  }, [selectedDate, step]);
 
   // Handlers
   const handleServiceSelect = (id: string) => {
@@ -220,7 +226,7 @@ export default function WidgetBooking() {
           <span className="flex items-center text-[11px] text-muted-foreground"><MapPin className="mr-1 h-3 w-3" />{salon.city}</span>
         </div>
         {step !== "SERVICE" && step !== "SUCCESS" && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
+          <Button aria-label="Nazad" variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => {
             if (step === "EMPLOYEE") setStep("SERVICE");
             if (step === "DATETIME") setStep("EMPLOYEE");
             if (step === "CONTACT") setStep("DATETIME");
@@ -241,7 +247,7 @@ export default function WidgetBooking() {
       )}
 
       {/* Body */}
-      <ScrollArea className="flex-1 bg-muted/10 px-4 py-4">
+      <ScrollArea ref={scrollAreaRef} data-testid="widget-booking-scroll-area" className="flex-1 bg-muted/10 px-4 py-4">
         <div className="mx-auto w-full max-w-md pb-8">
           
           {/* STEP 1: SERVICE */}
