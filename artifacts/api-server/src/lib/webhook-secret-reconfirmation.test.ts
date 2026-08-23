@@ -66,7 +66,7 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
   return realFetch(input, init);
 }) as typeof fetch;
 
-type CardFlags = { webhookSecretPendingReconfirmation?: boolean };
+type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null };
 
 async function run() {
   const server = app.listen(0, "127.0.0.1");
@@ -137,8 +137,10 @@ async function run() {
       const response = await fetch(`${baseUrl}/api/admin/integrations/${integration}/verify-webhook`, {
         method: "POST", headers: { cookie },
       });
-      const body = await response.json() as { message?: string; error?: string };
+      const body = await response.json() as CardFlags & { message?: string; error?: string };
       assert.equal(response.status, 200, `${integration} self-check must succeed: ${JSON.stringify(body)}`);
+      assert.ok(body.webhookVerifiedAt, `${integration} self-check response exposes its confirmation timestamp`);
+      return body;
     };
     const verifyBrevoRegistration = async (host: string) => {
       const response = await requestWithHost("/api/admin/integrations/brevo/verify-registration", {
@@ -153,8 +155,12 @@ async function run() {
       const cards = await getCards();
       assert.equal(cards["sms"]?.webhookSecretPendingReconfirmation, false, "sms baseline: no reminder");
       assert.equal(cards["brevo"]?.webhookSecretPendingReconfirmation, false, "brevo baseline: no reminder");
+      assert.equal(cards["sms"]?.webhookVerifiedAt, null, "sms baseline: no successful confirmation");
+      assert.equal(cards["brevo"]?.webhookVerifiedAt, null, "brevo baseline: no successful confirmation");
       assert.ok(!("webhookSecretPendingReconfirmation" in (cards["google_oauth"] ?? {})),
         "OAuth cards never carry the webhook reminder flag");
+      assert.ok(!("webhookVerifiedAt" in (cards["google_oauth"] ?? {})),
+        "OAuth cards never carry webhook confirmation metadata");
       console.log("✓ baseline: no reminder for never-changed secrets; OAuth cards unaffected");
     }
 
@@ -186,6 +192,8 @@ async function run() {
       const cards = await getCards();
       assert.equal(cards["sms"]?.webhookSecretPendingReconfirmation, false,
         "a successful self-check must clear the persisted reminder");
+      assert.ok(cards["sms"]?.webhookVerifiedAt, "successful self-check exposes its confirmation timestamp");
+      assert.ok(!Number.isNaN(new Date(cards["sms"]!.webhookVerifiedAt!).getTime()), "confirmation timestamp is ISO date-like");
       console.log("✓ successful self-check clears the reminder persistently");
     }
 
@@ -194,13 +202,20 @@ async function run() {
       const saved = await putIntegration("sms", { webhookSecret: smsSecret1 });
       assert.equal(saved.webhookSecretPendingReconfirmation, false,
         "re-saving an unchanged, already-confirmed secret must not re-raise the reminder");
+      assert.ok(saved.webhookVerifiedAt, "saving a confirmed webhook keeps its confirmation timestamp in the PUT response");
+      const unrelatedSave = await putIntegration("sms", { senderName: `LUMERA ${suffix}` });
+      assert.equal(unrelatedSave.webhookVerifiedAt, saved.webhookVerifiedAt,
+        "saving another SMS field must preserve the confirmation timestamp in the PUT response");
       const cards = await getCards();
       assert.equal(cards["sms"]?.webhookSecretPendingReconfirmation, false, "still cleared after reload");
+      assert.equal(cards["sms"]?.webhookVerifiedAt, saved.webhookVerifiedAt,
+        "saving another SMS field must not erase the confirmation timestamp from the admin card");
       // A genuinely different secret flags again (repeatable lifecycle) …
       const changedAgain = await putIntegration("sms", { webhookSecret: `wsr-sms-secret-${suffix}-2` });
       assert.equal(changedAgain.webhookSecretPendingReconfirmation, true, "a second change flags again");
       // … and the self-check clears it again.
-      await verifyWebhook("sms");
+      const verification = await verifyWebhook("sms");
+      assert.ok(!Number.isNaN(new Date(verification.webhookVerifiedAt!).getTime()), "self-check response timestamp is ISO date-like");
       assert.equal((await getCards())["sms"]?.webhookSecretPendingReconfirmation, false, "second cycle clears too");
       console.log("✓ unchanged confirmed secret never re-flags; the change→confirm cycle repeats cleanly");
     }
@@ -258,13 +273,16 @@ async function run() {
       const registrationRequest = await requestWithHost("/api/admin/integrations/brevo/register-webhook", {
         method: "POST", host: prodHost,
       });
-      const body = JSON.parse(registrationRequest.raw) as { message?: string; error?: string };
+      const body = JSON.parse(registrationRequest.raw) as CardFlags & { message?: string; error?: string };
       assert.equal(registrationRequest.status, 200, `one-click registration must succeed: ${JSON.stringify(body)}`);
       assert.equal(brevoQueue.length, 0, "registration flow must consume the full stub sequence");
+      assert.ok(body.webhookVerifiedAt, "one-click registration response exposes its confirmation timestamp");
 
       const cards = await getCards();
       assert.equal(cards["brevo"]?.webhookSecretPendingReconfirmation, false,
         "a successful one-click registration (with verified re-check) must clear the reminder");
+      assert.ok(cards["brevo"]?.webhookVerifiedAt, "successful Brevo registration exposes its confirmation timestamp");
+      assert.ok(!Number.isNaN(new Date(cards["brevo"]!.webhookVerifiedAt!).getTime()), "Brevo confirmation timestamp is ISO date-like");
       assert.equal(cards["sms"]?.webhookSecretPendingReconfirmation, false, "sms card stays cleared");
       console.log("✓ one-click Brevo registration clears the reminder persistently");
     }
@@ -277,6 +295,9 @@ async function run() {
           assert.ok(!(key in settings.values), `${integration} marker ${key} must not surface as a value`);
         }
       }
+      const cards = await getCards();
+      assert.ok(!("webhookSecretChangedAt" in (cards["sms"] ?? {})), "secret-change marker never leaks through admin cards");
+      assert.ok(!("webhookSecretChangedAt" in (cards["brevo"] ?? {})), "secret-change marker never leaks through admin cards");
       console.log("✓ marker rows never leak into integration values");
     }
 

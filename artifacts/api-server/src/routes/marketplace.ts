@@ -364,7 +364,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, type IntegrationName } from "../lib/integrations";
+import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerifiedAt, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
@@ -3214,7 +3214,10 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
         // Persisted server-side, so the "secret changed, registration not yet
         // re-confirmed" reminder survives page reloads and later sessions.
         ...(name === "sms" || name === "brevo"
-          ? { webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(name) }
+          ? {
+            webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(name),
+            webhookVerifiedAt: (await webhookVerifiedAt(name))?.toISOString() ?? null,
+          }
           : {}),
       },
     ])),
@@ -3289,7 +3292,12 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   }
   res.json({
     ...(await integrationDisplay(req.params.integration, definition.keys, definition.required)),
-    ...(webhookIntegration ? { webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(webhookIntegration) } : {}),
+    ...(webhookIntegration
+      ? {
+        webhookSecretPendingReconfirmation: await webhookSecretPendingReconfirmation(webhookIntegration),
+        webhookVerifiedAt: (await webhookVerifiedAt(webhookIntegration))?.toISOString() ?? null,
+      }
+      : {}),
   });
 });
 
@@ -3395,10 +3403,12 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
   // Successful self-check re-confirms the current secret — clear the persisted
   // "secret changed, registration not re-confirmed" reminder.
   await markWebhookReconfirmed(integration, user.id);
+  const confirmedAt = await webhookVerifiedAt(integration);
   res.json({
     message: integration === "sms"
       ? "Infobip webhook radi: sačuvana tajna se poklapa i endpoint prihvata izveštaje o isporuci. Probni događaj nije promenio nijednu isporuku."
       : "Brevo webhook radi: sačuvana tajna se poklapa i endpoint prihvata događaje. Probni događaj nije promenio nijednu isporuku.",
+    webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
   });
 });
 
@@ -3811,6 +3821,7 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     // One-click registration wrote the current secret to the provider and the
     // re-check confirmed it — clear the persisted re-registration reminder.
     await markWebhookReconfirmed("brevo", user.id);
+    const confirmedAt = await webhookVerifiedAt("brevo");
     // Surface any stale LUMERA-format duplicates still registered at Brevo
     // (old domains, old secrets) so the admin can remove them — they keep
     // receiving events that are rejected or lost. The freshly repaired
@@ -3822,6 +3833,7 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     res.json({
       message: `Webhook je ${action} na Brevo sa URL-om ove aplikacije i sačuvanom tajnom, uz pretplatu na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka. Ponovna provera je potvrdila registraciju.${staleNote}`,
       staleWebhooks,
+      webhookVerifiedAt: confirmedAt?.toISOString() ?? null,
     }); return;
   }
   res.status(502).json({ error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}` });

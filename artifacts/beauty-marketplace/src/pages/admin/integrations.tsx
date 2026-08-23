@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, Send, ShieldCheck, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
-type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean };
+type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null };
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
@@ -86,6 +86,12 @@ export default function AdminIntegrations() {
   const clearPendingReconfirmation = (integration: Integration) => setData((previous) => previous
     ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookSecretPendingReconfirmation: false } } }
     : previous);
+  const updateWebhookVerifiedAt = (integration: Integration, value: unknown) => {
+    if (typeof value !== "string" && value !== null) return;
+    setData((previous) => previous
+      ? { ...previous, integrations: { ...previous.integrations, [integration]: { ...previous.integrations[integration], webhookVerifiedAt: value } } }
+      : previous);
+  };
   const save = async (integration: Integration) => {
     const trimmedValues: Record<string, string> = {};
     for (const [k, v] of Object.entries(form[integration])) {
@@ -121,6 +127,7 @@ export default function AdminIntegrations() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
       clearPendingReconfirmation(integration);
+      updateWebhookVerifiedAt(integration, result.webhookVerifiedAt);
       toast.success(result.message);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Provera webhook-a nije uspela.");
@@ -202,6 +209,7 @@ export default function AdminIntegrations() {
       // One-click registration re-verified the provider registration with the
       // current secret — the server cleared the reminder; mirror it here.
       clearPendingReconfirmation("brevo");
+      updateWebhookVerifiedAt("brevo", result.webhookVerifiedAt);
       // The server lists stale LUMERA-format duplicates (masked URLs) still
       // registered at Brevo after a successful repair; render them with the
       // cleanup action below.
@@ -291,6 +299,7 @@ export default function AdminIntegrations() {
             <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
             <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
              {isDevelopmentPreview && <p className="mt-1.5 text-xs font-medium text-amber-700" data-testid={`development-webhook-url-caveat-${integration}`}><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Ovo je URL razvojne probe. Nemojte ga registrovati kod provajdera za produkciju.</p>}
+            <p className="mt-2 text-xs text-muted-foreground">Poslednja uspešna potvrda: <span className="font-medium">{formatTimestamp(card.webhookVerifiedAt ?? null) ?? "nikada potvrđeno"}</span></p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled={copyingWebhookUrl[integration]} onClick={() => copyWebhookUrl(integration)}>
                 {copyingWebhookUrl[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}

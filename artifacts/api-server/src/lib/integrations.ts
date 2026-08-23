@@ -136,6 +136,12 @@ export async function markWebhookReconfirmed(integration: "sms" | "brevo", updat
   await setIntegrationMarker(integration, "webhookVerifiedAt", updatedByUserId, at);
 }
 
+/** Return the last successful webhook confirmation without exposing marker
+ * storage details or any integration secret. */
+export async function webhookVerifiedAt(integration: "sms" | "brevo"): Promise<Date | null> {
+  return integrationMarker(integration, "webhookVerifiedAt");
+}
+
 /**
  * True while a webhook secret change awaits re-confirmation: a change was
  * recorded and no confirmation succeeded at or after it. Derived from the two
