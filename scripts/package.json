@@ -36,6 +36,7 @@
     "test:campaign-client-filter": "playwright test browser/campaign-client-filter.spec.ts",
     "test:campaign-period-filter": "playwright test browser/campaign-period-filter.spec.ts",
     "test:campaign-period-url": "playwright test browser/campaign-period-url.spec.ts",
+    "test:business-guide-help": "playwright test browser/business-guide-help-links.spec.ts",
     "test:multi-location": "playwright test browser/multi-location-owner.spec.ts",
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts",
     "test:retail-checkout-api": "tsx ./src/run-retail-checkout-api.ts",
