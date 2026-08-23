@@ -96,8 +96,13 @@ export async function saveIntegrationSettings(input: {
       set: { encryptedValue: encrypt(value.trim()), enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
     });
   }
+  // Apply the integration-level enabled flag to every row WITHOUT touching
+  // updatedAt: per-row updatedAt must reflect when THAT setting's value was
+  // last (re)written — the SMS registration check compares delivery-report
+  // receipts against the webhookSecret save time, so saving an unrelated
+  // field (or toggling enabled) must not make the secret look freshly changed.
   const rows = await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
-  if (rows.length) await db.update(integrationSettingsTable).set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() }).where(eq(integrationSettingsTable.integration, input.integration));
+  if (rows.length) await db.update(integrationSettingsTable).set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId }).where(eq(integrationSettingsTable.integration, input.integration));
 }
 
 async function integrationMarker(integration: IntegrationName, settingKey: WebhookMarkerKey): Promise<Date | null> {

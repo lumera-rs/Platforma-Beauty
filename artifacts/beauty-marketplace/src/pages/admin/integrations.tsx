@@ -13,7 +13,9 @@ type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
 type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
-type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number }; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
+
+type SmsWebhookRegistrationState = "no_secret" | "confirmed" | "misconfigured" | "stale_secret" | "unconfirmed";
+type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number }; smsWebhookRegistration?: SmsWebhookRegistration; redirectUris: { google: string; facebook: string }; smsReminder: { command: string; active: boolean; instructions: string[] } };
 
 const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
@@ -157,6 +159,22 @@ export default function AdminIntegrations() {
       setVerifyingRegistration(false);
     }
   };
+  const [verifyingSmsRegistration, setVerifyingSmsRegistration] = useState(false);
+  const verifySmsRegistration = async () => {
+    setVerifyingSmsRegistration(true);
+    try {
+      const response = await fetch("/api/admin/integrations/sms/verify-registration", { method: "POST", credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Provera registracije nije uspela.");
+      if (result.verified) toast.success(result.message);
+      else toast.info(result.message, { duration: 15000 });
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Provera registracije nije uspela.", { duration: 15000 });
+    } finally {
+      setVerifyingSmsRegistration(false);
+    }
+  };
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [staleBrevoWebhooks, setStaleBrevoWebhooks] = useState<Array<{ id: number; maskedUrl: string }>>([]);
   const registerBrevoWebhook = async () => {
@@ -262,6 +280,10 @@ export default function AdminIntegrations() {
                 {registeringWebhook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
                 {registeringWebhook ? "Registrujem…" : "Registruj webhook"}
               </Button>}
+              {integration === "sms" && <Button variant="outline" size="sm" disabled={verifyingSmsRegistration} onClick={verifySmsRegistration}>
+                {verifyingSmsRegistration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                {verifyingSmsRegistration ? "Proveravam…" : "Proveri registraciju (Infobip)"}
+              </Button>}
             </div>
             {integration === "brevo" && staleBrevoWebhooks.length > 0 && <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
               <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Zaostale LUMERA registracije na Brevo ({staleBrevoWebhooks.length})</p>
@@ -274,8 +296,33 @@ export default function AdminIntegrations() {
                 {cleaningStaleWebhooks ? "Uklanjam…" : "Ukloni zaostale registracije"}
               </Button>
             </div>}
+            {integration === "sms" && data.smsWebhookRegistration && (() => {
+              const registration = data.smsWebhookRegistration;
+              const panels: Record<SmsWebhookRegistrationState, { tone: "ok" | "warn" | "neutral"; badge: string; text: string }> = {
+                confirmed: { tone: "ok", badge: "Registracija potvrđena", text: `Infobip zaista dostavlja izveštaje o isporuci na ovaj endpoint sa aktuelnom tajnom — poslednji stvarni izveštaj: ${formatTimestamp(registration.lastReportAt) ?? "—"}.` },
+                unconfirmed: { tone: "neutral", badge: "Još nepotvrđena", text: "Nema nedavnih automatskih SMS poruka po kojima bi se registracija potvrdila — to NIJE znak greške. Infobip API ne omogućava očitavanje registrovanog report URL-a, pa se registracija potvrđuje tek prvim stvarnim izveštajem. Proverite u Infobip portalu da je delivery-report URL podešen (koristite „Kopiraj kompletan URL“), pa pokrenite „Proveri registraciju (Infobip)“." },
+                no_secret: { tone: "warn", badge: "Tajna nije sačuvana", text: "Webhook tajna nije sačuvana, pa endpoint odbija sve Infobip izveštaje. Generišite i sačuvajte tajnu, zatim registrujte kompletan URL u Infobip portalu." },
+                stale_secret: { tone: "warn", badge: "Verovatno stara tajna", text: `Tajna je promenjena ${formatTimestamp(registration.secretSavedAt) ?? "—"}, a poslednji potvrđeni izveštaj je stariji (${formatTimestamp(registration.lastReportAt) ?? "—"}) — registracija kod Infobip-a najverovatnije još nosi staru tajnu. Kopirajte kompletan URL sa novom tajnom i ažurirajte report URL u Infobip portalu.` },
+                misconfigured: { tone: "warn", badge: "Verovatno nije registrovan", text: "Automatske SMS poruke se šalju, ali Infobip ne dostavlja izveštaje — webhook nije registrovan kod Infobip-a, pokazuje na pogrešan domen ili nosi pogrešnu tajnu. Ovo nije problem sa saobraćajem: poruke postoje, izveštaji izostaju. Podesite report URL u Infobip portalu (koristite „Kopiraj kompletan URL“)." },
+              };
+              const panel = panels[registration.state];
+              const boxClass = panel.tone === "ok" ? "border-emerald-300 bg-emerald-50" : panel.tone === "warn" ? "border-amber-300 bg-amber-50" : "bg-muted/30";
+              const textClass = panel.tone === "ok" ? "text-emerald-800" : panel.tone === "warn" ? "text-amber-800" : "text-muted-foreground";
+              const badgeClass = panel.tone === "ok" ? "bg-emerald-100 text-emerald-700" : panel.tone === "warn" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
+              return <div className={`mt-3 rounded-lg border p-3 ${boxClass}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <Label className={panel.tone === "warn" ? "text-amber-800" : panel.tone === "ok" ? "text-emerald-800" : undefined}>Registracija na Infobip</Label>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeClass}`}>
+                    {panel.tone === "ok" ? <CheckCircle2 className="h-3.5 w-3.5" /> : panel.tone === "warn" ? <AlertTriangle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                    {panel.badge}
+                  </span>
+                </div>
+                <p className={`mt-1.5 text-xs ${textClass}`}>{panel.text}</p>
+              </div>;
+            })()}
             <p className="mt-1.5 text-xs text-muted-foreground">Kopiranje ubacuje sačuvanu tajnu umesto {"<tajna>"} — nalepite kopirani URL direktno kod provajdera, bez ručnog sklapanja.</p>
             <p className="mt-1.5 text-xs text-muted-foreground">Šalje probni događaj na sopstveni endpoint sa sačuvanom tajnom — potvrđuje da se tajna poklapa i da endpoint prima događaje, bez uticaja na isporuke.</p>
+            {integration === "sms" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije: Infobip API ne omogućava očitavanje registrovanog report URL-a, pa provera kombinuje probni događaj na sopstveni endpoint sa dokazima iz stvarnog saobraćaja — stvarni izveštaj primljen posle poslednje promene tajne potvrđuje registraciju, a poslate poruke bez ijednog izveštaja ukazuju na nepostojeću ili zastarelu registraciju. Tajna se nikada ne prikazuje.</p>}
             {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">Provera registracije pita Brevo API da li je webhook zaista registrovan kod provajdera: da li URL pokazuje na ovaj domen, nosi aktuelnu tajnu i prati sve potrebne događaje (isporuke, otvaranja, odbijanja i greške). Poređenje se obavlja na serveru; tajna se nikada ne prikazuje.</p>}
             {integration === "brevo" && <p className="mt-1 text-xs text-muted-foreground">„Registruj webhook“ jednim klikom kreira ili ažurira transakcioni webhook direktno preko Brevo API-ja — URL ove aplikacije sa sačuvanom tajnom i pretplatom na događaje isporuke, otvaranja, bounce-ova, blokada i grešaka — a zatim ponovo proverava registraciju. Tajna se koristi samo na serveru.</p>}
           </div>}
@@ -299,3 +346,5 @@ export default function AdminIntegrations() {
       <section className="rounded-xl border bg-card p-6 shadow-sm"><div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-primary" /><div><h2 className="text-xl font-semibold">SMS podsetnik · Scheduled Job</h2><p className="text-sm text-muted-foreground">Status: <span className="font-medium text-slate-600">Platforma ne prijavljuje ovaj status aplikaciji</span></p></div></div><ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">{data.smsReminder.instructions.map((item) => <li key={item}>{item}</li>)}</ol><div className="mt-4 rounded-lg bg-muted p-3 font-mono text-sm">{data.smsReminder.command}</div></section>
     </>}</div></AdminLayout>;
 }
+
+type SmsWebhookRegistration = { state: SmsWebhookRegistrationState; secretSavedAt: string | null; lastReportAt: string | null };

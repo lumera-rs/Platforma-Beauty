@@ -32,6 +32,7 @@ import {
   automationDeliveriesTable,
   db,
   emailDeliveriesTable,
+  integrationSettingsTable,
   providerWebhookReceiptsTable,
   smsDeliveriesTable,
 } from "@workspace/db";
@@ -183,6 +184,110 @@ export async function deliveryReportStatuses(now = new Date()): Promise<Record<D
   };
 
   return { brevo: status("brevo"), infobip: status("infobip") };
+}
+
+// ---------------------------------------------------------------------------
+// Infobip SMS delivery-report webhook registration health (guided check)
+// ---------------------------------------------------------------------------
+//
+// Brevo's registration check lists the provider's registered webhooks and
+// compares URL + secret server-side. Infobip has no equivalent public API for
+// the account-level SMS delivery-report URL (it is configured in the Infobip
+// portal / by Infobip support and cannot be listed programmatically), so the
+// SMS check derives a registration verdict from evidence the app itself can
+// verify:
+//   - whether a webhook secret is saved (without one every report is rejected),
+//   - WHEN the secret was last saved (a report accepted before a secret change
+//     proves nothing about the CURRENT registration — Infobip would still be
+//     calling with the old token, which the endpoint now rejects),
+//   - the last accepted VERIFIED real report (admin self-check batches are
+//     excluded from receipt tracking, so they can never fake this proof), and
+//   - the delivery-report silence warning (grace-aged recent sends with no
+//     report since — the "provider is NOT calling us" signal).
+
+/**
+ * When the webhook secret for a provider was last saved in the database, or
+ * null when no database-saved secret exists (environment fallback: age
+ * unknown, treated as never-changed). Saving any OTHER setting must not bump
+ * this timestamp — saveIntegrationSettings only touches updatedAt of rows
+ * whose value was actually (re)written.
+ */
+export async function webhookSecretSavedAt(provider: WebhookProvider): Promise<Date | null> {
+  const [row] = await db.select({ updatedAt: integrationSettingsTable.updatedAt })
+    .from(integrationSettingsTable)
+    .where(and(
+      eq(integrationSettingsTable.integration, provider),
+      eq(integrationSettingsTable.settingKey, "webhookSecret"),
+    ))
+    .limit(1);
+  return row?.updatedAt ?? null;
+}
+
+export type SmsWebhookRegistrationState =
+  | "no_secret"      // no webhook secret configured — the endpoint rejects every report
+  | "confirmed"      // a real verified report was accepted since the secret was last saved
+  | "misconfigured"  // recent sends exist but reports stay silent — registration missing/stale at Infobip
+  | "stale_secret"   // reports were confirmed before the secret changed, none since — Infobip likely carries the old token
+  | "unconfirmed";   // no evidence either way (no confirming report, no qualifying silence)
+
+/**
+ * Pure verdict: classify the Infobip delivery-report registration from the
+ * verifiable evidence above. Precedence:
+ *   1. no secret → nothing can ever be accepted;
+ *   2. a report accepted since the secret was last saved proves Infobip calls
+ *      this endpoint with the CURRENT secret — unless newer grace-aged sends
+ *      are silent again (registration broke after the confirmation);
+ *   3. a report exists but predates the secret change → the registration
+ *      almost certainly still carries the old secret (actionable regardless
+ *      of traffic: the silence, when present, is explained by the change);
+ *   4. no confirming report: silence despite qualifying sends means
+ *      misconfigured, otherwise there is simply nothing to judge by yet.
+ */
+export function smsWebhookRegistrationState(input: {
+  secretSaved: boolean;
+  /** DB save time of the secret; null = env fallback (treated as never-changed). */
+  secretSavedAt: Date | null;
+  /** Last accepted verified REAL report (self-checks never count). */
+  lastEventAt: Date | null;
+  /** Delivery-report silence warning (grace-aged sends, no report since). */
+  reportWarning: boolean;
+}): SmsWebhookRegistrationState {
+  if (!input.secretSaved) return "no_secret";
+  const confirmedSinceSecretSave = input.lastEventAt !== null
+    && (input.secretSavedAt === null || input.lastEventAt.getTime() >= input.secretSavedAt.getTime());
+  if (confirmedSinceSecretSave) return input.reportWarning ? "misconfigured" : "confirmed";
+  if (input.lastEventAt !== null && input.secretSavedAt !== null) return "stale_secret";
+  return input.reportWarning ? "misconfigured" : "unconfirmed";
+}
+
+export interface SmsWebhookRegistrationStatus {
+  state: SmsWebhookRegistrationState;
+  /** When the webhook secret was last saved in the database (ISO), or null. */
+  secretSavedAt: string | null;
+  /** Last accepted verified real report (ISO), or null if never. */
+  lastReportAt: string | null;
+}
+
+/**
+ * Registration status for the admin integrations page, composed from the
+ * already-computed Infobip delivery-report freshness (avoids re-querying).
+ */
+export async function smsWebhookRegistrationStatus(infobip: DeliveryReportStatus): Promise<SmsWebhookRegistrationStatus> {
+  const [secret, secretSavedAt] = await Promise.all([
+    resolveWebhookSecret("sms"),
+    webhookSecretSavedAt("sms"),
+  ]);
+  const lastEventAt = infobip.lastEventAt ? new Date(infobip.lastEventAt) : null;
+  return {
+    state: smsWebhookRegistrationState({
+      secretSaved: Boolean(secret),
+      secretSavedAt,
+      lastEventAt,
+      reportWarning: infobip.warning,
+    }),
+    secretSavedAt: secretSavedAt ? secretSavedAt.toISOString() : null,
+    lastReportAt: infobip.lastEventAt,
+  };
 }
 
 // ---------------------------------------------------------------------------

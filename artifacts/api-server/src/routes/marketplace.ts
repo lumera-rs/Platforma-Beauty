@@ -354,7 +354,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, type IntegrationName } from "../lib/integrations";
-import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
+import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
@@ -3209,6 +3209,11 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
     deliveryReportStatuses(),
     smsFallbackReachableAdminCount(),
   ]);
+  // Standing registration verdict for the Infobip delivery-report webhook —
+  // Infobip's API cannot list the configured report URL, so the verdict is
+  // derived from verifiable evidence (secret age vs. accepted real reports
+  // vs. report silence). See smsWebhookRegistrationState.
+  const smsWebhookRegistration = await smsWebhookRegistrationStatus(deliveryReportsByProvider.infobip);
   const origin = requestOrigin(req);
   res.json({
     integrations: Object.fromEntries(entries),
@@ -3223,6 +3228,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
     // warning to add a phone number, because a total email outage would
     // otherwise degrade to an unseen log line.
     smsFallback: { reachableAdminCount },
+    smsWebhookRegistration,
     redirectUris: {
       google: `${origin}/api/auth/oauth/google/callback`,
       facebook: `${origin}/api/auth/oauth/facebook/callback`,
@@ -3309,17 +3315,18 @@ router.post("/admin/integrations/:integration/test", async (req, res): Promise<v
  * state (the synthetic reference can never match a persisted outbound send,
  * and verification-only batches never count as provider delivery reports).
  */
-router.post("/admin/integrations/:integration/verify-webhook", async (req, res): Promise<void> => {
-  const user = await requireAdmin(req, res); if (!user) return;
-  const integration = req.params.integration;
-  if (integration !== "sms" && integration !== "brevo") {
-    res.status(404).json({ error: "Provera webhook-a je dostupna samo za SMS i Brevo integracije." }); return;
-  }
-  const secret = await resolveWebhookSecret(integration);
-  if (!secret) {
-    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
-  }
-
+/**
+ * Loopback webhook self-check shared by the "Proveri webhook" button and the
+ * SMS registration check: posts one synthetic delivery event to the app's own
+ * provider webhook endpoint with the currently saved secret, exercising
+ * routing, JSON parsing, the timing-safe token comparison, and event
+ * processing end to end. Returns a Serbian error when any step fails.
+ */
+async function runWebhookSelfCheck(
+  req: Request,
+  integration: "sms" | "brevo",
+  secret: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const webhookPath = integration === "sms" ? "infobip" : "brevo";
   // Unmatched by construction: no persisted outbound send ever carries this
   // reference, so the synthetic event cannot alter any delivery state.
@@ -3331,7 +3338,7 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
   // Loopback to the same bound server this admin request arrived on — works
   // identically in development and in the production deployment.
   const localPort = req.socket.localPort;
-  if (!localPort) { res.status(502).json({ error: "Provera nije moguća: port servera nije poznat. Pokušajte ponovo." }); return; }
+  if (!localPort) return { ok: false, error: "Provera nije moguća: port servera nije poznat. Pokušajte ponovo." };
   let response: globalThis.Response;
   try {
     response = await fetch(`http://127.0.0.1:${localPort}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}`, {
@@ -3341,19 +3348,34 @@ router.post("/admin/integrations/:integration/verify-webhook", async (req, res):
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    res.status(502).json({ error: "Webhook endpoint nije odgovorio na probni događaj. Proverite da li aplikacija radi, pa pokušajte ponovo." }); return;
+    return { ok: false, error: "Webhook endpoint nije odgovorio na probni događaj. Proverite da li aplikacija radi, pa pokušajte ponovo." };
   }
 
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (response.status === 401) {
-    res.status(502).json({ error: "Webhook endpoint je odbio sačuvanu tajnu. Sačuvajte webhook tajnu ponovo, pa kod provajdera registrujte URL sa istom tajnom." }); return;
+    return { ok: false, error: "Webhook endpoint je odbio sačuvanu tajnu. Sačuvajte webhook tajnu ponovo, pa kod provajdera registrujte URL sa istom tajnom." };
   }
   if (response.status === 503) {
-    res.status(502).json({ error: "Webhook endpoint prijavljuje da tajna nije konfigurisana. Sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+    return { ok: false, error: "Webhook endpoint prijavljuje da tajna nije konfigurisana. Sačuvajte webhook tajnu, pa pokušajte ponovo." };
   }
   if (!response.ok || !body || body["processed"] !== 1 || body["unmatched"] !== 1) {
-    res.status(502).json({ error: `Webhook endpoint nije prihvatio probni događaj (status ${response.status}). Proverite podešavanja, pa pokušajte ponovo.` }); return;
+    return { ok: false, error: `Webhook endpoint nije prihvatio probni događaj (status ${response.status}). Proverite podešavanja, pa pokušajte ponovo.` };
   }
+  return { ok: true };
+}
+
+router.post("/admin/integrations/:integration/verify-webhook", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const integration = req.params.integration;
+  if (integration !== "sms" && integration !== "brevo") {
+    res.status(404).json({ error: "Provera webhook-a je dostupna samo za SMS i Brevo integracije." }); return;
+  }
+  const secret = await resolveWebhookSecret(integration);
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  const selfCheck = await runWebhookSelfCheck(req, integration, secret);
+  if (!selfCheck.ok) { res.status(502).json({ error: selfCheck.error }); return; }
   // Successful self-check re-confirms the current secret — clear the persisted
   // "secret changed, registration not re-confirmed" reminder.
   await markWebhookReconfirmed(integration, user.id);
@@ -3605,6 +3627,87 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
   );
   if (verdict.ok) { res.json({ message: verdict.message }); return; }
   res.status(409).json({ error: verdict.error });
+});
+
+/**
+ * Admin SMS registration check ("Proveri registraciju") — the Infobip
+ * counterpart of the Brevo registration check above. Infobip's public API
+ * cannot list the account-level delivery-report webhook URL (it is configured
+ * in the Infobip portal / by Infobip support), so a provider-side listing is
+ * impossible; instead the check combines everything the app CAN verify:
+ *   1. the loopback self-check — this deployment's endpoint accepts the saved
+ *      secret and processes reports end to end, and
+ *   2. the evidence-based registration verdict (smsWebhookRegistrationState):
+ *      a real verified report accepted since the secret was last saved proves
+ *      Infobip calls this endpoint with the CURRENT secret; silence despite
+ *      recent grace-aged sends proves it does not; a report older than the
+ *      last secret change flags the stale-token case.
+ * A misconfigured or missing registration (409) is therefore always
+ * distinguishable from "no recent SMS sends" (200 with verified: false).
+ * Failure verdicts name the exact URL shape to configure at Infobip with the
+ * <tajna> placeholder — the secret itself is never echoed (admins use
+ * „Kopiraj kompletan URL“ for the complete URL). From a development/preview
+ * browsing address the instruction names the published-domain placeholder,
+ * mirroring the Brevo check, and the verdict is qualified as relative to the
+ * development environment (its receipts/sends live in the development
+ * database).
+ */
+router.post("/admin/integrations/sms/verify-registration", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const secret = await resolveWebhookSecret("sms");
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  const origin = normalizedRequestOrigin(req);
+  const developmentOrigin = isDevelopmentBrowsingOrigin(origin);
+  const expectedUrlHint = developmentOrigin
+    ? "https://<domen-objavljene-aplikacije>/api/webhooks/infobip/<tajna>"
+    : `${origin}/api/webhooks/infobip/<tajna>`;
+  const devNote = developmentOrigin
+    ? ` Napomena: proveru ste pokrenuli sa razvojne adrese (${origin}), pa se nalaz odnosi na razvojno okruženje — za pouzdanu presudu pokrenite proveru iz objavljene aplikacije i nemojte registrovati razvojni URL kod Infobip-a.`
+    : "";
+  const setupInstruction = `U Infobip portalu podesite delivery-report webhook (report URL) za SMS na ${expectedUrlHint} — upotrebite „Kopiraj kompletan URL“ da dobijete URL sa sačuvanom tajnom. Infobip API ne omogućava aplikaciji da tu registraciju očita ili podesi umesto vas.`;
+
+  const selfCheck = await runWebhookSelfCheck(req, "sms", secret);
+  if (!selfCheck.ok) {
+    res.status(502).json({ error: `Provera registracije nije završena — probni događaj na sopstveni endpoint nije prošao: ${selfCheck.error}` }); return;
+  }
+
+  const registration = await smsWebhookRegistrationStatus((await deliveryReportStatuses()).infobip);
+  const formatTs = (iso: string) => new Date(iso).toLocaleString("sr-RS", { timeZone: "Europe/Belgrade" });
+
+  if (registration.state === "confirmed") {
+    res.json({
+      verified: true,
+      state: registration.state,
+      message: `Registracija na Infobip je potvrđena: endpoint prihvata sačuvanu tajnu (probni događaj je prošao), a Infobip zaista dostavlja izveštaje o isporuci sa aktuelnom tajnom — poslednji stvarni izveštaj je primljen ${formatTs(registration.lastReportAt!)}.${devNote}`,
+    }); return;
+  }
+  if (registration.state === "unconfirmed") {
+    res.json({
+      verified: false,
+      state: registration.state,
+      message: `Endpoint i sačuvana tajna rade (probni događaj je prihvaćen), ali registracija kod Infobip-a još nije potvrđena: nema nedavnih automatskih SMS poruka po kojima bi se videlo da Infobip zaista šalje izveštaje. To ne znači da nešto ne radi — potvrda stiže sa prvim stvarnim izveštajem o isporuci. ${setupInstruction}${devNote}`,
+    }); return;
+  }
+  // The 409 bodies carry the structured contract's code themselves so the
+  // admin error normalizer passes verified/state through to the panel.
+  if (registration.state === "stale_secret") {
+    res.status(409).json({
+      verified: false,
+      state: registration.state,
+      code: "CONFLICT",
+      error: `Webhook tajna je promenjena ${formatTs(registration.secretSavedAt!)}, a poslednji potvrđeni Infobip izveštaj je stariji (${formatTs(registration.lastReportAt!)}) — registracija kod Infobip-a najverovatnije još nosi staru tajnu, pa endpoint sada odbija izveštaje. ${setupInstruction}${devNote}`,
+    }); return;
+  }
+  // "misconfigured" (recent sends, no reports). "no_secret" is unreachable —
+  // the saved secret already resolved above.
+  res.status(409).json({
+    verified: false,
+    state: registration.state,
+    code: "CONFLICT",
+    error: `Endpoint i sačuvana tajna rade (probni događaj je prihvaćen), ali automatske SMS poruke su nedavno poslate, a Infobip nije dostavio nijedan izveštaj o isporuci u očekivanom roku${registration.lastReportAt ? ` (poslednji stvarni izveštaj: ${formatTs(registration.lastReportAt)})` : " (nijedan stvarni izveštaj do sada)"}. Webhook najverovatnije nije registrovan kod Infobip-a ili pokazuje na pogrešan domen. ${setupInstruction}${devNote}`,
+  });
 });
 
 /**
