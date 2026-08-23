@@ -118,6 +118,14 @@ export default function AdminRetentionSettings() {
   const [conflict, setConflict] = useState<VersionConflict | null>(null);
 
   /**
+   * Parsed values held while the "these values change nothing" confirmation is
+   * open. Unlike restores (which the server rejects as no-ops), a deliberate
+   * manual re-confirmation stays allowed — the dialog only prevents accidental
+   * audit noise.
+   */
+  const [identicalSavePending, setIdenticalSavePending] = useState<RetentionThresholds | null>(null);
+
+  /**
    * Version the form values were loaded from. Saves send this as
    * `expectedVersion` — NOT the live `settings.version`, which the staleness
    * poll may silently advance past the values the admin is actually editing.
@@ -246,6 +254,7 @@ export default function AdminRetentionSettings() {
         );
         setRestoreTarget(null);
         setConflict(null);
+        setIdenticalSavePending(null);
         // Rebase the form on the version we just created, so the refetch
         // below neither re-triggers the staleness banner nor loses the state.
         loadFormFromSettings(updated);
@@ -253,6 +262,7 @@ export default function AdminRetentionSettings() {
       },
       onError: (err) => {
         setRestoreTarget(null);
+        setIdenticalSavePending(null);
         if (isVersionConflict(err)) {
           setPreview(null);
           setConflict({ pending: thresholds, origin });
@@ -289,6 +299,17 @@ export default function AdminRetentionSettings() {
     const values = parseForm();
     if (!values) {
       toast.error("Proverite označena polja pre čuvanja.");
+      return;
+    }
+    // A manual save identical to the active thresholds would record a version
+    // showing "Bez promene vrednosti" in the history. That stays allowed
+    // (deliberate re-confirmation), but ask first so it never happens by
+    // accident — same comparison the restore dialog uses for isNoOpRestore.
+    if (
+      settings &&
+      FIELDS.every((f) => values[f.key] === settings.thresholds[f.key])
+    ) {
+      setIdenticalSavePending(values);
       return;
     }
     performUpdate(values, { changeSource: "manual" });
@@ -714,6 +735,38 @@ export default function AdminRetentionSettings() {
               >
                 {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RotateCcw className="w-4 h-4 mr-2" />}
                 {restoreTarget?.kind === "defaults" ? "Vrati podrazumevane vrednosti" : "Vrati ovu verziju"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={identicalSavePending !== null}
+          onOpenChange={(open) => { if (!open) setIdenticalSavePending(null); }}
+        >
+          <AlertDialogContent data-testid="identical-retention-save-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Vrednosti su identične aktivnoj verziji</AlertDialogTitle>
+              <AlertDialogDescription>
+                Ništa se ne bi promenilo u ponašanju platforme — u istoriji bi bila zabeležena
+                nova verzija sa napomenom „Bez promene vrednosti“. Sačuvajte samo ako želite
+                namernu ponovnu potvrdu važećih pragova sa vašim imenom i vremenom.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={updateMutation.isPending} data-testid="cancel-identical-retention-save">
+                Otkaži
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (identicalSavePending) performUpdate(identicalSavePending, { changeSource: "manual" });
+                }}
+                disabled={updateMutation.isPending}
+                data-testid="confirm-identical-retention-save"
+              >
+                {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                Ipak sačuvaj
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
