@@ -20,6 +20,8 @@ type PendingBookingFixture = {
   customerEmail: string;
   customerPassword: string;
   customerId: string;
+  ownerEmail: string;
+  ownerPassword: string;
   ownerId: string;
   salonId: string;
   salonPath: string;
@@ -43,6 +45,8 @@ async function createPendingBookingFixture({
   const suffix = randomUUID();
   const customerEmail = `browser-pending-booking-customer-${suffix}@example.test`;
   const customerPassword = "browser-pending-booking-customer-password";
+  const ownerEmail = `browser-pending-booking-owner-${suffix}@example.test`;
+  const ownerPassword = "browser-pending-booking-owner-password";
   const customerPhone = `+38161${suffix.replaceAll("-", "").slice(0, 8)}`;
   let customerId: string | undefined;
   let ownerId: string | undefined;
@@ -52,8 +56,8 @@ async function createPendingBookingFixture({
     const [owner] = await db.insert(usersTable).values({
       firstName: "Browser",
       lastName: "Vlasnik",
-      email: `browser-pending-booking-owner-${suffix}@example.test`,
-      passwordHash: await hashPassword("browser-pending-booking-owner-password"),
+      email: ownerEmail,
+      passwordHash: await hashPassword(ownerPassword),
       passwordSetAt: new Date(),
       role: "SALON_OWNER",
     }).returning();
@@ -119,6 +123,8 @@ async function createPendingBookingFixture({
       customerEmail,
       customerPassword,
       customerId: customerUser.id,
+      ownerEmail,
+      ownerPassword,
       ownerId: owner.id,
       salonId: salon.id,
       salonPath: `/saloni/${salon.slug}`,
@@ -147,6 +153,13 @@ async function signInAsFixtureCustomer(page: Page, fixture: PendingBookingFixtur
     data: { email: fixture.customerEmail, password: fixture.customerPassword },
   });
   expect(response, "The pending-booking fixture customer must be able to sign in.").toBeOK();
+}
+
+async function signInAsFixtureOwner(page: Page, fixture: PendingBookingFixture) {
+  const response = await page.request.post("/api/auth/login", {
+    data: { email: fixture.ownerEmail, password: fixture.ownerPassword },
+  });
+  expect(response, "The pending-booking fixture owner must be able to sign in.").toBeOK();
 }
 
 async function signInAsSalonOwner(page: Page) {
@@ -285,84 +298,92 @@ async function reachBookingConfirmationAsNonCustomer(page: Page, widget: Locator
 
 test("customer can book from the mobile sticky trigger and the drawer remains accessible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await signInAsCustomer(page);
-  await page.goto(salonPath);
-
-  const stickyTrigger = page.getByRole("button", { name: "Zakaži", exact: true });
-  await expect(stickyTrigger).toBeVisible();
-  await stickyTrigger.click();
-
-  const drawer = page.getByRole("dialog");
-  await expect(drawer).toHaveAccessibleName("Zakažite termin");
-  await expect(drawer).toHaveAccessibleDescription("Izaberite uslugu, zaposlenog i slobodan termin.");
-  await expect(drawer.getByRole("button", { name: "Korak 1: Usluga" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Korak 2: Zaposleni" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toBeVisible();
-  await expect(drawer.getByRole("button", { name: "Korak 4: Potvrda" })).toBeVisible();
-
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
   let appointmentId: string | undefined;
   try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const stickyTrigger = page.getByRole("button", { name: "Zakaži", exact: true });
+    await expect(stickyTrigger).toBeVisible();
+    await stickyTrigger.click();
+
+    const drawer = page.getByRole("dialog");
+    await expect(drawer).toHaveAccessibleName("Zakažite termin");
+    await expect(drawer).toHaveAccessibleDescription("Izaberite uslugu, zaposlenog i slobodan termin.");
+    await expect(drawer.getByRole("button", { name: "Korak 1: Usluga" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Korak 2: Zaposleni" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Korak 3: Termin" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Korak 4: Potvrda" })).toBeVisible();
+
     appointmentId = await completeBooking(page, drawer);
   } finally {
     if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    await cleanUpPendingBookingFixture(fixture);
   }
 });
 
 test("customer can complete the desktop salon booking journey", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await signInAsCustomer(page);
-  await page.goto(salonPath);
-
-  const widget = page.locator("#booking-widget");
-  await expect(widget).toBeVisible();
-
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
   let appointmentId: string | undefined;
   try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
+
+    const widget = page.locator("#booking-widget");
+    await expect(widget).toBeVisible();
     appointmentId = await completeBooking(page, widget);
   } finally {
     if (appointmentId) await cleanUpAppointment(page, appointmentId);
+    await cleanUpPendingBookingFixture(fixture);
   }
 });
 
 test("a booking conflict returns the customer to refreshed available slots", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await signInAsCustomer(page);
-  await page.goto(salonPath);
+  const fixture = await createPendingBookingFixture({ instantBooking: true });
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
 
-  const widget = page.locator("#booking-widget");
-  await expect(widget).toBeVisible();
-  await reachBookingConfirmation(page, widget);
+    const widget = page.locator("#booking-widget");
+    await expect(widget).toBeVisible();
+    await reachBookingConfirmation(page, widget);
 
-  await page.route("**/api/appointments", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin.",
-      }),
+    await page.route("**/api/appointments", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "Termin više nije slobodan. Osvežite dostupnost i izaberite drugi termin.",
+        }),
+      });
     });
-  });
 
-  const refreshedAvailability = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return request.method() === "GET" && url.pathname.includes("/availability");
-  });
-  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+    const refreshedAvailability = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === "GET" && url.pathname.includes("/availability");
+    });
+    await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
 
-  await expect(page.getByText("Osvežili smo slobodne termine. Izaberite drugi termin.")).toBeVisible();
-  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-  await expect(widget.getByText("Pregled rezervacije")).toHaveCount(0);
-  await expect(widget.getByRole("button", { name: "Dalje" })).toBeDisabled();
-  await refreshedAvailability;
+    await expect(page.getByText("Osvežili smo slobodne termine. Izaberite drugi termin.")).toBeVisible();
+    await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+    await expect(widget.getByText("Pregled rezervacije")).toHaveCount(0);
+    await expect(widget.getByRole("button", { name: "Dalje" })).toBeDisabled();
+    await refreshedAvailability;
 
-  const refreshedSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
-  await expect(refreshedSlot).toBeVisible();
-  await refreshedSlot.click();
-  await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
+    const refreshedSlot = widget.getByRole("button", { name: /Izaberi termin u/ }).first();
+    await expect(refreshedSlot).toBeVisible();
+    await refreshedSlot.click();
+    await expect(widget.getByRole("button", { name: "Korak 4: Potvrda" })).toHaveAttribute("aria-current", "step");
+  } finally {
+    await cleanUpPendingBookingFixture(fixture);
+  }
 });
 
 test("customer sees a sent request when the salon must approve an in-salon booking", async ({ page }) => {
@@ -434,53 +455,65 @@ test("customer sees a sent request for a home visit from the mobile booking draw
 
 test("a non-customer is guided to use a client account before an appointment request", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await signInAsSalonOwner(page);
-  await page.goto(salonPath);
+  const fixture = await createPendingBookingFixture();
 
-  const widget = page.locator("#booking-widget");
-  await expect(widget).toBeVisible();
-  await reachBookingConfirmationAsNonCustomer(page, widget);
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(fixture.salonPath);
 
-  let appointmentPostCount = 0;
-  page.on("request", (request) => {
-    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/appointments") {
-      appointmentPostCount += 1;
-    }
-  });
+    const widget = page.locator("#booking-widget");
+    await expect(widget).toBeVisible();
+    await reachBookingConfirmationAsNonCustomer(page, widget);
 
-  await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
-  await expect(page.getByText("Za zakazivanje termina prijavite se klijentskim nalogom.")).toBeVisible();
-  await page.waitForTimeout(250);
-  expect(appointmentPostCount, "A non-customer must be stopped before the appointment API is called.").toBe(0);
+    let appointmentPostCount = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/appointments") {
+        appointmentPostCount += 1;
+      }
+    });
+
+    await widget.getByRole("button", { name: "Potvrdi rezervaciju" }).click();
+    await expect(page.getByText("Za zakazivanje termina prijavite se klijentskim nalogom.")).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(appointmentPostCount, "A non-customer must be stopped before the appointment API is called.").toBe(0);
+  } finally {
+    await cleanUpPendingBookingFixture(fixture);
+  }
 });
 
 test("returning to a booking draft preserves the any-employee choice", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await signInAsCustomer(page);
-  await page.goto(salonPath);
+  const fixture = await createPendingBookingFixture();
 
-  const widget = page.locator("#booking-widget");
-  const service = widget.locator('[role="button"]:has(h5)').first();
-  await service.click();
-  await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
-  const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return request.method() === "GET"
-      && url.pathname.includes("/availability")
-      && !url.searchParams.has("employeeId");
-  });
-  await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
-  await anyEmployeeAvailabilityRequest;
+  try {
+    await signInAsFixtureCustomer(page, fixture);
+    await page.goto(fixture.salonPath);
 
-  const reentryAvailabilityRequest = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return request.method() === "GET"
-      && url.pathname.includes("/availability")
-      && !url.searchParams.has("employeeId");
-  });
-  await page.reload();
-  await reentryAvailabilityRequest;
+    const widget = page.locator("#booking-widget");
+    const service = widget.locator('[role="button"]:has(h5)').first();
+    const anyEmployeeAvailabilityRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === "GET"
+        && url.pathname.includes("/availability")
+        && !url.searchParams.has("employeeId");
+    });
+    await service.click();
+    await expect(widget.getByRole("button", { name: "Korak 2: Zaposleni" })).toHaveAttribute("aria-current", "step");
+    await widget.getByRole("button", { name: /Bilo koji zaposleni/ }).click();
+    await anyEmployeeAvailabilityRequest;
 
-  await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
-  await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
+    const reentryAvailabilityRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === "GET"
+        && url.pathname.includes("/availability")
+        && !url.searchParams.has("employeeId");
+    });
+    await page.reload();
+    await reentryAvailabilityRequest;
+
+    await expect(widget.getByRole("button", { name: "Korak 3: Termin" })).toHaveAttribute("aria-current", "step");
+    await expect(widget.getByText("Bilo koji zaposleni", { exact: true }).first()).toBeVisible();
+  } finally {
+    await cleanUpPendingBookingFixture(fixture);
+  }
 });

@@ -17,7 +17,7 @@ test("the shared carousel renders discovery rows without a browser runtime crash
 
   const carousel = page.getByRole("region", { name: "Popularne usluge" });
   await expect(carousel).toBeVisible();
-  await expect(carousel.getByRole("group")).toHaveCount(6);
+  await expect(carousel.getByRole("group")).toHaveCount(7);
 
   const viewport = carousel.locator("[data-carousel-viewport]");
   const next = carousel.getByRole("button", { name: "Prikaži sledeće stavke" });

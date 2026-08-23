@@ -6333,7 +6333,7 @@ router.post("/salon/services/from-templates", async (req, res): Promise<void> =>
   const created = toCreate.length ? await db.insert(servicesTable).values(toCreate).returning() : [];
   if (created.length) void publishCatalogInvalidation(["salons", "services"]);
   res.status(201).json(CreateSalonServicesBatchResponse.parse({
-    created: created.map(salonServiceDto),
+    created: created.map((service) => ({ ...salonServiceDto(service), resourceRequirements: [] })),
     skipped: parsed.data.items.filter((item) => {
       const template = byId.get(item.templateId)!;
       return existingKeys.has(`${template.mainCategory}:${template.name}`);

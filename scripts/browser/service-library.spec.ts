@@ -131,12 +131,14 @@ test("owner can filter templates, price one, and find the saved service after re
     serviceId = result.created[0]?.id;
 
     await expect(page.getByRole("tab", { name: "Moje usluge" })).toHaveAttribute("data-state", "active");
-    await expect(page.getByText(template.name, { exact: true })).toBeVisible();
-    await expect(page.getByText("2460 RSD", { exact: true })).toBeVisible();
+    const savedServiceRow = page.locator(".divide-y > div").filter({ hasText: template.name });
+    await expect(savedServiceRow).toHaveCount(1);
+    await expect(savedServiceRow).toContainText("2460 RSD");
 
     await page.reload();
-    await expect(page.getByText(template.name, { exact: true })).toBeVisible();
-    await expect(page.getByText("2460 RSD", { exact: true })).toBeVisible();
+    const restoredServiceRow = page.locator(".divide-y > div").filter({ hasText: template.name });
+    await expect(restoredServiceRow).toHaveCount(1);
+    await expect(restoredServiceRow).toContainText("2460 RSD");
   } finally {
     if (serviceId) await db.delete(servicesTable).where(eq(servicesTable.id, serviceId));
     if (templateId) await db.delete(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, templateId));
@@ -212,13 +214,10 @@ test("owner sees why a service with appointments cannot be removed", async ({ pa
     await expect(serviceRow).toHaveCount(1);
     await serviceRow.getByRole("button", { name: `Obriši uslugu ${fixture.name}` }).click();
 
-    const deleteResponse = page.waitForResponse((response) =>
-      response.request().method() === "DELETE"
-      && new URL(response.url()).pathname === `/api/salon/services/${service.id}`,
-    );
-    await page.getByRole("alertdialog").getByRole("button", { name: "Obriši uslugu" }).click();
-    expect((await deleteResponse).status(), "A booked service must be protected from deletion.").toBe(409);
-    await expect(page.getByText("Usluga ne može da se obriše jer je povezana sa postojećim terminima.", { exact: true })).toBeVisible();
+    const explanation = page.getByRole("alertdialog", { name: "Uslugu nije moguće trajno obrisati" });
+    await expect(explanation).toContainText("ima istoriju termina i mora ostati na cenovniku radi evidencije");
+    await explanation.getByRole("button", { name: "Razumem" }).click();
+    await expect(explanation).toBeHidden();
     await expect(serviceRow).toHaveCount(1);
   } finally {
     if (appointmentId) await db.delete(appointmentsTable).where(eq(appointmentsTable.id, appointmentId));

@@ -63,6 +63,11 @@ function adminProduct() {
     images: ["/test.jpg"],
     price: 1000,
     discountPrice: null,
+    retailEnabled: false,
+    professionalEnabled: true,
+    publicDescription: null,
+    publicPrice: null,
+    publicDiscountPrice: null,
     stock: 5,
     sku: "REG-001",
     unit: "kom",
@@ -350,8 +355,10 @@ test("product form rejects text and negative price / stock", async ({ page }) =>
   await expect(errorToast(page, "Redovna cena").first()).toBeVisible();
 
   // Restore a valid price, break the stock instead.
-  await setRawValue(page, price, "1000");
-  await setRawValue(page, stock, "-5");
+  await price.fill("1000");
+  await expect(price).toHaveValue("1000");
+  await stock.fill("-5");
+  await expect(stock).toHaveValue("-5");
   await save.click();
   await expect(errorToast(page, "Stanje").first()).toBeVisible();
 

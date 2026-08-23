@@ -146,6 +146,11 @@ type PublicSalonResponse = {
   reviews: Array<{ id: string; text: string }>;
 };
 
+function publicReviewSummary(page: Page, rating: number, reviewCount: number) {
+  return page.getByRole("button", { name: `(${reviewCount} recenzija)` })
+    .filter({ hasText: rating.toFixed(1) });
+}
+
 async function expectRestoredSalonMatchesServer(
   request: APIRequestContext,
   page: Page,
@@ -157,8 +162,7 @@ async function expectRestoredSalonMatchesServer(
 
   expect(salon.reviews.some((review) => review.text === fixture.reviewText), "A moderator-deleted review must stay out of the public API.").toBe(false);
   await expect(page.locator("#reviews").getByText(fixture.reviewText)).toHaveCount(0);
-  await expect(page.getByText(salon.rating.toFixed(1), { exact: true })).toBeVisible();
-  await expect(page.getByText(`(${salon.reviewCount} recenzija)`, { exact: true })).toBeVisible();
+  await expect(publicReviewSummary(page, salon.rating, salon.reviewCount)).toBeVisible();
 }
 
 test("a moderator-deleted public review stays gone after browser history restoration", async ({ page, request }) => {
@@ -179,8 +183,7 @@ test("a moderator-deleted public review stays gone after browser history restora
 
     await page.goto(fixture.salonPath);
     await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
-    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 5, 1)).toBeVisible();
 
     await signInAsFixtureModerator(request, fixture);
     const deleted = await request.delete(`/api/admin/reviews/${review.id}`);
@@ -230,8 +233,7 @@ test("a moderator hiding or restoring a review keeps public salon metrics accura
 
     await page.goto(fixture.salonPath);
     await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
-    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 5, 1)).toBeVisible();
 
     await signInAsFixtureModerator(request, fixture);
     const hidden = await request.patch(`/api/admin/reviews/${review.id}`, { data: { visible: false } });
@@ -246,8 +248,7 @@ test("a moderator hiding or restoring a review keeps public salon metrics accura
 
     await page.reload();
     await expect(page.locator("#reviews").getByText(fixture.reviewText)).toHaveCount(0);
-    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 0, 0)).toBeVisible();
 
     const restored = await request.patch(`/api/admin/reviews/${review.id}`, { data: { visible: true } });
     expect(restored, "A moderator must be able to restore the fixture review.").toBeOK();
@@ -261,8 +262,7 @@ test("a moderator hiding or restoring a review keeps public salon metrics accura
 
     await page.reload();
     await expect(page.locator("#reviews").getByText(fixture.reviewText)).toBeVisible();
-    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 5, 1)).toBeVisible();
   } finally {
     await cleanUpReviewFixture(fixture);
   }
@@ -329,8 +329,7 @@ test("customer can publish and revise a review for a completed service on mobile
 
     await expect(editor).toBeHidden();
     await expect(reviews.getByText(initialReviewText)).toBeVisible();
-    await expect(page.getByText("4.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 4, 1)).toBeVisible();
 
     const editReview = page.getByRole("button", { name: "Izmeni recenziju" });
     await expect(editReview).toBeVisible();
@@ -352,8 +351,7 @@ test("customer can publish and revise a review for a completed service on mobile
     await expect(revisionEditor).toBeHidden();
     await expect(reviews.getByText(revisedReviewText)).toBeVisible();
     await expect(reviews.getByText(initialReviewText)).toHaveCount(0);
-    await expect(page.getByText("2.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 2, 1)).toBeVisible();
   } finally {
     await cleanUpReviewFixture(fixture);
   }
@@ -378,8 +376,7 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
     await page.goto(fixture.salonPath);
     const reviews = page.locator("#reviews");
     await expect(reviews.getByText(fixture.reviewText)).toBeVisible();
-    await expect(page.getByText("5.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(1 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 5, 1)).toBeVisible();
 
     await page.getByRole("button", { name: "Izmeni recenziju" }).click();
     const editor = page.getByRole("dialog", { name: "Izmenite recenziju" });
@@ -404,8 +401,7 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
     expect((await deleteResponse).status(), "Confirming review deletion must remove the review.").toBe(204);
 
     await expect(reviews.getByText(fixture.reviewText)).toHaveCount(0);
-    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 0, 0)).toBeVisible();
     const leaveReview = page.getByRole("button", { name: "Ostavite recenziju" });
     await expect(leaveReview).toBeVisible();
     await leaveReview.click();
@@ -424,8 +420,7 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
     await expect(page).toHaveURL(new RegExp(`${fixture.salonPath}$`));
     const restoredReviews = page.locator("#reviews");
     await expect(restoredReviews.getByText(fixture.reviewText)).toHaveCount(0);
-    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 0, 0)).toBeVisible();
     await expect(page.getByRole("button", { name: "Ostavite recenziju" })).toBeVisible();
 
     await page.goForward();
@@ -435,8 +430,7 @@ test("customer can cancel or confirm withdrawing a public review on mobile", asy
 
     const restoredAgainReviews = page.locator("#reviews");
     await expect(restoredAgainReviews.getByText(fixture.reviewText)).toHaveCount(0);
-    await expect(page.getByText("0.0", { exact: true })).toBeVisible();
-    await expect(page.getByText("(0 recenzija)", { exact: true })).toBeVisible();
+    await expect(publicReviewSummary(page, 0, 0)).toBeVisible();
     await expect(page.getByRole("button", { name: "Ostavite recenziju" })).toBeVisible();
   } finally {
     await cleanUpReviewFixture(fixture);

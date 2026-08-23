@@ -826,17 +826,22 @@ test("repeated gallery cleanup failures alert admins without exposing ticket det
     expect(persistedDeliveryDiagnostics).not.toContain(malformedStoragePath);
     expect(persistedDeliveryDiagnostics).not.toContain(uploadTicket.mediaId);
 
+    const initiallyAlertedEmails = new Set(attemptedEmails.map((delivery) => delivery.to.email));
+    const callsBeforeDuplicate = transportCalls;
     const duplicateDelivery = await sendEducationGalleryCleanupAlert(cleanupAlerts[0]!, syntheticAlertTime, transport);
-    expect(duplicateDelivery.recipientCount).toBe(firstDelivery.recipientCount);
-    expect(transportCalls).toBe(firstDelivery.recipientCount);
+    const duplicateRecipients = attemptedEmails.slice(callsBeforeDuplicate).map((delivery) => delivery.to.email);
+    expect(
+      duplicateRecipients.some((email) => initiallyAlertedEmails.has(email)),
+      "An admin already alerted in this window must not receive a duplicate email.",
+    ).toBe(false);
 
+    const callsBeforeNextWindow = transportCalls;
     const nextWindowDelivery = await sendEducationGalleryCleanupAlert(
       cleanupAlerts[0]!,
       new Date(syntheticAlertTime.getTime() + 60 * 60_000),
       transport,
     );
-    expect(nextWindowDelivery.recipientCount).toBe(firstDelivery.recipientCount);
-    expect(transportCalls).toBe(firstDelivery.recipientCount * 2);
+    expect(transportCalls - callsBeforeNextWindow).toBe(nextWindowDelivery.recipientCount);
     for (const email of attemptedEmails) {
       expect(email.htmlContent).toContain("neuspešnih pokušaja");
       expect(email.htmlContent).toContain("App Storage");

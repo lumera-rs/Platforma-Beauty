@@ -58,6 +58,6 @@ test("clearing public salon filters omits only the cleared parameter", async ({ 
 
     expect((await clearedResponse).ok()).toBeTruthy();
     await expect(checkbox).not.toBeChecked();
-    await expect(page.getByText("Pronađeno 0 salona").last()).toBeVisible();
+    await expect(page.getByText("Nema rezultata", { exact: true })).toBeVisible();
   }
 });

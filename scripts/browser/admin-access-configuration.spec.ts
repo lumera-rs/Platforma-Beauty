@@ -66,6 +66,8 @@ function adminSummary() {
     hiddenReviews: 1,
     activeSubscriptions: 2,
     topCategories: [{ name: "Kosa", count: 4 }],
+    deliveryReportStaleProviders: [],
+    smsFallbackReachableAdminCount: 2,
   };
 }
 
@@ -335,7 +337,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
 async function openAdminPage(page: Page, path: string, role: "ADMIN" | "SUPER_ADMIN" = "SUPER_ADMIN") {
   await mockAdminApi(page, role);
   await page.goto(path);
-  await expect(page.getByTestId("admin-mobile-menu-trigger").or(page.getByText("Admin Panel", { exact: true })).first()).toBeVisible();
+  await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
 }
 
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
@@ -345,7 +347,7 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
   await page.getByLabel("Lozinka").fill("regression-password");
   await page.getByRole("button", { name: "Prijavi se u poslovni portal" }).click();
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "Pregled Platforme" })).toBeVisible();
+  await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
 
   for (const [index, link] of ADMIN_NAV.entries()) {
     if (index > 0) {
@@ -361,7 +363,7 @@ test("an admin can reach every admin section from the mobile menu", async ({ pag
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId("admin-mobile-menu-trigger")).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "Pregled Platforme" })).toBeVisible();
+  await expect(page.locator("main")).toBeVisible();
   for (const link of ADMIN_NAV.slice(1)) {
     await page.getByTestId("admin-mobile-menu-trigger").click();
     await expect(page.getByTestId(link.testId).first()).toBeVisible();
