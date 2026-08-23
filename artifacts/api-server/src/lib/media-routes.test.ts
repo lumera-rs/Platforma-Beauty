@@ -780,6 +780,30 @@ async function run() {
     );
     assert.equal(deactivated.status, 200);
     assert.equal(deactivated.body.active, false);
+    for (const [assetId, label] of [
+      [firstFinalize.body.id, "cover"],
+      [galleryFinalize.body.id, "gallery"],
+    ] as const) {
+      const [deactivatedAsset] = await db.select({
+        resourceId: mediaAssetsTable.resourceId,
+        visibility: mediaAssetsTable.visibility,
+      }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, assetId)).limit(1);
+      assert.deepEqual(
+        deactivatedAsset,
+        { resourceId: ownerAndSalon.salon.id, visibility: "private" },
+        `Deactivating a salon must privatize its published ${label} asset without unbinding it.`,
+      );
+      assert.equal(
+        (await fetch(`${activeServer.baseUrl}/api/media/${assetId}?size=thumbnail`)).status,
+        403,
+        `An old direct URL for the deactivated salon's ${label} must be denied.`,
+      );
+    }
+    assert.equal(
+      (await fetch(`${activeServer.baseUrl}${privacyProbeUrl}&size=thumbnail`)).status,
+      403,
+      "Private treatment/customer media must remain protected during salon deactivation.",
+    );
     const inactiveProfile = await jsonRequest<{ imageUrl: string; gallery: string[] }>(
       activeServer.baseUrl,
       "/salon/profile",
