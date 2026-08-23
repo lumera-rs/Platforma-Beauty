@@ -352,6 +352,7 @@ import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationVal
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
+import { redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx } from "../lib/package-entitlement";
 import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
 import {
   canClaimMediaReference,
@@ -1146,10 +1147,24 @@ async function allocateResourcesInTx(
   ).onConflictDoNothing();
 }
 
+/**
+ * Thrown inside the createAllocatedAppointment transaction when an atomic
+ * package redemption fails, so the whole booking rolls back. The route maps
+ * `reason` to a clear 4xx code.
+ */
+class PackageRedemptionError extends Error {
+  constructor(public reason: string) {
+    super(`Package redemption failed: ${reason}`);
+    this.name = "PackageRedemptionError";
+  }
+}
+
 async function createAllocatedAppointment(input: {
   salonId: string; customerId: string | null; salonCustomerId?: string | null; serviceId: string; date: string; startTime: string;
   endTime: string; durationMinutes: number; price: number; status: "pending" | "confirmed"; notes?: string | null; preferredEmployeeId?: string | null;
   treatmentLocation?: "salon" | "home"; travelFee?: number; treatmentAddress?: { line1: string; city: string; postalCode?: string; details?: string } | null;
+  /** When set, redeem this package purchase against the created appointment in the SAME transaction. */
+  packagePurchaseId?: string | null;
 }): Promise<{ employee: typeof employeesTable.$inferSelect; appointment: typeof appointmentsTable.$inferSelect } | { employee: null; appointment: null }> {
   return db.transaction(async (tx) => {
     await lockAppointmentResources(tx, input.salonId, [{ date: input.date }]);
@@ -1166,6 +1181,19 @@ async function createAllocatedAppointment(input: {
     }).returning();
     // allocateResourcesInTx throws ResourceCapacityError → transaction rolls back.
     await allocateResourcesInTx(tx, input.salonId, requirements, appointment!.id, input.date, input.startTime, input.endTime);
+    // Atomic package redemption — any failure throws → whole booking rolls back.
+    if (input.packagePurchaseId) {
+      if (!input.salonCustomerId) throw new PackageRedemptionError("wrong_customer");
+      const redemption = await redeemPackageSessionInTx(tx, {
+        purchaseId: input.packagePurchaseId,
+        appointmentId: appointment!.id,
+        salonId: input.salonId,
+        requestingCustomerId: input.salonCustomerId,
+      });
+      if (!redemption.ok) throw new PackageRedemptionError(redemption.reason);
+      // Redemption zeroed the stored price — reflect it in the returned row.
+      return { employee, appointment: { ...appointment!, price: 0 } };
+    }
     return { employee, appointment: appointment! };
   });
 }
@@ -4198,6 +4226,11 @@ router.post("/appointments", async (req, res): Promise<void> => {
     salonId: salon.id, userId: user.id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
   }).onConflictDoNothing().returning();
   const crmContact = createdContact ?? (await db.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.salonId, salon.id), eq(salonCustomersTable.userId, user.id))).limit(1))[0];
+  const packagePurchaseId = parsed.data.packagePurchaseId ?? null;
+  if (packagePurchaseId && !crmContact?.id) {
+    res.status(400).json({ error: "Ne možemo povezati paket bez korisničkog profila u salonu." });
+    return;
+  }
   let allocation: Awaited<ReturnType<typeof createAllocatedAppointment>>;
   try {
     allocation = await createAllocatedAppointment({
@@ -4208,10 +4241,33 @@ router.post("/appointments", async (req, res): Promise<void> => {
       preferredEmployeeId: parsed.data.employeeId,
       treatmentLocation, travelFee: treatmentLocation === "home" ? service.homeServiceFee : 0,
       treatmentAddress: treatmentLocation === "home" ? parsed.data.treatmentAddress : null,
+      packagePurchaseId,
     });
   } catch (err: unknown) {
     if (err instanceof ResourceCapacityError) {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    if (err instanceof PackageRedemptionError) {
+      const messages: Record<string, string> = {
+        not_found: "Izabrani paket nije pronađen.",
+        wrong_salon: "Paket ne pripada ovom salonu.",
+        wrong_customer: "Paket ne pripada vama.",
+        already_redeemed: "Ovaj termin je već iskorišćen iz paketa.",
+        no_sessions_left: "Paket nema više dostupnih tretmana.",
+        expired: "Paket je istekao.",
+        not_active: "Paket nije aktivan.",
+        service_not_covered: "Izabrana usluga nije obuhvaćena ovim paketom.",
+        appointment_not_eligible: "Termin nije prihvatljiv za iskorišćavanje paketa.",
+      };
+      // Stable discriminator: `code` is always PACKAGE_ERROR so clients can
+      // distinguish package failures from plain availability 409s; `reason`
+      // carries the specific RedeemResult reason for programmatic handling.
+      res.status(409).json({
+        code: "PACKAGE_ERROR",
+        reason: err.reason,
+        error: messages[err.reason] ?? "Iskorišćavanje paketa nije uspelo.",
+      });
       return;
     }
     throw err;
@@ -4327,7 +4383,10 @@ router.post("/appointments/:appointmentId/cancel", async (req, res): Promise<voi
       eq(appointmentsTable.customerId, user.id),
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
     )).returning();
-    return appointment ? { appointment } : { error: "changed" as const };
+    if (!appointment) return { error: "changed" as const };
+    // Reverse any active package redemptions atomically with the cancellation.
+    await handleAppointmentCancellationReversalsInTx(tx, appointment.id, appointment.salonId);
+    return { appointment };
   });
   if ("error" in result) {
     res.status(result.error === "not-found" ? 404 : 409).json({
@@ -4488,11 +4547,32 @@ router.put("/customer/reviews/:salonId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Recenziju možete ostaviti samo za završenu uslugu u ovom salonu." });
     return;
   }
+  // Derive the employeeId from the customer's most recent completed appointment at this salon
+  const [custRec] = await db
+    .select({ id: salonCustomersTable.id })
+    .from(salonCustomersTable)
+    .where(and(eq(salonCustomersTable.userId, user.id), eq(salonCustomersTable.salonId, salon.id)))
+    .limit(1);
+  let latestEmployeeId: string | null = null;
+  if (custRec) {
+    const [latestAppt] = await db
+      .select({ employeeId: appointmentsTable.employeeId })
+      .from(appointmentsTable)
+      .where(and(
+        eq(appointmentsTable.salonId, salon.id),
+        eq(appointmentsTable.salonCustomerId, custRec.id),
+        eq(appointmentsTable.status, "completed"),
+      ))
+      .orderBy(desc(appointmentsTable.date))
+      .limit(1);
+    latestEmployeeId = latestAppt?.employeeId ?? null;
+  }
   const reviewInput = {
     serviceName: body.data.serviceName,
     rating: body.data.rating,
     text: body.data.text.trim(),
     showProfilePhoto: body.data.showProfilePhoto,
+    employeeId: latestEmployeeId,
   };
   const saved = await db.transaction(async (tx) => {
     // Serializing writes per salon keeps the stored public aggregate in sync
@@ -4914,21 +4994,38 @@ router.patch("/salon/customers/:customerId", async (req, res): Promise<void> => 
   const access = await requireSalonOwner(req, res); if (!access) return;
   const [params, body] = [UpdateSalonCustomerParams.safeParse(req.params), UpdateSalonCustomerBody.safeParse(req.body)];
   if (!params.success || !body.success) { res.status(400).json({ error: "Podaci za CRM klijenta nisu ispravni." }); return; }
-  const [contact] = await db.update(salonCustomersTable).set({ smsOptOut: body.data.smsOptOut, updatedAt: new Date() })
+  // Partial update: only touch columns the client explicitly sent.
+  //  - smsOptOut omitted → preserve the stored value (never reset to false).
+  //  - birthDate present → set YYYY-MM-DD (Date → date string); null clears it.
+  const updateFields: Partial<typeof salonCustomersTable.$inferInsert> = { updatedAt: new Date() };
+  if (body.data.smsOptOut !== undefined) updateFields.smsOptOut = body.data.smsOptOut;
+  if ("birthDate" in body.data) {
+    const bd = body.data.birthDate;
+    updateFields.birthDate = bd instanceof Date ? bd.toISOString().slice(0, 10) : null;
+  }
+  const [contact] = await db.update(salonCustomersTable).set(updateFields)
     .where(and(eq(salonCustomersTable.id, params.data.customerId), eq(salonCustomersTable.salonId, access.salon.id))).returning();
   if (!contact) { res.status(404).json({ error: "CRM klijent nije pronađen." }); return; }
   const appointments = await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
     eq(appointmentsTable.salonId, access.salon.id),
     eq(appointmentsTable.salonCustomerId, contact.id),
   ));
-  res.json(UpdateSalonCustomerResponse.parse({
+  const noShowCount = (await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
+    eq(appointmentsTable.salonId, access.salon.id),
+    eq(appointmentsTable.salonCustomerId, contact.id),
+    eq(appointmentsTable.status, "no-show"),
+  ))).length;
+  // birthDate is a `date` column (mode:"string") → already YYYY-MM-DD or null.
+  const payload = {
     id: contact.id, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, phone: contact.phone,
-    smsOptOut: contact.smsOptOut, visitCount: appointments.length, noShowCount: (await db.select({ id: appointmentsTable.id }).from(appointmentsTable).where(and(
-      eq(appointmentsTable.salonId, access.salon.id),
-      eq(appointmentsTable.salonCustomerId, contact.id),
-      eq(appointmentsTable.status, "no-show"),
-    ))).length, isRegistered: Boolean(contact.userId),
-  }));
+    smsOptOut: contact.smsOptOut, birthDate: contact.birthDate, visitCount: appointments.length,
+    noShowCount, isRegistered: Boolean(contact.userId),
+  };
+  // Validate the shape, but respond with the raw YYYY-MM-DD string so the UI
+  // rehydrates the date input (zod.coerce.date() would turn it into a full ISO
+  // timestamp, which the date field cannot consume).
+  UpdateSalonCustomerResponse.parse(payload);
+  res.json(payload);
 });
 
 router.post("/salon/appointments", async (req, res): Promise<void> => {
@@ -5108,6 +5205,10 @@ router.delete("/salon/appointment-series/:seriesId", async (req, res): Promise<v
       sql`${appointmentsTable.date} >= ${today}`,
       inArray(appointmentsTable.status, ["pending", "confirmed"]),
     )).returning({ id: appointmentsTable.id });
+    // Reverse active package redemptions for every cancelled appointment, atomically.
+    for (const appt of cancelled) {
+      await handleAppointmentCancellationReversalsInTx(tx, appt.id, access.salon.id);
+    }
     return { series, cancelled };
   });
   if ("error" in result) { res.status(404).json({ error: "Serija termina nije pronađena." }); return; }
@@ -5241,7 +5342,12 @@ router.patch("/salon/appointments/:appointmentId", async (req, res): Promise<voi
       eq(appointmentsTable.id, target.id),
       eq(appointmentsTable.salonId, salon.id),
     )).returning();
-    return updated ? { updated } : { error: "changed" as const };
+    if (!updated) return { error: "changed" as const };
+    // On transition INTO cancelled, reverse active package redemptions atomically.
+    if (updated.status === "cancelled" && target.status !== "cancelled") {
+      await handleAppointmentCancellationReversalsInTx(tx, updated.id, salon.id);
+    }
+    return { updated };
   }).catch((error: unknown) => {
     if (error instanceof ResourceCapacityError) return { error: "resource-unavailable" as const };
     throw error;

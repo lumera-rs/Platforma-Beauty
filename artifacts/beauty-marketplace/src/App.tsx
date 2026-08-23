@@ -43,6 +43,11 @@ const OwnerOrders = lazy(() => import('./pages/owner/orders'));
 const OwnerProductDetail = lazy(() => import('./pages/owner/product-detail'));
 const OwnerNotifications = lazy(() => import('./pages/owner/notifications'));
 const OwnerEmployees = lazy(() => import('./pages/owner/employees'));
+const OwnerRetention = lazy(() => import('./pages/owner/retention'));
+const OwnerAutomations = lazy(() => import('./pages/owner/automations'));
+const OwnerPackages = lazy(() => import('./pages/owner/packages'));
+const OwnerPerformance = lazy(() => import('./pages/owner/performance'));
+const OwnerAiAssistant = lazy(() => import('./pages/owner/ai-assistant'));
 const OwnerCartPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCartPage })));
 const OwnerCheckoutDeliveryPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutDeliveryPage })));
 const OwnerCheckoutReviewPage = lazy(() => import('./pages/owner/checkout').then((module) => ({ default: module.OwnerCheckoutReviewPage })));
@@ -216,12 +221,18 @@ function Router() {
         <Route path="/zaposleni/promeni-lozinku"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava" allowEmployeePasswordChange><EmployeePasswordChange /></RoleGuard></Route>
         <Route path="/zaposleni"><RoleGuard allowedRoles={['SALON_EMPLOYEE']} loginPath="/poslovna-prijava"><EmployeePortal /></RoleGuard></Route>
 
+        <Route path="/vlasnik/kontrolna-tabla"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerDashboard /></RoleGuard></Route>
         <Route path="/vlasnik/kalendar"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCalendar /></RoleGuard></Route>
         <Route path="/vlasnik/resursi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerResources /></RoleGuard></Route>
         <Route path="/vlasnik/usluge"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerServices /></RoleGuard></Route>
         <Route path="/vlasnik/profil"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerSalonProfile /></RoleGuard></Route>
         <Route path="/vlasnik/zaposleni"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerEmployees /></RoleGuard></Route>
+        <Route path="/vlasnik/klijenti"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerRetention /></RoleGuard></Route>
+        <Route path="/vlasnik/automatizacije"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerAutomations /></RoleGuard></Route>
+        <Route path="/vlasnik/paketi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPackages /></RoleGuard></Route>
+        <Route path="/vlasnik/performanse"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerPerformance /></RoleGuard></Route>
+        <Route path="/vlasnik/ai-asistent"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerAiAssistant /></RoleGuard></Route>
         <Route path="/vlasnik/shop"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerShop /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/korpa"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCartPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/dostava"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutDeliveryPage /></RoleGuard></Route>

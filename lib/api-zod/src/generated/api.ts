@@ -798,6 +798,7 @@ export const CreateAppointmentBody = zod.object({
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createAppointmentBodyStartTimeRegExp),
   "notes": zod.string().optional(),
+  "packagePurchaseId": zod.string().nullish().describe('Optional active package purchase to redeem for this booking. When supplied the appointment is created and a session is redeemed in the same transaction; the appointment price is set to 0. The purchase must belong to the authenticated customer, cover the booked service, be active, non-expired and have a remaining session. Any failure rolls back the entire booking.'),
   "treatmentLocation": zod.enum(['salon', 'home']).optional(),
   "treatmentAddress": zod.object({
   "line1": zod.string().min(createAppointmentBodyTreatmentAddressLine1Min).max(createAppointmentBodyTreatmentAddressLine1Max),
@@ -1885,6 +1886,7 @@ export const ListSalonCustomersResponseItem = zod.object({
   "email": zod.string().nullish(),
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
+  "birthDate": zod.coerce.date().nullish(),
   "visitCount": zod.number(),
   "noShowCount": zod.number().min(listSalonCustomersResponseNoShowCountMin),
   "isRegistered": zod.boolean(),
@@ -2021,7 +2023,8 @@ export const UpdateSalonCustomerParams = zod.object({
 })
 
 export const UpdateSalonCustomerBody = zod.object({
-  "smsOptOut": zod.boolean()
+  "smsOptOut": zod.boolean().optional(),
+  "birthDate": zod.coerce.date().nullish().describe('Customer date of birth for birthday automation (YYYY-MM-DD)')
 })
 
 export const updateSalonCustomerResponseNoShowCountMin = 0;
@@ -2035,6 +2038,7 @@ export const UpdateSalonCustomerResponse = zod.object({
   "email": zod.string().nullish(),
   "phone": zod.string().nullable(),
   "smsOptOut": zod.boolean(),
+  "birthDate": zod.coerce.date().nullish(),
   "visitCount": zod.number(),
   "noShowCount": zod.number().min(updateSalonCustomerResponseNoShowCountMin),
   "isRegistered": zod.boolean(),
@@ -2538,6 +2542,65 @@ export const DeactivateSalonEmployeeResponse = zod.object({
   "futureAppointmentCount": zod.number().min(deactivateSalonEmployeeResponseFutureAppointmentCountMin),
   "loginAccountDeactivated": zod.boolean()
 })
+
+
+/**
+ * @summary List employee leave requests for the active salon (owner)
+ */
+export const ListSalonLeaveRequestsResponseItem = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startDate": zod.coerce.date().describe('Leave start date (YYYY-MM-DD)'),
+  "endDate": zod.coerce.date().describe('Leave end date (YYYY-MM-DD)'),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'approved', 'rejected']),
+  "reviewedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}).describe('A single employee leave request row.').and(zod.object({
+  "employeeName": zod.string()
+}))
+export const ListSalonLeaveRequestsResponse = zod.array(ListSalonLeaveRequestsResponseItem)
+
+
+/**
+ * @summary Approve or reject an employee leave request (owner)
+ */
+export const ReviewSalonLeaveRequestParams = zod.object({
+  "requestId": zod.coerce.string()
+})
+
+export const ReviewSalonLeaveRequestBody = zod.object({
+  "status": zod.enum(['approved', 'rejected'])
+})
+
+export const ReviewSalonLeaveRequestResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['approved', 'rejected'])
+})
+
+
+/**
+ * @summary Submit a leave request (employee)
+ */
+
+
+
+export const CreateEmployeeLeaveRequestBody = zod.object({
+  "startDate": zod.coerce.date().describe('Leave start date (YYYY-MM-DD)'),
+  "endDate": zod.coerce.date().describe('Leave end date (YYYY-MM-DD); must be >= startDate'),
+  "reason": zod.string().min(1)
+})
+
+export const CreateEmployeeLeaveRequestResponse = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "startDate": zod.coerce.date().describe('Leave start date (YYYY-MM-DD)'),
+  "endDate": zod.coerce.date().describe('Leave end date (YYYY-MM-DD)'),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'approved', 'rejected']),
+  "reviewedAt": zod.coerce.date().nullish(),
+  "createdAt": zod.coerce.date()
+}).describe('A single employee leave request row.')
 
 
 /**
@@ -8829,3 +8892,776 @@ export const AdminDeleteCourierServiceParams = zod.object({
 })
 
 export const AdminDeleteCourierServiceResponse = zod.void()
+
+
+/**
+ * @summary List retention status for all salon customers (owner)
+ */
+export const OwnerListRetentionResponseItem = zod.object({
+  "salonCustomerId": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string().nullable(),
+  "phone": zod.string().nullable(),
+  "status": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
+  "completedCount": zod.number(),
+  "lastVisitDaysAgo": zod.number().nullable(),
+  "typicalIntervalDays": zod.number().nullable(),
+  "totalSpend": zod.number(),
+  "hasFutureAppointment": zod.boolean()
+})
+export const OwnerListRetentionResponse = zod.array(OwnerListRetentionResponseItem)
+
+
+/**
+ * @summary Get retention detail for a single salon customer (owner)
+ */
+export const OwnerGetRetentionDetailParams = zod.object({
+  "salonCustomerId": zod.coerce.string()
+})
+
+export const OwnerGetRetentionDetailResponse = zod.object({
+  "salonCustomerId": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string().nullable(),
+  "phone": zod.string().nullable(),
+  "birthDate": zod.coerce.date().nullish().describe('Customer date of birth for birthday automation (YYYY-MM-DD)'),
+  "status": zod.enum(['NEW', 'ACTIVE', 'VIP', 'AT_RISK', 'LOST']),
+  "completedCount": zod.number(),
+  "lastVisitDaysAgo": zod.number().nullable(),
+  "typicalIntervalDays": zod.number().nullable(),
+  "totalSpend": zod.number(),
+  "hasFutureAppointment": zod.boolean(),
+  "recentAppointments": zod.array(zod.object({
+  "id": zod.string(),
+  "date": zod.string(),
+  "status": zod.string(),
+  "price": zod.number(),
+  "serviceName": zod.string()
+}))
+})
+
+
+/**
+ * @summary List automation rules for the active salon (owner)
+ */
+export const OwnerListAutomationsResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const OwnerListAutomationsResponse = zod.array(OwnerListAutomationsResponseItem)
+
+
+/**
+ * @summary Create a new automation rule (owner)
+ */
+export const ownerCreateAutomationBodyNameMax = 200;
+
+
+
+export const OwnerCreateAutomationBody = zod.object({
+  "name": zod.string().min(1).max(ownerCreateAutomationBodyNameMax),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()).optional(),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish().describe('Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders'),
+  "smsBody": zod.string().nullish().describe('Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders'),
+  "voucherCode": zod.string().nullish()
+})
+
+export const OwnerCreateAutomationResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get an automation rule (owner)
+ */
+export const OwnerGetAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerGetAutomationResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update an automation rule (owner)
+ */
+export const OwnerUpdateAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const ownerUpdateAutomationBodyNameMax = 200;
+
+
+
+export const OwnerUpdateAutomationBody = zod.object({
+  "name": zod.string().min(1).max(ownerUpdateAutomationBodyNameMax).optional(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']).optional(),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()).optional(),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']).optional(),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish()
+})
+
+export const OwnerUpdateAutomationResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete an automation rule (owner)
+ */
+export const OwnerDeleteAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerDeleteAutomationResponse = zod.void()
+
+
+/**
+ * @summary Activate an automation rule (owner)
+ */
+export const OwnerActivateAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerActivateAutomationResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Pause an automation rule (owner)
+ */
+export const OwnerPauseAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerPauseAutomationResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get run statistics for an automation rule (owner)
+ */
+export const OwnerGetAutomationStatsParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerGetAutomationStatsResponse = zod.object({
+  "ruleId": zod.string(),
+  "totalRuns": zod.number(),
+  "sentCount": zod.number(),
+  "skippedCount": zod.number(),
+  "failedCount": zod.number(),
+  "attributedAppointments": zod.number(),
+  "deliveredCount": zod.number(),
+  "openedCount": zod.number(),
+  "lastRunAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Perform a safe manual test-run of an automation rule (owner)
+ */
+export const OwnerTestRunAutomationParams = zod.object({
+  "automationId": zod.coerce.string()
+})
+
+export const OwnerTestRunAutomationResponse = zod.object({
+  "wouldTriggerCount": zod.number(),
+  "eligibleCustomers": zod.number(),
+  "skippedDueToOptOut": zod.number(),
+  "skippedDueToRecentRun": zod.number(),
+  "triggerBreakdown": zod.record(zod.string(), zod.number()).optional()
+})
+
+
+/**
+ * @summary Explicitly confirm creation of a paused automation from an AI proposal (owner)
+ */
+export const ownerCreateAutomationFromAiProposalBodyNameMax = 200;
+
+
+
+export const OwnerCreateAutomationFromAiProposalBody = zod.object({
+  "name": zod.string().min(1).max(ownerCreateAutomationFromAiProposalBodyNameMax),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()).optional(),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish(),
+  "aiProposalContext": zod.string()
+})
+
+export const OwnerCreateAutomationFromAiProposalResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "trigger": zod.enum(['inactive_days', 'birthday', 'visit_count', 'first_visit_completed', 'package_completed', 'appointment_cancelled', 'expected_return_overdue']),
+  "triggerConfig": zod.record(zod.string(), zod.unknown()),
+  "action": zod.enum(['send_email', 'send_sms', 'send_email_and_sms']),
+  "emailSubject": zod.string().nullish(),
+  "emailBody": zod.string().nullish(),
+  "smsBody": zod.string().nullish(),
+  "voucherCode": zod.string().nullish().describe('Optional discount\/voucher code substituted into {{voucherCode}} template placeholders'),
+  "status": zod.enum(['active', 'paused', 'draft']),
+  "aiProposed": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List treatment packages for the active salon (owner)
+ */
+export const OwnerListPackagesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "active": zod.boolean(),
+  "serviceIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const OwnerListPackagesResponse = zod.array(OwnerListPackagesResponseItem)
+
+
+/**
+ * @summary Create a treatment package (owner)
+ */
+export const ownerCreatePackageBodyNameMax = 200;
+
+export const ownerCreatePackageBodyPriceInDinarsMin = 0;
+export const ownerCreatePackageBodyPriceInDinarsMultipleOf = 1;
+
+export const ownerCreatePackageBodySessionCountMax = 100;
+export const ownerCreatePackageBodySessionCountMultipleOf = 1;
+
+export const ownerCreatePackageBodyValidityDaysMax = 3650;
+export const ownerCreatePackageBodyValidityDaysMultipleOf = 1;
+
+
+
+
+export const OwnerCreatePackageBody = zod.object({
+  "name": zod.string().min(1).max(ownerCreatePackageBodyNameMax),
+  "description": zod.string().optional(),
+  "priceInDinars": zod.number().min(ownerCreatePackageBodyPriceInDinarsMin).multipleOf(ownerCreatePackageBodyPriceInDinarsMultipleOf),
+  "sessionCount": zod.number().min(1).max(ownerCreatePackageBodySessionCountMax).multipleOf(ownerCreatePackageBodySessionCountMultipleOf),
+  "validityDays": zod.number().min(1).max(ownerCreatePackageBodyValidityDaysMax).multipleOf(ownerCreatePackageBodyValidityDaysMultipleOf).optional(),
+  "active": zod.boolean().optional(),
+  "serviceIds": zod.array(zod.string()).min(1)
+})
+
+export const OwnerCreatePackageResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "active": zod.boolean(),
+  "serviceIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a treatment package (owner)
+ */
+export const OwnerGetPackageParams = zod.object({
+  "packageId": zod.coerce.string()
+})
+
+export const OwnerGetPackageResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "active": zod.boolean(),
+  "serviceIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a treatment package (owner)
+ */
+export const OwnerUpdatePackageParams = zod.object({
+  "packageId": zod.coerce.string()
+})
+
+export const ownerUpdatePackageBodyNameMax = 200;
+
+export const ownerUpdatePackageBodyPriceInDinarsMin = 0;
+export const ownerUpdatePackageBodyPriceInDinarsMultipleOf = 1;
+
+export const ownerUpdatePackageBodySessionCountMax = 100;
+export const ownerUpdatePackageBodySessionCountMultipleOf = 1;
+
+export const ownerUpdatePackageBodyValidityDaysMax = 3650;
+export const ownerUpdatePackageBodyValidityDaysMultipleOf = 1;
+
+
+
+
+export const OwnerUpdatePackageBody = zod.object({
+  "name": zod.string().min(1).max(ownerUpdatePackageBodyNameMax).optional(),
+  "description": zod.string().optional(),
+  "priceInDinars": zod.number().min(ownerUpdatePackageBodyPriceInDinarsMin).multipleOf(ownerUpdatePackageBodyPriceInDinarsMultipleOf).optional(),
+  "sessionCount": zod.number().min(1).max(ownerUpdatePackageBodySessionCountMax).multipleOf(ownerUpdatePackageBodySessionCountMultipleOf).optional(),
+  "validityDays": zod.number().min(1).max(ownerUpdatePackageBodyValidityDaysMax).multipleOf(ownerUpdatePackageBodyValidityDaysMultipleOf).optional(),
+  "active": zod.boolean().optional(),
+  "serviceIds": zod.array(zod.string()).min(1).optional()
+})
+
+export const OwnerUpdatePackageResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "active": zod.boolean(),
+  "serviceIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a treatment package (owner)
+ */
+export const OwnerDeletePackageParams = zod.object({
+  "packageId": zod.coerce.string()
+})
+
+export const OwnerDeletePackageResponse = zod.void()
+
+
+/**
+ * @summary List available packages for a salon (public/customer)
+ */
+export const CustomerListPublicPackagesQueryParams = zod.object({
+  "salonId": zod.coerce.string()
+})
+
+export const CustomerListPublicPackagesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "priceInDinars": zod.number(),
+  "sessionCount": zod.number(),
+  "validityDays": zod.number(),
+  "serviceIds": zod.array(zod.string())
+})
+export const CustomerListPublicPackagesResponse = zod.array(CustomerListPublicPackagesResponseItem)
+
+
+/**
+ * @summary Create a pending package purchase (customer)
+ */
+export const CustomerPurchasePackageParams = zod.object({
+  "packageId": zod.coerce.string()
+})
+
+export const CustomerPurchasePackageBody = zod.object({
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']).optional(),
+  "notes": zod.string().nullish()
+})
+
+export const CustomerPurchasePackageResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "packageId": zod.string(),
+  "packageName": zod.string(),
+  "salonCustomerId": zod.string(),
+  "totalSessions": zod.number(),
+  "remainingSessions": zod.number(),
+  "priceInDinars": zod.number(),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
+  "expiresAt": zod.coerce.date(),
+  "paymentConfirmedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Confirm payment for a package purchase (owner)
+ */
+export const OwnerConfirmPackagePaymentParams = zod.object({
+  "packageId": zod.coerce.string(),
+  "purchaseId": zod.coerce.string()
+})
+
+export const OwnerConfirmPackagePaymentResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "packageId": zod.string(),
+  "packageName": zod.string(),
+  "salonCustomerId": zod.string(),
+  "totalSessions": zod.number(),
+  "remainingSessions": zod.number(),
+  "priceInDinars": zod.number(),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
+  "expiresAt": zod.coerce.date(),
+  "paymentConfirmedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List own package purchases (customer)
+ */
+export const CustomerListMyPurchasesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "packageId": zod.string(),
+  "packageName": zod.string(),
+  "salonCustomerId": zod.string(),
+  "totalSessions": zod.number(),
+  "remainingSessions": zod.number(),
+  "priceInDinars": zod.number(),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
+  "expiresAt": zod.coerce.date(),
+  "paymentConfirmedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const CustomerListMyPurchasesResponse = zod.array(CustomerListMyPurchasesResponseItem)
+
+
+/**
+ * @summary Redeem one session from a package against an appointment (customer)
+ */
+export const CustomerRedeemPackageSessionParams = zod.object({
+  "purchaseId": zod.coerce.string()
+})
+
+export const CustomerRedeemPackageSessionBody = zod.object({
+  "appointmentId": zod.string()
+})
+
+export const CustomerRedeemPackageSessionResponse = zod.object({
+  "redemptionId": zod.string(),
+  "remainingSessions": zod.number(),
+  "purchaseId": zod.string()
+})
+
+
+/**
+ * @summary List all customer package purchases for the active salon (owner)
+ */
+export const OwnerListCustomerPackagesQueryParams = zod.object({
+  "salonCustomerId": zod.coerce.string().optional(),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']).optional()
+})
+
+export const OwnerListCustomerPackagesResponseItem = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "packageId": zod.string(),
+  "packageName": zod.string(),
+  "salonCustomerId": zod.string(),
+  "totalSessions": zod.number(),
+  "remainingSessions": zod.number(),
+  "priceInDinars": zod.number(),
+  "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
+  "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
+  "expiresAt": zod.coerce.date(),
+  "paymentConfirmedAt": zod.coerce.date().nullish(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const OwnerListCustomerPackagesResponse = zod.array(OwnerListCustomerPackagesResponseItem)
+
+
+/**
+ * @summary List employee performance metrics for the active salon (owner)
+ */
+export const OwnerListEmployeePerformanceQueryParams = zod.object({
+  "from": zod.date().optional(),
+  "to": zod.date().optional()
+})
+
+export const ownerListEmployeePerformanceResponseRebookingRateMin = 0;
+export const ownerListEmployeePerformanceResponseRebookingRateMax = 1;
+
+
+
+export const OwnerListEmployeePerformanceResponseItem = zod.object({
+  "employeeId": zod.string(),
+  "employeeName": zod.string(),
+  "completedAppointments": zod.number(),
+  "totalRevenue": zod.number(),
+  "commissionType": zod.enum(['percent_of_revenue', 'fixed_per_treatment']),
+  "commissionPercent": zod.number(),
+  "fixedAmountInDinars": zod.number(),
+  "estimatedCommission": zod.number(),
+  "noShowCount": zod.number(),
+  "cancelledCount": zod.number(),
+  "averageAppointmentValue": zod.number(),
+  "averageRating": zod.number().describe('Average rating × 10 (10–50 scale), 0 if no reviews'),
+  "reviewCount": zod.number(),
+  "rebookingRate": zod.number().min(ownerListEmployeePerformanceResponseRebookingRateMin).max(ownerListEmployeePerformanceResponseRebookingRateMax).describe('Fraction of customers who booked a second appointment')
+})
+export const OwnerListEmployeePerformanceResponse = zod.array(OwnerListEmployeePerformanceResponseItem)
+
+
+/**
+ * @summary Update commission settings for an employee (owner)
+ */
+export const OwnerUpdateEmployeeCommissionParams = zod.object({
+  "employeeId": zod.coerce.string()
+})
+
+export const ownerUpdateEmployeeCommissionBodyCommissionPercentMin = 0;
+export const ownerUpdateEmployeeCommissionBodyCommissionPercentMax = 100;
+export const ownerUpdateEmployeeCommissionBodyCommissionPercentMultipleOf = 1;
+
+export const ownerUpdateEmployeeCommissionBodyFixedAmountInDinarsMin = 0;
+export const ownerUpdateEmployeeCommissionBodyFixedAmountInDinarsMultipleOf = 1;
+
+
+
+export const OwnerUpdateEmployeeCommissionBody = zod.object({
+  "commissionType": zod.enum(['percent_of_revenue', 'fixed_per_treatment']),
+  "commissionPercent": zod.number().min(ownerUpdateEmployeeCommissionBodyCommissionPercentMin).max(ownerUpdateEmployeeCommissionBodyCommissionPercentMax).multipleOf(ownerUpdateEmployeeCommissionBodyCommissionPercentMultipleOf).optional(),
+  "fixedAmountInDinars": zod.number().min(ownerUpdateEmployeeCommissionBodyFixedAmountInDinarsMin).multipleOf(ownerUpdateEmployeeCommissionBodyFixedAmountInDinarsMultipleOf).optional(),
+  "perServiceOverrides": zod.record(zod.string(), zod.number()).optional()
+})
+
+export const OwnerUpdateEmployeeCommissionResponse = zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "employeeId": zod.string(),
+  "commissionType": zod.enum(['percent_of_revenue', 'fixed_per_treatment']),
+  "commissionPercent": zod.number(),
+  "fixedAmountInDinars": zod.number(),
+  "perServiceOverrides": zod.record(zod.string(), zod.number()),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get performance metrics for the logged-in employee
+ */
+export const EmployeeGetMyPerformanceQueryParams = zod.object({
+  "from": zod.date().optional(),
+  "to": zod.date().optional()
+})
+
+export const employeeGetMyPerformanceResponseRebookingRateMin = 0;
+export const employeeGetMyPerformanceResponseRebookingRateMax = 1;
+
+
+
+export const EmployeeGetMyPerformanceResponse = zod.object({
+  "employeeId": zod.string(),
+  "employeeName": zod.string(),
+  "completedAppointments": zod.number(),
+  "totalRevenue": zod.number(),
+  "commissionType": zod.enum(['percent_of_revenue', 'fixed_per_treatment']),
+  "commissionPercent": zod.number(),
+  "fixedAmountInDinars": zod.number(),
+  "estimatedCommission": zod.number(),
+  "noShowCount": zod.number(),
+  "cancelledCount": zod.number(),
+  "averageAppointmentValue": zod.number(),
+  "averageRating": zod.number().describe('Average rating × 10 (10–50 scale), 0 if no reviews'),
+  "reviewCount": zod.number(),
+  "rebookingRate": zod.number().min(employeeGetMyPerformanceResponseRebookingRateMin).max(employeeGetMyPerformanceResponseRebookingRateMax).describe('Fraction of customers who booked a second appointment')
+})
+
+
+/**
+ * @summary Ask the AI growth advisor a question grounded in salon data (owner)
+ */
+export const ownerAskGrowthAiBodyQuestionMax = 2000;
+
+export const ownerAskGrowthAiBodySnapshotPeriodDaysMin = 7;
+export const ownerAskGrowthAiBodySnapshotPeriodDaysMax = 365;
+export const ownerAskGrowthAiBodySnapshotPeriodDaysMultipleOf = 1;
+
+
+
+export const OwnerAskGrowthAiBody = zod.object({
+  "question": zod.string().min(1).max(ownerAskGrowthAiBodyQuestionMax),
+  "snapshotPeriodDays": zod.number().min(ownerAskGrowthAiBodySnapshotPeriodDaysMin).max(ownerAskGrowthAiBodySnapshotPeriodDaysMax).multipleOf(ownerAskGrowthAiBodySnapshotPeriodDaysMultipleOf).optional()
+})
+
+export const OwnerAskGrowthAiResponse = zod.object({
+  "answer": zod.string(),
+  "snapshot": zod.object({
+  "salonId": zod.string(),
+  "salonName": zod.string(),
+  "periodFrom": zod.string(),
+  "periodTo": zod.string(),
+  "generatedAt": zod.coerce.date(),
+  "totalRevenue": zod.number(),
+  "totalBookings": zod.number(),
+  "completedBookings": zod.number(),
+  "cancelledBookings": zod.number(),
+  "noShowBookings": zod.number(),
+  "retentionCounts": zod.object({
+  "NEW": zod.number(),
+  "ACTIVE": zod.number(),
+  "VIP": zod.number(),
+  "AT_RISK": zod.number(),
+  "LOST": zod.number()
+}),
+  "topServices": zod.array(zod.object({
+  "serviceName": zod.string(),
+  "bookingCount": zod.number(),
+  "revenue": zod.number()
+})),
+  "topEmployees": zod.array(zod.object({
+  "employeeName": zod.string(),
+  "completedCount": zod.number(),
+  "revenue": zod.number()
+})),
+  "totalCustomers": zod.number()
+})
+})
+
+
+/**
+ * @summary Reverse a package session redemption (owner), restoring session count and appointment price
+ */
+export const OwnerReverseRedemptionParams = zod.object({
+  "redemptionId": zod.coerce.string()
+})
+
+export const OwnerReverseRedemptionResponse = zod.object({
+  "remainingSessions": zod.number()
+})
+
+
+/**
+ * @summary Platform-wide growth summary for admin (read-only, no mutation)
+ */
+export const AdminGetGrowthSummaryResponse = zod.object({
+  "automation": zod.object({
+  "totalRules": zod.number(),
+  "activeRules": zod.number(),
+  "byStatus": zod.record(zod.string(), zod.number())
+}),
+  "packages": zod.object({
+  "total": zod.number(),
+  "active": zod.number()
+}),
+  "purchases": zod.object({
+  "total": zod.number(),
+  "active": zod.number(),
+  "pendingPayment": zod.number()
+})
+})

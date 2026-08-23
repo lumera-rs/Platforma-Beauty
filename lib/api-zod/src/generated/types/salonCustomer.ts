@@ -16,6 +16,8 @@ export interface SalonCustomer {
   /** @nullable */
   phone: string | null;
   smsOptOut: boolean;
+  /** @nullable */
+  birthDate?: Date | null;
   visitCount: number;
   /** @minimum 0 */
   noShowCount: number;

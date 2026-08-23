@@ -13,6 +13,7 @@ import {
   MapPin, AlertCircle, Heart, X
 } from "lucide-react";
 import type { SalonProfile, TimeSlot, CurrentUserResponse, Employee } from "@workspace/api-client-react";
+import { useCustomerListMyPurchases, useCustomerListPublicPackages } from "@workspace/api-client-react";
 import { AvatarImage as OptimizedAvatarImage } from "@/components/optimized-image";
 
 export interface BookingWidgetProps {
@@ -32,7 +33,7 @@ export interface BookingWidgetProps {
   setSelectedSlot: (slot: TimeSlot | null) => void;
   availability: TimeSlot[] | undefined;
   isLoadingAvailability: boolean;
-  onBook: () => void;
+  onBook: (packagePurchaseId?: string) => void;
   isBooking: boolean;
   isSuccess: boolean;
   bookingStatus?: "pending" | "confirmed";
@@ -60,6 +61,44 @@ export function BookingWidget(props: BookingWidgetProps) {
   const slotsVece = useMemo(() => props.availability?.filter(s => parseInt(s.start.split(':')[0], 10) >= 17) || [], [props.availability]);
   const today = startOfDay(new Date());
   const dayKey = (date: Date) => format(date, "yyyy-MM-dd");
+
+  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+
+  const { data: customerPackages } = useCustomerListMyPurchases(
+    {
+      query: {
+        enabled: props.user?.role === 'CUSTOMER',
+        queryKey: ['customer-list-my-purchases']
+      }
+    }
+  );
+
+  const { data: publicPackages } = useCustomerListPublicPackages(
+    { salonId: props.salon.id },
+    {
+      query: {
+        enabled: !!props.salon.id,
+        queryKey: ['public-packages', props.salon.id]
+      }
+    }
+  );
+
+  const applicablePackages = useMemo(() => {
+    if (!customerPackages || !props.selectedService || !publicPackages) return [];
+    return customerPackages.filter((p: any) => {
+      if (p.status !== 'active' || p.remainingSessions <= 0 || p.salonId !== props.salon.id) return false;
+      // Package must not be expired
+      if (p.expiresAt && new Date(p.expiresAt) < new Date()) return false;
+      const pkgDef = publicPackages.find((def: any) => def.id === p.packageId);
+      if (!pkgDef) return false;
+      return pkgDef.serviceIds.includes(props.selectedService!);
+    });
+  }, [customerPackages, props.selectedService, publicPackages, props.salon.id]);
+
+  // If selected service changes, reset package selection
+  useEffect(() => {
+    setSelectedPackageId(null);
+  }, [props.selectedService]);
 
   useEffect(() => {
     setDateAvailability({});
@@ -517,6 +556,43 @@ export function BookingWidget(props: BookingWidgetProps) {
                      </div>
                   </div>
 
+                  {applicablePackages.length > 0 && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 shadow-sm space-y-3">
+                      <p className="text-sm font-bold text-primary flex items-center gap-2">
+                        <Check className="w-4 h-4" /> Imate aktivan paket za ovu uslugu
+                      </p>
+                      <div className="space-y-2">
+                        {applicablePackages.map((pkg) => (
+                          <label key={pkg.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedPackageId === pkg.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:border-primary/40'}`}>
+                            <input
+                              type="radio"
+                              name="package_payment"
+                              checked={selectedPackageId === pkg.id}
+                              onChange={() => setSelectedPackageId(pkg.id)}
+                              className="accent-primary"
+                            />
+                            <div>
+                              <p className="font-bold text-sm leading-none">{pkg.packageName}</p>
+                              <p className={`text-xs mt-1 ${selectedPackageId === pkg.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                Preostalo: {pkg.remainingSessions} tretmana
+                              </p>
+                            </div>
+                          </label>
+                        ))}
+                        <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${!selectedPackageId ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:border-primary/40'}`}>
+                          <input
+                            type="radio"
+                            name="package_payment"
+                            checked={!selectedPackageId}
+                            onChange={() => setSelectedPackageId(null)}
+                            className="accent-primary"
+                          />
+                          <p className="font-bold text-sm leading-none">Plati standardno</p>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                   {!props.user && (
                     <div className="p-4 bg-amber-50 text-amber-800 rounded-xl border border-amber-200 text-sm font-medium flex gap-3 items-start shadow-sm">
                       <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
@@ -556,7 +632,7 @@ export function BookingWidget(props: BookingWidgetProps) {
           <Button 
             size="lg" 
             className="w-full rounded-xl shadow-lg flex-1 text-base font-bold bg-primary hover:bg-primary/90 text-primary-foreground transition-all" 
-            onClick={props.onBook} 
+            onClick={() => props.onBook(selectedPackageId ?? undefined)}
             disabled={props.isBooking}
           >
             {props.isBooking && <Loader2 className="w-5 h-5 mr-2 animate-spin" />}

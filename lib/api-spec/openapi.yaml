@@ -18,6 +18,7 @@ tags:
   - name: loyalty
   - name: education
   - name: admin
+  - name: growth
 paths:
   /healthz:
     get:
@@ -392,6 +393,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Appointment"
+        "409":
+          description: >-
+            Booking conflict. Package redemption failures carry a stable
+            discriminator `code: PACKAGE_ERROR` plus the specific `reason`;
+            plain availability conflicts omit `code`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentConflictError"
   /appointments/{appointmentId}:
     patch:
       operationId: updateAppointment
@@ -1130,6 +1140,66 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EmployeeDeactivationResult" }
+  /salon/leave-requests:
+    get:
+      operationId: listSalonLeaveRequests
+      tags: [salon-management]
+      summary: List employee leave requests for the active salon (owner)
+      responses:
+        "200":
+          description: Leave requests for all employees in the salon
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonLeaveRequest" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner role required }
+  /salon/leave-requests/{requestId}:
+    patch:
+      operationId: reviewSalonLeaveRequest
+      tags: [salon-management]
+      summary: Approve or reject an employee leave request (owner)
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaveRequestReviewBody" }
+      responses:
+        "200":
+          description: Leave request reviewed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaveRequestReviewResult" }
+        "400": { description: "Invalid status value" }
+        "401": { description: "Authentication required" }
+        "403": { description: "Salon owner role required, or request belongs to another salon" }
+        "404": { description: "Leave request not found" }
+        "409": { description: "Leave request already reviewed" }
+  /employee/leave-requests:
+    post:
+      operationId: createEmployeeLeaveRequest
+      tags: [salon-management]
+      summary: Submit a leave request (employee)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeLeaveRequestCreate" }
+      responses:
+        "201":
+          description: Leave request created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeLeaveRequest" }
+        "400": { description: Invalid period or reason }
+        "401": { description: Authentication required }
+        "403": { description: Salon employee role required }
   /shop/categories:
     get:
       operationId: listProductCategories
@@ -3432,6 +3502,571 @@ paths:
       responses:
         "204":
           description: Courier service deleted
+
+  # ---------------------------------------------------------------------------
+  # Business Growth Phase 2
+  # ---------------------------------------------------------------------------
+
+  /growth/retention:
+    get:
+      operationId: ownerListRetention
+      tags: [growth]
+      summary: List retention status for all salon customers (owner)
+      responses:
+        "200":
+          description: Retention list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CustomerRetentionItem" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/retention/{salonCustomerId}:
+    get:
+      operationId: ownerGetRetentionDetail
+      tags: [growth]
+      summary: Get retention detail for a single salon customer (owner)
+      parameters:
+        - name: salonCustomerId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Retention detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerRetentionDetail" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "404": { description: Customer not found }
+
+  /growth/automations:
+    get:
+      operationId: ownerListAutomations
+      tags: [growth]
+      summary: List automation rules for the active salon (owner)
+      responses:
+        "200":
+          description: Automation rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AutomationRule" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+    post:
+      operationId: ownerCreateAutomation
+      tags: [growth]
+      summary: Create a new automation rule (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAutomationRuleBody" }
+      responses:
+        "201":
+          description: Created automation rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/automations/{automationId}:
+    get:
+      operationId: ownerGetAutomation
+      tags: [growth]
+      summary: Get an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Automation rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "404": { description: Not found }
+    patch:
+      operationId: ownerUpdateAutomation
+      tags: [growth]
+      summary: Update an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAutomationRuleBody" }
+      responses:
+        "200":
+          description: Updated automation rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "404": { description: Not found }
+    delete:
+      operationId: ownerDeleteAutomation
+      tags: [growth]
+      summary: Delete an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Not found }
+
+  /growth/automations/{automationId}/activate:
+    post:
+      operationId: ownerActivateAutomation
+      tags: [growth]
+      summary: Activate an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Activated automation rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "404": { description: Not found }
+
+  /growth/automations/{automationId}/pause:
+    post:
+      operationId: ownerPauseAutomation
+      tags: [growth]
+      summary: Pause an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paused automation rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "404": { description: Not found }
+
+  /growth/automations/{automationId}/stats:
+    get:
+      operationId: ownerGetAutomationStats
+      tags: [growth]
+      summary: Get run statistics for an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Automation stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationStats" }
+        "404": { description: Not found }
+
+  /growth/automations/{automationId}/test-run:
+    post:
+      operationId: ownerTestRunAutomation
+      tags: [growth]
+      summary: Perform a safe manual test-run of an automation rule (owner)
+      parameters:
+        - name: automationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Test run result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationTestRunResult" }
+        "404": { description: Not found }
+
+  /growth/automations/from-ai-proposal:
+    post:
+      operationId: ownerCreateAutomationFromAiProposal
+      tags: [growth]
+      summary: Explicitly confirm creation of a paused automation from an AI proposal (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAutomationFromAiProposalBody" }
+      responses:
+        "201":
+          description: Created paused automation from AI proposal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutomationRule" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/packages:
+    get:
+      operationId: ownerListPackages
+      tags: [growth]
+      summary: List treatment packages for the active salon (owner)
+      responses:
+        "200":
+          description: Treatment packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TreatmentPackage" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+    post:
+      operationId: ownerCreatePackage
+      tags: [growth]
+      summary: Create a treatment package (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTreatmentPackageBody" }
+      responses:
+        "201":
+          description: Created treatment package
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TreatmentPackage" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/packages/{packageId}:
+    get:
+      operationId: ownerGetPackage
+      tags: [growth]
+      summary: Get a treatment package (owner)
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Treatment package
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TreatmentPackage" }
+        "404": { description: Not found }
+    patch:
+      operationId: ownerUpdatePackage
+      tags: [growth]
+      summary: Update a treatment package (owner)
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTreatmentPackageBody" }
+      responses:
+        "200":
+          description: Updated treatment package
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TreatmentPackage" }
+        "404": { description: Not found }
+    delete:
+      operationId: ownerDeletePackage
+      tags: [growth]
+      summary: Delete a treatment package (owner)
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Not found }
+
+  /growth/packages/public:
+    get:
+      operationId: customerListPublicPackages
+      tags: [growth]
+      summary: List available packages for a salon (public/customer)
+      parameters:
+        - name: salonId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Available packages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TreatmentPackagePublic" }
+
+  /growth/packages/{packageId}/purchases:
+    post:
+      operationId: customerPurchasePackage
+      tags: [growth]
+      summary: Create a pending package purchase (customer)
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PurchasePackageBody" }
+      responses:
+        "201":
+          description: Created pending purchase
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackagePurchase" }
+        "401": { description: Authentication required }
+        "403": { description: Customer access required }
+        "404": { description: Package not found }
+
+  /growth/packages/{packageId}/purchases/{purchaseId}/confirm-payment:
+    post:
+      operationId: ownerConfirmPackagePayment
+      tags: [growth]
+      summary: Confirm payment for a package purchase (owner)
+      parameters:
+        - name: packageId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: purchaseId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Purchase activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackagePurchase" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "404": { description: Not found }
+
+  /growth/my-purchases:
+    get:
+      operationId: customerListMyPurchases
+      tags: [growth]
+      summary: List own package purchases (customer)
+      responses:
+        "200":
+          description: Customer's package purchases
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PackagePurchase" }
+        "401": { description: Authentication required }
+
+  /growth/my-purchases/{purchaseId}/redeem:
+    post:
+      operationId: customerRedeemPackageSession
+      tags: [growth]
+      summary: Redeem one session from a package against an appointment (customer)
+      parameters:
+        - name: purchaseId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RedeemSessionBody" }
+      responses:
+        "200":
+          description: Session redeemed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RedeemSessionResult" }
+        "400": { description: Validation error }
+        "401": { description: Authentication required }
+        "403": { description: Access denied (purchase not owned by caller) }
+        "404": { description: Purchase not found }
+        "409":
+          description: >-
+            Redemption not allowed. Carries the stable package-error
+            discriminator `code: PACKAGE_ERROR` plus the specific `reason`
+            (e.g. appointment_not_eligible, already_redeemed, no_sessions_left,
+            expired, not_active, service_not_covered).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentConflictError"
+
+  /growth/salon-customer-packages:
+    get:
+      operationId: ownerListCustomerPackages
+      tags: [growth]
+      summary: List all customer package purchases for the active salon (owner)
+      parameters:
+        - name: salonCustomerId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending_payment, active, completed, expired, cancelled] }
+      responses:
+        "200":
+          description: Customer package purchases
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PackagePurchase" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/employees/performance:
+    get:
+      operationId: ownerListEmployeePerformance
+      tags: [growth]
+      summary: List employee performance metrics for the active salon (owner)
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Employee performance list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EmployeePerformanceMetrics" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+
+  /growth/employees/{employeeId}/commission:
+    patch:
+      operationId: ownerUpdateEmployeeCommission
+      tags: [growth]
+      summary: Update commission settings for an employee (owner)
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCommissionBody" }
+      responses:
+        "200":
+          description: Updated commission settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeCommissionSettings" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "404": { description: Employee not found }
+
+  /growth/my-performance:
+    get:
+      operationId: employeeGetMyPerformance
+      tags: [growth]
+      summary: Get performance metrics for the logged-in employee
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Employee self-performance metrics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeePerformanceMetrics" }
+        "401": { description: Authentication required }
+        "403": { description: Employee access required }
+        "404": { description: Employee profile not found }
+
+  /growth/ai/ask:
+    post:
+      operationId: ownerAskGrowthAi
+      tags: [growth]
+      summary: Ask the AI growth advisor a question grounded in salon data (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrowthAiQuestionBody" }
+      responses:
+        "200":
+          description: AI answer with auditable snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrowthAiAnswer" }
+        "401": { description: Authentication required }
+        "403": { description: Salon owner required }
+        "502": { description: AI provider unavailable }
+
+  /growth/redemptions/{redemptionId}/reverse:
+    post:
+      operationId: ownerReverseRedemption
+      tags: [growth]
+      summary: Reverse a package session redemption (owner), restoring session count and appointment price
+      parameters:
+        - name: redemptionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Reversal result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReversalResult" }
+        "403": { description: Salon owner required }
+        "404": { description: Redemption not found }
+        "409": { description: Already reversed }
+
+  /growth/admin/summary:
+    get:
+      operationId: adminGetGrowthSummary
+      tags: [growth]
+      summary: Platform-wide growth summary for admin (read-only, no mutation)
+      responses:
+        "200":
+          description: Platform growth summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrowthAdminSummary" }
+        "403": { description: Admin access required }
+
 components:
   parameters:
     CityQuery:
@@ -4156,6 +4791,15 @@ components:
         date: { type: string, format: date }
         startTime: { type: string, pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$' }
         notes: { type: string }
+        packagePurchaseId:
+          type: ["string", "null"]
+          description: >-
+            Optional active package purchase to redeem for this booking. When
+            supplied the appointment is created and a session is redeemed in the
+            same transaction; the appointment price is set to 0. The purchase
+            must belong to the authenticated customer, cover the booked service,
+            be active, non-expired and have a remaining session. Any failure
+            rolls back the entire booking.
         treatmentLocation: { type: string, enum: [salon, home] }
         treatmentAddress:
           type: object
@@ -4190,6 +4834,7 @@ components:
         email: { type: ["string", "null"] }
         phone: { type: ["string", "null"] }
         smsOptOut: { type: boolean }
+        birthDate: { type: ["string", "null"], format: date }
         visitCount: { type: number }
         noShowCount: { type: number, minimum: 0 }
         isRegistered: { type: boolean }
@@ -4317,11 +4962,62 @@ components:
         completedAppointments: { type: number }
         upcomingAppointments: { type: number }
       required: [id, serviceName, totalAppointments, completedAppointments, upcomingAppointments]
+    AppointmentConflictError:
+      type: object
+      properties:
+        error: { type: string, description: "Localized human-readable message" }
+        code:
+          type: string
+          enum: [PACKAGE_ERROR]
+          description: "Stable discriminator; present only for package redemption failures"
+        reason:
+          type: string
+          enum: [not_found, wrong_salon, wrong_customer, already_redeemed, no_sessions_left, expired, not_active, service_not_covered, appointment_not_eligible]
+          description: "Specific package redemption failure reason (present only when code=PACKAGE_ERROR)"
+      required: [error]
+    EmployeeLeaveRequest:
+      type: object
+      description: A single employee leave request row.
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        startDate: { type: string, format: date, description: "Leave start date (YYYY-MM-DD)" }
+        endDate: { type: string, format: date, description: "Leave end date (YYYY-MM-DD)" }
+        reason: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        reviewedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, employeeId, startDate, endDate, reason, status, createdAt]
+    SalonLeaveRequest:
+      allOf:
+        - $ref: "#/components/schemas/EmployeeLeaveRequest"
+        - type: object
+          properties:
+            employeeName: { type: string }
+          required: [employeeName]
+    EmployeeLeaveRequestCreate:
+      type: object
+      properties:
+        startDate: { type: string, format: date, description: "Leave start date (YYYY-MM-DD)" }
+        endDate: { type: string, format: date, description: "Leave end date (YYYY-MM-DD); must be >= startDate" }
+        reason: { type: string, minLength: 1 }
+      required: [startDate, endDate, reason]
+    LeaveRequestReviewBody:
+      type: object
+      properties:
+        status: { type: string, enum: [approved, rejected] }
+      required: [status]
+    LeaveRequestReviewResult:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [approved, rejected] }
+      required: [id, status]
     SalonCustomerUpdate:
       type: object
       properties:
         smsOptOut: { type: boolean }
-      required: [smsOptOut]
+        birthDate: { type: ["string", "null"], format: date, description: "Customer date of birth for birthday automation (YYYY-MM-DD)" }
     SalonAppointmentCreate:
       type: object
       properties:
@@ -5892,3 +6588,428 @@ components:
         price: { type: number, minimum: 0, multipleOf: 1 }
         available: { type: boolean }
       required: [id, name, description, price, available]
+
+    # ---------------------------------------------------------------------------
+    # Business Growth Phase 2 schemas
+    # ---------------------------------------------------------------------------
+
+    CustomerRetentionItem:
+      type: object
+      properties:
+        salonCustomerId: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        status: { type: string, enum: [NEW, ACTIVE, VIP, AT_RISK, LOST] }
+        completedCount: { type: number }
+        lastVisitDaysAgo: { type: ["number", "null"] }
+        typicalIntervalDays: { type: ["number", "null"] }
+        totalSpend: { type: number }
+        hasFutureAppointment: { type: boolean }
+      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment]
+
+    CustomerRetentionDetail:
+      type: object
+      properties:
+        salonCustomerId: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        birthDate: { type: ["string", "null"], format: date, description: "Customer date of birth for birthday automation (YYYY-MM-DD)" }
+        status: { type: string, enum: [NEW, ACTIVE, VIP, AT_RISK, LOST] }
+        completedCount: { type: number }
+        lastVisitDaysAgo: { type: ["number", "null"] }
+        typicalIntervalDays: { type: ["number", "null"] }
+        totalSpend: { type: number }
+        hasFutureAppointment: { type: boolean }
+        recentAppointments:
+          type: array
+          items: { $ref: "#/components/schemas/AppointmentSummary" }
+      required: [salonCustomerId, firstName, lastName, email, phone, status, completedCount, lastVisitDaysAgo, typicalIntervalDays, totalSpend, hasFutureAppointment, recentAppointments]
+
+    AppointmentSummary:
+      type: object
+      properties:
+        id: { type: string }
+        date: { type: string }
+        status: { type: string }
+        price: { type: number }
+        serviceName: { type: string }
+      required: [id, date, status, price, serviceName]
+
+    AutomationRule:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        name: { type: string }
+        trigger: { type: string, enum: [inactive_days, birthday, visit_count, first_visit_completed, package_completed, appointment_cancelled, expected_return_overdue] }
+        triggerConfig:
+          type: object
+          additionalProperties: {}
+        action: { type: string, enum: [send_email, send_sms, send_email_and_sms] }
+        emailSubject: { type: ["string", "null"] }
+        emailBody: { type: ["string", "null"] }
+        smsBody: { type: ["string", "null"] }
+        voucherCode: { type: ["string", "null"], description: "Optional discount/voucher code substituted into {{voucherCode}} template placeholders" }
+        status: { type: string, enum: [active, paused, draft] }
+        aiProposed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, salonId, name, trigger, triggerConfig, action, status, aiProposed, createdAt, updatedAt]
+
+    CreateAutomationRuleBody:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        trigger: { type: string, enum: [inactive_days, birthday, visit_count, first_visit_completed, package_completed, appointment_cancelled, expected_return_overdue] }
+        triggerConfig:
+          type: object
+          additionalProperties: {}
+        action: { type: string, enum: [send_email, send_sms, send_email_and_sms] }
+        emailSubject: { type: ["string", "null"] }
+        emailBody: { type: ["string", "null"], description: "Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders" }
+        smsBody: { type: ["string", "null"], description: "Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders" }
+        voucherCode: { type: ["string", "null"] }
+      required: [name, trigger, action]
+
+    UpdateAutomationRuleBody:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        trigger: { type: string, enum: [inactive_days, birthday, visit_count, first_visit_completed, package_completed, appointment_cancelled, expected_return_overdue] }
+        triggerConfig:
+          type: object
+          additionalProperties: {}
+        action: { type: string, enum: [send_email, send_sms, send_email_and_sms] }
+        emailSubject: { type: ["string", "null"] }
+        emailBody: { type: ["string", "null"] }
+        smsBody: { type: ["string", "null"] }
+        voucherCode: { type: ["string", "null"] }
+
+    CreateAutomationFromAiProposalBody:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        trigger: { type: string, enum: [inactive_days, birthday, visit_count, first_visit_completed, package_completed, appointment_cancelled, expected_return_overdue] }
+        triggerConfig:
+          type: object
+          additionalProperties: {}
+        action: { type: string, enum: [send_email, send_sms, send_email_and_sms] }
+        emailSubject: { type: ["string", "null"] }
+        emailBody: { type: ["string", "null"] }
+        smsBody: { type: ["string", "null"] }
+        voucherCode: { type: ["string", "null"] }
+        aiProposalContext: { type: string }
+      required: [name, trigger, action, aiProposalContext]
+
+    AutomationStats:
+      type: object
+      properties:
+        ruleId: { type: string }
+        totalRuns: { type: number }
+        sentCount: { type: number }
+        skippedCount: { type: number }
+        failedCount: { type: number }
+        attributedAppointments: { type: number }
+        deliveredCount: { type: number }
+        openedCount: { type: number }
+        lastRunAt: { type: ["string", "null"], format: date-time }
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, deliveredCount, openedCount]
+
+    AutomationTestRunResult:
+      type: object
+      properties:
+        wouldTriggerCount: { type: number }
+        eligibleCustomers: { type: number }
+        skippedDueToOptOut: { type: number }
+        skippedDueToRecentRun: { type: number }
+        triggerBreakdown:
+          type: object
+          additionalProperties: { type: number }
+      required: [wouldTriggerCount, eligibleCustomers, skippedDueToOptOut, skippedDueToRecentRun]
+
+    TreatmentPackage:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        priceInDinars: { type: number }
+        sessionCount: { type: number }
+        validityDays: { type: number }
+        active: { type: boolean }
+        serviceIds:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, active, serviceIds, createdAt, updatedAt]
+
+    TreatmentPackagePublic:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        priceInDinars: { type: number }
+        sessionCount: { type: number }
+        validityDays: { type: number }
+        serviceIds:
+          type: array
+          items: { type: string }
+      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, serviceIds]
+
+    CreateTreatmentPackageBody:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        priceInDinars: { type: number, minimum: 0, multipleOf: 1 }
+        sessionCount: { type: number, minimum: 1, maximum: 100, multipleOf: 1 }
+        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
+        active: { type: boolean }
+        serviceIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+      required: [name, priceInDinars, sessionCount, serviceIds]
+
+    UpdateTreatmentPackageBody:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        priceInDinars: { type: number, minimum: 0, multipleOf: 1 }
+        sessionCount: { type: number, minimum: 1, maximum: 100, multipleOf: 1 }
+        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
+        active: { type: boolean }
+        serviceIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+
+    PackagePurchase:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        packageId: { type: string }
+        packageName: { type: string }
+        salonCustomerId: { type: string }
+        totalSessions: { type: number }
+        remainingSessions: { type: number }
+        priceInDinars: { type: number }
+        paymentMethod: { type: string, enum: [pay_at_salon, bank_transfer] }
+        status: { type: string, enum: [pending_payment, active, completed, expired, cancelled] }
+        expiresAt: { type: string, format: date-time }
+        paymentConfirmedAt: { type: ["string", "null"], format: date-time }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, salonId, packageId, packageName, salonCustomerId, totalSessions, remainingSessions, priceInDinars, paymentMethod, status, expiresAt, createdAt, updatedAt]
+
+    PurchasePackageBody:
+      type: object
+      additionalProperties: false
+      properties:
+        paymentMethod: { type: string, enum: [pay_at_salon, bank_transfer] }
+        notes: { type: ["string", "null"] }
+
+    RedeemSessionBody:
+      type: object
+      additionalProperties: false
+      properties:
+        appointmentId: { type: string }
+      required: [appointmentId]
+
+    RedeemSessionResult:
+      type: object
+      properties:
+        redemptionId: { type: string }
+        remainingSessions: { type: number }
+        purchaseId: { type: string }
+      required: [redemptionId, remainingSessions, purchaseId]
+
+    EmployeePerformanceMetrics:
+      type: object
+      properties:
+        employeeId: { type: string }
+        employeeName: { type: string }
+        completedAppointments: { type: number }
+        totalRevenue: { type: number }
+        commissionType: { type: string, enum: [percent_of_revenue, fixed_per_treatment] }
+        commissionPercent: { type: number }
+        fixedAmountInDinars: { type: number }
+        estimatedCommission: { type: number }
+        noShowCount: { type: number }
+        cancelledCount: { type: number }
+        averageAppointmentValue: { type: number }
+        averageRating: { type: number, description: "Average rating × 10 (10–50 scale), 0 if no reviews" }
+        reviewCount: { type: number }
+        rebookingRate: { type: number, minimum: 0, maximum: 1, description: "Fraction of customers who booked a second appointment" }
+      required: [employeeId, employeeName, completedAppointments, totalRevenue, commissionType, commissionPercent, fixedAmountInDinars, estimatedCommission, noShowCount, cancelledCount, averageAppointmentValue, averageRating, reviewCount, rebookingRate]
+
+    EmployeeCommissionSettings:
+      type: object
+      properties:
+        id: { type: string }
+        salonId: { type: string }
+        employeeId: { type: string }
+        commissionType: { type: string, enum: [percent_of_revenue, fixed_per_treatment] }
+        commissionPercent: { type: number }
+        fixedAmountInDinars: { type: number }
+        perServiceOverrides:
+          type: object
+          additionalProperties: { type: number }
+        updatedAt: { type: string, format: date-time }
+      required: [id, salonId, employeeId, commissionType, commissionPercent, fixedAmountInDinars, perServiceOverrides, updatedAt]
+
+    UpdateCommissionBody:
+      type: object
+      additionalProperties: false
+      properties:
+        commissionType: { type: string, enum: [percent_of_revenue, fixed_per_treatment] }
+        commissionPercent: { type: number, minimum: 0, maximum: 100, multipleOf: 1 }
+        fixedAmountInDinars: { type: number, minimum: 0, multipleOf: 1 }
+        perServiceOverrides:
+          type: object
+          additionalProperties: { type: number }
+      required: [commissionType]
+
+    GrowthAiQuestionBody:
+      type: object
+      additionalProperties: false
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000 }
+        snapshotPeriodDays: { type: number, minimum: 7, maximum: 365, multipleOf: 1 }
+      required: [question]
+
+    GrowthAiAnswer:
+      type: object
+      properties:
+        answer: { type: string }
+        snapshot: { $ref: "#/components/schemas/SalonMetricSnapshot" }
+      required: [answer, snapshot]
+
+    SalonMetricSnapshot:
+      type: object
+      properties:
+        salonId: { type: string }
+        salonName: { type: string }
+        periodFrom: { type: string }
+        periodTo: { type: string }
+        generatedAt: { type: string, format: date-time }
+        totalRevenue: { type: number }
+        totalBookings: { type: number }
+        completedBookings: { type: number }
+        cancelledBookings: { type: number }
+        noShowBookings: { type: number }
+        retentionCounts:
+          type: object
+          properties:
+            NEW: { type: number }
+            ACTIVE: { type: number }
+            VIP: { type: number }
+            AT_RISK: { type: number }
+            LOST: { type: number }
+          required: [NEW, ACTIVE, VIP, AT_RISK, LOST]
+        topServices:
+          type: array
+          items:
+            type: object
+            properties:
+              serviceName: { type: string }
+              bookingCount: { type: number }
+              revenue: { type: number }
+            required: [serviceName, bookingCount, revenue]
+        topEmployees:
+          type: array
+          items:
+            type: object
+            properties:
+              employeeName: { type: string }
+              completedCount: { type: number }
+              revenue: { type: number }
+            required: [employeeName, completedCount, revenue]
+        totalCustomers: { type: number }
+      required: [salonId, salonName, periodFrom, periodTo, generatedAt, totalRevenue, totalBookings, completedBookings, cancelledBookings, noShowBookings, retentionCounts, topServices, topEmployees, totalCustomers]
+
+    RetentionCustomer:
+      type: object
+      properties:
+        salonCustomerId: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: ["string", "null"] }
+        phone: { type: ["string", "null"] }
+        birthDate: { type: ["string", "null"], format: date }
+        status: { type: string, enum: [NEW, ACTIVE, VIP, AT_RISK, LOST] }
+        completedCount: { type: number }
+        lastVisitDaysAgo: { type: ["number", "null"] }
+        typicalIntervalDays: { type: ["number", "null"] }
+        totalSpend: { type: number }
+        hasFutureAppointment: { type: boolean }
+        explanation: { type: string }
+        recommendedAction: { type: string }
+      required: [salonCustomerId, firstName, lastName, status, completedCount, totalSpend, hasFutureAppointment, explanation, recommendedAction]
+
+    RetentionCustomerDetail:
+      allOf:
+        - $ref: "#/components/schemas/RetentionCustomer"
+        - type: object
+          properties:
+            recentAppointments:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  date: { type: string, format: date }
+                  status: { type: string }
+                  price: { type: number }
+                  serviceName: { type: string }
+                required: [id, date, status, price, serviceName]
+          required: [recentAppointments]
+
+    ReversalResult:
+      type: object
+      properties:
+        remainingSessions: { type: number }
+      required: [remainingSessions]
+
+    GrowthAdminSummary:
+      type: object
+      properties:
+        automation:
+          type: object
+          properties:
+            totalRules: { type: number }
+            activeRules: { type: number }
+            byStatus:
+              type: object
+              additionalProperties: { type: number }
+          required: [totalRules, activeRules, byStatus]
+        packages:
+          type: object
+          properties:
+            total: { type: number }
+            active: { type: number }
+          required: [total, active]
+        purchases:
+          type: object
+          properties:
+            total: { type: number }
+            active: { type: number }
+            pendingPayment: { type: number }
+          required: [total, active, pendingPayment]
+      required: [automation, packages, purchases]

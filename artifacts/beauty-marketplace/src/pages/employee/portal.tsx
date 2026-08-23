@@ -6,7 +6,7 @@ import { PasswordInput } from "@/components/password-input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,11 +24,20 @@ import {
   Trash2,
   UserRound,
   XCircle,
+  TrendingUp,
+  DollarSign,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
+import { getGetCurrentUserQueryKey, useEmployeeGetMyPerformance, useGetCurrentUser } from "@workspace/api-client-react";
 import { AvatarImage } from "@/components/optimized-image";
+import {
+  createEmployeeLeaveDraft,
+  formatEmployeeLeaveRequestSummary,
+  type EmployeeLeaveRequest,
+} from "@/lib/employee-leave";
 import { uploadOptimizedImage } from "@/lib/media-upload";
+import { format, subDays, startOfMonth, endOfMonth, endOfDay } from "date-fns";
 
 type Appointment = {
   id: string;
@@ -51,8 +60,8 @@ type Portal = {
   clients: { id: string; firstName: string; lastName: string; phone: string | null }[];
   services: { id: string; name: string; durationMinutes: number }[];
   schedule: { id: string; weekday: number; startTime: string; endTime: string; breakStart: string | null; breakEnd: string | null }[];
-  timeOff: { id: string; startDate: string; endDate: string; reason: string }[];
-  leaveRequests: { id: string; startDate: string; endDate: string; reason: string; status: string }[];
+  timeOff: { id: string; from: string; to: string; reason: string }[];
+  leaveRequests: EmployeeLeaveRequest[];
   notifications: { id: string; title: string; date: string; createdAt: string }[];
   stats: { week: number; month: number; completed: number; noShow: number };
 };
@@ -213,6 +222,103 @@ export function EmployeePasswordChange() {
   );
 }
 
+function EmployeePerformanceTab() {
+  const { data: userResp } = useGetCurrentUser();
+  const [dateRange, setDateRange] = useState<"this_month" | "last_month" | "last_30">("this_month");
+
+  const rangeParams = useMemo(() => {
+    const today = new Date();
+    let startDate, endDate;
+
+    if (dateRange === "this_month") {
+      startDate = startOfMonth(today);
+      endDate = endOfDay(today);
+    } else if (dateRange === "last_month") {
+      const lastMonth = subDays(startOfMonth(today), 1);
+      startDate = startOfMonth(lastMonth);
+      endDate = endOfMonth(lastMonth);
+    } else {
+      startDate = subDays(today, 30);
+      endDate = endOfDay(today);
+    }
+
+    return {
+      from: format(startDate, 'yyyy-MM-dd'),
+      to: format(endDate, 'yyyy-MM-dd')
+    };
+  }, [dateRange]);
+
+  const { data: perf, isLoading } = useEmployeeGetMyPerformance(
+    rangeParams,
+    {
+      query: {
+        enabled: !!userResp?.user,
+        queryKey: ['employee-my-performance', rangeParams.from, rangeParams.to]
+      }
+    }
+  );
+
+  if (isLoading) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (!perf) return null;
+
+  return (
+    <Card className="overflow-hidden border-primary/10 shadow-md h-full flex flex-col">
+      <CardHeader className="border-b bg-card px-5 py-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-primary" /> Moje Performanse
+          </CardTitle>
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground"
+            value={dateRange}
+            onChange={e => setDateRange(e.target.value as any)}
+          >
+            <option value="this_month">Ovaj mesec</option>
+            <option value="last_month">Prošli mesec</option>
+            <option value="last_30">Poslednjih 30 dana</option>
+          </select>
+        </div>
+      </CardHeader>
+      <CardContent className="p-5 space-y-6 flex-1 bg-muted/10">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-background border p-4 rounded-xl shadow-sm text-center">
+            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Odrađeno tretmana</p>
+            <p className="text-3xl font-bold mt-2">{perf.completedAppointments}</p>
+          </div>
+          <div className="bg-background border p-4 rounded-xl shadow-sm text-center">
+            <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider flex items-center justify-center gap-1"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> Prosečna ocena</p>
+            <p className="text-3xl font-bold mt-2">
+              {perf.reviewCount > 0 ? (perf.averageRating / 10).toFixed(1) : "Nema"}
+            </p>
+            {perf.reviewCount > 0 && <p className="text-[10px] text-muted-foreground mt-1">na osnovu {perf.reviewCount} recenzija</p>}
+          </div>
+        </div>
+
+        <div className="bg-orange-50 border border-orange-200 p-5 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-semibold text-orange-800 mb-2">
+            <DollarSign className="w-4 h-4" /> Procenjena provizija
+          </div>
+          <p className="text-4xl font-bold text-orange-900">{perf.estimatedCommission.toLocaleString()} RSD</p>
+          <p className="text-xs text-orange-700/80 mt-2">
+            Na osnovu pravila: {perf.commissionType === 'percent_of_revenue' ? `${perf.commissionPercent}% od prihoda` : `${perf.fixedAmountInDinars} RSD po tretmanu`}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 bg-background border p-4 rounded-xl shadow-sm">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Ukupan prihod od termina</p>
+            <p className="font-bold">{perf.totalRevenue.toLocaleString()} RSD</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Rebooking rate</p>
+            <p className="font-bold">{Math.round(perf.rebookingRate * 100)}%</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EmployeePortal() {
   const [portal, setPortal] = useState<Portal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -240,7 +346,7 @@ export default function EmployeePortal() {
   } | null>(null);
   const [profile, setProfile] = useState({ bio: "", avatarUrl: "", phone: "" });
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [leave, setLeave] = useState({ startDate: today(), endDate: today(), reason: "" });
+  const [leave, setLeave] = useState(() => createEmployeeLeaveDraft(today()));
 
   const load = async () => {
     setLoading(true);
@@ -331,7 +437,7 @@ export default function EmployeePortal() {
       await api("/api/employee/leave-requests", { method: "POST", body: JSON.stringify(leave) });
       toast.success("Zahtev je poslat salonu.");
       setLeaveOpen(false);
-      setLeave({ startDate: today(), endDate: today(), reason: "" });
+      setLeave(createEmployeeLeaveDraft(today()));
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Zahtev nije poslat.");
@@ -553,12 +659,16 @@ export default function EmployeePortal() {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader><CardTitle className="text-lg">Odsustva i zahtevi</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {portal.leaveRequests.length ? portal.leaveRequests.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{item.startDate} – {item.endDate} · {item.reason}</span><Badge variant={item.status === "approved" ? "secondary" : item.status === "rejected" ? "destructive" : "default"}>{item.status === "pending" ? "Na čekanju" : item.status === "approved" ? "Odobreno" : "Odbijeno"}</Badge></div>) : <p className="text-sm text-muted-foreground">Nema poslatih zahteva.</p>}
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle className="text-lg">Odsustva i zahtevi</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {portal.leaveRequests.length ? portal.leaveRequests.map((item) => <div key={item.id} className="flex items-center justify-between rounded-md border p-3 text-sm"><span>{formatEmployeeLeaveRequestSummary(item)}</span><Badge variant={item.status === "approved" ? "secondary" : item.status === "rejected" ? "destructive" : "default"}>{item.status === "pending" ? "Na čekanju" : item.status === "approved" ? "Odobreno" : "Odbijeno"}</Badge></div>) : <p className="text-sm text-muted-foreground">Nema poslatih zahteva.</p>}
+            </CardContent>
+          </Card>
+
+          <EmployeePerformanceTab />
+        </div>
 
         <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
           <DialogContent>

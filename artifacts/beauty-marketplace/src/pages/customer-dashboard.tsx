@@ -14,6 +14,7 @@ import {
   useGetAppointmentSalonContact,
   useListFavorites,
   useListMyAppointments,
+  useCustomerListMyPurchases,
 } from "@workspace/api-client-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,7 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
-import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap } from "lucide-react";
+import { Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,6 +45,74 @@ import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { EducationPurchases } from "@/components/education-purchases";
 
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
+
+function CustomerPackages() {
+  const { data: userResp } = useGetCurrentUser();
+  const { data: purchases, isLoading } = useCustomerListMyPurchases(
+    {
+      query: {
+        enabled: !!userResp?.user,
+        queryKey: ['customer-list-my-purchases']
+      }
+    }
+  );
+
+  if (isLoading) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+
+  if (!purchases || purchases.length === 0) {
+    return (
+      <Empty className="border bg-card py-14">
+        <EmptyHeader>
+          <EmptyMedia variant="icon"><Box /></EmptyMedia>
+          <EmptyTitle>Nemate kupljene pakete</EmptyTitle>
+          <EmptyDescription>Pronađite salon i kupite paket tretmana za uštedu.</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent><Button asChild><Link href="/saloni">Istraži salone</Link></Button></EmptyContent>
+      </Empty>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      {purchases.map((p: any) => (
+        <Card key={p.id} className={p.status === 'expired' || p.status === 'completed' ? 'opacity-60 grayscale-[30%]' : ''}>
+          <CardHeader className="pb-3 border-b">
+            <div className="flex justify-between items-start gap-2">
+              <div>
+                <CardTitle className="text-lg">{p.packageName}</CardTitle>
+                <div className="mt-2 flex gap-2">
+                  {p.status === 'active' && <Badge className="bg-emerald-100 text-emerald-800 border-none">Aktivan</Badge>}
+                  {p.status === 'pending_payment' && <Badge variant="secondary" className="bg-orange-100 text-orange-800 border-none">Čeka uplatu</Badge>}
+                  {p.status === 'completed' && <Badge variant="outline">Iskorišćen</Badge>}
+                  {p.status === 'expired' && <Badge variant="destructive">Istekao</Badge>}
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="font-bold text-lg">{p.priceInDinars.toLocaleString()} RSD</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="py-4 space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Preostalo tretmana:</span>
+              <span className="font-bold">{p.remainingSessions} / {p.totalSessions}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Ističe:</span>
+              <span className="font-medium">{format(parseISO(p.expiresAt), 'dd.MM.yyyy')}</span>
+            </div>
+            {p.status === 'pending_payment' && (
+              <div className="mt-3 p-3 bg-muted/30 rounded-lg text-xs text-muted-foreground">
+                <p>Paket će postati aktivan nakon što salon potvrdi vašu uplatu.</p>
+                <p className="mt-1">Način plaćanja: {p.paymentMethod === 'bank_transfer' ? 'Uplata na račun' : 'Plaćanje u salonu'}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 export default function CustomerDashboard() {
   const [location, setLocation] = useLocation();
@@ -90,7 +159,7 @@ export default function CustomerDashboard() {
   // Wouter navigation can update its location before the browser search string
   // is observed by a render, so accept the query from either source.
   const requestedTab = new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search).get("tab");
-  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" ? requestedTab : "appointments";
+  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" ? requestedTab : "appointments";
 
   useEffect(() => {
     const search = location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search;
@@ -281,6 +350,9 @@ export default function CustomerDashboard() {
             <TabsTrigger value="favorites" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Omiljeni Saloni ({dashboard?.favoriteCount || 0})
             </TabsTrigger>
+            <TabsTrigger value="packages" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+              Moji Paketi
+            </TabsTrigger>
             <TabsTrigger value="education" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               <GraduationCap className="mr-2 h-4 w-4" />Moje edukacije
             </TabsTrigger>
@@ -393,6 +465,11 @@ export default function CustomerDashboard() {
                 </div>
               )}
           </TabsContent>
+
+          <TabsContent value="packages" className="mt-0">
+            <CustomerPackages />
+          </TabsContent>
+
           <TabsContent value="education" className="mt-0">
             <EducationPurchases />
           </TabsContent>

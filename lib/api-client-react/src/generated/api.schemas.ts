@@ -978,6 +978,11 @@ export interface AppointmentInput {
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
+  /**
+     * Optional active package purchase to redeem for this booking. When supplied the appointment is created and a session is redeemed in the same transaction; the appointment price is set to 0. The purchase must belong to the authenticated customer, cover the booked service, be active, non-expired and have a remaining session. Any failure rolls back the entire booking.
+     * @nullable
+     */
+  packagePurchaseId?: string | null;
   treatmentLocation?: AppointmentInputTreatmentLocation;
   treatmentAddress?: AppointmentInputTreatmentAddress;
 }
@@ -1025,6 +1030,8 @@ export interface SalonCustomer {
   /** @nullable */
   phone: string | null;
   smsOptOut: boolean;
+  /** @nullable */
+  birthDate?: string | null;
   visitCount: number;
   /** @minimum 0 */
   noShowCount: number;
@@ -1138,8 +1145,114 @@ export interface AppointmentSeriesMoveResult {
   appointments: Appointment[];
 }
 
+/**
+ * Stable discriminator; present only for package redemption failures
+ */
+export type AppointmentConflictErrorCode = typeof AppointmentConflictErrorCode[keyof typeof AppointmentConflictErrorCode];
+
+
+export const AppointmentConflictErrorCode = {
+  PACKAGE_ERROR: 'PACKAGE_ERROR',
+} as const;
+
+/**
+ * Specific package redemption failure reason (present only when code=PACKAGE_ERROR)
+ */
+export type AppointmentConflictErrorReason = typeof AppointmentConflictErrorReason[keyof typeof AppointmentConflictErrorReason];
+
+
+export const AppointmentConflictErrorReason = {
+  not_found: 'not_found',
+  wrong_salon: 'wrong_salon',
+  wrong_customer: 'wrong_customer',
+  already_redeemed: 'already_redeemed',
+  no_sessions_left: 'no_sessions_left',
+  expired: 'expired',
+  not_active: 'not_active',
+  service_not_covered: 'service_not_covered',
+  appointment_not_eligible: 'appointment_not_eligible',
+} as const;
+
+export interface AppointmentConflictError {
+  /** Localized human-readable message */
+  error: string;
+  /** Stable discriminator; present only for package redemption failures */
+  code?: AppointmentConflictErrorCode;
+  /** Specific package redemption failure reason (present only when code=PACKAGE_ERROR) */
+  reason?: AppointmentConflictErrorReason;
+}
+
+export type EmployeeLeaveRequestStatus = typeof EmployeeLeaveRequestStatus[keyof typeof EmployeeLeaveRequestStatus];
+
+
+export const EmployeeLeaveRequestStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+/**
+ * A single employee leave request row.
+ */
+export interface EmployeeLeaveRequest {
+  id: string;
+  employeeId: string;
+  /** Leave start date (YYYY-MM-DD) */
+  startDate: string;
+  /** Leave end date (YYYY-MM-DD) */
+  endDate: string;
+  reason: string;
+  status: EmployeeLeaveRequestStatus;
+  /** @nullable */
+  reviewedAt?: string | null;
+  createdAt: string;
+}
+
+export type SalonLeaveRequest = EmployeeLeaveRequest & {
+  employeeName: string;
+};
+
+export interface EmployeeLeaveRequestCreate {
+  /** Leave start date (YYYY-MM-DD) */
+  startDate: string;
+  /** Leave end date (YYYY-MM-DD); must be >= startDate */
+  endDate: string;
+  /** @minLength 1 */
+  reason: string;
+}
+
+export type LeaveRequestReviewBodyStatus = typeof LeaveRequestReviewBodyStatus[keyof typeof LeaveRequestReviewBodyStatus];
+
+
+export const LeaveRequestReviewBodyStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface LeaveRequestReviewBody {
+  status: LeaveRequestReviewBodyStatus;
+}
+
+export type LeaveRequestReviewResultStatus = typeof LeaveRequestReviewResultStatus[keyof typeof LeaveRequestReviewResultStatus];
+
+
+export const LeaveRequestReviewResultStatus = {
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface LeaveRequestReviewResult {
+  id: string;
+  status: LeaveRequestReviewResultStatus;
+}
+
 export interface SalonCustomerUpdate {
-  smsOptOut: boolean;
+  smsOptOut?: boolean;
+  /**
+     * Customer date of birth for birthday automation (YYYY-MM-DD)
+     * @nullable
+     */
+  birthDate?: string | null;
 }
 
 export type SalonAppointmentCreateGuest = {
@@ -3473,6 +3586,633 @@ export interface ShippingConfigInput {
   personalDeliveryDescription: string;
 }
 
+export type CustomerRetentionItemStatus = typeof CustomerRetentionItemStatus[keyof typeof CustomerRetentionItemStatus];
+
+
+export const CustomerRetentionItemStatus = {
+  NEW: 'NEW',
+  ACTIVE: 'ACTIVE',
+  VIP: 'VIP',
+  AT_RISK: 'AT_RISK',
+  LOST: 'LOST',
+} as const;
+
+export interface CustomerRetentionItem {
+  salonCustomerId: string;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  phone: string | null;
+  status: CustomerRetentionItemStatus;
+  completedCount: number;
+  /** @nullable */
+  lastVisitDaysAgo: number | null;
+  /** @nullable */
+  typicalIntervalDays: number | null;
+  totalSpend: number;
+  hasFutureAppointment: boolean;
+}
+
+export type CustomerRetentionDetailStatus = typeof CustomerRetentionDetailStatus[keyof typeof CustomerRetentionDetailStatus];
+
+
+export const CustomerRetentionDetailStatus = {
+  NEW: 'NEW',
+  ACTIVE: 'ACTIVE',
+  VIP: 'VIP',
+  AT_RISK: 'AT_RISK',
+  LOST: 'LOST',
+} as const;
+
+export interface AppointmentSummary {
+  id: string;
+  date: string;
+  status: string;
+  price: number;
+  serviceName: string;
+}
+
+export interface CustomerRetentionDetail {
+  salonCustomerId: string;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  phone: string | null;
+  /**
+     * Customer date of birth for birthday automation (YYYY-MM-DD)
+     * @nullable
+     */
+  birthDate?: string | null;
+  status: CustomerRetentionDetailStatus;
+  completedCount: number;
+  /** @nullable */
+  lastVisitDaysAgo: number | null;
+  /** @nullable */
+  typicalIntervalDays: number | null;
+  totalSpend: number;
+  hasFutureAppointment: boolean;
+  recentAppointments: AppointmentSummary[];
+}
+
+export type AutomationRuleTrigger = typeof AutomationRuleTrigger[keyof typeof AutomationRuleTrigger];
+
+
+export const AutomationRuleTrigger = {
+  inactive_days: 'inactive_days',
+  birthday: 'birthday',
+  visit_count: 'visit_count',
+  first_visit_completed: 'first_visit_completed',
+  package_completed: 'package_completed',
+  appointment_cancelled: 'appointment_cancelled',
+  expected_return_overdue: 'expected_return_overdue',
+} as const;
+
+export type AutomationRuleTriggerConfig = {[key: string]: unknown};
+
+export type AutomationRuleAction = typeof AutomationRuleAction[keyof typeof AutomationRuleAction];
+
+
+export const AutomationRuleAction = {
+  send_email: 'send_email',
+  send_sms: 'send_sms',
+  send_email_and_sms: 'send_email_and_sms',
+} as const;
+
+export type AutomationRuleStatus = typeof AutomationRuleStatus[keyof typeof AutomationRuleStatus];
+
+
+export const AutomationRuleStatus = {
+  active: 'active',
+  paused: 'paused',
+  draft: 'draft',
+} as const;
+
+export interface AutomationRule {
+  id: string;
+  salonId: string;
+  name: string;
+  trigger: AutomationRuleTrigger;
+  triggerConfig: AutomationRuleTriggerConfig;
+  action: AutomationRuleAction;
+  /** @nullable */
+  emailSubject?: string | null;
+  /** @nullable */
+  emailBody?: string | null;
+  /** @nullable */
+  smsBody?: string | null;
+  /**
+     * Optional discount/voucher code substituted into {{voucherCode}} template placeholders
+     * @nullable
+     */
+  voucherCode?: string | null;
+  status: AutomationRuleStatus;
+  aiProposed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateAutomationRuleBodyTrigger = typeof CreateAutomationRuleBodyTrigger[keyof typeof CreateAutomationRuleBodyTrigger];
+
+
+export const CreateAutomationRuleBodyTrigger = {
+  inactive_days: 'inactive_days',
+  birthday: 'birthday',
+  visit_count: 'visit_count',
+  first_visit_completed: 'first_visit_completed',
+  package_completed: 'package_completed',
+  appointment_cancelled: 'appointment_cancelled',
+  expected_return_overdue: 'expected_return_overdue',
+} as const;
+
+export type CreateAutomationRuleBodyTriggerConfig = {[key: string]: unknown};
+
+export type CreateAutomationRuleBodyAction = typeof CreateAutomationRuleBodyAction[keyof typeof CreateAutomationRuleBodyAction];
+
+
+export const CreateAutomationRuleBodyAction = {
+  send_email: 'send_email',
+  send_sms: 'send_sms',
+  send_email_and_sms: 'send_email_and_sms',
+} as const;
+
+export interface CreateAutomationRuleBody {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  trigger: CreateAutomationRuleBodyTrigger;
+  triggerConfig?: CreateAutomationRuleBodyTriggerConfig;
+  action: CreateAutomationRuleBodyAction;
+  /** @nullable */
+  emailSubject?: string | null;
+  /**
+     * Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders
+     * @nullable
+     */
+  emailBody?: string | null;
+  /**
+     * Supports {{firstName}}, {{lastName}}, {{salonName}}, {{voucherCode}} placeholders
+     * @nullable
+     */
+  smsBody?: string | null;
+  /** @nullable */
+  voucherCode?: string | null;
+}
+
+export type UpdateAutomationRuleBodyTrigger = typeof UpdateAutomationRuleBodyTrigger[keyof typeof UpdateAutomationRuleBodyTrigger];
+
+
+export const UpdateAutomationRuleBodyTrigger = {
+  inactive_days: 'inactive_days',
+  birthday: 'birthday',
+  visit_count: 'visit_count',
+  first_visit_completed: 'first_visit_completed',
+  package_completed: 'package_completed',
+  appointment_cancelled: 'appointment_cancelled',
+  expected_return_overdue: 'expected_return_overdue',
+} as const;
+
+export type UpdateAutomationRuleBodyTriggerConfig = {[key: string]: unknown};
+
+export type UpdateAutomationRuleBodyAction = typeof UpdateAutomationRuleBodyAction[keyof typeof UpdateAutomationRuleBodyAction];
+
+
+export const UpdateAutomationRuleBodyAction = {
+  send_email: 'send_email',
+  send_sms: 'send_sms',
+  send_email_and_sms: 'send_email_and_sms',
+} as const;
+
+export interface UpdateAutomationRuleBody {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  trigger?: UpdateAutomationRuleBodyTrigger;
+  triggerConfig?: UpdateAutomationRuleBodyTriggerConfig;
+  action?: UpdateAutomationRuleBodyAction;
+  /** @nullable */
+  emailSubject?: string | null;
+  /** @nullable */
+  emailBody?: string | null;
+  /** @nullable */
+  smsBody?: string | null;
+  /** @nullable */
+  voucherCode?: string | null;
+}
+
+export type CreateAutomationFromAiProposalBodyTrigger = typeof CreateAutomationFromAiProposalBodyTrigger[keyof typeof CreateAutomationFromAiProposalBodyTrigger];
+
+
+export const CreateAutomationFromAiProposalBodyTrigger = {
+  inactive_days: 'inactive_days',
+  birthday: 'birthday',
+  visit_count: 'visit_count',
+  first_visit_completed: 'first_visit_completed',
+  package_completed: 'package_completed',
+  appointment_cancelled: 'appointment_cancelled',
+  expected_return_overdue: 'expected_return_overdue',
+} as const;
+
+export type CreateAutomationFromAiProposalBodyTriggerConfig = {[key: string]: unknown};
+
+export type CreateAutomationFromAiProposalBodyAction = typeof CreateAutomationFromAiProposalBodyAction[keyof typeof CreateAutomationFromAiProposalBodyAction];
+
+
+export const CreateAutomationFromAiProposalBodyAction = {
+  send_email: 'send_email',
+  send_sms: 'send_sms',
+  send_email_and_sms: 'send_email_and_sms',
+} as const;
+
+export interface CreateAutomationFromAiProposalBody {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  trigger: CreateAutomationFromAiProposalBodyTrigger;
+  triggerConfig?: CreateAutomationFromAiProposalBodyTriggerConfig;
+  action: CreateAutomationFromAiProposalBodyAction;
+  /** @nullable */
+  emailSubject?: string | null;
+  /** @nullable */
+  emailBody?: string | null;
+  /** @nullable */
+  smsBody?: string | null;
+  /** @nullable */
+  voucherCode?: string | null;
+  aiProposalContext: string;
+}
+
+export interface AutomationStats {
+  ruleId: string;
+  totalRuns: number;
+  sentCount: number;
+  skippedCount: number;
+  failedCount: number;
+  attributedAppointments: number;
+  deliveredCount: number;
+  openedCount: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+}
+
+export type AutomationTestRunResultTriggerBreakdown = {[key: string]: number};
+
+export interface AutomationTestRunResult {
+  wouldTriggerCount: number;
+  eligibleCustomers: number;
+  skippedDueToOptOut: number;
+  skippedDueToRecentRun: number;
+  triggerBreakdown?: AutomationTestRunResultTriggerBreakdown;
+}
+
+export interface TreatmentPackage {
+  id: string;
+  salonId: string;
+  name: string;
+  description: string;
+  priceInDinars: number;
+  sessionCount: number;
+  validityDays: number;
+  active: boolean;
+  serviceIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TreatmentPackagePublic {
+  id: string;
+  salonId: string;
+  name: string;
+  description: string;
+  priceInDinars: number;
+  sessionCount: number;
+  validityDays: number;
+  serviceIds: string[];
+}
+
+export interface CreateTreatmentPackageBody {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  description?: string;
+  /** @minimum 0 */
+  priceInDinars: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  sessionCount: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  validityDays?: number;
+  active?: boolean;
+  /** @minItems 1 */
+  serviceIds: string[];
+}
+
+export interface UpdateTreatmentPackageBody {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name?: string;
+  description?: string;
+  /** @minimum 0 */
+  priceInDinars?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  sessionCount?: number;
+  /**
+     * @minimum 1
+     * @maximum 3650
+     */
+  validityDays?: number;
+  active?: boolean;
+  /** @minItems 1 */
+  serviceIds?: string[];
+}
+
+export type PackagePurchasePaymentMethod = typeof PackagePurchasePaymentMethod[keyof typeof PackagePurchasePaymentMethod];
+
+
+export const PackagePurchasePaymentMethod = {
+  pay_at_salon: 'pay_at_salon',
+  bank_transfer: 'bank_transfer',
+} as const;
+
+export type PackagePurchaseStatus = typeof PackagePurchaseStatus[keyof typeof PackagePurchaseStatus];
+
+
+export const PackagePurchaseStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  completed: 'completed',
+  expired: 'expired',
+  cancelled: 'cancelled',
+} as const;
+
+export interface PackagePurchase {
+  id: string;
+  salonId: string;
+  packageId: string;
+  packageName: string;
+  salonCustomerId: string;
+  totalSessions: number;
+  remainingSessions: number;
+  priceInDinars: number;
+  paymentMethod: PackagePurchasePaymentMethod;
+  status: PackagePurchaseStatus;
+  expiresAt: string;
+  /** @nullable */
+  paymentConfirmedAt?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PurchasePackageBodyPaymentMethod = typeof PurchasePackageBodyPaymentMethod[keyof typeof PurchasePackageBodyPaymentMethod];
+
+
+export const PurchasePackageBodyPaymentMethod = {
+  pay_at_salon: 'pay_at_salon',
+  bank_transfer: 'bank_transfer',
+} as const;
+
+export interface PurchasePackageBody {
+  paymentMethod?: PurchasePackageBodyPaymentMethod;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface RedeemSessionBody {
+  appointmentId: string;
+}
+
+export interface RedeemSessionResult {
+  redemptionId: string;
+  remainingSessions: number;
+  purchaseId: string;
+}
+
+export type EmployeePerformanceMetricsCommissionType = typeof EmployeePerformanceMetricsCommissionType[keyof typeof EmployeePerformanceMetricsCommissionType];
+
+
+export const EmployeePerformanceMetricsCommissionType = {
+  percent_of_revenue: 'percent_of_revenue',
+  fixed_per_treatment: 'fixed_per_treatment',
+} as const;
+
+export interface EmployeePerformanceMetrics {
+  employeeId: string;
+  employeeName: string;
+  completedAppointments: number;
+  totalRevenue: number;
+  commissionType: EmployeePerformanceMetricsCommissionType;
+  commissionPercent: number;
+  fixedAmountInDinars: number;
+  estimatedCommission: number;
+  noShowCount: number;
+  cancelledCount: number;
+  averageAppointmentValue: number;
+  /** Average rating × 10 (10–50 scale), 0 if no reviews */
+  averageRating: number;
+  reviewCount: number;
+  /**
+     * Fraction of customers who booked a second appointment
+     * @minimum 0
+     * @maximum 1
+     */
+  rebookingRate: number;
+}
+
+export type EmployeeCommissionSettingsCommissionType = typeof EmployeeCommissionSettingsCommissionType[keyof typeof EmployeeCommissionSettingsCommissionType];
+
+
+export const EmployeeCommissionSettingsCommissionType = {
+  percent_of_revenue: 'percent_of_revenue',
+  fixed_per_treatment: 'fixed_per_treatment',
+} as const;
+
+export type EmployeeCommissionSettingsPerServiceOverrides = {[key: string]: number};
+
+export interface EmployeeCommissionSettings {
+  id: string;
+  salonId: string;
+  employeeId: string;
+  commissionType: EmployeeCommissionSettingsCommissionType;
+  commissionPercent: number;
+  fixedAmountInDinars: number;
+  perServiceOverrides: EmployeeCommissionSettingsPerServiceOverrides;
+  updatedAt: string;
+}
+
+export type UpdateCommissionBodyCommissionType = typeof UpdateCommissionBodyCommissionType[keyof typeof UpdateCommissionBodyCommissionType];
+
+
+export const UpdateCommissionBodyCommissionType = {
+  percent_of_revenue: 'percent_of_revenue',
+  fixed_per_treatment: 'fixed_per_treatment',
+} as const;
+
+export type UpdateCommissionBodyPerServiceOverrides = {[key: string]: number};
+
+export interface UpdateCommissionBody {
+  commissionType: UpdateCommissionBodyCommissionType;
+  /**
+     * @minimum 0
+     * @maximum 100
+     */
+  commissionPercent?: number;
+  /** @minimum 0 */
+  fixedAmountInDinars?: number;
+  perServiceOverrides?: UpdateCommissionBodyPerServiceOverrides;
+}
+
+export interface GrowthAiQuestionBody {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  question: string;
+  /**
+     * @minimum 7
+     * @maximum 365
+     */
+  snapshotPeriodDays?: number;
+}
+
+export type SalonMetricSnapshotRetentionCounts = {
+  NEW: number;
+  ACTIVE: number;
+  VIP: number;
+  AT_RISK: number;
+  LOST: number;
+};
+
+export type SalonMetricSnapshotTopServicesItem = {
+  serviceName: string;
+  bookingCount: number;
+  revenue: number;
+};
+
+export type SalonMetricSnapshotTopEmployeesItem = {
+  employeeName: string;
+  completedCount: number;
+  revenue: number;
+};
+
+export interface SalonMetricSnapshot {
+  salonId: string;
+  salonName: string;
+  periodFrom: string;
+  periodTo: string;
+  generatedAt: string;
+  totalRevenue: number;
+  totalBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  noShowBookings: number;
+  retentionCounts: SalonMetricSnapshotRetentionCounts;
+  topServices: SalonMetricSnapshotTopServicesItem[];
+  topEmployees: SalonMetricSnapshotTopEmployeesItem[];
+  totalCustomers: number;
+}
+
+export interface GrowthAiAnswer {
+  answer: string;
+  snapshot: SalonMetricSnapshot;
+}
+
+export type RetentionCustomerStatus = typeof RetentionCustomerStatus[keyof typeof RetentionCustomerStatus];
+
+
+export const RetentionCustomerStatus = {
+  NEW: 'NEW',
+  ACTIVE: 'ACTIVE',
+  VIP: 'VIP',
+  AT_RISK: 'AT_RISK',
+  LOST: 'LOST',
+} as const;
+
+export interface RetentionCustomer {
+  salonCustomerId: string;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  birthDate?: string | null;
+  status: RetentionCustomerStatus;
+  completedCount: number;
+  /** @nullable */
+  lastVisitDaysAgo?: number | null;
+  /** @nullable */
+  typicalIntervalDays?: number | null;
+  totalSpend: number;
+  hasFutureAppointment: boolean;
+  explanation: string;
+  recommendedAction: string;
+}
+
+export type RetentionCustomerDetailRecentAppointmentsItem = {
+  id: string;
+  date: string;
+  status: string;
+  price: number;
+  serviceName: string;
+};
+
+export type RetentionCustomerDetail = RetentionCustomer & {
+  recentAppointments: RetentionCustomerDetailRecentAppointmentsItem[];
+};
+
+export interface ReversalResult {
+  remainingSessions: number;
+}
+
+export type GrowthAdminSummaryAutomationByStatus = {[key: string]: number};
+
+export type GrowthAdminSummaryAutomation = {
+  totalRules: number;
+  activeRules: number;
+  byStatus: GrowthAdminSummaryAutomationByStatus;
+};
+
+export type GrowthAdminSummaryPackages = {
+  total: number;
+  active: number;
+};
+
+export type GrowthAdminSummaryPurchases = {
+  total: number;
+  active: number;
+  pendingPayment: number;
+};
+
+export interface GrowthAdminSummary {
+  automation: GrowthAdminSummaryAutomation;
+  packages: GrowthAdminSummaryPackages;
+  purchases: GrowthAdminSummaryPurchases;
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -4083,4 +4823,34 @@ mainCategory?: string;
  * @maxLength 120
  */
 subcategory?: string;
+};
+
+export type CustomerListPublicPackagesParams = {
+salonId: string;
+};
+
+export type OwnerListCustomerPackagesParams = {
+salonCustomerId?: string;
+status?: OwnerListCustomerPackagesStatus;
+};
+
+export type OwnerListCustomerPackagesStatus = typeof OwnerListCustomerPackagesStatus[keyof typeof OwnerListCustomerPackagesStatus];
+
+
+export const OwnerListCustomerPackagesStatus = {
+  pending_payment: 'pending_payment',
+  active: 'active',
+  completed: 'completed',
+  expired: 'expired',
+  cancelled: 'cancelled',
+} as const;
+
+export type OwnerListEmployeePerformanceParams = {
+from?: string;
+to?: string;
+};
+
+export type EmployeeGetMyPerformanceParams = {
+from?: string;
+to?: string;
 };

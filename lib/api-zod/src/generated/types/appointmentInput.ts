@@ -17,6 +17,11 @@ export interface AppointmentInput {
   /** @pattern ^(?:[01][0-9]|2[0-3]):[0-5][0-9]$ */
   startTime: string;
   notes?: string;
+  /**
+     * Optional active package purchase to redeem for this booking. When supplied the appointment is created and a session is redeemed in the same transaction; the appointment price is set to 0. The purchase must belong to the authenticated customer, cover the booked service, be active, non-expired and have a remaining session. Any failure rolls back the entire booking.
+     * @nullable
+     */
+  packagePurchaseId?: string | null;
   treatmentLocation?: AppointmentInputTreatmentLocation;
   treatmentAddress?: AppointmentInputTreatmentAddress;
 }

@@ -57,6 +57,7 @@ import type {
   AdminUserUpdate,
   ApiError,
   Appointment,
+  AppointmentConflictError,
   AppointmentInput,
   AppointmentSalonContact,
   AppointmentSeriesCancellation,
@@ -68,6 +69,9 @@ import type {
   AppointmentSeriesResult,
   AppointmentUpdate,
   AuthSession,
+  AutomationRule,
+  AutomationStats,
+  AutomationTestRunResult,
   BusinessRegistrationInput,
   CancelAppointmentInput,
   CitySummary,
@@ -75,10 +79,16 @@ import type {
   CourierServiceInput,
   CourierServiceUpdate,
   Course,
+  CreateAutomationFromAiProposalBody,
+  CreateAutomationRuleBody,
   CreateEducationDisputeBody,
   CreateEducationPurchaseMessageBody,
+  CreateTreatmentPackageBody,
   CurrentUserResponse,
   CustomerDashboard,
+  CustomerListPublicPackagesParams,
+  CustomerRetentionDetail,
+  CustomerRetentionItem,
   CustomerReview,
   CustomerReviewInput,
   CustomerSalonReviewContext,
@@ -125,8 +135,13 @@ import type {
   EmailMarketingCampaign,
   Employee,
   EmployeeAppointmentSeriesInput,
+  EmployeeCommissionSettings,
   EmployeeDeactivationPreview,
   EmployeeDeactivationResult,
+  EmployeeGetMyPerformanceParams,
+  EmployeeLeaveRequest,
+  EmployeeLeaveRequestCreate,
+  EmployeePerformanceMetrics,
   FavoriteInput,
   FavoriteResult,
   GetMarketplaceHomeDiscoveryParams,
@@ -134,7 +149,12 @@ import type {
   GetSalonAvailabilityParams,
   GetSalonDashboardParams,
   GetShippingQuoteParams,
+  GrowthAdminSummary,
+  GrowthAiAnswer,
+  GrowthAiQuestionBody,
   HealthStatus,
+  LeaveRequestReviewBody,
+  LeaveRequestReviewResult,
   LinkEducationCourseInstructorBody,
   ListCoursesParams,
   ListEnrollmentsParams,
@@ -159,6 +179,9 @@ import type {
   MediaUploadInput,
   MediaUploadTicket,
   Order,
+  OwnerListCustomerPackagesParams,
+  OwnerListEmployeePerformanceParams,
+  PackagePurchase,
   PlatformTrustStats,
   ProductBrand,
   ProductCategory,
@@ -166,7 +189,11 @@ import type {
   ProductList,
   ProductReview,
   ProductReviewInput,
+  PurchasePackageBody,
+  RedeemSessionBody,
+  RedeemSessionResult,
   RegisterInput,
+  ReversalResult,
   SalonAppointmentCreate,
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
@@ -175,6 +202,7 @@ import type {
   SalonCustomerUpdate,
   SalonDashboard,
   SalonFirstAvailable,
+  SalonLeaveRequest,
   SalonManagedService,
   SalonNotification,
   SalonProfile,
@@ -204,7 +232,12 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanInput,
   SubscriptionPlanUpdate,
-  TimeSlot
+  TimeSlot,
+  TreatmentPackage,
+  TreatmentPackagePublic,
+  UpdateAutomationRuleBody,
+  UpdateCommissionBody,
+  UpdateTreatmentPackageBody
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1720,7 +1753,7 @@ export const createAppointment = async (appointmentInput: AppointmentInput, opti
 
 
 
-export const getCreateAppointmentMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateAppointmentMutationOptions = <TError = ErrorType<AppointmentConflictError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext> => {
 
@@ -1749,12 +1782,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateAppointmentMutationResult = NonNullable<Awaited<ReturnType<typeof createAppointment>>>
     export type CreateAppointmentMutationBody = BodyType<AppointmentInput>
-    export type CreateAppointmentMutationError = ErrorType<unknown>
+    export type CreateAppointmentMutationError = ErrorType<AppointmentConflictError>
 
     /**
  * @summary Create a booking
  */
-export const useCreateAppointment = <TError = ErrorType<unknown>,
+export const useCreateAppointment = <TError = ErrorType<AppointmentConflictError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppointment>>, TError,{data: BodyType<AppointmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createAppointment>>,
@@ -4736,6 +4769,226 @@ export const useDeactivateSalonEmployee = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getDeactivateSalonEmployeeMutationOptions(options));
+    }
+
+export const getListSalonLeaveRequestsUrl = () => {
+
+
+
+
+  return `/api/salon/leave-requests`
+}
+
+/**
+ * @summary List employee leave requests for the active salon (owner)
+ */
+export const listSalonLeaveRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<SalonLeaveRequest[]> => {
+
+  return customFetch<SalonLeaveRequest[]>(getListSalonLeaveRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonLeaveRequestsQueryKey = () => {
+    return [
+    `/api/salon/leave-requests`
+    ] as const;
+    }
+
+
+export const getListSalonLeaveRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listSalonLeaveRequests>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonLeaveRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonLeaveRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonLeaveRequests>>> = ({ signal }) => listSalonLeaveRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonLeaveRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonLeaveRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonLeaveRequests>>>
+export type ListSalonLeaveRequestsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List employee leave requests for the active salon (owner)
+ */
+
+export function useListSalonLeaveRequests<TData = Awaited<ReturnType<typeof listSalonLeaveRequests>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonLeaveRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonLeaveRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReviewSalonLeaveRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/salon/leave-requests/${requestId}`
+}
+
+/**
+ * @summary Approve or reject an employee leave request (owner)
+ */
+export const reviewSalonLeaveRequest = async (requestId: string,
+    leaveRequestReviewBody: LeaveRequestReviewBody, options?: Parameters<typeof customFetch>[1]): Promise<LeaveRequestReviewResult> => {
+
+  return customFetch<LeaveRequestReviewResult>(getReviewSalonLeaveRequestUrl(requestId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(leaveRequestReviewBody)
+  }
+);}
+
+
+
+
+
+export const getReviewSalonLeaveRequestMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewSalonLeaveRequest>>, TError,{requestId: string;data: BodyType<LeaveRequestReviewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewSalonLeaveRequest>>, TError,{requestId: string;data: BodyType<LeaveRequestReviewBody>}, TContext> => {
+
+const mutationKey = ['reviewSalonLeaveRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewSalonLeaveRequest>>, {requestId: string;data: BodyType<LeaveRequestReviewBody>}> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  reviewSalonLeaveRequest(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewSalonLeaveRequestMutationResult = NonNullable<Awaited<ReturnType<typeof reviewSalonLeaveRequest>>>
+    export type ReviewSalonLeaveRequestMutationBody = BodyType<LeaveRequestReviewBody>
+    export type ReviewSalonLeaveRequestMutationError = ErrorType<void>
+
+    /**
+ * @summary Approve or reject an employee leave request (owner)
+ */
+export const useReviewSalonLeaveRequest = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewSalonLeaveRequest>>, TError,{requestId: string;data: BodyType<LeaveRequestReviewBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewSalonLeaveRequest>>,
+        TError,
+        {requestId: string;data: BodyType<LeaveRequestReviewBody>},
+        TContext
+      > => {
+      return useMutation(getReviewSalonLeaveRequestMutationOptions(options));
+    }
+
+export const getCreateEmployeeLeaveRequestUrl = () => {
+
+
+
+
+  return `/api/employee/leave-requests`
+}
+
+/**
+ * @summary Submit a leave request (employee)
+ */
+export const createEmployeeLeaveRequest = async (employeeLeaveRequestCreate: EmployeeLeaveRequestCreate, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeLeaveRequest> => {
+
+  return customFetch<EmployeeLeaveRequest>(getCreateEmployeeLeaveRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeLeaveRequestCreate)
+  }
+);}
+
+
+
+
+
+export const getCreateEmployeeLeaveRequestMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeLeaveRequest>>, TError,{data: BodyType<EmployeeLeaveRequestCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmployeeLeaveRequest>>, TError,{data: BodyType<EmployeeLeaveRequestCreate>}, TContext> => {
+
+const mutationKey = ['createEmployeeLeaveRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmployeeLeaveRequest>>, {data: BodyType<EmployeeLeaveRequestCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createEmployeeLeaveRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmployeeLeaveRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createEmployeeLeaveRequest>>>
+    export type CreateEmployeeLeaveRequestMutationBody = BodyType<EmployeeLeaveRequestCreate>
+    export type CreateEmployeeLeaveRequestMutationError = ErrorType<void>
+
+    /**
+ * @summary Submit a leave request (employee)
+ */
+export const useCreateEmployeeLeaveRequest = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmployeeLeaveRequest>>, TError,{data: BodyType<EmployeeLeaveRequestCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmployeeLeaveRequest>>,
+        TError,
+        {data: BodyType<EmployeeLeaveRequestCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateEmployeeLeaveRequestMutationOptions(options));
     }
 
 export const getListProductCategoriesUrl = () => {
@@ -14318,3 +14571,2169 @@ export const useAdminDeleteCourierService = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getAdminDeleteCourierServiceMutationOptions(options));
     }
+
+export const getOwnerListRetentionUrl = () => {
+
+
+
+
+  return `/api/growth/retention`
+}
+
+/**
+ * @summary List retention status for all salon customers (owner)
+ */
+export const ownerListRetention = async ( options?: Parameters<typeof customFetch>[1]): Promise<CustomerRetentionItem[]> => {
+
+  return customFetch<CustomerRetentionItem[]>(getOwnerListRetentionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListRetentionQueryKey = () => {
+    return [
+    `/api/growth/retention`
+    ] as const;
+    }
+
+
+export const getOwnerListRetentionQueryOptions = <TData = Awaited<ReturnType<typeof ownerListRetention>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListRetention>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListRetentionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListRetention>>> = ({ signal }) => ownerListRetention({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListRetention>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListRetentionQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListRetention>>>
+export type OwnerListRetentionQueryError = ErrorType<void>
+
+
+/**
+ * @summary List retention status for all salon customers (owner)
+ */
+
+export function useOwnerListRetention<TData = Awaited<ReturnType<typeof ownerListRetention>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListRetention>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListRetentionQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerGetRetentionDetailUrl = (salonCustomerId: string,) => {
+
+
+
+
+  return `/api/growth/retention/${salonCustomerId}`
+}
+
+/**
+ * @summary Get retention detail for a single salon customer (owner)
+ */
+export const ownerGetRetentionDetail = async (salonCustomerId: string, options?: Parameters<typeof customFetch>[1]): Promise<CustomerRetentionDetail> => {
+
+  return customFetch<CustomerRetentionDetail>(getOwnerGetRetentionDetailUrl(salonCustomerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerGetRetentionDetailQueryKey = (salonCustomerId: string,) => {
+    return [
+    `/api/growth/retention/${salonCustomerId}`
+    ] as const;
+    }
+
+
+export const getOwnerGetRetentionDetailQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetRetentionDetail>>, TError = ErrorType<void>>(salonCustomerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetRetentionDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerGetRetentionDetailQueryKey(salonCustomerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetRetentionDetail>>> = ({ signal }) => ownerGetRetentionDetail(salonCustomerId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: salonCustomerId !== null && salonCustomerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerGetRetentionDetail>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerGetRetentionDetailQueryResult = NonNullable<Awaited<ReturnType<typeof ownerGetRetentionDetail>>>
+export type OwnerGetRetentionDetailQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get retention detail for a single salon customer (owner)
+ */
+
+export function useOwnerGetRetentionDetail<TData = Awaited<ReturnType<typeof ownerGetRetentionDetail>>, TError = ErrorType<void>>(
+ salonCustomerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetRetentionDetail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerGetRetentionDetailQueryOptions(salonCustomerId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerListAutomationsUrl = () => {
+
+
+
+
+  return `/api/growth/automations`
+}
+
+/**
+ * @summary List automation rules for the active salon (owner)
+ */
+export const ownerListAutomations = async ( options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule[]> => {
+
+  return customFetch<AutomationRule[]>(getOwnerListAutomationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListAutomationsQueryKey = () => {
+    return [
+    `/api/growth/automations`
+    ] as const;
+    }
+
+
+export const getOwnerListAutomationsQueryOptions = <TData = Awaited<ReturnType<typeof ownerListAutomations>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListAutomationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListAutomations>>> = ({ signal }) => ownerListAutomations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListAutomationsQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListAutomations>>>
+export type OwnerListAutomationsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List automation rules for the active salon (owner)
+ */
+
+export function useOwnerListAutomations<TData = Awaited<ReturnType<typeof ownerListAutomations>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListAutomations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListAutomationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerCreateAutomationUrl = () => {
+
+
+
+
+  return `/api/growth/automations`
+}
+
+/**
+ * @summary Create a new automation rule (owner)
+ */
+export const ownerCreateAutomation = async (createAutomationRuleBody: CreateAutomationRuleBody, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerCreateAutomationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createAutomationRuleBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerCreateAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomation>>, TError,{data: BodyType<CreateAutomationRuleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomation>>, TError,{data: BodyType<CreateAutomationRuleBody>}, TContext> => {
+
+const mutationKey = ['ownerCreateAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerCreateAutomation>>, {data: BodyType<CreateAutomationRuleBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ownerCreateAutomation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerCreateAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerCreateAutomation>>>
+    export type OwnerCreateAutomationMutationBody = BodyType<CreateAutomationRuleBody>
+    export type OwnerCreateAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a new automation rule (owner)
+ */
+export const useOwnerCreateAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomation>>, TError,{data: BodyType<CreateAutomationRuleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerCreateAutomation>>,
+        TError,
+        {data: BodyType<CreateAutomationRuleBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerCreateAutomationMutationOptions(options));
+    }
+
+export const getOwnerGetAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}`
+}
+
+/**
+ * @summary Get an automation rule (owner)
+ */
+export const ownerGetAutomation = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerGetAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerGetAutomationQueryKey = (automationId: string,) => {
+    return [
+    `/api/growth/automations/${automationId}`
+    ] as const;
+    }
+
+
+export const getOwnerGetAutomationQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetAutomation>>, TError = ErrorType<void>>(automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerGetAutomationQueryKey(automationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetAutomation>>> = ({ signal }) => ownerGetAutomation(automationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: automationId !== null && automationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerGetAutomationQueryResult = NonNullable<Awaited<ReturnType<typeof ownerGetAutomation>>>
+export type OwnerGetAutomationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an automation rule (owner)
+ */
+
+export function useOwnerGetAutomation<TData = Awaited<ReturnType<typeof ownerGetAutomation>>, TError = ErrorType<void>>(
+ automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerGetAutomationQueryOptions(automationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerUpdateAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}`
+}
+
+/**
+ * @summary Update an automation rule (owner)
+ */
+export const ownerUpdateAutomation = async (automationId: string,
+    updateAutomationRuleBody: UpdateAutomationRuleBody, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerUpdateAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateAutomationRuleBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerUpdateAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateAutomation>>, TError,{automationId: string;data: BodyType<UpdateAutomationRuleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateAutomation>>, TError,{automationId: string;data: BodyType<UpdateAutomationRuleBody>}, TContext> => {
+
+const mutationKey = ['ownerUpdateAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerUpdateAutomation>>, {automationId: string;data: BodyType<UpdateAutomationRuleBody>}> = (props) => {
+          const {automationId,data} = props ?? {};
+
+          return  ownerUpdateAutomation(automationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerUpdateAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerUpdateAutomation>>>
+    export type OwnerUpdateAutomationMutationBody = BodyType<UpdateAutomationRuleBody>
+    export type OwnerUpdateAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Update an automation rule (owner)
+ */
+export const useOwnerUpdateAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateAutomation>>, TError,{automationId: string;data: BodyType<UpdateAutomationRuleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerUpdateAutomation>>,
+        TError,
+        {automationId: string;data: BodyType<UpdateAutomationRuleBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerUpdateAutomationMutationOptions(options));
+    }
+
+export const getOwnerDeleteAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}`
+}
+
+/**
+ * @summary Delete an automation rule (owner)
+ */
+export const ownerDeleteAutomation = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getOwnerDeleteAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerDeleteAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerDeleteAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerDeleteAutomation>>, TError,{automationId: string}, TContext> => {
+
+const mutationKey = ['ownerDeleteAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerDeleteAutomation>>, {automationId: string}> = (props) => {
+          const {automationId} = props ?? {};
+
+          return  ownerDeleteAutomation(automationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerDeleteAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerDeleteAutomation>>>
+
+    export type OwnerDeleteAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete an automation rule (owner)
+ */
+export const useOwnerDeleteAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerDeleteAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerDeleteAutomation>>,
+        TError,
+        {automationId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerDeleteAutomationMutationOptions(options));
+    }
+
+export const getOwnerActivateAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}/activate`
+}
+
+/**
+ * @summary Activate an automation rule (owner)
+ */
+export const ownerActivateAutomation = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerActivateAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerActivateAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerActivateAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerActivateAutomation>>, TError,{automationId: string}, TContext> => {
+
+const mutationKey = ['ownerActivateAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerActivateAutomation>>, {automationId: string}> = (props) => {
+          const {automationId} = props ?? {};
+
+          return  ownerActivateAutomation(automationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerActivateAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerActivateAutomation>>>
+
+    export type OwnerActivateAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Activate an automation rule (owner)
+ */
+export const useOwnerActivateAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerActivateAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerActivateAutomation>>,
+        TError,
+        {automationId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerActivateAutomationMutationOptions(options));
+    }
+
+export const getOwnerPauseAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}/pause`
+}
+
+/**
+ * @summary Pause an automation rule (owner)
+ */
+export const ownerPauseAutomation = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerPauseAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerPauseAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerPauseAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerPauseAutomation>>, TError,{automationId: string}, TContext> => {
+
+const mutationKey = ['ownerPauseAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerPauseAutomation>>, {automationId: string}> = (props) => {
+          const {automationId} = props ?? {};
+
+          return  ownerPauseAutomation(automationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerPauseAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerPauseAutomation>>>
+
+    export type OwnerPauseAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Pause an automation rule (owner)
+ */
+export const useOwnerPauseAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerPauseAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerPauseAutomation>>,
+        TError,
+        {automationId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerPauseAutomationMutationOptions(options));
+    }
+
+export const getOwnerGetAutomationStatsUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}/stats`
+}
+
+/**
+ * @summary Get run statistics for an automation rule (owner)
+ */
+export const ownerGetAutomationStats = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationStats> => {
+
+  return customFetch<AutomationStats>(getOwnerGetAutomationStatsUrl(automationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerGetAutomationStatsQueryKey = (automationId: string,) => {
+    return [
+    `/api/growth/automations/${automationId}/stats`
+    ] as const;
+    }
+
+
+export const getOwnerGetAutomationStatsQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError = ErrorType<void>>(automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerGetAutomationStatsQueryKey(automationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetAutomationStats>>> = ({ signal }) => ownerGetAutomationStats(automationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: automationId !== null && automationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerGetAutomationStatsQueryResult = NonNullable<Awaited<ReturnType<typeof ownerGetAutomationStats>>>
+export type OwnerGetAutomationStatsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get run statistics for an automation rule (owner)
+ */
+
+export function useOwnerGetAutomationStats<TData = Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError = ErrorType<void>>(
+ automationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetAutomationStats>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerGetAutomationStatsQueryOptions(automationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerTestRunAutomationUrl = (automationId: string,) => {
+
+
+
+
+  return `/api/growth/automations/${automationId}/test-run`
+}
+
+/**
+ * @summary Perform a safe manual test-run of an automation rule (owner)
+ */
+export const ownerTestRunAutomation = async (automationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AutomationTestRunResult> => {
+
+  return customFetch<AutomationTestRunResult>(getOwnerTestRunAutomationUrl(automationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerTestRunAutomationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerTestRunAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerTestRunAutomation>>, TError,{automationId: string}, TContext> => {
+
+const mutationKey = ['ownerTestRunAutomation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerTestRunAutomation>>, {automationId: string}> = (props) => {
+          const {automationId} = props ?? {};
+
+          return  ownerTestRunAutomation(automationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerTestRunAutomationMutationResult = NonNullable<Awaited<ReturnType<typeof ownerTestRunAutomation>>>
+
+    export type OwnerTestRunAutomationMutationError = ErrorType<void>
+
+    /**
+ * @summary Perform a safe manual test-run of an automation rule (owner)
+ */
+export const useOwnerTestRunAutomation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerTestRunAutomation>>, TError,{automationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerTestRunAutomation>>,
+        TError,
+        {automationId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerTestRunAutomationMutationOptions(options));
+    }
+
+export const getOwnerCreateAutomationFromAiProposalUrl = () => {
+
+
+
+
+  return `/api/growth/automations/from-ai-proposal`
+}
+
+/**
+ * @summary Explicitly confirm creation of a paused automation from an AI proposal (owner)
+ */
+export const ownerCreateAutomationFromAiProposal = async (createAutomationFromAiProposalBody: CreateAutomationFromAiProposalBody, options?: Parameters<typeof customFetch>[1]): Promise<AutomationRule> => {
+
+  return customFetch<AutomationRule>(getOwnerCreateAutomationFromAiProposalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createAutomationFromAiProposalBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerCreateAutomationFromAiProposalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>, TError,{data: BodyType<CreateAutomationFromAiProposalBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>, TError,{data: BodyType<CreateAutomationFromAiProposalBody>}, TContext> => {
+
+const mutationKey = ['ownerCreateAutomationFromAiProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>, {data: BodyType<CreateAutomationFromAiProposalBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ownerCreateAutomationFromAiProposal(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerCreateAutomationFromAiProposalMutationResult = NonNullable<Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>>
+    export type OwnerCreateAutomationFromAiProposalMutationBody = BodyType<CreateAutomationFromAiProposalBody>
+    export type OwnerCreateAutomationFromAiProposalMutationError = ErrorType<void>
+
+    /**
+ * @summary Explicitly confirm creation of a paused automation from an AI proposal (owner)
+ */
+export const useOwnerCreateAutomationFromAiProposal = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>, TError,{data: BodyType<CreateAutomationFromAiProposalBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerCreateAutomationFromAiProposal>>,
+        TError,
+        {data: BodyType<CreateAutomationFromAiProposalBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerCreateAutomationFromAiProposalMutationOptions(options));
+    }
+
+export const getOwnerListPackagesUrl = () => {
+
+
+
+
+  return `/api/growth/packages`
+}
+
+/**
+ * @summary List treatment packages for the active salon (owner)
+ */
+export const ownerListPackages = async ( options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPackage[]> => {
+
+  return customFetch<TreatmentPackage[]>(getOwnerListPackagesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListPackagesQueryKey = () => {
+    return [
+    `/api/growth/packages`
+    ] as const;
+    }
+
+
+export const getOwnerListPackagesQueryOptions = <TData = Awaited<ReturnType<typeof ownerListPackages>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListPackagesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListPackages>>> = ({ signal }) => ownerListPackages({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListPackages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListPackagesQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListPackages>>>
+export type OwnerListPackagesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List treatment packages for the active salon (owner)
+ */
+
+export function useOwnerListPackages<TData = Awaited<ReturnType<typeof ownerListPackages>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListPackagesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerCreatePackageUrl = () => {
+
+
+
+
+  return `/api/growth/packages`
+}
+
+/**
+ * @summary Create a treatment package (owner)
+ */
+export const ownerCreatePackage = async (createTreatmentPackageBody: CreateTreatmentPackageBody, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPackage> => {
+
+  return customFetch<TreatmentPackage>(getOwnerCreatePackageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createTreatmentPackageBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerCreatePackageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreatePackage>>, TError,{data: BodyType<CreateTreatmentPackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerCreatePackage>>, TError,{data: BodyType<CreateTreatmentPackageBody>}, TContext> => {
+
+const mutationKey = ['ownerCreatePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerCreatePackage>>, {data: BodyType<CreateTreatmentPackageBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ownerCreatePackage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerCreatePackageMutationResult = NonNullable<Awaited<ReturnType<typeof ownerCreatePackage>>>
+    export type OwnerCreatePackageMutationBody = BodyType<CreateTreatmentPackageBody>
+    export type OwnerCreatePackageMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a treatment package (owner)
+ */
+export const useOwnerCreatePackage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerCreatePackage>>, TError,{data: BodyType<CreateTreatmentPackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerCreatePackage>>,
+        TError,
+        {data: BodyType<CreateTreatmentPackageBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerCreatePackageMutationOptions(options));
+    }
+
+export const getOwnerGetPackageUrl = (packageId: string,) => {
+
+
+
+
+  return `/api/growth/packages/${packageId}`
+}
+
+/**
+ * @summary Get a treatment package (owner)
+ */
+export const ownerGetPackage = async (packageId: string, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPackage> => {
+
+  return customFetch<TreatmentPackage>(getOwnerGetPackageUrl(packageId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerGetPackageQueryKey = (packageId: string,) => {
+    return [
+    `/api/growth/packages/${packageId}`
+    ] as const;
+    }
+
+
+export const getOwnerGetPackageQueryOptions = <TData = Awaited<ReturnType<typeof ownerGetPackage>>, TError = ErrorType<void>>(packageId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetPackage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerGetPackageQueryKey(packageId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerGetPackage>>> = ({ signal }) => ownerGetPackage(packageId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: packageId !== null && packageId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerGetPackage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerGetPackageQueryResult = NonNullable<Awaited<ReturnType<typeof ownerGetPackage>>>
+export type OwnerGetPackageQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a treatment package (owner)
+ */
+
+export function useOwnerGetPackage<TData = Awaited<ReturnType<typeof ownerGetPackage>>, TError = ErrorType<void>>(
+ packageId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerGetPackage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerGetPackageQueryOptions(packageId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerUpdatePackageUrl = (packageId: string,) => {
+
+
+
+
+  return `/api/growth/packages/${packageId}`
+}
+
+/**
+ * @summary Update a treatment package (owner)
+ */
+export const ownerUpdatePackage = async (packageId: string,
+    updateTreatmentPackageBody: UpdateTreatmentPackageBody, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPackage> => {
+
+  return customFetch<TreatmentPackage>(getOwnerUpdatePackageUrl(packageId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateTreatmentPackageBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerUpdatePackageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdatePackage>>, TError,{packageId: string;data: BodyType<UpdateTreatmentPackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerUpdatePackage>>, TError,{packageId: string;data: BodyType<UpdateTreatmentPackageBody>}, TContext> => {
+
+const mutationKey = ['ownerUpdatePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerUpdatePackage>>, {packageId: string;data: BodyType<UpdateTreatmentPackageBody>}> = (props) => {
+          const {packageId,data} = props ?? {};
+
+          return  ownerUpdatePackage(packageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerUpdatePackageMutationResult = NonNullable<Awaited<ReturnType<typeof ownerUpdatePackage>>>
+    export type OwnerUpdatePackageMutationBody = BodyType<UpdateTreatmentPackageBody>
+    export type OwnerUpdatePackageMutationError = ErrorType<void>
+
+    /**
+ * @summary Update a treatment package (owner)
+ */
+export const useOwnerUpdatePackage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdatePackage>>, TError,{packageId: string;data: BodyType<UpdateTreatmentPackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerUpdatePackage>>,
+        TError,
+        {packageId: string;data: BodyType<UpdateTreatmentPackageBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerUpdatePackageMutationOptions(options));
+    }
+
+export const getOwnerDeletePackageUrl = (packageId: string,) => {
+
+
+
+
+  return `/api/growth/packages/${packageId}`
+}
+
+/**
+ * @summary Delete a treatment package (owner)
+ */
+export const ownerDeletePackage = async (packageId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getOwnerDeletePackageUrl(packageId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerDeletePackageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerDeletePackage>>, TError,{packageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerDeletePackage>>, TError,{packageId: string}, TContext> => {
+
+const mutationKey = ['ownerDeletePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerDeletePackage>>, {packageId: string}> = (props) => {
+          const {packageId} = props ?? {};
+
+          return  ownerDeletePackage(packageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerDeletePackageMutationResult = NonNullable<Awaited<ReturnType<typeof ownerDeletePackage>>>
+
+    export type OwnerDeletePackageMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a treatment package (owner)
+ */
+export const useOwnerDeletePackage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerDeletePackage>>, TError,{packageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerDeletePackage>>,
+        TError,
+        {packageId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerDeletePackageMutationOptions(options));
+    }
+
+export const getCustomerListPublicPackagesUrl = (params: CustomerListPublicPackagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/growth/packages/public?${stringifiedParams}` : `/api/growth/packages/public`
+}
+
+/**
+ * @summary List available packages for a salon (public/customer)
+ */
+export const customerListPublicPackages = async (params: CustomerListPublicPackagesParams, options?: Parameters<typeof customFetch>[1]): Promise<TreatmentPackagePublic[]> => {
+
+  return customFetch<TreatmentPackagePublic[]>(getCustomerListPublicPackagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCustomerListPublicPackagesQueryKey = (params?: CustomerListPublicPackagesParams,) => {
+    return [
+    `/api/growth/packages/public`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getCustomerListPublicPackagesQueryOptions = <TData = Awaited<ReturnType<typeof customerListPublicPackages>>, TError = ErrorType<unknown>>(params: CustomerListPublicPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListPublicPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCustomerListPublicPackagesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof customerListPublicPackages>>> = ({ signal }) => customerListPublicPackages(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof customerListPublicPackages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CustomerListPublicPackagesQueryResult = NonNullable<Awaited<ReturnType<typeof customerListPublicPackages>>>
+export type CustomerListPublicPackagesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List available packages for a salon (public/customer)
+ */
+
+export function useCustomerListPublicPackages<TData = Awaited<ReturnType<typeof customerListPublicPackages>>, TError = ErrorType<unknown>>(
+ params: CustomerListPublicPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListPublicPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCustomerListPublicPackagesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCustomerPurchasePackageUrl = (packageId: string,) => {
+
+
+
+
+  return `/api/growth/packages/${packageId}/purchases`
+}
+
+/**
+ * @summary Create a pending package purchase (customer)
+ */
+export const customerPurchasePackage = async (packageId: string,
+    purchasePackageBody: PurchasePackageBody, options?: Parameters<typeof customFetch>[1]): Promise<PackagePurchase> => {
+
+  return customFetch<PackagePurchase>(getCustomerPurchasePackageUrl(packageId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(purchasePackageBody)
+  }
+);}
+
+
+
+
+
+export const getCustomerPurchasePackageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerPurchasePackage>>, TError,{packageId: string;data: BodyType<PurchasePackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof customerPurchasePackage>>, TError,{packageId: string;data: BodyType<PurchasePackageBody>}, TContext> => {
+
+const mutationKey = ['customerPurchasePackage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof customerPurchasePackage>>, {packageId: string;data: BodyType<PurchasePackageBody>}> = (props) => {
+          const {packageId,data} = props ?? {};
+
+          return  customerPurchasePackage(packageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CustomerPurchasePackageMutationResult = NonNullable<Awaited<ReturnType<typeof customerPurchasePackage>>>
+    export type CustomerPurchasePackageMutationBody = BodyType<PurchasePackageBody>
+    export type CustomerPurchasePackageMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a pending package purchase (customer)
+ */
+export const useCustomerPurchasePackage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerPurchasePackage>>, TError,{packageId: string;data: BodyType<PurchasePackageBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof customerPurchasePackage>>,
+        TError,
+        {packageId: string;data: BodyType<PurchasePackageBody>},
+        TContext
+      > => {
+      return useMutation(getCustomerPurchasePackageMutationOptions(options));
+    }
+
+export const getOwnerConfirmPackagePaymentUrl = (packageId: string,
+    purchaseId: string,) => {
+
+
+
+
+  return `/api/growth/packages/${packageId}/purchases/${purchaseId}/confirm-payment`
+}
+
+/**
+ * @summary Confirm payment for a package purchase (owner)
+ */
+export const ownerConfirmPackagePayment = async (packageId: string,
+    purchaseId: string, options?: Parameters<typeof customFetch>[1]): Promise<PackagePurchase> => {
+
+  return customFetch<PackagePurchase>(getOwnerConfirmPackagePaymentUrl(packageId,purchaseId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerConfirmPackagePaymentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerConfirmPackagePayment>>, TError,{packageId: string;purchaseId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerConfirmPackagePayment>>, TError,{packageId: string;purchaseId: string}, TContext> => {
+
+const mutationKey = ['ownerConfirmPackagePayment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerConfirmPackagePayment>>, {packageId: string;purchaseId: string}> = (props) => {
+          const {packageId,purchaseId} = props ?? {};
+
+          return  ownerConfirmPackagePayment(packageId,purchaseId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerConfirmPackagePaymentMutationResult = NonNullable<Awaited<ReturnType<typeof ownerConfirmPackagePayment>>>
+
+    export type OwnerConfirmPackagePaymentMutationError = ErrorType<void>
+
+    /**
+ * @summary Confirm payment for a package purchase (owner)
+ */
+export const useOwnerConfirmPackagePayment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerConfirmPackagePayment>>, TError,{packageId: string;purchaseId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerConfirmPackagePayment>>,
+        TError,
+        {packageId: string;purchaseId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerConfirmPackagePaymentMutationOptions(options));
+    }
+
+export const getCustomerListMyPurchasesUrl = () => {
+
+
+
+
+  return `/api/growth/my-purchases`
+}
+
+/**
+ * @summary List own package purchases (customer)
+ */
+export const customerListMyPurchases = async ( options?: Parameters<typeof customFetch>[1]): Promise<PackagePurchase[]> => {
+
+  return customFetch<PackagePurchase[]>(getCustomerListMyPurchasesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCustomerListMyPurchasesQueryKey = () => {
+    return [
+    `/api/growth/my-purchases`
+    ] as const;
+    }
+
+
+export const getCustomerListMyPurchasesQueryOptions = <TData = Awaited<ReturnType<typeof customerListMyPurchases>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListMyPurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCustomerListMyPurchasesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof customerListMyPurchases>>> = ({ signal }) => customerListMyPurchases({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof customerListMyPurchases>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CustomerListMyPurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof customerListMyPurchases>>>
+export type CustomerListMyPurchasesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List own package purchases (customer)
+ */
+
+export function useCustomerListMyPurchases<TData = Awaited<ReturnType<typeof customerListMyPurchases>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof customerListMyPurchases>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCustomerListMyPurchasesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCustomerRedeemPackageSessionUrl = (purchaseId: string,) => {
+
+
+
+
+  return `/api/growth/my-purchases/${purchaseId}/redeem`
+}
+
+/**
+ * @summary Redeem one session from a package against an appointment (customer)
+ */
+export const customerRedeemPackageSession = async (purchaseId: string,
+    redeemSessionBody: RedeemSessionBody, options?: Parameters<typeof customFetch>[1]): Promise<RedeemSessionResult> => {
+
+  return customFetch<RedeemSessionResult>(getCustomerRedeemPackageSessionUrl(purchaseId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(redeemSessionBody)
+  }
+);}
+
+
+
+
+
+export const getCustomerRedeemPackageSessionMutationOptions = <TError = ErrorType<void | AppointmentConflictError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerRedeemPackageSession>>, TError,{purchaseId: string;data: BodyType<RedeemSessionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof customerRedeemPackageSession>>, TError,{purchaseId: string;data: BodyType<RedeemSessionBody>}, TContext> => {
+
+const mutationKey = ['customerRedeemPackageSession'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof customerRedeemPackageSession>>, {purchaseId: string;data: BodyType<RedeemSessionBody>}> = (props) => {
+          const {purchaseId,data} = props ?? {};
+
+          return  customerRedeemPackageSession(purchaseId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CustomerRedeemPackageSessionMutationResult = NonNullable<Awaited<ReturnType<typeof customerRedeemPackageSession>>>
+    export type CustomerRedeemPackageSessionMutationBody = BodyType<RedeemSessionBody>
+    export type CustomerRedeemPackageSessionMutationError = ErrorType<void | AppointmentConflictError>
+
+    /**
+ * @summary Redeem one session from a package against an appointment (customer)
+ */
+export const useCustomerRedeemPackageSession = <TError = ErrorType<void | AppointmentConflictError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof customerRedeemPackageSession>>, TError,{purchaseId: string;data: BodyType<RedeemSessionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof customerRedeemPackageSession>>,
+        TError,
+        {purchaseId: string;data: BodyType<RedeemSessionBody>},
+        TContext
+      > => {
+      return useMutation(getCustomerRedeemPackageSessionMutationOptions(options));
+    }
+
+export const getOwnerListCustomerPackagesUrl = (params?: OwnerListCustomerPackagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/growth/salon-customer-packages?${stringifiedParams}` : `/api/growth/salon-customer-packages`
+}
+
+/**
+ * @summary List all customer package purchases for the active salon (owner)
+ */
+export const ownerListCustomerPackages = async (params?: OwnerListCustomerPackagesParams, options?: Parameters<typeof customFetch>[1]): Promise<PackagePurchase[]> => {
+
+  return customFetch<PackagePurchase[]>(getOwnerListCustomerPackagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListCustomerPackagesQueryKey = (params?: OwnerListCustomerPackagesParams,) => {
+    return [
+    `/api/growth/salon-customer-packages`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getOwnerListCustomerPackagesQueryOptions = <TData = Awaited<ReturnType<typeof ownerListCustomerPackages>>, TError = ErrorType<void>>(params?: OwnerListCustomerPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListCustomerPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListCustomerPackagesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListCustomerPackages>>> = ({ signal }) => ownerListCustomerPackages(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListCustomerPackages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListCustomerPackagesQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListCustomerPackages>>>
+export type OwnerListCustomerPackagesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List all customer package purchases for the active salon (owner)
+ */
+
+export function useOwnerListCustomerPackages<TData = Awaited<ReturnType<typeof ownerListCustomerPackages>>, TError = ErrorType<void>>(
+ params?: OwnerListCustomerPackagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListCustomerPackages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListCustomerPackagesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerListEmployeePerformanceUrl = (params?: OwnerListEmployeePerformanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/growth/employees/performance?${stringifiedParams}` : `/api/growth/employees/performance`
+}
+
+/**
+ * @summary List employee performance metrics for the active salon (owner)
+ */
+export const ownerListEmployeePerformance = async (params?: OwnerListEmployeePerformanceParams, options?: Parameters<typeof customFetch>[1]): Promise<EmployeePerformanceMetrics[]> => {
+
+  return customFetch<EmployeePerformanceMetrics[]>(getOwnerListEmployeePerformanceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerListEmployeePerformanceQueryKey = (params?: OwnerListEmployeePerformanceParams,) => {
+    return [
+    `/api/growth/employees/performance`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getOwnerListEmployeePerformanceQueryOptions = <TData = Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError = ErrorType<void>>(params?: OwnerListEmployeePerformanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getOwnerListEmployeePerformanceQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof ownerListEmployeePerformance>>> = ({ signal }) => ownerListEmployeePerformance(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type OwnerListEmployeePerformanceQueryResult = NonNullable<Awaited<ReturnType<typeof ownerListEmployeePerformance>>>
+export type OwnerListEmployeePerformanceQueryError = ErrorType<void>
+
+
+/**
+ * @summary List employee performance metrics for the active salon (owner)
+ */
+
+export function useOwnerListEmployeePerformance<TData = Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError = ErrorType<void>>(
+ params?: OwnerListEmployeePerformanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof ownerListEmployeePerformance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getOwnerListEmployeePerformanceQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerUpdateEmployeeCommissionUrl = (employeeId: string,) => {
+
+
+
+
+  return `/api/growth/employees/${employeeId}/commission`
+}
+
+/**
+ * @summary Update commission settings for an employee (owner)
+ */
+export const ownerUpdateEmployeeCommission = async (employeeId: string,
+    updateCommissionBody: UpdateCommissionBody, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeCommissionSettings> => {
+
+  return customFetch<EmployeeCommissionSettings>(getOwnerUpdateEmployeeCommissionUrl(employeeId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateCommissionBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerUpdateEmployeeCommissionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>, TError,{employeeId: string;data: BodyType<UpdateCommissionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>, TError,{employeeId: string;data: BodyType<UpdateCommissionBody>}, TContext> => {
+
+const mutationKey = ['ownerUpdateEmployeeCommission'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>, {employeeId: string;data: BodyType<UpdateCommissionBody>}> = (props) => {
+          const {employeeId,data} = props ?? {};
+
+          return  ownerUpdateEmployeeCommission(employeeId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerUpdateEmployeeCommissionMutationResult = NonNullable<Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>>
+    export type OwnerUpdateEmployeeCommissionMutationBody = BodyType<UpdateCommissionBody>
+    export type OwnerUpdateEmployeeCommissionMutationError = ErrorType<void>
+
+    /**
+ * @summary Update commission settings for an employee (owner)
+ */
+export const useOwnerUpdateEmployeeCommission = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>, TError,{employeeId: string;data: BodyType<UpdateCommissionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerUpdateEmployeeCommission>>,
+        TError,
+        {employeeId: string;data: BodyType<UpdateCommissionBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerUpdateEmployeeCommissionMutationOptions(options));
+    }
+
+export const getEmployeeGetMyPerformanceUrl = (params?: EmployeeGetMyPerformanceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/growth/my-performance?${stringifiedParams}` : `/api/growth/my-performance`
+}
+
+/**
+ * @summary Get performance metrics for the logged-in employee
+ */
+export const employeeGetMyPerformance = async (params?: EmployeeGetMyPerformanceParams, options?: Parameters<typeof customFetch>[1]): Promise<EmployeePerformanceMetrics> => {
+
+  return customFetch<EmployeePerformanceMetrics>(getEmployeeGetMyPerformanceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getEmployeeGetMyPerformanceQueryKey = (params?: EmployeeGetMyPerformanceParams,) => {
+    return [
+    `/api/growth/my-performance`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getEmployeeGetMyPerformanceQueryOptions = <TData = Awaited<ReturnType<typeof employeeGetMyPerformance>>, TError = ErrorType<void>>(params?: EmployeeGetMyPerformanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof employeeGetMyPerformance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getEmployeeGetMyPerformanceQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof employeeGetMyPerformance>>> = ({ signal }) => employeeGetMyPerformance(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof employeeGetMyPerformance>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type EmployeeGetMyPerformanceQueryResult = NonNullable<Awaited<ReturnType<typeof employeeGetMyPerformance>>>
+export type EmployeeGetMyPerformanceQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get performance metrics for the logged-in employee
+ */
+
+export function useEmployeeGetMyPerformance<TData = Awaited<ReturnType<typeof employeeGetMyPerformance>>, TError = ErrorType<void>>(
+ params?: EmployeeGetMyPerformanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof employeeGetMyPerformance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getEmployeeGetMyPerformanceQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getOwnerAskGrowthAiUrl = () => {
+
+
+
+
+  return `/api/growth/ai/ask`
+}
+
+/**
+ * @summary Ask the AI growth advisor a question grounded in salon data (owner)
+ */
+export const ownerAskGrowthAi = async (growthAiQuestionBody: GrowthAiQuestionBody, options?: Parameters<typeof customFetch>[1]): Promise<GrowthAiAnswer> => {
+
+  return customFetch<GrowthAiAnswer>(getOwnerAskGrowthAiUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(growthAiQuestionBody)
+  }
+);}
+
+
+
+
+
+export const getOwnerAskGrowthAiMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerAskGrowthAi>>, TError,{data: BodyType<GrowthAiQuestionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerAskGrowthAi>>, TError,{data: BodyType<GrowthAiQuestionBody>}, TContext> => {
+
+const mutationKey = ['ownerAskGrowthAi'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerAskGrowthAi>>, {data: BodyType<GrowthAiQuestionBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  ownerAskGrowthAi(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerAskGrowthAiMutationResult = NonNullable<Awaited<ReturnType<typeof ownerAskGrowthAi>>>
+    export type OwnerAskGrowthAiMutationBody = BodyType<GrowthAiQuestionBody>
+    export type OwnerAskGrowthAiMutationError = ErrorType<void>
+
+    /**
+ * @summary Ask the AI growth advisor a question grounded in salon data (owner)
+ */
+export const useOwnerAskGrowthAi = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerAskGrowthAi>>, TError,{data: BodyType<GrowthAiQuestionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerAskGrowthAi>>,
+        TError,
+        {data: BodyType<GrowthAiQuestionBody>},
+        TContext
+      > => {
+      return useMutation(getOwnerAskGrowthAiMutationOptions(options));
+    }
+
+export const getOwnerReverseRedemptionUrl = (redemptionId: string,) => {
+
+
+
+
+  return `/api/growth/redemptions/${redemptionId}/reverse`
+}
+
+/**
+ * @summary Reverse a package session redemption (owner), restoring session count and appointment price
+ */
+export const ownerReverseRedemption = async (redemptionId: string, options?: Parameters<typeof customFetch>[1]): Promise<ReversalResult> => {
+
+  return customFetch<ReversalResult>(getOwnerReverseRedemptionUrl(redemptionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getOwnerReverseRedemptionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerReverseRedemption>>, TError,{redemptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ownerReverseRedemption>>, TError,{redemptionId: string}, TContext> => {
+
+const mutationKey = ['ownerReverseRedemption'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ownerReverseRedemption>>, {redemptionId: string}> = (props) => {
+          const {redemptionId} = props ?? {};
+
+          return  ownerReverseRedemption(redemptionId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type OwnerReverseRedemptionMutationResult = NonNullable<Awaited<ReturnType<typeof ownerReverseRedemption>>>
+
+    export type OwnerReverseRedemptionMutationError = ErrorType<void>
+
+    /**
+ * @summary Reverse a package session redemption (owner), restoring session count and appointment price
+ */
+export const useOwnerReverseRedemption = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ownerReverseRedemption>>, TError,{redemptionId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ownerReverseRedemption>>,
+        TError,
+        {redemptionId: string},
+        TContext
+      > => {
+      return useMutation(getOwnerReverseRedemptionMutationOptions(options));
+    }
+
+export const getAdminGetGrowthSummaryUrl = () => {
+
+
+
+
+  return `/api/growth/admin/summary`
+}
+
+/**
+ * @summary Platform-wide growth summary for admin (read-only, no mutation)
+ */
+export const adminGetGrowthSummary = async ( options?: Parameters<typeof customFetch>[1]): Promise<GrowthAdminSummary> => {
+
+  return customFetch<GrowthAdminSummary>(getAdminGetGrowthSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetGrowthSummaryQueryKey = () => {
+    return [
+    `/api/growth/admin/summary`
+    ] as const;
+    }
+
+
+export const getAdminGetGrowthSummaryQueryOptions = <TData = Awaited<ReturnType<typeof adminGetGrowthSummary>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetGrowthSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetGrowthSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetGrowthSummary>>> = ({ signal }) => adminGetGrowthSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetGrowthSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetGrowthSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetGrowthSummary>>>
+export type AdminGetGrowthSummaryQueryError = ErrorType<void>
+
+
+/**
+ * @summary Platform-wide growth summary for admin (read-only, no mutation)
+ */
+
+export function useAdminGetGrowthSummary<TData = Awaited<ReturnType<typeof adminGetGrowthSummary>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetGrowthSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetGrowthSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

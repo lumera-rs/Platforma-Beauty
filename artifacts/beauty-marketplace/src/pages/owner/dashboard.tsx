@@ -2,12 +2,14 @@ import { BusinessLayout } from "@/components/business-layout";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
 import { useEffect, useState } from "react";
-import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Loader2, TrendingUp, Users, Calendar, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid, HeartHandshake, Zap, Box, BarChart3, Bot, Menu } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 export function OwnerSidebar({ current }: { current: string }) {
+  const [isOpen, setIsOpen] = useState(false);
   const links = [
     { href: "/vlasnik", label: "Dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/kalendar", label: "Kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
@@ -15,6 +17,11 @@ export function OwnerSidebar({ current }: { current: string }) {
     { href: "/vlasnik/resursi", label: "Resursi", icon: <LayoutGrid className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/profil", label: "Profil salona", icon: <Store className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/zaposleni", label: "Zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/klijenti", label: "CRM & Retencija", icon: <HeartHandshake className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/automatizacije", label: "Automatizacije", icon: <Zap className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/paketi", label: "Paketi tretmana", icon: <Box className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/performanse", label: "Performanse tima", icon: <BarChart3 className="w-4 h-4 mr-2" /> },
+    { href: "/vlasnik/ai-asistent", label: "AI Asistent", icon: <Bot className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/shop", label: "B2B Oprema", icon: <DollarSign className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/porudzbine", label: "Porudžbine", icon: <Package className="w-4 h-4 mr-2" /> },
     { href: "/vlasnik/obavestenja", label: "Obaveštenja", icon: <Bell className="w-4 h-4 mr-2" /> },
@@ -22,18 +29,48 @@ export function OwnerSidebar({ current }: { current: string }) {
     { href: "/biznis/edukacije", label: "Edukacije", icon: <GraduationCap className="w-4 h-4 mr-2" /> },
   ];
 
-  return (
-    <aside className="w-full md:w-64 shrink-0 space-y-1">
+  const sidebarContent = (
+    <div className="space-y-1">
       {links.map(l => (
         <Link 
           key={l.href} 
           href={l.href}
+          onClick={() => setIsOpen(false)}
           className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors ${current === l.href ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground/80'}`}
         >
           {l.icon} {l.label}
         </Link>
       ))}
-    </aside>
+    </div>
+  );
+
+  const currentLabel = links.find(l => l.href === current)?.label || "Meni";
+
+  return (
+    <>
+      {/* Mobile Drawer Trigger */}
+      <div className="md:hidden w-full mb-4">
+        <Sheet open={isOpen} onOpenChange={setIsOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" className="w-full flex justify-between items-center">
+              <span>{currentLabel}</span>
+              <Menu className="w-4 h-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-[300px] overflow-y-auto">
+            <div className="py-4">
+              <h2 className="font-bold text-lg mb-4 px-4">Navigacija</h2>
+              {sidebarContent}
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:block w-64 shrink-0">
+        {sidebarContent}
+      </aside>
+    </>
   );
 }
 

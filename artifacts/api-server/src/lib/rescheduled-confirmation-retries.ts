@@ -1,6 +1,10 @@
 import { retryFailedRescheduledEmailConfirmations } from "./brevo";
 import { logger } from "./logger";
 
+// NOTE: retryFailedRescheduledEmailConfirmations now delegates to the generalized
+// email outbox retry worker, so this scheduled batch also drives retries for
+// automation emails (and any other retryable email type), not only rescheduled
+// appointment confirmations. The name/log wording is retained for compatibility.
 export async function retryFailedRescheduledConfirmations() {
   return { email: await retryFailedRescheduledEmailConfirmations() };
 }

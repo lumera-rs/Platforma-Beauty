@@ -34,3 +34,5 @@
 - [Overlapping optimistic mutations](overlapping-optimistic-mutations.md) — independent snapshots are unsafe for shared caches; serialize operations or maintain a rebaseable operation log.
 - [Multi-location owner billing](multi-location-owner-billing.md) — legacy location loyalty and subscriptions roll up safely while the canonical subscription is pinned per owner.
 - [Tenant isolation proof fixtures](tenant-isolation-proof-fixtures.md) — isolation gates need adversarial cross-relations, same-owner locations, and cleanup assertions.
+- [Sold package entitlement integrity](sold-package-entitlement-integrity.md) — purchased coverage is immutable; booking and cancellation must move sessions atomically.
+- [Automation delivery crash recovery](automation-delivery-crash-recovery.md) — provider sends need leased claims and event-key reconciliation so crashes cannot lose messages.

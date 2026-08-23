@@ -38,13 +38,14 @@ export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["pending",
 export const oauthProviderEnum = pgEnum("oauth_provider", ["google", "facebook"]);
 export const emailDeliveryStatusEnum = pgEnum("email_delivery_status", ["queued", "processing", "sent", "failed", "skipped"]);
 export const emailCampaignStatusEnum = pgEnum("email_campaign_status", ["draft", "scheduled", "sent", "failed"]);
-export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "sent", "failed", "skipped"]);
+export const smsDeliveryStatusEnum = pgEnum("sms_delivery_status", ["queued", "processing", "sent", "failed", "skipped"]);
 export const smsMessageTypeEnum = pgEnum("sms_message_type", [
   "appointment_confirmation",
   "appointment_reminder",
   "education_session_reminder",
   "education_waitlist_offer",
   "education_session_cancelled",
+  "automation",
 ]);
 export const integrationKeyEnum = pgEnum("integration_key", ["sms", "brevo", "google_oauth", "facebook_oauth"]);
 export const imageAssetStatusEnum = pgEnum("image_asset_status", ["pending", "processing", "ready", "failed"]);
@@ -477,6 +478,8 @@ export const salonCustomersTable = pgTable("salon_customers", {
   phone: text("phone"),
   phoneNormalized: text("phone_normalized"),
   smsOptOut: boolean("sms_opt_out").notNull().default(false),
+  /** Optional date-of-birth for birthday automation trigger (format: YYYY-MM-DD) */
+  birthDate: date("birth_date", { mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -547,7 +550,33 @@ export const smsDeliveriesTable = pgTable("sms_deliveries", {
   messageType: smsMessageTypeEnum("message_type").notNull(),
   recipientPhone: text("recipient_phone").notNull(),
   body: text("body").notNull(),
+  /**
+   * queued     — inserted, not yet attempted
+   * processing — claimed by a sender under a lease; reclaimable once
+   *              claimExpiresAt has passed (crash/restart recovery)
+   * sent       — provider accepted the message (terminal / deduplicated)
+   * skipped    — intentionally not sent (opt-out, integration off, no key) (terminal)
+   * failed     — provider error; reclaimable for retry
+   */
   status: smsDeliveryStatusEnum("status").notNull().default("queued"),
+  /** Set when a sender claims this delivery row for provider dispatch. */
+  processingStartedAt: timestamp("processing_started_at", { withTimezone: true }),
+  /**
+   * Set (while holding the CAS lease) IMMEDIATELY BEFORE the provider HTTP
+   * request is issued. Its presence marks an "unknown outcome" — the provider
+   * may or may not have accepted the message. A later claim MUST reconcile by
+   * this row's stable id (used as the provider messageId) before any resend,
+   * rather than blindly re-submitting. It is never cleared on retry, so a
+   * provider-success-then-local-crash is recoverable. NULL means no provider
+   * request was ever started (safe to send on the next claim).
+   */
+  submissionStartedAt: timestamp("submission_started_at", { withTimezone: true }),
+  /**
+   * Lease expiry. A delivery stuck in processing past this timestamp can be
+   * reclaimed by another sender (crash after claim but before/around the
+   * provider call). Typically NOW + 5min.
+   */
+  claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
   providerMessageId: text("provider_message_id"),
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at", { withTimezone: true }),
@@ -559,6 +588,8 @@ export const smsDeliveriesTable = pgTable("sms_deliveries", {
   index("sms_deliveries_retention_idx")
     .on(table.createdAt)
     .where(sql`${table.status} in ('sent', 'skipped')`),
+  /** Stale-claim recovery scan: find processing rows whose lease has expired. */
+  index("sms_deliveries_claim_expiry_idx").on(table.status, table.claimExpiresAt),
   // Leading FK coverage for salonId and appointmentId.
   index("sms_deliveries_salon_idx").on(table.salonId),
   index("sms_deliveries_appointment_idx").on(table.appointmentId),
@@ -581,6 +612,8 @@ export const reviewsTable = pgTable("reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
   customerId: uuid("customer_id").notNull().references(() => usersTable.id),
+  /** Nullable — set from the reviewer's latest completed appointment at this salon */
+  employeeId: uuid("employee_id").references(() => employeesTable.id, { onDelete: "set null" }),
   serviceName: text("service_name").notNull(),
   rating: integer("rating").notNull(),
   text: text("text").notNull(),
@@ -592,6 +625,8 @@ export const reviewsTable = pgTable("reviews", {
   uniqueIndex("reviews_customer_salon_unique").on(table.customerId, table.salonId),
   // Salon review listing ordered by date, filtered by visible.
   index("reviews_salon_visible_created_idx").on(table.salonId, table.visible, table.createdAt),
+  // Employee rating aggregate scan.
+  index("reviews_employee_visible_idx").on(table.employeeId, table.visible),
 ]);
 
 export const favoritesTable = pgTable("favorites", {

@@ -7,5 +7,10 @@
  */
 
 export interface SalonCustomerUpdate {
-  smsOptOut: boolean;
+  smsOptOut?: boolean;
+  /**
+     * Customer date of birth for birthday automation (YYYY-MM-DD)
+     * @nullable
+     */
+  birthDate?: Date | null;
 }

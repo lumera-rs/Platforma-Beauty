@@ -1,7 +1,7 @@
 import { BookingWidget, MobileBookingTrigger, MobileBookingDrawer } from "@/components/booking-widget";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { 
   useGetSalon, 
@@ -13,6 +13,8 @@ import {
   useDeleteCustomerSalonReview, 
   useGetSalonFirstAvailable,
   useListSalons,
+  useCustomerListPublicPackages,
+  useCustomerPurchasePackage,
   getGetCustomerDashboardQueryKey,
   getGetSalonAvailabilityQueryKey, 
   getGetSalonQueryKey, 
@@ -45,6 +47,7 @@ import { DiscoveryCarousel } from "@/components/discovery-carousel";
 
 const profileSections = [
   { id: "popular-services", label: "Popularno" },
+  { id: "packages", label: "Paketi" },
   { id: "services", label: "Usluge" },
   { id: "staff", label: "Tim" },
   { id: "reviews", label: "Recenzije" },
@@ -62,7 +65,7 @@ export default function SalonProfile() {
   const search = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const { data: salon, isLoading, refetch: refetchSalon } = useGetSalon(slug || "", {
     query: {
       queryKey: getGetSalonQueryKey(slug || ""),
@@ -145,6 +148,20 @@ export default function SalonProfile() {
   const upsertReview = useUpsertCustomerSalonReview();
   const deleteCustomerSalonReview = useDeleteCustomerSalonReview();
   
+  const { data: publicPackages, isLoading: isLoadingPackages } = useCustomerListPublicPackages(
+    { salonId: salonData?.id || "" },
+    {
+      query: {
+        enabled: !!salonData?.id,
+        queryKey: ['public-packages', salonData?.id]
+      }
+    }
+  );
+
+  const purchasePackageMutation = useCustomerPurchasePackage();
+  const [purchasingPackageId, setPurchasingPackageId] = useState<string | null>(null);
+  const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<"pay_at_salon" | "bank_transfer">("pay_at_salon");
+
   const { data: reviewContext, isLoading: isLoadingReviewContext, refetch: refetchReviewContext } = useGetCustomerSalonReview(
     salonData?.id || "",
     {
@@ -343,7 +360,9 @@ export default function SalonProfile() {
     setFavoriteEmployeeId(employeeId); selectEmployee(employeeId); toast.success("Omiljeni zaposleni je sačuvan.");
   };
 
-  const submitBooking = (locationType: "salon" | "home") => {
+  const [pendingPackageId, setPendingPackageId] = useState<string | undefined>();
+
+  const submitBooking = (locationType: "salon" | "home", packagePurchaseId?: string) => {
     if (!user) {
       toast.error("Prijava obavezna", { description: "Morate biti prijavljeni da biste zakazali termin." });
       setLocation("/prijava");
@@ -367,19 +386,32 @@ export default function SalonProfile() {
         treatmentAddress: locationType === "home"
           ? { line1: homeAddress.line1.trim(), city: homeAddress.city.trim(), postalCode: homeAddress.postalCode.trim() || undefined, details: homeAddress.details.trim() || undefined }
           : undefined,
+        packagePurchaseId: packagePurchaseId,
       }
     }, {
       onSuccess: (response) => {
         queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetCustomerDashboardQueryKey() });
+        if (packagePurchaseId) {
+          queryClient.invalidateQueries({ queryKey: ['customer-list-my-purchases'] });
+        }
         clearDraft();
         setBookingStatus(response.status === "confirmed" ? "confirmed" : "pending");
         setLocationDialogOpen(false);
         setIsSuccess(true);
       },
       onError: (error: unknown) => {
-        const isBookingConflict = (error as { status?: number })?.status === 409;
-        if (isBookingConflict) {
+        const status = (error as { status?: number })?.status;
+        const errorData = (error as { data?: { error?: string, code?: string } })?.data;
+
+        if (status === 409) {
+          if (errorData?.code === 'PACKAGE_ERROR') {
+            toast.error("Greška sa paketom", { description: errorData.error || "Paket nije moguće iskoristiti za ovaj termin." });
+            setLocationDialogOpen(false);
+            // DO NOT reset selection or step so user can try standard payment
+            return;
+          }
+
           const availabilityQueryKey = getGetSalonAvailabilityQueryKey(salonData.id, {
             serviceId: selectedService,
             date: dateStr,
@@ -396,7 +428,7 @@ export default function SalonProfile() {
           return;
         }
 
-        const description = (error as { data?: { error?: string }; message?: string })?.data?.error
+        const description = errorData?.error
           ?? (error as { message?: string })?.message
           ?? "Došlo je do greške prilikom zakazivanja.";
         toast.error("Zakazivanje nije uspelo", { description });
@@ -404,15 +436,16 @@ export default function SalonProfile() {
     });
   };
 
-  const handleBook = () => {
+  const handleBook = (packagePurchaseId?: string) => {
     if (!user) { setLocation("/prijava"); return; }
     const service = salonData?.services.find((item) => item.id === selectedService);
     if (service?.homeServiceAvailable) {
       setTreatmentLocation("salon");
+      setPendingPackageId(packagePurchaseId);
       setLocationDialogOpen(true);
       return;
     }
-    submitBooking("salon");
+    submitBooking("salon", packagePurchaseId);
   };
 
   const requestPhoneCode = async () => {
@@ -718,6 +751,42 @@ export default function SalonProfile() {
                   {salonData.topServices.map(renderTopServiceCard)}
                 </DiscoveryCarousel>
               )}
+            </section>
+          )}
+
+          {publicPackages && publicPackages.length > 0 && (
+            <section id="packages">
+              <h2 className="text-3xl font-serif font-bold mb-8 flex items-center gap-3">
+                <span className="w-10 h-1.5 bg-primary inline-block rounded-full"></span>
+                Paketi tretmana
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {publicPackages.map(pkg => (
+                  <Card key={pkg.id} className="relative overflow-hidden group">
+                    <CardHeader className="pb-3 border-b">
+                      <CardTitle className="text-lg">{pkg.name}</CardTitle>
+                      <div className="font-bold text-primary text-xl mt-1">{pkg.priceInDinars.toLocaleString()} RSD</div>
+                    </CardHeader>
+                    <CardContent className="py-4 space-y-3">
+                      <p className="text-sm text-muted-foreground">{pkg.description}</p>
+                      <ul className="text-sm space-y-1">
+                        <li>• <strong className="text-foreground">{pkg.sessionCount}</strong> tretmana</li>
+                        <li>• Važi <strong className="text-foreground">{pkg.validityDays}</strong> dana</li>
+                      </ul>
+                      <div className="pt-2">
+                        <Button className="w-full" onClick={() => {
+                          if (!user) {
+                            toast.error("Prijavite se", { description: "Morate biti prijavljeni da biste kupili paket." });
+                            setLocation("/prijava");
+                            return;
+                          }
+                          setPurchasingPackageId(pkg.id);
+                        }}>Kupi paket</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </section>
           )}
 
@@ -1134,7 +1203,7 @@ export default function SalonProfile() {
                 </div> : null}
               </div> : null}
               <div className="rounded-xl bg-primary/5 p-4 text-sm"><div className="flex justify-between"><span>Usluga</span><strong>{basePrice} RSD</strong></div>{treatmentLocation === "home" ? <div className="mt-2 flex justify-between"><span>Naknada za dolazak</span><strong>{travelFee} RSD</strong></div> : null}<div className="mt-3 flex justify-between border-t pt-3 text-base"><span>Ukupno</span><strong>{basePrice + (treatmentLocation === "home" ? travelFee : 0)} RSD</strong></div>{treatmentLocation === "home" && service?.homeServiceMinimumOrder ? <p className="mt-2 text-xs text-muted-foreground">Minimalna vrednost usluge za dolazak: {service.homeServiceMinimumOrder} RSD.</p> : null}</div>
-              <Button className="w-full" onClick={() => submitBooking(treatmentLocation)} disabled={createAppointment.isPending || (treatmentLocation === "home" && (!homeAddress.line1.trim() || !homeAddress.city.trim() || needsPhoneVerification))}>{createAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{treatmentLocation === "home" ? "Pošalji zahtev za dolazak" : "Potvrdi rezervaciju"}</Button>
+              <Button className="w-full" onClick={() => submitBooking(treatmentLocation, pendingPackageId)} disabled={createAppointment.isPending || (treatmentLocation === "home" && (!homeAddress.line1.trim() || !homeAddress.city.trim() || needsPhoneVerification))}>{createAppointment.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{treatmentLocation === "home" ? "Pošalji zahtev za dolazak" : "Potvrdi rezervaciju"}</Button>
             </div>;
           })()}
         </DialogContent>
@@ -1228,6 +1297,63 @@ export default function SalonProfile() {
                {upsertReview.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Sačuvaj recenziju
              </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!purchasingPackageId} onOpenChange={(open) => !open && setPurchasingPackageId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Kupovina paketa</DialogTitle>
+            <DialogDescription>Izaberite način plaćanja za vaš novi paket.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label>Način plaćanja</Label>
+              <Select value={purchasePaymentMethod} onValueChange={(val: any) => setPurchasePaymentMethod(val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pay_at_salon">Plaćanje u salonu</SelectItem>
+                  <SelectItem value="bank_transfer">Uplata na račun (uplatnica)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {purchasePaymentMethod === 'bank_transfer' && (
+              <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                Uputstvo za uplatu ćete dobiti na email. Vaš paket će postati aktivan nakon što salon evidentira uplatu.
+              </p>
+            )}
+            {purchasePaymentMethod === 'pay_at_salon' && (
+              <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                Vaš paket će biti evidentiran, a uplatu možete izvršiti prilikom prvog narednog dolaska u salon.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPurchasingPackageId(null)}>Odustani</Button>
+            <Button
+              disabled={purchasePackageMutation.isPending}
+              onClick={() => {
+                if (!purchasingPackageId) return;
+                purchasePackageMutation.mutate({
+                  packageId: purchasingPackageId,
+                  data: {
+                    paymentMethod: purchasePaymentMethod
+                  }
+                }, {
+                  onSuccess: () => {
+                    toast.success("Paket uspešno rezervisan!");
+                    setPurchasingPackageId(null);
+                    queryClient.invalidateQueries({ queryKey: ['customer-list-my-purchases'] });
+                  }
+                });
+              }}
+            >
+              {purchasePackageMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Potvrdi kupovinu
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

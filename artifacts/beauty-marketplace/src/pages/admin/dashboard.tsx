@@ -1,7 +1,7 @@
 import { AdminLayout } from "./layout";
-import { useGetAdminSummary } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Store, Calendar, TrendingUp, DollarSign, AlertCircle, ShieldCheck, Loader2 } from "lucide-react";
+import { useGetAdminSummary, useAdminGetGrowthSummary } from "@workspace/api-client-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Users, Store, Calendar, TrendingUp, DollarSign, AlertCircle, ShieldCheck, Loader2, Zap, MessageSquare, Briefcase, Plus, Activity } from "lucide-react";
 
 function formatCleanupTicketAge(ageMinutes: number | null): string {
   if (ageMinutes === null) return "Nema";
@@ -15,8 +15,9 @@ function formatCleanupTicketAge(ageMinutes: number | null): string {
 
 export default function AdminDashboard() {
   const { data: summary, isLoading, error } = useGetAdminSummary();
+  const { data: growth, isLoading: isLoadingGrowth } = useAdminGetGrowthSummary();
 
-  if (isLoading) return <AdminLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></AdminLayout>;
+  if (isLoading || isLoadingGrowth) return <AdminLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></AdminLayout>;
   if (error || !summary) return <AdminLayout><div className="p-10 text-destructive bg-destructive/10 rounded-xl text-center border border-destructive/20 font-medium">Došlo je do greške pri učitavanju pregleda platforme.</div></AdminLayout>;
 
   return (
@@ -73,6 +74,74 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {growth && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-serif font-bold text-foreground">Aktivnost novih modula</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                    <span>Automatizacije (Kampanje)</span>
+                    <MessageSquare className="w-4 h-4" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{growth.automation.activeRules}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Aktivnih pravila</p>
+                  <div className="mt-4 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Ukupno pravila</span>
+                      <span className="font-bold">{growth.automation.totalRules}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                    <span>Paketi Tretmana</span>
+                    <Briefcase className="w-4 h-4" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{growth.packages.active}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Aktivnih paketa</p>
+                  <div className="mt-4 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Ukupno paketa</span>
+                      <span className="font-bold">{growth.packages.total}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between">
+                    <span>Kupovine Paketa</span>
+                    <Activity className="w-4 h-4" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{growth.purchases.active}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Aktivnih kupovina</p>
+                  <div className="mt-4 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span>Ukupno kupovina</span>
+                      <span className="font-bold text-primary">{growth.purchases.total}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span>Na čekanju za uplatu</span>
+                      <span className="font-bold text-amber-600">{growth.purchases.pendingPayment}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>

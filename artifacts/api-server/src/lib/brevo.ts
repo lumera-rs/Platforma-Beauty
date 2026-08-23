@@ -18,6 +18,13 @@ export type TransactionalEmailTransport = {
 };
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
+const AUTOMATION_EMAIL_TYPE = "automation";
+// Email types that participate in the durable outbox retry lifecycle:
+// insert as queued with a due nextRetryAt, CAS processing claim/lease, bounded
+// backoff retries, temporary-vs-permanent classification, and idempotent
+// provider dedup (via the stable delivery id). Any other emailType is a
+// single-shot send with no retry.
+const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE] as const;
 const EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE = "education_gallery_cleanup_alert";
 const EDUCATION_GALLERY_CLEANUP_ALERT_COOLDOWN_MS = 60 * 60_000;
 const RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000] as const;
@@ -110,25 +117,108 @@ export async function sendTransactionalEmail(input: {
     subject: input.subject,
     htmlContent: input.htmlContent,
     scheduledAt: input.scheduledAt ?? null,
-    nextRetryAt: input.emailType === RESCHEDULED_EMAIL_TYPE ? new Date() : null,
+    // Retryable types enter the outbox as "due now" so the first attempt (and any
+    // subsequent retries) flow through the CAS claim/lease path below.
+    nextRetryAt: retryableEmailType(input.emailType) ? new Date() : null,
     metadata: input.metadata ?? {},
   }).onConflictDoNothing().returning();
-  if (!delivery) return { deduplicated: true };
+
+  // Insert conflict: a row for this eventKey already exists. NEVER assume "sent"
+  // merely because the eventKey exists — inspect the real status so callers can
+  // distinguish a genuine prior success from a still-retrying/failed delivery.
+  if (!delivery) {
+    return reconcileExistingDelivery(input.eventKey, input.htmlContent, transport);
+  }
+
   if (retryable(delivery)) {
-    const processingToken = randomUUID();
-    const [claimed] = await db.update(emailDeliveriesTable).set({
-      status: "processing",
-      processingToken,
-      nextRetryAt: new Date(Date.now() + RETRY_LEASE_MS),
-    }).where(and(
-      eq(emailDeliveriesTable.id, delivery.id),
-      eq(emailDeliveriesTable.status, "queued"),
-      lte(emailDeliveriesTable.nextRetryAt, new Date()),
-    )).returning();
-    if (!claimed) return { queued: true };
-    return deliverEmail(claimed, input.htmlContent, processingToken, transport);
+    return claimAndDeliver(delivery, input.htmlContent, transport);
   }
   return deliverEmail(delivery, input.htmlContent, undefined, transport);
+}
+
+/**
+ * Attempt to CAS-claim a queued+due retryable delivery and send it. Returns a
+ * discriminated result:
+ *   - delivery outcome ({messageId}/{deduplicated}/{skipped}/{failed}) if we
+ *     won the claim and ran the provider call, or
+ *   - { queued: true } if the row is not currently due (another attempt will
+ *     pick it up), or
+ *   - { inProgress: true } if another worker holds a live processing lease.
+ */
+async function claimAndDeliver(
+  delivery: EmailDelivery,
+  htmlContent: string,
+  transport: TransactionalEmailTransport,
+  now = new Date(),
+) {
+  const processingToken = randomUUID();
+  const [claimed] = await db.update(emailDeliveriesTable).set({
+    status: "processing",
+    processingToken,
+    nextRetryAt: new Date(now.getTime() + RETRY_LEASE_MS),
+  }).where(and(
+    eq(emailDeliveriesTable.id, delivery.id),
+    eq(emailDeliveriesTable.status, "queued"),
+    lte(emailDeliveriesTable.nextRetryAt, now),
+  )).returning();
+  if (!claimed) {
+    // Not due yet, or lost the race. Report the current live state.
+    const [current] = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.id, delivery.id)).limit(1);
+    return classifyNonClaimed(current ?? delivery);
+  }
+  return deliverEmail(claimed, htmlContent, processingToken, transport);
+}
+
+/**
+ * Map an existing (already-inserted) delivery to a status-accurate result on an
+ * insert conflict. If it is queued and due, we opportunistically claim+send;
+ * otherwise we report its true terminal/pending state.
+ */
+async function reconcileExistingDelivery(
+  eventKey: string,
+  htmlContent: string,
+  transport: TransactionalEmailTransport,
+  now = new Date(),
+) {
+  const [existing] = await db.select().from(emailDeliveriesTable)
+    .where(eq(emailDeliveriesTable.eventKey, eventKey)).limit(1);
+  // Defensive: conflict implies a row exists, but if a concurrent delete raced
+  // it away, treat as a benign dedup.
+  if (!existing) return { deduplicated: true } as const;
+
+  if (existing.status === "sent") return { deduplicated: true } as const;
+  if (existing.status === "skipped") return { skipped: true } as const;
+
+  if (existing.status === "queued") {
+    const due = existing.nextRetryAt != null && existing.nextRetryAt.getTime() <= now.getTime();
+    const exhausted = existing.retryCount >= RETRY_DELAYS_MS.length;
+    if (retryable(existing) && due && !exhausted && existing.htmlContent) {
+      return claimAndDeliver(existing, existing.htmlContent, transport, now);
+    }
+    // Queued but not due yet (or exhausted/permanent) — leave for the worker.
+    return exhausted ? { failed: true } as const : { queued: true } as const;
+  }
+
+  // processing → someone may hold a live lease; stale leases are reclaimed by
+  // the retry worker. Report as in-progress (retryable, not final).
+  if (existing.status === "processing") return { inProgress: true } as const;
+
+  // failed → terminal for the caller (worker only re-queues within backoff caps).
+  return { failed: true } as const;
+}
+
+function classifyNonClaimed(delivery: EmailDelivery) {
+  switch (delivery.status) {
+    case "sent": return { deduplicated: true } as const;
+    case "skipped": return { skipped: true } as const;
+    case "processing": return { inProgress: true } as const;
+    case "failed":
+      return delivery.retryCount >= RETRY_DELAYS_MS.length
+        ? { failed: true } as const
+        : { queued: true } as const;
+    default: return { queued: true } as const; // queued but not due
+  }
 }
 
 export async function sendEducationGalleryCleanupAlert(
@@ -207,7 +297,11 @@ function nextRetryAt(retryCount: number, now = new Date()) {
 }
 
 function retryable(delivery: EmailDelivery) {
-  return delivery.emailType === RESCHEDULED_EMAIL_TYPE;
+  return (RETRYABLE_EMAIL_TYPES as readonly string[]).includes(delivery.emailType);
+}
+
+function retryableEmailType(emailType: string) {
+  return (RETRYABLE_EMAIL_TYPES as readonly string[]).includes(emailType);
 }
 
 function temporaryFailure(error: unknown) {
@@ -319,22 +413,28 @@ async function deliverEmail(
   }
 }
 
-export async function retryFailedRescheduledEmailConfirmations(
+/**
+ * Generalized durable outbox retry worker. Reclaims stale processing rows whose
+ * lease has expired, then claims and re-sends queued+due rows within retry caps.
+ * Processes ALL retryable email types (appointment_rescheduled, automation).
+ */
+export async function retryFailedRetryableEmails(
   now = new Date(),
   transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
 ) {
+  // Recover stale processing rows (crashed/leased worker) whose lease elapsed.
   await db.update(emailDeliveriesTable).set({
     status: "queued",
     processingToken: null,
     nextRetryAt: now,
   }).where(and(
-    eq(emailDeliveriesTable.emailType, RESCHEDULED_EMAIL_TYPE),
+    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES as unknown as string[]),
     eq(emailDeliveriesTable.status, "processing"),
     lte(emailDeliveriesTable.nextRetryAt, now),
   ));
 
   const due = await db.select().from(emailDeliveriesTable).where(and(
-    eq(emailDeliveriesTable.emailType, RESCHEDULED_EMAIL_TYPE),
+    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES as unknown as string[]),
     eq(emailDeliveriesTable.status, "queued"),
     isNotNull(emailDeliveriesTable.nextRetryAt),
     lte(emailDeliveriesTable.nextRetryAt, now),
@@ -360,6 +460,18 @@ export async function retryFailedRescheduledEmailConfirmations(
     await deliverEmail(claimed, claimed.htmlContent!, processingToken, transport);
   }
   return { considered: due.length, retried };
+}
+
+/**
+ * Legacy exported name retained for compatibility with the scheduled reschedule
+ * confirmation worker and its tests. Now delegates to the generalized retry
+ * worker, which also processes automation emails.
+ */
+export async function retryFailedRescheduledEmailConfirmations(
+  now = new Date(),
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
+  return retryFailedRetryableEmails(now, transport);
 }
 
 export async function createBrevoMarketingCampaign(input: {

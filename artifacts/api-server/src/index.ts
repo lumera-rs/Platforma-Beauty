@@ -12,6 +12,7 @@ import { cleanupExpiredImageAssets } from "./routes/image-media";
 import { runMediaUploadCleanup } from "./routes/media";
 import { migrateLegacyMediaReferences } from "./lib/media-migration";
 import { ensureMediaSchema } from "./lib/media-schema";
+import { ensureBusinessGrowthSchema } from "./lib/business-growth-schema";
 import {
   catalogCacheStats,
   startCatalogCacheInvalidationListener,
@@ -19,6 +20,7 @@ import {
 } from "./lib/catalog-cache";
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
+import { runAutomationWorker } from "./lib/automation-worker";
 
 const rawPort = process.env["PORT"];
 
@@ -34,6 +36,11 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+// Production does not run drizzle-kit push. Roll out the Phase 2 (Business
+// Growth) schema additively/idempotently BEFORE the media schema, any DB
+// listeners, listen(), and every scheduler/worker (notably the automation
+// worker) so the very first query the workers make sees the required objects.
+await ensureBusinessGrowthSchema();
 await ensureMediaSchema();
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
@@ -110,6 +117,17 @@ const communicationArchiveInterval = setInterval(() => {
   });
 }, 24 * 60 * 60_000);
 communicationArchiveInterval.unref();
+
+// Automation worker: evaluate active rules every 15 minutes
+const automationWorkerInterval = setInterval(() => {
+  void runAutomationWorker().catch((error: unknown) => {
+    logger.warn({ err: error }, "Automation worker scheduler failed");
+  });
+}, 15 * 60_000);
+automationWorkerInterval.unref();
+void runAutomationWorker().catch((error: unknown) => {
+  logger.warn({ err: error }, "Automation worker initial run failed");
+});
 compatibilityImageCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
   logger.warn({ err: error }, "Compatibility image asset cleanup scheduler failed");
@@ -144,6 +162,7 @@ function clearScheduledTasks(): void {
   clearInterval(mediaCleanupInterval);
   clearInterval(compatibilityImageCleanupInterval);
   clearInterval(communicationArchiveInterval);
+  clearInterval(automationWorkerInterval);
   clearInterval(databaseMetricsInterval);
 }
 function shutDown(signal: NodeJS.Signals): void {
