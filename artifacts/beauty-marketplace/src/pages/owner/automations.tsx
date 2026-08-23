@@ -35,6 +35,7 @@ import type { AutomationAttributedAppointment, AutomationStatsOverviewItem } fro
 import { useLocation, useSearch } from "wouter";
 import { Link } from "wouter";
 import { parsePeriodSelection, serializePeriodSelection, type StatsPeriod } from "@/lib/campaign-period-url";
+import { getCampaignCancellationWarning } from "@/lib/campaign-cancellation-warning";
 
 function rate(part: number, total: number) {
   if (!total) return null;
@@ -43,8 +44,6 @@ function rate(part: number, total: number) {
 
 /** Page size for the attributed-appointments drill-down list. */
 const ATTRIBUTED_PAGE_SIZE = 25;
-const CANCELLATION_FLAG_THRESHOLD = 1 / 3;
-const CANCELLATION_FLAG_MIN_VOLUME = 3;
 type AttributedClientType = "all" | "new" | "returning";
 const periodOptions: { value: Exclude<StatsPeriod, "custom">; label: string }[] = [
   { value: "7d", label: "7 dana" },
@@ -101,24 +100,6 @@ async function copyTextWithFallback(text: string): Promise<void> {
   } finally {
     textarea.remove();
   }
-}
-
-function getCancellationFlag(item: {
-  attributedAppointments?: number | null;
-  cancelledAttributedAppointments?: number | null;
-}) {
-  const attributedAppointments = item.attributedAppointments ?? 0;
-  const cancelledAppointments = item.cancelledAttributedAppointments ?? 0;
-  const totalAttributedBookings = attributedAppointments + cancelledAppointments;
-  const cancellationShare = totalAttributedBookings > 0
-    ? cancelledAppointments / totalAttributedBookings
-    : 0;
-
-  return {
-    isFlagged: totalAttributedBookings >= CANCELLATION_FLAG_MIN_VOLUME
-      && cancellationShare >= CANCELLATION_FLAG_THRESHOLD,
-    cancellationShare,
-  };
 }
 
 function periodDescription(period: StatsPeriod, customRange: DateRange | undefined): string {
@@ -375,12 +356,9 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
             </thead>
             <tbody>
               {items.map((item) => {
-                const cancellationFlag = getCancellationFlag(item);
-                const cancellationShareLabel = `${Math.round(cancellationFlag.cancellationShare * 100)}%`;
-                const totalAttributedBookings = (item.attributedAppointments ?? 0) + (item.cancelledAttributedAppointments ?? 0);
-                const cancellationExplanation = `Visok udeo otkazanih termina: ${cancellationShareLabel} (${item.cancelledAttributedAppointments ?? 0} od ${totalAttributedBookings} kampanjom pripisanih termina). Proverite poruke, ponude ili publiku kampanje.`;
+                const cancellationWarning = getCampaignCancellationWarning(item);
                 return (
-                <tr key={item.ruleId} className={`border-b last:border-b-0 align-top ${cancellationFlag.isFlagged ? "bg-amber-50/70" : ""}`} data-testid={`overview-row-${item.ruleId}`}>
+                <tr key={item.ruleId} className={`border-b last:border-b-0 align-top ${cancellationWarning.isFlagged ? "bg-amber-50/70" : ""}`} data-testid={`overview-row-${item.ruleId}`}>
                   <td className="py-3 pr-4">
                     <div className="flex items-start gap-2">
                       <button
@@ -391,13 +369,13 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                       >
                         {item.ruleName}
                       </button>
-                      {cancellationFlag.isFlagged && (
+                      {cancellationWarning.isFlagged && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span
                               role="img"
                               tabIndex={0}
-                              aria-label={cancellationExplanation}
+                              aria-label={cancellationWarning.explanation}
                               data-testid={`overview-cancellation-flag-${item.ruleId}`}
                               className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full text-amber-700 outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-offset-1"
                             >
@@ -405,7 +383,7 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                             </span>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs text-center">
-                            {cancellationExplanation} Proverite poruke, ponude ili publiku kampanje.
+                            {cancellationWarning.explanation}
                           </TooltipContent>
                         </Tooltip>
                       )}
