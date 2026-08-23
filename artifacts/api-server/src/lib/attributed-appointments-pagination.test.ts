@@ -6,16 +6,16 @@
  *      limit/offset/period with 400
  *   2. pages deterministically (newest first, id tiebreaker): walking pages by
  *      offset covers every attributed appointment exactly once, no overlap
- *   3. excludes cancelled appointments from both rows and `total`, so `total`
- *      always equals the stats endpoint's attributedAppointments count
+ *   3. excludes cancelled and no-show appointments from both rows and `total`,
+ *      so `total` always equals the stats endpoint's attributedAppointments count
  *   4. honors the same `period` window as the stats endpoints, so the total
  *      matches the count shown above the list for every period choice
  *   5. stays owner-scoped: another owner's session gets 404 for a foreign rule
  *
  * Also guards the overview trend comparison (/growth/automation-stats with
  * compare=previous): the previous-window attributed count must exclude
- * cancelled appointments exactly like the current window, or trend arrows
- * mislead owners whenever prior-period appointments were cancelled.
+ * cancelled and no-show appointments exactly like the current window, or trend
+ * arrows mislead owners whenever prior-period appointments fell through.
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-pagination.test.ts
  */
@@ -88,23 +88,24 @@ async function main() {
   }).returning();
   assert.ok(rule);
 
-  // 60 attributed non-cancelled appointments + 3 cancelled ones. The first
-  // RECENT_TOTAL runs executed just now; the rest (including all cancelled
-  // ones) executed 45 days ago, so a 30d window splits the set and the
-  // 45-day-old runs land safely inside the previous 30d comparison window
-  // [60d, 30d). Appointments share startTime to exercise the id tiebreaker
-  // in the deterministic ordering.
+  // 60 attributed realized appointments + 3 cancelled and 1 no-show ones.
+  // The first RECENT_TOTAL runs executed just now; the rest (including all
+  // excluded-status ones) executed 45 days ago, so a 30d window splits the
+  // set and the 45-day-old runs land safely inside the previous 30d comparison
+  // window [60d, 30d). Appointments share startTime to exercise the id
+  // tiebreaker in the deterministic ordering.
   const TOTAL = 60;
   const RECENT_TOTAL = 40;
   const RECENT_RUN_AT = new Date();
   const OLD_RUN_AT = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
-  for (let i = 0; i < TOTAL + 3; i++) {
-    const cancelled = i >= TOTAL;
+  for (let i = 0; i < TOTAL + 4; i++) {
+    const cancelled = i >= TOTAL && i < TOTAL + 3;
+    const noShow = i === TOTAL + 3;
     const day = String((i % 28) + 1).padStart(2, "0");
     const [appt] = await db.insert(appointmentsTable).values({
       salonId: a.salon.id, salonCustomerId: cust.id, serviceId: svc.id,
       date: `2026-05-${day}`, startTime: "10:00", endTime: "11:00", durationMinutes: 60,
-      status: cancelled ? "cancelled" : "completed",
+      status: cancelled ? "cancelled" : noShow ? "no-show" : "completed",
       price: 1000 + i, treatmentLocation: "salon",
     }).returning();
     assert.ok(appt);
@@ -126,18 +127,18 @@ async function main() {
   const listPath = `/api/growth/automations/${rule.id}/attributed-appointments`;
 
   try {
-    // ── 1. Default page size + cancelled-exclusive total ───────────────────
+    // ── 1. Default page size + excluded-status-exclusive total ───────────────
     const first = await get(listPath);
     assert.equal(first.status, 200);
     assert.equal(first.body.items.length, 25, "default page size is 25");
-    assert.equal(first.body.total, TOTAL, "total excludes cancelled appointments");
+    assert.equal(first.body.total, TOTAL, "total excludes cancelled and no-show appointments");
     assert.equal(first.body.limit, 25);
     assert.equal(first.body.offset, 0);
     assert.equal(
       first.body.items[0].salonCustomerId, cust.id,
       "rows expose the linked salon customer id for the CRM deep link",
     );
-    console.log("✓ default page size and cancelled-exclusive total");
+    console.log("✓ default page size and excluded-status-exclusive total");
 
     // ── 2. Total matches the stats count for every period choice ───────────
     for (const [period, expected] of [["all", TOTAL], ["30d", RECENT_TOTAL], ["7d", RECENT_TOTAL], ["90d", TOTAL]] as const) {
@@ -185,7 +186,7 @@ async function main() {
     }
     console.log("✓ invalid limit/offset/period rejected");
 
-    // ── 6. Overview trend: previous window excludes cancelled appointments ─
+    // ── 6. Trend: previous window excludes cancelled and no-show appointments
     const overview = await get(`/api/growth/automation-stats?period=30d&compare=previous`);
     assert.equal(overview.status, 200);
     const mine = overview.body.find((r: any) => r.ruleId === rule.id);
@@ -195,9 +196,16 @@ async function main() {
     assert.equal(
       mine.previous.attributedAppointments,
       TOTAL - RECENT_TOTAL,
-      "previous-window count excludes cancelled appointments like the current window",
+      "previous-window count excludes cancelled and no-show appointments like the current window",
     );
-    console.log("✓ trend comparison excludes cancelled appointments in the previous window");
+    const detail = await get(`/api/growth/automations/${rule.id}/stats?period=30d&compare=previous`);
+    assert.equal(detail.status, 200);
+    assert.equal(
+      detail.body.previous.attributedAppointments,
+      TOTAL - RECENT_TOTAL,
+      "per-rule previous-window count excludes cancelled and no-show appointments like the current window",
+    );
+    console.log("✓ trend comparison excludes cancelled and no-show appointments in both endpoints");
 
     // ── 7. Owner scoping ────────────────────────────────────────────────────
     const foreign = await get(listPath, b.token);
