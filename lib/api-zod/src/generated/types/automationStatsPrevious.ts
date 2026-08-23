@@ -7,7 +7,7 @@
  */
 
 /**
- * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+ * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range.
  */
 export type AutomationStatsPrevious = {
   attributedAppointments: number;

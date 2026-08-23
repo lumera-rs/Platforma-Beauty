@@ -97,6 +97,27 @@ function periodDescription(period: StatsPeriod, customRange: DateRange | undefin
   }
 }
 
+/** Label the exact window used as the comparison baseline in the trend note. */
+function previousTrendWindowLabel(period: StatsPeriod, customRange: DateRange | undefined): string | null {
+  if (period === "all") return null;
+  if (period !== "custom") return periodDescription(period, undefined).replace("poslednjih ", "");
+  if (!customRange?.from || !customRange.to) return null;
+
+  const currentFrom = new Date(
+    customRange.from.getFullYear(),
+    customRange.from.getMonth(),
+    customRange.from.getDate(),
+  );
+  const currentTo = new Date(
+    customRange.to.getFullYear(),
+    customRange.to.getMonth(),
+    customRange.to.getDate(),
+  );
+  const rangeDays = Math.round((currentTo.getTime() - currentFrom.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  const previousTo = new Date(currentFrom.getFullYear(), currentFrom.getMonth(), currentFrom.getDate() - 1);
+  const previousFrom = new Date(currentFrom.getFullYear(), currentFrom.getMonth(), currentFrom.getDate() - rangeDays);
+  return formatRangeLabel({ from: previousFrom, to: previousTo });
+}
 /**
  * Up/down/flat indicator versus the preceding window of the same length.
  * Percentage change is shown when the previous count is non-zero; a jump from
@@ -408,9 +429,9 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
             </tbody>
           </table>
         </div>
-        {period !== "all" && period !== "custom" && (
+         {previousTrendWindowLabel(period, customRange) && (
           <p className="text-xs text-muted-foreground mt-3" data-testid="overview-trend-note">
-            Trend u odnosu na prethodni period iste dužine ({periodDescription(period, undefined).replace("poslednjih ", "")}).
+             Trend u odnosu na prethodni period iste dužine ({previousTrendWindowLabel(period, customRange)}).
           </p>
         )}
         {anySms && (
@@ -499,12 +520,12 @@ export default function OwnerAutomations() {
   if (statsParams !== null) lastCompleteParamsRef.current = statsParams;
   const activeStatsParams = statsParams ?? lastCompleteParamsRef.current;
 
-  // For bounded preset periods, also request counts for the preceding window
-  // of the same length so the overview can show per-rule trends. "All time"
-  // and custom date ranges have no canonical previous window, so no compare
-  // flag is sent and no trends are rendered.
+  // For every bounded window, request counts for the preceding window of the
+  // same length so the overview can show per-rule trends. The API derives the
+  // exact preceding dates for complete custom ranges; "all time" has no
+  // previous window and therefore sends no compare flag.
   const overviewParams = useMemo(() => (
-    "period" in activeStatsParams && activeStatsParams.period !== "all"
+    ("period" in activeStatsParams && activeStatsParams.period !== "all") || "from" in activeStatsParams
       ? { ...activeStatsParams, compare: "previous" as const }
       : activeStatsParams
   ), [activeStatsParams]);
@@ -526,9 +547,8 @@ export default function OwnerAutomations() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentRuleId, setCurrentRuleId] = useState<string | null>(null);
 
-  // The dialog mirrors the overview request (compare=previous for bounded
-  // preset periods only) so it shows the same trends; custom ranges and
-  // "all time" have no previous window and therefore no trend.
+  // The dialog mirrors the overview request so it shows the same trends for
+  // presets and complete custom ranges; "all time" has no previous window.
   const { data: statsData, isLoading: isStatsLoading } = useOwnerGetAutomationStats(
     statsRuleId ?? "",
     overviewParams,
@@ -1128,9 +1148,9 @@ export default function OwnerAutomations() {
                 <p>Preskočeno (npr. nema kontakt podataka): {statsData.skippedCount}</p>
                 <p className="mt-1">Poslednje pokretanje: {statsData.lastRunAt ? new Date(statsData.lastRunAt).toLocaleString("sr-RS") : "Nikad"}</p>
               </div>
-              {statsData.previous && (
+              {statsData.previous && previousTrendWindowLabel(statsPeriod, customRange) && (
                 <p className="col-span-2 text-xs text-muted-foreground" data-testid="stats-trend-note">
-                  Trend u odnosu na prethodni period iste dužine ({periodDescription(statsPeriod, undefined).replace("poslednjih ", "")}).
+                  Trend u odnosu na prethodni period iste dužine ({previousTrendWindowLabel(statsPeriod, customRange)}).
                 </p>
               )}
             </div>

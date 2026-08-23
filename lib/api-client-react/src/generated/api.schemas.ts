@@ -4128,7 +4128,7 @@ export interface CreateAutomationFromAiProposalBody {
 }
 
 /**
- * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+ * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range.
  */
 export type AutomationStatsPrevious = {
   attributedAppointments: number;
@@ -4171,7 +4171,7 @@ export interface AutomationStats {
   smsFailedCount: number;
   /** @nullable */
   lastRunAt?: string | null;
-  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period. */
+  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsPrevious;
 }
 
@@ -4221,7 +4221,7 @@ export interface AutomationAttributedAppointmentsPage {
 }
 
 /**
- * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+ * Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range.
  */
 export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
@@ -4265,7 +4265,7 @@ export interface AutomationStatsOverviewItem {
   smsFailedCount: number;
   /** @nullable */
   lastRunAt?: string | null;
-  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period. */
+  /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsOverviewItemPrevious;
 }
 
@@ -5803,7 +5803,7 @@ from?: string;
  */
 to?: string;
 /**
- * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.
  */
 compare?: OwnerGetAutomationStatsCompare;
 };
@@ -5887,7 +5887,7 @@ from?: string;
  */
 to?: string;
 /**
- * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+ * Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.
  */
 compare?: OwnerListAutomationStatsCompare;
 };

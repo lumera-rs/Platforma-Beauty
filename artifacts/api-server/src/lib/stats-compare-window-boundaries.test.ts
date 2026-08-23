@@ -20,9 +20,9 @@
  *   3. Rows older than both windows count in neither (but still appear in
  *      the all-time aggregate), and current + previous + outside = all-time,
  *      so no row is ever double-counted or dropped
- *   4. compare validation: compare=previous with period=all, with no period,
- *      or with a custom from/to range → 400; any compare value other than
- *      the literal "previous" → 400 — on both stats endpoints
+ *   4. compare validation: compare=previous with period=all or with no period
+ *      → 400; a complete custom from/to range is accepted; any compare value
+ *      other than the literal "previous" → 400 — on both stats endpoints
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
@@ -239,7 +239,15 @@ async function main() {
     };
     await expect400("?period=all&compare=previous", "compare=previous with period=all");
     await expect400("?compare=previous", "compare=previous with no period (defaults to all-time)");
-    await expect400("?from=2026-01-01&to=2026-02-01&compare=previous", "compare=previous with a custom from/to range");
+    for (const path of [
+      `/api/growth/automation-stats?from=2026-01-01&to=2026-02-01&compare=previous`,
+      `/api/growth/automations/${rule.id}/stats?from=2026-01-01&to=2026-02-01&compare=previous`,
+    ]) {
+      const r = await get(path);
+      assert.equal(r.status, 200, `complete custom range is accepted (${path})`);
+      assert.ok(r.body.previous ?? r.body.find?.((x: any) => x.ruleId === rule.id)?.previous,
+        `complete custom range returns previous counts (${path})`);
+    }
     await expect400("?period=30d&compare=next", "unknown compare value");
     await expect400("?period=30d&compare=Previous", "case-mismatched compare value");
     console.log("✓ compare validation: unbounded periods and unknown compare values rejected with 400 on both endpoints");

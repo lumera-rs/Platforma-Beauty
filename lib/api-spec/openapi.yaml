@@ -3744,7 +3744,7 @@ paths:
           schema: { type: string, format: date }
         - name: compare
           in: query
-          description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+          description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.
           schema: { type: string, enum: [previous] }
       responses:
         "200":
@@ -3820,7 +3820,7 @@ paths:
           schema: { type: string, format: date }
         - name: compare
           in: query
-          description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).
+          description: Set to "previous" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.
           schema: { type: string, enum: [previous] }
       responses:
         "200":
@@ -7691,7 +7691,7 @@ components:
         lastRunAt: { type: ["string", "null"], format: date-time }
         previous:
           type: object
-          description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+          description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range.
           properties:
             attributedAppointments: { type: number }
             attributedRevenue:
@@ -7795,7 +7795,7 @@ components:
         lastRunAt: { type: ["string", "null"], format: date-time }
         previous:
           type: object
-          description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
+          description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range.
           properties:
             attributedAppointments: { type: number }
             attributedRevenue:

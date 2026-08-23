@@ -9311,7 +9311,7 @@ export const OwnerGetAutomationStatsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
   "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
   "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
-  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).')
+  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from\/to range.')
 })
 
 export const OwnerGetAutomationStatsResponse = zod.object({
@@ -9344,7 +9344,7 @@ export const OwnerGetAutomationStatsResponse = zod.object({
   "emailDeliveredCount": zod.number(),
   "emailOpenedCount": zod.number(),
   "smsDeliveredCount": zod.number()
-}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.')
+}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from\/to range.')
 })
 
 
@@ -9397,7 +9397,7 @@ export const OwnerListAutomationStatsQueryParams = zod.object({
   "period": zod.enum(['7d', '30d', '90d', 'all']).optional().describe('Time window for run\/delivery aggregation (defaults to all time)'),
   "from": zod.date().optional().describe('Custom window start date (inclusive, YYYY-MM-DD); cannot be combined with period'),
   "to": zod.date().optional().describe('Custom window end date (inclusive, YYYY-MM-DD); cannot be combined with period'),
-  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d).')
+  "compare": zod.enum(['previous']).optional().describe('Set to \"previous\" to also return counts for the preceding window of the same length. Requires a bounded period (7d, 30d, 90d) or a complete custom from\/to range.')
 })
 
 export const OwnerListAutomationStatsResponseItem = zod.object({
@@ -9431,7 +9431,7 @@ export const OwnerListAutomationStatsResponseItem = zod.object({
   "emailDeliveredCount": zod.number(),
   "emailOpenedCount": zod.number(),
   "smsDeliveredCount": zod.number()
-}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.')
+}).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from\/to range.')
 })
 export const OwnerListAutomationStatsResponse = zod.array(OwnerListAutomationStatsResponseItem)
 

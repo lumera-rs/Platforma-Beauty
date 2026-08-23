@@ -600,6 +600,29 @@ function statsDeliveryPeriodCondition(window: StatsWindow) {
 }
 
 /**
+ * Derive the preceding window requested by compare=previous. Presets have a
+ * fixed duration, while a complete custom range uses its inclusive calendar
+ * length (represented by the half-open `window` as end - start). Open-ended
+ * custom ranges and all-time have no meaningful preceding window.
+ */
+function previousStatsWindow(query: Record<string, unknown>, window: StatsWindow): StatsWindow | null {
+  const periodDays = typeof query["period"] === "string" ? STATS_PERIOD_DAYS[query["period"]] : undefined;
+  if (periodDays !== undefined && window.start) {
+    const durationMs = periodDays * 24 * 60 * 60 * 1000;
+    return { start: new Date(window.start.getTime() - durationMs), end: window.start };
+  }
+
+  if (window.start && window.end) {
+    const durationMs = window.end.getTime() - window.start.getTime();
+    if (durationMs > 0) {
+      return { start: new Date(window.start.getTime() - durationMs), end: window.start };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Scope for stats aggregation: every rule of the active salon (overview
  * endpoint) or a single rule (per-rule stats endpoint).
  */
@@ -758,16 +781,11 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       res.status(400).json({ error: "Invalid compare. Expected: previous.", code: "VALIDATION" });
       return;
     }
-    // The preceding comparison window is only defined for the rolling presets;
-    // custom from/to ranges and all-time have no canonical "previous" window yet.
-    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
-    if (compareRaw === "previous" && (periodDays === undefined || !window.start)) {
-      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d).", code: "VALIDATION" });
+    const previousWindow = compareRaw === "previous" ? previousStatsWindow(req.query, window) : null;
+    if (compareRaw === "previous" && !previousWindow) {
+      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.", code: "VALIDATION" });
       return;
     }
-    const prevCutoff = compareRaw === "previous" && window.start && periodDays !== undefined
-      ? new Date(window.start.getTime() - periodDays * 24 * 60 * 60 * 1000)
-      : null;
 
     const rules = await db
       .select({
@@ -794,10 +812,9 @@ router.get("/growth/automation-stats", async (req, res, next) => {
     // attribution semantics.
     let prevRunsByRule: Map<string, { attributedAppointments: number; attributedRevenue: number }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
-    if (prevCutoff && window.start) {
-      const prevWindow: StatsWindow = { start: prevCutoff, end: window.start };
-      const prevRunAgg = await aggregateRunStats({ ruleIds }, prevWindow);
-      const prevDeliveryAgg = await aggregateDeliveryStats({ ruleIds }, prevWindow);
+    if (previousWindow) {
+      const prevRunAgg = await aggregateRunStats({ ruleIds }, previousWindow);
+      const prevDeliveryAgg = await aggregateDeliveryStats({ ruleIds }, previousWindow);
 
       prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments, attributedRevenue: r.attributedRevenue }]));
       prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
@@ -866,23 +883,18 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     const { window } = parsedWindow;
 
     // Same compare semantics as the overview endpoint: only "previous" is
-    // accepted, and only together with a bounded period ("all" has no
-    // preceding window of equal length to compare against).
+    // accepted, and only together with a bounded preset or complete custom
+    // range ("all" has no preceding window of equal length to compare against).
     const compareRaw = req.query["compare"];
     if (compareRaw !== undefined && compareRaw !== "previous") {
       res.status(400).json({ error: "Invalid compare. Expected: previous.", code: "VALIDATION" });
       return;
     }
-    // The preceding comparison window is only defined for the rolling presets;
-    // custom from/to ranges and all-time have no canonical "previous" window yet.
-    const periodDays = typeof req.query["period"] === "string" ? STATS_PERIOD_DAYS[req.query["period"]] : undefined;
-    if (compareRaw === "previous" && (periodDays === undefined || !window.start)) {
-      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d).", code: "VALIDATION" });
+    const previousWindow = compareRaw === "previous" ? previousStatsWindow(req.query, window) : null;
+    if (compareRaw === "previous" && !previousWindow) {
+      res.status(400).json({ error: "compare=previous requires a bounded period (7d, 30d, 90d) or a complete custom from/to range.", code: "VALIDATION" });
       return;
     }
-    const prevCutoff = compareRaw === "previous" && window.start && periodDays !== undefined
-      ? new Date(window.start.getTime() - periodDays * 24 * 60 * 60 * 1000)
-      : null;
 
     const [rule] = await db
       .select({ id: automationRulesTable.id })
@@ -907,10 +919,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
     let previous:
       | { attributedAppointments: number; attributedRevenue: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
       | undefined;
-    if (prevCutoff && window.start) {
-      const prevWindow: StatsWindow = { start: prevCutoff, end: window.start };
-      const [prevRuns] = await aggregateRunStats({ ruleId: rule.id }, prevWindow);
-      const [prevDeliveries] = await aggregateDeliveryStats({ ruleId: rule.id }, prevWindow);
+    if (previousWindow) {
+      const [prevRuns] = await aggregateRunStats({ ruleId: rule.id }, previousWindow);
+      const [prevDeliveries] = await aggregateDeliveryStats({ ruleId: rule.id }, previousWindow);
 
       previous = {
         attributedAppointments: prevRuns?.attributedAppointments ?? 0,
