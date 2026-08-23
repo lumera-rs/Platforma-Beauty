@@ -460,6 +460,8 @@ async function integrationTests() {
     assert.deepEqual(identity.candidateCounts, identity.currentCounts, "counts agree for identical thresholds");
     assert.deepEqual(identity.shifts, [], "no shifts for identical thresholds");
     assert.deepEqual(identity.topAffectedSalons, [], "no affected salons for identical thresholds");
+    assert.deepEqual(identity.topShareAffectedSalons, [], "no share-affected salons for identical thresholds");
+    assert.equal(identity.shareRankingMinCustomers, 5, "preview reports the share-ranking customer floor");
     assert.ok(identity.totalCustomers >= 3, "platform-wide totals include the fixture customers");
     const sumCurrent = Object.values(identity.currentCounts as Record<string, number>)
       .reduce((s, n) => s + n, 0);
@@ -515,6 +517,38 @@ async function integrationTests() {
     }
     const affectedSum = affected.reduce((s: number, x: any) => s + x.reclassifiedCount, 0);
     assert.ok(affectedSum <= previewBody.reclassifiedCount, "per-salon counts stay within the total");
+
+    // Share-based ranking: every entry respects the minimum-customer floor
+    // and the list is sorted by share, largest first. The fixture salon has
+    // exactly 3 customers — below the floor of 5 — so despite its high share
+    // it must appear ONLY in the count ranking above, never in the share one.
+    const shareAffected = previewBody.topShareAffectedSalons as any[];
+    assert.ok(Array.isArray(shareAffected), "preview reports a share-based ranking");
+    assert.ok(shareAffected.length <= 10, "share ranking is capped at 10");
+    for (const s of shareAffected) {
+      assert.ok(
+        s.totalCustomers >= previewBody.shareRankingMinCustomers,
+        "share ranking only includes salons at or above the customer floor",
+      );
+      assert.ok(
+        s.reclassifiedCount >= 1 && s.reclassifiedCount <= s.totalCustomers,
+        "share entries carry consistent per-salon counts",
+      );
+    }
+    for (let i = 1; i < shareAffected.length; i++) {
+      const prev = shareAffected[i - 1];
+      const cur = shareAffected[i];
+      assert.ok(
+        prev.reclassifiedCount / prev.totalCustomers >=
+          cur.reclassifiedCount / cur.totalCustomers - 1e-9,
+        "share ranking is sorted by share, largest first",
+      );
+    }
+    assert.ok(
+      !shareAffected.some((s) => s.salonId === salon.id),
+      "a 3-customer salon stays below the share-ranking floor",
+    );
+    console.log("✓ Share ranking respects the minimum-customer floor and share order");
 
     // Invalid candidate → 400 (same validation as PUT).
     const badPreviewRes = await postPreview({
@@ -889,6 +923,62 @@ async function integrationTests() {
       await db.insert(appointmentsTable).values(deepAppointmentRows.slice(i, i + 1000));
     }
 
+    // Small-salon share fixtures: a 5-customer salon where EVERY customer
+    // flips under the candidate (100% share — hardest hit, but far too small
+    // for the count top-10 on a platform this size), and a 1-customer salon
+    // that also flips 100% but sits below the share floor of 5. Customers get
+    // 2 completed visits (40 and 10 days ago, 2000 din each): under the
+    // active thresholds (vipMinCompletedVisits=100) they are ACTIVE — spend
+    // 4000 does NOT exceed 2× the salon median of 2000 (strictly-greater) —
+    // and under the candidate (vipMinCompletedVisits=2) they all become VIP.
+    const [shareSalonRow, floorSalonRow] = await db.insert(salonsTable).values([
+      {
+        ownerId: perfOwner.id, name: `Share Salon ${suffix}`, slug: `share-salon-${suffix}`,
+        city: "Beograd", municipality: "Vračar", address: "Share 1", postalCode: "11000",
+        phone: "+381609990001", email: `share-salon-${suffix}@rts.test`,
+        shortDescription: "Share", description: "Share salon", imageUrl: "/t.jpg",
+      },
+      {
+        ownerId: perfOwner.id, name: `Floor Salon ${suffix}`, slug: `floor-salon-${suffix}`,
+        city: "Beograd", municipality: "Vračar", address: "Floor 1", postalCode: "11000",
+        phone: "+381609990002", email: `floor-salon-${suffix}@rts.test`,
+        shortDescription: "Floor", description: "Floor salon", imageUrl: "/t.jpg",
+      },
+    ]).returning({ id: salonsTable.id, name: salonsTable.name });
+    assert.ok(shareSalonRow && floorSalonRow);
+    createdSalonIds.push(shareSalonRow.id, floorSalonRow.id);
+    const smallServices = await db.insert(servicesTable).values(
+      [shareSalonRow.id, floorSalonRow.id].map((salonId, i) => ({
+        salonId, categoryName: "Hair", name: `Small Svc ${i} ${suffix}`, description: "Small",
+        durationMinutes: 60, price: 2000, imageUrl: "/t.jpg", active: true,
+      })),
+    ).returning({ id: servicesTable.id, salonId: servicesTable.salonId });
+    const smallServiceBySalon = new Map(smallServices.map((s) => [s.salonId, s.id]));
+    const smallCustomers = await db.insert(salonCustomersTable).values([
+      ...Array.from({ length: 5 }, (_, i) => ({
+        salonId: shareSalonRow.id, firstName: "Udeo", lastName: `Kupac${i}`,
+        email: `share-cust-${i}-${suffix}@rts.test`, phone: null,
+      })),
+      {
+        salonId: floorSalonRow.id, firstName: "Prag", lastName: "Kupac",
+        email: `floor-cust-${suffix}@rts.test`, phone: null,
+      },
+    ]).returning({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId });
+    await db.insert(appointmentsTable).values(
+      smallCustomers.flatMap((c) =>
+        [40, 10].map((daysAgo) => ({
+          salonId: c.salonId,
+          salonCustomerId: c.id,
+          serviceId: smallServiceBySalon.get(c.salonId)!,
+          date: isoDaysAgo(daysAgo),
+          startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+          status: "completed" as const,
+          price: 2000,
+          treatmentLocation: "salon" as const,
+        })),
+      ),
+    );
+
     const perfStartedAt = Date.now();
     const perfRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
     const perfElapsedMs = Date.now() - perfStartedAt;
@@ -909,6 +999,44 @@ async function integrationTests() {
     console.log(
       `✓ Volume benchmark: ${perf.totalCustomers} customers previewed in ${perfElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
     );
+
+    // ── 16a. Share ranking surfaces the hardest-hit small salon at volume ───
+    // The 5-customer salon flips 100% of its clientele, so it must appear in
+    // the share ranking even though its absolute count (5) is nowhere near
+    // the count top-10 (perf salons flip dozens of customers each). The
+    // 1-customer salon also flips 100% but sits below the floor of 5, so the
+    // share ranking must exclude it.
+    const perfShare = perf.topShareAffectedSalons as any[];
+    assert.ok(perfShare.length >= 1, "volume preview reports share-affected salons");
+    for (const s of perfShare) {
+      assert.ok(
+        s.totalCustomers >= perf.shareRankingMinCustomers,
+        "share entries respect the customer floor at volume",
+      );
+    }
+    for (let i = 1; i < perfShare.length; i++) {
+      const prev = perfShare[i - 1];
+      const cur = perfShare[i];
+      assert.ok(
+        prev.reclassifiedCount / prev.totalCustomers >=
+          cur.reclassifiedCount / cur.totalCustomers - 1e-9,
+        "volume share ranking is sorted by share, largest first",
+      );
+    }
+    const shareEntry = perfShare.find((s) => s.salonId === shareSalonRow.id);
+    assert.ok(shareEntry, "the fully-flipped 5-customer salon makes the share ranking");
+    assert.equal(shareEntry.reclassifiedCount, 5, "all 5 small-salon customers flip");
+    assert.equal(shareEntry.totalCustomers, 5, "small salon reports its full clientele");
+    assert.equal(shareEntry.salonName, shareSalonRow.name, "share entry carries the salon name");
+    assert.ok(
+      !(perf.topAffectedSalons as any[]).some((s) => s.salonId === shareSalonRow.id),
+      "the same salon never reaches the count top-10 on a platform this size",
+    );
+    assert.ok(
+      !perfShare.some((s) => s.salonId === floorSalonRow.id),
+      "a 1-of-1 salon stays below the share floor even at 100%",
+    );
+    console.log("✓ Share ranking surfaces the hardest-hit small salon that the count top-10 misses");
 
     // ── 16b. Deep-history stress: appointment row budget bounds memory ──────
     // Force a tiny appointment row budget (350 rows) so each 300-visit deep
@@ -931,6 +1059,8 @@ async function integrationTests() {
           candidateCounts: chunked.candidateCounts,
           shifts: chunked.shifts,
           topAffectedSalons: chunked.topAffectedSalons,
+          topShareAffectedSalons: chunked.topShareAffectedSalons,
+          shareRankingMinCustomers: chunked.shareRankingMinCustomers,
         },
         {
           totalCustomers: perf.totalCustomers,
@@ -939,6 +1069,8 @@ async function integrationTests() {
           candidateCounts: perf.candidateCounts,
           shifts: perf.shifts,
           topAffectedSalons: perf.topAffectedSalons,
+          topShareAffectedSalons: perf.topShareAffectedSalons,
+          shareRankingMinCustomers: perf.shareRankingMinCustomers,
         },
         "row-budget sub-chunking yields identical results to the default budget",
       );

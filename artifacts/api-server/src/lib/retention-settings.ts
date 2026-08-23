@@ -339,10 +339,25 @@ export interface RetentionPreviewResult {
   shifts: RetentionPreviewShift[];
   /** Salons with the most reclassified customers, largest first (top N). */
   topAffectedSalons: RetentionPreviewAffectedSalon[];
+  /**
+   * Salons with the highest SHARE of reclassified customers, largest first
+   * (top N). Only salons with at least shareRankingMinCustomers customers
+   * qualify, so a 1-of-1 salon cannot dominate the ranking.
+   */
+  topShareAffectedSalons: RetentionPreviewAffectedSalon[];
+  /** Minimum customers a salon needs to qualify for the share ranking. */
+  shareRankingMinCustomers: number;
 }
 
 /** How many most-affected salons the preview reports. */
 export const PREVIEW_TOP_AFFECTED_SALONS_LIMIT = 10;
+
+/**
+ * Minimum total customers a salon needs to appear in the share-based ranking.
+ * Without a floor, a salon whose single customer flips would rank at 100% and
+ * crowd out salons where the change genuinely hits a meaningful clientele.
+ */
+export const PREVIEW_SHARE_RANKING_MIN_CUSTOMERS = 5;
 
 const RETENTION_STATUSES: RetentionStatus[] = ["NEW", "ACTIVE", "VIP", "AT_RISK", "LOST"];
 
@@ -632,23 +647,53 @@ export async function previewRetentionThresholds(
     .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
     .slice(0, PREVIEW_TOP_AFFECTED_SALONS_LIMIT);
 
+  // Share-based ranking: salons where the HIGHEST FRACTION of customers flips
+  // feel the change hardest, even when their absolute counts are small. A
+  // minimum-customer floor keeps 1-of-1 salons from dominating at "100%".
+  // Ties break on absolute count (bigger swing first), then salonId, so the
+  // cut is deterministic.
+  const shareOf = (salonId: string, count: number) => {
+    const total = totalCustomersBySalon.get(salonId) ?? 0;
+    return total > 0 ? count / total : 0;
+  };
+  const topByShare = [...reclassifiedBySalon.entries()]
+    .filter(
+      ([salonId]) =>
+        (totalCustomersBySalon.get(salonId) ?? 0) >= PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
+    )
+    .sort(
+      (a, b) =>
+        shareOf(b[0], b[1]) - shareOf(a[0], a[1]) ||
+        b[1] - a[1] ||
+        (a[0] < b[0] ? -1 : 1),
+    )
+    .slice(0, PREVIEW_TOP_AFFECTED_SALONS_LIMIT);
+
+  // Names are fetched once for the union of both rankings (read-only lookup —
+  // the preview still never writes).
   let topAffectedSalons: RetentionPreviewAffectedSalon[] = [];
-  if (topAffected.length > 0) {
+  let topShareAffectedSalons: RetentionPreviewAffectedSalon[] = [];
+  if (topAffected.length > 0 || topByShare.length > 0) {
     assertWithinBudget();
+    const namedIds = [
+      ...new Set([...topAffected, ...topByShare].map(([salonId]) => salonId)),
+    ];
     const namedRows = await withPreviewStatementTimeout(remainingMs(), (tx) =>
       tx
         .select({ id: salonsTable.id, name: salonsTable.name })
         .from(salonsTable)
-        .where(inArray(salonsTable.id, topAffected.map(([salonId]) => salonId))),
+        .where(inArray(salonsTable.id, namedIds)),
       "salon-names",
     );
     const nameById = new Map(namedRows.map((row) => [row.id, row.name]));
-    topAffectedSalons = topAffected.map(([salonId, count]) => ({
+    const toAffectedSalon = ([salonId, count]: [string, number]): RetentionPreviewAffectedSalon => ({
       salonId,
       salonName: nameById.get(salonId) ?? "Nepoznat salon",
       reclassifiedCount: count,
       totalCustomers: totalCustomersBySalon.get(salonId) ?? 0,
-    }));
+    });
+    topAffectedSalons = topAffected.map(toAffectedSalon);
+    topShareAffectedSalons = topByShare.map(toAffectedSalon);
   }
   // Never return an overdue "success" — the budget covers the whole preview,
   // including the final lookup.
@@ -662,6 +707,8 @@ export async function previewRetentionThresholds(
     candidateCounts,
     shifts,
     topAffectedSalons,
+    topShareAffectedSalons,
+    shareRankingMinCustomers: PREVIEW_SHARE_RANKING_MIN_CUSTOMERS,
   };
 }
 

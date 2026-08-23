@@ -22,4 +22,8 @@ export interface RetentionSettingsPreview {
   shifts: RetentionReclassificationShift[];
   /** Salons with the most reclassified customers, largest first (top 10) */
   topAffectedSalons: RetentionPreviewAffectedSalon[];
+  /** Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify */
+  topShareAffectedSalons: RetentionPreviewAffectedSalon[];
+  /** Minimum customers a salon needs to qualify for the share-based ranking */
+  shareRankingMinCustomers: number;
 }

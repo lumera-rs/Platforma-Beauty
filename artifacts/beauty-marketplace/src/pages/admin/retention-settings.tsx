@@ -103,6 +103,10 @@ export default function AdminRetentionSettings() {
   const updateMutation = useAdminUpdateRetentionSettings();
   const previewMutation = useAdminPreviewRetentionSettings();
   const [preview, setPreview] = useState<RetentionSettingsPreview | null>(null);
+  // How the "most affected salons" list is ranked: by absolute reclassified
+  // count, or by the share of the salon's customers that flips (small salons
+  // that feel the change hardest).
+  const [salonRanking, setSalonRanking] = useState<"count" | "share">("count");
 
   const [form, setForm] = useState<Record<FieldKey, string>>({
     newCustomerWindowDays: "",
@@ -572,37 +576,76 @@ export default function AdminRetentionSettings() {
 
                 {preview.topAffectedSalons.length > 0 && (
                   <div className="space-y-1.5" data-testid="retention-preview-affected-salons">
-                    <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                      <Store className="w-3.5 h-3.5 shrink-0" />
-                      Najviše pogođeni saloni:
-                    </p>
-                    <ul className="space-y-1">
-                      {preview.topAffectedSalons.map((salon) => (
-                        <li
-                          key={salon.salonId}
-                          className="text-sm text-muted-foreground flex items-center gap-1.5"
-                          data-testid={`retention-preview-salon-${salon.salonId}`}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Store className="w-3.5 h-3.5 shrink-0" />
+                        Najviše pogođeni saloni:
+                      </p>
+                      <div className="flex items-center gap-1" role="group" aria-label="Rangiranje pogođenih salona">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={salonRanking === "count" ? "secondary" : "ghost"}
+                          className="h-7 px-2 text-xs"
+                          aria-pressed={salonRanking === "count"}
+                          onClick={() => setSalonRanking("count")}
+                          data-testid="retention-preview-ranking-count"
                         >
-                          <a
-                            href={`${import.meta.env.BASE_URL}admin/saloni/${salon.salonId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-foreground hover:text-primary hover:underline inline-flex items-center gap-1"
-                            data-testid={`retention-preview-salon-link-${salon.salonId}`}
+                          Po broju
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={salonRanking === "share" ? "secondary" : "ghost"}
+                          className="h-7 px-2 text-xs"
+                          aria-pressed={salonRanking === "share"}
+                          onClick={() => setSalonRanking("share")}
+                          data-testid="retention-preview-ranking-share"
+                        >
+                          Po udelu (%)
+                        </Button>
+                      </div>
+                    </div>
+                    {salonRanking === "share" && (
+                      <p className="text-xs text-muted-foreground" data-testid="retention-preview-share-floor-note">
+                        Saloni sa najvećim procentom pogođenih klijenata — mali saloni koji promenu
+                        osećaju najjače. Računaju se samo saloni sa najmanje {preview.shareRankingMinCustomers}{" "}
+                        klijenata.
+                      </p>
+                    )}
+                    {(salonRanking === "share" ? preview.topShareAffectedSalons : preview.topAffectedSalons).length === 0 ? (
+                      <p className="text-sm text-muted-foreground" data-testid="retention-preview-share-empty">
+                        Nijedan pogođeni salon nema najmanje {preview.shareRankingMinCustomers} klijenata.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {(salonRanking === "share" ? preview.topShareAffectedSalons : preview.topAffectedSalons).map((salon) => (
+                          <li
+                            key={salon.salonId}
+                            className="text-sm text-muted-foreground flex items-center gap-1.5"
+                            data-testid={`retention-preview-salon-${salon.salonId}`}
                           >
-                            {salon.salonName}
-                            <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
-                          </a>
-                          <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
-                          {`od ${salon.totalCustomers} ${salon.totalCustomers === 1 ? "klijenta" : "klijenata"}`}
-                          {salon.totalCustomers > 0 && (
-                            <span className="text-foreground">
-                              ({Math.round((salon.reclassifiedCount / salon.totalCustomers) * 100)}%)
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                            <a
+                              href={`${import.meta.env.BASE_URL}admin/saloni/${salon.salonId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-foreground hover:text-primary hover:underline inline-flex items-center gap-1"
+                              data-testid={`retention-preview-salon-link-${salon.salonId}`}
+                            >
+                              {salon.salonName}
+                              <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
+                            </a>
+                            <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
+                            {`od ${salon.totalCustomers} ${salon.totalCustomers === 1 ? "klijenta" : "klijenata"}`}
+                            {salon.totalCustomers > 0 && (
+                              <span className="text-foreground">
+                                ({Math.round((salon.reclassifiedCount / salon.totalCustomers) * 100)}%)
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </div>

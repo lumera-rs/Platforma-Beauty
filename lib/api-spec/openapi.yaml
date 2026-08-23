@@ -7381,7 +7381,12 @@ components:
           type: array
           description: "Salons with the most reclassified customers, largest first (top 10)"
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
-      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons]
+        topShareAffectedSalons:
+          type: array
+          description: "Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify"
+          items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
+        shareRankingMinCustomers: { type: number, description: "Minimum customers a salon needs to qualify for the share-based ranking" }
+      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers]
 
     RetentionSettingsUpdate:
       allOf:
