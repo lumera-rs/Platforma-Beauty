@@ -51,6 +51,7 @@ import {
 } from "./provider-events";
 import {
   DELIVERY_REPORT_ALERT_COOLDOWN_MS,
+  runDeliveryReportRecoveryAlerts,
   runDeliveryReportSilenceAlerts,
   staleDeliveryReportProviders,
 } from "./delivery-report-alerts";
@@ -822,6 +823,149 @@ async function run() {
       }
       assert.deepEqual(summaryBody.deliveryReportStaleProviders, [], "fresh receipts read healthy on the dashboard");
       console.log("✓ silence alerts email admins once per cooldown window and feed the dashboard summary");
+    }
+
+    // ── 7g. Recovery → one-time "reports arriving again" notice ────────────
+    {
+      // Two fresh admins: one with a (synthetic, past) silence-alert history
+      // for brevo, one that never alerted. Only the first may ever receive a
+      // recovery notice, and only once per silence episode.
+      const recoveryAdminEmail = `pe-recovery-admin-${suffix}@bg.test`;
+      const witnessAdminEmail = `pe-recovery-witness-${suffix}@bg.test`;
+      const [recoveryAdmin] = await db.insert(usersTable).values({
+        firstName: "Admin", lastName: "Recovery",
+        email: recoveryAdminEmail, passwordHash: await hashPassword(`pe-recovery-${suffix}`),
+        passwordSetAt: new Date(), role: "ADMIN",
+      }).returning();
+      const [witnessAdmin] = await db.insert(usersTable).values({
+        firstName: "Admin", lastName: "Witness",
+        email: witnessAdminEmail, passwordHash: await hashPassword(`pe-witness-${suffix}`),
+        passwordSetAt: new Date(), role: "ADMIN",
+      }).returning();
+      assert.ok(recoveryAdmin && witnessAdmin);
+      cleanup.userIds.push(recoveryAdmin.id, witnessAdmin.id);
+
+      // Guarantee a fresh verified-event receipt for brevo (monotonic; the
+      // suite's earlier webhook posts already recorded receipts around now).
+      await recordWebhookReceipt("brevo");
+      const brevoReceipt = await webhookReceipt("brevo");
+      assert.ok(brevoReceipt, "brevo receipt exists after verified events");
+
+      const makeFakeTransport = () => {
+        const calls: { email: string; subject: string }[] = [];
+        const transport: TransactionalEmailTransport = {
+          async send(input) {
+            calls.push({ email: input.to.email, subject: input.subject });
+            return { messageId: `pe-recovery-fake-${calls.length}` };
+          },
+        };
+        return { calls, transport };
+      };
+      // The 7f alert admin's silence alerts carry FUTURE alertAt anchors
+      // (crafted evaluation times) — verified events have NOT arrived after
+      // them, so recovery must stay quiet for that admin throughout.
+      const futureAlertedAdminEmail = `pe-alert-admin-${suffix}@bg.test`;
+
+      // Baseline tick: neither fresh admin has silence history → no notice.
+      const baseline = makeFakeTransport();
+      const baselineRun = await runDeliveryReportRecoveryAlerts(new Date(), baseline.transport);
+      cleanup.emailEventKeys.push(...baselineRun.attemptedEventKeys);
+      for (const email of [recoveryAdminEmail, witnessAdminEmail, futureAlertedAdminEmail]) {
+        assert.ok(baseline.calls.every((call) => call.email !== email),
+          `no recovery notice without a qualifying silence alert (${email})`);
+      }
+
+      // Synthetic past silence episode #1 for the recovery admin only.
+      const silenceKey1 = `pe-recovery-silence-1-${suffix}`;
+      const alert1At = new Date(Date.now() - 2 * 60 * 60_000);
+      cleanup.emailEventKeys.push(silenceKey1);
+      await db.insert(emailDeliveriesTable).values({
+        eventKey: silenceKey1, emailType: "delivery_report_silence_alert",
+        recipientEmail: recoveryAdminEmail, subject: "PE silence 1", htmlContent: "<p>x</p>",
+        status: "sent", sentAt: alert1At,
+        metadata: { provider: "brevo", alertAt: alert1At.toISOString(), sequence: 1 },
+      });
+      assert.ok(brevoReceipt.getTime() > alert1At.getTime(), "verified events postdate the synthetic alert");
+
+      // While the provider still reads SILENT, history + resumed events must
+      // not trigger a notice. probeAt is far enough ahead that a grace-aged
+      // qualifying email send exists with no receipt after it.
+      const g = await makeOwnerAndSalon("recovery");
+      const [customerG] = await db.insert(salonCustomersTable).values({
+        salonId: g.salon.id, firstName: "Kupac", lastName: "G", email: `pe-cust-g-${suffix}@bg.test`,
+      }).returning();
+      const [ruleG] = await db.insert(automationRulesTable).values({
+        salonId: g.salon.id, name: `PE pravilo G ${suffix}`, trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
+      }).returning();
+      assert.ok(customerG && ruleG);
+      const probeAt = new Date(Date.now() + 48 * 60 * 60_000);
+      const probeSentAt = new Date(probeAt.getTime() - 35 * 60_000);
+      const probeRunKey = `pe-run-recovery-${suffix}`;
+      const [probeRun] = await db.insert(automationRunsTable).values({
+        eventKey: probeRunKey, ruleId: ruleG.id, salonId: g.salon.id, salonCustomerId: customerG.id,
+        status: "sent", executedAt: probeSentAt, sentAt: probeSentAt,
+      }).returning();
+      assert.ok(probeRun);
+      const [probeDelivery] = await db.insert(automationDeliveriesTable).values({
+        runId: probeRun.id, salonId: g.salon.id, eventKey: `${probeRunKey}:email`, channel: "email",
+        recipientEmail: `pe-recovery-stale-${suffix}@bg.test`, status: "sent", sentAt: probeSentAt,
+      }).returning();
+      assert.ok(probeDelivery);
+      const stale = makeFakeTransport();
+      const staleRun = await runDeliveryReportRecoveryAlerts(probeAt, stale.transport);
+      cleanup.emailEventKeys.push(...staleRun.attemptedEventKeys);
+      assert.ok(!staleRun.notifiedProviders.includes("brevo"), "a still-silent provider never announces recovery");
+      assert.ok(stale.calls.every((call) => call.email !== recoveryAdminEmail),
+        "no recovery notice while the warning is still active");
+
+      // Healthy tick at the real current time: exactly one notice, naming the
+      // provider, to the alerted admin only.
+      const first = makeFakeTransport();
+      const firstRun = await runDeliveryReportRecoveryAlerts(new Date(), first.transport);
+      cleanup.emailEventKeys.push(...firstRun.attemptedEventKeys);
+      const firstMine = first.calls.filter((call) => call.email === recoveryAdminEmail);
+      assert.equal(firstMine.length, 1, "exactly one recovery notice for the alerted admin");
+      assert.ok(firstMine[0]!.subject.includes("ponovo stižu"), "notice says reports are arriving again");
+      assert.ok(firstMine[0]!.subject.includes("Brevo"), "notice names the recovered provider");
+      assert.ok(firstRun.notifiedProviders.includes("brevo"), "brevo reported as notified");
+      assert.equal(firstRun.failedDeliveryCount, 0);
+      assert.equal(firstRun.skippedDeliveryCount, 0);
+      assert.ok(first.calls.every((call) => call.email !== witnessAdminEmail),
+        "an admin that never alerted gets no recovery notice");
+      assert.ok(first.calls.every((call) => call.email !== futureAlertedAdminEmail),
+        "no notice when verified events have not arrived after the newest alert");
+
+      // Repeat tick: the episode is answered — nothing new for our admin, and
+      // the suppression happens without contacting the provider.
+      const second = makeFakeTransport();
+      const secondRun = await runDeliveryReportRecoveryAlerts(new Date(), second.transport);
+      cleanup.emailEventKeys.push(...secondRun.attemptedEventKeys);
+      assert.ok(second.calls.every((call) => call.email !== recoveryAdminEmail),
+        "repeat tick sends no second notice for the same episode");
+      assert.ok(secondRun.alreadyNotifiedCount >= 1, "answered episode is suppressed before the outbox");
+
+      // A NEW silence episode (fresh alert after the recovery) re-arms the
+      // notice under a fresh outbox key — flapping without a new alert never
+      // spams, a genuine new alert closes its own loop.
+      const silenceKey2 = `pe-recovery-silence-2-${suffix}`;
+      const alert2At = new Date(Date.now() - 60 * 60_000);
+      cleanup.emailEventKeys.push(silenceKey2);
+      await db.insert(emailDeliveriesTable).values({
+        eventKey: silenceKey2, emailType: "delivery_report_silence_alert",
+        recipientEmail: recoveryAdminEmail, subject: "PE silence 2", htmlContent: "<p>x</p>",
+        status: "sent", sentAt: alert2At,
+        metadata: { provider: "brevo", alertAt: alert2At.toISOString(), sequence: 2 },
+      });
+      const third = makeFakeTransport();
+      const thirdRun = await runDeliveryReportRecoveryAlerts(new Date(), third.transport);
+      cleanup.emailEventKeys.push(...thirdRun.attemptedEventKeys);
+      const thirdMine = third.calls.filter((call) => call.email === recoveryAdminEmail);
+      assert.equal(thirdMine.length, 1, "a new silence episode earns exactly one new recovery notice");
+      for (const eventKey of thirdRun.attemptedEventKeys) {
+        assert.ok(!firstRun.attemptedEventKeys.includes(eventKey), "new episode uses a fresh outbox key");
+      }
+      console.log("✓ recovery notices close the loop once per silence episode and never fire without a prior alert");
     }
 
     // ── 8. Cross-salon isolation + owner stats accuracy ────────────────────

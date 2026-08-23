@@ -32,6 +32,19 @@
  * webhook does not prevent the alert from sending. If Brevo sending is
  * unavailable too, the send is logged as failed/skipped and the dashboard
  * alert remains the fallback surface.
+ *
+ * Recovery notices (runDeliveryReportRecoveryAlerts): once a provider that
+ * previously triggered a silence alert receives verified events again, each
+ * alerted administrator gets a single "reports are arriving again" email so
+ * they know the fix worked without re-checking the dashboard. Dedup anchors
+ * on the silence-alert SEQUENCE instead of a time window: a recovery email's
+ * metadata records the silence sequence it answers (silenceSequence), and no
+ * further recovery email goes out until a NEWER silence alert exists. Flap
+ * cycles inside the silence cooldown (silent → recovered → silent → recovered)
+ * therefore produce at most one recovery email per silence alert, and a
+ * provider (or admin) that never alerted never gets a recovery notice.
+ * Racing instances compute the same anchored eventKey and collapse in the
+ * idempotent outbox exactly like the silence alerts do.
  */
 import { createHash } from "node:crypto";
 import { db, emailDeliveriesTable, usersTable } from "@workspace/db";
@@ -50,6 +63,7 @@ import {
 } from "./provider-events";
 
 const DELIVERY_REPORT_ALERT_EMAIL_TYPE = "delivery_report_silence_alert";
+const DELIVERY_REPORT_RECOVERY_EMAIL_TYPE = "delivery_report_recovery_alert";
 /** Rolling cooldown: at least this long between two alerts to the same admin about the same provider. */
 export const DELIVERY_REPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
 
@@ -224,6 +238,181 @@ export async function runDeliveryReportSilenceAlerts(
     recipientCount: recipients.length,
     attemptedEventKeys,
     cooldownSuppressedCount,
+    failedDeliveryCount,
+    skippedDeliveryCount,
+  };
+}
+
+/**
+ * Check for providers whose delivery reports have RECOVERED after a silence
+ * alert and email each previously-alerted administrator exactly once per
+ * silence episode. Safe to run on every scheduler tick from any number of
+ * instances:
+ *   - a recipient/provider pair is only considered when it has silence-alert
+ *     history (never alerted → never notified),
+ *   - verified events must have arrived AFTER the newest silence alert
+ *     (metadata.alertAt < receipt lastEventAt) and the provider must read
+ *     healthy now — a warning that merely aged out of the send window without
+ *     any events is not a recovery,
+ *   - the outbox eventKey anchors on the newest silence-alert sequence
+ *     (count of silence rows), so repeat ticks and racing instances collapse
+ *     onto the same key, and no new recovery email is possible until a NEWER
+ *     silence alert exists (flap cycles inside the silence cooldown cannot
+ *     spam),
+ *   - already-answered episodes are skipped without touching the outbox by
+ *     comparing the newest recovery row's recorded silenceSequence.
+ *
+ * Returns a summary for logging and tests. Never throws on provider
+ * failures — individual send outcomes are tallied and logged.
+ */
+export async function runDeliveryReportRecoveryAlerts(
+  now = new Date(),
+  transport?: TransactionalEmailTransport,
+): Promise<{
+  notifiedProviders: DeliveryReportProvider[];
+  recipientCount: number;
+  attemptedEventKeys: string[];
+  alreadyNotifiedCount: number;
+  failedDeliveryCount: number;
+  skippedDeliveryCount: number;
+}> {
+  const statuses = await deliveryReportStatuses(now);
+  // Only providers that read healthy now AND have received at least one
+  // verified event can have recovered; a stale or never-reporting provider
+  // has nothing to announce.
+  const candidates = (["brevo", "infobip"] as const).filter(
+    (provider) => !statuses[provider].warning && statuses[provider].lastEventAt !== null,
+  );
+  const empty = {
+    notifiedProviders: [] as DeliveryReportProvider[],
+    recipientCount: 0,
+    attemptedEventKeys: [] as string[],
+    alreadyNotifiedCount: 0,
+    failedDeliveryCount: 0,
+    skippedDeliveryCount: 0,
+  };
+  if (!candidates.length) return empty;
+
+  const recipients = await db.select({ email: usersTable.email })
+    .from(usersTable)
+    .where(and(
+      eq(usersTable.active, true),
+      inArray(usersTable.role, ["ADMIN", "SUPER_ADMIN"]),
+    ));
+  if (!recipients.length) return empty;
+
+  // Silence-alert history per provider + recipient: the row count is the
+  // current silence sequence (the recovery eventKey anchor) and the newest
+  // alertAt is the timestamp verified events must postdate. Recovery history
+  // records which silence sequence was already answered.
+  const providerExpr = sql<string>`${emailDeliveriesTable.metadata}->>'provider'`;
+  const [silenceHistory, recoveryHistory] = await Promise.all([
+    db.select({
+      recipientEmail: emailDeliveriesTable.recipientEmail,
+      provider: providerExpr,
+      alertCount: sql<number>`count(*)::int`,
+      lastAlertAtIso: sql<string | null>`max(${emailDeliveriesTable.metadata}->>'alertAt')`,
+    })
+      .from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_ALERT_EMAIL_TYPE))
+      .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
+    db.select({
+      recipientEmail: emailDeliveriesTable.recipientEmail,
+      provider: providerExpr,
+      answeredSequence: sql<number | null>`max((${emailDeliveriesTable.metadata}->>'silenceSequence')::int)`,
+    })
+      .from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_RECOVERY_EMAIL_TYPE))
+      .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
+  ]);
+  const silenceByKey = new Map(silenceHistory.map((row) => [`${row.provider}:${row.recipientEmail}`, row]));
+  const answeredByKey = new Map(recoveryHistory.map((row) => [`${row.provider}:${row.recipientEmail}`, row.answeredSequence ?? 0]));
+
+  let alreadyNotifiedCount = 0;
+  const attemptedEventKeys: string[] = [];
+  const notifiedProviders = new Set<DeliveryReportProvider>();
+  const sends: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>[] = [];
+  for (const provider of candidates) {
+    const status = statuses[provider];
+    const lastEventAt = status.lastEventAt ? new Date(status.lastEventAt) : null;
+    if (!lastEventAt || Number.isNaN(lastEventAt.getTime())) continue;
+    const label = DELIVERY_REPORT_PROVIDER_LABELS[provider];
+    const subject = `LUMERA — izveštaji o isporuci ponovo stižu (${label})`;
+    const htmlContent = lumeraEmailHtml(
+      "Izveštaji o isporuci ponovo stižu",
+      `<p>Provajder <strong>${label}</strong> ponovo javlja status isporuke — poslednji potvrđeni izveštaj primljen je ${formatBelgradeTime(status.lastEventAt)}.</p>
+      <p>Ranije upozorenje o izveštajima koji ne stižu je time razrešeno; webhook radi ispravno i nije potrebna dalja intervencija.</p>`,
+    );
+    for (const recipient of recipients) {
+      const normalizedEmail = recipient.email.toLowerCase();
+      const silence = silenceByKey.get(`${provider}:${normalizedEmail}`);
+      // Never notify a recipient (or provider) that never received a silence
+      // alert — there is no loop to close.
+      if (!silence || !silence.alertCount) continue;
+      const lastAlertAt = silence.lastAlertAtIso ? new Date(silence.lastAlertAtIso) : null;
+      // A missing/unparseable anchor suppresses conservatively, and verified
+      // events must have arrived strictly AFTER the newest silence alert —
+      // otherwise the reports have not actually resumed since the admin was
+      // warned.
+      if (!lastAlertAt || Number.isNaN(lastAlertAt.getTime())) continue;
+      if (lastEventAt.getTime() <= lastAlertAt.getTime()) continue;
+      const sequence = silence.alertCount;
+      if ((answeredByKey.get(`${provider}:${normalizedEmail}`) ?? 0) >= sequence) {
+        alreadyNotifiedCount += 1;
+        continue;
+      }
+      const recipientKey = createHash("sha256").update(normalizedEmail).digest("hex").slice(0, 16);
+      // Anchored on the silence sequence: repeat ticks and racing instances
+      // compute the same eventKey and the unique outbox key collapses them.
+      const eventKey = `delivery-report-recovery-alert:${provider}:${recipientKey}:${sequence}`;
+      attemptedEventKeys.push(eventKey);
+      notifiedProviders.add(provider);
+      sends.push(sendTransactionalEmail({
+        eventKey,
+        emailType: DELIVERY_REPORT_RECOVERY_EMAIL_TYPE,
+        to: { email: recipient.email },
+        subject,
+        htmlContent,
+        metadata: {
+          provider,
+          recoveredAt: now.toISOString(),
+          silenceSequence: sequence,
+          lastEventAt: status.lastEventAt,
+        },
+      }, transport));
+    }
+  }
+
+  const results = await Promise.allSettled(sends);
+  const failedDeliveryCount = results.filter(
+    (result) => result.status === "rejected" || ("failed" in result.value && result.value.failed),
+  ).length;
+  const skippedDeliveryCount = results.filter(
+    (result) => result.status === "fulfilled" && "skipped" in result.value && result.value.skipped,
+  ).length;
+  const deduplicatedCount = results.filter(
+    (result) => result.status === "fulfilled" && "deduplicated" in result.value && result.value.deduplicated,
+  ).length;
+
+  const providers = [...notifiedProviders];
+  if (failedDeliveryCount || skippedDeliveryCount) {
+    logger.warn(
+      { notifiedProviders: providers, recipientCount: recipients.length, alreadyNotifiedCount, failedDeliveryCount, skippedDeliveryCount },
+      "Delivery-report recovery notice delivery did not complete for every administrator",
+    );
+  } else if (attemptedEventKeys.length && deduplicatedCount < results.length) {
+    // Only log when something new actually went out — an already-answered or
+    // fully deduplicated tick is the steady state after a recovery.
+    logger.info(
+      { notifiedProviders: providers, recipientCount: recipients.length, alreadyNotifiedCount },
+      "Delivery-report recovery notice delivery queued",
+    );
+  }
+  return {
+    notifiedProviders: providers,
+    recipientCount: recipients.length,
+    attemptedEventKeys,
+    alreadyNotifiedCount,
     failedDeliveryCount,
     skippedDeliveryCount,
   };

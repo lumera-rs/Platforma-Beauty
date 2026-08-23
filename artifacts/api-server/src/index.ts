@@ -21,7 +21,7 @@ import {
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
-import { runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
+import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
 
 const rawPort = process.env["PORT"];
 
@@ -137,10 +137,19 @@ const deliveryReportAlertInterval = setInterval(() => {
   void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
     logger.warn({ err: error }, "Delivery-report silence alert scheduler failed");
   });
+  // Recovery notices close the loop: once a previously-alerted provider
+  // reports verified events again, each alerted admin gets a single
+  // "reports are arriving again" email (anchored per silence episode).
+  void runDeliveryReportRecoveryAlerts().catch((error: unknown) => {
+    logger.warn({ err: error }, "Delivery-report recovery notice scheduler failed");
+  });
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
 void runDeliveryReportSilenceAlerts().catch((error: unknown) => {
   logger.warn({ err: error }, "Delivery-report silence alert initial run failed");
+});
+void runDeliveryReportRecoveryAlerts().catch((error: unknown) => {
+  logger.warn({ err: error }, "Delivery-report recovery notice initial run failed");
 });
 compatibilityImageCleanupInterval.unref();
 void cleanupExpiredImageAssets().catch((error) => {
