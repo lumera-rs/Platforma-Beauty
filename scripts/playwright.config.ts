@@ -66,6 +66,7 @@ if (isolatedBrowserTest) {
 
 export default defineConfig({
   testDir: "./browser",
+  globalSetup: "./src/browser-preflight.ts",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: releaseBrowserTest ? 0 : process.env.CI ? 2 : 0,
