@@ -711,21 +711,23 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       .groupBy(automationRunsTable.ruleId);
 
     // Preceding window of the same length (compare=previous): only the counts
-    // the overview renders trends for — delivered, opened, and attributed
-    // appointments — aggregated over [prevCutoff, window.start).
-    let prevRunsByRule: Map<string, { attributedAppointments: number }> | null = null;
+    // the overview renders trends for — delivered, opened, attributed
+    // appointments, and attributed revenue — aggregated over
+    // [prevCutoff, window.start).
+    let prevRunsByRule: Map<string, { attributedAppointments: number; attributedRevenue: number }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
     if (prevCutoff && window.start) {
-      // Same non-cancelled join as the current-period aggregate: a cancelled
-      // appointment is not campaign-earned, so it must not count in either
-      // window or the trend direction would be wrong.
+      // Same realized-attribution join as the current-period aggregate: a
+      // cancelled or no-show appointment is not campaign-earned, so it must
+      // not count in either window or the trend direction would be wrong.
       const prevRunAgg = await db
         .select({
           ruleId: automationRunsTable.ruleId,
           // Same realized-attribution semantics as the current window: the
           // join excludes cancelled and no-show appointments so trend arrows
-          // compare like-for-like counts.
+          // compare like-for-like counts and revenue.
           attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
+          attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         })
         .from(automationRunsTable)
         .leftJoin(appointmentsTable, and(
@@ -747,7 +749,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         .where(and(inArray(automationRunsTable.ruleId, ruleIds), statsDeliveryPeriodRangeCondition(prevCutoff, window.start)))
         .groupBy(automationRunsTable.ruleId);
 
-      prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments }]));
+      prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, { attributedAppointments: r.attributedAppointments, attributedRevenue: r.attributedRevenue }]));
       prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
         emailDeliveredCount: d.emailDeliveredCount,
         emailOpenedCount: d.emailOpenedCount,
@@ -764,6 +766,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       const previous = prevRunsByRule && prevDeliveriesByRule
         ? {
             attributedAppointments: prevRunsByRule.get(rule.id)?.attributedAppointments ?? 0,
+            attributedRevenue: prevRunsByRule.get(rule.id)?.attributedRevenue ?? 0,
             emailDeliveredCount: prevDeliveriesByRule.get(rule.id)?.emailDeliveredCount ?? 0,
             emailOpenedCount: prevDeliveriesByRule.get(rule.id)?.emailOpenedCount ?? 0,
             smsDeliveredCount: prevDeliveriesByRule.get(rule.id)?.smsDeliveredCount ?? 0,
@@ -890,11 +893,12 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       .where(and(eq(automationRunsTable.ruleId, rule.id), statsDeliveryPeriodCondition(window)));
 
     // Preceding window of the same length (compare=previous): only the counts
-    // the stats dialog renders trends for — delivered, opened, and attributed
-    // appointments — aggregated over [prevCutoff, cutoff). Same shape as the
-    // overview endpoint's `previous` block so the UI trends stay consistent.
+    // the stats dialog renders trends for — delivered, opened, attributed
+    // appointments, and attributed revenue — aggregated over
+    // [prevCutoff, cutoff). Same shape as the overview endpoint's `previous`
+    // block so the UI trends stay consistent.
     let previous:
-      | { attributedAppointments: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
+      | { attributedAppointments: number; attributedRevenue: number; emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }
       | undefined;
     if (prevCutoff && window.start) {
       // Same realized-attribution join as the current-period aggregate: a
@@ -903,6 +907,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       const [prevRuns] = await db
         .select({
           attributedAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null then 1 else 0 end)::int`,
+          attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         })
         .from(automationRunsTable)
         .leftJoin(appointmentsTable, and(
@@ -923,6 +928,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
 
       previous = {
         attributedAppointments: prevRuns?.attributedAppointments ?? 0,
+        attributedRevenue: prevRuns?.attributedRevenue ?? 0,
         emailDeliveredCount: prevDeliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: prevDeliveries?.emailOpenedCount ?? 0,
         smsDeliveredCount: prevDeliveries?.smsDeliveredCount ?? 0,

@@ -11,6 +11,8 @@
  */
 export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
+  /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
+  attributedRevenue: number;
   emailDeliveredCount: number;
   emailOpenedCount: number;
   smsDeliveredCount: number;

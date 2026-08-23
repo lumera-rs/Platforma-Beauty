@@ -365,6 +365,7 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                     <span className="text-lg font-bold text-primary">{item.attributedAppointments}</span>
                     <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
                       {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
+                      {item.previous && <span className="ml-1.5"><TrendIndicator current={item.attributedRevenue ?? 0} previous={item.previous.attributedRevenue ?? 0} testId={`trend-revenue-${item.ruleId}`} /></span>}
                     </div>
                     {item.attributedAppointments > 0 && (
                       <div className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid={`overview-revenue-split-${item.ruleId}`}>
@@ -829,6 +830,9 @@ export default function OwnerAutomations() {
                 )}
                 <p className="text-sm font-semibold text-emerald-800 mt-1" data-testid="stats-attributed-revenue">
                   {(statsData.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD prihoda
+                  {statsData.previous && (
+                    <span className="ml-1.5"><TrendIndicator current={statsData.attributedRevenue ?? 0} previous={statsData.previous.attributedRevenue ?? 0} testId="stats-trend-revenue" /></span>
+                  )}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-1" data-testid="stats-revenue-split">
                   Ostvareno: {(statsData.completedRevenue ?? 0).toLocaleString("sr-RS")} RSD ({statsData.completedAppointments}) · Zakazano: {(statsData.upcomingRevenue ?? 0).toLocaleString("sr-RS")} RSD ({statsData.upcomingAppointments})

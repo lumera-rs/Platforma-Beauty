@@ -49,3 +49,4 @@
 - [Alert fallback channels](alert-fallback-channels.md) — fallbacks fire only when every attempted primary send failed/skipped, and dedup by embedding the primary alert sequence in the outbox key.
 - [Platform-wide preview guards](platform-wide-preview-guards.md) — admin dry-runs over all tenants must bound rows in memory and enforce the time budget on every step, database-side included.
 - [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form's loaded base version, not the live polled one.
+- [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.

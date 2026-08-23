@@ -6930,10 +6930,13 @@ components:
           description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
           properties:
             attributedAppointments: { type: number }
+            attributedRevenue:
+              type: number
+              description: Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.
             emailDeliveredCount: { type: number }
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
-          required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
+          required: [attributedAppointments, attributedRevenue, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
       required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:
@@ -7016,10 +7019,13 @@ components:
           description: Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded period.
           properties:
             attributedAppointments: { type: number }
+            attributedRevenue:
+              type: number
+              description: Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.
             emailDeliveredCount: { type: number }
             emailOpenedCount: { type: number }
             smsDeliveredCount: { type: number }
-          required: [attributedAppointments, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
+          required: [attributedAppointments, attributedRevenue, emailDeliveredCount, emailOpenedCount, smsDeliveredCount]
       required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:

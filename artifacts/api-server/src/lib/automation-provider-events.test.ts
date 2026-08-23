@@ -181,6 +181,7 @@ async function captureWebhookLogs(): Promise<{ output: string; exitCode: number 
   return { output, exitCode };
 }
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 async function run() {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -1460,6 +1461,8 @@ async function run() {
       assert.equal(previous["smsDeliveredCount"], 1, "previous window SMS delivery counted");
       assert.equal(previous["attributedAppointments"], 1,
         "cancelled and no-show appointments must not count as attributed in the previous window");
+      assert.equal(previous["attributedRevenue"], 2000,
+        "previous window revenue must sum only realized (non-cancelled, non-no-show) attributed appointments");
 
       // The overview endpoint must apply the same cancelled/no-show filter to
       // its previous block, so both surfaces show the same trend direction.
@@ -1474,6 +1477,8 @@ async function run() {
       assert.ok(overviewPrevious, "overview compare=previous must include a previous block");
       assert.equal(overviewPrevious["attributedAppointments"], 1,
         "overview previous window must exclude cancelled and no-show appointments too");
+      assert.equal(overviewPrevious["attributedRevenue"], 2000,
+        "overview previous window revenue must match the per-rule stats");
       assert.equal(overviewPrevious["emailDeliveredCount"], 1);
       assert.equal(overviewPrevious["smsDeliveredCount"], 1);
 
