@@ -9849,6 +9849,7 @@ export const AdminGetRetentionSettingsResponse = zod.object({
   "vipSpendPercentOfMedian": zod.number().min(adminGetRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMin).max(adminGetRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMax).multipleOf(adminGetRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
 }),
   "changedByUserId": zod.string().nullable(),
+  "changedByName": zod.string().nullable().describe('Resolved display name of the admin who made the change; null for platform defaults or when the user is unknown'),
   "changedAt": zod.string().nullable().describe('ISO timestamp of the change; null for platform defaults'),
   "isDefault": zod.boolean(),
   "defaults": zod.object({
@@ -9975,6 +9976,7 @@ export const AdminUpdateRetentionSettingsResponse = zod.object({
   "vipSpendPercentOfMedian": zod.number().min(adminUpdateRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMin).max(adminUpdateRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMax).multipleOf(adminUpdateRetentionSettingsResponseThresholdsVipSpendPercentOfMedianMultipleOf).describe('VIP when total spend exceeds salon median × this percent (200 = 2×)')
 }),
   "changedByUserId": zod.string().nullable(),
+  "changedByName": zod.string().nullable().describe('Resolved display name of the admin who made the change; null for platform defaults or when the user is unknown'),
   "changedAt": zod.string().nullable().describe('ISO timestamp of the change; null for platform defaults'),
   "isDefault": zod.boolean(),
   "defaults": zod.object({

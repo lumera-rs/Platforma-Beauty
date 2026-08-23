@@ -1857,6 +1857,7 @@ function settingsView(s: Awaited<ReturnType<typeof getActiveRetentionSettings>>)
     version: s.version,
     thresholds: s.thresholds,
     changedByUserId: s.changedByUserId,
+    changedByName: s.changedByName,
     changedAt: s.changedAt ? s.changedAt.toISOString() : null,
     isDefault: s.version === 0,
     defaults: { ...DEFAULT_RETENTION_THRESHOLDS },

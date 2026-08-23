@@ -431,8 +431,10 @@ export default function AdminRetentionSettings() {
               )}
             </CardTitle>
             {settings && !settings.isDefault && settings.changedAt && (
-              <CardDescription>
+              <CardDescription data-testid="retention-settings-last-change">
                 Poslednja izmena: {format(new Date(settings.changedAt), "dd.MM.yyyy. HH:mm")}
+                {" — "}
+                {settings.changedByName ?? "Nepoznat administrator"}
               </CardDescription>
             )}
           </CardHeader>

@@ -360,6 +360,7 @@ async function integrationTests() {
       assert.equal(active0.isDefault, true);
       assert.deepEqual(active0.thresholds, DEFAULT_RETENTION_THRESHOLDS);
       assert.equal(active0.changedByUserId, null);
+      assert.equal(active0.changedByName, null, "platform defaults have no changer name");
       assert.equal(active0.changedAt, null);
     }
     console.log("✓ GET active settings");
@@ -410,7 +411,13 @@ async function integrationTests() {
     assert.equal(baseline.version, initialVersion + 1, "versions increment sequentially");
     assert.equal(baseline.isDefault, false);
     assert.equal(baseline.changedByUserId, admin.id, "change records who made it");
+    assert.equal(baseline.changedByName, "Retention Admin", "change resolves the admin's display name");
     assert.ok(baseline.changedAt, "change records when it was made");
+
+    // The active-settings GET resolves the same name the history endpoint
+    // shows, so the card can display "who last touched it" without history.
+    const activeAfterBaseline = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    assert.equal(((await activeAfterBaseline.json()) as any).changedByName, "Retention Admin", "GET active settings resolves changedByName");
     console.log("✓ Valid update creates a new audited version");
 
     // ── 11c. Optimistic concurrency: stale expectedVersion → 409 ────────────

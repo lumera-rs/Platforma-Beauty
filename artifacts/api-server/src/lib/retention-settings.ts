@@ -42,6 +42,8 @@ export interface ActiveRetentionSettings {
   version: number;
   thresholds: RetentionThresholds;
   changedByUserId: string | null;
+  /** Resolved display name of the admin who made the change; null when unknown. */
+  changedByName: string | null;
   changedAt: Date | null;
   /** How the active version came to be — manual edit or a labelled restore. */
   changeSource: RetentionChangeSource;
@@ -103,6 +105,14 @@ function rowToThresholds(
   };
 }
 
+/** "First Last" from nullable name parts, or null when both are missing. */
+function formatChangedByName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): string | null {
+  return firstName || lastName ? `${firstName ?? ""} ${lastName ?? ""}`.trim() : null;
+}
+
 /** Returns the active (highest-version) settings, or defaults as version 0. */
 /** Any drizzle executor — the shared pool or an open transaction. */
 type RetentionDbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -110,8 +120,13 @@ export async function getActiveRetentionSettings(
   executor: RetentionDbExecutor = db,
 ): Promise<ActiveRetentionSettings> {
   const [row] = await executor
-    .select()
+    .select({
+      settings: platformRetentionSettingsTable,
+      changedByFirstName: usersTable.firstName,
+      changedByLastName: usersTable.lastName,
+    })
     .from(platformRetentionSettingsTable)
+    .leftJoin(usersTable, eq(platformRetentionSettingsTable.changedByUserId, usersTable.id))
     .orderBy(desc(platformRetentionSettingsTable.version))
     .limit(1);
 
@@ -120,18 +135,20 @@ export async function getActiveRetentionSettings(
       version: 0,
       thresholds: { ...DEFAULT_RETENTION_THRESHOLDS },
       changedByUserId: null,
+      changedByName: null,
       changedAt: null,
       changeSource: "manual",
       restoredFromVersion: null,
     };
   }
   return {
-    version: row.version,
-    thresholds: rowToThresholds(row),
-    changedByUserId: row.changedByUserId,
-    changedAt: row.createdAt,
-    changeSource: (row.changeSource as RetentionChangeSource) ?? "manual",
-    restoredFromVersion: row.restoredFromVersion,
+    version: row.settings.version,
+    thresholds: rowToThresholds(row.settings),
+    changedByUserId: row.settings.changedByUserId,
+    changedByName: formatChangedByName(row.changedByFirstName, row.changedByLastName),
+    changedAt: row.settings.createdAt,
+    changeSource: (row.settings.changeSource as RetentionChangeSource) ?? "manual",
+    restoredFromVersion: row.settings.restoredFromVersion,
   };
 }
 
@@ -259,7 +276,18 @@ export async function updateRetentionSettings(
       })
       .returning();
     if (!row) throw new Error("Failed to insert retention settings version.");
-    return { kind: "inserted", row } as const;
+    // Resolve the changer's display name so the returned settings carry the
+    // same fields as getActiveRetentionSettings (the active-card view).
+    const [changer] = await tx
+      .select({ firstName: usersTable.firstName, lastName: usersTable.lastName })
+      .from(usersTable)
+      .where(eq(usersTable.id, changedByUserId))
+      .limit(1);
+    return {
+      kind: "inserted",
+      row,
+      changedByName: formatChangedByName(changer?.firstName, changer?.lastName),
+    } as const;
   });
 
   if (outcome.kind === "conflict") {
@@ -275,6 +303,7 @@ export async function updateRetentionSettings(
       version: inserted.version,
       thresholds: rowToThresholds(inserted),
       changedByUserId: inserted.changedByUserId,
+      changedByName: outcome.changedByName,
       changedAt: inserted.createdAt,
       changeSource: (inserted.changeSource as RetentionChangeSource) ?? "manual",
       restoredFromVersion: inserted.restoredFromVersion,
@@ -671,10 +700,7 @@ export async function getRetentionSettingsHistory(): Promise<RetentionSettingsHi
         ? rowToThresholds(prior.settings)
         : { ...DEFAULT_RETENTION_THRESHOLDS },
       changedByUserId: row.settings.changedByUserId,
-      changedByName:
-        row.changedByFirstName || row.changedByLastName
-          ? `${row.changedByFirstName ?? ""} ${row.changedByLastName ?? ""}`.trim()
-          : null,
+      changedByName: formatChangedByName(row.changedByFirstName, row.changedByLastName),
       changedAt: row.settings.createdAt,
       changeSource: (row.settings.changeSource as RetentionChangeSource) ?? "manual",
       restoredFromVersion: row.settings.restoredFromVersion,

@@ -15,6 +15,11 @@ export interface RetentionSettings {
   /** @nullable */
   changedByUserId: string | null;
   /**
+     * Resolved display name of the admin who made the change; null for platform defaults or when the user is unknown
+     * @nullable
+     */
+  changedByName: string | null;
+  /**
      * ISO timestamp of the change; null for platform defaults
      * @nullable
      */
