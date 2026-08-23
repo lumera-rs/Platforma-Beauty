@@ -1378,6 +1378,18 @@ async function run() {
       });
       assert.ok(brevoReceipt.getTime() > alert1At.getTime(), "verified events postdate the synthetic alert");
 
+      // Old/manual outbox rows can contain non-numeric JSON. The history
+      // aggregate must ignore that row rather than crashing the entire
+      // scheduler cycle while it evaluates a legitimate recovery.
+      const malformedRecoveryKey = `pe-recovery-malformed-sequence-${suffix}`;
+      cleanup.emailEventKeys.push(malformedRecoveryKey);
+      await db.insert(emailDeliveriesTable).values({
+        eventKey: malformedRecoveryKey, emailType: "delivery_report_recovery_alert",
+        recipientEmail: recoveryAdminEmail, subject: "PE malformed recovery", htmlContent: "<p>x</p>",
+        status: "sent", sentAt: alert1At,
+        metadata: { provider: "brevo", silenceSequence: "not-a-number" },
+      });
+
       // While the provider still reads SILENT, history + resumed events must
       // not trigger a notice. probeAt is far enough ahead that a grace-aged
       // qualifying email send exists with no receipt after it.

@@ -70,6 +70,7 @@ import {
   type TransactionalEmailTransport,
 } from "./brevo";
 import { logger } from "./logger";
+import { withSchedulerDependency } from "./scheduler-resilience";
 import {
   deliveryReportStatuses,
   DELIVERY_REPORT_WINDOW_HOURS,
@@ -151,7 +152,10 @@ export async function runDeliveryReportSilenceAlerts(
   skippedDeliveryCount: number;
   smsFallback: SmsFallbackSummary;
 }> {
-  const statuses = await deliveryReportStatuses(now);
+  const statuses = await withSchedulerDependency(
+    "delivery-report-statuses",
+    () => deliveryReportStatuses(now),
+  );
   const staleProviders = staleDeliveryReportProviders(statuses);
   const empty = {
     staleProviders,
@@ -369,7 +373,10 @@ export async function runDeliveryReportRecoveryAlerts(
   failedDeliveryCount: number;
   skippedDeliveryCount: number;
 }> {
-  const statuses = await deliveryReportStatuses(now);
+  const statuses = await withSchedulerDependency(
+    "delivery-report-statuses",
+    () => deliveryReportStatuses(now),
+  );
   // Only providers that read healthy now AND have received at least one
   // verified event can have recovered; a stale or never-reporting provider
   // has nothing to announce.
@@ -386,9 +393,12 @@ export async function runDeliveryReportRecoveryAlerts(
   };
   if (!candidates.length) return empty;
 
-  const recipients = await db.select({ email: usersTable.email })
-    .from(usersTable)
-    .where(smsFallbackAdminAudiencePredicate());
+  const recipients = await withSchedulerDependency(
+    "delivery-report-recipients",
+    () => db.select({ email: usersTable.email })
+      .from(usersTable)
+      .where(smsFallbackAdminAudiencePredicate()),
+  );
   if (!recipients.length) return empty;
 
   // Silence-alert history per provider + recipient: the row count is the
@@ -396,25 +406,35 @@ export async function runDeliveryReportRecoveryAlerts(
   // alertAt is the timestamp verified events must postdate. Recovery history
   // records which silence sequence was already answered.
   const providerExpr = sql<string>`${emailDeliveriesTable.metadata}->>'provider'`;
-  const [silenceHistory, recoveryHistory] = await Promise.all([
-    db.select({
-      recipientEmail: emailDeliveriesTable.recipientEmail,
-      provider: providerExpr,
-      alertCount: sql<number>`count(*)::int`,
-      lastAlertAtIso: sql<string | null>`max(${emailDeliveriesTable.metadata}->>'alertAt')`,
-    })
-      .from(emailDeliveriesTable)
-      .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_ALERT_EMAIL_TYPE))
-      .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
-    db.select({
-      recipientEmail: emailDeliveriesTable.recipientEmail,
-      provider: providerExpr,
-      answeredSequence: sql<number | null>`max((${emailDeliveriesTable.metadata}->>'silenceSequence')::int)`,
-    })
-      .from(emailDeliveriesTable)
-      .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_RECOVERY_EMAIL_TYPE))
-      .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
-  ]);
+  const [silenceHistory, recoveryHistory] = await withSchedulerDependency(
+    "delivery-report-history",
+    () => Promise.all([
+      db.select({
+        recipientEmail: emailDeliveriesTable.recipientEmail,
+        provider: providerExpr,
+        alertCount: sql<number>`count(*)::int`,
+        lastAlertAtIso: sql<string | null>`max(${emailDeliveriesTable.metadata}->>'alertAt')`,
+      })
+        .from(emailDeliveriesTable)
+        .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_ALERT_EMAIL_TYPE))
+        .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
+      db.select({
+        recipientEmail: emailDeliveriesTable.recipientEmail,
+        provider: providerExpr,
+        // Legacy rows can carry arbitrary JSON. Only a bounded non-negative
+        // integer is a valid sequence; malformed metadata must not abort the
+        // complete recovery scheduler run.
+        answeredSequence: sql<number | null>`max(case
+          when (${emailDeliveriesTable.metadata}->>'silenceSequence') ~ '^[0-9]{1,9}$'
+          then (${emailDeliveriesTable.metadata}->>'silenceSequence')::int
+          else null
+        end)`,
+      })
+        .from(emailDeliveriesTable)
+        .where(eq(emailDeliveriesTable.emailType, DELIVERY_REPORT_RECOVERY_EMAIL_TYPE))
+        .groupBy(emailDeliveriesTable.recipientEmail, providerExpr),
+    ]),
+  );
   const silenceByKey = new Map(silenceHistory.map((row) => [`${row.provider}:${row.recipientEmail}`, row]));
   const answeredByKey = new Map(recoveryHistory.map((row) => [`${row.provider}:${row.recipientEmail}`, row.answeredSequence ?? 0]));
 

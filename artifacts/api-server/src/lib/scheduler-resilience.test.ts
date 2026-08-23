@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { createResilientScheduledJob, isTransientDatabaseFailure, type SchedulerTimer } from "./scheduler-resilience";
+import {
+  createResilientScheduledJob,
+  isTransientDatabaseFailure,
+  schedulerFailureDiagnostics,
+  type SchedulerTimer,
+  withSchedulerDependency,
+} from "./scheduler-resilience";
 
 type ScheduledTimer = { callback: () => void; delayMs: number; cleared: boolean };
 
@@ -31,6 +37,55 @@ async function run(): Promise<void> {
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("connection timed out"), { code: "08006" })), true);
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("socket reset"), { code: "ECONNRESET" })), true);
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("missing relation"), { code: "42P01" })), false);
+  {
+    const source = Object.assign(new Error("relation secret_table does not exist"), { code: "42P01" });
+    await assert.rejects(
+      () => withSchedulerDependency("education-gallery-candidates", async () => { throw source; }),
+      (error) => {
+        assert.deepEqual(schedulerFailureDiagnostics(error), {
+          dependency: "education-gallery-candidates",
+          errorCode: "42P01",
+          errorType: "SchedulerDependencyError",
+          causeType: "Error",
+        });
+        return true;
+      },
+    );
+  }
+  {
+    const source = new Error("connection timed out");
+    let wrappedFailure: unknown;
+    await assert.rejects(
+      () => withSchedulerDependency("delivery-report-statuses", async () => { throw source; }),
+      (error) => {
+        wrappedFailure = error;
+        assert.deepEqual(schedulerFailureDiagnostics(error), {
+          dependency: "delivery-report-statuses",
+          errorCode: "unknown",
+          errorType: "SchedulerDependencyError",
+          causeType: "Error",
+        });
+        return true;
+      },
+    );
+    assert.equal(
+      isTransientDatabaseFailure(wrappedFailure),
+      true,
+      "a wrapper must preserve message-only transient classification from its cause",
+    );
+
+    const fake = createFakeTimer();
+    const job = createResilientScheduledJob({
+      job: "delivery-report-status-timeout",
+      run: () => withSchedulerDependency("delivery-report-statuses", async () => { throw source; }),
+      timer: fake.timer,
+      random: () => 0.5,
+    });
+    await job.run();
+    assert.equal(job.snapshot().state, "retrying");
+    assert.equal(job.snapshot().lastFailureClass, "transient_database");
+    assert.equal(fake.scheduled.length, 1, "wrapped status timeouts retain bounded retry behavior");
+  }
 
   {
     const fake = createFakeTimer();

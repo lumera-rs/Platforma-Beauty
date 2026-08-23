@@ -367,7 +367,7 @@ import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmati
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
-import { schedulerHealthSnapshot } from "../lib/scheduler-resilience";
+import { schedulerHealthSnapshot, withSchedulerDependency } from "../lib/scheduler-resilience";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -2037,8 +2037,12 @@ type EducationGalleryCleanupResult = {
 };
 
 const EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT = 3;
-type EducationGalleryCleanupOptions = {
+type EducationGalleryCleanupCandidate = typeof educationMediaUploadsTable.$inferSelect;
+
+export type EducationGalleryCleanupOptions = {
   notify?: (alert: EducationGalleryCleanupAlert, now: Date) => Promise<unknown>;
+  /** Test seam for controlled run-level database failure regression coverage. */
+  loadCandidates?: (now: Date) => Promise<EducationGalleryCleanupCandidate[]>;
 };
 
 function educationMediaUploadCleanupEligibility(now: Date) {
@@ -2123,10 +2127,15 @@ export async function cleanupEducationMediaUpload(
 
 export async function runEducationGalleryCleanup(options: EducationGalleryCleanupOptions = {}): Promise<EducationGalleryCleanupResult> {
   const now = new Date();
-  const candidates = await db.select().from(educationMediaUploadsTable)
-    .where(educationMediaUploadCleanupEligibility(now))
-    .orderBy(asc(educationMediaUploadsTable.createdAt))
-    .limit(100);
+  const candidates = await withSchedulerDependency(
+    "education-gallery-candidates",
+    () => options.loadCandidates
+      ? options.loadCandidates(now)
+      : db.select().from(educationMediaUploadsTable)
+        .where(educationMediaUploadCleanupEligibility(now))
+        .orderBy(asc(educationMediaUploadsTable.createdAt))
+        .limit(100),
+  );
   const result: EducationGalleryCleanupResult = {
     scanned: candidates.length,
     deletedTickets: 0,

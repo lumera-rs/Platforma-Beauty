@@ -1,7 +1,50 @@
 import { logger } from "./logger";
+import { randomUUID } from "node:crypto";
 
 export type SchedulerFailureClass = "transient_database" | "permanent";
 export type SchedulerRunState = "idle" | "running" | "retrying" | "failed";
+
+export const SCHEDULER_DEPENDENCIES = [
+  "delivery-report-statuses",
+  "delivery-report-recipients",
+  "delivery-report-history",
+  "education-gallery-candidates",
+] as const;
+
+export type SchedulerDependency = typeof SCHEDULER_DEPENDENCIES[number];
+
+class SchedulerDependencyError extends Error {
+  readonly dependency: SchedulerDependency;
+
+  constructor(dependency: SchedulerDependency, cause: unknown) {
+    super("Scheduled job dependency failed");
+    this.name = "SchedulerDependencyError";
+    this.dependency = dependency;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Preserves the original failure for retry classification while tagging the
+ * known dependency boundary. The boundary is static and safe to put in logs.
+ */
+export async function withSchedulerDependency<T>(
+  dependency: SchedulerDependency,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw new SchedulerDependencyError(dependency, error);
+  }
+}
+
+export type SchedulerFailureDiagnostics = {
+  dependency: SchedulerDependency | "unknown";
+  errorCode: string | "unknown";
+  errorType: string;
+  causeType: string | "unknown";
+};
 
 export type SchedulerJobHealth = {
   job: string;
@@ -67,6 +110,72 @@ function errorMessage(error: unknown): string {
   return "";
 }
 
+const SAFE_ERROR_TYPES = new Set([
+  "SchedulerDependencyError",
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "AbortError",
+  "AggregateError",
+  "PostgresError",
+  "DatabaseError",
+  "FetchError",
+]);
+
+const SAFE_NETWORK_ERROR_CODES = new Set([
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EPIPE",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function safeErrorType(error: unknown): string {
+  const name = error instanceof Error
+    ? error.name
+    : error && typeof error === "object" && typeof (error as { name?: unknown }).name === "string"
+      ? (error as { name: string }).name
+      : "unknown";
+  return SAFE_ERROR_TYPES.has(name) ? name : "unknown";
+}
+
+function safeErrorCode(error: unknown): string | "unknown" {
+  const code = errorCode(error);
+  if (!code) return "unknown";
+  // PostgreSQL SQLSTATE values and a short set of Node/undici network codes
+  // are opaque implementation identifiers, unlike error messages or queries.
+  if (/^[0-9A-Z]{5}$/.test(code) || SAFE_NETWORK_ERROR_CODES.has(code)) return code;
+  return "unknown";
+}
+
+/**
+ * Returns only allowlisted diagnostics. Never add error messages, SQL, URLs,
+ * request bodies, stack traces, or arbitrary custom error fields here.
+ */
+export function schedulerFailureDiagnostics(error: unknown): SchedulerFailureDiagnostics {
+  const seen = new Set<unknown>();
+  let candidate: unknown = error;
+  let dependency: SchedulerDependency | "unknown" = "unknown";
+  let errorCodeValue: string | "unknown" = "unknown";
+  let errorType = "unknown";
+  let causeType: string | "unknown" = "unknown";
+
+  while (candidate && typeof candidate === "object" && !seen.has(candidate)) {
+    seen.add(candidate);
+    const candidateType = safeErrorType(candidate);
+    if (errorType === "unknown") errorType = candidateType;
+    else if (causeType === "unknown" && candidateType !== "unknown") causeType = candidateType;
+    if (errorCodeValue === "unknown") errorCodeValue = safeErrorCode(candidate);
+    if (candidate instanceof SchedulerDependencyError) dependency = candidate.dependency;
+    candidate = (candidate as { cause?: unknown }).cause;
+  }
+
+  return { dependency, errorCode: errorCodeValue, errorType, causeType };
+}
+
 /**
  * True only for failures where another connection attempt can reasonably
  * recover work. SQL mistakes, invalid data, and configuration errors stay
@@ -91,6 +200,11 @@ export function isTransientDatabaseFailure(error: unknown): boolean {
       || code === "ECONNREFUSED"
       || code === "EPIPE"
     ) {
+      return true;
+    }
+    if (/\b(connection|connect|socket|network).{0,40}\b(timeout|timed out|reset|refused|closed|terminated)\b/i.test(
+      errorMessage(candidate),
+    )) {
       return true;
     }
 
@@ -175,7 +289,9 @@ export class ResilientScheduledJob {
 
     this.running = true;
     this.health.state = "running";
-    this.health.lastStartedAt = this.timer.now().toISOString();
+    const startedAt = this.timer.now();
+    const runId = randomUUID();
+    this.health.lastStartedAt = startedAt.toISOString();
     try {
       await this.runJob();
       this.retryAttempts = 0;
@@ -189,6 +305,8 @@ export class ResilientScheduledJob {
       const failureClass: SchedulerFailureClass = isTransientDatabaseFailure(error)
         ? "transient_database"
         : "permanent";
+      const diagnostics = schedulerFailureDiagnostics(error);
+      const durationMs = Math.max(0, this.timer.now().getTime() - startedAt.getTime());
       this.health.lastFailedAt = this.timer.now().toISOString();
       this.health.lastFailureClass = failureClass;
       this.health.consecutiveFailures += 1;
@@ -198,14 +316,30 @@ export class ResilientScheduledJob {
         this.health.deferredCycles += 1;
         this.scheduleRetry();
         logger.warn(
-          { job: this.job, retryAttempt: this.retryAttempts, maxRetryAttempts: this.maxRetryAttempts },
+          {
+            job: this.job,
+            runId,
+            isRetry,
+            durationMs,
+            ...diagnostics,
+            retryAttempt: this.retryAttempts,
+            maxRetryAttempts: this.maxRetryAttempts,
+          },
           "Scheduler database failure deferred for bounded retry",
         );
       } else {
         this.health.state = "failed";
         this.health.nextRetryAt = null;
         logger.error(
-          { job: this.job, failureClass, retryAttempts: this.retryAttempts },
+          {
+            job: this.job,
+            runId,
+            isRetry,
+            durationMs,
+            failureClass,
+            ...diagnostics,
+            retryAttempts: this.retryAttempts,
+          },
           "Scheduler job failed; waiting for its next normal cycle",
         );
       }
