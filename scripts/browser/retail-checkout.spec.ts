@@ -311,10 +311,60 @@ test("retail checkout offers a retry after a failed quote refresh", async ({ pag
   }
 });
 
+test("retail checkout offers a retry after the initial quote fails without reloading", async ({ page }) => {
+  let allowPreview = false;
+  const previewRequests: string[] = [];
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+  await page.route("**/api/retail/checkout-preview?**", async (route) => {
+    previewRequests.push(route.request().url());
+    if (!allowPreview) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nije moguće učitati pregled." }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await createCartAndOpenCheckout(page);
+  const checkoutUrl = page.url();
+  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
+  const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
+  await expect(retryButton).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Privremeno nije moguće učitati pregled.");
+  await expect(confirmButton).toBeDisabled();
+
+  await fillCheckoutContact(page, "Beograd");
+  await page.locator('input[type="radio"]').nth(1).check();
+  await expect(retryButton).toBeVisible();
+
+  allowPreview = true;
+  const retriedPreview = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/retail/checkout-preview"
+      && url.searchParams.get("deliveryMethod") === "personal_belgrade"
+      && url.searchParams.get("city") === "Beograd";
+  });
+  await retryButton.click();
+  await retriedPreview;
+
+  await expect(retryButton).not.toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+  await expect(confirmButton).toBeEnabled();
+  expect(page.url()).toBe(checkoutUrl);
+  expect(mainFrameNavigations).toBe(1);
+  expect(previewRequests.length).toBeGreaterThanOrEqual(3);
+});
+
 test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
-  const confirmButton = page.locator("form").getByRole("button");
+  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
   await expect(confirmButton).toBeEnabled();
 
   expect(productId).toBeTruthy();

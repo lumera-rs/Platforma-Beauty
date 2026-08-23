@@ -89,6 +89,7 @@ export function RetailCheckoutPage() {
       .catch((error: unknown) => {
         if (!active || (error instanceof DOMException && error.name === "AbortError")) return;
         setPreview(null);
+        setQuoteRefreshError(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se učita.");
       })
       .finally(() => {
         if (active) setPreviewLoading(false);
