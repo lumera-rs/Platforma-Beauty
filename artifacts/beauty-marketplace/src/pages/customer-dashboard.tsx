@@ -36,7 +36,7 @@ import { useLocation, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
@@ -160,6 +160,23 @@ export default function CustomerDashboard() {
   // is observed by a render, so accept the query from either source.
   const requestedTab = new URLSearchParams(location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search).get("tab");
   const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" ? requestedTab : "appointments";
+  const tabsSectionRef = useRef<HTMLDivElement>(null);
+  const previousTabRef = useRef<string | null>(null);
+
+  // Scroll the tab panel into view whenever the active tab changes (tab click
+  // or an in-app link with ?tab=...), otherwise on long pages the switch
+  // happens below the fold and looks like nothing happened. Skip the initial
+  // render so plain page loads keep their normal scroll position.
+  useEffect(() => {
+    if (previousTabRef.current !== null && previousTabRef.current !== activeTab) {
+      const section = tabsSectionRef.current;
+      if (section) {
+        // Offset for the sticky navbar so the tab bar stays visible.
+        window.scrollTo({ top: Math.max(0, section.getBoundingClientRect().top + window.scrollY - 88), behavior: "smooth" });
+      }
+    }
+    previousTabRef.current = activeTab;
+  }, [activeTab]);
 
   useEffect(() => {
     const search = location.includes("?") ? location.slice(location.indexOf("?")) : window.location.search;
@@ -176,8 +193,10 @@ export default function CustomerDashboard() {
       toast.error("Povezivanje nije uspelo", { description: oauthError });
     }
 
-    window.history.replaceState(null, "", `${window.location.pathname}?tab=settings`);
-  }, [location, refetchSignInMethods, toast]);
+    // Navigate through wouter (not native replaceState) so the router's
+    // location stays in sync and the settings tab actually activates.
+    setLocation("/moj-nalog?tab=settings", { replace: true });
+  }, [location, refetchSignInMethods, setLocation, toast]);
 
   const handleCancel = (id: string) => {
     cancelMutation.mutate(
@@ -342,8 +361,9 @@ export default function CustomerDashboard() {
           </section>
         ) : null}
 
+        <div ref={tabsSectionRef} className="scroll-mt-24">
         <Tabs value={activeTab} onValueChange={(tab) => setLocation(`/moj-nalog?tab=${tab}`)} className="w-full">
-          <TabsList className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto">
+          <TabsList className="mb-6 border-b rounded-none w-full justify-start bg-transparent p-0 h-auto flex-wrap">
             <TabsTrigger value="appointments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Termini
             </TabsTrigger>
@@ -600,6 +620,7 @@ export default function CustomerDashboard() {
           </TabsContent>
 
         </Tabs>
+        </div>
       </div>
       <AlertDialog open={appointmentToCancel !== null} onOpenChange={(open) => !open && setAppointmentToCancel(null)}>
         <AlertDialogContent>
