@@ -7730,7 +7730,13 @@ router.delete("/retail/cart/items/:cartItemId", async (req, res): Promise<void> 
 router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
   const view = await retailCheckoutCartQuote(cart.id);
-  if (!view) { res.status(409).json({ error: "Dostupnost ili cena proizvoda u korpi se promenila. Osvežite korpu i pokušajte ponovo." }); return; }
+  if (!view) {
+    res.status(409).json({
+      error: "Dostupnost ili cena proizvoda u korpi se promenila. Osvežite korpu i pokušajte ponovo.",
+      code: "CHECKOUT_QUOTE_CHANGED",
+    });
+    return;
+  }
   const config = await getShippingConfig();
   const deliveryMethod = req.query.deliveryMethod === "personal_belgrade" ? "personal_belgrade" : "courier";
   const city = typeof req.query.city === "string" ? req.query.city : "";
@@ -7837,8 +7843,20 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
   });
   if (created === "empty") { res.status(400).json({ error: "Korpa je prazna." }); return; }
   if (idempotencyConflict) { res.status(409).json({ error: "Ovaj ključ potvrde je već iskorišćen za drugu korpu. Osvežite stranicu i pokušajte ponovo." }); return; }
-  if (quoteConflict) { res.status(409).json({ error: "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo." }); return; }
-  if (stockConflict || !created || stockError) { res.status(409).json({ error: `Dostupnost proizvoda${stockError ? ` "${stockError}"` : ""} se promenila. Osvežite korpu i pokušajte ponovo.` }); return; }
+  if (quoteConflict) {
+    res.status(409).json({
+      error: "Iznos porudžbine se promenio. Osvežite pregled i pokušajte ponovo.",
+      code: "CHECKOUT_QUOTE_CHANGED",
+    });
+    return;
+  }
+  if (stockConflict || !created || stockError) {
+    res.status(409).json({
+      error: `Dostupnost proizvoda${stockError ? ` "${stockError}"` : ""} se promenila. Osvežite korpu i pokušajte ponovo.`,
+      code: "CHECKOUT_QUOTE_CHANGED",
+    });
+    return;
+  }
   const detail = await retailOrderWithItems(created.order);
   if (!created.repeat && trackingToken) {
     const trackingUrl = `${process.env["APP_BASE_URL"]?.replace(/\/$/, "") ?? ""}/porudzbina/pracenje?token=${encodeURIComponent(trackingToken)}`;

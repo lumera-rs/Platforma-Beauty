@@ -123,3 +123,4 @@
 - [Batched provider event matching](batched-provider-event-matching.md) — batch only the reference→key lookup per webhook batch; state application stays per-event guarded and monotonic.
 - [URL restore picker parity](url-restore-picker-parity.md) — state restored from shared links must obey the same constraints the UI picker enforces; clamp to the reachable boundary or fall back.
 - [Browser preflight isolated flags](browser-preflight-isolated-flags.md) — new LUMERA_ISOLATED_* suites must be added to the shared Playwright preflight's skip list or they'll probe localhost:80.
+- [Retail checkout quote refresh](retail-checkout-quote-refresh.md) — one stable conflict code covers price, delivery, and availability changes so clients can safely replace stale totals.

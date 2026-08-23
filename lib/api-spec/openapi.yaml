@@ -4750,7 +4750,9 @@ paths:
           description: Checkout pricing preview
           content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutPreview" } } }
         "400": { description: Delivery method is not available for the destination }
-        "409": { description: "A cart item price or availability changed" }
+        "409":
+          description: "A cart item price or availability changed"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } }
   /retail/checkout:
     post:
       operationId: checkoutRetailCart
@@ -4759,7 +4761,9 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutInput" } } } }
       responses:
         "201": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
-        "409": { description: "The cart, stock, or displayed checkout quote changed" }
+        "409":
+          description: "The cart, stock, or displayed checkout quote changed"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ApiError" } } }
   /retail/orders/track:
     get:
       operationId: trackRetailOrder

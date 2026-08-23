@@ -167,3 +167,49 @@ test("retail checkout displays and saves identical totals for courier and person
   await page.context().clearCookies();
   await assertDisplayedAndSavedTotal(page, "personal_belgrade", "Beograd");
 });
+
+test("retail checkout refreshes a changed quote before allowing confirmation again", async ({ page }) => {
+  let holdRefreshedPreview = false;
+  let notifyRefreshStarted: (() => void) | undefined;
+  let releaseRefreshedPreview: (() => void) | undefined;
+  const refreshStarted = new Promise<void>((resolve) => { notifyRefreshStarted = resolve; });
+  const releasePreview = new Promise<void>((resolve) => { releaseRefreshedPreview = resolve; });
+  await page.route("**/api/retail/checkout-preview?**", async (route) => {
+    if (holdRefreshedPreview) {
+      notifyRefreshStarted?.();
+      await releasePreview;
+    }
+    await route.continue();
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const confirmButton = page.locator("form").getByRole("button");
+  await expect(confirmButton).toBeEnabled();
+
+  expect(productId).toBeTruthy();
+  await db.update(productsTable).set({ publicDiscountPrice: 1_800 }).where(eq(productsTable.id, productId!));
+  holdRefreshedPreview = true;
+  try {
+    const checkoutResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/retail/checkout" && response.request().method() === "POST",
+    );
+    await confirmButton.click();
+    const response = await checkoutResponse;
+    expect(response.status()).toBe(409);
+    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+
+    await refreshStarted;
+    await expect(confirmButton).toBeDisabled();
+    releaseRefreshedPreview?.();
+
+    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+    await expect(page.getByRole("status")).toContainText(`Dostava je sada ${money(390)}`);
+    await expect(page.getByRole("status")).toContainText(`ukupno za plaćanje ${money(2_190)}`);
+    await expect(page.getByText(money(2_190), { exact: true })).toBeVisible();
+    await expect(confirmButton).toBeEnabled();
+  } finally {
+    releaseRefreshedPreview?.();
+    await db.update(productsTable).set({ publicDiscountPrice: 2_000 }).where(eq(productsTable.id, productId!));
+  }
+});

@@ -31,6 +31,7 @@ type RetailOrder = {
   shippingCost: number;
   total: number;
 };
+type ApiError = { error: string; code?: string };
 
 const createdCartIds: string[] = [];
 const createdOrderIds: string[] = [];
@@ -299,4 +300,42 @@ test("duplicate cart rows cannot create a quote or order above aggregate stock",
   const afterResponse = await request("/retail/cart");
   const after = await afterResponse.json() as RetailCart;
   assert.equal(after.items.reduce((sum, item) => sum + item.quantity, 0), 6);
+});
+
+test("checkout marks a displayed-quote mismatch so shoppers can refresh it in place", async () => {
+  assert.ok(createdProductId);
+  const request = retailClient();
+  const addResponse = await addRetailItem(request, createdProductId, 1);
+  assert.equal(addResponse.status, 201);
+
+  const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+  assert.equal(previewResponse.status, 200);
+  const preview = await previewResponse.json() as RetailCheckoutPreview;
+
+  await db.update(productsTable).set({ publicDiscountPrice: 1_800 }).where(eq(productsTable.id, createdProductId));
+  try {
+    const checkoutResponse = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-quote-conflict-${randomUUID()}`,
+        firstName: "Retail",
+        lastName: "Kupac",
+        email: `quote-conflict-${randomUUID()}@example.test`,
+        phone: "+381601234567",
+        street: "Test ulica 1",
+        city: "Novi Sad",
+        postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER",
+        deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal,
+        expectedShippingCost: preview.shipping.shippingCost,
+        expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(checkoutResponse.status, 409);
+    const error = await checkoutResponse.json() as ApiError;
+    assert.equal(error.code, "CHECKOUT_QUOTE_CHANGED");
+  } finally {
+    await db.update(productsTable).set({ publicDiscountPrice: 2_000 }).where(eq(productsTable.id, createdProductId));
+  }
 });

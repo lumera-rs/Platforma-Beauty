@@ -19413,7 +19413,7 @@ export const getPreviewRetailCheckoutQueryKey = (params?: PreviewRetailCheckoutP
     }
 
 
-export const getPreviewRetailCheckoutQueryOptions = <TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void>>(params?: PreviewRetailCheckoutParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getPreviewRetailCheckoutQueryOptions = <TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void | ApiError>>(params?: PreviewRetailCheckoutParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -19432,14 +19432,14 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type PreviewRetailCheckoutQueryResult = NonNullable<Awaited<ReturnType<typeof previewRetailCheckout>>>
-export type PreviewRetailCheckoutQueryError = ErrorType<void>
+export type PreviewRetailCheckoutQueryError = ErrorType<void | ApiError>
 
 
 /**
  * @summary Calculate delivery and final total for the selected retail destination
  */
 
-export function usePreviewRetailCheckout<TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void>>(
+export function usePreviewRetailCheckout<TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void | ApiError>>(
  params?: PreviewRetailCheckoutParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -19483,7 +19483,7 @@ export const checkoutRetailCart = async (retailCheckoutInput: RetailCheckoutInpu
 
 
 
-export const getCheckoutRetailCartMutationOptions = <TError = ErrorType<void>,
+export const getCheckoutRetailCartMutationOptions = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext> => {
 
@@ -19512,12 +19512,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CheckoutRetailCartMutationResult = NonNullable<Awaited<ReturnType<typeof checkoutRetailCart>>>
     export type CheckoutRetailCartMutationBody = BodyType<RetailCheckoutInput>
-    export type CheckoutRetailCartMutationError = ErrorType<void>
+    export type CheckoutRetailCartMutationError = ErrorType<ApiError>
 
     /**
  * @summary Create an idempotent retail order from the current cart
  */
-export const useCheckoutRetailCart = <TError = ErrorType<void>,
+export const useCheckoutRetailCart = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof checkoutRetailCart>>,

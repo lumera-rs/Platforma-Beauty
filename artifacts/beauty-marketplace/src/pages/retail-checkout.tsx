@@ -11,9 +11,28 @@ type Cart = { id: string; items: Array<{ id: string; productId: string; name: st
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
 type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
+
+class RetailApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "RetailApiError";
+  }
+}
+
 async function retail<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
-  if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? "Zahtev nije uspeo.");
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: unknown; code?: unknown } | null;
+    throw new RetailApiError(
+      typeof body?.error === "string" ? body.error : "Zahtev nije uspeo.",
+      response.status,
+      typeof body?.code === "string" ? body.code : undefined,
+    );
+  }
   return response.json() as Promise<T>;
 }
 
@@ -46,6 +65,8 @@ export function RetailCartPage() {
 export function RetailCheckoutPage() {
   const [, setLocation] = useLocation(); const { toast } = useToast();
   const [cart, setCart] = useState<Cart | null>(null); const [preview, setPreview] = useState<CheckoutPreview | null>(null); const [submitting, setSubmitting] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [quoteRefreshMessage, setQuoteRefreshMessage] = useState<string | null>(null);
   const [idempotencyKey] = useState(() => `retail-${crypto.randomUUID()}-${crypto.randomUUID()}`);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", street: "", city: "", postalCode: "", note: "", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier" });
   useEffect(() => { void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null)); }, []);
@@ -53,7 +74,9 @@ export function RetailCheckoutPage() {
     if (!cart) return;
     const controller = new AbortController();
     let active = true;
+    setPreviewLoading(true);
     setPreview(null);
+    setQuoteRefreshMessage(null);
     const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
     void retail<CheckoutPreview>(`/retail/checkout-preview?${query}`, { signal: controller.signal })
       .then((nextPreview) => {
@@ -64,6 +87,9 @@ export function RetailCheckoutPage() {
       .catch((error: unknown) => {
         if (!active || (error instanceof DOMException && error.name === "AbortError")) return;
         setPreview(null);
+      })
+      .finally(() => {
+        if (active) setPreviewLoading(false);
       });
     return () => {
       active = false;
@@ -76,6 +102,37 @@ export function RetailCheckoutPage() {
     }
   }, [form.city, form.deliveryMethod]);
   const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const refreshCheckoutQuote = async (previousPreview: CheckoutPreview | null) => {
+    setPreview(null);
+    setQuoteRefreshMessage(null);
+    setPreviewLoading(true);
+    try {
+      const currentCart = await retail<Cart>("/retail/cart");
+      setCart(currentCart);
+      if (!currentCart.items.length) return;
+
+      const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
+      const nextPreview = await retail<CheckoutPreview>(`/retail/checkout-preview?${query}`);
+      setCart(nextPreview.cart);
+      setPreview(nextPreview);
+      const previousShipping = previousPreview?.shipping.shippingCost;
+      const previousTotal = previousPreview?.total;
+      const shippingChange = previousShipping !== undefined && previousShipping !== nextPreview.shipping.shippingCost
+        ? ` (prethodno ${money(previousShipping)})`
+        : "";
+      const totalChange = previousTotal !== undefined && previousTotal !== nextPreview.total
+        ? ` (prethodno ${money(previousTotal)})`
+        : "";
+      setQuoteRefreshMessage(
+        `Pregled je osvežen. Dostava je sada ${money(nextPreview.shipping.shippingCost)}${shippingChange}, a ukupno za plaćanje ${money(nextPreview.total)}${totalChange}.`,
+      );
+    } catch (error) {
+      setPreview(null);
+      toast.error(error instanceof Error ? error.message : "Pregled porudžbine nije mogao da se osveži.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
   const submit = async (event: React.FormEvent) => { event.preventDefault(); setSubmitting(true); try {
     const order = await retail<Order & { trackingToken?: string | null }>("/retail/checkout", {
       method: "POST",
@@ -88,9 +145,15 @@ export function RetailCheckoutPage() {
       }),
     });
     sessionStorage.setItem("retail-order", JSON.stringify(order)); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
-  } catch (error) { toast.error(error instanceof Error ? error.message : "Porudžbina nije potvrđena."); } finally { setSubmitting(false); } };
+  } catch (error) {
+    if (error instanceof RetailApiError && error.code === "CHECKOUT_QUOTE_CHANGED") {
+      await refreshCheckoutQuote(preview);
+    } else {
+      toast.error(error instanceof Error ? error.message : "Porudžbina nije potvrđena.");
+    }
+  } finally { setSubmitting(false); } };
   const personalAvailable = /beograd/i.test(form.city);
-  return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <p className="mt-6">Korpa je prazna.</p> : <form onSubmit={submit} className="mt-7 grid gap-8 lg:grid-cols-[1fr_340px]"><div className="space-y-5"><section className="rounded-xl border p-5"><h2 className="font-semibold">Kontakt</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{[["firstName","Ime"],["lastName","Prezime"],["email","Email"],["phone","Telefon"],["street","Adresa"],["city","Grad"],["postalCode","Poštanski broj"]].map(([key,label]) => <div key={key} className={key === "street" ? "sm:col-span-2" : ""}><Label>{label}</Label><Input required type={key === "email" ? "email" : "text"} value={(form as Record<string,string>)[key]} onChange={(e) => update(key,e.target.value)} /></div>)}</div><div className="mt-3"><Label>Napomena za dostavu</Label><Input value={form.note} onChange={(e) => update("note", e.target.value)} /></div></section><section className="rounded-xl border p-5"><h2 className="font-semibold">Dostava</h2><label className="mt-3 flex gap-2 text-sm"><input type="radio" checked={form.deliveryMethod === "courier"} onChange={() => update("deliveryMethod","courier")} />Kurirska dostava</label><label className="mt-3 flex gap-2 text-sm"><input type="radio" disabled={!personalAvailable} checked={form.deliveryMethod === "personal_belgrade"} onChange={() => update("deliveryMethod","personal_belgrade")} />Lična dostava — Beograd</label>{!personalAvailable && <p className="mt-2 text-xs text-muted-foreground">Unesite Beograd kao grad da biste izabrali ličnu dostavu.</p>}</section><section className="rounded-xl border p-5"><h2 className="font-semibold">Plaćanje</h2>{[["BANK_TRANSFER","Uplata na račun"],["CASH_ON_DELIVERY","Plaćanje pouzećem"]].map(([value,label]) => <label className="mt-3 flex gap-2 text-sm" key={value}><input type="radio" checked={form.paymentMethod === value} onChange={() => update("paymentMethod",value)} />{label}</label>)}<p className="mt-3 text-xs text-muted-foreground">Plaćanje karticom će biti dostupno nakon uključivanja sigurnog payment handoff-a.</p></section></div><aside className="h-fit rounded-xl border p-5"><h2 className="font-semibold">Pregled</h2><p className="mt-4 text-sm text-muted-foreground">{cart.itemCount} stavki</p><div className="mt-3 flex justify-between text-sm"><span>Proizvodi</span><span>{money(cart.subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Dostava</span><span>{preview ? money(preview.shipping.shippingCost) : "…"}</span></div><div className="mt-3 flex justify-between border-t pt-3"><span className="font-semibold">Ukupno</span><strong className="text-2xl">{preview ? money(preview.total) : "…"}</strong></div><Button className="mt-5 w-full" size="lg" disabled={submitting || !preview}>{submitting ? "Potvrđivanje…" : "Potvrdi porudžbinu"}</Button></aside></form>}</main></Layout>;
+  return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <p className="mt-6">Korpa je prazna.</p> : <form onSubmit={submit} className="mt-7 grid gap-8 lg:grid-cols-[1fr_340px]"><div className="space-y-5"><section className="rounded-xl border p-5"><h2 className="font-semibold">Kontakt</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{[["firstName","Ime"],["lastName","Prezime"],["email","Email"],["phone","Telefon"],["street","Adresa"],["city","Grad"],["postalCode","Poštanski broj"]].map(([key,label]) => <div key={key} className={key === "street" ? "sm:col-span-2" : ""}><Label>{label}</Label><Input required type={key === "email" ? "email" : "text"} value={(form as Record<string,string>)[key]} onChange={(e) => update(key,e.target.value)} /></div>)}</div><div className="mt-3"><Label>Napomena za dostavu</Label><Input value={form.note} onChange={(e) => update("note", e.target.value)} /></div></section><section className="rounded-xl border p-5"><h2 className="font-semibold">Dostava</h2><label className="mt-3 flex gap-2 text-sm"><input type="radio" checked={form.deliveryMethod === "courier"} onChange={() => update("deliveryMethod","courier")} />Kurirska dostava</label><label className="mt-3 flex gap-2 text-sm"><input type="radio" disabled={!personalAvailable} checked={form.deliveryMethod === "personal_belgrade"} onChange={() => update("deliveryMethod","personal_belgrade")} />Lična dostava — Beograd</label>{!personalAvailable && <p className="mt-2 text-xs text-muted-foreground">Unesite Beograd kao grad da biste izabrali ličnu dostavu.</p>}</section><section className="rounded-xl border p-5"><h2 className="font-semibold">Plaćanje</h2>{[["BANK_TRANSFER","Uplata na račun"],["CASH_ON_DELIVERY","Plaćanje pouzećem"]].map(([value,label]) => <label className="mt-3 flex gap-2 text-sm" key={value}><input type="radio" checked={form.paymentMethod === value} onChange={() => update("paymentMethod",value)} />{label}</label>)}<p className="mt-3 text-xs text-muted-foreground">Plaćanje karticom će biti dostupno nakon uključivanja sigurnog payment handoff-a.</p></section></div><aside className="h-fit rounded-xl border p-5"><h2 className="font-semibold">Pregled</h2><p className="mt-4 text-sm text-muted-foreground">{cart.itemCount} stavki</p>{quoteRefreshMessage && <div role="status" aria-live="polite" className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p className="font-medium">Promena iznosa je osvežena</p><p className="mt-1 text-muted-foreground">{quoteRefreshMessage}</p></div>}<div className="mt-3 flex justify-between text-sm"><span>Proizvodi</span><span>{money(cart.subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Dostava</span><span>{preview ? money(preview.shipping.shippingCost) : "…"}</span></div><div className="mt-3 flex justify-between border-t pt-3"><span className="font-semibold">Ukupno</span><strong className="text-2xl">{preview ? money(preview.total) : "…"}</strong></div><Button className="mt-5 w-full" size="lg" disabled={submitting || previewLoading || !preview}>{submitting ? "Potvrđivanje…" : previewLoading ? "Osvežavanje pregleda…" : "Potvrdi porudžbinu"}</Button></aside></form>}</main></Layout>;
 }
 
 export function RetailSuccessPage() {
