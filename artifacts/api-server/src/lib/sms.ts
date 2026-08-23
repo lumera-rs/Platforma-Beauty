@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "./logger";
 import { infobipBaseUrl, integrationSettings, integrationValue } from "./integrations";
 
-export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert";
+export type SmsMessageType = "appointment_confirmation" | "appointment_reminder" | "automation" | "admin_alert" | "retail_order";
 
 /** Lease duration for an SMS delivery claim (5 minutes). */
 const SMS_LEASE_MS = 5 * 60 * 1000;

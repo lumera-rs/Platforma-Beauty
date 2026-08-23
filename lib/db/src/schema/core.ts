@@ -46,6 +46,7 @@ export const smsMessageTypeEnum = pgEnum("sms_message_type", [
   "education_waitlist_offer",
   "education_session_cancelled",
   "automation",
+  "retail_order",
   // Platform-level administrator alert (e.g. the delivery-report silence
   // fallback SMS when alert emails cannot be sent). Not tied to any salon.
   "admin_alert",

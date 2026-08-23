@@ -50,7 +50,8 @@ require_declaration() {
 
 require_declaration "$API_DECLARATIONS" "useListPublicProducts"
 require_declaration "$API_DECLARATIONS" "useGetPublicProduct"
-require_declaration "$SCHEMA_DECLARATIONS" "publicEnabled"
+require_declaration "$SCHEMA_DECLARATIONS" "retailEnabled"
+require_declaration "$SCHEMA_DECLARATIONS" "professionalEnabled"
 require_declaration "$SCHEMA_DECLARATIONS" "publicDescription"
 require_declaration "$SCHEMA_DECLARATIONS" "publicPrice"
 require_declaration "$SCHEMA_DECLARATIONS" "publicDiscountPrice"

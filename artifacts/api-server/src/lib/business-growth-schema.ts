@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 11;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 13;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -40,6 +40,10 @@ const ADVISORY_LOCK_KEY = 0x42470000 + BUSINESS_GROWTH_SCHEMA_VERSION;
  * applied older one. Order matters only for readability; ADD VALUE appends.
  */
 const ENUM_LABELS: Record<string, string[]> = {
+  order_status: ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"],
+  payment_method: ["CARD", "BANK_TRANSFER", "CASH_AT_SALON", "CASH_ON_DELIVERY", "FREE"],
+  payment_status: ["unpaid", "pending", "paid", "refunded", "failed"],
+  delivery_method: ["courier", "personal_belgrade"],
   automation_trigger: [
     "inactive_days",
     "birthday",
@@ -72,6 +76,7 @@ const ENUM_LABELS: Record<string, string[]> = {
     "automation",
     // v7: platform-level admin alerts (delivery-report silence SMS fallback).
     "admin_alert",
+    "retail_order",
   ],
   // v10 — Phase 3 enums. Mirror lib/db/src/schema/phase3.ts exactly.
   treatment_photo_kind: ["before", "after"],
@@ -137,16 +142,111 @@ function tableStatements(s: string): string[] {
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
 
-    // v11: Customer-safe public storefront fields. These deliberately remain
+    // v12: Customer-safe retail storefront fields. These deliberately remain
     // separate from the owner-only B2B description and prices in `products`.
     // Production does not run drizzle push, so legacy catalogs need the same
     // additive rollout before anonymous catalog queries can be served.
-    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_enabled boolean NOT NULL DEFAULT false`,
+    `DO $$ BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'products' AND column_name = 'public_enabled')
+          AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'products' AND column_name = 'retail_enabled') THEN
+         ALTER TABLE products RENAME COLUMN public_enabled TO retail_enabled;
+       END IF;
+     END $$`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS retail_enabled boolean NOT NULL DEFAULT false`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_description text`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
-    `CREATE INDEX IF NOT EXISTS products_public_active_created_idx
-       ON ${s}.products (public_enabled, active, created_at)`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
+    `DROP INDEX IF EXISTS ${s}.products_public_active_created_idx`,
+    `CREATE INDEX IF NOT EXISTS products_retail_active_created_idx
+       ON ${s}.products (retail_enabled, active, created_at)`,
+    `CREATE INDEX IF NOT EXISTS products_professional_active_created_idx
+       ON ${s}.products (professional_enabled, active, created_at)`,
+
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_carts (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      token_hash text NOT NULL UNIQUE,
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS retail_carts_user_idx ON ${s}.retail_carts (user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_cart_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      cart_id uuid NOT NULL REFERENCES ${s}.retail_carts(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      variant_value text,
+      product_name text NOT NULL,
+      product_image_url text NOT NULL,
+      unit_price integer NOT NULL,
+      quantity integer NOT NULL,
+      weight_grams integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS retail_cart_items_cart_product_variant_unique
+       ON ${s}.retail_cart_items (cart_id, product_id, variant_value) NULLS NOT DISTINCT`,
+    `CREATE INDEX IF NOT EXISTS retail_cart_items_cart_idx ON ${s}.retail_cart_items (cart_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_cart_items_product_idx ON ${s}.retail_cart_items (product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_orders (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_number text NOT NULL UNIQUE,
+      cart_id uuid NOT NULL REFERENCES ${s}.retail_carts(id) ON DELETE RESTRICT,
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      tracking_token_hash text NOT NULL UNIQUE,
+      tracking_token_revoked_at timestamptz,
+      idempotency_key text NOT NULL,
+      status ${s}.order_status NOT NULL DEFAULT 'pending',
+      payment_method ${s}.payment_method NOT NULL,
+      payment_status ${s}.payment_status NOT NULL DEFAULT 'unpaid',
+      delivery_method ${s}.delivery_method NOT NULL DEFAULT 'courier',
+      subtotal integer NOT NULL,
+      shipping_cost integer NOT NULL DEFAULT 0,
+      total integer NOT NULL,
+      shipping_name text NOT NULL,
+      shipping_address text NOT NULL,
+      shipping_city text NOT NULL,
+      shipping_postal_code text NOT NULL,
+      shipping_phone text NOT NULL,
+      shipping_email text NOT NULL,
+      shipping_note text,
+      tracking_number text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (cart_id, idempotency_key)
+    )`,
+    `ALTER TABLE ${s}.retail_orders ADD COLUMN IF NOT EXISTS cart_id uuid REFERENCES ${s}.retail_carts(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.retail_orders DROP CONSTRAINT IF EXISTS retail_orders_idempotency_key_key`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS retail_orders_cart_idempotency_unique
+       ON ${s}.retail_orders (cart_id, idempotency_key) WHERE cart_id IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS retail_orders_user_created_idx ON ${s}.retail_orders (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS retail_orders_status_created_idx ON ${s}.retail_orders (status, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_order_items (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id uuid NOT NULL REFERENCES ${s}.retail_orders(id) ON DELETE CASCADE,
+      product_id uuid NOT NULL REFERENCES ${s}.products(id),
+      product_name text NOT NULL,
+      product_image_url text NOT NULL,
+      variant_value text,
+      variant_label text,
+      unit_price integer NOT NULL,
+      quantity integer NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS retail_order_items_order_idx ON ${s}.retail_order_items (order_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_order_items_product_idx ON ${s}.retail_order_items (product_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.retail_product_reviews (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,
+      order_item_id uuid NOT NULL REFERENCES ${s}.retail_order_items(id) ON DELETE CASCADE,
+      user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      rating integer NOT NULL,
+      comment text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS retail_product_reviews_item_user_unique ON ${s}.retail_product_reviews (order_item_id, user_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_product_reviews_product_idx ON ${s}.retail_product_reviews (product_id)`,
+    `CREATE INDEX IF NOT EXISTS retail_product_reviews_user_idx ON ${s}.retail_product_reviews (user_id)`,
 
     `ALTER TABLE ${s}.reviews ADD COLUMN IF NOT EXISTS employee_id uuid`,
     `DO $$ BEGIN

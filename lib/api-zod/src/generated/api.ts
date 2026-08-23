@@ -7999,7 +7999,8 @@ export const AdminListProductsResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminListProductsResponseItemsItemPriceMultipleOf),
   "discountPrice": zod.number().multipleOf(adminListProductsResponseItemsItemDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean(),
+  "retailEnabled": zod.boolean(),
+  "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicDiscountPriceMultipleOf).nullish(),
@@ -8087,7 +8088,8 @@ export const AdminCreateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminCreateProductBodyPriceMin).max(adminCreateProductBodyPriceMax).multipleOf(adminCreateProductBodyPriceMultipleOf),
   "discountPrice": zod.number().min(adminCreateProductBodyDiscountPriceMin).max(adminCreateProductBodyDiscountPriceMax).multipleOf(adminCreateProductBodyDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean().optional(),
+  "retailEnabled": zod.boolean().optional(),
+  "professionalEnabled": zod.boolean().optional(),
   "publicDescription": zod.string().max(adminCreateProductBodyPublicDescriptionMax).nullish(),
   "publicPrice": zod.number().min(1).max(adminCreateProductBodyPublicPriceMax).multipleOf(adminCreateProductBodyPublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).max(adminCreateProductBodyPublicDiscountPriceMax).multipleOf(adminCreateProductBodyPublicDiscountPriceMultipleOf).nullish(),
@@ -8146,7 +8148,8 @@ export const AdminCreateProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminCreateProductResponsePriceMultipleOf),
   "discountPrice": zod.number().multipleOf(adminCreateProductResponseDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean(),
+  "retailEnabled": zod.boolean(),
+  "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicDiscountPriceMultipleOf).nullish(),
@@ -8257,7 +8260,8 @@ export const AdminUpdateProductBody = zod.object({
   "images": zod.array(zod.string()).optional(),
   "price": zod.number().min(adminUpdateProductBodyPriceMin).max(adminUpdateProductBodyPriceMax).multipleOf(adminUpdateProductBodyPriceMultipleOf).optional(),
   "discountPrice": zod.number().min(adminUpdateProductBodyDiscountPriceMin).max(adminUpdateProductBodyDiscountPriceMax).multipleOf(adminUpdateProductBodyDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean().optional(),
+  "retailEnabled": zod.boolean().optional(),
+  "professionalEnabled": zod.boolean().optional(),
   "publicDescription": zod.string().max(adminUpdateProductBodyPublicDescriptionMax).nullish(),
   "publicPrice": zod.number().min(1).max(adminUpdateProductBodyPublicPriceMax).multipleOf(adminUpdateProductBodyPublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).max(adminUpdateProductBodyPublicDiscountPriceMax).multipleOf(adminUpdateProductBodyPublicDiscountPriceMultipleOf).nullish(),
@@ -8316,7 +8320,8 @@ export const AdminUpdateProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminUpdateProductResponsePriceMultipleOf),
   "discountPrice": zod.number().multipleOf(adminUpdateProductResponseDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean(),
+  "retailEnabled": zod.boolean(),
+  "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicDiscountPriceMultipleOf).nullish(),
@@ -8388,7 +8393,8 @@ export const AdminDeleteProductResponse = zod.object({
   "images": zod.array(zod.string()),
   "price": zod.number().multipleOf(adminDeleteProductResponsePriceMultipleOf),
   "discountPrice": zod.number().multipleOf(adminDeleteProductResponseDiscountPriceMultipleOf).nullish(),
-  "publicEnabled": zod.boolean(),
+  "retailEnabled": zod.boolean(),
+  "professionalEnabled": zod.boolean(),
   "publicDescription": zod.string().nullish(),
   "publicPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicPriceMultipleOf).nullish(),
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicDiscountPriceMultipleOf).nullish(),
@@ -10938,3 +10944,440 @@ export const CreateWidgetAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "salonName": zod.string()
 })
+
+
+/**
+ * @summary Get the current guest or customer retail cart
+ */
+export const getRetailCartResponseItemCountMin = 0;
+
+export const getRetailCartResponseSubtotalMin = 0;
+
+
+export const getRetailCartResponseItemsItemUnitPriceMin = 0;
+
+export const getRetailCartResponseItemsItemLineTotalMin = 0;
+
+
+
+export const GetRetailCartResponse = zod.object({
+  "id": zod.string(),
+  "itemCount": zod.number().int().min(getRetailCartResponseItemCountMin),
+  "subtotal": zod.number().int().min(getRetailCartResponseSubtotalMin),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.number().int().min(getRetailCartResponseItemsItemUnitPriceMin),
+  "lineTotal": zod.number().int().min(getRetailCartResponseItemsItemLineTotalMin)
+}))
+})
+
+
+/**
+ * @summary Add a retail product to the separate guest/customer cart
+ */
+
+export const addRetailCartItemBodyQuantityMax = 100;
+
+
+
+export const AddRetailCartItemBody = zod.object({
+  "productId": zod.string().min(1),
+  "quantity": zod.number().int().min(1).max(addRetailCartItemBodyQuantityMax)
+})
+
+export const addRetailCartItemResponseItemCountMin = 0;
+
+export const addRetailCartItemResponseSubtotalMin = 0;
+
+
+export const addRetailCartItemResponseItemsItemUnitPriceMin = 0;
+
+export const addRetailCartItemResponseItemsItemLineTotalMin = 0;
+
+
+
+export const AddRetailCartItemResponse = zod.object({
+  "id": zod.string(),
+  "itemCount": zod.number().int().min(addRetailCartItemResponseItemCountMin),
+  "subtotal": zod.number().int().min(addRetailCartItemResponseSubtotalMin),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.number().int().min(addRetailCartItemResponseItemsItemUnitPriceMin),
+  "lineTotal": zod.number().int().min(addRetailCartItemResponseItemsItemLineTotalMin)
+}))
+})
+
+
+/**
+ * @summary Change a retail cart item quantity
+ */
+export const UpdateRetailCartItemParams = zod.object({
+  "cartItemId": zod.coerce.string()
+})
+
+export const updateRetailCartItemResponseItemCountMin = 0;
+
+export const updateRetailCartItemResponseSubtotalMin = 0;
+
+
+export const updateRetailCartItemResponseItemsItemUnitPriceMin = 0;
+
+export const updateRetailCartItemResponseItemsItemLineTotalMin = 0;
+
+
+
+export const UpdateRetailCartItemResponse = zod.object({
+  "id": zod.string(),
+  "itemCount": zod.number().int().min(updateRetailCartItemResponseItemCountMin),
+  "subtotal": zod.number().int().min(updateRetailCartItemResponseSubtotalMin),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.number().int().min(updateRetailCartItemResponseItemsItemUnitPriceMin),
+  "lineTotal": zod.number().int().min(updateRetailCartItemResponseItemsItemLineTotalMin)
+}))
+})
+
+
+/**
+ * @summary Remove an item from the current retail cart
+ */
+export const RemoveRetailCartItemParams = zod.object({
+  "cartItemId": zod.coerce.string()
+})
+
+export const removeRetailCartItemResponseItemCountMin = 0;
+
+export const removeRetailCartItemResponseSubtotalMin = 0;
+
+
+export const removeRetailCartItemResponseItemsItemUnitPriceMin = 0;
+
+export const removeRetailCartItemResponseItemsItemLineTotalMin = 0;
+
+
+
+export const RemoveRetailCartItemResponse = zod.object({
+  "id": zod.string(),
+  "itemCount": zod.number().int().min(removeRetailCartItemResponseItemCountMin),
+  "subtotal": zod.number().int().min(removeRetailCartItemResponseSubtotalMin),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int().min(1),
+  "unitPrice": zod.number().int().min(removeRetailCartItemResponseItemsItemUnitPriceMin),
+  "lineTotal": zod.number().int().min(removeRetailCartItemResponseItemsItemLineTotalMin)
+}))
+})
+
+
+/**
+ * @summary Calculate delivery and final total for the selected retail destination
+ */
+export const PreviewRetailCheckoutQueryParams = zod.object({
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional(),
+  "city": zod.coerce.string().optional()
+})
+
+export const PreviewRetailCheckoutResponse = zod.unknown()
+
+
+/**
+ * @summary Create an idempotent retail order from the current cart
+ */
+export const checkoutRetailCartBodyIdempotencyKeyMin = 16;
+export const checkoutRetailCartBodyIdempotencyKeyMax = 200;
+
+export const checkoutRetailCartBodyFirstNameMax = 100;
+
+export const checkoutRetailCartBodyLastNameMax = 100;
+
+export const checkoutRetailCartBodyEmailMin = 5;
+export const checkoutRetailCartBodyEmailMax = 320;
+
+
+export const checkoutRetailCartBodyEmailRegExp = new RegExp('^[^\\\\s@]+@[^\\\\s@]+\\\\.[^\\\\s@]+$');
+export const checkoutRetailCartBodyPhoneMin = 6;
+export const checkoutRetailCartBodyPhoneMax = 40;
+
+export const checkoutRetailCartBodyStreetMin = 2;
+export const checkoutRetailCartBodyStreetMax = 250;
+
+export const checkoutRetailCartBodyCityMin = 2;
+export const checkoutRetailCartBodyCityMax = 120;
+
+export const checkoutRetailCartBodyPostalCodeMin = 3;
+export const checkoutRetailCartBodyPostalCodeMax = 20;
+
+export const checkoutRetailCartBodyNoteMax = 1000;
+
+
+
+export const CheckoutRetailCartBody = zod.object({
+  "idempotencyKey": zod.string().min(checkoutRetailCartBodyIdempotencyKeyMin).max(checkoutRetailCartBodyIdempotencyKeyMax),
+  "firstName": zod.string().min(1).max(checkoutRetailCartBodyFirstNameMax),
+  "lastName": zod.string().min(1).max(checkoutRetailCartBodyLastNameMax),
+  "email": zod.string().min(checkoutRetailCartBodyEmailMin).max(checkoutRetailCartBodyEmailMax).regex(checkoutRetailCartBodyEmailRegExp),
+  "phone": zod.string().min(checkoutRetailCartBodyPhoneMin).max(checkoutRetailCartBodyPhoneMax),
+  "street": zod.string().min(checkoutRetailCartBodyStreetMin).max(checkoutRetailCartBodyStreetMax),
+  "city": zod.string().min(checkoutRetailCartBodyCityMin).max(checkoutRetailCartBodyCityMax),
+  "postalCode": zod.string().min(checkoutRetailCartBodyPostalCodeMin).max(checkoutRetailCartBodyPostalCodeMax),
+  "note": zod.string().max(checkoutRetailCartBodyNoteMax).optional(),
+  "paymentMethod": zod.enum(['CARD', 'BANK_TRANSFER', 'CASH_ON_DELIVERY']),
+  "deliveryMethod": zod.enum(['courier', 'personal_belgrade']).optional()
+})
+
+export const CheckoutRetailCartResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Track a retail order using its opaque guest access token
+ */
+export const trackRetailOrderQueryTokenMin = 32;
+
+
+
+export const TrackRetailOrderQueryParams = zod.object({
+  "token": zod.coerce.string().min(trackRetailOrderQueryTokenMin)
+})
+
+export const TrackRetailOrderResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary List only the authenticated customer's retail orders
+ */
+export const ListCustomerRetailOrdersResponseItem = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+export const ListCustomerRetailOrdersResponse = zod.array(ListCustomerRetailOrdersResponseItem)
+
+
+/**
+ * @summary Get one retail order owned by the authenticated customer
+ */
+export const GetCustomerRetailOrderParams = zod.object({
+  "orderId": zod.coerce.string()
+})
+
+export const GetCustomerRetailOrderResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary List retail orders for administration
+ */
+export const AdminListRetailOrdersResponseItem = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+export const AdminListRetailOrdersResponse = zod.array(AdminListRetailOrdersResponseItem)
+
+
+/**
+ * @summary Get the retail order snapshot and customer delivery details
+ */
+export const AdminGetRetailOrderParams = zod.object({
+  "orderId": zod.coerce.string()
+})
+
+export const AdminGetRetailOrderResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Update retail fulfillment status
+ */
+export const AdminUpdateRetailOrderStatusParams = zod.object({
+  "orderId": zod.coerce.string()
+})
+
+export const AdminUpdateRetailOrderStatusResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary Update retail payment state separately from fulfillment status
+ */
+export const AdminUpdateRetailPaymentStatusParams = zod.object({
+  "orderId": zod.coerce.string()
+})
+
+export const AdminUpdateRetailPaymentStatusResponse = zod.object({
+  "id": zod.string(),
+  "orderNumber": zod.string(),
+  "status": zod.string(),
+  "paymentMethod": zod.string(),
+  "paymentStatus": zod.string(),
+  "deliveryMethod": zod.string(),
+  "subtotal": zod.number().int(),
+  "shippingCost": zod.number().int(),
+  "total": zod.number().int(),
+  "createdAt": zod.coerce.date(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "productId": zod.string(),
+  "name": zod.string(),
+  "imageUrl": zod.string(),
+  "quantity": zod.number().int(),
+  "unitPrice": zod.number().int()
+}))
+})
+
+
+/**
+ * @summary List public aggregated retail reviews for a product
+ */
+export const ListRetailProductReviewsParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const ListRetailProductReviewsResponse = zod.unknown()
+
+
+/**
+ * @summary Create or update a review for an authenticated customer's delivered item
+ */
+export const UpsertCustomerRetailProductReviewParams = zod.object({
+  "productId": zod.coerce.string()
+})
+
+export const UpsertCustomerRetailProductReviewResponse = zod.unknown()

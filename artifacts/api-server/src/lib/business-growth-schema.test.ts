@@ -293,8 +293,8 @@ async function run() {
       );
     }
     assert.ok(await columnExists("salon_customers", "birth_date"), "salon_customers.birth_date added");
-    for (const column of ["public_enabled", "public_description", "public_price", "public_discount_price"]) {
-      assert.ok(await columnExists("products", column), `products.${column} added for public storefront`);
+    for (const column of ["retail_enabled", "professional_enabled", "public_description", "public_price", "public_discount_price"]) {
+      assert.ok(await columnExists("products", column), `products.${column} added for retail storefront`);
     }
     assert.ok(await columnExists("reviews", "employee_id"), "reviews.employee_id added");
     assert.ok(await columnExists("sms_deliveries", "processing_started_at"), "sms_deliveries.processing_started_at added");
@@ -335,7 +335,8 @@ async function run() {
     }
     for (const idx of [
       "reviews_employee_visible_idx",
-      "products_public_active_created_idx",
+      "products_retail_active_created_idx",
+      "products_professional_active_created_idx",
       "sms_deliveries_claim_expiry_idx",
       "automation_runs_cooldown_idx",
       "automation_deliveries_claim_expiry_idx",
@@ -355,12 +356,12 @@ async function run() {
     // public storefront's eligibility predicate and explicit public fields.
     const publicProduct = (await q<{ id: string }>(
       `INSERT INTO "${s}".products
-         (name, description, public_enabled, public_description, public_price, public_discount_price)
+         (name, description, retail_enabled, public_description, public_price, public_discount_price)
        VALUES ('Javni proizvod', 'Interni B2B opis', true, 'Opis za kupce', 2499, 1999)
        RETURNING id`,
     )).rows[0]!;
     await q(
-      `INSERT INTO "${s}".products (name, description, public_enabled, public_price)
+      `INSERT INTO "${s}".products (name, description, retail_enabled, public_price)
        VALUES ('Privatni B2B proizvod', 'Ne sme biti javan', false, 999)`,
     );
     const publicList = (await q<{
@@ -374,7 +375,7 @@ async function run() {
               public_discount_price AS discount_price
        FROM "${s}".products
        WHERE active = true
-         AND public_enabled = true
+         AND retail_enabled = true
          AND public_description IS NOT NULL
          AND public_price IS NOT NULL
        ORDER BY created_at, id`,
@@ -392,7 +393,7 @@ async function run() {
        FROM "${s}".products
        WHERE id = $1
          AND active = true
-         AND public_enabled = true
+         AND retail_enabled = true
          AND public_description IS NOT NULL
          AND public_price IS NOT NULL`,
       [publicProduct.id],

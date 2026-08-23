@@ -1,0 +1,80 @@
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { Layout } from "@/components/layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+
+type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
+type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
+const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
+async function retail<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api${path}`, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
+  if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? "Zahtev nije uspeo.");
+  return response.json() as Promise<T>;
+}
+
+function CartLines({ cart, refresh }: { cart: Cart; refresh: () => void }) {
+  const { toast } = useToast();
+  const change = async (id: string, quantity: number) => {
+    try { await retail(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }); refresh(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Promena nije uspela."); }
+  };
+  const remove = async (id: string) => {
+    try { await retail(`/retail/cart/items/${id}`, { method: "DELETE" }); refresh(); }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Brisanje nije uspelo."); }
+  };
+  return <div className="space-y-3">{cart.items.map((item) => <div key={item.id} className="flex gap-3 rounded-xl border p-3">
+    <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
+    <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
+      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" onClick={() => item.quantity > 1 ? change(item.id, item.quantity - 1) : remove(item.id)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" onClick={() => change(item.id, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
+      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" onClick={() => remove(item.id)}><Trash2 className="h-4 w-4" /></Button></div>
+    </div><strong>{money(item.lineTotal)}</strong>
+  </div>)}</div>;
+}
+
+export function RetailCartPage() {
+  const [cart, setCart] = useState<Cart | null>(null);
+  const refresh = () => void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null));
+  useEffect(refresh, []);
+  return <Layout><main className="mx-auto min-h-screen max-w-3xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Vaša korpa</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <div className="mt-10 rounded-2xl border p-8 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-muted-foreground" /><p className="mt-3">Korpa je prazna.</p><Button asChild className="mt-5"><Link href="/proizvodi">Pregledajte proizvode</Link></Button></div> : <><div className="mt-6"><CartLines cart={cart} refresh={refresh} /></div><div className="mt-6 flex items-center justify-between rounded-xl bg-muted p-5"><span className="font-medium">Ukupno</span><strong className="text-xl">{money(cart.subtotal)}</strong></div><Button asChild size="lg" className="mt-5 w-full"><Link href="/korpa/placanje">Nastavi na dostavu i plaćanje</Link></Button></>}</main></Layout>;
+}
+
+export function RetailCheckoutPage() {
+  const [, setLocation] = useLocation(); const { toast } = useToast();
+  const [cart, setCart] = useState<Cart | null>(null); const [preview, setPreview] = useState<{ shipping: { shippingCost: number }; total: number } | null>(null); const [submitting, setSubmitting] = useState(false);
+  const [idempotencyKey] = useState(() => `retail-${crypto.randomUUID()}-${crypto.randomUUID()}`);
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", street: "", city: "", postalCode: "", note: "", paymentMethod: "BANK_TRANSFER", deliveryMethod: "courier" });
+  useEffect(() => { void retail<Cart>("/retail/cart").then(setCart).catch(() => setCart(null)); }, []);
+  useEffect(() => {
+    if (!cart) return;
+    setPreview(null);
+    const query = new URLSearchParams({ deliveryMethod: form.deliveryMethod, city: form.city });
+    void retail<{ shipping: { shippingCost: number }; total: number }>(`/retail/checkout-preview?${query}`).then(setPreview).catch(() => setPreview(null));
+  }, [cart?.id, form.deliveryMethod, form.city]);
+  useEffect(() => {
+    if (form.deliveryMethod === "personal_belgrade" && !/beograd/i.test(form.city)) {
+      setForm((current) => ({ ...current, deliveryMethod: "courier" }));
+    }
+  }, [form.city, form.deliveryMethod]);
+  const update = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = async (event: React.FormEvent) => { event.preventDefault(); setSubmitting(true); try {
+    const order = await retail<Order & { trackingToken?: string | null }>("/retail/checkout", { method: "POST", body: JSON.stringify({ ...form, idempotencyKey }) });
+    sessionStorage.setItem("retail-order", JSON.stringify(order)); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
+  } catch (error) { toast.error(error instanceof Error ? error.message : "Porudžbina nije potvrđena."); } finally { setSubmitting(false); } };
+  const personalAvailable = /beograd/i.test(form.city);
+  return <Layout><main className="mx-auto min-h-screen max-w-4xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Dostava i plaćanje</h1>{!cart ? <Loader2 className="mt-10 animate-spin" /> : !cart.items.length ? <p className="mt-6">Korpa je prazna.</p> : <form onSubmit={submit} className="mt-7 grid gap-8 lg:grid-cols-[1fr_340px]"><div className="space-y-5"><section className="rounded-xl border p-5"><h2 className="font-semibold">Kontakt</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{[["firstName","Ime"],["lastName","Prezime"],["email","Email"],["phone","Telefon"],["street","Adresa"],["city","Grad"],["postalCode","Poštanski broj"]].map(([key,label]) => <div key={key} className={key === "street" ? "sm:col-span-2" : ""}><Label>{label}</Label><Input required type={key === "email" ? "email" : "text"} value={(form as Record<string,string>)[key]} onChange={(e) => update(key,e.target.value)} /></div>)}</div><div className="mt-3"><Label>Napomena za dostavu</Label><Input value={form.note} onChange={(e) => update("note", e.target.value)} /></div></section><section className="rounded-xl border p-5"><h2 className="font-semibold">Dostava</h2><label className="mt-3 flex gap-2 text-sm"><input type="radio" checked={form.deliveryMethod === "courier"} onChange={() => update("deliveryMethod","courier")} />Kurirska dostava</label><label className="mt-3 flex gap-2 text-sm"><input type="radio" disabled={!personalAvailable} checked={form.deliveryMethod === "personal_belgrade"} onChange={() => update("deliveryMethod","personal_belgrade")} />Lična dostava — Beograd</label>{!personalAvailable && <p className="mt-2 text-xs text-muted-foreground">Unesite Beograd kao grad da biste izabrali ličnu dostavu.</p>}</section><section className="rounded-xl border p-5"><h2 className="font-semibold">Plaćanje</h2>{[["BANK_TRANSFER","Uplata na račun"],["CASH_ON_DELIVERY","Plaćanje pouzećem"]].map(([value,label]) => <label className="mt-3 flex gap-2 text-sm" key={value}><input type="radio" checked={form.paymentMethod === value} onChange={() => update("paymentMethod",value)} />{label}</label>)}<p className="mt-3 text-xs text-muted-foreground">Plaćanje karticom će biti dostupno nakon uključivanja sigurnog payment handoff-a.</p></section></div><aside className="h-fit rounded-xl border p-5"><h2 className="font-semibold">Pregled</h2><p className="mt-4 text-sm text-muted-foreground">{cart.itemCount} stavki</p><div className="mt-3 flex justify-between text-sm"><span>Proizvodi</span><span>{money(cart.subtotal)}</span></div><div className="mt-2 flex justify-between text-sm"><span>Dostava</span><span>{preview ? money(preview.shipping.shippingCost) : "…"}</span></div><div className="mt-3 flex justify-between border-t pt-3"><span className="font-semibold">Ukupno</span><strong className="text-2xl">{preview ? money(preview.total) : "…"}</strong></div><Button className="mt-5 w-full" size="lg" disabled={submitting || !preview}>{submitting ? "Potvrđivanje…" : "Potvrdi porudžbinu"}</Button></aside></form>}</main></Layout>;
+}
+
+export function RetailSuccessPage() {
+  const [, setLocation] = useLocation(); const query = new URLSearchParams(window.location.search); const order = query.get("order"); const token = query.get("token");
+  return <Layout><main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-4 text-center"><ShoppingBag className="h-12 w-12 text-primary" /><h1 className="mt-5 font-serif text-4xl font-bold">Porudžbina je primljena</h1><p className="mt-3 text-muted-foreground">Broj porudžbine: <strong>{order}</strong>. Poslali smo potvrdu na email adresu.</p>{token && <Button className="mt-6" onClick={() => setLocation(`/porudzbina/pracenje?token=${encodeURIComponent(token)}`)}>Prati porudžbinu</Button>}<Button variant="outline" className="mt-3" asChild><Link href="/proizvodi">Nastavi kupovinu</Link></Button></main></Layout>;
+}
+
+export function RetailTrackingPage() {
+  const token = new URLSearchParams(window.location.search).get("token") ?? ""; const [order, setOrder] = useState<Order | null>(null); const [error, setError] = useState("");
+  useEffect(() => { if (token) void retail<Order>(`/retail/orders/track?token=${encodeURIComponent(token)}`).then(setOrder).catch((e) => setError(e.message)); }, [token]);
+  return <Layout><main className="mx-auto min-h-screen max-w-2xl px-4 py-10"><h1 className="font-serif text-4xl font-bold">Praćenje porudžbine</h1>{!token || error ? <p className="mt-6 text-destructive">{error || "Veza za praćenje nije važeća."}</p> : !order ? <Loader2 className="mt-8 animate-spin" /> : <div className="mt-7 rounded-xl border p-5"><p className="text-sm text-muted-foreground">{order.orderNumber}</p><h2 className="mt-1 text-xl font-semibold">Status: {order.status}</h2><div className="mt-5 space-y-2">{order.items.map((item) => <p key={item.id}>{item.quantity}× {item.name} — {money(item.unitPrice * item.quantity)}</p>)}</div><strong className="mt-5 block">{money(order.total)}</strong></div>}</main></Layout>;
+}

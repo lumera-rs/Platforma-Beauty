@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness } from "lucide-react";
+import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag } from "lucide-react";
 import { Button } from "./ui/button";
 import { useGetCurrentUser, useLogout } from "@workspace/api-client-react";
 import { useState } from "react";
@@ -65,6 +65,9 @@ export function Navbar() {
               <BriefcaseBusiness className="h-3.5 w-3.5" />
               Za salone i biznise
             </Link>
+            <Button variant="ghost" size="icon" asChild aria-label="Korpa">
+              <Link href="/korpa"><ShoppingBag className="h-5 w-5" /></Link>
+            </Button>
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

@@ -49,6 +49,14 @@ import { EducationPurchases } from "@/components/education-purchases";
 
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
 
+function CustomerRetailOrders() {
+  const [orders, setOrders] = useState<Array<{ id: string; orderNumber: string; status: string; total: number; createdAt: string; items: Array<{ id: string; name: string; quantity: number }> }> | null>(null);
+  useEffect(() => { void fetch("/api/customer/retail-orders", { credentials: "include" }).then((r) => r.ok ? r.json() : Promise.reject()).then(setOrders).catch(() => setOrders([])); }, []);
+  if (!orders) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (!orders.length) return <Empty className="border bg-card py-14"><EmptyHeader><EmptyMedia variant="icon"><Box /></EmptyMedia><EmptyTitle>Nemate retail porudžbine</EmptyTitle><EmptyDescription>Proizvode za kućnu negu možete poručiti iz javne prodavnice.</EmptyDescription></EmptyHeader><EmptyContent><Button asChild><Link href="/proizvodi">Istraži proizvode</Link></Button></EmptyContent></Empty>;
+  return <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">{order.orderNumber}</p><p className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("sr-RS")} · {order.items.map((item) => `${item.quantity}× ${item.name}`).join(", ")}</p></div><div className="text-right"><Badge>{order.status}</Badge><p className="mt-1 font-semibold">{order.total.toLocaleString("sr-RS")} RSD</p></div></CardContent></Card>)}</div>;
+}
+
 function CustomerPackages() {
   const { data: userResp } = useGetCurrentUser();
   const { data: purchases, isLoading } = useCustomerListMyPurchases(
@@ -212,7 +220,7 @@ export default function CustomerDashboard() {
   // /moj-nalog to /moj-nalog?tab=... never re-renders through it. useSearch()
   // subscribes to the query string itself, which is what drives the tabs.
   const requestedTab = new URLSearchParams(searchString).get("tab");
-  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" ? requestedTab : "appointments";
+  const activeTab = requestedTab === "favorites" || requestedTab === "settings" || requestedTab === "education" || requestedTab === "packages" || requestedTab === "orders" ? requestedTab : "appointments";
   const tabsSectionRef = useRef<HTMLDivElement>(null);
   const tabsListRef = useRef<HTMLDivElement>(null);
   const previousTabRef = useRef<string | null>(null);
@@ -440,6 +448,9 @@ export default function CustomerDashboard() {
             <TabsTrigger value="packages" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               Moji Paketi
             </TabsTrigger>
+            <TabsTrigger value="orders" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
+              Porudžbine
+            </TabsTrigger>
             <TabsTrigger value="education" className="shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3">
               <GraduationCap className="mr-2 h-4 w-4" />Moje edukacije
             </TabsTrigger>
@@ -559,6 +570,9 @@ export default function CustomerDashboard() {
 
           <TabsContent value="packages" className="mt-0">
             <CustomerPackages />
+          </TabsContent>
+          <TabsContent value="orders" className="mt-0">
+            <CustomerRetailOrders />
           </TabsContent>
 
           <TabsContent value="education" className="mt-0">

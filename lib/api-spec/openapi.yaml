@@ -4706,6 +4706,128 @@ paths:
         "409": { description: Slot no longer available }
         "429": { description: Too many requests }
 
+  /retail/cart:
+    get:
+      operationId: getRetailCart
+      tags: [shop]
+      summary: Get the current guest or customer retail cart
+      responses:
+        "200": { description: Retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart/items:
+    post:
+      operationId: addRetailCartItem
+      tags: [shop]
+      summary: Add a retail product to the separate guest/customer cart
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCartItemInput" } } } }
+      responses:
+        "201": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart/items/{cartItemId}:
+    patch:
+      operationId: updateRetailCartItem
+      tags: [shop]
+      summary: Change a retail cart item quantity
+      parameters: [{ name: cartItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+        "409": { description: Requested quantity is unavailable }
+    delete:
+      operationId: removeRetailCartItem
+      tags: [shop]
+      summary: Remove an item from the current retail cart
+      parameters: [{ name: cartItemId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/checkout-preview:
+    get:
+      operationId: previewRetailCheckout
+      tags: [shop]
+      summary: Calculate delivery and final total for the selected retail destination
+      parameters:
+        - { name: deliveryMethod, in: query, schema: { type: string, enum: [courier, personal_belgrade] } }
+        - { name: city, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Checkout pricing preview }
+        "400": { description: Delivery method is not available for the destination }
+  /retail/checkout:
+    post:
+      operationId: checkoutRetailCart
+      tags: [shop]
+      summary: Create an idempotent retail order from the current cart
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCheckoutInput" } } } }
+      responses:
+        "201": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+  /retail/orders/track:
+    get:
+      operationId: trackRetailOrder
+      tags: [shop]
+      summary: Track a retail order using its opaque guest access token
+      parameters: [{ name: token, in: query, required: true, schema: { type: string, minLength: 32 } }]
+      responses:
+        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+  /customer/retail-orders:
+    get:
+      operationId: listCustomerRetailOrders
+      tags: [customer]
+      summary: List only the authenticated customer's retail orders
+      responses:
+        "200": { description: Retail orders, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RetailOrder" } } } } }
+  /customer/retail-orders/{orderId}:
+    get:
+      operationId: getCustomerRetailOrder
+      tags: [customer]
+      summary: Get one retail order owned by the authenticated customer
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+        "404": { description: Order not found or not owned by the customer }
+  /admin/retail-orders:
+    get:
+      operationId: adminListRetailOrders
+      tags: [admin]
+      summary: List retail orders for administration
+      responses:
+        "200": { description: Retail orders, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RetailOrder" } } } } }
+  /admin/retail-orders/{orderId}:
+    get:
+      operationId: adminGetRetailOrder
+      tags: [admin]
+      summary: Get the retail order snapshot and customer delivery details
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+  /admin/retail-orders/{orderId}/status:
+    patch:
+      operationId: adminUpdateRetailOrderStatus
+      tags: [admin]
+      summary: Update retail fulfillment status
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+  /admin/retail-orders/{orderId}/payment-status:
+    patch:
+      operationId: adminUpdateRetailPaymentStatus
+      tags: [admin]
+      summary: Update retail payment state separately from fulfillment status
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Updated retail order, content: { application/json: { schema: { $ref: "#/components/schemas/RetailOrder" } } } }
+  /retail/products/{productId}/reviews:
+    get:
+      operationId: listRetailProductReviews
+      tags: [shop]
+      summary: List public aggregated retail reviews for a product
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Public retail reviews }
+  /customer/retail-products/{productId}/reviews:
+    post:
+      operationId: upsertCustomerRetailProductReview
+      tags: [customer]
+      summary: Create or update a review for an authenticated customer's delivered item
+      parameters: [{ name: productId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Retail review saved }
+
 components:
   parameters:
     CityQuery:
@@ -5754,6 +5876,75 @@ components:
           maxItems: 20
           items: { $ref: "#/components/schemas/ServiceResourceRequirement" }
       required: [category, name, description, durationMinutes, price, imageUrl, active, homeServiceAvailable, homeServiceFee]
+    RetailCartItemInput:
+      type: object
+      additionalProperties: false
+      properties:
+        productId: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 100 }
+      required: [productId, quantity]
+    RetailCart:
+      type: object
+      properties:
+        id: { type: string }
+        itemCount: { type: integer, minimum: 0 }
+        subtotal: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              productId: { type: string }
+              name: { type: string }
+              imageUrl: { type: string }
+              quantity: { type: integer, minimum: 1 }
+              unitPrice: { type: integer, minimum: 0 }
+              lineTotal: { type: integer, minimum: 0 }
+            required: [id, productId, name, imageUrl, quantity, unitPrice, lineTotal]
+      required: [id, itemCount, subtotal, items]
+    RetailCheckoutInput:
+      type: object
+      additionalProperties: false
+      properties:
+        idempotencyKey: { type: string, minLength: 16, maxLength: 200 }
+        firstName: { type: string, minLength: 1, maxLength: 100 }
+        lastName: { type: string, minLength: 1, maxLength: 100 }
+        email: { type: string, minLength: 5, maxLength: 320, pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$' }
+        phone: { type: string, minLength: 6, maxLength: 40 }
+        street: { type: string, minLength: 2, maxLength: 250 }
+        city: { type: string, minLength: 2, maxLength: 120 }
+        postalCode: { type: string, minLength: 3, maxLength: 20 }
+        note: { type: string, maxLength: 1000 }
+        paymentMethod: { type: string, enum: [CARD, BANK_TRANSFER, CASH_ON_DELIVERY] }
+        deliveryMethod: { type: string, enum: [courier, personal_belgrade] }
+      required: [idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, paymentMethod]
+    RetailOrder:
+      type: object
+      properties:
+        id: { type: string }
+        orderNumber: { type: string }
+        status: { type: string }
+        paymentMethod: { type: string }
+        paymentStatus: { type: string }
+        deliveryMethod: { type: string }
+        subtotal: { type: integer }
+        shippingCost: { type: integer }
+        total: { type: integer }
+        createdAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              productId: { type: string }
+              name: { type: string }
+              imageUrl: { type: string }
+              quantity: { type: integer }
+              unitPrice: { type: integer }
+            required: [id, productId, name, imageUrl, quantity, unitPrice]
+      required: [id, orderNumber, status, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, createdAt, items]
     ProductCategory:
       type: object
       properties:
@@ -7017,7 +7208,8 @@ components:
           items: { type: string }
         price: { type: number, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], multipleOf: 1 }
-        publicEnabled: { type: boolean }
+        retailEnabled: { type: boolean }
+        professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"] }
         publicPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
@@ -7034,7 +7226,7 @@ components:
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, name, categoryName, description, imageUrl, images, price, publicEnabled, stock, sku, unit, isNew, isBestseller, active, createdAt]
+      required: [id, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, sku, unit, isNew, isBestseller, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -7063,7 +7255,8 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
-        publicEnabled: { type: boolean }
+        retailEnabled: { type: boolean }
+        professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
@@ -7096,7 +7289,8 @@ components:
           items: { type: string }
         price: { type: number, minimum: 0, maximum: 100000000, multipleOf: 1 }
         discountPrice: { type: ["number", "null"], minimum: 0, maximum: 100000000, multipleOf: 1 }
-        publicEnabled: { type: boolean }
+        retailEnabled: { type: boolean }
+        professionalEnabled: { type: boolean }
         publicDescription: { type: ["string", "null"], maxLength: 10000 }
         publicPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, maximum: 100000000, multipleOf: 1 }

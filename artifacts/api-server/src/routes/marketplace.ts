@@ -60,6 +60,11 @@ import {
   productCategoriesTable,
   productsTable,
   productBrandsTable,
+  retailCartsTable,
+  retailCartItemsTable,
+  retailOrdersTable,
+  retailOrderItemsTable,
+  retailProductReviewsTable,
   reviewsTable,
   salonHoursTable,
   salonBrandsTable,
@@ -7362,7 +7367,7 @@ function productDtoWithAggregate(
 function publicProductDto(item: typeof productsTable.$inferSelect) {
   const price = item.publicPrice;
   const discountPrice = item.publicDiscountPrice;
-  if (!item.publicEnabled || !item.publicDescription || price == null) {
+  if (!item.retailEnabled || !item.publicDescription || price == null) {
     throw new Error("Attempted to serialize a product without complete public storefront data.");
   }
   return {
@@ -7381,6 +7386,118 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     isNew: item.isNew,
     isBestseller: item.isBestseller,
   };
+}
+const retailVariantCompatibleCondition = () => or(
+  isNull(productsTable.variants),
+  sql`jsonb_array_length(${productsTable.variants}) = 0`,
+);
+
+const RETAIL_CART_COOKIE = "lumera_retail_cart";
+const retailCartCookieOptions = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  maxAge: 1000 * 60 * 60 * 24 * 30,
+  path: "/",
+};
+const hashRetailToken = (token: string) => createHash("sha256").update(token).digest("hex");
+type RetailCartItemInput = { productId: string; quantity: number };
+type RetailCheckoutInput = {
+  idempotencyKey: string; firstName: string; lastName: string; email: string; phone: string;
+  street: string; city: string; postalCode: string; note?: string;
+  paymentMethod: "CARD" | "BANK_TRANSFER" | "CASH_ON_DELIVERY"; deliveryMethod: "courier" | "personal_belgrade";
+};
+function retailCartItemInput(body: unknown): RetailCartItemInput | null {
+  const value = body as Partial<RetailCartItemInput>;
+  return typeof value?.productId === "string" && value.productId.trim() && Number.isInteger(value.quantity) && value.quantity! >= 1 && value.quantity! <= 100
+    ? { productId: value.productId, quantity: value.quantity! } : null;
+}
+function retailCheckoutInput(body: unknown): RetailCheckoutInput | null {
+  const value = body as Record<string, unknown>;
+  const string = (key: string, min: number, max: number) => typeof value?.[key] === "string" && value[key].trim().length >= min && value[key].trim().length <= max ? value[key].trim() : null;
+  const idempotencyKey = string("idempotencyKey", 16, 200);
+  const firstName = string("firstName", 1, 100); const lastName = string("lastName", 1, 100);
+  const email = string("email", 5, 320); const phone = string("phone", 6, 40);
+  const street = string("street", 2, 250); const city = string("city", 2, 120); const postalCode = string("postalCode", 3, 20);
+  const paymentMethod = value?.paymentMethod;
+  const deliveryMethod = value?.deliveryMethod ?? "courier";
+  if (!idempotencyKey || !firstName || !lastName || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !phone || !street || !city || !postalCode
+    || (paymentMethod !== "CARD" && paymentMethod !== "BANK_TRANSFER" && paymentMethod !== "CASH_ON_DELIVERY")
+    || (deliveryMethod !== "courier" && deliveryMethod !== "personal_belgrade")) return null;
+  const note = typeof value.note === "string" && value.note.trim().length <= 1000 ? value.note.trim() || undefined : undefined;
+  return { idempotencyKey, firstName, lastName, email, phone, street, city, postalCode, note, paymentMethod, deliveryMethod };
+}
+
+async function retailCartForRequest(req: Request, res: Response) {
+  let token = typeof req.cookies?.[RETAIL_CART_COOKIE] === "string" ? req.cookies[RETAIL_CART_COOKIE] : null;
+  let cart = token
+    ? (await db.select().from(retailCartsTable).where(eq(retailCartsTable.tokenHash, hashRetailToken(token))).limit(1))[0]
+    : undefined;
+  if (!cart) {
+    token = randomBytes(32).toString("base64url");
+    const user = await getCurrentUser(req);
+    [cart] = await db.insert(retailCartsTable).values({
+      tokenHash: hashRetailToken(token),
+      userId: user?.role === "CUSTOMER" ? user.id : null,
+    }).returning();
+    res.cookie(RETAIL_CART_COOKIE, token, retailCartCookieOptions);
+  } else {
+    const user = await getCurrentUser(req);
+    if (user?.role === "CUSTOMER" && cart.userId !== user.id) {
+      [cart] = await db.update(retailCartsTable).set({ userId: user.id, updatedAt: new Date() })
+        .where(eq(retailCartsTable.id, cart.id)).returning();
+    }
+  }
+  return cart!;
+}
+
+function retailLineDto(item: typeof retailCartItemsTable.$inferSelect) {
+  return {
+    id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+    quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.unitPrice * item.quantity,
+  };
+}
+
+async function retailCartDto(cartId: string) {
+  const items = await db.select().from(retailCartItemsTable)
+    .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
+  const lines = items.map(retailLineDto);
+  return {
+    id: cartId,
+    items: lines,
+    itemCount: lines.reduce((sum, item) => sum + item.quantity, 0),
+    subtotal: lines.reduce((sum, item) => sum + item.lineTotal, 0),
+  };
+}
+
+function retailOrderDto(
+  order: typeof retailOrdersTable.$inferSelect,
+  items: Array<typeof retailOrderItemsTable.$inferSelect>,
+) {
+  return {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
+    deliveryMethod: order.deliveryMethod,
+    subtotal: order.subtotal,
+    shippingCost: order.shippingCost,
+    total: order.total,
+    trackingNumber: order.trackingNumber ?? null,
+    createdAt: order.createdAt.toISOString(),
+    contact: { name: order.shippingName, email: order.shippingEmail, phone: order.shippingPhone },
+    delivery: { address: order.shippingAddress, city: order.shippingCity, postalCode: order.shippingPostalCode, note: order.shippingNote ?? null },
+    items: items.map((item) => ({
+      id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+      variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
+    })),
+  };
+}
+
+async function retailOrderWithItems(order: typeof retailOrdersTable.$inferSelect) {
+  const items = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id));
+  return retailOrderDto(order, items);
 }
 
 async function productReviewViews(productId: string, currentSalonId?: string) {
@@ -7408,9 +7525,10 @@ router.get("/shop/public/products", async (req, res): Promise<void> => {
   const q = parsed.data;
   const productFilters: Parameters<typeof and>[0][] = [
     eq(productsTable.active, true),
-    eq(productsTable.publicEnabled, true),
+    eq(productsTable.retailEnabled, true),
     isNotNull(productsTable.publicPrice),
     isNotNull(productsTable.publicDescription),
+    retailVariantCompatibleCondition(),
     activeCategoryCondition(),
   ];
   if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
@@ -7447,9 +7565,10 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const publicCondition = and(
     eq(productsTable.active, true),
-    eq(productsTable.publicEnabled, true),
+    eq(productsTable.retailEnabled, true),
     isNotNull(productsTable.publicPrice),
     isNotNull(productsTable.publicDescription),
+    retailVariantCompatibleCondition(),
     activeCategoryCondition(),
   );
   const [product] = await db.select().from(productsTable)
@@ -7464,6 +7583,303 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   }));
 });
 
+router.get("/retail/cart", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  res.json(await retailCartDto(cart.id));
+});
+
+router.post("/retail/cart/items", async (req, res): Promise<void> => {
+  const parsed = retailCartItemInput(req.body);
+  if (!parsed) { res.status(400).json({ error: "Neispravna stavka korpe." }); return; }
+  const cart = await retailCartForRequest(req, res);
+  const [product] = await db.select().from(productsTable).where(and(
+    eq(productsTable.id, parsed.productId),
+    eq(productsTable.active, true),
+    eq(productsTable.retailEnabled, true),
+    isNotNull(productsTable.publicDescription),
+    retailVariantCompatibleCondition(),
+    isNotNull(productsTable.publicPrice),
+    activeCategoryCondition(),
+  )).limit(1);
+  if (!product || product.stock < parsed.quantity || (product.variants?.length ?? 0) > 0) {
+    res.status(409).json({ error: "Proizvod više nije dostupan u traženoj količini." }); return;
+  }
+  const unitPrice = product.publicDiscountPrice ?? product.publicPrice!;
+  let stockConflict = false;
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    const [existing] = await tx.select().from(retailCartItemsTable).where(and(
+      eq(retailCartItemsTable.cartId, cart.id), eq(retailCartItemsTable.productId, product.id), isNull(retailCartItemsTable.variantValue),
+    )).limit(1);
+    const quantity = (existing?.quantity ?? 0) + parsed.quantity;
+    if (quantity > product.stock) throw new Error("retail_stock_conflict");
+    if (existing) {
+      await tx.update(retailCartItemsTable).set({ quantity, unitPrice, updatedAt: new Date() })
+        .where(eq(retailCartItemsTable.id, existing.id));
+    } else {
+      await tx.insert(retailCartItemsTable).values({
+        cartId: cart.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+        unitPrice, quantity, weightGrams: product.weightGrams ?? 0,
+      });
+    }
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
+    throw error;
+  });
+  if (stockConflict) { res.status(409).json({ error: "Proizvod je već u korpi u većoj količini nego što je trenutno dostupno." }); return; }
+  res.status(201).json(await retailCartDto(cart.id));
+});
+
+router.patch("/retail/cart/items/:cartItemId", async (req, res): Promise<void> => {
+  const body = typeof req.body?.quantity === "number" && Number.isInteger(req.body.quantity) && req.body.quantity >= 1 && req.body.quantity <= 100
+    ? { quantity: req.body.quantity } : null;
+  if (!body) { res.status(400).json({ error: "Količina mora biti pozitivan ceo broj." }); return; }
+  const cart = await retailCartForRequest(req, res);
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    const [item] = await tx.select().from(retailCartItemsTable).where(and(
+      eq(retailCartItemsTable.id, req.params.cartItemId), eq(retailCartItemsTable.cartId, cart.id),
+    )).limit(1);
+    if (!item) return "missing";
+    const [product] = await tx.select().from(productsTable).where(and(
+      eq(productsTable.id, item.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true),
+      isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice), activeCategoryCondition(),
+    )).limit(1);
+    if (!product || product.stock < body.quantity || (product.variants?.length ?? 0) > 0) return "stock";
+    await tx.update(retailCartItemsTable).set({
+      quantity: body.quantity, unitPrice: product.publicDiscountPrice ?? product.publicPrice!, updatedAt: new Date(),
+    }).where(eq(retailCartItemsTable.id, item.id));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    return "ok";
+  });
+  if (result === "missing") { res.status(404).json({ error: "Stavka korpe nije pronađena." }); return; }
+  if (result === "stock") { res.status(409).json({ error: "Proizvod više nije dostupan u traženoj količini." }); return; }
+  res.json(await retailCartDto(cart.id));
+});
+
+router.delete("/retail/cart/items/:cartItemId", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    await tx.delete(retailCartItemsTable).where(and(
+      eq(retailCartItemsTable.id, req.params.cartItemId), eq(retailCartItemsTable.cartId, cart.id),
+    ));
+    await tx.update(retailCartsTable).set({ updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+  });
+  res.json(await retailCartDto(cart.id));
+});
+
+router.get("/retail/checkout-preview", async (req, res): Promise<void> => {
+  const cart = await retailCartForRequest(req, res);
+  const view = await retailCartDto(cart.id);
+  const config = await getShippingConfig();
+  const items = await db.select().from(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
+  const weight = items.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0);
+  const deliveryMethod = req.query.deliveryMethod === "personal_belgrade" ? "personal_belgrade" : "courier";
+  const city = typeof req.query.city === "string" ? req.query.city : "";
+  if (deliveryMethod === "personal_belgrade" && (!config.personalDeliveryEnabled || !/beograd/i.test(city))) {
+    res.status(400).json({ error: "Lična dostava je dostupna samo u Beogradu." }); return;
+  }
+  const shipping = calculateShipping(config, weight, view.subtotal, deliveryMethod, city);
+  res.json({ cart: view, shipping, total: view.subtotal + shipping.shippingCost, paymentMethods: checkoutPaymentMethods });
+});
+
+router.post("/retail/checkout", async (req, res): Promise<void> => {
+  const parsed = retailCheckoutInput(req.body);
+  if (!parsed) { res.status(400).json({ error: "Unesite kompletne i ispravne podatke za dostavu." }); return; }
+  const cart = await retailCartForRequest(req, res);
+  const currentUser = await getCurrentUser(req);
+  const userId = currentUser?.role === "CUSTOMER" ? currentUser.id : null;
+  if (parsed.paymentMethod === "CARD") {
+    res.status(400).json({ error: "Plaćanje karticom biće dostupno čim se uključi siguran payment handoff." }); return;
+  }
+  const config = await getShippingConfig();
+  if (parsed.deliveryMethod === "personal_belgrade" && (!config.personalDeliveryEnabled || !/beograd/i.test(parsed.city))) {
+    res.status(400).json({ error: "Lična dostava je trenutno dostupna samo u Beogradu." }); return;
+  }
+  let stockError: string | null = null;
+  let trackingToken: string | null = null;
+  let stockConflict = false;
+  let idempotencyConflict = false;
+  const created = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from retail_carts where id = ${cart.id} for update`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${parsed.idempotencyKey}))`);
+    const [previous] = await tx.select().from(retailOrdersTable)
+      .where(and(eq(retailOrdersTable.cartId, cart.id), eq(retailOrdersTable.idempotencyKey, parsed.idempotencyKey))).limit(1);
+    if (previous) return { order: previous, repeat: true };
+    const [collision] = await tx.select({ id: retailOrdersTable.id }).from(retailOrdersTable)
+      .where(eq(retailOrdersTable.idempotencyKey, parsed.idempotencyKey)).limit(1);
+    if (collision) throw new Error("retail_idempotency_collision");
+    const cartItems = await tx.select().from(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
+    if (!cartItems.length) throw new Error("retail_cart_empty");
+    const productIds = [...new Set(cartItems.map((item) => item.productId))].sort();
+    for (const id of productIds) await tx.execute(sql`select id from products where id = ${id} for update`);
+    const products = await tx.select().from(productsTable).where(and(inArray(productsTable.id, productIds), activeCategoryCondition()));
+    const byId = new Map(products.map((product) => [product.id, product]));
+    let subtotal = 0;
+    let weight = 0;
+    const lines = cartItems.map((item) => {
+      const product = byId.get(item.productId);
+      if (!product || !product.active || !product.retailEnabled || !product.publicDescription || product.publicPrice == null || product.stock < item.quantity || (product.variants?.length ?? 0) > 0) {
+        stockError = product?.name ?? item.productName;
+        return null;
+      }
+      const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
+      subtotal += unitPrice * item.quantity;
+      weight += (product.weightGrams ?? 0) * item.quantity;
+      return { product, item, unitPrice };
+    });
+    if (stockError || lines.some((line) => !line)) return null;
+    const shipping = calculateShipping(config, weight, subtotal, parsed.deliveryMethod, parsed.city);
+    trackingToken = randomBytes(32).toString("base64url");
+    const orderNumber = `LR-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
+    const [order] = await tx.insert(retailOrdersTable).values({
+      orderNumber, cartId: cart.id, userId, trackingTokenHash: hashRetailToken(trackingToken), idempotencyKey: parsed.idempotencyKey,
+      status: "pending", paymentMethod: parsed.paymentMethod,
+      paymentStatus: parsed.paymentMethod === "CASH_ON_DELIVERY" ? "unpaid" : "pending",
+      deliveryMethod: parsed.deliveryMethod, subtotal, shippingCost: shipping.shippingCost, total: subtotal + shipping.shippingCost,
+      shippingName: `${parsed.firstName} ${parsed.lastName}`, shippingAddress: parsed.street, shippingCity: parsed.city,
+      shippingPostalCode: parsed.postalCode, shippingPhone: parsed.phone, shippingEmail: parsed.email.toLowerCase(), shippingNote: parsed.note ?? null,
+    }).returning();
+    const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
+      orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+      variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
+    }));
+    await tx.insert(retailOrderItemsTable).values(orderItems);
+    for (const line of lines.filter((line): line is NonNullable<typeof line> => line !== null)) {
+      const [updated] = await tx.update(productsTable).set({ stock: sql`${productsTable.stock} - ${line.item.quantity}` })
+        .where(and(eq(productsTable.id, line.product.id), gte(productsTable.stock, line.item.quantity))).returning({ id: productsTable.id });
+      if (!updated) { stockError = line.product.name; return null; }
+    }
+    await tx.delete(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
+    await tx.update(retailCartsTable).set({ userId, updatedAt: new Date() }).where(eq(retailCartsTable.id, cart.id));
+    return { order: order!, repeat: false };
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "retail_cart_empty") return "empty" as const;
+    if (error instanceof Error && error.message === "retail_stock_conflict") { stockConflict = true; return null; }
+    if (error instanceof Error && error.message === "retail_idempotency_collision") { idempotencyConflict = true; return null; }
+    throw error;
+  });
+  if (created === "empty") { res.status(400).json({ error: "Korpa je prazna." }); return; }
+  if (idempotencyConflict) { res.status(409).json({ error: "Ovaj ključ potvrde je već iskorišćen za drugu korpu. Osvežite stranicu i pokušajte ponovo." }); return; }
+  if (stockConflict || !created || stockError) { res.status(409).json({ error: `Dostupnost proizvoda${stockError ? ` "${stockError}"` : ""} se promenila. Osvežite korpu i pokušajte ponovo.` }); return; }
+  const detail = await retailOrderWithItems(created.order);
+  if (!created.repeat && trackingToken) {
+    const trackingUrl = `${process.env["APP_BASE_URL"]?.replace(/\/$/, "") ?? ""}/porudzbina/pracenje?token=${encodeURIComponent(trackingToken)}`;
+    void sendTransactionalEmail({
+      eventKey: `retail-order:${created.order.id}:confirmation`, emailType: "retail_order_confirmation",
+      to: { email: created.order.shippingEmail, name: created.order.shippingName },
+      subject: `LUMERA — porudžbina ${created.order.orderNumber} je primljena`,
+      htmlContent: lumeraEmailHtml("Porudžbina je primljena", `<p>Hvala! Primili smo vašu porudžbinu <strong>${emailSafe(created.order.orderNumber)}</strong>.</p><p>Praćenje: <a href="${emailSafe(trackingUrl)}">otvorite status porudžbine</a>.</p>`),
+      metadata: { retailOrderId: created.order.id },
+    });
+    const phone = normalizedPhone(created.order.shippingPhone);
+    if (phone) void sendSms({
+      eventKey: `retail-order:${created.order.id}:confirmation`, salonId: null, appointmentId: null,
+      type: "retail_order", phone, text: `LUMERA: porudžbina ${created.order.orderNumber} je primljena.`,
+    });
+  }
+  res.status(created.repeat ? 200 : 201).json({ ...detail, trackingToken: created.repeat ? null : trackingToken, alreadySubmitted: created.repeat });
+});
+
+router.get("/retail/orders/track", async (req, res): Promise<void> => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  if (token.length < 32) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
+  const [order] = await db.select().from(retailOrdersTable).where(and(
+    eq(retailOrdersTable.trackingTokenHash, hashRetailToken(token)),
+    isNull(retailOrdersTable.trackingTokenRevokedAt),
+  )).limit(1);
+  if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
+  res.json(await retailOrderWithItems(order));
+});
+
+router.get("/customer/retail-orders", async (req, res): Promise<void> => {
+  const user = await getCurrentUser(req);
+  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
+  const orders = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.userId, user.id))
+    .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
+  res.json(await Promise.all(orders.map(retailOrderWithItems)));
+});
+
+router.get("/customer/retail-orders/:orderId", async (req, res): Promise<void> => {
+  const user = await getCurrentUser(req);
+  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
+  const [order] = await db.select().from(retailOrdersTable).where(and(
+    eq(retailOrdersTable.id, req.params.orderId), eq(retailOrdersTable.userId, user.id),
+  )).limit(1);
+  if (!order) { res.status(404).json({ error: "Porudžbina nije pronađena." }); return; }
+  res.json(await retailOrderWithItems(order));
+});
+
+router.get("/admin/retail-orders", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const status = typeof req.query.status === "string" ? req.query.status : null;
+  const filters = status && ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"].includes(status)
+    ? and(eq(retailOrdersTable.status, status as typeof retailOrdersTable.$inferSelect.status)) : undefined;
+  const orders = await db.select().from(retailOrdersTable).where(filters)
+    .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
+  res.json(await Promise.all(orders.map(retailOrderWithItems)));
+});
+
+router.get("/admin/retail-orders/:orderId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const [order] = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.id, req.params.orderId)).limit(1);
+  if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
+  res.json(await retailOrderWithItems(order));
+});
+
+router.patch("/admin/retail-orders/:orderId/status", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const next = req.body?.status;
+  if (typeof next !== "string" || !["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"].includes(next)) {
+    res.status(400).json({ error: "Neispravan status porudžbine." }); return;
+  }
+  const [order] = await db.update(retailOrdersTable).set({ status: next as typeof retailOrdersTable.$inferInsert.status, updatedAt: new Date() })
+    .where(eq(retailOrdersTable.id, req.params.orderId)).returning();
+  if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
+  res.json(await retailOrderWithItems(order));
+});
+
+router.patch("/admin/retail-orders/:orderId/payment-status", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const next = req.body?.paymentStatus;
+  if (typeof next !== "string" || !["unpaid", "pending", "paid", "refunded", "failed"].includes(next)) {
+    res.status(400).json({ error: "Neispravan status plaćanja." }); return;
+  }
+  const [order] = await db.update(retailOrdersTable).set({
+    paymentStatus: next as typeof retailOrdersTable.$inferInsert.paymentStatus, updatedAt: new Date(),
+  }).where(eq(retailOrdersTable.id, req.params.orderId)).returning();
+  if (!order) { res.status(404).json({ error: "Retail porudžbina nije pronađena." }); return; }
+  res.json(await retailOrderWithItems(order));
+});
+
+router.get("/retail/products/:productId/reviews", async (req, res): Promise<void> => {
+  const rows = await db.select().from(retailProductReviewsTable).where(eq(retailProductReviewsTable.productId, req.params.productId))
+    .orderBy(desc(retailProductReviewsTable.updatedAt));
+  res.json(rows.map((review) => ({ id: review.id, rating: review.rating, comment: review.comment, createdAt: review.updatedAt.toISOString() })));
+});
+
+router.post("/customer/retail-products/:productId/reviews", async (req, res): Promise<void> => {
+  const user = await getCurrentUser(req);
+  if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
+  const rating = req.body?.rating;
+  const comment = typeof req.body?.comment === "string" ? req.body.comment.trim().slice(0, 2000) : "";
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) { res.status(400).json({ error: "Ocena mora biti između 1 i 5." }); return; }
+  const delivered = await db.select({ item: retailOrderItemsTable }).from(retailOrderItemsTable)
+    .innerJoin(retailOrdersTable, eq(retailOrderItemsTable.orderId, retailOrdersTable.id))
+    .where(and(eq(retailOrderItemsTable.productId, req.params.productId), eq(retailOrdersTable.userId, user.id), eq(retailOrdersTable.status, "delivered")));
+  const item = delivered[0]?.item;
+  if (!item) { res.status(403).json({ error: "Recenziju može ostaviti samo kupac kome je proizvod dostavljen." }); return; }
+  const [existing] = await db.select().from(retailProductReviewsTable).where(and(
+    eq(retailProductReviewsTable.orderItemId, item.id), eq(retailProductReviewsTable.userId, user.id),
+  )).limit(1);
+  const [saved] = existing
+    ? await db.update(retailProductReviewsTable).set({ rating, comment, updatedAt: new Date() }).where(eq(retailProductReviewsTable.id, existing.id)).returning()
+    : await db.insert(retailProductReviewsTable).values({ productId: req.params.productId, orderItemId: item.id, userId: user.id, rating, comment }).returning();
+  res.json({ id: saved!.id, rating: saved!.rating, comment: saved!.comment, createdAt: saved!.updatedAt.toISOString() });
+});
+
 router.get("/shop/products", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const normalized = normalizeBooleanQuery(req.query, ["onSale", "isNew", "isBestseller"]);
@@ -7471,7 +7887,10 @@ router.get("/shop/products", async (req, res): Promise<void> => {
   const parsed = ListProductsQueryParams.safeParse(normalized);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const q = parsed.data;
-  const productFilters: Parameters<typeof and>[0][] = [eq(productsTable.active, true)];
+  const productFilters: Parameters<typeof and>[0][] = [
+    eq(productsTable.active, true),
+    eq(productsTable.professionalEnabled, true),
+  ];
   if (q.category) productFilters.push(eq(productsTable.categoryName, q.category));
   if (q.subcategory) productFilters.push(eq(productsTable.subcategoryName, q.subcategory));
   if (q.brand) productFilters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
@@ -7517,7 +7936,7 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
   const [product] = await db
     .select()
     .from(productsTable)
-    .where(and(eq(productsTable.id, parsed.data.productId), eq(productsTable.active, true), activeCategoryCondition()))
+    .where(and(eq(productsTable.id, parsed.data.productId), eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), activeCategoryCondition()))
     .limit(1);
   if (!product) {
     res.status(404).json({ error: "Proizvod nije pronađen ili nije dostupan." }); return;
@@ -7531,7 +7950,7 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
     db
       .select()
       .from(productsTable)
-      .where(and(eq(productsTable.active, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition()))
+      .where(and(eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition()))
       .orderBy(asc(productsTable.name), asc(productsTable.id))
       .limit(4),
   ]);
@@ -7558,7 +7977,9 @@ router.post("/shop/products/:productId/reviews", async (req, res): Promise<void>
   const params = UpsertProductReviewParams.safeParse(req.params);
   const body = UpsertProductReviewBody.safeParse(req.body);
   if (!params.success || !body.success) { res.status(400).json({ error: !params.success ? params.error.message : body.error?.message ?? "Neispravan zahtev." }); return; }
-  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, params.data.productId)).limit(1);
+  const [product] = await db.select().from(productsTable).where(and(
+    eq(productsTable.id, params.data.productId), eq(productsTable.professionalEnabled, true),
+  )).limit(1);
   if (!product) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
   const orders = await db.select({ id: ordersTable.id }).from(ordersTable)
     .where(and(eq(ordersTable.salonId, access.salon.id), inArray(ordersTable.status, ["paid", "processing", "shipped", "delivered"])));
@@ -7730,7 +8151,9 @@ async function shopCartDto(salonId: string) {
   if (!cart) return { id: null, items: [], itemCount: 0, subtotal: 0, totalWeightGrams: 0 };
   const items = await db.select().from(shoppingCartItemsTable).where(eq(shoppingCartItemsTable.cartId, cart.id)).orderBy(asc(shoppingCartItemsTable.createdAt));
   const productIds = [...new Set(items.map((item) => item.productId))];
-  const products = productIds.length ? await db.select().from(productsTable).where(inArray(productsTable.id, productIds)) : [];
+  const products = productIds.length ? await db.select().from(productsTable).where(and(
+    inArray(productsTable.id, productIds), eq(productsTable.professionalEnabled, true),
+  )) : [];
   const byId = new Map(products.map((product) => [product.id, product]));
   const views = items.map((item) => {
     const product = byId.get(item.productId);
@@ -7784,7 +8207,9 @@ router.post("/shop/cart/items", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = AddShopCartItemBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [product] = await db.select().from(productsTable).where(eq(productsTable.id, parsed.data.productId)).limit(1);
+  const [product] = await db.select().from(productsTable).where(and(
+    eq(productsTable.id, parsed.data.productId), eq(productsTable.professionalEnabled, true),
+  )).limit(1);
   if (!product || !product.active) { res.status(404).json({ error: "Proizvod nije dostupan." }); return; }
   const categories = await db.select().from(productCategoriesTable);
   if (!productBelongsToActiveCategory(product, categories)) { res.status(400).json({ error: "Kategorija ovog proizvoda trenutno nije dostupna." }); return; }
@@ -7826,7 +8251,9 @@ router.patch("/shop/cart/items/:cartItemId", async (req, res): Promise<void> => 
     await tx.execute(sql`select id from shopping_carts where id = ${cart.id} for update`);
     const [item] = await tx.select().from(shoppingCartItemsTable).where(and(eq(shoppingCartItemsTable.id, params.data.cartItemId), eq(shoppingCartItemsTable.cartId, cart.id))).limit(1);
     if (!item) return { error: "Stavka korpe nije pronađena.", status: 404 };
-    const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, item.productId)).limit(1);
+    const [product] = await tx.select().from(productsTable).where(and(
+      eq(productsTable.id, item.productId), eq(productsTable.professionalEnabled, true),
+    )).limit(1);
     if (!product || !product.active) return { error: "Proizvod više nije dostupan.", status: 400 };
     const line = cartLineForProduct(product, item.variantValue ?? undefined, body.data.quantity);
     if ("error" in line) return { error: line.error, status: 400 };
@@ -7922,7 +8349,9 @@ router.post("/shop/checkout", async (req, res): Promise<void> => {
     const lockedProducts = new Map<string, typeof productsTable.$inferSelect>();
     for (const productId of productIds.sort()) {
       await tx.execute(sql`select id from products where id = ${productId} for update`);
-      const [product] = await tx.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
+      const [product] = await tx.select().from(productsTable).where(and(
+        eq(productsTable.id, productId), eq(productsTable.professionalEnabled, true),
+      )).limit(1);
       if (!product || !product.active) {
         conflictProductName = product?.name ?? "izabrani proizvod";
         tx.rollback();
@@ -12498,7 +12927,8 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     images: item.images ?? [],
     price: item.price,
     discountPrice: item.discountPrice ?? null,
-    publicEnabled: item.publicEnabled,
+    retailEnabled: item.retailEnabled,
+    professionalEnabled: item.professionalEnabled,
     publicDescription: item.publicDescription ?? null,
     publicPrice: item.publicPrice ?? null,
     publicDiscountPrice: item.publicDiscountPrice ?? null,
@@ -12517,12 +12947,14 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
 }
 
 function publicStorefrontError(data: {
-  publicEnabled?: boolean;
+  retailEnabled?: boolean;
   publicDescription?: string | null;
   publicPrice?: number | null;
   publicDiscountPrice?: number | null;
+  variants?: Array<unknown> | null;
 }): string | null {
-  if (!data.publicEnabled) return null;
+  if (!data.retailEnabled) return null;
+  if (data.variants?.length) return "Proizvod sa B2B varijantama ne može biti objavljen za kućnu negu dok retail varijante nisu posebno podešene.";
   if (!data.publicDescription?.trim()) return "Javni proizvod mora imati poseban opis za kupce.";
   if (data.publicPrice == null) return "Javni proizvod mora imati javnu cenu za kupce.";
   if (data.publicDiscountPrice != null && data.publicDiscountPrice >= data.publicPrice) {
@@ -12653,7 +13085,8 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         images: body.images ?? [],
         price: body.price,
         discountPrice: body.discountPrice ?? null,
-        publicEnabled: body.publicEnabled ?? false,
+        retailEnabled: body.retailEnabled ?? false,
+        professionalEnabled: body.professionalEnabled ?? true,
         publicDescription: body.publicDescription?.trim() || null,
         publicPrice: body.publicPrice ?? null,
         publicDiscountPrice: body.publicDiscountPrice ?? null,
@@ -12740,10 +13173,11 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Akcijska cena mora biti niža od redovne cene." }); return;
   }
   const publicError = publicStorefrontError({
-    publicEnabled: body.publicEnabled ?? existing.publicEnabled,
+    retailEnabled: body.retailEnabled ?? existing.retailEnabled,
     publicDescription: body.publicDescription !== undefined ? body.publicDescription : existing.publicDescription,
     publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
     publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,
+    variants: body.variants !== undefined ? body.variants : existing.variants,
   });
   if (publicError) { res.status(400).json({ error: publicError }); return; }
   if (body.sku && body.sku !== existing.sku) {
@@ -12796,7 +13230,8 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         images: nextImages,
         price: nextPrice,
         discountPrice: nextDiscount,
-        publicEnabled: body.publicEnabled ?? existing.publicEnabled,
+        retailEnabled: body.retailEnabled ?? existing.retailEnabled,
+        professionalEnabled: body.professionalEnabled ?? existing.professionalEnabled,
         publicDescription: body.publicDescription !== undefined ? body.publicDescription?.trim() || null : existing.publicDescription,
         publicPrice: body.publicPrice !== undefined ? body.publicPrice : existing.publicPrice,
         publicDiscountPrice: body.publicDiscountPrice !== undefined ? body.publicDiscountPrice : existing.publicDiscountPrice,

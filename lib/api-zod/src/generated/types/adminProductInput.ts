@@ -39,7 +39,8 @@ export interface AdminProductInput {
      * @nullable
      */
   discountPrice?: number | null;
-  publicEnabled?: boolean;
+  retailEnabled?: boolean;
+  professionalEnabled?: boolean;
   /**
      * @maxLength 10000
      * @nullable

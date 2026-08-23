@@ -25,7 +25,8 @@ export interface AdminProduct {
   price: number;
   /** @nullable */
   discountPrice?: number | null;
-  publicEnabled: boolean;
+  retailEnabled: boolean;
+  professionalEnabled: boolean;
   /** @nullable */
   publicDescription?: string | null;
   /**

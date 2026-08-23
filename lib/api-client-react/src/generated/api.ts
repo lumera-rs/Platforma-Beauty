@@ -194,6 +194,7 @@ import type {
   OwnerListEmployeePerformanceParams,
   PackagePurchase,
   PlatformTrustStats,
+  PreviewRetailCheckoutParams,
   ProductBrand,
   ProductCategory,
   ProductDetail,
@@ -206,6 +207,10 @@ import type {
   RedeemSessionBody,
   RedeemSessionResult,
   RegisterInput,
+  RetailCart,
+  RetailCartItemInput,
+  RetailCheckoutInput,
+  RetailOrder,
   RetentionSettings,
   RetentionSettingsHistoryEntry,
   RetentionSettingsPreview,
@@ -263,6 +268,7 @@ import type {
   SubscriptionPlanInput,
   SubscriptionPlanUpdate,
   TimeSlot,
+  TrackRetailOrderParams,
   TreatmentPackage,
   TreatmentPackagePublic,
   TreatmentPhoto,
@@ -19074,4 +19080,1131 @@ export const useCreateWidgetAppointment = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getCreateWidgetAppointmentMutationOptions(options));
+    }
+
+export const getGetRetailCartUrl = () => {
+
+
+
+
+  return `/api/retail/cart`
+}
+
+/**
+ * @summary Get the current guest or customer retail cart
+ */
+export const getRetailCart = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getGetRetailCartUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRetailCartQueryKey = () => {
+    return [
+    `/api/retail/cart`
+    ] as const;
+    }
+
+
+export const getGetRetailCartQueryOptions = <TData = Awaited<ReturnType<typeof getRetailCart>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailCart>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRetailCartQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRetailCart>>> = ({ signal }) => getRetailCart({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRetailCart>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRetailCartQueryResult = NonNullable<Awaited<ReturnType<typeof getRetailCart>>>
+export type GetRetailCartQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the current guest or customer retail cart
+ */
+
+export function useGetRetailCart<TData = Awaited<ReturnType<typeof getRetailCart>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailCart>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRetailCartQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddRetailCartItemUrl = () => {
+
+
+
+
+  return `/api/retail/cart/items`
+}
+
+/**
+ * @summary Add a retail product to the separate guest/customer cart
+ */
+export const addRetailCartItem = async (retailCartItemInput: RetailCartItemInput, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getAddRetailCartItemUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retailCartItemInput)
+  }
+);}
+
+
+
+
+
+export const getAddRetailCartItemMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRetailCartItem>>, TError,{data: BodyType<RetailCartItemInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addRetailCartItem>>, TError,{data: BodyType<RetailCartItemInput>}, TContext> => {
+
+const mutationKey = ['addRetailCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addRetailCartItem>>, {data: BodyType<RetailCartItemInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  addRetailCartItem(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddRetailCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof addRetailCartItem>>>
+    export type AddRetailCartItemMutationBody = BodyType<RetailCartItemInput>
+    export type AddRetailCartItemMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a retail product to the separate guest/customer cart
+ */
+export const useAddRetailCartItem = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRetailCartItem>>, TError,{data: BodyType<RetailCartItemInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addRetailCartItem>>,
+        TError,
+        {data: BodyType<RetailCartItemInput>},
+        TContext
+      > => {
+      return useMutation(getAddRetailCartItemMutationOptions(options));
+    }
+
+export const getUpdateRetailCartItemUrl = (cartItemId: string,) => {
+
+
+
+
+  return `/api/retail/cart/items/${cartItemId}`
+}
+
+/**
+ * @summary Change a retail cart item quantity
+ */
+export const updateRetailCartItem = async (cartItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getUpdateRetailCartItemUrl(cartItemId),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getUpdateRetailCartItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRetailCartItem>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateRetailCartItem>>, TError,{cartItemId: string}, TContext> => {
+
+const mutationKey = ['updateRetailCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateRetailCartItem>>, {cartItemId: string}> = (props) => {
+          const {cartItemId} = props ?? {};
+
+          return  updateRetailCartItem(cartItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateRetailCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateRetailCartItem>>>
+
+    export type UpdateRetailCartItemMutationError = ErrorType<void>
+
+    /**
+ * @summary Change a retail cart item quantity
+ */
+export const useUpdateRetailCartItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRetailCartItem>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateRetailCartItem>>,
+        TError,
+        {cartItemId: string},
+        TContext
+      > => {
+      return useMutation(getUpdateRetailCartItemMutationOptions(options));
+    }
+
+export const getRemoveRetailCartItemUrl = (cartItemId: string,) => {
+
+
+
+
+  return `/api/retail/cart/items/${cartItemId}`
+}
+
+/**
+ * @summary Remove an item from the current retail cart
+ */
+export const removeRetailCartItem = async (cartItemId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailCart> => {
+
+  return customFetch<RetailCart>(getRemoveRetailCartItemUrl(cartItemId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveRetailCartItemMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeRetailCartItem>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeRetailCartItem>>, TError,{cartItemId: string}, TContext> => {
+
+const mutationKey = ['removeRetailCartItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeRetailCartItem>>, {cartItemId: string}> = (props) => {
+          const {cartItemId} = props ?? {};
+
+          return  removeRetailCartItem(cartItemId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveRetailCartItemMutationResult = NonNullable<Awaited<ReturnType<typeof removeRetailCartItem>>>
+
+    export type RemoveRetailCartItemMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove an item from the current retail cart
+ */
+export const useRemoveRetailCartItem = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeRetailCartItem>>, TError,{cartItemId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeRetailCartItem>>,
+        TError,
+        {cartItemId: string},
+        TContext
+      > => {
+      return useMutation(getRemoveRetailCartItemMutationOptions(options));
+    }
+
+export const getPreviewRetailCheckoutUrl = (params?: PreviewRetailCheckoutParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/retail/checkout-preview?${stringifiedParams}` : `/api/retail/checkout-preview`
+}
+
+/**
+ * @summary Calculate delivery and final total for the selected retail destination
+ */
+export const previewRetailCheckout = async (params?: PreviewRetailCheckoutParams, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getPreviewRetailCheckoutUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getPreviewRetailCheckoutQueryKey = (params?: PreviewRetailCheckoutParams,) => {
+    return [
+    `/api/retail/checkout-preview`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getPreviewRetailCheckoutQueryOptions = <TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void>>(params?: PreviewRetailCheckoutParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getPreviewRetailCheckoutQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof previewRetailCheckout>>> = ({ signal }) => previewRetailCheckout(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type PreviewRetailCheckoutQueryResult = NonNullable<Awaited<ReturnType<typeof previewRetailCheckout>>>
+export type PreviewRetailCheckoutQueryError = ErrorType<void>
+
+
+/**
+ * @summary Calculate delivery and final total for the selected retail destination
+ */
+
+export function usePreviewRetailCheckout<TData = Awaited<ReturnType<typeof previewRetailCheckout>>, TError = ErrorType<void>>(
+ params?: PreviewRetailCheckoutParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof previewRetailCheckout>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getPreviewRetailCheckoutQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCheckoutRetailCartUrl = () => {
+
+
+
+
+  return `/api/retail/checkout`
+}
+
+/**
+ * @summary Create an idempotent retail order from the current cart
+ */
+export const checkoutRetailCart = async (retailCheckoutInput: RetailCheckoutInput, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getCheckoutRetailCartUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(retailCheckoutInput)
+  }
+);}
+
+
+
+
+
+export const getCheckoutRetailCartMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext> => {
+
+const mutationKey = ['checkoutRetailCart'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkoutRetailCart>>, {data: BodyType<RetailCheckoutInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  checkoutRetailCart(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckoutRetailCartMutationResult = NonNullable<Awaited<ReturnType<typeof checkoutRetailCart>>>
+    export type CheckoutRetailCartMutationBody = BodyType<RetailCheckoutInput>
+    export type CheckoutRetailCartMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create an idempotent retail order from the current cart
+ */
+export const useCheckoutRetailCart = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkoutRetailCart>>, TError,{data: BodyType<RetailCheckoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof checkoutRetailCart>>,
+        TError,
+        {data: BodyType<RetailCheckoutInput>},
+        TContext
+      > => {
+      return useMutation(getCheckoutRetailCartMutationOptions(options));
+    }
+
+export const getTrackRetailOrderUrl = (params: TrackRetailOrderParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/retail/orders/track?${stringifiedParams}` : `/api/retail/orders/track`
+}
+
+/**
+ * @summary Track a retail order using its opaque guest access token
+ */
+export const trackRetailOrder = async (params: TrackRetailOrderParams, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getTrackRetailOrderUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getTrackRetailOrderQueryKey = (params?: TrackRetailOrderParams,) => {
+    return [
+    `/api/retail/orders/track`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getTrackRetailOrderQueryOptions = <TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<unknown>>(params: TrackRetailOrderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTrackRetailOrderQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof trackRetailOrder>>> = ({ signal }) => trackRetailOrder(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type TrackRetailOrderQueryResult = NonNullable<Awaited<ReturnType<typeof trackRetailOrder>>>
+export type TrackRetailOrderQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Track a retail order using its opaque guest access token
+ */
+
+export function useTrackRetailOrder<TData = Awaited<ReturnType<typeof trackRetailOrder>>, TError = ErrorType<unknown>>(
+ params: TrackRetailOrderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof trackRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getTrackRetailOrderQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListCustomerRetailOrdersUrl = () => {
+
+
+
+
+  return `/api/customer/retail-orders`
+}
+
+/**
+ * @summary List only the authenticated customer's retail orders
+ */
+export const listCustomerRetailOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder[]> => {
+
+  return customFetch<RetailOrder[]>(getListCustomerRetailOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCustomerRetailOrdersQueryKey = () => {
+    return [
+    `/api/customer/retail-orders`
+    ] as const;
+    }
+
+
+export const getListCustomerRetailOrdersQueryOptions = <TData = Awaited<ReturnType<typeof listCustomerRetailOrders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCustomerRetailOrdersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCustomerRetailOrders>>> = ({ signal }) => listCustomerRetailOrders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCustomerRetailOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCustomerRetailOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof listCustomerRetailOrders>>>
+export type ListCustomerRetailOrdersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List only the authenticated customer's retail orders
+ */
+
+export function useListCustomerRetailOrders<TData = Awaited<ReturnType<typeof listCustomerRetailOrders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCustomerRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCustomerRetailOrdersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCustomerRetailOrderUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/customer/retail-orders/${orderId}`
+}
+
+/**
+ * @summary Get one retail order owned by the authenticated customer
+ */
+export const getCustomerRetailOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getGetCustomerRetailOrderUrl(orderId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCustomerRetailOrderQueryKey = (orderId: string,) => {
+    return [
+    `/api/customer/retail-orders/${orderId}`
+    ] as const;
+    }
+
+
+export const getGetCustomerRetailOrderQueryOptions = <TData = Awaited<ReturnType<typeof getCustomerRetailOrder>>, TError = ErrorType<void>>(orderId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomerRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCustomerRetailOrderQueryKey(orderId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCustomerRetailOrder>>> = ({ signal }) => getCustomerRetailOrder(orderId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderId !== null && orderId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCustomerRetailOrder>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCustomerRetailOrderQueryResult = NonNullable<Awaited<ReturnType<typeof getCustomerRetailOrder>>>
+export type GetCustomerRetailOrderQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get one retail order owned by the authenticated customer
+ */
+
+export function useGetCustomerRetailOrder<TData = Awaited<ReturnType<typeof getCustomerRetailOrder>>, TError = ErrorType<void>>(
+ orderId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCustomerRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCustomerRetailOrderQueryOptions(orderId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminListRetailOrdersUrl = () => {
+
+
+
+
+  return `/api/admin/retail-orders`
+}
+
+/**
+ * @summary List retail orders for administration
+ */
+export const adminListRetailOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder[]> => {
+
+  return customFetch<RetailOrder[]>(getAdminListRetailOrdersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminListRetailOrdersQueryKey = () => {
+    return [
+    `/api/admin/retail-orders`
+    ] as const;
+    }
+
+
+export const getAdminListRetailOrdersQueryOptions = <TData = Awaited<ReturnType<typeof adminListRetailOrders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminListRetailOrdersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListRetailOrders>>> = ({ signal }) => adminListRetailOrders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminListRetailOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof adminListRetailOrders>>>
+export type AdminListRetailOrdersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List retail orders for administration
+ */
+
+export function useAdminListRetailOrders<TData = Awaited<ReturnType<typeof adminListRetailOrders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminListRetailOrdersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetRetailOrderUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/admin/retail-orders/${orderId}`
+}
+
+/**
+ * @summary Get the retail order snapshot and customer delivery details
+ */
+export const adminGetRetailOrder = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getAdminGetRetailOrderUrl(orderId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetRetailOrderQueryKey = (orderId: string,) => {
+    return [
+    `/api/admin/retail-orders/${orderId}`
+    ] as const;
+    }
+
+
+export const getAdminGetRetailOrderQueryOptions = <TData = Awaited<ReturnType<typeof adminGetRetailOrder>>, TError = ErrorType<unknown>>(orderId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetRetailOrderQueryKey(orderId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetRetailOrder>>> = ({ signal }) => adminGetRetailOrder(orderId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: orderId !== null && orderId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetRetailOrder>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetRetailOrderQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetRetailOrder>>>
+export type AdminGetRetailOrderQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the retail order snapshot and customer delivery details
+ */
+
+export function useAdminGetRetailOrder<TData = Awaited<ReturnType<typeof adminGetRetailOrder>>, TError = ErrorType<unknown>>(
+ orderId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetRetailOrder>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetRetailOrderQueryOptions(orderId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminUpdateRetailOrderStatusUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/admin/retail-orders/${orderId}/status`
+}
+
+/**
+ * @summary Update retail fulfillment status
+ */
+export const adminUpdateRetailOrderStatus = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getAdminUpdateRetailOrderStatusUrl(orderId),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateRetailOrderStatusMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext> => {
+
+const mutationKey = ['adminUpdateRetailOrderStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, {orderId: string}> = (props) => {
+          const {orderId} = props ?? {};
+
+          return  adminUpdateRetailOrderStatus(orderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateRetailOrderStatusMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>>
+
+    export type AdminUpdateRetailOrderStatusMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update retail fulfillment status
+ */
+export const useAdminUpdateRetailOrderStatus = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateRetailOrderStatus>>,
+        TError,
+        {orderId: string},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateRetailOrderStatusMutationOptions(options));
+    }
+
+export const getAdminUpdateRetailPaymentStatusUrl = (orderId: string,) => {
+
+
+
+
+  return `/api/admin/retail-orders/${orderId}/payment-status`
+}
+
+/**
+ * @summary Update retail payment state separately from fulfillment status
+ */
+export const adminUpdateRetailPaymentStatus = async (orderId: string, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder> => {
+
+  return customFetch<RetailOrder>(getAdminUpdateRetailPaymentStatusUrl(orderId),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminUpdateRetailPaymentStatusMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>, TError,{orderId: string}, TContext> => {
+
+const mutationKey = ['adminUpdateRetailPaymentStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>, {orderId: string}> = (props) => {
+          const {orderId} = props ?? {};
+
+          return  adminUpdateRetailPaymentStatus(orderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminUpdateRetailPaymentStatusMutationResult = NonNullable<Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>>
+
+    export type AdminUpdateRetailPaymentStatusMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update retail payment state separately from fulfillment status
+ */
+export const useAdminUpdateRetailPaymentStatus = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>, TError,{orderId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminUpdateRetailPaymentStatus>>,
+        TError,
+        {orderId: string},
+        TContext
+      > => {
+      return useMutation(getAdminUpdateRetailPaymentStatusMutationOptions(options));
+    }
+
+export const getListRetailProductReviewsUrl = (productId: string,) => {
+
+
+
+
+  return `/api/retail/products/${productId}/reviews`
+}
+
+/**
+ * @summary List public aggregated retail reviews for a product
+ */
+export const listRetailProductReviews = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getListRetailProductReviewsUrl(productId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRetailProductReviewsQueryKey = (productId: string,) => {
+    return [
+    `/api/retail/products/${productId}/reviews`
+    ] as const;
+    }
+
+
+export const getListRetailProductReviewsQueryOptions = <TData = Awaited<ReturnType<typeof listRetailProductReviews>>, TError = ErrorType<unknown>>(productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRetailProductReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRetailProductReviewsQueryKey(productId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRetailProductReviews>>> = ({ signal }) => listRetailProductReviews(productId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: productId !== null && productId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRetailProductReviews>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRetailProductReviewsQueryResult = NonNullable<Awaited<ReturnType<typeof listRetailProductReviews>>>
+export type ListRetailProductReviewsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List public aggregated retail reviews for a product
+ */
+
+export function useListRetailProductReviews<TData = Awaited<ReturnType<typeof listRetailProductReviews>>, TError = ErrorType<unknown>>(
+ productId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRetailProductReviews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRetailProductReviewsQueryOptions(productId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpsertCustomerRetailProductReviewUrl = (productId: string,) => {
+
+
+
+
+  return `/api/customer/retail-products/${productId}/reviews`
+}
+
+/**
+ * @summary Create or update a review for an authenticated customer's delivered item
+ */
+export const upsertCustomerRetailProductReview = async (productId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUpsertCustomerRetailProductReviewUrl(productId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getUpsertCustomerRetailProductReviewMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>, TError,{productId: string}, TContext> => {
+
+const mutationKey = ['upsertCustomerRetailProductReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>, {productId: string}> = (props) => {
+          const {productId} = props ?? {};
+
+          return  upsertCustomerRetailProductReview(productId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertCustomerRetailProductReviewMutationResult = NonNullable<Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>>
+
+    export type UpsertCustomerRetailProductReviewMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create or update a review for an authenticated customer's delivered item
+ */
+export const useUpsertCustomerRetailProductReview = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>, TError,{productId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertCustomerRetailProductReview>>,
+        TError,
+        {productId: string},
+        TContext
+      > => {
+      return useMutation(getUpsertCustomerRetailProductReviewMutationOptions(options));
     }

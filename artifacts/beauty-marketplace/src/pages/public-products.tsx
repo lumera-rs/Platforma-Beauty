@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { useToast } from "@/hooks/use-toast";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -24,6 +25,15 @@ function ProductPrice({ product }: { product: PublicProduct }) {
 }
 
 function PublicProductCard({ product }: { product: PublicProduct }) {
+  const { toast } = useToast();
+  const [adding, setAdding] = useState(false);
+  const add = async () => {
+    setAdding(true);
+    const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId: product.id, quantity: 1 }) });
+    setAdding(false);
+    if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
+    toast.success("Proizvod je dodat u korpu.");
+  };
   return (
     <article className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md">
       <Link href={`/proizvodi/${product.id}`} className="block">
@@ -43,19 +53,24 @@ function PublicProductCard({ product }: { product: PublicProduct }) {
           <ProductPrice product={product} />
         </div>
       </Link>
+      <div className="px-4 pb-4"><Button className="w-full" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button></div>
     </article>
   );
 }
 
 export default function PublicProductsPage() {
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebouncedSearch(search);
   const params = useMemo(() => ({
     page,
     pageSize: 24,
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-  }), [debouncedSearch, page]);
+    ...(category.trim() ? { category: category.trim() } : {}),
+    ...(brand.trim() ? { brand: brand.trim() } : {}),
+  }), [debouncedSearch, category, brand, page]);
   const { data, isLoading, isError } = useListPublicProducts(params);
 
   return (
@@ -70,10 +85,14 @@ export default function PublicProductsPage() {
         </section>
 
         <section className="mt-8">
-          <label className="relative block max-w-xl">
+          <div className="grid max-w-3xl gap-3 sm:grid-cols-3">
+          <label className="relative block sm:col-span-3">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Pretražite proizvode..." className="h-12 pl-10" data-testid="public-product-search" />
           </label>
+          <Input value={category} onChange={(event) => { setCategory(event.target.value); setPage(1); }} placeholder="Kategorija" aria-label="Filtriraj po kategoriji" />
+          <Input value={brand} onChange={(event) => { setBrand(event.target.value); setPage(1); }} placeholder="Brend" aria-label="Filtriraj po brendu" />
+          </div>
         </section>
 
         <section className="mt-8">
@@ -112,6 +131,15 @@ export function PublicProductDetailPage() {
   const [, params] = useRoute("/proizvodi/:productId");
   const productId = params?.productId ?? "";
   const { data: product, isLoading, isError } = useGetPublicProduct(productId);
+  const { toast } = useToast();
+  const [adding, setAdding] = useState(false);
+  const add = async () => {
+    setAdding(true);
+    const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId, quantity: 1 }) });
+    setAdding(false);
+    if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
+    toast.success("Proizvod je dodat u korpu.");
+  };
 
   if (isLoading) return <Layout><div className="flex min-h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Layout>;
   if (isError || !product) {
@@ -132,7 +160,8 @@ export function PublicProductDetailPage() {
             <h1 className="mt-2 font-serif text-4xl font-bold tracking-tight">{product.name}</h1>
             <div className="mt-5"><ProductPrice product={product} /></div>
             <p className="mt-7 whitespace-pre-line leading-7 text-muted-foreground">{product.description}</p>
-            <div className="mt-8 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"><strong className="block text-foreground">Informacije za kupce</strong><span className="mt-1 block">Cena je javno prikazana. Za raspoloživost i kupovinu obratite se LUMERA partneru.</span></div>
+            <div className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button><Button size="lg" variant="outline" asChild><Link href="/korpa">Pogledaj korpu</Link></Button></div>
+            <div className="mt-5 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"><strong className="block text-foreground">Bezbedna retail kupovina</strong><span className="mt-1 block">Konačna dostupnost i javna cena proveravaju se ponovo prilikom potvrde porudžbine.</span></div>
           </div>
         </section>
         {product.relatedProducts.length > 0 && (

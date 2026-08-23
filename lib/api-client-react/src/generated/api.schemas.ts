@@ -1408,6 +1408,126 @@ export interface ServiceInput {
   resourceRequirements?: ServiceResourceRequirement[];
 }
 
+export interface RetailCartItemInput {
+  /** @minLength 1 */
+  productId: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  quantity: number;
+}
+
+export type RetailCartItemsItem = {
+  id: string;
+  productId: string;
+  name: string;
+  imageUrl: string;
+  /** @minimum 1 */
+  quantity: number;
+  /** @minimum 0 */
+  unitPrice: number;
+  /** @minimum 0 */
+  lineTotal: number;
+};
+
+export interface RetailCart {
+  id: string;
+  /** @minimum 0 */
+  itemCount: number;
+  /** @minimum 0 */
+  subtotal: number;
+  items: RetailCartItemsItem[];
+}
+
+export type RetailCheckoutInputPaymentMethod = typeof RetailCheckoutInputPaymentMethod[keyof typeof RetailCheckoutInputPaymentMethod];
+
+
+export const RetailCheckoutInputPaymentMethod = {
+  CARD: 'CARD',
+  BANK_TRANSFER: 'BANK_TRANSFER',
+  CASH_ON_DELIVERY: 'CASH_ON_DELIVERY',
+} as const;
+
+export type RetailCheckoutInputDeliveryMethod = typeof RetailCheckoutInputDeliveryMethod[keyof typeof RetailCheckoutInputDeliveryMethod];
+
+
+export const RetailCheckoutInputDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export interface RetailCheckoutInput {
+  /**
+     * @minLength 16
+     * @maxLength 200
+     */
+  idempotencyKey: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  firstName: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  lastName: string;
+  /**
+     * @minLength 5
+     * @maxLength 320
+     * @pattern ^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$
+     */
+  email: string;
+  /**
+     * @minLength 6
+     * @maxLength 40
+     */
+  phone: string;
+  /**
+     * @minLength 2
+     * @maxLength 250
+     */
+  street: string;
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  city: string;
+  /**
+     * @minLength 3
+     * @maxLength 20
+     */
+  postalCode: string;
+  /** @maxLength 1000 */
+  note?: string;
+  paymentMethod: RetailCheckoutInputPaymentMethod;
+  deliveryMethod?: RetailCheckoutInputDeliveryMethod;
+}
+
+export type RetailOrderItemsItem = {
+  id: string;
+  productId: string;
+  name: string;
+  imageUrl: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+export interface RetailOrder {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  deliveryMethod: string;
+  subtotal: number;
+  shippingCost: number;
+  total: number;
+  createdAt: string;
+  items: RetailOrderItemsItem[];
+}
+
 export type ProductCategorySubcategoriesItem = {
   id: string;
   name: string;
@@ -3303,7 +3423,8 @@ export interface AdminProduct {
   price: number;
   /** @nullable */
   discountPrice?: number | null;
-  publicEnabled: boolean;
+  retailEnabled: boolean;
+  professionalEnabled: boolean;
   /** @nullable */
   publicDescription?: string | null;
   /**
@@ -3374,7 +3495,8 @@ export interface AdminProductInput {
      * @nullable
      */
   discountPrice?: number | null;
-  publicEnabled?: boolean;
+  retailEnabled?: boolean;
+  professionalEnabled?: boolean;
   /**
      * @maxLength 10000
      * @nullable
@@ -3447,7 +3569,8 @@ export interface AdminProductUpdate {
      * @nullable
      */
   discountPrice?: number | null;
-  publicEnabled?: boolean;
+  retailEnabled?: boolean;
+  professionalEnabled?: boolean;
   /**
      * @maxLength 10000
      * @nullable
@@ -5773,4 +5896,24 @@ export type GetWidgetAvailabilityParams = {
 serviceId: string;
 date: string;
 employeeId?: string;
+};
+
+export type PreviewRetailCheckoutParams = {
+deliveryMethod?: PreviewRetailCheckoutDeliveryMethod;
+city?: string;
+};
+
+export type PreviewRetailCheckoutDeliveryMethod = typeof PreviewRetailCheckoutDeliveryMethod[keyof typeof PreviewRetailCheckoutDeliveryMethod];
+
+
+export const PreviewRetailCheckoutDeliveryMethod = {
+  courier: 'courier',
+  personal_belgrade: 'personal_belgrade',
+} as const;
+
+export type TrackRetailOrderParams = {
+/**
+ * @minLength 32
+ */
+token: string;
 };

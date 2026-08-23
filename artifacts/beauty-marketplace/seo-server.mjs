@@ -332,7 +332,7 @@ export async function createSeoResponse(req, template) {
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
   const origin = requestOrigin(req);
   if (pathname === '/robots.txt') {
-    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nSitemap: ${origin}/sitemap.xml\n` };
+    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nSitemap: ${origin}/sitemap.xml\n` };
   }
   if (pathname === '/sitemap.xml') {
     try { return { status: 200, type: 'application/xml; charset=utf-8', body: await buildSitemap(req) }; }

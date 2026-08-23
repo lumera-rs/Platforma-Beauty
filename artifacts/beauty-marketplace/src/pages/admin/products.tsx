@@ -57,7 +57,8 @@ const emptyForm: AdminProductInput = {
   images: [],
   price: 0,
   discountPrice: null,
-  publicEnabled: false,
+  retailEnabled: false,
+  professionalEnabled: true,
   publicDescription: null,
   publicPrice: null,
   publicDiscountPrice: null,
@@ -110,7 +111,8 @@ function ProductFormDialog({
           images: editing.images ?? [],
           price: editing.price,
           discountPrice: editing.discountPrice ?? null,
-          publicEnabled: editing.publicEnabled,
+          retailEnabled: editing.retailEnabled,
+          professionalEnabled: editing.professionalEnabled,
           publicDescription: editing.publicDescription ?? null,
           publicPrice: editing.publicPrice ?? null,
           publicDiscountPrice: editing.publicDiscountPrice ?? null,
@@ -306,10 +308,14 @@ function ProductFormDialog({
       ? { ok: true as const, value: null }
       : parseStrictInt(rawNums.publicDiscountPrice, { label: "Javna akcijska cena", allowNegative: false, allowZero: false });
     if (!publicDiscountParsed.ok) { toast.error("Greška", { description: publicDiscountParsed.message }); return; }
-    if (form.publicEnabled && !form.publicDescription?.trim()) {
+    if (!form.professionalEnabled && !form.retailEnabled) {
+      toast.error("Izaberite namenu proizvoda", { description: "Proizvod mora biti dostupan profesionalcima, za kućnu negu ili u oba kanala." });
+      return;
+    }
+    if (form.retailEnabled && !form.publicDescription?.trim()) {
       toast.error("Greška", { description: "Javni proizvod mora imati poseban opis za kupce." }); return;
     }
-    if (form.publicEnabled && publicPriceParsed.value === null) {
+    if (form.retailEnabled && publicPriceParsed.value === null) {
       toast.error("Greška", { description: "Javni proizvod mora imati javnu cenu za kupce." }); return;
     }
     if (publicDiscountParsed.value !== null && (publicPriceParsed.value === null || publicDiscountParsed.value >= publicPriceParsed.value)) {
@@ -470,14 +476,18 @@ function ProductFormDialog({
               </div>
               <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
                 <div>
-                  <p className="font-medium">Javni storefront za kupce</p>
+                  <p className="font-medium">Kanali prodaje</p>
                   <p className="mt-1 text-xs text-muted-foreground">Javne informacije su odvojene od B2B kataloga. Kupci i pretraživači vide samo opis i cene koje unesete ovde.</p>
                 </div>
                 <div className="flex items-center justify-between gap-4">
-                  <Label className="cursor-pointer">Objavi proizvod na javnoj prodavnici</Label>
-                  <Switch checked={form.publicEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, publicEnabled: checked })} data-testid="switch-product-public" />
+                  <Label className="cursor-pointer">Za profesionalce (B2B)</Label>
+                  <Switch checked={form.professionalEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, professionalEnabled: checked })} data-testid="switch-product-professional" />
                 </div>
-                {form.publicEnabled && (
+                <div className="flex items-center justify-between gap-4">
+                  <Label className="cursor-pointer">Za kućnu negu (retail)</Label>
+                  <Switch checked={form.retailEnabled ?? false} onCheckedChange={(checked) => setForm({ ...form, retailEnabled: checked })} data-testid="switch-product-retail" />
+                </div>
+                {form.retailEnabled && (
                   <>
                     <div className="space-y-2">
                       <Label>Javni opis za kupce *</Label>
@@ -978,7 +988,8 @@ export default function AdminProducts() {
                       <td className="p-3 hidden sm:table-cell">
                         <div className="flex flex-wrap gap-1">
                           {!p.active && <Badge variant="secondary" className="text-[10px]">Neaktivan</Badge>}
-                          {p.publicEnabled && <Badge className="bg-emerald-600 text-white border-none text-[10px]">Javno</Badge>}
+                          {p.professionalEnabled && <Badge className="bg-slate-700 text-white border-none text-[10px]">Profesionalci</Badge>}
+                          {p.retailEnabled && <Badge className="bg-emerald-600 text-white border-none text-[10px]">Kućna nega</Badge>}
                           {p.isNew && <Badge className="bg-sky-500 text-white border-none text-[10px]">Novo</Badge>}
                           {p.discountPercent != null && <Badge className="bg-destructive text-white border-none text-[10px]">-{p.discountPercent}%</Badge>}
                           {p.stock <= 0 && <Badge variant="outline" className="text-[10px] text-destructive border-destructive/40">Nema</Badge>}

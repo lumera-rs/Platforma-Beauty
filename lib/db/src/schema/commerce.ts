@@ -11,7 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { salonsTable } from "./core";
+import { salonsTable, usersTable } from "./core";
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
@@ -82,10 +82,11 @@ export const productsTable = pgTable("products", {
   images: jsonb("images").$type<string[]>().notNull().default([]),
   price: integer("price").notNull(),
   discountPrice: integer("discount_price"),
-  publicEnabled: boolean("public_enabled").notNull().default(false),
+  retailEnabled: boolean("retail_enabled").notNull().default(false),
   publicDescription: text("public_description"),
   publicPrice: integer("public_price"),
   publicDiscountPrice: integer("public_discount_price"),
+  professionalEnabled: boolean("professional_enabled").notNull().default(true),
   stock: integer("stock").notNull().default(0),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
@@ -100,7 +101,8 @@ export const productsTable = pgTable("products", {
   // Product catalog: active listings by category, sorted by creation date or price.
   index("products_category_active_idx").on(table.categoryId, table.active),
   index("products_active_created_idx").on(table.active, table.createdAt),
-  index("products_public_active_created_idx").on(table.publicEnabled, table.active, table.createdAt),
+  index("products_retail_active_created_idx").on(table.retailEnabled, table.active, table.createdAt),
+  index("products_professional_active_created_idx").on(table.professionalEnabled, table.active, table.createdAt),
   index("products_brand_active_idx").on(table.brand, table.active),
 ]);
 
@@ -289,6 +291,98 @@ export const productReviewsTable = pgTable("product_reviews", {
   uniqueIndex("product_reviews_product_salon_unique").on(table.productId, table.salonId),
   // Leading FK coverage for salonId (all reviews a salon has written).
   index("product_reviews_salon_idx").on(table.salonId),
+]);
+
+// Retail checkout is intentionally separate from the salon-owned B2B cart and
+// order model. This keeps guest identity, delivery snapshots, and inventory
+// reservations out of fulfillment code that assumes a salon.
+export const retailCartsTable = pgTable("retail_carts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  tokenHash: text("token_hash").notNull().unique(),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("retail_carts_user_idx").on(table.userId),
+]);
+
+export const retailCartItemsTable = pgTable("retail_cart_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cartId: uuid("cart_id").notNull().references(() => retailCartsTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  variantValue: text("variant_value"),
+  productName: text("product_name").notNull(),
+  productImageUrl: text("product_image_url").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+  quantity: integer("quantity").notNull(),
+  weightGrams: integer("weight_grams").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("retail_cart_items_cart_product_variant_unique").on(table.cartId, table.productId, table.variantValue),
+  index("retail_cart_items_cart_idx").on(table.cartId),
+  index("retail_cart_items_product_idx").on(table.productId),
+]);
+
+export const retailOrdersTable = pgTable("retail_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderNumber: text("order_number").notNull().unique(),
+  cartId: uuid("cart_id").notNull().references(() => retailCartsTable.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  trackingTokenHash: text("tracking_token_hash").notNull().unique(),
+  trackingTokenRevokedAt: timestamp("tracking_token_revoked_at", { withTimezone: true }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  status: orderStatusEnum("status").notNull().default("pending"),
+  paymentMethod: paymentMethodEnum("payment_method").notNull(),
+  paymentStatus: paymentStatusEnum("payment_status").notNull().default("unpaid"),
+  deliveryMethod: deliveryMethodEnum("delivery_method").notNull().default("courier"),
+  subtotal: integer("subtotal").notNull(),
+  shippingCost: integer("shipping_cost").notNull().default(0),
+  total: integer("total").notNull(),
+  shippingName: text("shipping_name").notNull(),
+  shippingAddress: text("shipping_address").notNull(),
+  shippingCity: text("shipping_city").notNull(),
+  shippingPostalCode: text("shipping_postal_code").notNull(),
+  shippingPhone: text("shipping_phone").notNull(),
+  shippingEmail: text("shipping_email").notNull(),
+  shippingNote: text("shipping_note"),
+  trackingNumber: text("tracking_number"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("retail_orders_cart_idempotency_unique").on(table.cartId, table.idempotencyKey),
+  index("retail_orders_user_created_idx").on(table.userId, table.createdAt),
+  index("retail_orders_status_created_idx").on(table.status, table.createdAt),
+]);
+
+export const retailOrderItemsTable = pgTable("retail_order_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => retailOrdersTable.id, { onDelete: "cascade" }),
+  productId: uuid("product_id").notNull().references(() => productsTable.id),
+  productName: text("product_name").notNull(),
+  productImageUrl: text("product_image_url").notNull(),
+  variantValue: text("variant_value"),
+  variantLabel: text("variant_label"),
+  unitPrice: integer("unit_price").notNull(),
+  quantity: integer("quantity").notNull(),
+}, (table) => [
+  index("retail_order_items_order_idx").on(table.orderId),
+  index("retail_order_items_product_idx").on(table.productId),
+]);
+
+export const retailProductReviewsTable = pgTable("retail_product_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
+  orderItemId: uuid("order_item_id").notNull().references(() => retailOrderItemsTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),
+  comment: text("comment").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("retail_product_reviews_item_user_unique").on(table.orderItemId, table.userId),
+  index("retail_product_reviews_product_idx").on(table.productId),
+  index("retail_product_reviews_user_idx").on(table.userId),
 ]);
 
 export const salonNotificationsTable = pgTable("salon_notifications", {

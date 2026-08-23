@@ -32,6 +32,10 @@ const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketp
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
 
 const PublicProducts = lazy(() => import('./pages/public-products'));
+const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCartPage })));
+const RetailCheckoutPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCheckoutPage })));
+const RetailSuccessPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailSuccessPage })));
+const RetailTrackingPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailTrackingPage })));
 const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
 const CustomerDashboard = lazy(() => import('./pages/customer-dashboard'));
@@ -185,6 +189,10 @@ function Router() {
         <Route path="/saloni/:slug" component={SalonProfile} />
         <Route path="/proizvodi" component={PublicProducts} />
         <Route path="/proizvodi/:productId" component={PublicProductDetail} />
+        <Route path="/korpa" component={RetailCartPage} />
+        <Route path="/korpa/placanje" component={RetailCheckoutPage} />
+        <Route path="/korpa/uspeh" component={RetailSuccessPage} />
+        <Route path="/porudzbina/pracenje" component={RetailTrackingPage} />
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
