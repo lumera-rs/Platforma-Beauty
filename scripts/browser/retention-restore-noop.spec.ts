@@ -10,7 +10,7 @@
  * precondition), so the append-only history never records a duplicate
  * "no values changed" version. The server side of this contract is covered by
  * artifacts/api-server/src/lib/retention-settings.test.ts; this spec proves
- * the browser end of the funnel:
+ * the browser end of the funnel, plus the earlier live no-op transition:
  *
  *  1. Admin A opens the restore dialog for the older baseline version while
  *     admin B saves exactly the baseline thresholds through
@@ -22,6 +22,9 @@
  *     closes, the "Vrednosti su identične…" info toast appears instead of an
  *     error, and no new version is recorded — the version badge, the API
  *     payload, and the history all stay at admin B's version.
+ *  4. A separate test opens the same restore dialog before admin B applies the
+ *     pending values, triggers the page's focus refetch, and verifies the
+ *     dialog disables the no-op restore before any confirm request is sent.
  *
  * Cleanup follows scripts/browser/retention-restore-conflict.spec.ts: the max
  * version is captured before the test and every row above that watermark is
@@ -38,6 +41,7 @@ const scrypt = promisify(scryptCallback);
 
 const baseURL = process.env.LUMERA_WEB_BASE_URL ?? "http://localhost:80";
 const settingsPath = "/api/growth/admin/retention-settings";
+const historyPath = `${settingsPath}/history`;
 
 /**
  * Deterministic baseline written as the first version of this run — the
@@ -254,6 +258,102 @@ test("a restore another admin already applied ends in an info toast and records 
     expect(activeAfterNoOp.changeSource).toBe("manual");
     expect(activeAfterNoOp.restoredFromVersion).toBeNull();
     expect(activeAfterNoOp.thresholds).toEqual(BASELINE_THRESHOLDS);
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("a live refetch disables a restore after another admin already applied its values", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Establish a known older version and a changed active version so the
+    // restore dialog starts with a real diff.
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const secondResponse = await apiB.put(settingsPath, {
+      data: {
+        ...BASELINE_THRESHOLDS,
+        newCustomerWindowDays: SECOND_VERSION_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(secondResponse.ok(), "the second save must succeed").toBe(true);
+    const secondVersion = (await secondResponse.json()).version as number;
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${secondVersion}`);
+    await page.getByTestId(`restore-retention-v${baselineVersion}`).click();
+
+    const restoreDialog = page.getByTestId("restore-retention-dialog");
+    await expect(restoreDialog).toBeVisible();
+    await expect(page.getByTestId("restore-retention-noop-notice")).not.toBeVisible();
+    await expect(page.getByTestId("confirm-restore-retention")).toBeEnabled();
+
+    // Admin B applies the exact values that admin A is about to restore while
+    // the dialog is still open.
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: secondVersion },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+    const adminBVersion = (await concurrentResponse.json()).version as number;
+
+    // Visibility changes are one of the page's configured refetch triggers.
+    // TanStack Query v5 subscribes to document.visibilitychange, so dispatch
+    // that event directly. Await the GET so the assertions prove the dialog
+    // reacted to refreshed settings rather than merely observing a delayed
+    // render.
+    const settingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await settingsRefetch;
+
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(page.getByTestId("restore-retention-noop-notice")).toBeVisible();
+    await expect(restoreDialog.locator(".line-through")).toHaveCount(0);
+    await expect(page.getByTestId("confirm-restore-retention")).toBeDisabled();
+
+    // Closing the dialog is a no-op: it must not send a restore request or
+    // append another history version, and admin B's version remains active.
+    await page.getByTestId("cancel-restore-retention").click();
+    await expect(restoreDialog).not.toBeVisible();
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+
+    const historyAfterClose = await (await page.request.get(historyPath)).json();
+    expect(
+      Math.max(...historyAfterClose.map((entry: { version: number }) => entry.version)),
+      "closing the disabled dialog must not append a version",
+    ).toBe(adminBVersion);
+    expect(historyAfterClose.some(
+      (entry: { version: number }) => entry.version === adminBVersion,
+    )).toBe(true);
+
+    const activeAfterClose = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterClose.version).toBe(adminBVersion);
+    expect(activeAfterClose.thresholds).toEqual(BASELINE_THRESHOLDS);
   } finally {
     await apiB.dispose();
   }
