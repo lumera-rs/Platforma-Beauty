@@ -26,7 +26,10 @@
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
- * explicitly seeded timestamps, so no database clock is involved.
+ * explicitly seeded timestamps, so no database clock is involved. The fixed
+ * instant is deliberately chosen so the 30d current window crosses the
+ * 2026-03-08 daylight-saving transition; all fixture timestamps remain UTC
+ * epoch values and therefore do not depend on the machine timezone.
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/stats-compare-window-boundaries.test.ts
  */
@@ -53,10 +56,13 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 const suffix = randomUUID().slice(0, 8);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Freeze the request-time clock so the 30d preset cutoffs are exact:
+// Freeze the request-time clock so the 30d preset cutoffs are exact. This
+// instant makes the current window [2026-03-08T12:00Z, 2026-04-07T12:00Z),
+// which crosses the US daylight-saving transition on 2026-03-08. Keeping the
+// instant explicit in UTC makes the fixture independent of machine timezone.
 // cutoff = FROZEN_NOW - 30d and prevCutoff = FROZEN_NOW - 60d, allowing rows
 // seeded 1ms around each edge to deterministically land on one side.
-const FROZEN_NOW = Date.now();
+const FROZEN_NOW = Date.parse("2026-04-07T12:00:00.000Z");
 const CUTOFF = FROZEN_NOW - 30 * DAY_MS;
 const PREV_CUTOFF = FROZEN_NOW - 60 * DAY_MS;
 
@@ -111,7 +117,7 @@ async function main() {
   for (const c of runCases) {
     const [appt] = await db.insert(appointmentsTable).values({
       salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
-      date: "2026-05-01", startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+      date: "2026-02-01", startTime: "10:00", endTime: "11:00", durationMinutes: 60,
       status: "completed", price: 1000, treatmentLocation: "salon",
     }).returning();
     assert.ok(appt);
