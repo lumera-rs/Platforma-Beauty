@@ -146,6 +146,7 @@ import {
   GetShopCartResponse,
   GetShopCheckoutPreviewResponse,
   GetShopCheckoutProfileResponse,
+  GetRetailCartSummaryResponse,
   AdminDeleteLoyaltyTierParams,
   AdminDeleteReviewParams,
   AdminDeleteSubscriptionPlanParams,
@@ -7459,6 +7460,20 @@ async function retailCartForRequest(req: Request, res: Response) {
   return cart!;
 }
 
+async function retailCartSummaryForRequest(req: Request) {
+  const token = typeof req.cookies?.[RETAIL_CART_COOKIE] === "string" ? req.cookies[RETAIL_CART_COOKIE] : null;
+  if (!token) return { itemCount: 0 };
+
+  const [cart] = await db.select({ id: retailCartsTable.id }).from(retailCartsTable)
+    .where(eq(retailCartsTable.tokenHash, hashRetailToken(token))).limit(1);
+  if (!cart) return { itemCount: 0 };
+
+  const [summary] = await db.select({
+    itemCount: sql<number>`coalesce(sum(${retailCartItemsTable.quantity}), 0)`,
+  }).from(retailCartItemsTable).where(eq(retailCartItemsTable.cartId, cart.id));
+  return { itemCount: Number(summary?.itemCount ?? 0) };
+}
+
 function retailLineDto(item: typeof retailCartItemsTable.$inferSelect) {
   return {
     id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
@@ -7633,6 +7648,10 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
 router.get("/retail/cart", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
   res.json(await retailCartDto(cart.id));
+});
+
+router.get("/retail/cart-summary", async (req, res): Promise<void> => {
+  res.json(GetRetailCartSummaryResponse.parse(await retailCartSummaryForRequest(req)));
 });
 
 router.post("/retail/cart/items", async (req, res): Promise<void> => {

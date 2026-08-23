@@ -4713,6 +4713,13 @@ paths:
       summary: Get the current guest or customer retail cart
       responses:
         "200": { description: Retail cart, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCart" } } } }
+  /retail/cart-summary:
+    get:
+      operationId: getRetailCartSummary
+      tags: [shop]
+      summary: Get the current retail cart item count without creating a cart
+      responses:
+        "200": { description: Retail cart item count, content: { application/json: { schema: { $ref: "#/components/schemas/RetailCartSummary" } } } }
   /retail/cart/items:
     post:
       operationId: addRetailCartItem
@@ -5911,6 +5918,11 @@ components:
               lineTotal: { type: integer, minimum: 0 }
             required: [id, productId, name, imageUrl, quantity, unitPrice, lineTotal]
       required: [id, itemCount, subtotal, items]
+    RetailCartSummary:
+      type: object
+      properties:
+        itemCount: { type: integer, minimum: 0 }
+      required: [itemCount]
     RetailCheckoutInput:
       type: object
       additionalProperties: false

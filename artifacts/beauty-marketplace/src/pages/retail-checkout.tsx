@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 
 type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
@@ -65,6 +66,7 @@ export function RetailCartPage() {
     try {
       await op();
       await loadCart();
+      notifyRetailCartChanged();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : failureMessage);
     } finally {
@@ -239,7 +241,7 @@ export function RetailCheckoutPage() {
         expectedTotal: preview?.total,
       }),
     });
-    sessionStorage.setItem("retail-order", JSON.stringify(order)); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
+    sessionStorage.setItem("retail-order", JSON.stringify(order)); notifyRetailCartChanged(); setLocation(`/korpa/uspeh?order=${encodeURIComponent(order.orderNumber)}${order.trackingToken ? `&token=${encodeURIComponent(order.trackingToken)}` : ""}`);
   } catch (error) {
     if (error instanceof RetailApiError && error.code === "CHECKOUT_QUOTE_CHANGED") {
       await refreshCheckoutQuote(preview);

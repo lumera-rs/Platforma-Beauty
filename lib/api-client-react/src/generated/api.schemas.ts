@@ -1440,6 +1440,11 @@ export interface RetailCart {
   items: RetailCartItemsItem[];
 }
 
+export interface RetailCartSummary {
+  /** @minimum 0 */
+  itemCount: number;
+}
+
 export type RetailCheckoutInputPaymentMethod = typeof RetailCheckoutInputPaymentMethod[keyof typeof RetailCheckoutInputPaymentMethod];
 
 

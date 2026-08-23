@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { useToast } from "@/hooks/use-toast";
+import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 
 const money = (value: number) => new Intl.NumberFormat("sr-RS", {
   style: "currency", currency: "RSD", maximumFractionDigits: 0,
@@ -32,6 +33,7 @@ function PublicProductCard({ product }: { product: PublicProduct }) {
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId: product.id, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
+    notifyRetailCartChanged();
     toast.success("Proizvod je dodat u korpu.");
   };
   return (
@@ -138,6 +140,7 @@ export function PublicProductDetailPage() {
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
+    notifyRetailCartChanged();
     toast.success("Proizvod je dodat u korpu.");
   };
 

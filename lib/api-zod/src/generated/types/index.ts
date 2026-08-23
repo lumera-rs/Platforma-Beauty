@@ -352,6 +352,7 @@ export * from './registerInput';
 export * from './retailCart';
 export * from './retailCartItemInput';
 export * from './retailCartItemsItem';
+export * from './retailCartSummary';
 export * from './retailCheckoutInput';
 export * from './retailCheckoutInputDeliveryMethod';
 export * from './retailCheckoutInputPaymentMethod';

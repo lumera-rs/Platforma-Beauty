@@ -10977,6 +10977,18 @@ export const GetRetailCartResponse = zod.object({
 
 
 /**
+ * @summary Get the current retail cart item count without creating a cart
+ */
+export const getRetailCartSummaryResponseItemCountMin = 0;
+
+
+
+export const GetRetailCartSummaryResponse = zod.object({
+  "itemCount": zod.number().int().min(getRetailCartSummaryResponseItemCountMin)
+})
+
+
+/**
  * @summary Add a retail product to the separate guest/customer cart
  */
 

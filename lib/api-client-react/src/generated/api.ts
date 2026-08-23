@@ -209,6 +209,7 @@ import type {
   RegisterInput,
   RetailCart,
   RetailCartItemInput,
+  RetailCartSummary,
   RetailCheckoutInput,
   RetailCheckoutPreview,
   RetailOrder,
@@ -19148,6 +19149,83 @@ export function useGetRetailCart<TData = Awaited<ReturnType<typeof getRetailCart
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetRetailCartQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetRetailCartSummaryUrl = () => {
+
+
+
+
+  return `/api/retail/cart-summary`
+}
+
+/**
+ * @summary Get the current retail cart item count without creating a cart
+ */
+export const getRetailCartSummary = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailCartSummary> => {
+
+  return customFetch<RetailCartSummary>(getGetRetailCartSummaryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRetailCartSummaryQueryKey = () => {
+    return [
+    `/api/retail/cart-summary`
+    ] as const;
+    }
+
+
+export const getGetRetailCartSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getRetailCartSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailCartSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRetailCartSummaryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRetailCartSummary>>> = ({ signal }) => getRetailCartSummary({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRetailCartSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRetailCartSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getRetailCartSummary>>>
+export type GetRetailCartSummaryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the current retail cart item count without creating a cart
+ */
+
+export function useGetRetailCartSummary<TData = Awaited<ReturnType<typeof getRetailCartSummary>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRetailCartSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRetailCartSummaryQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

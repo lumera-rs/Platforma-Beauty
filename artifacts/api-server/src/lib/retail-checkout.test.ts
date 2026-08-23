@@ -22,6 +22,7 @@ type RetailCart = {
   id: string;
   items: Array<{ id: string; quantity: number }>;
 };
+type RetailCartSummary = { itemCount: number };
 type RetailCheckoutPreview = {
   cart: { subtotal: number };
   shipping: { shippingCost: number };
@@ -200,6 +201,37 @@ test.after(async () => {
     await db.delete(shippingRulesTable).where(eq(shippingRulesTable.id, createdShippingRuleId));
   }
   await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
+});
+
+test("cart summary does not create a cart and returns the count for an existing cart", async () => {
+  assert.ok(createdProductId);
+  const cartsBefore = await db.select({ id: retailCartsTable.id }).from(retailCartsTable);
+
+  const emptySummary = await fetch(`${baseUrl}/retail/cart-summary`);
+  assert.equal(emptySummary.status, 200);
+  assert.equal(emptySummary.headers.get("set-cookie"), null);
+  assert.deepEqual(await emptySummary.json() as RetailCartSummary, { itemCount: 0 });
+
+  const cartsAfterEmptySummary = await db.select({ id: retailCartsTable.id }).from(retailCartsTable);
+  assert.equal(cartsAfterEmptySummary.length, cartsBefore.length, "a summary request must not create a persistent cart");
+
+  const addResponse = await fetch(`${baseUrl}/retail/cart/items`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ productId: createdProductId, quantity: 1 }),
+  });
+  assert.equal(addResponse.status, 201);
+  const cart = await addResponse.json() as RetailCart;
+  createdCartIds.push(cart.id);
+  const token = addResponse.headers.get("set-cookie")?.match(/lumera_retail_cart=([^;]+)/)?.[1];
+  assert.ok(token);
+
+  const existingSummary = await fetch(`${baseUrl}/retail/cart-summary`, {
+    headers: { cookie: `lumera_retail_cart=${token}` },
+  });
+  assert.equal(existingSummary.status, 200);
+  assert.equal(existingSummary.headers.get("set-cookie"), null);
+  assert.deepEqual(await existingSummary.json() as RetailCartSummary, { itemCount: 1 });
 });
 
 test("retail checkout saves the exact courier and personal-delivery previews", async () => {
