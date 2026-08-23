@@ -9974,6 +9974,7 @@ export const AdminPreviewRetentionSettingsResponse = zod.object({
   "currentVersion": zod.number().describe('Settings version the current counts were computed against (0 = platform defaults)'),
   "totalCustomers": zod.number().describe('Salon customers evaluated platform-wide'),
   "reclassifiedCount": zod.number().describe('Customers whose status would change under the candidate thresholds'),
+  "reclassifiedCountMarginOfError": zod.number().nullable().describe('Approximate 95% margin of error for reclassifiedCount when isEstimate is true; null in exact mode'),
   "currentCounts": zod.object({
   "NEW": zod.number(),
   "ACTIVE": zod.number(),

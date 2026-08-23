@@ -4734,6 +4734,11 @@ export interface RetentionSettingsPreview {
   totalCustomers: number;
   /** Customers whose status would change under the candidate thresholds */
   reclassifiedCount: number;
+  /**
+     * Approximate 95% margin of error for reclassifiedCount when isEstimate is true; null in exact mode
+     * @nullable
+     */
+  reclassifiedCountMarginOfError: number | null;
   currentCounts: RetentionStatusCounts;
   candidateCounts: RetentionStatusCounts;
   /** Status moves under the candidate thresholds, largest first */

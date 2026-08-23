@@ -528,9 +528,9 @@ export default function AdminRetentionSettings() {
                   >
                     {preview.reclassifiedCount === 0
                       ? preview.isEstimate
-                        ? "Bez promena statusa (procena)"
+                        ? `~0${preview.reclassifiedCountMarginOfError !== null ? ` ±${preview.reclassifiedCountMarginOfError}` : ""} klijenata menja status (procena)`
                         : "Bez promena statusa"
-                      : `${preview.isEstimate ? "~" : ""}${preview.reclassifiedCount} od ${preview.totalCustomers} klijenata menja status`}
+                      : `${preview.isEstimate ? "~" : ""}${preview.reclassifiedCount}${preview.isEstimate && preview.reclassifiedCountMarginOfError !== null ? ` ±${preview.reclassifiedCountMarginOfError}` : ""} od ${preview.totalCustomers} klijenata menja status`}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -543,7 +543,9 @@ export default function AdminRetentionSettings() {
                   <p className="text-xs text-amber-600 dark:text-amber-500" data-testid="retention-preview-estimate-note">
                     Platforma je prevelika za tačan pregled, pa su brojevi procena na osnovu nasumičnog
                     uzorka od {preview.sampleSize?.toLocaleString("sr-Latn-RS")} klijenata — vrednosti
-                    označene znakom „~“ su približne, ne tačne.
+                    označene znakom „~“ su približne, ne tačne. Margina greške je približno ±
+                    {preview.reclassifiedCountMarginOfError?.toLocaleString("sr-Latn-RS")} klijenata
+                    (95% pouzdanost), pa stvarni broj može biti niži ili viši.
                   </p>
                 )}
 

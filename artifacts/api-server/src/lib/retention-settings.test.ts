@@ -74,6 +74,7 @@ import {
 } from "./retention-classification";
 import {
   RetentionPreviewOverloadError,
+  calculateEstimatedCountMarginOfError,
   validateRetentionThresholds,
   withPreviewStatementTimeout,
 } from "./retention-settings";
@@ -252,10 +253,28 @@ function testThresholdValidation() {
   console.log("✓ Threshold validation rules");
 }
 
-// ---------------------------------------------------------------------------
-// DB + API integration
-// ---------------------------------------------------------------------------
-
+function testEstimatedPreviewMarginOfError() {
+  // A 50/50 result has sampling uncertainty, while the Wilson interval also
+  // keeps edge samples (0% or 100%) from being misreported as ±0.
+  assert.ok(
+    calculateEstimatedCountMarginOfError(50, 100, 10_000) > 0,
+    "mixed samples report a positive margin",
+  );
+  assert.ok(
+    calculateEstimatedCountMarginOfError(0, 10, 10_000) > 0,
+    "an all-zero sample does not imply zero uncertainty",
+  );
+  assert.ok(
+    calculateEstimatedCountMarginOfError(10, 10, 10_000) > 0,
+    "an all-change sample does not imply zero uncertainty",
+  );
+  assert.equal(
+    calculateEstimatedCountMarginOfError(50, 100, 100),
+    0,
+    "a census has no sampling uncertainty",
+  );
+  console.log("✓ Estimated preview margin of error");
+}
 function isoDaysAgo(days: number): string {
   const d = new Date(Date.now() - days * 86_400_000);
   return d.toISOString().slice(0, 10);
@@ -617,6 +636,11 @@ async function integrationTests() {
       const exactBaseline = (await (await postPreview(DEFAULT_RETENTION_THRESHOLDS)).json()) as any;
       assert.equal(exactBaseline.isEstimate, false, "below the cap the preview stays exact");
       assert.equal(exactBaseline.sampleSize, null, "exact mode reports no sample size");
+      assert.equal(
+        exactBaseline.reclassifiedCountMarginOfError,
+        null,
+        "exact mode reports no margin of error",
+      );
       const platformCustomers = exactBaseline.totalCustomers as number;
       assert.ok(platformCustomers >= 3, "fixtures guarantee at least 3 customers");
 
@@ -642,6 +666,11 @@ async function integrationTests() {
         "estimate reports how many customers were actually classified (at most the cap)",
       );
       assert.equal(overCap.totalCustomers, platformCustomers, "estimate reports the true platform size");
+      assert.ok(
+        Number.isInteger(overCap.reclassifiedCountMarginOfError) &&
+          overCap.reclassifiedCountMarginOfError >= 0,
+        "estimate reports a non-negative integer margin of error",
+      );
       assert.equal(overCap.reclassifiedCount, 0, "identity thresholds reclassify nobody, even sampled");
       assert.deepEqual(overCap.shifts, [], "no shifts under identity thresholds");
       assert.deepEqual(overCap.topAffectedSalons, [], "per-salon breakdown is never extrapolated");
@@ -1114,6 +1143,11 @@ async function integrationTests() {
       assert.equal(est.sampleSize, 1000, "sample honors the configured size");
       assert.equal(est.totalCustomers, perf.totalCustomers, "estimate reports the true platform size");
       assert.ok(
+        Number.isInteger(est.reclassifiedCountMarginOfError) &&
+          est.reclassifiedCountMarginOfError >= 0,
+        "volume estimate reports a non-negative integer margin of error",
+      );
+      assert.ok(
         estElapsedMs <= PERF_RESPONSE_BOUND_MS,
         `estimate over ${est.totalCustomers} customers answered in ${estElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
       );
@@ -1410,6 +1444,7 @@ async function main() {
   testVipVisitCountBoundary();
   testVipSpendBoundary();
   testThresholdValidation();
+  testEstimatedPreviewMarginOfError();
 
   console.log("— Integration tests —");
   await integrationTests();

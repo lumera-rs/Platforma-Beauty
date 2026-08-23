@@ -8137,6 +8137,9 @@ components:
         currentVersion: { type: number, description: "Settings version the current counts were computed against (0 = platform defaults)" }
         totalCustomers: { type: number, description: "Salon customers evaluated platform-wide" }
         reclassifiedCount: { type: number, description: "Customers whose status would change under the candidate thresholds" }
+        reclassifiedCountMarginOfError:
+          type: ["number", "null"]
+          description: "Approximate 95% margin of error for reclassifiedCount when isEstimate is true; null in exact mode"
         currentCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
         candidateCounts: { $ref: "#/components/schemas/RetentionStatusCounts" }
         shifts:
@@ -8158,7 +8161,7 @@ components:
         sampleSize:
           type: ["number", "null"]
           description: "Customers actually classified when isEstimate is true; null in exact mode"
-      required: [currentVersion, totalCustomers, reclassifiedCount, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
+      required: [currentVersion, totalCustomers, reclassifiedCount, reclassifiedCountMarginOfError, currentCounts, candidateCounts, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
 
     RetentionSettingsUpdate:
       allOf:

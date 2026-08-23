@@ -361,6 +361,11 @@ export interface RetentionPreviewResult {
   totalCustomers: number;
 
   reclassifiedCount: number;
+  /**
+   * Approximate 95% margin of error for the estimated reclassified count;
+   * null when the preview is exact.
+   */
+  reclassifiedCountMarginOfError: number | null;
 
   currentCounts: RetentionStatusCounts;
 
@@ -413,17 +418,46 @@ function emptyStatusCounts(): RetentionStatusCounts {
   return { NEW: 0, ACTIVE: 0, VIP: 0, AT_RISK: 0, LOST: 0 };
 }
 
-// ── Preview guards ───────────────────────────────────────────────────────────
-// The preview runs on the admin page's request path, so it must never stall
-// the UI on very large datasets. Three independent guards protect it:
-//   1. A customer-count cap checked BEFORE any data is loaded.
-//   2. A wall-clock deadline checked before AND after every query and batch.
-//   3. A database-side statement_timeout set to the remaining budget, so even
-//      a single slow query is cancelled by PostgreSQL instead of holding the
-//      request past the budget.
-// Cap and budget are env-tunable so operators can raise them without a deploy
-// and tests can exercise the guard paths without seeding millions of rows.
+/**
+ * Return the approximate 95% margin of error for a sampled proportion
+ * extrapolated to the full customer population.
+ *
+ * The Wilson interval avoids reporting a falsely precise ±0 when a small
+ * sample happens to contain no changes (or only changes). The finite-
+ * population correction matters when the sample is a meaningful fraction of
+ * the platform. This is still an approximation: TABLESAMPLE SYSTEM has
+ * page-level clustering, so the UI must keep the estimate marker and explain
+ * that the result can be higher or lower.
+ */
+export function calculateEstimatedCountMarginOfError(
+  sampledReclassifiedCount: number,
+  sampleSize: number,
+  totalCustomers: number,
+): number {
+  if (sampleSize <= 0 || totalCustomers <= 1 || sampleSize >= totalCustomers) return 0;
 
+  const z = 1.96;
+  const proportion = sampledReclassifiedCount / sampleSize;
+  const zSquared = z * z;
+  const denominator = 1 + zSquared / sampleSize;
+  const center = (proportion + zSquared / (2 * sampleSize)) / denominator;
+  const halfWidth =
+    (z / denominator) *
+    Math.sqrt(
+      (proportion * (1 - proportion)) / sampleSize +
+        zSquared / (4 * sampleSize * sampleSize),
+    );
+  const finitePopulationCorrection = Math.sqrt(
+    Math.max(0, (totalCustomers - sampleSize) / (totalCustomers - 1)),
+  );
+  const lower = Math.max(0, center - halfWidth);
+  const upper = Math.min(1, center + halfWidth);
+  return Math.round(
+    Math.max(proportion - lower, upper - proportion) *
+      totalCustomers *
+      finitePopulationCorrection,
+  );
+}
 /** Hard cap on salon customers the preview will classify exactly. Above it
  * the preview falls back to sampled-estimate mode instead of refusing. */
 export const RETENTION_PREVIEW_DEFAULT_MAX_CUSTOMERS = 250_000;
@@ -870,6 +904,11 @@ export async function previewRetentionThresholds(
       currentVersion: active.version,
       totalCustomers: customerCount,
       reclassifiedCount: estimatedShifts.reduce((sum, shift) => sum + shift.count, 0),
+      reclassifiedCountMarginOfError: calculateEstimatedCountMarginOfError(
+        reclassifiedCount,
+        sampledCount,
+        customerCount,
+      ),
       currentCounts: estimatedCounts(currentCounts),
       candidateCounts: estimatedCounts(candidateCounts),
       shifts: estimatedShifts,
@@ -944,6 +983,7 @@ export async function previewRetentionThresholds(
     currentVersion: active.version,
     totalCustomers,
     reclassifiedCount,
+    reclassifiedCountMarginOfError: null,
     currentCounts,
     candidateCounts,
     shifts,
