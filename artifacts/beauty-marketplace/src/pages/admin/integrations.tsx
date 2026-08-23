@@ -238,6 +238,11 @@ export default function AdminIntegrations() {
         <p className="mt-1 text-sm text-destructive">Nijedan aktivan administrator nema broj telefona na nalogu. Ako slanje e-pošte potpuno otkaže, rezervni SMS je jedini kanal kojim biste saznali za prekid — bez broja telefona upozorenje završava samo u logovima servera.</p>
         <p className="mt-1 text-sm text-destructive">Neka bar jedan administrator doda i verifikuje broj telefona na svom nalogu; ovo obaveštenje nestaje čim prvi broj bude sačuvan.</p>
       </div>}
+      {data.smsFallback?.reachableAdminCount === 1 && <div className="rounded-xl border border-sky-300 bg-sky-50 p-4" role="status" data-testid="sms-fallback-single-admin-phone">
+        <p className="font-semibold text-sky-800"><ShieldCheck className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno zavise od samo jednog administratora</p>
+        <p className="mt-1 text-sm text-sky-800">Samo jedan aktivan administrator ima broj telefona za rezervna SMS upozorenja. Ako ta osoba nije dostupna ili bude deaktivirana, potpuni prekid slanja e-pošte mogao bi ponovo proći neprimećeno.</p>
+        <p className="mt-1 text-sm text-sky-800">Preporučujemo da još jedan aktivan administrator doda i verifikuje broj telefona.</p>
+      </div>}
       <div className="grid gap-6 xl:grid-cols-2">{(Object.keys(fields) as Integration[]).map((integration) => {
         const card = data.integrations[integration]; const [label, color] = status(card);
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">

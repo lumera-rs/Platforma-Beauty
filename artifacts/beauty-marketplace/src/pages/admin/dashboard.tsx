@@ -45,6 +45,17 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {summary.smsFallbackReachableAdminCount === 1 && (
+          <div className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800" role="status" data-testid="sms-fallback-single-admin-phone-alert">
+            <strong>Hitna SMS upozorenja trenutno zavise od samo jednog administratora.</strong>{" "}
+            Ako ta osoba nije dostupna ili bude deaktivirana, potpuni prekid slanja e-pošte mogao bi ponovo proći neprimećeno.
+            {" "}Preporučujemo da još jedan aktivan administrator doda i verifikuje broj telefona.{" "}
+            <Link href="/admin/integracije" className="font-medium underline underline-offset-2" data-testid="sms-fallback-single-admin-phone-alert-link">
+              Više detalja u sekciji Integracije
+            </Link>.
+          </div>
+        )}
+
         {summary.deliveryReportStaleProviders.length > 0 && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="delivery-report-alert">
             <strong>Potrebna je intervencija.</strong> Izveštaji o isporuci ne stižu za:{" "}
