@@ -9142,6 +9142,13 @@ export const OwnerGetAutomationStatsResponse = zod.object({
   "attributedAppointments": zod.number(),
   "deliveredCount": zod.number(),
   "openedCount": zod.number(),
+  "emailSentCount": zod.number(),
+  "emailDeliveredCount": zod.number(),
+  "emailOpenedCount": zod.number(),
+  "emailFailedCount": zod.number(),
+  "smsSentCount": zod.number(),
+  "smsDeliveredCount": zod.number(),
+  "smsFailedCount": zod.number(),
   "lastRunAt": zod.coerce.date().nullish()
 })
 

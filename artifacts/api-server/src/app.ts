@@ -17,7 +17,9 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          // safePathname strips the query string AND redacts path-embedded
+          // capability tokens (webhook URLs) before the path reaches the log.
+          url: safePathname(req.url),
         };
       },
       res(res) {
@@ -39,14 +41,26 @@ export const slowRequestThresholdMs: number = (() => {
 })();
 
 /**
- * Strips the query string from a URL and returns only the pathname portion.
- * Used to ensure no query parameter values (which may contain sensitive data)
- * are ever emitted in logs.
+ * Provider webhook endpoints authenticate with a capability token embedded in
+ * the URL path (/api/webhooks/<provider>/<token>) — for those routes the path
+ * IS the secret. Every path that reaches any log sink must therefore pass
+ * through this redaction first, or the log stream would leak a replayable
+ * credential to anyone with log access.
+ */
+const WEBHOOK_TOKEN_PATTERN = /(\/webhooks\/[^/?#]+\/)[^?#]+/g;
+export function redactPathSecrets(path: string): string {
+  return path.replace(WEBHOOK_TOKEN_PATTERN, "$1:token");
+}
+
+/**
+ * Strips the query string from a URL and returns only the pathname portion,
+ * with path-embedded secrets redacted. Used to ensure neither query parameter
+ * values nor capability tokens are ever emitted in logs.
  */
 export function safePathname(url: string | undefined): string {
   if (!url) return "/";
   const qIndex = url.indexOf("?");
-  return qIndex === -1 ? url : url.slice(0, qIndex);
+  return redactPathSecrets(qIndex === -1 ? url : url.slice(0, qIndex));
 }
 
 /**

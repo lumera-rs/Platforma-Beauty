@@ -513,11 +513,22 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       .from(automationRunsTable)
       .where(eq(automationRunsTable.ruleId, rule.id));
 
-    // Delivery stats (delivered / opened from provider webhooks)
+    // Delivery stats (delivered / opened / provider-failed, updated from
+    // verified provider webhooks). Broken down per channel so the UI can show
+    // a real funnel and handle providers without open tracking (SMS).
+    const emailChannel = sql`${automationDeliveriesTable.channel} = 'email'`;
+    const smsChannel = sql`${automationDeliveriesTable.channel} = 'sms'`;
     const [deliveryStats] = await db
       .select({
         deliveredCount: sql<number>`sum(case when ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
         openedCount: sql<number>`sum(case when ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+        emailSentCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+        emailDeliveredCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        emailOpenedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.openedAt} is not null then 1 else 0 end)::int`,
+        emailFailedCount: sql<number>`sum(case when ${emailChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
+        smsSentCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.status} = 'sent' then 1 else 0 end)::int`,
+        smsDeliveredCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.deliveredAt} is not null then 1 else 0 end)::int`,
+        smsFailedCount: sql<number>`sum(case when ${smsChannel} and ${automationDeliveriesTable.failedAt} is not null then 1 else 0 end)::int`,
       })
       .from(automationDeliveriesTable)
       .innerJoin(automationRunsTable, eq(automationRunsTable.id, automationDeliveriesTable.runId))
@@ -532,6 +543,13 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       attributedAppointments: stats?.attributedAppointments ?? 0,
       deliveredCount: deliveryStats?.deliveredCount ?? 0,
       openedCount: deliveryStats?.openedCount ?? 0,
+      emailSentCount: deliveryStats?.emailSentCount ?? 0,
+      emailDeliveredCount: deliveryStats?.emailDeliveredCount ?? 0,
+      emailOpenedCount: deliveryStats?.emailOpenedCount ?? 0,
+      emailFailedCount: deliveryStats?.emailFailedCount ?? 0,
+      smsSentCount: deliveryStats?.smsSentCount ?? 0,
+      smsDeliveredCount: deliveryStats?.smsDeliveredCount ?? 0,
+      smsFailedCount: deliveryStats?.smsFailedCount ?? 0,
       lastRunAt: stats?.lastRunAt ?? null,
     });
   } catch (err) { next(err); }

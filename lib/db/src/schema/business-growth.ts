@@ -176,6 +176,14 @@ export const automationDeliveriesTable = pgTable("automation_deliveries", {
   /** Populated from provider webhooks/polling when available */
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   openedAt: timestamp("opened_at", { withTimezone: true }),
+  /**
+   * Provider-reported terminal delivery failure (bounce, undeliverable, …),
+   * populated from verified provider webhooks. Deliberately separate from
+   * `status` — webhooks must never flip `status` back to a claimable state,
+   * or the automation worker could resend an already-accepted message.
+   * A later delivered/opened event clears it (delivery confirmation wins).
+   */
+  failedAt: timestamp("failed_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

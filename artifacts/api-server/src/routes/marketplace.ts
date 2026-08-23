@@ -3169,8 +3169,8 @@ router.get("/admin/sms-deliveries", async (req, res): Promise<void> => {
 });
 
 const integrationDefinitions: Record<IntegrationName, { keys: string[]; required: string[] }> = {
-  sms: { keys: ["apiKey", "senderName", "baseUrl"], required: ["apiKey", "senderName"] },
-  brevo: { keys: ["apiKey", "senderEmail", "senderName"], required: ["apiKey", "senderEmail"] },
+  sms: { keys: ["apiKey", "senderName", "baseUrl", "webhookSecret"], required: ["apiKey", "senderName"] },
+  brevo: { keys: ["apiKey", "senderEmail", "senderName", "webhookSecret"], required: ["apiKey", "senderEmail"] },
   google_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
   facebook_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
 };

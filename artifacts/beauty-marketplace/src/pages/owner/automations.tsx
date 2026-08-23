@@ -24,6 +24,51 @@ import { Loader2, Zap, Play, Pause, Trash2, Mail, MessageSquare, Plus, Activity,
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
+function rate(part: number, total: number) {
+  if (!total) return null;
+  return `${Math.round((part / total) * 100)}%`;
+}
+
+/**
+ * Live per-channel delivery funnel: sent → delivered → opened, fed by verified
+ * provider webhook events. `opened: null` marks a channel whose provider does
+ * not expose open tracking (SMS) — the opened step is replaced by a note.
+ */
+function DeliveryFunnel({ icon, label, sent, delivered, opened, failed, noOpensNote }: {
+  icon: React.ReactNode;
+  label: string;
+  sent: number;
+  delivered: number;
+  opened: number | null;
+  failed: number;
+  noOpensNote?: string;
+}) {
+  return (
+    <div className="border rounded-lg p-3 bg-muted/20" data-testid={`funnel-${label.toLowerCase()}`}>
+      <div className="flex items-center gap-2 text-sm font-semibold mb-2">{icon} {label}</div>
+      <div className="flex items-center gap-2 text-sm flex-wrap">
+        <span className="px-2 py-1 rounded bg-muted/60">Poslato: <strong>{sent}</strong></span>
+        <span className="text-muted-foreground">→</span>
+        <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-900">
+          Isporučeno: <strong>{delivered}</strong>{rate(delivered, sent) ? <span className="text-emerald-700 ml-1">({rate(delivered, sent)})</span> : null}
+        </span>
+        {opened !== null && (
+          <>
+            <span className="text-muted-foreground">→</span>
+            <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-900">
+              Otvoreno: <strong>{opened}</strong>{rate(opened, sent) ? <span className="text-indigo-700 ml-1">({rate(opened, sent)})</span> : null}
+            </span>
+          </>
+        )}
+      </div>
+      {failed > 0 && (
+        <p className="text-xs text-red-700 mt-2">Neisporučeno (provajder prijavio grešku): {failed}</p>
+      )}
+      {noOpensNote && <p className="text-xs text-muted-foreground mt-2">{noOpensNote}</p>}
+    </div>
+  );
+}
+
 export default function OwnerAutomations() {
   const { data: userResp } = useGetCurrentUser();
   const queryClient = useQueryClient();
@@ -370,6 +415,36 @@ export default function OwnerAutomations() {
               <div className="bg-red-50 border border-red-100 p-4 rounded-lg text-center col-span-2 sm:col-span-1">
                 <p className="text-xs text-red-700 uppercase font-semibold flex items-center justify-center gap-1"><XCircle className="w-3 h-3" /> Neuspešno (Greške)</p>
                 <p className="text-2xl font-bold mt-1 text-red-900">{statsData.failedCount}</p>
+              </div>
+              <div className="col-span-2 space-y-3">
+                <p className="text-xs text-muted-foreground uppercase font-semibold">Isporuka poruka (podaci provajdera)</p>
+                {statsData.emailSentCount === 0 && statsData.smsSentCount === 0 ? (
+                  <p className="text-sm text-muted-foreground">Podaci o isporuci se prikazuju nakon prvog slanja.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {statsData.emailSentCount > 0 && (
+                      <DeliveryFunnel
+                        icon={<Mail className="w-4 h-4" />}
+                        label="Email"
+                        sent={statsData.emailSentCount}
+                        delivered={statsData.emailDeliveredCount}
+                        opened={statsData.emailOpenedCount}
+                        failed={statsData.emailFailedCount}
+                      />
+                    )}
+                    {statsData.smsSentCount > 0 && (
+                      <DeliveryFunnel
+                        icon={<MessageSquare className="w-4 h-4" />}
+                        label="SMS"
+                        sent={statsData.smsSentCount}
+                        delivered={statsData.smsDeliveredCount}
+                        opened={null}
+                        failed={statsData.smsFailedCount}
+                        noOpensNote="Provajder ne prati otvaranja SMS poruka."
+                      />
+                    )}
+                  </div>
+                )}
               </div>
               <div className="col-span-2 text-center mt-2 text-sm text-muted-foreground">
                 <p>Preskočeno (npr. nema kontakt podataka): {statsData.skippedCount}</p>

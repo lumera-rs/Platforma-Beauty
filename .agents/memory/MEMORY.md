@@ -36,3 +36,4 @@
 - [Tenant isolation proof fixtures](tenant-isolation-proof-fixtures.md) — isolation gates need adversarial cross-relations, same-owner locations, and cleanup assertions.
 - [Sold package entitlement integrity](sold-package-entitlement-integrity.md) — purchased coverage is immutable; booking and cancellation must move sessions atomically.
 - [Automation delivery crash recovery](automation-delivery-crash-recovery.md) — provider sends need leased claims and event-key reconciliation so crashes cannot lose messages.
+- [Provider webhook delivery state](provider-webhook-delivery-state.md) — capability-token webhooks apply monotonic timestamp updates and never touch the worker-owned status column.

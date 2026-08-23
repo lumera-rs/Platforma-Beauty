@@ -6719,8 +6719,15 @@ components:
         attributedAppointments: { type: number }
         deliveredCount: { type: number }
         openedCount: { type: number }
+        emailSentCount: { type: number }
+        emailDeliveredCount: { type: number }
+        emailOpenedCount: { type: number }
+        emailFailedCount: { type: number }
+        smsSentCount: { type: number }
+        smsDeliveredCount: { type: number }
+        smsFailedCount: { type: number }
         lastRunAt: { type: ["string", "null"], format: date-time }
-      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, deliveredCount, openedCount]
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

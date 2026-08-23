@@ -15,6 +15,13 @@ export interface AutomationStats {
   attributedAppointments: number;
   deliveredCount: number;
   openedCount: number;
+  emailSentCount: number;
+  emailDeliveredCount: number;
+  emailOpenedCount: number;
+  emailFailedCount: number;
+  smsSentCount: number;
+  smsDeliveredCount: number;
+  smsFailedCount: number;
   /** @nullable */
   lastRunAt?: Date | null;
 }
