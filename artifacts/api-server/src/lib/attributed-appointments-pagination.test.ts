@@ -6,8 +6,9 @@
  *      limit/offset/period with 400
  *   2. pages deterministically (newest first, id tiebreaker): walking pages by
  *      offset covers every attributed appointment exactly once, no overlap
- *   3. excludes cancelled and no-show appointments from both rows and `total`,
- *      so `total` always equals the stats endpoint's attributedAppointments count
+ *   3. exercises every status in the campaign classification map, excludes
+ *      cancelled/excluded statuses from rows and `total`, and keeps `total`
+ *      equal to the stats endpoint's attributedAppointments count
  *   4. honors the same `period` window as the stats endpoints, so the total
  *      matches the count shown above the list for every period choice
  *   5. stays owner-scoped: another owner's session gets 404 for a foreign rule
@@ -36,6 +37,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import app from "../app";
+import { CAMPAIGN_APPOINTMENT_STATUS_BUCKETS } from "../routes/growth";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 
 const suffix = randomUUID().slice(0, 8);
@@ -98,6 +100,20 @@ async function main() {
   const RECENT_TOTAL = 40;
   const RECENT_RUN_AT = new Date();
   const OLD_RUN_AT = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+  const campaignStatusCases = Object.entries(CAMPAIGN_APPOINTMENT_STATUS_BUCKETS).flatMap(([bucket, statuses]) =>
+    statuses.map((status) => ({ bucket, status })),
+  );
+  const realizedStatusCases = campaignStatusCases.filter(
+    ({ bucket }) => bucket === "completed" || bucket === "upcoming",
+  );
+  const EXPECTED_ALL_TOTAL = TOTAL + realizedStatusCases.length;
+  const EXPECTED_RECENT_TOTAL = RECENT_TOTAL + realizedStatusCases.length;
+  const statusFixtures: Array<{
+    status: (typeof appointmentsTable.status.enumValues)[number];
+    bucket: string;
+    appointmentId: string;
+  }> = [];
+
   for (let i = 0; i < TOTAL + 4; i++) {
     const cancelled = i >= TOTAL && i < TOTAL + 3;
     const noShow = i === TOTAL + 3;
@@ -116,6 +132,24 @@ async function main() {
       attributedAppointmentId: appt.id,
     });
   }
+  // Keep this endpoint-level fixture coupled to the exhaustive campaign
+  // policy: one run per mapped status makes a newly added/reclassified status
+  // fail loudly if the drill-down and aggregate stop agreeing.
+  for (const [i, { status, bucket }] of campaignStatusCases.entries()) {
+    const [appt] = await db.insert(appointmentsTable).values({
+      salonId: a.salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+      date: "2026-08-23", startTime: `12:${String(i).padStart(2, "0")}`,
+      endTime: `13:${String(i).padStart(2, "0")}`, durationMinutes: 60,
+      status, price: 2000 + i, treatmentLocation: "salon",
+    }).returning();
+    assert.ok(appt);
+    statusFixtures.push({ status, bucket, appointmentId: appt.id });
+    await db.insert(automationRunsTable).values({
+      eventKey: `pg-status-run-${i}-${suffix}`, ruleId: rule.id, salonId: a.salon.id,
+      salonCustomerId: cust.id, status: "sent", executedAt: RECENT_RUN_AT, sentAt: RECENT_RUN_AT,
+      attributedAppointmentId: appt.id,
+    });
+  }
 
   const server = app.listen(0);
   await once(server, "listening");
@@ -131,7 +165,11 @@ async function main() {
     const first = await get(listPath);
     assert.equal(first.status, 200);
     assert.equal(first.body.items.length, 25, "default page size is 25");
-    assert.equal(first.body.total, TOTAL, "total excludes cancelled and no-show appointments");
+    assert.equal(
+      first.body.total,
+      EXPECTED_ALL_TOTAL,
+      "total includes every realized mapped status and excludes cancelled/excluded statuses",
+    );
     assert.equal(first.body.limit, 25);
     assert.equal(first.body.offset, 0);
     assert.equal(
@@ -141,7 +179,12 @@ async function main() {
     console.log("✓ default page size and excluded-status-exclusive total");
 
     // ── 2. Total matches the stats count for every period choice ───────────
-    for (const [period, expected] of [["all", TOTAL], ["30d", RECENT_TOTAL], ["7d", RECENT_TOTAL], ["90d", TOTAL]] as const) {
+    for (const [period, expected] of [
+      ["all", EXPECTED_ALL_TOTAL],
+      ["30d", EXPECTED_RECENT_TOTAL],
+      ["7d", EXPECTED_RECENT_TOTAL],
+      ["90d", EXPECTED_ALL_TOTAL],
+    ] as const) {
       const page = await get(`${listPath}?period=${period}`);
       assert.equal(page.status, 200);
       assert.equal(page.body.total, expected, `period=${period} total`);
@@ -167,13 +210,22 @@ async function main() {
       }
       assert.equal(seen.size, expectedTotal, `pages cover exactly ${expectedTotal} rows for ${query}`);
     };
-    await walk("period=all", TOTAL);
-    await walk("period=30d", RECENT_TOTAL);
+    await walk("period=all", EXPECTED_ALL_TOTAL);
+    await walk("period=30d", EXPECTED_RECENT_TOTAL);
     console.log("✓ deterministic pages cover the full set with no overlap, honoring the period");
 
     // ── 4. Newest-first ordering within the maximum page ───────────────────
     const all = await get(`${listPath}?limit=100`);
-    assert.equal(all.body.items.length, TOTAL, "limit=100 returns all rows in one page");
+    assert.equal(all.body.items.length, EXPECTED_ALL_TOTAL, "limit=100 returns all realized rows in one page");
+    const listedIds = new Set(all.body.items.map((item: { appointmentId: string }) => item.appointmentId));
+    for (const fixture of statusFixtures) {
+      const shouldBeListed = fixture.bucket === "completed" || fixture.bucket === "upcoming";
+      assert.equal(
+        listedIds.has(fixture.appointmentId),
+        shouldBeListed,
+        `${fixture.status} (${fixture.bucket}) must ${shouldBeListed ? "" : "not "}appear in the drill-down`,
+      );
+    }
     const dates = all.body.items.map((i: any) => i.date);
     const sorted = [...dates].sort((x: string, y: string) => (x < y ? 1 : x > y ? -1 : 0));
     assert.deepEqual(dates, sorted, "newest-first ordering");
@@ -191,7 +243,7 @@ async function main() {
     assert.equal(overview.status, 200);
     const mine = overview.body.find((r: any) => r.ruleId === rule.id);
     assert.ok(mine, "rule present in overview stats");
-    assert.equal(mine.attributedAppointments, RECENT_TOTAL, "current-window count");
+    assert.equal(mine.attributedAppointments, EXPECTED_RECENT_TOTAL, "current-window count includes every realized mapped status");
     assert.ok(mine.previous, "previous window returned for compare=previous");
     assert.equal(
       mine.previous.attributedAppointments,
