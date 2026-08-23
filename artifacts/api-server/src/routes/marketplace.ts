@@ -349,7 +349,7 @@ import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../l
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
 import { infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, saveIntegrationSettings, type IntegrationName } from "../lib/integrations";
-import { deliveryReportStatuses, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS } from "../lib/provider-events";
+import { deliveryReportStatuses, resolveWebhookSecret, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { logger } from "../lib/logger";
 import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
 import { lockAppointmentResources } from "../lib/appointment-locks";
@@ -3263,6 +3263,68 @@ router.post("/admin/integrations/:integration/test", async (req, res): Promise<v
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Test integracije nije uspeo." });
   }
+});
+
+/**
+ * Admin webhook self-check ("Proveri webhook"): posts one synthetic delivery
+ * event to the app's OWN provider webhook endpoint over the loopback
+ * interface, using the currently saved webhook secret as the path token. This
+ * exercises the full production path — routing, JSON body parsing, the
+ * timing-safe token comparison, and event processing — end to end, without
+ * weakening security (no token-check bypass) and without touching delivery
+ * state (the synthetic reference can never match a persisted outbound send,
+ * and verification-only batches never count as provider delivery reports).
+ */
+router.post("/admin/integrations/:integration/verify-webhook", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const integration = req.params.integration;
+  if (integration !== "sms" && integration !== "brevo") {
+    res.status(404).json({ error: "Provera webhook-a je dostupna samo za SMS i Brevo integracije." }); return;
+  }
+  const secret = await resolveWebhookSecret(integration);
+  if (!secret) {
+    res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+
+  const webhookPath = integration === "sms" ? "infobip" : "brevo";
+  // Unmatched by construction: no persisted outbound send ever carries this
+  // reference, so the synthetic event cannot alter any delivery state.
+  const reference = `${WEBHOOK_VERIFICATION_REFERENCE_PREFIX}${randomUUID()}`;
+  const payload = integration === "sms"
+    ? { results: [{ messageId: reference, status: { groupName: "DELIVERED", name: "DELIVERED_TO_HANDSET" }, doneAt: new Date().toISOString() }] }
+    : [{ event: "delivered", "message-id": reference, ts_event: Math.floor(Date.now() / 1000) }];
+
+  // Loopback to the same bound server this admin request arrived on — works
+  // identically in development and in the production deployment.
+  const localPort = req.socket.localPort;
+  if (!localPort) { res.status(502).json({ error: "Provera nije moguća: port servera nije poznat. Pokušajte ponovo." }); return; }
+  let response: globalThis.Response;
+  try {
+    response = await fetch(`http://127.0.0.1:${localPort}/api/webhooks/${webhookPath}/${encodeURIComponent(secret)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    res.status(502).json({ error: "Webhook endpoint nije odgovorio na probni događaj. Proverite da li aplikacija radi, pa pokušajte ponovo." }); return;
+  }
+
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (response.status === 401) {
+    res.status(502).json({ error: "Webhook endpoint je odbio sačuvanu tajnu. Sačuvajte webhook tajnu ponovo, pa kod provajdera registrujte URL sa istom tajnom." }); return;
+  }
+  if (response.status === 503) {
+    res.status(502).json({ error: "Webhook endpoint prijavljuje da tajna nije konfigurisana. Sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
+  }
+  if (!response.ok || !body || body["processed"] !== 1 || body["unmatched"] !== 1) {
+    res.status(502).json({ error: `Webhook endpoint nije prihvatio probni događaj (status ${response.status}). Proverite podešavanja, pa pokušajte ponovo.` }); return;
+  }
+  res.json({
+    message: integration === "sms"
+      ? "Infobip webhook radi: sačuvana tajna se poklapa i endpoint prihvata izveštaje o isporuci. Probni događaj nije promenio nijednu isporuku."
+      : "Brevo webhook radi: sačuvana tajna se poklapa i endpoint prihvata događaje. Probni događaj nije promenio nijednu isporuku.",
+  });
 });
 
 router.post("/internal/jobs/sms-reminders", async (req, res): Promise<void> => {

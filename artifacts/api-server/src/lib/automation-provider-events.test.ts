@@ -42,6 +42,7 @@ import {
   deliveryReportWarning,
   recordWebhookReceipt,
   resolveWebhookSecret,
+  WEBHOOK_VERIFICATION_REFERENCE_PREFIX,
   type DeliveryReportProvider,
 } from "./provider-events";
 
@@ -477,6 +478,7 @@ async function run() {
     }
 
     // ── 7c. Admin integrations endpoint surfaces delivery-report freshness ─
+    let adminToken = "";
     {
       const adminHash = await hashPassword(`pe-admin-${suffix}`);
       const [admin] = await db.insert(usersTable).values({
@@ -485,7 +487,7 @@ async function run() {
       }).returning();
       assert.ok(admin);
       cleanup.userIds.push(admin.id);
-      const adminToken = await createSession(admin.id);
+      adminToken = await createSession(admin.id);
 
       const response = await fetch(`${baseUrl}/api/admin/integrations`, {
         headers: { cookie: `${sessionCookieName}=${adminToken}` },
@@ -518,6 +520,63 @@ async function run() {
       const anonymous = await fetch(`${baseUrl}/api/admin/integrations`);
       assert.equal(anonymous.status, 401, "anonymous integrations read rejected");
       console.log("✓ admin integrations endpoint exposes per-provider delivery-report freshness");
+    }
+
+    // ── 7d. Admin webhook self-check: end-to-end, no state/receipt change ──
+    {
+      const brevoReceiptBefore = await webhookReceipt("brevo");
+      const infobipReceiptBefore = await webhookReceipt("infobip");
+
+      // Synthetic verification events still require a valid token — the
+      // marker never bypasses the timing-safe check.
+      const forged = await postJson(`/webhooks/brevo/${encodeURIComponent(`${brevoSecret}x`)}`, {
+        event: "delivered", "message-id": `${WEBHOOK_VERIFICATION_REFERENCE_PREFIX}${randomUUID()}`,
+      });
+      assert.equal(forged.status, 401, "verification events must still pass token verification");
+
+      // Direct synthetic post with the valid token: accepted, unmatched, and
+      // therefore incapable of changing any delivery state.
+      const synthetic = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, {
+        event: "delivered", "message-id": `${WEBHOOK_VERIFICATION_REFERENCE_PREFIX}${randomUUID()}`,
+      });
+      assert.equal(synthetic.status, 200);
+      assert.equal(synthetic.body?.["unmatched"], 1, "synthetic reference must be unmatched");
+      assert.equal(synthetic.body?.["updated"], 0, "synthetic events never change delivery state");
+
+      // Admin self-check endpoint succeeds end-to-end for both providers.
+      const verify = (integration: string) => fetch(`${baseUrl}/api/admin/integrations/${integration}/verify-webhook`, {
+        method: "POST", headers: { cookie: `${sessionCookieName}=${adminToken}` },
+      });
+      for (const integration of ["brevo", "sms"] as const) {
+        const response = await verify(integration);
+        const body = await response.json() as { message?: string; error?: string };
+        assert.equal(response.status, 200, `${integration} self-check must succeed: ${JSON.stringify(body)}`);
+        assert.ok(body.message && body.message.includes("webhook radi"), `${integration} self-check reports success in Serbian`);
+      }
+
+      // None of the verification traffic above may count as a provider report.
+      assert.equal(
+        (await webhookReceipt("brevo"))?.getTime() ?? null,
+        brevoReceiptBefore?.getTime() ?? null,
+        "self-checks must not refresh Brevo delivery-report freshness",
+      );
+      assert.equal(
+        (await webhookReceipt("infobip"))?.getTime() ?? null,
+        infobipReceiptBefore?.getTime() ?? null,
+        "self-checks must not refresh Infobip delivery-report freshness",
+      );
+
+      // Access control: anonymous and non-admin callers rejected; the check
+      // exists only for the two webhook-bearing integrations.
+      const anonymous = await fetch(`${baseUrl}/api/admin/integrations/brevo/verify-webhook`, { method: "POST" });
+      assert.equal(anonymous.status, 401, "anonymous self-check rejected");
+      const nonAdmin = await fetch(`${baseUrl}/api/admin/integrations/brevo/verify-webhook`, {
+        method: "POST", headers: { cookie: `${sessionCookieName}=${a.token}` },
+      });
+      assert.equal(nonAdmin.status, 403, "non-admin self-check rejected");
+      const unknown = await verify("google_oauth");
+      assert.equal(unknown.status, 404, "self-check exists only for SMS and Brevo");
+      console.log("✓ admin webhook self-check verifies end-to-end without touching state or freshness");
     }
 
     // ── 8. Cross-salon isolation + owner stats accuracy ────────────────────

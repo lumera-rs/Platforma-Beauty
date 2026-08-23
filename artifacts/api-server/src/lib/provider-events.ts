@@ -431,3 +431,39 @@ export async function applyInfobipReports(reports: InfobipDeliveryReport[], now 
   for (const report of reports) tally(summary, await applyInfobipReport(report, now));
   return summary;
 }
+
+// ---------------------------------------------------------------------------
+// Admin webhook self-check ("Proveri webhook") — synthetic event marking
+// ---------------------------------------------------------------------------
+
+/**
+ * Prefix of the synthetic message references the admin webhook self-check
+ * posts to the app's own webhook endpoints. Such a reference can never match
+ * a persisted outbound send (Brevo provider message ids are
+ * `<...@smtp-relay...>` strings, Infobip references are the UUIDs of
+ * sms_deliveries rows), so a synthetic event is always classified `unmatched`
+ * and can never alter delivery state.
+ *
+ * Batches consisting solely of verification references are additionally
+ * excluded from delivery-report receipt tracking: a self-check proves that
+ * the endpoint and the saved secret work, NOT that the provider is calling
+ * the webhook, so it must never silence the report-staleness warning. This
+ * carries no security risk — the marker only lets an (already authenticated)
+ * caller opt out of refreshing the freshness timestamp, never bypass the
+ * timing-safe token check or delivery-state guards.
+ */
+export const WEBHOOK_VERIFICATION_REFERENCE_PREFIX = "lumera-webhook-verify:";
+
+function isVerificationReference(reference: unknown): boolean {
+  return typeof reference === "string" && reference.startsWith(WEBHOOK_VERIFICATION_REFERENCE_PREFIX);
+}
+
+/** True when every event in the batch is a synthetic self-check event. */
+export function isBrevoVerificationBatch(events: BrevoWebhookEvent[]): boolean {
+  return events.length > 0 && events.every((event) => isVerificationReference(event["message-id"]));
+}
+
+/** True when every report in the batch is a synthetic self-check report. */
+export function isInfobipVerificationBatch(reports: InfobipDeliveryReport[]): boolean {
+  return reports.length > 0 && reports.every((report) => isVerificationReference(report.messageId ?? report.callbackData));
+}

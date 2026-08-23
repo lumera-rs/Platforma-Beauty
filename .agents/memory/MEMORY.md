@@ -40,3 +40,4 @@
 - [Global settings test baselining](global-settings-test-baselining.md) — versioned global-config tests must watermark versions, activate an explicit baseline, and clean up by watermark.
 - [Production bootstrap schema parity](production-bootstrap-schema-parity.md) — a bootstrap version bump must mirror every merged drizzle column, with legacy ALTERs and rollout-test asserts.
 - [Rebase and generated codegen](rebase-generated-codegen.md) — after a rebase touching the OpenAPI spec, re-run codegen and full typecheck once the rebase completes; mid-rebase regeneration can still commit scrambled output.
+- [Webhook self-check semantics](webhook-self-check-semantics.md) — synthetic verification events stay unmatched and never count toward delivery-report freshness.

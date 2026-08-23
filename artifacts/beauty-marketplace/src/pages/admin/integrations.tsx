@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Copy, PlugZap, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Loader2, PlugZap, Send, ShieldCheck, Webhook } from "lucide-react";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null> };
@@ -53,6 +53,20 @@ export default function AdminIntegrations() {
     if (!response.ok) throw new Error(result.error ?? "Test nije uspeo.");
     toast.success(result.message);
   };
+  const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false });
+  const verifyWebhook = async (integration: Integration) => {
+    setVerifyingWebhook((previous) => ({ ...previous, [integration]: true }));
+    try {
+      const response = await fetch(`/api/admin/integrations/${integration}/verify-webhook`, { method: "POST", credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
+      toast.success(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Provera webhook-a nije uspela.");
+    } finally {
+      setVerifyingWebhook((previous) => ({ ...previous, [integration]: false }));
+    }
+  };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
@@ -72,7 +86,16 @@ export default function AdminIntegrations() {
           <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
           {fields[integration].map((field) => <div key={field.key} className="space-y-1.5"><Label>{field.label}</Label>{card.values[field.key] && <p className="text-xs text-muted-foreground">Sačuvano: {card.values[field.key]}</p>}{field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label><div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
-          {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Webhook URL za statuse isporuke</Label><p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p><div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div></div>}
+          {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">
+            <Label>Webhook URL za statuse isporuke</Label>
+            <p className="mt-1 text-xs text-muted-foreground">Registrujte kod provajdera ({integration === "sms" ? "Infobip delivery reports" : "Brevo transactional webhooks"}); zamenite {"<tajna>"} sačuvanom webhook tajnom:</p>
+            <div className="mt-2 rounded bg-muted p-2 font-mono text-xs break-all">{`${window.location.origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/<tajna>`}</div>
+            <Button variant="outline" size="sm" className="mt-3" disabled={verifyingWebhook[integration]} onClick={() => verifyWebhook(integration)}>
+              {verifyingWebhook[integration] ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Webhook className="mr-2 h-4 w-4" />}
+              {verifyingWebhook[integration] ? "Proveravam…" : "Proveri webhook"}
+            </Button>
+            <p className="mt-1.5 text-xs text-muted-foreground">Šalje probni događaj na sopstveni endpoint sa sačuvanom tajnom — potvrđuje da se tajna poklapa i da endpoint prima događaje, bez uticaja na isporuke.</p>
+          </div>}
           {(integration === "sms" || integration === "brevo") && (() => {
             const report = deliveryReport(integration);
             if (!report) return null;

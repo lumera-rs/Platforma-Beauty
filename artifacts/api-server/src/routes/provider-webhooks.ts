@@ -21,6 +21,8 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import {
   applyBrevoEvents,
   applyInfobipReports,
+  isBrevoVerificationBatch,
+  isInfobipVerificationBatch,
   parseBrevoWebhookBody,
   parseInfobipWebhookBody,
   recordWebhookReceipt,
@@ -76,8 +78,11 @@ router.post("/webhooks/brevo/:token", async (req, res, next) => {
       return;
     }
     const summary = await applyBrevoEvents(events);
-    await trackWebhookReceipt("brevo", summary);
-    logger.info({ provider: "brevo", ...summary }, "provider webhook processed");
+    // Admin self-check batches prove endpoint+secret health, not provider
+    // activity — they must never refresh delivery-report freshness.
+    const verificationOnly = isBrevoVerificationBatch(events);
+    if (!verificationOnly) await trackWebhookReceipt("brevo", summary);
+    logger.info({ provider: "brevo", verificationOnly, ...summary }, "provider webhook processed");
     res.json(summary);
   } catch (err) { next(err); }
 });
@@ -91,8 +96,11 @@ router.post("/webhooks/infobip/:token", async (req, res, next) => {
       return;
     }
     const summary = await applyInfobipReports(reports);
-    await trackWebhookReceipt("infobip", summary);
-    logger.info({ provider: "infobip", ...summary }, "provider webhook processed");
+    // Admin self-check batches prove endpoint+secret health, not provider
+    // activity — they must never refresh delivery-report freshness.
+    const verificationOnly = isInfobipVerificationBatch(reports);
+    if (!verificationOnly) await trackWebhookReceipt("infobip", summary);
+    logger.info({ provider: "infobip", verificationOnly, ...summary }, "provider webhook processed");
     res.json(summary);
   } catch (err) { next(err); }
 });
