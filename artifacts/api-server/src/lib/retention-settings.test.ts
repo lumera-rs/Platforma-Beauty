@@ -20,6 +20,19 @@
  * 11b. Preview dry-runs candidate thresholds: identity candidate moves nobody,
  *     a tuned candidate reports counts + shifts, and NO settings version or
  *     row is ever recorded (including for invalid candidates → 400)
+ * 11c. Preview guards: a row-count cap and a time budget (both env-tunable)
+ *     turn an oversized/slow preview into a friendly 503 instead of stalling
+ *     the admin page — including when a SINGLE (final) batch overruns the
+ *     budget after its work (deterministic fault-injected batch delay); the
+ *     preview recovers once the guards are lifted
+ * 11d. Preview building blocks: the database-side statement_timeout cancels a
+ *     slow query and surfaces as the friendly overload error, and SQL
+ *     percentile_cont agrees exactly with computeSalonMedianSpend for odd and
+ *     even price counts (so the preview median matches the CRM endpoints)
+ * 16. Volume benchmark: with a realistic seeded volume (30 extra salons,
+ *     12,000+ customers, 27,000 appointments including deep per-customer
+ *     histories) the keyset-batched preview still answers correctly within
+ *     the response-time bound
  * 12. Owner CRM list flips a 3-visit customer ACTIVE → VIP when the admin
  *     lowers vipMinCompletedVisits, and reports the active version
  * 13. Owner CRM detail turns AT_RISK → LOST under tuned lost thresholds and
@@ -46,12 +59,18 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { sql } from "drizzle-orm";
 import {
   classifyRetention,
+  computeSalonMedianSpend,
   DEFAULT_RETENTION_THRESHOLDS,
   type RetentionThresholds,
 } from "./retention-classification";
-import { validateRetentionThresholds } from "./retention-settings";
+import {
+  RetentionPreviewOverloadError,
+  validateRetentionThresholds,
+  withPreviewStatementTimeout,
+} from "./retention-settings";
 
 // ---------------------------------------------------------------------------
 // Unit tests
@@ -506,6 +525,127 @@ async function integrationTests() {
     assert.equal(rowsAfterPreview.length, 0, "preview inserts no settings rows");
     console.log("✓ Preview dry-runs candidate thresholds without persisting");
 
+    // ── 11c. Preview guards: row-count cap + time budget → friendly 503 ─────
+    try {
+      // Cap of 1 customer: the platform has at least the 3 fixture customers,
+      // so the row-count guard must trip BEFORE any data is loaded.
+      process.env.RETENTION_PREVIEW_MAX_CUSTOMERS = "1";
+      const cappedRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+      assert.equal(cappedRes.status, 503, "over-cap preview returns 503, not a stall or a 500");
+      const capped = (await cappedRes.json()) as any;
+      assert.equal(capped.code, "PREVIEW_TOO_LARGE");
+      assert.ok(
+        typeof capped.error === "string" && capped.error.length > 0,
+        "row-count guard carries a friendly message",
+      );
+      delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
+
+      // 1 ms budget: the settings + count queries alone exceed it, so the
+      // time guard must abort during setup, before any batch is loaded.
+      process.env.RETENTION_PREVIEW_TIME_BUDGET_MS = "1";
+      const timedOutRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+      assert.equal(timedOutRes.status, 503, "over-budget preview returns 503");
+      const timedOut = (await timedOutRes.json()) as any;
+      assert.equal(timedOut.code, "PREVIEW_TIMEOUT");
+      assert.ok(
+        typeof timedOut.error === "string" && timedOut.error.length > 0,
+        "time guard carries a friendly message",
+      );
+      delete process.env.RETENTION_PREVIEW_TIME_BUDGET_MS;
+
+      // Single/final batch overrun: a fault-injected delay at the END of each
+      // classification batch (honored only under NODE_ENV=test) guarantees
+      // the batch finishes after the deadline, deterministically. The budget
+      // (1.5 s) comfortably survives setup, so the ONLY way this can 503 is
+      // the deadline check that runs AFTER a batch's work — the platform
+      // currently fits in one batch, i.e. this is the sole/final batch.
+      process.env.RETENTION_PREVIEW_TIME_BUDGET_MS = "1500";
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_BATCH_DELAY_MS = "2000";
+      const finalBatchRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+      assert.equal(finalBatchRes.status, 503, "final-batch overrun returns 503, not a stale 200");
+      const finalBatch = (await finalBatchRes.json()) as any;
+      assert.equal(finalBatch.code, "PREVIEW_TIMEOUT", "post-batch deadline check reports a timeout");
+      assert.ok(
+        typeof finalBatch.error === "string" && finalBatch.error.length > 0,
+        "final-batch guard carries a friendly message",
+      );
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_BATCH_DELAY_MS;
+
+      // Database-side cancellation on the REAL request path: a pg_sleep is
+      // injected at an exact labelled step inside that step's transaction, so
+      // it outlives the budget-derived statement_timeout and PostgreSQL must
+      // cancel it — the endpoint answers a friendly 503 instead of stalling.
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_MS = "60000";
+      const slowSteps: [string, unknown][] = [
+        // Setup path: the active-settings read and the platform-wide count.
+        ["active-settings", DEFAULT_RETENTION_THRESHOLDS],
+        ["customer-count", DEFAULT_RETENTION_THRESHOLDS],
+        // Finalize path: the affected-salon-name lookup — the candidate must
+        // reclassify fixture customers so the preview actually reaches it.
+        ["salon-names", { ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 3 }],
+      ];
+      process.env.RETENTION_PREVIEW_TIME_BUDGET_MS = "2000";
+      for (const [step, candidate] of slowSteps) {
+        process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_AT = step;
+        const slowRes = await postPreview(candidate);
+        assert.equal(slowRes.status, 503, `blocked ${step} query is cancelled, not stalled`);
+        assert.equal(((await slowRes.json()) as any).code, "PREVIEW_TIMEOUT");
+      }
+    } finally {
+      delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
+      delete process.env.RETENTION_PREVIEW_TIME_BUDGET_MS;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_BATCH_DELAY_MS;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_AT;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_MS;
+    }
+
+    // Guards are strictly read-only failures: no settings row recorded, and
+    // the preview works again once the limits are back to defaults.
+    const afterGuardsRes = await fetch(`${baseUrl}/growth/admin/retention-settings`, { headers: adminHeaders });
+    assert.equal(((await afterGuardsRes.json()) as any).version, initialVersion + 1, "guard trips record no settings version");
+    const recoveredRes = await postPreview(DEFAULT_RETENTION_THRESHOLDS);
+    assert.equal(recoveredRes.status, 200, "preview recovers once guards are lifted");
+    console.log("✓ Preview guards: cap, setup/step cancellation, and final-batch overrun → friendly 503, then recovery");
+
+    // ── 11d. Preview building blocks ────────────────────────────────────────
+    // Database-side cancellation: a query slower than the remaining budget is
+    // killed by PostgreSQL (statement_timeout) and surfaces as the SAME
+    // friendly overload error — a slow query can never hold the request.
+    await assert.rejects(
+      () => withPreviewStatementTimeout(50, (tx) => tx.execute(sql`select pg_sleep(0.5)`)),
+      (err: unknown) => {
+        assert.ok(err instanceof RetentionPreviewOverloadError, "statement timeout maps to overload error");
+        assert.equal(err.code, "PREVIEW_TIMEOUT");
+        return true;
+      },
+    );
+    // And a fast query inside the same wrapper still succeeds.
+    await withPreviewStatementTimeout(5_000, (tx) => tx.execute(sql`select 1`));
+
+    // Median parity: the preview aggregates salon medians database-side with
+    // percentile_cont(0.5); it must agree EXACTLY with computeSalonMedianSpend
+    // (the CRM endpoints' median) for odd and even price counts.
+    const priceSets = [
+      [3000],
+      [1000, 2000],
+      [1000, 2000, 4000],
+      [500, 1000, 2000, 10000],
+      [1500, 1500, 3000, 4500, 9000, 12000],
+    ];
+    for (const prices of priceSets) {
+      const arrayLiteral = `ARRAY[${prices.join(",")}]::double precision[]`;
+      const res: any = await db.execute(
+        sql`select percentile_cont(0.5) within group (order by p) as m from unnest(${sql.raw(arrayLiteral)}) as p`,
+      );
+      const row = (res.rows ?? res)[0];
+      assert.equal(
+        Number(row.m),
+        computeSalonMedianSpend(prices),
+        `percentile_cont matches computeSalonMedianSpend for [${prices.join(", ")}]`,
+      );
+    }
+    console.log("✓ Statement-timeout cancellation + SQL median parity with CRM endpoints");
+
     // ── 12. Owner CRM flips ACTIVE → VIP under tuned visit count ────────────
     const listBefore = await getOwnerList();
     const rowBefore = listBefore.find((c: { salonCustomerId: string }) => c.salonCustomerId === customerA.id);
@@ -633,7 +773,196 @@ async function integrationTests() {
       "UI appointment list stays capped at 50");
     console.log("✓ Detail classifies from full history; list/detail agree beyond 50 visits");
 
-    // ── 16. Restore provenance: labelled truthfully, rejected when it lies ──
+    // ── 16. Volume benchmark: batched preview stays fast at realistic scale ─
+    // 30 extra salons × 400 customers (12,000 customers) with 2 appointments
+    // each (24,000 rows), plus 10 deep-history customers with 300 completed
+    // visits each (3,000 more rows) so one batch carries a heavy appointment
+    // load. The preview classifies customers in keyset batches of 1,000, so
+    // this exercises 12+ batches end-to-end — including the high-history
+    // case the guards must survive — and measures the actual response time
+    // against the bound considered acceptable for the admin UI.
+    const PERF_SALONS = 30;
+    const PERF_CUSTOMERS_PER_SALON = 400;
+    const PERF_RESPONSE_BOUND_MS = 5_000;
+
+    const [perfOwner] = await db.insert(usersTable).values({
+      firstName: "Perf", lastName: suffix,
+      email: `perf-owner-${suffix}@rts.test`, passwordHash: hash, passwordSetAt: new Date(), role: "SALON_OWNER",
+    }).returning();
+    assert.ok(perfOwner);
+    createdUserIds.push(perfOwner.id);
+
+    const perfSalonRows = Array.from({ length: PERF_SALONS }, (_, s) => ({
+      ownerId: perfOwner.id,
+      name: `Perf Salon ${s} ${suffix}`,
+      slug: `perf-salon-${s}-${suffix}`,
+      city: "Beograd", municipality: "Vračar", address: `Perf ${s}`, postalCode: "11000",
+      phone: `+38160${String(1000000 + s).slice(-7)}`,
+      email: `perf-salon-${s}-${suffix}@rts.test`,
+      shortDescription: "Perf", description: "Perf salon", imageUrl: "/t.jpg",
+    }));
+    const perfSalons = await db.insert(salonsTable).values(perfSalonRows).returning({ id: salonsTable.id });
+    assert.equal(perfSalons.length, PERF_SALONS);
+    for (const s of perfSalons) createdSalonIds.push(s.id);
+
+    const perfServices = await db.insert(servicesTable).values(perfSalons.map((s, i) => ({
+      salonId: s.id, categoryName: "Hair", name: `Perf Svc ${i} ${suffix}`, description: "Perf",
+      durationMinutes: 60, price: 2000, imageUrl: "/t.jpg", active: true,
+    }))).returning({ id: servicesTable.id, salonId: servicesTable.salonId });
+    const serviceBySalon = new Map(perfServices.map((s) => [s.salonId, s.id]));
+
+    const customerRows = perfSalons.flatMap((s, si) =>
+      Array.from({ length: PERF_CUSTOMERS_PER_SALON }, (_, ci) => ({
+        salonId: s.id,
+        firstName: `Perf${si}`,
+        lastName: `Kupac${ci}`,
+        email: `perf-${si}-${ci}-${suffix}@rts.test`,
+        phone: null,
+      })),
+    );
+    const insertedCustomers: { id: string; salonId: string }[] = [];
+    for (let i = 0; i < customerRows.length; i += 1000) {
+      const chunk = await db.insert(salonCustomersTable).values(customerRows.slice(i, i + 1000))
+        .returning({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId });
+      insertedCustomers.push(...chunk);
+    }
+    assert.equal(insertedCustomers.length, PERF_SALONS * PERF_CUSTOMERS_PER_SALON);
+
+    // Two visits per customer with spread-out recency so every status bucket
+    // is populated (NEW through LOST) and medians differ per salon.
+    const appointmentRows = insertedCustomers.flatMap((c, i) => {
+      const lastVisitDaysAgo = (i % 360) + 1;
+      return [
+        { daysAgo: lastVisitDaysAgo + 40, price: 1000 + (i % 7) * 500 },
+        { daysAgo: lastVisitDaysAgo, price: 1000 + (i % 5) * 700 },
+      ].map((v) => ({
+        salonId: c.salonId,
+        salonCustomerId: c.id,
+        serviceId: serviceBySalon.get(c.salonId)!,
+        date: isoDaysAgo(v.daysAgo),
+        startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+        status: "completed" as const,
+        price: v.price,
+        treatmentLocation: "salon" as const,
+      }));
+    });
+    for (let i = 0; i < appointmentRows.length; i += 1000) {
+      await db.insert(appointmentsTable).values(appointmentRows.slice(i, i + 1000));
+    }
+
+    // Deep-history customers: 10 customers in the first perf salon with 300
+    // completed visits each. Bounds are per customer batch, so a batch whose
+    // customers carry thousands of appointment rows must still classify
+    // correctly and inside the time budget.
+    const DEEP_CUSTOMERS = 10;
+    const DEEP_VISITS_EACH = 300;
+    const firstPerfSalon = perfSalons[0]!;
+    const deepCustomers = await db.insert(salonCustomersTable).values(
+      Array.from({ length: DEEP_CUSTOMERS }, (_, i) => ({
+        salonId: firstPerfSalon.id,
+        firstName: "Deep",
+        lastName: `Istorija${i}`,
+        email: `perf-deep-${i}-${suffix}@rts.test`,
+        phone: null,
+      })),
+    ).returning({ id: salonCustomersTable.id, salonId: salonCustomersTable.salonId });
+    const deepAppointmentRows = deepCustomers.flatMap((c) =>
+      Array.from({ length: DEEP_VISITS_EACH }, (_, v) => ({
+        salonId: c.salonId,
+        salonCustomerId: c.id,
+        serviceId: serviceBySalon.get(c.salonId)!,
+        date: isoDaysAgo(v + 1),
+        startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+        status: "completed" as const,
+        price: 2000,
+        treatmentLocation: "salon" as const,
+      })),
+    );
+    for (let i = 0; i < deepAppointmentRows.length; i += 1000) {
+      await db.insert(appointmentsTable).values(deepAppointmentRows.slice(i, i + 1000));
+    }
+
+    const perfStartedAt = Date.now();
+    const perfRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+    const perfElapsedMs = Date.now() - perfStartedAt;
+    assert.equal(perfRes.status, 200, "volume preview succeeds under default guards");
+    const perf = (await perfRes.json()) as any;
+    assert.ok(
+      perf.totalCustomers >= PERF_SALONS * PERF_CUSTOMERS_PER_SALON,
+      "volume preview classifies every seeded customer",
+    );
+    const perfSum = Object.values(perf.currentCounts as Record<string, number>)
+      .reduce((s: number, n) => s + (n as number), 0);
+    assert.equal(perfSum, perf.totalCustomers, "batched counts still cover every customer exactly once");
+    assert.ok(perf.reclassifiedCount >= 1, "lowering the VIP visit floor moves seeded repeat customers");
+    assert.ok(
+      perfElapsedMs <= PERF_RESPONSE_BOUND_MS,
+      `preview over ${perf.totalCustomers} customers answered in ${perfElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+    );
+    console.log(
+      `✓ Volume benchmark: ${perf.totalCustomers} customers previewed in ${perfElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+    );
+
+    // ── 16b. Deep-history stress: appointment row budget bounds memory ──────
+    // Force a tiny appointment row budget (350 rows) so each 300-visit deep
+    // customer nearly fills a sub-chunk alone — every keyset page splits into
+    // many sub-chunks. The preview must still succeed and produce identical
+    // classification results, proving sub-chunking changes memory shape only,
+    // never semantics.
+    try {
+      process.env.RETENTION_PREVIEW_APPOINTMENT_ROW_BUDGET = "350";
+      const chunkedStartedAt = Date.now();
+      const chunkedRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      const chunkedElapsedMs = Date.now() - chunkedStartedAt;
+      assert.equal(chunkedRes.status, 200, "preview succeeds with a tiny appointment row budget");
+      const chunked = (await chunkedRes.json()) as any;
+      assert.deepEqual(
+        {
+          totalCustomers: chunked.totalCustomers,
+          reclassifiedCount: chunked.reclassifiedCount,
+          currentCounts: chunked.currentCounts,
+          candidateCounts: chunked.candidateCounts,
+          shifts: chunked.shifts,
+          topAffectedSalons: chunked.topAffectedSalons,
+        },
+        {
+          totalCustomers: perf.totalCustomers,
+          reclassifiedCount: perf.reclassifiedCount,
+          currentCounts: perf.currentCounts,
+          candidateCounts: perf.candidateCounts,
+          shifts: perf.shifts,
+          topAffectedSalons: perf.topAffectedSalons,
+        },
+        "row-budget sub-chunking yields identical results to the default budget",
+      );
+      assert.ok(
+        chunkedElapsedMs <= PERF_RESPONSE_BOUND_MS,
+        `sub-chunked preview answered in ${chunkedElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+      );
+      console.log(
+        `✓ Deep-history stress: 350-row budget preview matches default-budget results in ${chunkedElapsedMs} ms`,
+      );
+
+      // A single customer whose history alone exceeds the whole row budget
+      // cannot be processed within the memory bound (full history is the
+      // irreducible unit for parity with the CRM endpoints). The preview must
+      // refuse with the same friendly overload contract, never silently blow
+      // the budget: 250-row budget < 300-visit deep customers → 503.
+      process.env.RETENTION_PREVIEW_APPOINTMENT_ROW_BUDGET = "250";
+      const oversizedRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      assert.equal(oversizedRes.status, 503, "oversized single-customer history is refused, not fetched");
+      const oversized = (await oversizedRes.json()) as any;
+      assert.equal(oversized.code, "PREVIEW_TOO_LARGE");
+      assert.ok(
+        typeof oversized.error === "string" && oversized.error.length > 0,
+        "oversized-history refusal carries a friendly message",
+      );
+      console.log("✓ Single history above the row budget → friendly 503 refusal");
+    } finally {
+      delete process.env.RETENTION_PREVIEW_APPOINTMENT_ROW_BUDGET;
+    }
+
+    // ── 17. Restore provenance: labelled truthfully, rejected when it lies ──
     // Manual updates never carry restore metadata.
     const historySoFar = (await (await fetch(`${baseUrl}/growth/admin/retention-settings/history`, { headers: adminHeaders })).json()) as any[];
     for (const entry of historySoFar.filter((h) => h.version > initialVersion)) {
@@ -733,6 +1062,7 @@ async function integrationTests() {
     assert.equal(manualIdenticalRes.status, 200, "identical manual save is still allowed");
     assert.equal(((await manualIdenticalRes.json()) as any).version, initialVersion + 7);
     console.log("✓ Manual saves are unaffected by the no-op restore guard");
+
   } finally {
     // Remove only rows created by this run; earlier versions stay untouched.
     await db.delete(platformRetentionSettingsTable)

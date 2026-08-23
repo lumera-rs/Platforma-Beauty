@@ -53,6 +53,7 @@ import {
   getRetentionSettingsHistory,
   previewRetentionThresholds,
   RetentionNoOpRestoreError,
+  RetentionPreviewOverloadError,
   RetentionRestoreError,
   updateRetentionSettings,
   validateRetentionThresholds,
@@ -1933,7 +1934,15 @@ router.post("/growth/admin/retention-settings/preview", async (req, res, next) =
     }
 
     res.json(await previewRetentionThresholds(parsed.data));
-  } catch (err) { next(err); }
+  } catch (err) {
+    // Guard trip (dataset too large / time budget exceeded): friendly 503
+    // instead of stalling the admin page or surfacing a generic 500.
+    if (err instanceof RetentionPreviewOverloadError) {
+      res.status(503).json({ error: err.message, code: err.code });
+      return;
+    }
+    next(err);
+  }
 });
 
 router.get("/growth/admin/retention-settings/history", async (req, res, next) => {

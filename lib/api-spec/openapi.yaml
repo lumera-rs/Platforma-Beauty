@@ -4216,6 +4216,7 @@ paths:
         "400": { description: Validation error (out-of-range or inconsistent thresholds) }
         "401": { description: Authentication required }
         "403": { description: Admin access required }
+        "503": { description: Preview temporarily unavailable — dataset exceeds the row-count cap or the computation exceeded its time budget (friendly message in `error`) }
 
   /growth/admin/retention-settings/history:
     get:
