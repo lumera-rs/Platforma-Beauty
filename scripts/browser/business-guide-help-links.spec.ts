@@ -48,6 +48,24 @@ const EMPLOYEE_HELP_IDS = [
   "za-odsustva",
 ] as const;
 
+const OWNER_MOBILE_NAV_HELP_IDS = [
+  "vl-dashboard",
+  "vl-kalendar",
+  "vl-usluge",
+  "vl-zaposleni",
+  "vl-radno-vreme",
+  "vl-inventar",
+  "vl-shop",
+  "vl-porudzbine",
+  "vl-obavestenja",
+  "vl-edukacije",
+] as const;
+
+const EMPLOYEE_MOBILE_NAV_HELP_IDS = [
+  "za-portal",
+  "za-ostalo",
+] as const;
+
 type GuideHelpFixture = {
   owner: { email: string; password: string; id: string };
   employee: { email: string; password: string; id: string };
@@ -151,11 +169,19 @@ async function assertVisibleHelpLinksReachSections(
   page: Page,
   startPath: string,
   expectedIds: readonly string[],
+  options: { mobileMenu?: boolean } = {},
 ): Promise<void> {
   await page.goto(startPath);
   await expect(page.locator("body")).not.toContainText("404");
 
-  const shortcuts = page.locator('[data-testid^="guide-help-"]:visible');
+  if (options.mobileMenu) {
+    await expect(page.getByTestId("button-mobile-menu")).toBeVisible();
+    await page.getByTestId("button-mobile-menu").click();
+  }
+
+  const shortcuts = options.mobileMenu
+    ? page.locator("nav").locator('[data-testid^="guide-help-"]:visible')
+    : page.locator('[data-testid^="guide-help-"]:visible');
   await expect(shortcuts, `${startPath} must render every expected visible help shortcut.`)
     .toHaveCount(expectedIds.length);
   const sectionIds = await shortcuts.evaluateAll((elements) => elements.map((element) => {
@@ -180,6 +206,9 @@ async function assertVisibleHelpLinksReachSections(
     await expect(section.locator("h3")).toBeVisible();
 
     await page.goto(startPath);
+    if (options.mobileMenu) {
+      await page.getByTestId("button-mobile-menu").click();
+    }
     await expect(shortcuts).toHaveCount(expectedIds.length);
   }
 }
@@ -230,6 +259,36 @@ test("employee portal help shortcuts open their matching guide sections", async 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_HELP_IDS);
     expect(browserErrors, "The employee guide journey must not produce browser errors.").toEqual([]);
+  } finally {
+    await cleanUpGuideHelpFixture(fixture);
+  }
+});
+
+test("owner mobile business-menu help shortcuts open their matching guide sections", async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await createGuideHelpFixture();
+  const browserErrors = collectBrowserErrors(page);
+
+  try {
+    await signIn(page, fixture.owner);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_MOBILE_NAV_HELP_IDS, { mobileMenu: true });
+    expect(browserErrors, "The owner mobile guide journey must not produce browser errors.").toEqual([]);
+  } finally {
+    await cleanUpGuideHelpFixture(fixture);
+  }
+});
+
+test("employee mobile business-menu help shortcuts open their matching guide sections", async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await createGuideHelpFixture();
+  const browserErrors = collectBrowserErrors(page);
+
+  try {
+    await signIn(page, fixture.employee);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_MOBILE_NAV_HELP_IDS, { mobileMenu: true });
+    expect(browserErrors, "The employee mobile guide journey must not produce browser errors.").toEqual([]);
   } finally {
     await cleanUpGuideHelpFixture(fixture);
   }
