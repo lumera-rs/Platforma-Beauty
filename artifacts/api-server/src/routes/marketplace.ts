@@ -11133,7 +11133,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets, deliveryReports] = await Promise.all([
+  const [users, salons, allAppointments, orders, reviews, subscriptions, services, eligibleGalleryUploadTickets, deliveryReports, reachableAdminCount] = await Promise.all([
     db.select().from(usersTable),
     db.select().from(salonsTable),
     db.select().from(appointmentsTable),
@@ -11148,6 +11148,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
       .from(educationMediaUploadsTable)
       .where(educationMediaUploadCleanupEligibility(now)),
     deliveryReportStatuses(now),
+    smsFallbackReachableAdminCount(),
   ]);
 
   const bookingsThisMonth = allAppointments.filter((a) => a.createdAt >= thisMonthStart).length;
@@ -11197,6 +11198,10 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     // Same staleness signal as the integrations page — surfaces the
     // "Potrebna je intervencija" alert on the dashboard proactively.
     deliveryReportStaleProviders: staleDeliveryReportProviders(deliveryReports),
+    // Same audience + phone predicate as the emergency-SMS send path (shared
+    // helper) — zero means a total email outage would reach no administrator,
+    // so the dashboard shows the same standing warning as the integrations page.
+    smsFallbackReachableAdminCount: reachableAdminCount,
     topCategories,
   }));
 });

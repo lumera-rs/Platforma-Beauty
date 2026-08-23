@@ -6,7 +6,9 @@
  * the fallback degrades to a log line — so GET /admin/integrations reports
  * `smsFallback.reachableAdminCount` (computed by smsFallbackReachableAdminCount,
  * which shares the exact audience and phone predicate with the send path) and
- * the admin panel shows a standing warning while the count is zero.
+ * the admin panel shows a standing warning while the count is zero. The admin
+ * dashboard landing page surfaces the same condition via GET /admin/summary's
+ * `smsFallbackReachableAdminCount`, so both endpoints are asserted in lockstep.
  *
  * Verified here:
  *   1. Zero state: with every active admin phone cleared, the endpoint
@@ -72,6 +74,15 @@ async function run() {
       assert.ok(body.smsFallback, "response must carry the smsFallback audience health block");
       assert.equal(typeof body.smsFallback.reachableAdminCount, "number",
         "reachableAdminCount must be a number");
+
+      // The dashboard landing page shows the same warning from GET
+      // /admin/summary — both endpoints share the helper, so they must agree.
+      const summaryResponse = await fetch(`${baseUrl}/api/admin/summary`, { headers: { cookie } });
+      assert.equal(summaryResponse.status, 200, "admin summary read must succeed");
+      const summary = await summaryResponse.json() as { smsFallbackReachableAdminCount?: number };
+      assert.equal(summary.smsFallbackReachableAdminCount, body.smsFallback.reachableAdminCount,
+        "GET /admin/summary must report the same reachable-admin count as GET /admin/integrations");
+
       return body.smsFallback.reachableAdminCount!;
     };
 

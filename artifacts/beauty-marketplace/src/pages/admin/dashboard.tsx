@@ -34,6 +34,17 @@ export default function AdminDashboard() {
           <p className="text-muted-foreground">Analitika, metrika i trenutni status LUMERA sistema.</p>
         </div>
 
+        {summary.smsFallbackReachableAdminCount === 0 && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert" data-testid="sms-fallback-no-admin-phone-alert">
+            <strong>Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu.</strong>{" "}
+            Nijedan aktivan administrator nema broj telefona na nalogu — ako slanje e-pošte potpuno otkaže, rezervni SMS je jedini kanal kojim biste saznali za prekid.
+            {" "}Neka bar jedan administrator doda broj telefona; ovo obaveštenje nestaje čim prvi broj bude sačuvan.{" "}
+            <Link href="/admin/integracije" className="font-medium underline underline-offset-2" data-testid="sms-fallback-no-admin-phone-alert-link">
+              Više detalja u sekciji Integracije
+            </Link>.
+          </div>
+        )}
+
         {summary.deliveryReportStaleProviders.length > 0 && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="delivery-report-alert">
             <strong>Potrebna je intervencija.</strong> Izveštaji o isporuci ne stižu za:{" "}

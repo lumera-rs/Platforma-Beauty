@@ -6670,6 +6670,9 @@ components:
           type: array
           description: Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since.
           items: { type: string, enum: [brevo, infobip] }
+        smsFallbackReachableAdminCount:
+          type: number
+          description: How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody.
         topCategories:
           type: array
           items:
@@ -6678,7 +6681,7 @@ components:
               name: { type: string }
               count: { type: number }
             required: [name, count]
-      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, topCategories]
+      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, smsFallbackReachableAdminCount, topCategories]
     AdminSalon:
       type: object
       properties:

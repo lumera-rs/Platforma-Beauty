@@ -33,5 +33,7 @@ export interface AdminSummary {
   galleryCleanupHasRepeatedFailures: boolean;
   /** Delivery-report providers (brevo = e-mail, infobip = SMS) whose webhooks look silent — automation messages were sent recently but no verified delivery report has arrived since. */
   deliveryReportStaleProviders: AdminSummaryDeliveryReportStaleProvidersItem[];
+  /** How many active administrators the total-email-outage SMS fallback could actually reach (active ADMIN/SUPER_ADMIN accounts with a usable phone number). Zero means an emergency SMS would reach nobody. */
+  smsFallbackReachableAdminCount: number;
   topCategories: AdminSummaryTopCategoriesItem[];
 }
