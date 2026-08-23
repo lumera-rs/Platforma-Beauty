@@ -215,6 +215,13 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   // Leading FK coverage: deliveries for a salon, deliveries for an appointment.
   index("email_deliveries_salon_idx").on(table.salonId),
   index("email_deliveries_appointment_idx").on(table.appointmentId),
+  // Delivery-report alert history: the silence/recovery alert runners scan and
+  // group ALL rows of their two alert email types on every 15-minute scheduler
+  // tick. This partial index bounds those scans to the (tiny, cooldown-limited)
+  // alert history no matter how large email_deliveries grows overall.
+  index("email_deliveries_report_alert_history_idx")
+    .on(table.emailType, table.recipientEmail)
+    .where(sql`${table.emailType} IN ('delivery_report_silence_alert', 'delivery_report_recovery_alert')`),
 ]);
 
 export const emailCampaignsTable = pgTable("email_campaigns", {

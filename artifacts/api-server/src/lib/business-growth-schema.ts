@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 7;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 8;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -148,6 +148,15 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.sms_deliveries ADD COLUMN IF NOT EXISTS next_retry_at timestamptz`,
     `CREATE INDEX IF NOT EXISTS sms_deliveries_retry_index ON ${s}.sms_deliveries (status, next_retry_at)`,
     `CREATE INDEX IF NOT EXISTS sms_deliveries_claim_expiry_idx ON ${s}.sms_deliveries (status, claim_expires_at)`,
+
+    // email_deliveries delivery-report alert history (v8). The silence and
+    // recovery alert runners group over ALL rows of their alert email types on
+    // every scheduler tick; this partial index keeps those history scans
+    // bounded to the small alert history as email_deliveries grows. Mirrors
+    // email_deliveries_report_alert_history_idx in lib/db/src/schema/core.ts.
+    `CREATE INDEX IF NOT EXISTS email_deliveries_report_alert_history_idx
+       ON ${s}.email_deliveries (email_type, recipient_email)
+       WHERE email_type IN ('delivery_report_silence_alert', 'delivery_report_recovery_alert')`,
 
     // ── platform_retention_settings (v4: admin-tunable retention thresholds) ─
     // Append-only versioned platform config; highest version is active. Mirrors

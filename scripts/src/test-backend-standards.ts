@@ -172,6 +172,7 @@ const REQUIRED_INDEXES = [
   "service_templates_category_subcategory_index",
   "sms_deliveries_retry_index",
   "email_deliveries_retry_index",
+  "email_deliveries_report_alert_history_idx",
   "salons_city_active_rating_idx",
   "salons_municipality_active_idx",
   // commerce.ts

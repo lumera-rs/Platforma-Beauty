@@ -98,6 +98,19 @@ async function seedLegacySchema(schema: string) {
     created_at timestamptz NOT NULL DEFAULT now()
   )`);
 
+  // Legacy email_deliveries WITHOUT the v8 delivery-report alert history
+  // partial index — the bootstrap must create it on the existing table.
+  await q(`CREATE TABLE "${schema}".email_deliveries (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_key text NOT NULL UNIQUE,
+    email_type text NOT NULL,
+    salon_id uuid REFERENCES "${schema}".salons(id) ON DELETE SET NULL,
+    recipient_email text NOT NULL,
+    subject text NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}',
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`);
+
   // OLD platform_retention_settings WITHOUT the v6 change-provenance columns
   // (change_source / restored_from_version) — the ALTER path must add them
   // and backfill existing audit rows as 'manual'.
@@ -125,6 +138,12 @@ async function seedLegacySchema(schema: string) {
   await q(`INSERT INTO "${schema}".reviews (salon_id, customer_id, service_name, rating, text) VALUES ($1, $2, 'Svc', 5, 'Great')`, [salon.id, user.id]);
   // Legacy row uses an OLD message_type label (automation did not exist yet).
   await q(`INSERT INTO "${schema}".sms_deliveries (event_key, salon_id, message_type, recipient_phone, body, status) VALUES ('legacy-sms-1', $1, 'appointment_confirmation', '+381600000000', 'Zdravo', 'sent')`, [salon.id]);
+  // Legacy alert-history row that the v8 partial index must cover in place.
+  await q(
+    `INSERT INTO "${schema}".email_deliveries (event_key, email_type, recipient_email, subject, metadata)
+     VALUES ('legacy-silence-alert-1', 'delivery_report_silence_alert', 'legacy@bg.test', 'Alert',
+             '{"provider":"brevo","alertAt":"2026-01-01T00:00:00.000Z","sequence":1}'::jsonb)`,
+  );
   // Legacy audited settings version predating change-provenance columns.
   await q(
     `INSERT INTO "${schema}".platform_retention_settings
@@ -163,6 +182,8 @@ async function run() {
     assert.equal(reviewCount, "1", "legacy reviews row preserved");
     const custCount = (await q<{ n: string }>(`SELECT count(*)::text AS n FROM "${s}".salon_customers`)).rows[0]!.n;
     assert.equal(custCount, "1", "legacy salon_customers row preserved");
+    const emailCount = (await q<{ n: string }>(`SELECT count(*)::text AS n FROM "${s}".email_deliveries`)).rows[0]!.n;
+    assert.equal(emailCount, "1", "legacy email_deliveries row preserved");
 
     // ── Enum now accepts `processing` ──────────────────────────────────────
     const enumLabels = (await q<{ enumlabel: string }>(
@@ -305,6 +326,7 @@ async function run() {
       "employee_commission_settings_employee_unique",
       "customer_package_purchases_status_idx",
       "platform_retention_settings_version_unique",
+      "email_deliveries_report_alert_history_idx",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }
