@@ -6,6 +6,44 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
 const fallbackDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+const categoryPages = new Map([
+  ['/saloni/kategorija/frizerski-saloni', {
+    slug: 'frizerski-saloni',
+    apiCategory: 'Frizerski saloni',
+    label: 'Frizerski saloni',
+    h1: 'Frizerski saloni u Srbiji',
+    title: 'Frizerski saloni u Srbiji | LUMERA',
+    description: 'Pronađite najbolje frizerske salone u Srbiji, pregledajte usluge, ocene i cene i rezervišite termin online.',
+    intro: 'Istražite proverene frizerske salone za šišanje, feniranje, farbanje i stilizovanje kose.',
+  }],
+  ['/saloni/kategorija/nokti', {
+    slug: 'nokti',
+    apiCategory: 'Nokti',
+    label: 'Saloni za nokte',
+    h1: 'Saloni za nokte u Srbiji',
+    title: 'Saloni za nokte u Srbiji | LUMERA',
+    description: 'Pronađite salone za manikir, gel lak i pedikir u Srbiji. Uporedite ocene i cene i rezervišite termin online.',
+    intro: 'Pronađite stručnjake za manikir, gel lak, izlivanje noktiju i pedikir u vašem gradu.',
+  }],
+  ['/saloni/kategorija/masaza', {
+    slug: 'masaza',
+    apiCategory: 'Masaža',
+    label: 'Saloni za masažu',
+    h1: 'Saloni za masažu u Srbiji',
+    title: 'Saloni za masažu u Srbiji | LUMERA',
+    description: 'Otkrijte salone za masažu u Srbiji. Izaberite relaks, terapeutsku ili sportsku masažu i rezervišite termin.',
+    intro: 'Opustite se uz relaks, terapeutsku, sportsku ili masažu celog tela u proverenom salonu.',
+  }],
+  ['/saloni/kategorija/nega-lica', {
+    slug: 'nega-lica',
+    apiCategory: 'Lice',
+    label: 'Nega lica',
+    h1: 'Saloni za negu lica u Srbiji',
+    title: 'Nega lica u Srbiji | LUMERA',
+    description: 'Pronađite salone za negu lica u Srbiji. Pregledajte tretmane, ocene i cene i zakažite svoj beauty termin.',
+    intro: 'Istražite hidratantne, anti-age i druge profesionalne tretmane za negu lica.',
+  }],
+]);
 const staticPages = new Map([
   ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
   ['/za-biznise', ['LUMERA za biznise | Rast vašeg salona', 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', 'Digitalni alati za salone i beauty biznise.']],
@@ -141,6 +179,35 @@ async function renderPublicPage(req, pathname) {
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p><p>Za dodatne informacije pogledajte <a href="/saloni">javni katalog salona</a> ili <a href="/edukacije">beauty edukacije</a>.</p></article>`, origin) };
   }
 
+  const categoryPage = categoryPages.get(pathname);
+  if (categoryPage) {
+    const salons = await getJson(req, `/api/salons?category=${encodeURIComponent(categoryPage.apiCategory)}&page=1&pageSize=24`) ?? [];
+    const meta = makeMeta(pathname, categoryPage.title, categoryPage.description, {
+      schema: {
+        '@context': 'https://schema.org',
+        '@type': 'ItemList',
+        name: categoryPage.h1,
+        itemListElement: salons.map((salon, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: `${origin}/saloni/${salon.slug}`,
+          name: salon.name,
+        })),
+      },
+    });
+    const cards = salons.map((salon) => card({
+      href: `/saloni/${salon.slug}`,
+      title: salon.name,
+      description: salon.shortDescription,
+      image: salon.imageUrl,
+      detail: `${salon.city} · Ocena ${salon.rating} (${salon.reviewCount} recenzija)`,
+    })).join('');
+    return {
+      meta,
+      html: pageShell(meta, `<section><h1>${escapeHtml(categoryPage.h1)}</h1><p>${escapeHtml(categoryPage.description)}</p><p>${escapeHtml(categoryPage.intro)}</p></section><section><h2>${escapeHtml(categoryPage.label)}</h2><div class="seo-grid">${cards || '<p>Trenutno nema dostupnih salona u ovoj kategoriji.</p>'}</div></section>`, origin),
+    };
+  }
+
   const salonMatch = pathname.match(/^\/saloni\/([^/]+)$/);
   if (salonMatch) {
     const salon = await getJson(req, `/api/salons/${encodeURIComponent(salonMatch[1])}`);
@@ -211,7 +278,7 @@ function sitemapXml(origin, entries) {
 
 async function buildSitemap(req) {
   const origin = requestOrigin(req);
-  const entries = [...staticPages.keys()].map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : '0.7' }));
+  const entries = [...staticPages.keys(), ...categoryPages.keys()].map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
   const [salons, courses] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),

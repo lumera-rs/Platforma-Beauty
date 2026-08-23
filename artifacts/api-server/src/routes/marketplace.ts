@@ -4214,7 +4214,7 @@ router.get("/salons", async (req, res): Promise<void> => {
     query.city ? sql`lower(${salonsTable.city}) = ${query.city.toLowerCase()}` : undefined,
     query.municipality ? sql`lower(${salonsTable.municipality}) = ${query.municipality.toLowerCase()}` : undefined,
     treatment
-      ? sql`exists (select 1 from ${servicesTable} where ${activeService} and position(${treatment} in lower(${servicesTable.categoryName} || ' ' || ${servicesTable.name} || ' ' || coalesce(array_to_string(${servicesTable.tags}, ' '), ''))) > 0)`
+      ? sql`exists (select 1 from ${servicesTable} where ${activeService} and position(${treatment} in lower(${servicesTable.categoryName} || ' ' || ${servicesTable.name} || ' ' || coalesce(${servicesTable.tags}::text, ''))) > 0)`
       : undefined,
     query.priceMax !== undefined ? sql`${startingPriceExpr} <= ${query.priceMax}` : undefined,
     query.minRating !== undefined ? sql`${salonsTable.rating} >= ${Math.round(query.minRating * 10)}` : undefined,

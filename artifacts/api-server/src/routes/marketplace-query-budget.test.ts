@@ -83,6 +83,9 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       largeCourses.queries.length <= smallCourses.queries.length + 1,
       `education query count grew with page size (${smallCourses.queries.length} -> ${largeCourses.queries.length})`,
     );
+
+    const categorySalons = await countedRequest(`${baseUrl}/salons?category=Frizerski%20saloni&page=1&pageSize=6`);
+    assert.equal(categorySalons.response.status, 200, "public category filtering must support JSONB service tags");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());

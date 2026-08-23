@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
+import { getPublicCategoryPage } from '@/lib/public-category-pages';
 
 type SeoPayload = {
   title: string;
@@ -16,6 +17,16 @@ function text(value: unknown, fallback = ''): string {
 }
 
 function staticMetadata(pathname: string): SeoPayload | null {
+  const categorySlug = pathname.match(/^\/saloni\/kategorija\/([^/]+)$/)?.[1];
+  const categoryPage = getPublicCategoryPage(categorySlug);
+  if (categoryPage) {
+    return {
+      title: categoryPage.title,
+      description: categoryPage.description,
+      indexable: true,
+    };
+  }
+
   const pages: Record<string, SeoPayload> = {
     '/': { title: 'LUMERA | Saloni, tretmani i edukacije', description: defaultDescription, indexable: true },
     '/za-biznise': { title: 'LUMERA za biznise | Rast vašeg salona', description: 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', indexable: true },
@@ -116,16 +127,20 @@ async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
 
 export function ClientSeoMetadata() {
   const [pathname] = useLocation();
+  const searchString = useSearch();
 
   useEffect(() => {
     let cancelled = false;
     const fallback = staticMetadata(pathname);
     if (fallback) {
-      applySeo(pathname, fallback);
+      applySeo(pathname, { ...fallback, indexable: fallback.indexable && searchString.length === 0 });
       return;
     }
     void dynamicMetadata(pathname).then((payload) => {
-      if (!cancelled) applySeo(pathname, payload ?? {
+      if (!cancelled) applySeo(pathname, payload ? {
+        ...payload,
+        indexable: payload.indexable && searchString.length === 0,
+      } : {
         title: `${APP_NAME} | Privatna stranica`,
         description: defaultDescription,
         indexable: false,
@@ -138,7 +153,7 @@ export function ClientSeoMetadata() {
       });
     });
     return () => { cancelled = true; };
-  }, [pathname]);
+  }, [pathname, searchString]);
 
   return null;
 }

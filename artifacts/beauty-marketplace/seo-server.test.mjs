@@ -55,3 +55,46 @@ test('public content is outside the React root for safe client takeover', async 
   assert.match(response.body, /<div id="root"><\/div>/);
   assert.match(response.body, /html\[data-app-ready="true"\] #seo-prerender\{display:none\}/);
 });
+
+test('category pages use the real catalog filter and have unique SEO metadata', async () => {
+  const previousFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = async (input) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([{
+      slug: 'studio-kosa',
+      name: 'Studio Kosa',
+      shortDescription: 'Frizerski salon u Beogradu.',
+      imageUrl: '',
+      city: 'Beograd',
+      rating: 4.9,
+      reviewCount: 12,
+    }]), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const response = await createSeoResponse(request('/saloni/kategorija/frizerski-saloni'), template);
+    assert.equal(response.status, 200);
+    assert.match(response.body, /<title>Frizerski saloni u Srbiji \| LUMERA<\/title>/);
+    assert.match(response.body, /rel="canonical" href="https:\/\/lumera\.example\/saloni\/kategorija\/frizerski-saloni"/);
+    assert.match(response.body, /<h1>Frizerski saloni u Srbiji<\/h1>/);
+    assert.match(response.body, /Studio Kosa/);
+    assert.match(decodeURIComponent(requestedUrl), /\/api\/salons\?category=Frizerski saloni&page=1&pageSize=24/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('category pages are included in the canonical sitemap', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const response = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(response.status, 200);
+    assert.match(response.body, /https:\/\/lumera\.example\/saloni\/kategorija\/frizerski-saloni/);
+    assert.match(response.body, /https:\/\/lumera\.example\/saloni\/kategorija\/nokti/);
+    assert.match(response.body, /https:\/\/lumera\.example\/saloni\/kategorija\/masaza/);
+    assert.match(response.body, /https:\/\/lumera\.example\/saloni\/kategorija\/nega-lica/);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

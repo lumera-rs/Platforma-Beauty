@@ -1,5 +1,5 @@
 import { Layout } from "@/components/layout";
-import { Link, useSearch } from "wouter";
+import { Link, useRoute, useSearch } from "wouter";
 import { MapPin, Star, SlidersHorizontal, BadgeCheck, Zap, CreditCard, Clock3, ChevronLeft, ChevronRight } from "lucide-react";
 import { OptimizedImage } from "@/components/optimized-image";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { getListSalonsQueryKey, useListSalons, type ListSalonsParams } from "@workspace/api-client-react";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { getPublicCategoryPage, getPublicCategoryPath, PUBLIC_CATEGORY_PAGES } from "@/lib/public-category-pages";
 
 const PAGE_SIZE = 6;
 const salonSortValues = ["recommended", "top-rated", "cheapest", "largest-discount", "nearest", "first-available", "most-popular", "most-booked-recently", "newest"] as const;
@@ -20,10 +21,12 @@ function isSalonSort(value: string | null): value is NonNullable<ListSalonsParam
 }
 
 export default function Salons() {
+  const [, categoryRouteParams] = useRoute<{ categorySlug: string }>("/saloni/kategorija/:categorySlug");
+  const categoryPage = getPublicCategoryPage(categoryRouteParams?.categorySlug);
   const searchString = useSearch();
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
 
-  const [category, setCategory] = useState(searchParams.get("category") || "");
+  const [category, setCategory] = useState(categoryPage?.apiCategory || searchParams.get("category") || "");
   const [city, setCity] = useState(searchParams.get("city") || "");
   const [municipality, setMunicipality] = useState("");
   const [brand, setBrand] = useState("");
@@ -59,7 +62,7 @@ export default function Salons() {
   }, [sort]);
 
   useEffect(() => {
-    setCategory(searchParams.get("category") || "");
+    setCategory(categoryPage?.apiCategory || searchParams.get("category") || "");
     setCity(searchParams.get("city") || "");
     const sortFromQuery = searchParams.get("sort");
     setSort(isSalonSort(sortFromQuery) ? sortFromQuery : "recommended");
@@ -73,7 +76,7 @@ export default function Salons() {
     setFeatured(searchParams.get("featured") === "true");
     const minReviewCountFromQuery = Number(searchParams.get("minReviewCount"));
     setMinReviewCount(Number.isFinite(minReviewCountFromQuery) && minReviewCountFromQuery > 0 ? minReviewCountFromQuery : undefined);
-  }, [searchParams]);
+  }, [categoryPage?.apiCategory, searchParams]);
 
   // Filters (everything except the page cursor) are memoized separately so we
   // can reset to page 1 whenever any filter/sort changes, then fold the current
@@ -187,10 +190,23 @@ export default function Salons() {
       <div className="bg-secondary/30 py-8 border-b">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl md:text-4xl font-serif font-bold text-foreground mb-2">Istražite salone</h1>
+            <h1 className="text-3xl md:text-4xl font-serif font-bold text-foreground mb-2">
+              {categoryPage?.h1 || "Istražite salone"}
+            </h1>
             <p className="text-muted-foreground text-base max-w-2xl">
-              Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini.
+              {categoryPage?.intro || "Pronađite najbolje salone i stručnjake za lepotu u vašoj blizini."}
             </p>
+            <nav className="mt-4 flex flex-wrap gap-x-4 gap-y-2" aria-label="Popularne kategorije">
+              {PUBLIC_CATEGORY_PAGES.map((page) => (
+                <Link
+                  key={page.slug}
+                  href={getPublicCategoryPath(page)}
+                  className={`text-sm font-medium transition-colors hover:text-primary ${page.slug === categoryPage?.slug ? "text-primary" : "text-muted-foreground"}`}
+                >
+                  {page.label}
+                </Link>
+              ))}
+            </nav>
           </div>
           <div className="lg:hidden">
             <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>

@@ -18,6 +18,7 @@ import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { useState, useEffect, useMemo } from "react";
 import { HomeSalonCard, HomeDiscountSalonCard } from "@/components/home-salon-card";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { getPublicCategoryPath, PUBLIC_CATEGORY_PAGES } from "@/lib/public-category-pages";
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -92,6 +93,9 @@ export default function Home() {
   };
 
   const getCategoryHref = (category: string) => {
+    const publicCategory = PUBLIC_CATEGORY_PAGES.find((page) => page.apiCategory === category || page.label === category);
+    if (publicCategory) return getPublicCategoryPath(publicCategory);
+
     const params = new URLSearchParams();
     params.append("category", category);
     if (sessionCity) params.append("city", sessionCity);
@@ -538,7 +542,7 @@ export default function Home() {
             <div>
               <h4 className="font-serif font-bold text-lg mb-6 text-foreground">Top usluge</h4>
               <ul className="space-y-3">
-                {["Frizerski saloni", "Masaža", "Nokti", "Kozmetički saloni", "Depilacija"].map((cat) => (
+                {["Frizerski saloni", "Masaža", "Nokti", "Nega lica", "Kozmetički saloni", "Depilacija"].map((cat) => (
                   <li key={cat}>
                     <Link href={getCategoryHref(cat)} className="text-muted-foreground hover:text-primary transition-colors text-sm flex items-center gap-1.5 group">
                       <ChevronRight className="w-3 h-3 text-muted-foreground/50 group-hover:text-primary" /> {cat}

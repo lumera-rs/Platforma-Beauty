@@ -179,6 +179,7 @@ function Router() {
         <Route path="/poslovna-prijava"><BusinessAuth initialTab="login" /></Route>
         <Route path="/poslovna-registracija"><BusinessAuth initialTab="register" /></Route>
         <Route path="/saloni" component={Salons} />
+        <Route path="/saloni/kategorija/:categorySlug" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
