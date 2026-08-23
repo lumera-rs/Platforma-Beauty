@@ -89,7 +89,7 @@ function CampaignOverview({ items, onShowStats }: {
           <BarChart3 className="w-5 h-5 text-primary" /> Pregled performansi kampanja
         </CardTitle>
         <CardDescription>
-          Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine ostvarene kampanjama.
+          Uporedni prikaz svih pravila — isporuka i otvaranja prema podacima provajdera, uz termine i prihod ostvarene kampanjama.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
@@ -155,6 +155,9 @@ function CampaignOverview({ items, onShowStats }: {
                   </td>
                   <td className="py-3 text-right">
                     <span className="text-lg font-bold text-primary">{item.attributedAppointments}</span>
+                    <div className="text-xs font-semibold text-emerald-800 whitespace-nowrap" data-testid={`overview-revenue-${item.ruleId}`}>
+                      {(item.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -521,6 +524,9 @@ export default function OwnerAutomations() {
               <div className="bg-primary/5 border border-primary/20 p-4 rounded-lg text-center">
                 <p className="text-xs text-primary uppercase font-semibold">Prihodovani termini</p>
                 <p className="text-2xl font-bold mt-1 text-primary">{statsData.attributedAppointments}</p>
+                <p className="text-sm font-semibold text-emerald-800 mt-1" data-testid="stats-attributed-revenue">
+                  {(statsData.attributedRevenue ?? 0).toLocaleString("sr-RS")} RSD prihoda
+                </p>
               </div>
               <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-lg text-center col-span-2 sm:col-span-1">
                 <p className="text-xs text-emerald-700 uppercase font-semibold flex items-center justify-center gap-1"><CheckCircle2 className="w-3 h-3" /> Uspešno poslato</p>

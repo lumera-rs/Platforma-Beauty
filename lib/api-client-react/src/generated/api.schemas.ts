@@ -3866,6 +3866,8 @@ export interface AutomationStats {
   skippedCount: number;
   failedCount: number;
   attributedAppointments: number;
+  /** Total price (RSD) of appointments attributed to this rule. */
+  attributedRevenue: number;
   deliveredCount: number;
   openedCount: number;
   emailSentCount: number;
@@ -3889,6 +3891,8 @@ export interface AutomationStatsOverviewItem {
   skippedCount: number;
   failedCount: number;
   attributedAppointments: number;
+  /** Total price (RSD) of appointments attributed to this rule. */
+  attributedRevenue: number;
   emailSentCount: number;
   emailDeliveredCount: number;
   emailOpenedCount: number;
@@ -3899,6 +3903,7 @@ export interface AutomationStatsOverviewItem {
   /** @nullable */
   lastRunAt?: string | null;
 }
+
 export type AutomationTestRunResultTriggerBreakdown = {[key: string]: number};
 
 export interface AutomationTestRunResult {

@@ -16,6 +16,8 @@ export interface AutomationStatsOverviewItem {
   skippedCount: number;
   failedCount: number;
   attributedAppointments: number;
+  /** Total price (RSD) of appointments attributed to this rule. */
+  attributedRevenue: number;
   emailSentCount: number;
   emailDeliveredCount: number;
   emailOpenedCount: number;

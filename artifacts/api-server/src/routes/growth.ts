@@ -540,9 +540,11 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
         attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
+      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
       .where(inArray(automationRunsTable.ruleId, ruleIds))
       .groupBy(automationRunsTable.ruleId);
 
@@ -580,6 +582,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         skippedCount: runs?.skippedCount ?? 0,
         failedCount: runs?.failedCount ?? 0,
         attributedAppointments: runs?.attributedAppointments ?? 0,
+        attributedRevenue: runs?.attributedRevenue ?? 0,
         emailSentCount: deliveries?.emailSentCount ?? 0,
         emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: deliveries?.emailOpenedCount ?? 0,
@@ -612,9 +615,11 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         skippedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'skipped' then 1 else 0 end)::int`,
         failedCount: sql<number>`sum(case when ${automationRunsTable.status} = 'failed' then 1 else 0 end)::int`,
         attributedAppointments: sql<number>`sum(case when ${automationRunsTable.attributedAppointmentId} is not null then 1 else 0 end)::int`,
+        attributedRevenue: sql<number>`coalesce(sum(${appointmentsTable.price}), 0)::int`,
         lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
       })
       .from(automationRunsTable)
+      .leftJoin(appointmentsTable, eq(appointmentsTable.id, automationRunsTable.attributedAppointmentId))
       .where(eq(automationRunsTable.ruleId, rule.id));
 
     // Delivery stats (delivered / opened / provider-failed, updated from
@@ -645,6 +650,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       skippedCount: stats?.skippedCount ?? 0,
       failedCount: stats?.failedCount ?? 0,
       attributedAppointments: stats?.attributedAppointments ?? 0,
+      attributedRevenue: stats?.attributedRevenue ?? 0,
       deliveredCount: deliveryStats?.deliveredCount ?? 0,
       openedCount: deliveryStats?.openedCount ?? 0,
       emailSentCount: deliveryStats?.emailSentCount ?? 0,
