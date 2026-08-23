@@ -66,7 +66,11 @@ export default defineConfig({
       ? {
           '/api': {
             target: apiBaseUrl,
-            changeOrigin: true,
+            // Keep the browser's public Host header so host-derived URLs
+            // (OAuth callbacks and provider webhooks) match the origin the
+            // admin is actually using. The API trusts this only through its
+            // configured proxy boundary.
+            changeOrigin: false,
           },
         }
       : undefined,

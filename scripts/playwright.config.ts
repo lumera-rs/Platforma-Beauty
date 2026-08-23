@@ -1,6 +1,18 @@
 import { defineConfig } from "@playwright/test";
 
 const chromiumExecutablePath = process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+const hostMatrixPublishedHost = "lumera-published.example.test";
+const webBaseUrl = process.env.LUMERA_WEB_BASE_URL ?? "http://localhost:80";
+
+function hostMatrixResolverTarget(webUrl: string): string {
+  try {
+    const hostname = new URL(webUrl).hostname;
+    return hostname === "localhost" ? "127.0.0.1" : hostname;
+  } catch {
+    return "127.0.0.1";
+  }
+}
+
 const isolatedAdminBrowserTest = process.env.LUMERA_ISOLATED_ADMIN_BROWSER_TEST === "1";
 const isolatedAdminFormResilienceBrowserTest =
   process.env.LUMERA_ISOLATED_ADMIN_FORM_RESILIENCE_BROWSER_TEST === "1";
@@ -90,8 +102,14 @@ export default defineConfig({
   retries: releaseBrowserTest ? 0 : process.env.CI ? 2 : 0,
   reporter: "list",
   use: {
-    baseURL: process.env.LUMERA_WEB_BASE_URL ?? "http://localhost:80",
+    baseURL: webBaseUrl,
     trace: "retain-on-failure",
-    launchOptions: chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : undefined,
+    launchOptions: {
+      ...(chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : {}),
+      // The host-matrix integration check must exercise window.location and
+      // the request Host header together. Map its published-style origin to
+      // the active local frontend without changing the URL visible to the page.
+      args: [`--host-resolver-rules=MAP ${hostMatrixPublishedHost} ${hostMatrixResolverTarget(webBaseUrl)}`],
+    },
   },
 });

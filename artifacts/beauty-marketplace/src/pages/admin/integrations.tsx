@@ -268,7 +268,9 @@ export default function AdminIntegrations() {
     );
   };
   const redirectUri = (integration: Integration) => integration === "google_oauth" ? data?.redirectUris.google : data?.redirectUris.facebook;
-  const isDevelopmentPreview = window.location.hostname === "localhost" || window.location.hostname.endsWith(".replit.dev");
+  const isDevelopmentPreview = window.location.hostname === "localhost"
+    || window.location.hostname === "127.0.0.1"
+    || window.location.hostname.endsWith(".replit.dev");
   const deliveryReport = (integration: Integration): DeliveryReportStatus | null => {
     if (!data?.deliveryReports) return null;
     if (integration === "brevo") return data.deliveryReports.providers.brevo;
