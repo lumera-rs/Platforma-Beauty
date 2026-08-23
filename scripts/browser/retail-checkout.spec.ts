@@ -264,6 +264,53 @@ test("retail checkout refreshes a changed delivery fee before allowing confirmat
   }
 });
 
+test("retail checkout offers a retry after a failed quote refresh", async ({ page }) => {
+  let failNextPreview = false;
+  await page.route("**/api/retail/checkout-preview?**", async (route) => {
+    if (failNextPreview) {
+      failNextPreview = false;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nije moguće osvežiti pregled." }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await createCartAndOpenCheckout(page);
+  await fillCheckoutContact(page, "Novi Sad");
+  const confirmButton = page.locator("form").getByRole("button", { name: "Potvrdi porudžbinu" });
+  await expect(confirmButton).toBeEnabled();
+
+  expect(productId).toBeTruthy();
+  await db.update(productsTable).set({ publicDiscountPrice: 1_800 }).where(eq(productsTable.id, productId!));
+  failNextPreview = true;
+  try {
+    const checkoutResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/retail/checkout" && response.request().method() === "POST",
+    );
+    await confirmButton.click();
+    const response = await checkoutResponse;
+    expect(response.status()).toBe(409);
+    expect((await response.json() as { code?: string }).code).toBe("CHECKOUT_QUOTE_CHANGED");
+
+    const retryButton = page.getByRole("button", { name: "Pokušaj ponovo" });
+    await expect(retryButton).toBeVisible();
+    await expect(confirmButton).toBeDisabled();
+    await expect(page.getByText(money(2_390), { exact: true })).not.toBeVisible();
+
+    await retryButton.click();
+    await expect(retryButton).not.toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Promena iznosa je osvežena");
+    await expect(page.getByText(money(2_190), { exact: true })).toBeVisible();
+    await expect(confirmButton).toBeEnabled();
+  } finally {
+    await db.update(productsTable).set({ publicDiscountPrice: 2_000 }).where(eq(productsTable.id, productId!));
+  }
+});
+
 test("retail checkout cannot submit an old preview after the item becomes unavailable", async ({ page }) => {
   await createCartAndOpenCheckout(page);
   await fillCheckoutContact(page, "Novi Sad");
