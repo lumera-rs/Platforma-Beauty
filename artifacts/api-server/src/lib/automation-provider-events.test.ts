@@ -960,6 +960,74 @@ async function run() {
             "a new cooldown window mints fresh fallback SMS keys",
           );
         }
+
+        // INFOBIP alert outage (regression: fallback was brevo-only): the
+        // silence alert ABOUT infobip also travels over Brevo's send API, so
+        // when it fails for everyone, admins must be paged too — with an SMS
+        // naming Infobip and its own provider-namespaced dedup keys. A probe
+        // one cooldown past allSkippedNow, with a fresh grace-aged SMS
+        // automation send and no receipt after it, reads infobip (and ONLY
+        // infobip — the brevo email sends have aged out of the 24h window)
+        // as silent.
+        const infobipOutageNow = new Date(allSkippedNow.getTime() + DELIVERY_REPORT_ALERT_COOLDOWN_MS + 30 * 60_000);
+        const [infobipStaleDelivery] = await db.insert(automationDeliveriesTable).values({
+          runId: staleRun.id, salonId: c.salon.id, eventKey: `${staleRunKey}:sms:fallback`, channel: "sms",
+          recipientPhone: "+381601234567", status: "sent",
+          sentAt: new Date(infobipOutageNow.getTime() - 35 * 60_000),
+        }).returning();
+        assert.ok(infobipStaleDelivery);
+
+        const infobipSms = makeFakeSms();
+        const infobipRun = await runDeliveryReportSilenceAlerts(infobipOutageNow, failingTransport, infobipSms.provider);
+        cleanup.emailEventKeys.push(...infobipRun.attemptedEventKeys);
+        cleanup.smsEventKeys.push(...infobipRun.smsFallback.attemptedEventKeys);
+        assert.deepEqual(infobipRun.staleProviders, ["infobip"], "only infobip reads silent at this probe");
+        assert.ok(infobipRun.attemptedEventKeys.length >= 1, "infobip alert emails were attempted");
+        assert.equal(
+          infobipRun.failedDeliveryCount,
+          infobipRun.attemptedEventKeys.length,
+          "every infobip alert email failed",
+        );
+        assert.equal(infobipRun.smsFallback.triggered, true, "a total email failure for the infobip alert triggers the SMS fallback");
+        assert.ok(infobipRun.smsFallback.recipientCount >= 1, "our phone-carrying admin is an SMS recipient");
+        assert.equal(
+          infobipRun.smsFallback.attemptedEventKeys.length,
+          infobipRun.smsFallback.recipientCount,
+          "one fallback SMS per phone-carrying admin",
+        );
+        for (const eventKey of infobipRun.smsFallback.attemptedEventKeys) {
+          assert.ok(
+            eventKey.startsWith(`${DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX}:infobip:`),
+            "fallback SMS keys are namespaced to the affected provider",
+          );
+        }
+        assert.ok(infobipSms.calls.some((call) => call.to === alertAdminPhone), "our admin's phone is paged about infobip");
+        assert.ok(infobipSms.calls.every((call) => call.text.includes("Infobip")), "SMS names the affected provider");
+        assert.equal(infobipRun.smsFallback.sentCount, infobipSms.calls.length, "every infobip fallback SMS was accepted");
+        assert.equal(infobipRun.smsFallback.failedCount, 0);
+
+        // Persisted in the same durable admin-alert SMS outbox.
+        const infobipFallbackRows = await db.select().from(smsDeliveriesTable)
+          .where(inArray(smsDeliveriesTable.eventKey, infobipRun.smsFallback.attemptedEventKeys));
+        assert.equal(
+          infobipFallbackRows.length,
+          infobipRun.smsFallback.attemptedEventKeys.length,
+          "every infobip fallback SMS is persisted",
+        );
+        for (const row of infobipFallbackRows) {
+          assert.equal(row.messageType, "admin_alert", "infobip fallback SMS is an admin alert");
+          assert.equal(row.salonId, null, "infobip fallback SMS belongs to no salon");
+          assert.equal(row.status, "sent", "infobip fallback SMS reached the provider");
+        }
+
+        // Immediate repeat tick: the email cooldown (anchored by the failed
+        // infobip alert rows) suppresses all attempts, so the fallback is
+        // never evaluated — same no-spam guarantee as the brevo path.
+        const infobipRepeatSms = makeFakeSms();
+        const infobipRepeatRun = await runDeliveryReportSilenceAlerts(infobipOutageNow, failingTransport, infobipRepeatSms.provider);
+        assert.equal(infobipRepeatRun.attemptedEventKeys.length, 0, "repeat tick attempts no infobip alert emails");
+        assert.equal(infobipRepeatRun.smsFallback.triggered, false, "suppressed tick never evaluates the fallback");
+        assert.equal(infobipRepeatSms.calls.length, 0, "no repeat SMS inside the cooldown window");
         console.log("✓ SMS fallback pages admins exactly when the alert email path is fully down, once per window");
       }
     }

@@ -23,6 +23,12 @@ clock anchor (row `createdAt` diverges from injected test times) and could
 double-alert across windows; reusing the primary sequence keeps both
 channels in lockstep and spam-proof by construction.
 
+Scope: evaluate the fallback PER ALERT SUBJECT (e.g. per stale provider), not
+hardcoded to the one subject whose outage motivated it — every alert email
+rides the same send API, so a total send outage silences alerts about every
+subject. Namespace the fallback eventKey by subject so windows dedup
+independently.
+
 **How to apply:** any new emergency/fallback notification path (SMS, push,
 etc.) layered over an outbox-based alert. Platform-level (salon-less) SMS
 uses the `admin_alert` message type with a NULL salonId — enum changes must
