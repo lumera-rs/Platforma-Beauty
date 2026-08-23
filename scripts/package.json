@@ -19,6 +19,7 @@
     "test:review-photo-privacy": "playwright test browser/review-photo-privacy.spec.ts",
     "test:admin-review-feedback": "playwright test browser/admin-review-feedback.spec.ts",
     "test:retention-conflict": "playwright test browser/retention-conflict.spec.ts",
+    "test:retention-preview": "tsx ./src/run-retention-preview.ts",
     "test:retention-restore-conflict": "playwright test browser/retention-restore-conflict.spec.ts",
     "test:retention-restore-noop": "playwright test browser/retention-restore-noop.spec.ts",
     "test:integrations-unsaved-guard": "playwright test browser/integrations-unsaved-guard.spec.ts",

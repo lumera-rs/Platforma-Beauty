@@ -8,6 +8,8 @@ const isolatedSalonNotificationBrowserTest =
   process.env.LUMERA_ISOLATED_SALON_NOTIFICATION_BROWSER_TEST === "1";
 const isolatedRetailCheckoutBrowserTest =
   process.env.LUMERA_ISOLATED_RETAIL_CHECKOUT_BROWSER_TEST === "1";
+const isolatedRetentionPreviewBrowserTest =
+  process.env.LUMERA_ISOLATED_RETENTION_PREVIEW_BROWSER_TEST === "1";
 const releaseBrowserTest = process.env.LUMERA_RELEASE_BROWSER_TEST === "1";
 
 function isHarnessDatabaseUrl(databaseUrl: string, databaseNamePattern: RegExp): boolean {
@@ -36,7 +38,8 @@ const isolatedBrowserTest =
   isolatedAdminBrowserTest
   || isolatedAdminFormResilienceBrowserTest
   || isolatedSalonNotificationBrowserTest
-  || isolatedRetailCheckoutBrowserTest;
+  || isolatedRetailCheckoutBrowserTest
+  || isolatedRetentionPreviewBrowserTest;
 
 if (
   [
@@ -44,6 +47,7 @@ if (
     isolatedAdminFormResilienceBrowserTest,
     isolatedSalonNotificationBrowserTest,
     isolatedRetailCheckoutBrowserTest,
+    isolatedRetentionPreviewBrowserTest,
   ].filter(Boolean).length > 1
 ) {
   throw new Error("Only one isolated browser suite may run in a harness process.");
@@ -57,7 +61,9 @@ if (isolatedBrowserTest) {
       ? /^lumera_form_browser_\d+_[a-f0-9]{32}$/
       : isolatedSalonNotificationBrowserTest
         ? /^lumera_alert_browser_\d+_[a-f0-9]{32}$/
-        : /^lumera_retail_browser_\d+_[a-f0-9]{32}$/;
+        : isolatedRetailCheckoutBrowserTest
+          ? /^lumera_retail_browser_\d+_[a-f0-9]{32}$/
+          : /^(?:lumera_retention_estimate_browser_|lumera_retention_exact_browser_)\d+_[a-f0-9]{32}$/;
   if (
     !testDatabaseUrl
     || process.env.DATABASE_URL !== testDatabaseUrl
