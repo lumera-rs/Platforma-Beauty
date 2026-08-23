@@ -3565,9 +3565,20 @@ router.post("/admin/integrations/brevo/verify-registration", async (req, res): P
  * used server-side only and never returned. Afterwards the registration check
  * re-runs against a fresh provider listing so the reported outcome reflects
  * what Brevo actually stored, not what we asked for.
+ *
+ * Refused outright from a development/preview browsing origin, BEFORE any
+ * provider contact: the write always targets the requesting origin, so from a
+ * dev address the matching-secret fallback could select the healthy
+ * PRODUCTION registration and rewrite it to the development URL — silently
+ * redirecting production delivery reports to the preview. The read-only
+ * verdict softening cannot protect the write path; only refusing to write can.
  */
 router.post("/admin/integrations/brevo/register-webhook", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
+  const context = brevoVerdictContext(req);
+  if (context.developmentOrigin) {
+    res.status(400).json({ error: `Registracija webhook-a je pokrenuta sa razvojne adrese (${context.origin}). Registracija sa razvojne adrese bi mogla da presnimi produkcionu registraciju i preusmeri izveštaje o isporuci na razvojno okruženje, pa je moguća samo iz objavljene aplikacije. Otvorite ovu stranicu iz objavljene aplikacije, pa pokušajte ponovo.` }); return;
+  }
   const secret = await resolveWebhookSecret("brevo");
   if (!secret) {
     res.status(400).json({ error: "Webhook tajna nije sačuvana. Unesite i sačuvajte webhook tajnu, pa pokušajte ponovo." }); return;
@@ -3579,7 +3590,6 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     respondBrevoListingFailure(res, error); return;
   }
 
-  const context = brevoVerdictContext(req);
   const origin = context.origin;
   const targetUrl = `${origin}/api/webhooks/brevo/${encodeURIComponent(secret)}`;
   const candidates = brevoRegistrationCandidates(webhooks, secret);

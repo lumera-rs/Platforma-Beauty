@@ -51,3 +51,4 @@
 - [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form's loaded base version, not the live polled one.
 - [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.
 - [Wouter query-string reactivity](wouter-query-string-reactivity.md) — useLocation() tracks only the pathname; query-driven UI must subscribe via useSearch() or same-path ?param navigation never re-renders.
+- [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
