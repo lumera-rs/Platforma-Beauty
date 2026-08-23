@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">LUMERA</title>
+  <desc id="desc">Beauty, wellness i edukacije</desc>
+  <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#2f1c46"/><stop offset="1" stop-color="#bd6f89"/></linearGradient></defs>
+  <rect width="1200" height="630" fill="url(#g)"/><circle cx="1000" cy="100" r="260" fill="#fff" opacity=".09"/><circle cx="180" cy="570" r="240" fill="#f6d7ba" opacity=".12"/>
+  <text x="100" y="295" fill="#fff" font-family="Georgia,serif" font-size="108" font-weight="700">LUMERA</text>
+  <text x="105" y="375" fill="#f6d7ba" font-family="Arial,sans-serif" font-size="34" letter-spacing="3">BEAUTY · WELLNESS · EDUKACIJE</text>
+</svg>

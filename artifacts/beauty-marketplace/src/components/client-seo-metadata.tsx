@@ -1,0 +1,144 @@
+import { useEffect } from 'react';
+import { useLocation } from 'wouter';
+
+type SeoPayload = {
+  title: string;
+  description: string;
+  image?: string;
+  indexable: boolean;
+};
+
+const APP_NAME = 'LUMERA';
+const defaultDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
+
+function text(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function staticMetadata(pathname: string): SeoPayload | null {
+  const pages: Record<string, SeoPayload> = {
+    '/': { title: 'LUMERA | Saloni, tretmani i edukacije', description: defaultDescription, indexable: true },
+    '/za-biznise': { title: 'LUMERA za biznise | Rast vašeg salona', description: 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', indexable: true },
+    '/saloni': { title: 'Saloni i beauty tretmani | LUMERA', description: 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', indexable: true },
+    '/inspiracija': { title: 'Beauty inspiracija | LUMERA vodič', description: 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', indexable: true },
+    '/recnik': { title: 'Rečnik beauty pojmova | LUMERA', description: 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', indexable: true },
+    '/brendovi': { title: 'Profesionalni beauty brendovi | LUMERA', description: 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', indexable: true },
+    '/edukacije': { title: 'Beauty edukacije i kursevi | LUMERA', description: 'Pronađite stručne beauty edukacije, praktične kurseve i sertifikovane programe.', indexable: true },
+    '/uslovi-koriscenja': { title: 'Uslovi korišćenja | LUMERA', description: 'Uslovi korišćenja LUMERA platforme.', indexable: true },
+    '/politika-privatnosti': { title: 'Politika privatnosti | LUMERA', description: 'Kako LUMERA obrađuje i štiti podatke korisnika.', indexable: true },
+    '/politika-kolacica': { title: 'Politika kolačića | LUMERA', description: 'Informacije o korišćenju kolačića na LUMERA platformi.', indexable: true },
+    '/uslovi-kupovine': { title: 'Uslovi kupovine | LUMERA', description: 'Uslovi kupovine edukacija i usluga putem LUMERA platforme.', indexable: true },
+    '/otkazivanje-termina': { title: 'Otkazivanje termina | LUMERA', description: 'Pravila i smernice za otkazivanje zakazanih termina.', indexable: true },
+    '/povracaj-sredstava': { title: 'Povraćaj sredstava | LUMERA', description: 'Informacije o refundacijama i zaštiti kupovine na LUMERA platformi.', indexable: true },
+  };
+  return pages[pathname] ?? null;
+}
+
+function setMeta(selector: string, attribute: 'name' | 'property', key: string, content: string) {
+  let node = document.head.querySelector<HTMLMetaElement>(selector);
+  if (!node) {
+    node = document.createElement('meta');
+    node.setAttribute(attribute, key);
+    document.head.append(node);
+  }
+  node.content = content;
+}
+
+function applySeo(pathname: string, payload: SeoPayload) {
+  const origin = window.location.origin;
+  const canonical = `${origin}${pathname}`;
+  const image = payload.image ? new URL(payload.image, origin).href : `${origin}/og-lumera.svg`;
+  document.title = payload.title;
+  setMeta('meta[name="description"]', 'name', 'description', payload.description);
+  setMeta('meta[name="robots"]', 'name', 'robots', payload.indexable ? 'index, follow' : 'noindex, follow');
+  setMeta('meta[property="og:title"]', 'property', 'og:title', payload.title);
+  setMeta('meta[property="og:description"]', 'property', 'og:description', payload.description);
+  setMeta('meta[property="og:url"]', 'property', 'og:url', canonical);
+  setMeta('meta[property="og:image"]', 'property', 'og:image', image);
+  setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', payload.title);
+  setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', payload.description);
+  setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', image);
+  let link = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'canonical';
+    document.head.append(link);
+  }
+  link.href = canonical;
+}
+
+async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
+  const salon = pathname.match(/^\/saloni\/([^/]+)$/);
+  if (salon) {
+    const response = await fetch(`/api/salons/${encodeURIComponent(salon[1])}`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const name = text(item.name, 'Salon');
+    const city = text(item.city, 'Srbiji');
+    return {
+      title: `${name} u ${city} | LUMERA`,
+      description: text(item.description, text(item.shortDescription, `${name} — salon i beauty tretmani u gradu ${city}.`)),
+      image: item.gallery?.[0] ?? item.imageUrl,
+      indexable: true,
+    };
+  }
+  const course = pathname.match(/^\/edukacije\/([a-zA-Z0-9-]+)$/);
+  if (course) {
+    const response = await fetch(`/api/education/public/courses/${encodeURIComponent(course[1])}`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const title = text(item.title, 'Beauty edukacija');
+    return {
+      title: `${title} | LUMERA edukacije`,
+      description: text(item.description, `${title} — stručna beauty edukacija na LUMERA platformi.`),
+      image: item.imageUrl,
+      indexable: true,
+    };
+  }
+  const center = pathname.match(/^\/edukacije\/centri\/([a-zA-Z0-9-]+)$/);
+  if (center) {
+    const response = await fetch(`/api/education/public/centers/${encodeURIComponent(center[1])}`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const name = text(item.name, 'Edukativni centar');
+    return { title: `${name} | LUMERA edukacije`, description: text(item.description, `Kursevi i edukacije centra ${name}.`), image: item.imageUrl, indexable: true };
+  }
+  const instructor = pathname.match(/^\/edukacije\/instruktori\/([a-zA-Z0-9-]+)$/);
+  if (instructor) {
+    const response = await fetch(`/api/education/instructors/${encodeURIComponent(instructor[1])}/public`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const name = text(item.name, 'Instruktor');
+    return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), image: item.photoUrl, indexable: true };
+  }
+  return null;
+}
+
+export function ClientSeoMetadata() {
+  const [pathname] = useLocation();
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallback = staticMetadata(pathname);
+    if (fallback) {
+      applySeo(pathname, fallback);
+      return;
+    }
+    void dynamicMetadata(pathname).then((payload) => {
+      if (!cancelled) applySeo(pathname, payload ?? {
+        title: `${APP_NAME} | Privatna stranica`,
+        description: defaultDescription,
+        indexable: false,
+      });
+    }).catch(() => {
+      if (!cancelled) applySeo(pathname, {
+        title: `${APP_NAME} | Privatna stranica`,
+        description: defaultDescription,
+        indexable: false,
+      });
+    });
+    return () => { cancelled = true; };
+  }, [pathname]);
+
+  return null;
+}

@@ -20,3 +20,8 @@ createRoot(document.getElementById('root')!, {
     <App />
   </ErrorBoundary>,
 );
+
+// Public pages are delivered with a crawler-facing semantic fallback outside
+// React's root. Once the SPA is mounted we hide it, avoiding hydration
+// mismatches while keeping the existing client-side route architecture intact.
+document.documentElement.dataset.appReady = 'true';

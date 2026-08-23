@@ -14,14 +14,20 @@ localPort = 23561
 [services.development]
 run = "pnpm --filter @workspace/beauty-marketplace run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/beauty-marketplace", "run", "build" ]
-serve = "static"
-publicDir = "artifacts/beauty-marketplace/dist/public"
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/beauty-marketplace", "run", "build"]
 
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+[services.production.run]
+args = ["node", "artifacts/beauty-marketplace/seo-server.mjs"]
+
+[services.production.run.env]
+PORT = "23561"
+NODE_ENV = "production"
+LUMERA_PUBLIC_URL = "https://beauty-partner-hub.replit.app"
+LUMERA_SEO_API_ORIGIN = "http://127.0.0.1:8080"
+
+[services.production.health.startup]
+path = "/"
 
 [services.env]
 PORT = "23561"
