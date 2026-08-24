@@ -2007,6 +2007,10 @@ async function run() {
         "cancelled and no-show appointments must not count as attributed in the previous window");
       assert.equal(previous["attributedRevenue"], 2000,
         "previous window revenue must sum only realized (non-cancelled, non-no-show) attributed appointments");
+      assert.equal(previous["noShowAttributedAppointments"], 1,
+        "previous window must expose no-show appointments separately from realized attribution");
+      assert.equal(previous["noShowAttributedRevenue"], 6000,
+        "previous window must expose no-show value separately from realized revenue");
 
       // The overview endpoint must apply the same cancelled/no-show filter to
       // its previous block, so both surfaces show the same trend direction.
@@ -2023,6 +2027,10 @@ async function run() {
         "overview previous window must exclude cancelled and no-show appointments too");
       assert.equal(overviewPrevious["attributedRevenue"], 2000,
         "overview previous window revenue must match the per-rule stats");
+      assert.equal(overviewPrevious["noShowAttributedAppointments"], 1,
+        "overview previous window must expose no-show appointments separately");
+      assert.equal(overviewPrevious["noShowAttributedRevenue"], 6000,
+        "overview previous window must expose no-show value separately");
       assert.equal(overviewPrevious["emailDeliveredCount"], 1);
       assert.equal(overviewPrevious["smsDeliveredCount"], 1);
 

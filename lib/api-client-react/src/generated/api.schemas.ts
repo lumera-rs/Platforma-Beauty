@@ -227,6 +227,33 @@ export interface AdminIntegrationCard {
 }
 
 export type AdminSaveIntegrationInputValues = {[key: string]: string};
+
+export interface AdminSaveIntegrationInput {
+  enabled: boolean;
+  /**
+     * Configuration version returned when this settings card was loaded; stale versions are rejected with 409.
+     * @nullable
+     */
+  expectedVersion: string | null;
+  values: AdminSaveIntegrationInputValues;
+}
+
+export type IntegrationSettingsVersionConflictCode = typeof IntegrationSettingsVersionConflictCode[keyof typeof IntegrationSettingsVersionConflictCode];
+
+
+export const IntegrationSettingsVersionConflictCode = {
+  INTEGRATION_SETTINGS_VERSION_CONFLICT: 'INTEGRATION_SETTINGS_VERSION_CONFLICT',
+} as const;
+
+export interface IntegrationSettingsVersionConflict {
+  error: string;
+  code: IntegrationSettingsVersionConflictCode;
+  /** @nullable */
+  expectedVersion: string | null;
+  /** @nullable */
+  currentVersion: string | null;
+}
+
 export type AdminWebhookIntegrationCard = AdminIntegrationCard & ({
   webhookSecretPendingReconfirmation: boolean;
   /** @nullable */
@@ -4281,6 +4308,10 @@ export type AutomationStatsPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /** Attributed appointments that became no-shows in the preceding window, excluded from realized numbers. */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments in the preceding window — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   /** Attributed appointments in the preceding window whose salon client had no completed appointment before the campaign message was sent. */
   newClientCount: number;
   /** Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent. */
@@ -4406,6 +4437,10 @@ export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /** Attributed appointments that became no-shows in the preceding window, excluded from realized numbers. */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments in the preceding window — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   /** Attributed appointments from new clients in the preceding window. */
   newClientCount: number;
   /** Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
@@ -6200,28 +6235,3 @@ export type TrackRetailOrderParams = {
  */
 token: string;
 };
-
-export const IntegrationSettingsVersionConflictCode = {
-  INTEGRATION_SETTINGS_VERSION_CONFLICT: 'INTEGRATION_SETTINGS_VERSION_CONFLICT',
-} as const;
-
-export interface AdminSaveIntegrationInput {
-  enabled: boolean;
-  /**
-     * Configuration version returned when this settings card was loaded; stale versions are rejected with 409.
-     * @nullable
-     */
-  expectedVersion: string | null;
-  values: AdminSaveIntegrationInputValues;
-}
-
-export type IntegrationSettingsVersionConflictCode = typeof IntegrationSettingsVersionConflictCode[keyof typeof IntegrationSettingsVersionConflictCode];
-
-export interface IntegrationSettingsVersionConflict {
-  error: string;
-  code: IntegrationSettingsVersionConflictCode;
-  /** @nullable */
-  expectedVersion: string | null;
-  /** @nullable */
-  currentVersion: string | null;
-}

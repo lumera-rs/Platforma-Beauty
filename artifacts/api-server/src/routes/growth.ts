@@ -924,13 +924,15 @@ router.get("/growth/automation-stats", async (req, res, next) => {
 
     // Preceding window of the same length (compare=previous): only the counts
     // the overview renders trends for — delivered, opened, attributed
-    // appointments, and attributed revenue — aggregated over
+    // appointments, attributed revenue, and no-show outcomes — aggregated over
     // [prevCutoff, window.start). Built with the same shared aggregation as
     // the current window so trend arrows always compare like-for-like
     // attribution semantics.
     let prevRunsByRule: Map<string, {
       attributedAppointments: number;
       attributedRevenue: number;
+      noShowAttributedAppointments: number;
+      noShowAttributedRevenue: number;
       newClientCount: number;
       returningClientCount: number;
       knownClientCount: number;
@@ -943,6 +945,8 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       prevRunsByRule = new Map(prevRunAgg.map((r) => [r.ruleId, {
         attributedAppointments: r.attributedAppointments,
         attributedRevenue: r.attributedRevenue,
+        noShowAttributedAppointments: r.noShowAttributedAppointments,
+        noShowAttributedRevenue: r.noShowAttributedRevenue,
         newClientCount: r.newClientCount,
         returningClientCount: r.returningClientCount,
         knownClientCount: calculateKnownClientCount(r.newClientCount, r.returningClientCount),
@@ -970,6 +974,8 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         ? {
             attributedAppointments: prevRunsByRule?.get(rule.id)?.attributedAppointments ?? 0,
             attributedRevenue: prevRunsByRule?.get(rule.id)?.attributedRevenue ?? 0,
+            noShowAttributedAppointments: prevRunsByRule?.get(rule.id)?.noShowAttributedAppointments ?? 0,
+            noShowAttributedRevenue: prevRunsByRule?.get(rule.id)?.noShowAttributedRevenue ?? 0,
             newClientCount: prevRunsByRule?.get(rule.id)?.newClientCount ?? 0,
             knownClientCount: prevRunsByRule?.get(rule.id)?.knownClientCount ?? 0,
             newClientShare: calculateNewClientShare(
@@ -1061,7 +1067,7 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
 
     // Preceding window of the same length (compare=previous): only the counts
     // the stats dialog renders trends for — delivered, opened, attributed
-    // appointments, and attributed revenue — aggregated over
+    // appointments, attributed revenue, and no-show outcomes — aggregated over
     // [prevCutoff, cutoff). Built with the same shared aggregation as the
     // current window and the same shape as the overview endpoint's `previous`
     // block so the UI trends stay consistent.
@@ -1069,6 +1075,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       | {
           attributedAppointments: number;
           attributedRevenue: number;
+          noShowAttributedAppointments: number;
+          noShowAttributedRevenue: number;
           newClientCount: number;
           returningClientCount: number;
           knownClientCount: number;
@@ -1086,6 +1094,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       previous = {
         attributedAppointments: prevRuns?.attributedAppointments ?? 0,
         attributedRevenue: prevRuns?.attributedRevenue ?? 0,
+        noShowAttributedAppointments: prevRuns?.noShowAttributedAppointments ?? 0,
+        noShowAttributedRevenue: prevRuns?.noShowAttributedRevenue ?? 0,
         newClientCount: prevRuns?.newClientCount ?? 0,
         returningClientCount: prevRuns?.returningClientCount ?? 0,
         knownClientCount: calculateKnownClientCount(prevRuns?.newClientCount, prevRuns?.returningClientCount),

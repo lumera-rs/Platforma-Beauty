@@ -241,6 +241,59 @@ function TrendIndicator({ current, previous, testId }: { current: number; previo
     </span>
   );
 }
+
+/**
+ * No-show growth is a negative outcome: unlike the regular performance trend,
+ * an increase is shown as a warning and a decrease as an improvement. When
+ * there is no comparison window (for example, all time), say so instead of
+ * implying that the outcome improved or worsened.
+ */
+function NoShowTrendIndicator({
+  current,
+  previous,
+  testId,
+}: {
+  current: number;
+  previous?: number;
+  testId: string;
+}) {
+  if (previous === undefined) {
+    return (
+      <span
+        className="text-xs font-medium text-muted-foreground"
+        title="Za izabrani period nema prethodnog perioda iste dužine za poređenje"
+        data-testid={testId}
+      >
+        (bez prethodnog perioda)
+      </span>
+    );
+  }
+
+  const diff = current - previous;
+  const title = "No-show u odnosu na prethodni period iste dužine";
+  if (diff === 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground" title={title} data-testid={testId}>
+        <Minus className="w-3 h-3" /> bez promene
+      </span>
+    );
+  }
+
+  if (diff > 0) {
+    const pct = previous > 0 ? `+${Math.round((diff / previous) * 100)}%` : "novo";
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-red-700" title={title} data-testid={testId}>
+        <TrendingUp className="w-3 h-3" /> {pct}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700" title={title} data-testid={testId}>
+      <TrendingDown className="w-3 h-3" /> −{Math.round((Math.abs(diff) / previous) * 100)}%
+    </span>
+  );
+}
 /**
  * Live per-channel delivery funnel: sent → delivered → opened, fed by verified
  * provider webhook events. `opened: null` marks a channel whose provider does
@@ -597,9 +650,23 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                         Otkazano: {item.cancelledAttributedAppointments} ({(item.cancelledAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD)
                       </div>
                     )}
-                    {(item.noShowAttributedAppointments ?? 0) > 0 && (
+                    {((item.noShowAttributedAppointments ?? 0) > 0 || (item.previous?.noShowAttributedAppointments ?? 0) > 0) && (
                       <div className="text-[11px] text-muted-foreground whitespace-nowrap mt-0.5" data-testid={`overview-no-show-${item.ruleId}`}>
-                        No-show: {item.noShowAttributedAppointments} ({(item.noShowAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD)
+                        No-show: {item.noShowAttributedAppointments ?? 0} ({(item.noShowAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD)
+                        <span className="ml-1.5">
+                          <NoShowTrendIndicator
+                            current={item.noShowAttributedAppointments ?? 0}
+                            previous={item.previous?.noShowAttributedAppointments}
+                            testId={`trend-no-show-${item.ruleId}`}
+                          />
+                        </span>
+                        <span className="ml-1.5">
+                          <NoShowTrendIndicator
+                            current={item.noShowAttributedRevenue ?? 0}
+                            previous={item.previous?.noShowAttributedRevenue}
+                            testId={`trend-no-show-revenue-${item.ruleId}`}
+                          />
+                        </span>
                       </div>
                     )}
                     {item.previous && (
@@ -1297,9 +1364,23 @@ export default function OwnerAutomations() {
                     Otkazano: {statsData.cancelledAttributedAppointments} {statsData.cancelledAttributedAppointments === 1 ? "termin" : "termina"} · {(statsData.cancelledAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD propušteno
                   </p>
                 ) : null}
-                {(statsData.noShowAttributedAppointments ?? 0) > 0 ? (
+                {((statsData.noShowAttributedAppointments ?? 0) > 0 || (statsData.previous?.noShowAttributedAppointments ?? 0) > 0) ? (
                   <p className="text-[11px] text-muted-foreground mt-1" data-testid="stats-no-show-line">
-                    No-show: {statsData.noShowAttributedAppointments} {statsData.noShowAttributedAppointments === 1 ? "termin" : "termina"} · {(statsData.noShowAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD nije realizovano
+                    No-show: {statsData.noShowAttributedAppointments ?? 0} {(statsData.noShowAttributedAppointments ?? 0) === 1 ? "termin" : "termina"} · {(statsData.noShowAttributedRevenue ?? 0).toLocaleString("sr-RS")} RSD nije realizovano
+                    <span className="ml-1.5">
+                      <NoShowTrendIndicator
+                        current={statsData.noShowAttributedAppointments ?? 0}
+                        previous={statsData.previous?.noShowAttributedAppointments}
+                        testId="stats-trend-no-show"
+                      />
+                    </span>
+                    <span className="ml-1.5">
+                      <NoShowTrendIndicator
+                        current={statsData.noShowAttributedRevenue ?? 0}
+                        previous={statsData.previous?.noShowAttributedRevenue}
+                        testId="stats-trend-no-show-revenue"
+                      />
+                    </span>
                   </p>
                 ) : (
                   <p className="text-[11px] text-muted-foreground mt-1">Otkazani i no-show termini nisu uračunati u ostvareni prihod</p>

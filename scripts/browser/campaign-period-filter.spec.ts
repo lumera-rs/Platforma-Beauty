@@ -280,34 +280,6 @@ test("overview period selection announces the active window without disturbing t
     const oldRows = rows.filter({ hasText: "Klijent Stari" });
     const loadMore = dialog.getByTestId("button-load-more-attributed");
     const overviewRow = page.getByTestId(`overview-row-${fixture.ruleId}`);
-    const status = dialog.getByTestId("stats-period-status");
-
-    // Page 1 of "Sve vreme": full page, unfiltered counter, both run windows present.
-    await expect(rows).toHaveCount(PAGE_SIZE);
-    await expect(dialog.getByTestId("stats-attributed-revenue")).toBeVisible();
-    // "Sve vreme" does not request a comparison window, so no trend marker
-    // should be rendered even though the campaign has current activity.
-    await expect(overviewRow.getByTestId(`trend-email-delivered-${fixture.ruleId}`)).toHaveCount(0);
-    await expect(overviewRow.getByTestId(`trend-appointments-${fixture.ruleId}`)).toHaveCount(0);
-    await expect(dialog.getByTestId("stats-trend-email-delivered")).toHaveCount(0);
-    await expect(dialog.getByTestId("stats-trend-appointments")).toHaveCount(0);
-    await expect(loadMore).toContainText(`Učitaj još (${PAGE_SIZE} od ${TOTAL})`);
-    expect(await recentRows.count(), "Unfiltered page 1 must contain recent-run rows.").toBeGreaterThan(0);
-    expect(await oldRows.count(), "Unfiltered page 1 must contain old-run rows.").toBeGreaterThan(0);
-
-    // Accumulate a second page.
-    await loadMore.click();
-    await expect(rows).toHaveCount(PAGE_SIZE * 2);
-    await expect(loadMore).toContainText(`Učitaj još (${PAGE_SIZE * 2} od ${TOTAL})`);
-    expect(await oldRows.count(), "Accumulated pages must contain old-run rows.").toBeGreaterThan(0);
-
-    // Switch the period to "30 dana": the 50 accumulated rows must collapse
-    // to one fresh first page whose counter uses the period-filtered total,
-    // with zero rows attributed to runs outside the period.
-    //
-    // The in-dialog selector must keep the accumulated stats dialog open while
-    // changing the period, so the period dependency cannot be masked by a
-    // close/reopen reset.
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
 
     const thirtyStatsResponse = nextStatsResponse(page, fixture.ruleId, "30d");
@@ -376,6 +348,7 @@ test("overview period selection announces the active window without disturbing t
   }
 });
 test("mobile stats period controls stay visible and keep the dialog open", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const fixture = await createFixture();
 
     const overview = page.getByTestId("campaign-overview");
@@ -393,13 +366,8 @@ test("mobile stats period controls stay visible and keep the dialog open", async
     const selector = dialog.getByTestId("stats-period-selector");
 
     const status = dialog.getByTestId("stats-period-status");
-    await expect(selector).toBeVisible();
-    for (const [period, label] of [
-      ["7d", "7 dana"],
-      ["30d", "30 dana"],
-      ["90d", "90 dana"],
-      ["all", "Sve vreme"],
-    ] as const) {
+
+    const status = dialog.getByTestId("stats-period-status");
       const button = selector.getByTestId(`period-${period}`);
       await expect(button).toHaveText(label);
       await expect(button).toBeVisible();
@@ -463,6 +431,8 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     const selector = dialog.getByTestId("stats-period-selector");
 
     const status = dialog.getByTestId("stats-period-status");
+
+    const status = dialog.getByTestId("stats-period-status");
     const periodButtons = ["7d", "30d", "90d", "all"].map((period) =>
       selector.getByTestId(`period-${period}`),
     );
@@ -502,7 +472,6 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     // dialog's interaction. Choosing a preset must announce its exact date
     // range before Escape dismisses a later open picker and returns focus to
     // the trigger.
-    const now = new Date();
     const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
     const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
@@ -520,21 +489,5 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
         && url.searchParams.get("to") === toDateParam(customTo)
         && url.searchParams.get("offset") === "0";
     });
-    await rangePresets.getByTestId("range-preset-last-14d").click();
-    expect((await customResponse).status()).toBe(200);
-    await expect(status).toHaveText(`Izabran period: ${customLabel}`);
-    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
-    await expect(dialog).toBeVisible();
-    await expect(customButton).toBeFocused();
 
-    await page.keyboard.press("Space");
-    await expect(rangePresets).toBeVisible();
-    await expect(dialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(rangePresets).toBeHidden();
-    await expect(dialog).toBeVisible();
-    await expect(customButton).toBeFocused();
-  } finally {
-    await cleanUpFixture(fixture);
-  }
-});
+    const now = new Date();

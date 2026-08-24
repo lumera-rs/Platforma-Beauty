@@ -13,6 +13,10 @@ export type AutomationStatsPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /** Attributed appointments that became no-shows in the preceding window, excluded from realized numbers. */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments in the preceding window — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   /** Attributed appointments in the preceding window whose salon client had no completed appointment before the campaign message was sent. */
   newClientCount: number;
   /** Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent. */

@@ -340,6 +340,8 @@ async function main() {
     const emptyOverviewPrevious = {
       attributedAppointments: 0,
       attributedRevenue: 0,
+      noShowAttributedAppointments: 0,
+      noShowAttributedRevenue: 0,
       newClientCount: 0,
       knownClientCount: 0,
       newClientShare: null,

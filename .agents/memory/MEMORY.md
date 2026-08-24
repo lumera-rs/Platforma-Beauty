@@ -81,7 +81,6 @@
 - [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
-- [Campaign period portal tests](campaign-period-portal-tests.md) — Radix picker presets render outside the selector subtree, so browser locators must use the page-level portal test id.
-- [Browser fixture schema boundaries](browser-fixture-schema-boundaries.md) — scripts helpers receive generated schemas from specs so shared payloads validate without crossing TypeScript rootDir.
+- [Browser test boundaries](browser-boundaries.md) — account for UI portals and package compilation boundaries when structuring locators and shared fixture validation.
 - [Isolated process recovery](isolated-process-recovery.md) — stale-run cleanup targets unique child markers, while protected foreign /proc entries remain non-fatal.
 - [API test schema readiness](api-test-schema-readiness.md) — direct Express-app harnesses bypass startup rollouts and must ensure newly queried database columns first.
