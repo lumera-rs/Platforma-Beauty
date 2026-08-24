@@ -183,10 +183,39 @@ async function assertVisibleHelpLinksReachSections(
   }
 
   if (options.mobileMenu) {
-    await expect(page.getByTestId("button-mobile-menu")).toBeVisible();
-    await page.getByTestId("button-mobile-menu").click();
-    // Opening the menu is a pointer action; establish keyboard modality before
-    // focusing shortcuts so :focus-visible reflects the keyboard journey.
+    const mobileMenuButton = page.getByTestId("button-mobile-menu");
+    await expect(mobileMenuButton).toBeVisible();
+    if (options.keyboard) {
+      await mobileMenuButton.focus();
+      await expect(mobileMenuButton).toBeFocused();
+      if (options.assertFocusIndicator) {
+        const focusIndicator = await mobileMenuButton.evaluate((element) => {
+          const styles = window.getComputedStyle(element);
+          const outlineWidth = Number.parseFloat(styles.outlineWidth);
+          const shadowDimensions = styles.boxShadow.match(/-?\d*\.?\d+px/g)?.map(Number) ?? [];
+
+          return {
+            hasVisibleOutline: styles.outlineStyle !== "none"
+              && Number.isFinite(outlineWidth)
+              && outlineWidth > 0,
+            hasVisibleShadow: styles.boxShadow !== "none"
+              && shadowDimensions.some((dimension) => dimension !== 0),
+            outlineStyle: styles.outlineStyle,
+            outlineWidth: styles.outlineWidth,
+            boxShadow: styles.boxShadow,
+          };
+        });
+        expect(
+          focusIndicator.hasVisibleOutline || focusIndicator.hasVisibleShadow,
+          "The mobile business-menu toggle must expose a visible focus outline or ring with non-zero geometry.",
+        ).toBeTruthy();
+      }
+      await mobileMenuButton.press("Enter");
+    } else {
+      await mobileMenuButton.click();
+    }
+    // Establish keyboard modality before focusing shortcuts so :focus-visible
+    // reflects the keyboard journey.
     await page.keyboard.press("Tab");
   }
 
@@ -247,7 +276,14 @@ async function assertVisibleHelpLinksReachSections(
       await page.evaluate(() => document.documentElement.classList.add("dark"));
     }
     if (options.mobileMenu) {
-      await page.getByTestId("button-mobile-menu").click();
+      const mobileMenuButton = page.getByTestId("button-mobile-menu");
+      if (options.keyboard) {
+        await mobileMenuButton.focus();
+        await expect(mobileMenuButton).toBeFocused();
+        await mobileMenuButton.press("Enter");
+      } else {
+        await mobileMenuButton.click();
+      }
       await page.keyboard.press("Tab");
     }
     await expect(shortcuts).toHaveCount(expectedIds.length);

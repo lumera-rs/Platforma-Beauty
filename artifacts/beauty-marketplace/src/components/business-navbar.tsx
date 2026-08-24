@@ -281,7 +281,7 @@ export function BusinessNavbar() {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="2xl:hidden text-white hover:bg-white/10"
+            className="2xl:hidden text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             data-testid="button-mobile-menu"
