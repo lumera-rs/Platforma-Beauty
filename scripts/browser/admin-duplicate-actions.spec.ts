@@ -32,6 +32,12 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
   let nextMutationHold: Promise<void> | null = null;
   let shouldFailNextBrevoRegistration = false;
   let shouldFailNextBrevoCleanup = false;
+  const successfulBrevoRegistration = {
+    message: "Brevo webhook je registrovan.",
+    webhookVerifiedAt: "2026-08-24T12:34:56.000Z",
+    webhookVerificationStale: false,
+    staleWebhooks: [{ id: 702, maskedUrl: "https://retry.example.test/brevo/•••" }],
+  };
 
   const holdNextMutation = () => {
     let release = () => undefined;
@@ -108,7 +114,7 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
         await route.fulfill({ status: 502, json: { error: "Brevo je odbio registraciju." } });
         return;
       }
-      await route.fulfill({ json: { message: "Brevo webhook je registrovan.", webhookVerifiedAt: null, webhookVerificationStale: false, staleWebhooks: [] } });
+      await route.fulfill({ json: successfulBrevoRegistration });
       return;
     }
     if (pathname === "/api/admin/integrations/brevo/cleanup-webhooks" && method === "POST") {
@@ -257,6 +263,9 @@ test("failed Brevo webhook registration releases its guard for one deliberate re
   await expect(register).toBeEnabled();
   await register.click();
   await expect.poll(() => mutations.brevoRegistration).toBe(2);
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("sveža potvrda");
+  await expect(page.getByText("https://old.example.test/brevo/•••")).toHaveCount(0);
+  await expect(page.getByText("https://retry.example.test/brevo/•••")).toBeVisible();
 });
 
 test("Brevo stale webhook cleanup reaches the API once after rapid confirmation", async ({ page }) => {
@@ -291,6 +300,8 @@ test("failed Brevo stale webhook cleanup releases its guard for one deliberate r
   await expect(cleanup).toBeEnabled();
   await cleanup.click();
   await expect.poll(() => mutations.brevoCleanup).toBe(2);
+  await expect(page.getByTestId("stale-brevo-webhook-checkbox-701")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ukloni zaostale registracije" })).toHaveCount(0);
 });
 
 test("manual education settlement reaches the API once after rapid confirmation", async ({ page }) => {
