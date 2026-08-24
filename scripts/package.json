@@ -26,6 +26,7 @@
     "test:retention-restore-conflict": "playwright test browser/retention-restore-conflict.spec.ts",
     "test:retention-restore-noop": "playwright test browser/retention-restore-noop.spec.ts",
     "test:integrations-unsaved-guard": "playwright test browser/integrations-unsaved-guard.spec.ts",
+    "test:integrations-response-validation": "playwright test browser/admin-integrations-response-validation.spec.ts",
     "test:integrations-host-matrix": "playwright test browser/integrations-preview-host.spec.ts",
     "test:brevo-cleanup-selection": "node ./node_modules/@playwright/test/cli.js test browser/brevo-cleanup-selection.spec.ts",
     "test:sms-fallback-phone-notice-browser": "playwright test browser/sms-fallback-phone-notice.spec.ts",
