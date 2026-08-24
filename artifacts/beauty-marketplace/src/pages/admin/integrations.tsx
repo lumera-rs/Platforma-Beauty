@@ -162,6 +162,12 @@ export default function AdminIntegrations() {
       }
       : previous);
   };
+  const applyBrevoRegistrationResult = (result: unknown, responseOk: boolean) => {
+    if (!result || typeof result !== "object") return;
+    const payload = result as { missingEvents?: unknown };
+    if (Array.isArray(payload.missingEvents)) updateBrevoRegistrationMissingEvents(payload.missingEvents);
+    else if (responseOk) updateBrevoRegistrationMissingEvents([]);
+  };
   const save = async (integration: Integration) => {
     const trimmedValues: Record<string, string> = {};
     for (const [k, v] of Object.entries(form[integration])) {
@@ -244,8 +250,7 @@ export default function AdminIntegrations() {
       const response = await fetch("/api/admin/integrations/brevo/verify-registration", { method: "POST", credentials: "include" });
       const result = await response.json();
       if (Array.isArray(result.staleWebhooks)) updateStaleBrevoWebhooks(result.staleWebhooks);
-      if (Array.isArray(result.missingEvents)) updateBrevoRegistrationMissingEvents(result.missingEvents);
-      else if (response.ok || response.status === 409) updateBrevoRegistrationMissingEvents([]);
+      applyBrevoRegistrationResult(result, response.ok || response.status === 409);
       if (!response.ok) throw new Error(result.error ?? "Provera registracije na Brevo nije uspela.");
       // A development/preview verdict may be successful only in the softened
       // sense that it found the current secret elsewhere (likely production).
@@ -351,6 +356,10 @@ export default function AdminIntegrations() {
     try {
       const response = await fetch("/api/admin/integrations/brevo/register-webhook", { method: "POST", credentials: "include" });
       const result = await response.json();
+      // The provider may accept the update while still omitting event groups.
+      // Keep those exact groups in the card before surfacing the error, rather
+      // than reducing a partial repair to a transient toast.
+      applyBrevoRegistrationResult(result, response.ok);
       if (!response.ok) throw new Error(result.error ?? "Registracija webhook-a na Brevo nije uspela.");
       // One-click registration re-verified the provider registration with the
       // current secret — the server cleared the reminder; mirror it here.

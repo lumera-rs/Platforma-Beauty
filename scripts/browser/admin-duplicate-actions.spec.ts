@@ -23,6 +23,7 @@ type MutationCounts = {
 type MutationHarness = MutationCounts & {
   holdNextMutation: () => () => void;
   failNextBrevoRegistration: () => void;
+  returnPartialBrevoRegistration: () => void;
   failNextBrevoCleanup: () => void;
 };
 
@@ -31,12 +32,26 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
   const integrationCard = { enabled: true, configuredInDatabase: true, complete: true, values: {} };
   let nextMutationHold: Promise<void> | null = null;
   let shouldFailNextBrevoRegistration = false;
+  let shouldReturnPartialBrevoRegistration = false;
   let shouldFailNextBrevoCleanup = false;
+  const missingBrevoEvents = [
+    "isporučeno (delivered)",
+    "otvaranja (opened / uniqueOpened)",
+    "trajno odbijeno (hardBounce)",
+    "blokirano (blocked)",
+    "greška u slanju (error)",
+  ];
   const successfulBrevoRegistration = {
     message: "Brevo webhook je registrovan.",
     webhookVerifiedAt: "2026-08-24T12:34:56.000Z",
     webhookVerificationStale: false,
     staleWebhooks: [{ id: 702, maskedUrl: "https://retry.example.test/brevo/•••" }],
+  };
+  const partialBrevoRegistration = {
+    code: "BREVO_REGISTRATION_INCOMPLETE",
+    error: `Webhook je ažuriran na Brevo, ali ponovna provera i dalje prijavljuje problem: Webhook je registrovan na Brevo, ali registracija ne prati sve potrebne događaje. Nedostaju: ${missingBrevoEvents.join(", ")}.`,
+    missingEvents: missingBrevoEvents,
+    staleWebhooks: [],
   };
 
   const holdNextMutation = () => {
@@ -114,7 +129,16 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
         await route.fulfill({ status: 502, json: { error: "Brevo je odbio registraciju." } });
         return;
       }
+      if (shouldReturnPartialBrevoRegistration) {
+        shouldReturnPartialBrevoRegistration = false;
+        await route.fulfill({ status: 502, json: partialBrevoRegistration });
+        return;
+      }
       await route.fulfill({ json: successfulBrevoRegistration });
+      return;
+    }
+    if (pathname === "/api/admin/integrations/brevo/verify-registration" && method === "POST") {
+      await route.fulfill({ status: 409, json: { ...partialBrevoRegistration, code: "CONFLICT" } });
       return;
     }
     if (pathname === "/api/admin/integrations/brevo/cleanup-webhooks" && method === "POST") {
@@ -187,6 +211,7 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
     get educationSettings() { return counts.educationSettings; },
     holdNextMutation,
     failNextBrevoRegistration: () => { shouldFailNextBrevoRegistration = true; },
+    returnPartialBrevoRegistration: () => { shouldReturnPartialBrevoRegistration = true; },
     failNextBrevoCleanup: () => { shouldFailNextBrevoCleanup = true; },
   };
 }
@@ -266,6 +291,31 @@ test("failed Brevo webhook registration releases its guard for one deliberate re
   await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("sveža potvrda");
   await expect(page.getByText("https://old.example.test/brevo/•••")).toHaveCount(0);
   await expect(page.getByText("https://retry.example.test/brevo/•••")).toBeVisible();
+});
+
+test("partial Brevo webhook repair keeps missing event guidance visible for repair and re-check", async ({ page }) => {
+  const mutations = await mockAdminMutationPages(page);
+  await page.goto("/admin/integracije");
+  const register = page.getByRole("button", { name: "Registruj webhook" });
+  await expect(register).toBeVisible();
+
+  mutations.returnPartialBrevoRegistration();
+  await register.click();
+
+  const warning = page.getByTestId("brevo-missing-event-coverage");
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("ne prati sve potrebne događaje");
+  for (const missingEvent of [
+    "isporučeno (delivered)",
+    "otvaranja (opened / uniqueOpened)",
+    "trajno odbijeno (hardBounce)",
+    "blokirano (blocked)",
+    "greška u slanju (error)",
+  ]) await expect(warning).toContainText(missingEvent);
+
+  await page.getByRole("button", { name: "Proveri registraciju na Brevo", exact: true }).click();
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("Ažurirajte registraciju u Brevo");
 });
 
 test("Brevo stale webhook cleanup reaches the API once after rapid confirmation", async ({ page }) => {

@@ -4013,7 +4013,9 @@ router.post("/admin/integrations/brevo/register-webhook", async (req, res): Prom
     await clearBrevoRegistrationIncomplete();
   }
   res.status(502).json({
+    code: "BREVO_REGISTRATION_INCOMPLETE",
     error: `Webhook je ${action} na Brevo, ali ponovna provera i dalje prijavljuje problem: ${verdict.error}`,
+    staleWebhooks: staleBrevoRegistrations(refreshedCandidates, context),
     ...("missingEvents" in verdict ? { missingEvents: verdict.missingEvents } : {}),
   });
 });
