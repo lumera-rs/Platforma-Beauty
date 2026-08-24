@@ -520,12 +520,20 @@ router.post("/growth/automations/:automationId/pause", async (req, res, next) =>
 const STATS_PERIOD_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
 const STATS_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const STATS_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Time window for stats aggregation. `start` is inclusive, `end` exclusive;
  * either may be null for an open-ended side. Both null = all time.
  */
 type StatsWindow = { start: Date | null; end: Date | null };
+
+/** Move a date boundary by whole UTC calendar days, preserving midnight. */
+function shiftStatsCalendarDays(date: Date, days: number): Date {
+  const shifted = new Date(date.getTime());
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted;
+}
 
 function parseStatsDate(raw: string): Date | null {
   if (!STATS_DATE_RE.test(raw)) return null;
@@ -571,7 +579,7 @@ function parseStatsWindow(query: Record<string, unknown>): { window: StatsWindow
       return { error: "Invalid range: from must be on or before to." };
     }
     // `to` is inclusive → exclusive end is the start of the following day.
-    const end = toDate ? new Date(toDate.getTime() + 24 * 60 * 60 * 1000) : null;
+    const end = toDate ? shiftStatsCalendarDays(toDate, 1) : null;
     return { window: { start, end } };
   }
 
@@ -624,14 +632,19 @@ function statsDeliveryPeriodCondition(window: StatsWindow) {
 function previousStatsWindow(query: Record<string, unknown>, window: StatsWindow): StatsWindow | null {
   const periodDays = typeof query["period"] === "string" ? STATS_PERIOD_DAYS[query["period"]] : undefined;
   if (periodDays !== undefined && window.start) {
-    const durationMs = periodDays * 24 * 60 * 60 * 1000;
+    const durationMs = periodDays * STATS_DAY_MS;
     return { start: new Date(window.start.getTime() - durationMs), end: window.start };
   }
 
   if (window.start && window.end) {
     const durationMs = window.end.getTime() - window.start.getTime();
-    if (durationMs > 0) {
-      return { start: new Date(window.start.getTime() - durationMs), end: window.start };
+    const durationDays = durationMs / STATS_DAY_MS;
+    if (Number.isInteger(durationDays) && durationDays > 0) {
+      // Custom ranges are inclusive calendar dates. In particular, from=to
+      // must compare [the previous midnight, the current midnight) against
+      // [the current midnight, the next midnight), never a shifted elapsed
+      // interval that could move activity across a date boundary.
+      return { start: shiftStatsCalendarDays(window.start, -durationDays), end: window.start };
     }
   }
 

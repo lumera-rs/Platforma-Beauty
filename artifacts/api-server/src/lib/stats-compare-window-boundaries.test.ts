@@ -30,6 +30,9 @@
  *   6. a future-dated run and provider delivery are excluded from rolling
  *      presets but included by an explicit future custom range; compare=previous
  *      uses the immediately preceding calendar range on both stats endpoints
+ *   7. a one-day custom range keeps activity at the previous, current, and next
+ *      midnight in exactly one or neither window, with matching attribution and
+ *      delivery totals on both stats endpoints
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
@@ -309,6 +312,45 @@ async function main() {
     sentAt: new Date(futureEventAt), deliveredAt: new Date(futureEventAt),
   });
 
+  // A one-day custom range is the smallest bounded comparison: the current
+  // window is Apr 7 [Apr 7 00:00, Apr 8 00:00), and its previous window is
+  // Apr 6 [Apr 6 00:00, Apr 7 00:00). Seed each adjacent midnight so an
+  // inclusive/exclusive regression cannot make an event appear in both or
+  // neither window.
+  const [oneDayRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id, name: `WB One Day Rule ${suffix}`,
+    trigger: "inactive_days", triggerConfig: { inactiveDays: 30 },
+    action: "send_email", emailSubject: "T", emailBody: "T",
+    status: "active",
+  }).returning();
+  assert.ok(oneDayRule);
+  const oneDayEvents = [
+    { tag: "previous-midnight", at: Date.parse("2026-04-06T00:00:00.000Z") },
+    { tag: "current-midnight", at: Date.parse("2026-04-07T00:00:00.000Z") },
+    { tag: "next-midnight", at: Date.parse("2026-04-08T00:00:00.000Z") },
+  ] as const;
+  for (const event of oneDayEvents) {
+    const [appointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+      date: "2026-04-07", startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+      status: "completed", price: 1200, treatmentLocation: "salon",
+    }).returning();
+    assert.ok(appointment);
+    const [run] = await db.insert(automationRunsTable).values({
+      eventKey: `wb-one-day-run-${event.tag}-${suffix}`, ruleId: oneDayRule.id,
+      salonId: salon.id, salonCustomerId: cust.id, status: "sent",
+      executedAt: new Date(event.at), sentAt: new Date(event.at),
+      attributedAppointmentId: appointment.id,
+    }).returning();
+    assert.ok(run);
+    await db.insert(automationDeliveriesTable).values({
+      runId: run.id, salonId: salon.id,
+      eventKey: `wb-one-day-delivery-${event.tag}-${suffix}`, channel: "email",
+      recipientEmail: `wb-one-day-${event.tag}-${suffix}@bg.test`, status: "sent",
+      sentAt: new Date(event.at), deliveredAt: new Date(event.at),
+    });
+  }
+
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -550,6 +592,39 @@ async function main() {
         `${label}: previous delivery is in the preceding calendar window`);
     }
     console.log("✓ future custom ranges compare against the immediately preceding calendar window on both stats endpoints");
+
+    // The one-day range must keep the current and immediately preceding
+    // calendar days separate at both midnight boundaries. The overview and
+    // per-rule responses must agree on both attribution and delivery totals.
+    const oneDayQuery = "?from=2026-04-07&to=2026-04-07&compare=previous";
+    const oneDayOverview = await overviewRow(oneDayQuery, oneDayRule.id);
+    const oneDayPerRule = await perRule(oneDayQuery, oneDayRule.id);
+    for (const [label, row] of [
+      ["overview", oneDayOverview],
+      ["per-rule", oneDayPerRule],
+    ] as const) {
+      assert.equal(row.totalRuns, 1, `${label}: current one-day window includes only current midnight`);
+      assert.equal(row.attributedAppointments, 1,
+        `${label}: current one-day attribution includes only current midnight`);
+      assert.equal(row.emailDeliveredCount, 1,
+        `${label}: current one-day delivery includes only current midnight`);
+      assert.ok(row.previous, `${label}: one-day comparison block is present`);
+      assert.equal(row.previous.attributedAppointments, 1,
+        `${label}: previous one-day attribution includes only previous midnight`);
+      assert.equal(row.previous.emailDeliveredCount, 1,
+        `${label}: previous one-day delivery includes only previous midnight`);
+    }
+    assert.equal(oneDayOverview.totalRuns, oneDayPerRule.totalRuns,
+      "one-day overview and per-rule run totals match");
+    assert.equal(oneDayOverview.attributedAppointments, oneDayPerRule.attributedAppointments,
+      "one-day overview and per-rule attribution totals match");
+    assert.equal(oneDayOverview.emailDeliveredCount, oneDayPerRule.emailDeliveredCount,
+      "one-day overview and per-rule delivery totals match");
+    assert.equal(oneDayOverview.previous.attributedAppointments, oneDayPerRule.previous.attributedAppointments,
+      "one-day overview and per-rule previous attribution totals match");
+    assert.equal(oneDayOverview.previous.emailDeliveredCount, oneDayPerRule.previous.emailDeliveredCount,
+      "one-day overview and per-rule previous delivery totals match");
+    console.log("✓ one-day custom comparisons keep adjacent midnight activity separate and match across stats endpoints");
 
     // ── 5. compare validation on both endpoints ─────────────────────────────
     const expect400 = async (qs: string, label: string) => {
