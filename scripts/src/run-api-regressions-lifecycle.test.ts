@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, rmdir, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -404,6 +404,112 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
         { recursive: true, force: true },
       );
     }
+  }
+});
+
+test("standalone browser cleanup entry points report browser suite wording", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-standalone-recovery-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const originalPath = process.env.PATH;
+  const standaloneRunners = [
+    {
+      scriptPath: path.join(workspaceRoot, "scripts", "src", "run-retention-preview.ts"),
+      cases: [
+        {
+          databasePrefix: "lumera_retention_estimate_browser_",
+          manifestDirectoryName: "retention-preview-estimate-browser-databases",
+        },
+        {
+          databasePrefix: "lumera_retention_exact_browser_",
+          manifestDirectoryName: "retention-preview-exact-browser-databases",
+        },
+        {
+          databasePrefix: "lumera_retention_stratified_browser_",
+          manifestDirectoryName: "retention-preview-stratified-browser-databases",
+        },
+      ],
+    },
+    {
+      scriptPath: path.join(workspaceRoot, "scripts", "src", "run-infobip-registration-browser.ts"),
+      cases: [
+        {
+          databasePrefix: "lumera_infobip_registration_browser_",
+          manifestDirectoryName: "infobip-registration-browser-databases",
+        },
+      ],
+    },
+  ] as const;
+  const manifestPaths: string[] = [];
+  const manifestDirectories = new Set<string>();
+
+  try {
+    await mkdir(binDirectory, { recursive: true });
+    await writeFile(
+      path.join(binDirectory, "dropdb"),
+      "#!/bin/sh\nexit 0\n",
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+
+    for (const runner of standaloneRunners) {
+      const expectedOutput: string[] = [];
+      for (const standaloneCase of runner.cases) {
+        const databaseName =
+          `${standaloneCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+        const manifestDirectory = path.join(
+          workspaceRoot,
+          ".lumera-test-state",
+          standaloneCase.manifestDirectoryName,
+        );
+        manifestDirectories.add(manifestDirectory);
+        await mkdir(manifestDirectory, { recursive: true });
+        manifestPaths.push(await writeManifest(manifestDirectory, {
+          version: 1,
+          databaseName,
+          databaseTarget: getDatabaseTarget(),
+          ownerPid: 2_147_483_647,
+          ownerProcessIdentity: "stale-process",
+        }));
+        expectedOutput.push(`Removed interrupted browser test database ${databaseName}.`);
+      }
+
+      const result = await execFileAsync(
+        runnerPath,
+        [runner.scriptPath, "--recover-interrupted-databases"],
+        {
+          cwd: workspaceRoot,
+          env: {
+            ...process.env,
+            DATABASE_URL: databaseUrl,
+          },
+        },
+      ) as { stdout: string; stderr: string };
+      assert.equal(
+        result.stderr,
+        "",
+        `Standalone cleanup emitted stderr for ${path.basename(runner.scriptPath)}.`,
+      );
+      assert.deepEqual(
+        result.stdout.trim().split("\n").sort(),
+        expectedOutput.sort(),
+      );
+    }
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
+    await Promise.all(
+      [...manifestDirectories].map(async (manifestDirectory) => {
+        try {
+          if ((await readdir(manifestDirectory)).length === 0) {
+            await rmdir(manifestDirectory);
+          }
+        } catch {
+          // Preserve state directories created by another test or active runner.
+        }
+      }),
+    );
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 });
 

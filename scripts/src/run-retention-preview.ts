@@ -53,9 +53,9 @@ const stratifiedEstimateConfiguration: IsolatedBrowserSuiteConfiguration = {
 async function run(): Promise<void> {
   const commandArguments = process.argv.slice(2);
   if (commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases") {
-    await recoverInterruptedHarnessDatabases(estimateConfiguration);
-    await recoverInterruptedHarnessDatabases(exactConfiguration);
-    await recoverInterruptedHarnessDatabases(stratifiedEstimateConfiguration);
+    await recoverInterruptedHarnessDatabases(estimateConfiguration, "browser");
+    await recoverInterruptedHarnessDatabases(exactConfiguration, "browser");
+    await recoverInterruptedHarnessDatabases(stratifiedEstimateConfiguration, "browser");
     return;
   }
   if (commandArguments.length > 0) {

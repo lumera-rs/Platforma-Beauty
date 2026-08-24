@@ -398,7 +398,7 @@ async function stopOrphanedHarnessProcesses(processMarker: string | undefined): 
 
 export async function recoverInterruptedHarnessDatabases(
   configuration: IsolatedSuiteConfiguration,
-  suiteLabel: "browser" | "API" | "API regression" = "browser",
+  suiteLabel: "browser" | "API" | "API regression",
 ): Promise<void> {
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const developmentDatabaseName = getDatabaseName(developmentDatabaseUrl);

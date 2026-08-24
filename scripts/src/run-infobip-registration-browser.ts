@@ -18,7 +18,7 @@ const configuration: IsolatedBrowserSuiteConfiguration = {
 async function run(): Promise<void> {
   const commandArguments = process.argv.slice(2);
   if (commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases") {
-    await recoverInterruptedHarnessDatabases(configuration);
+    await recoverInterruptedHarnessDatabases(configuration, "browser");
     return;
   }
   if (commandArguments.length > 0) {
@@ -30,7 +30,7 @@ async function run(): Promise<void> {
   // A forced stop bypasses Playwright's afterAll cleanup. Recover any stale
   // disposable run before creating the next database so its synthetic
   // provider receipt cannot influence a later check.
-  await recoverInterruptedHarnessDatabases(configuration);
+  await recoverInterruptedHarnessDatabases(configuration, "browser");
   await runIsolatedBrowserSuite(configuration);
 }
 
