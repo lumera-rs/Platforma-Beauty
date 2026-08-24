@@ -268,6 +268,36 @@ test("employee portal help shortcuts open their matching guide sections", async 
   }
 });
 
+test("owner desktop help shortcuts open their matching guide sections from the keyboard", async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await createGuideHelpFixture();
+  const browserErrors = collectBrowserErrors(page);
+
+  try {
+    await signIn(page, fixture.owner);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_HELP_IDS, { keyboard: true });
+    expect(browserErrors, "The owner desktop keyboard guide journey must not produce browser errors.").toEqual([]);
+  } finally {
+    await cleanUpGuideHelpFixture(fixture);
+  }
+});
+
+test("employee desktop help shortcuts open their matching guide sections from the keyboard", async ({ page }) => {
+  test.setTimeout(120_000);
+  const fixture = await createGuideHelpFixture();
+  const browserErrors = collectBrowserErrors(page);
+
+  try {
+    await signIn(page, fixture.employee);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_HELP_IDS, { keyboard: true });
+    expect(browserErrors, "The employee desktop keyboard guide journey must not produce browser errors.").toEqual([]);
+  } finally {
+    await cleanUpGuideHelpFixture(fixture);
+  }
+});
+
 test("owner mobile business-menu help shortcuts open their matching guide sections", async ({ page }) => {
   test.setTimeout(120_000);
   const fixture = await createGuideHelpFixture();
