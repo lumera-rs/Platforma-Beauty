@@ -25,6 +25,9 @@
  *  6. Back/Forward between two combined shared URLs → the custom window,
  *     selected segment, open campaign, request filters, and unrelated query
  *     parameters stay in sync.
+ *  7. A campaign deleted between Back/Forward traversals → the stale
+ *     combined URL falls back to the overview while preserving the custom
+ *     window and unrelated query parameters.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -470,6 +473,59 @@ test("stale campaign links stay safe when restored through browser history", asy
       };
     }).toEqual({
       tracking: "instagram",
+      rule: null,
+      clients: null,
+    });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("deleted combined campaign links fall back safely through browser history", async ({ page }) => {
+  const fixture = await createFixture();
+  const window = {
+    from: "2026-03-01",
+    to: "2026-04-30",
+  };
+  const overviewUrl = "/vlasnik/automatizacije?utm_source=history-stale-combined&ref=overview";
+  const combinedUrl = `/vlasnik/automatizacije?utm_source=history-stale-combined&ref=deleted&from=${window.from}&to=${window.to}&rule=${fixture.ruleId}&clients=returning`;
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(overviewUrl);
+    await page.evaluate((url) => {
+      window.history.pushState({}, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, combinedUrl);
+
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+
+    // Remove the campaign after the valid entry has been recorded. The page
+    // remains mounted, so its cached rules list is intentionally stale until
+    // the URL-driven validation re-fetches it.
+    await db.delete(automationRulesTable).where(eq(automationRulesTable.id, fixture.ruleId));
+
+    await page.goBack();
+    await expect(dialog).toBeHidden();
+
+    await page.goForward();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        from: params.get("from"),
+        to: params.get("to"),
+        tracking: params.get("utm_source"),
+        ref: params.get("ref"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      ...window,
+      tracking: "history-stale-combined",
+      ref: "deleted",
       rule: null,
       clients: null,
     });

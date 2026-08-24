@@ -12,6 +12,7 @@ import {
   useOwnerPauseAutomation,
   useOwnerTestRunAutomation,
   useGetCurrentUser,
+  ownerListAutomations,
   getOwnerListAutomationsQueryKey,
   getOwnerListAutomationStatsQueryKey,
 } from "@workspace/api-client-react";
@@ -806,6 +807,9 @@ export default function OwnerAutomations() {
   // rule back into the restored URL.
   const lastHandledSearchRef = useRef(searchString);
   const skipUrlMirrorRef = useRef(false);
+  const ruleValidationRequestRef = useRef(0);
+  const historyRuleRefreshRef = useRef(false);
+
   useEffect(() => {
     if (lastHandledSearchRef.current === searchString) return;
 
@@ -819,10 +823,42 @@ export default function OwnerAutomations() {
     setAttributedClientType(parseAttributedClientType(searchString));
     setStatsRuleId(null);
     setPendingRuleId(urlRuleId);
-  }, [searchString]);
+    ruleValidationRequestRef.current += 1;
+    if (!urlRuleId || !rules?.some((rule: any) => rule.id === urlRuleId)) {
+      historyRuleRefreshRef.current = false;
+      return;
+    }
+
+    // A campaign visible in the cached list might have been deleted in
+    // another tab before this history entry is revisited. Wait for a fresh
+    // list before reopening it; IDs already absent from the cache keep the
+    // immediate overview fallback below.
+    historyRuleRefreshRef.current = true;
+    const validationRequest = ++ruleValidationRequestRef.current;
+    void ownerListAutomations({ cache: "no-store" }).then((refreshedRules) => {
+      if (
+        validationRequest !== ruleValidationRequestRef.current
+        || new URLSearchParams(window.location.search).get("rule") !== urlRuleId
+      ) return;
+      historyRuleRefreshRef.current = false;
+      queryClient.setQueryData(getOwnerListAutomationsQueryKey(), refreshedRules);
+      if (refreshedRules.some((rule: any) => rule.id === urlRuleId)) {
+        setStatsRuleId(urlRuleId);
+      }
+      setPendingRuleId(null);
+    }).catch(() => {
+      if (
+        validationRequest === ruleValidationRequestRef.current
+        && new URLSearchParams(window.location.search).get("rule") === urlRuleId
+      ) {
+        historyRuleRefreshRef.current = false;
+        setPendingRuleId(null);
+      }
+    });
+  }, [searchString, rules, queryClient]);
 
   useEffect(() => {
-    if (pendingRuleId === null || !rules) return;
+    if (pendingRuleId === null || !rules || historyRuleRefreshRef.current) return;
     if (rules.some((rule: any) => rule.id === pendingRuleId)) {
       setStatsRuleId(pendingRuleId);
     }
