@@ -143,6 +143,54 @@ function formatRangeLabel(range: DateRange | undefined): string | null {
   return `${range.from.toLocaleDateString("sr-RS")} – ${range.to.toLocaleDateString("sr-RS")}`;
 }
 
+function formatAccessibleCalendarDate(date: Date): string {
+  return date.toLocaleDateString("sr-RS", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function calendarDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isSameCalendarDate(left: Date, right: Date): boolean {
+  return calendarDateKey(left) === calendarDateKey(right);
+}
+
+function calendarRangeDayState(date: Date, range: DateRange | undefined): string | null {
+  if (!range?.from) return null;
+  if (!range.to) {
+    return isSameCalendarDate(date, range.from)
+      ? "početak perioda; izaberite krajnji datum"
+      : null;
+  }
+
+  const from = calendarDateKey(range.from);
+  const to = calendarDateKey(range.to);
+  const current = calendarDateKey(date);
+  const start = from <= to ? from : to;
+  const end = from <= to ? to : from;
+  const isStart = current === from;
+  const isEnd = current === to;
+
+  if (isStart && isEnd) return "početak i kraj izabranog perioda";
+  if (isStart) return "početak izabranog perioda";
+  if (isEnd) return "kraj izabranog perioda";
+  if (current > start && current < end) return "u izabranom periodu";
+  return null;
+}
+
+function campaignCalendarTriggerLabel(range: DateRange | undefined): string {
+  if (!range?.from) return "Izaberite početni i krajnji datum perioda";
+  if (!range.to) {
+    return `Početak perioda: ${formatAccessibleCalendarDate(range.from)}; izaberite krajnji datum`;
+  }
+  return `Izabran period od ${formatAccessibleCalendarDate(range.from)} do ${formatAccessibleCalendarDate(range.to)}`;
+}
+
 function isShareCancelled(error: unknown): boolean {
   return typeof error === "object"
     && error !== null
@@ -399,6 +447,7 @@ function PeriodSelector({
               aria-pressed={period === "custom"}
               aria-expanded={rangeOpen}
               aria-haspopup="dialog"
+              aria-label={campaignCalendarTriggerLabel(customRange)}
               data-testid="period-custom"
               className={`col-span-2 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors sm:col-span-1 ${
                 period === "custom"
@@ -437,6 +486,14 @@ function PeriodSelector({
               defaultMonth={customRange?.from}
               selected={customRange}
               disabled={{ after: new Date() }}
+              labels={{
+                labelDayButton: (date, modifiers) => {
+                  const dateLabel = formatAccessibleCalendarDate(date);
+                  const state = calendarRangeDayState(date, customRange);
+                  if (state) return `${dateLabel}, ${state}`;
+                  return modifiers.today ? `${dateLabel}, danas` : dateLabel;
+                },
+              }}
               onSelect={(range) => {
                 // DayPicker represents an initial range click as a complete
                 // one-day range. Keep that first click open as the range start;
@@ -454,6 +511,20 @@ function PeriodSelector({
               }}
               data-testid={`${testId}-range-calendar`}
             />
+            <p
+              id={`${testId}-range-status`}
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-testid={`${testId}-range-status`}
+            >
+              {customRange?.from && !customRange?.to
+                ? `Početak perioda: ${formatAccessibleCalendarDate(customRange.from)}. Izaberite krajnji datum.`
+                : customRange?.from && customRange?.to
+                  ? `Izabran period od ${formatAccessibleCalendarDate(customRange.from)} do ${formatAccessibleCalendarDate(customRange.to)}.`
+                  : "Nije izabran početni datum perioda."}
+            </p>
             <p className="px-3 pb-3 text-xs text-muted-foreground">
               {customRange?.from && !customRange?.to
                 ? "Izaberite i krajnji datum perioda."

@@ -17,6 +17,7 @@ function Calendar({
   captionLayout = 'label',
   buttonVariant = 'ghost',
   formatters,
+  labels,
   components,
   ...props
 }: React.ComponentProps<typeof DayPicker> & {
@@ -48,6 +49,27 @@ function Calendar({
           date.toLocaleDateString('sr-RS', { weekday: 'short' })
             .replace(/\.$/, ''),
         ...formatters,
+      }}
+      labels={{
+        labelPrevious: () => 'Prethodni mesec',
+        labelNext: () => 'Sledeći mesec',
+        labelGrid: (date) => {
+          const label = date.toLocaleDateString('sr-RS', {
+            month: 'long',
+            year: 'numeric',
+          });
+          return label.charAt(0).toUpperCase() + label.slice(1);
+        },
+        labelDayButton: (date, modifiers) => {
+          const label = date.toLocaleDateString('sr-RS', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          });
+          return modifiers.today ? `${label}, danas` : label;
+        },
+        ...labels,
       }}
       classNames={{
         root: cn('w-full min-w-0', defaultClassNames.root),

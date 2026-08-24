@@ -34,6 +34,8 @@
  *     and stats dialog with their exact from/to values.
  *  10. A shared stats URL → the custom July window is restored in the stats
  *      dialog and both stats requests keep the restored from/to after reload.
+ *  11. Accessibility labels → month navigation, focused dates, pending starts,
+ *      and completed cross-month range days expose understandable names.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -508,8 +510,8 @@ test.describe("shared campaign period links restore the picked window", () => {
     // The calendar opens on the current month. Move to July, pick the last
     // day shown there, then move to August and pick an earlier day. This
     // exercises the pending-start state across a real month transition.
-    const previousMonth = calendar.getByRole("button", { name: /previous month/i });
-    const nextMonth = calendar.getByRole("button", { name: /next month/i });
+    const previousMonth = calendar.getByRole("button", { name: /prethodni mesec/i });
+    const nextMonth = calendar.getByRole("button", { name: /sledeći mesec/i });
     await expect(previousMonth).toBeVisible();
     await previousMonth.click();
 
@@ -578,7 +580,7 @@ test.describe("shared campaign period links restore the picked window", () => {
     // Use the actual keyboard focus path for both month navigation and date
     // selection. The start must survive the month transition before the
     // second Enter completes the range.
-    const previousMonth = calendar.getByRole("button", { name: /previous month/i });
+    const previousMonth = calendar.getByRole("button", { name: /prethodni mesec/i });
     await previousMonth.focus();
     await expect(previousMonth).toBeFocused();
     await page.keyboard.press("Enter");
@@ -591,7 +593,7 @@ test.describe("shared campaign period links restore the picked window", () => {
     await expect(fromDay).toBeFocused();
     await page.keyboard.press("Enter");
 
-    const nextMonth = calendar.getByRole("button", { name: /next month/i });
+    const nextMonth = calendar.getByRole("button", { name: /sledeći mesec/i });
     await nextMonth.focus();
     await expect(nextMonth).toBeFocused();
     await page.keyboard.press("Enter");
@@ -633,6 +635,80 @@ test.describe("shared campaign period links restore the picked window", () => {
       .getByTestId("period-custom");
     await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
     await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
+  });
+
+  test("campaign date picker exposes understandable month, focus, and range labels", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-08-23T12:00:00.000Z") });
+    await signInAsFixtureOwner(page, fixture);
+
+    await page.goto("/vlasnik/automatizacije?period=30d");
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    const customTrigger = selector.getByTestId("period-custom");
+    await customTrigger.click();
+
+    const calendar = page.getByTestId("overview-period-selector-range-calendar");
+    await expect(calendar).toBeVisible();
+    await expect(calendar.getByRole("button", { name: "Prethodni mesec" })).toHaveAttribute(
+      "aria-label",
+      "Prethodni mesec",
+    );
+    await expect(calendar.getByRole("button", { name: "Sledeći mesec" })).toHaveAttribute(
+      "aria-label",
+      "Sledeći mesec",
+    );
+    await expect(calendar.getByRole("grid")).toHaveAttribute("aria-label", /2026/);
+
+    const focusedDate = new Date(2026, 7, 10);
+    const focusedDay = calendar.locator(`button[data-day="${focusedDate.toLocaleDateString()}"]`);
+    await focusedDay.focus();
+    await expect(focusedDay).toBeFocused();
+    await expect(focusedDay).toHaveAttribute("aria-label", /10.*2026/);
+
+    const previousMonth = calendar.getByRole("button", { name: "Prethodni mesec" });
+    await previousMonth.click();
+    const fromDate = new Date(2026, 6, 31);
+    const fromDay = calendar.locator(`button[data-day="${fromDate.toLocaleDateString()}"]`);
+    await expect(fromDay).toHaveAttribute("aria-label", /31.*2026/);
+    await fromDay.click();
+
+    const rangeStatus = page.getByTestId("overview-period-selector-range-status");
+    await expect(rangeStatus).toContainText("Početak perioda");
+    await expect(rangeStatus).toContainText("Izaberite krajnji datum");
+    await expect(fromDay).toHaveAttribute("aria-label", /početak perioda.*izaberite krajnji datum/i);
+
+    const nextMonth = calendar.getByRole("button", { name: "Sledeći mesec" });
+    await nextMonth.click();
+    const toDate = new Date(2026, 7, 3);
+    const toDay = calendar.locator(`button[data-day="${toDate.toLocaleDateString()}"]`);
+    await expect(toDay).toHaveAttribute("aria-label", /3.*2026/);
+
+    const statsResponse = nextOverviewStatsResponse(page, {
+      period: null,
+      from: toDateParam(fromDate),
+      to: toDateParam(toDate),
+    });
+    await toDay.click();
+    expect((await statsResponse).status()).toBe(200);
+    await expect(calendar).toBeHidden();
+    await expect(customTrigger).toHaveAttribute(
+      "aria-label",
+      /izabran period od.*31.*2026.*3.*2026/i,
+    );
+
+    // Reopen the completed range to inspect the inclusive middle days too.
+    await customTrigger.click();
+    await expect(calendar).toBeVisible();
+    const completedFromDay = calendar.locator(`button[data-day="${fromDate.toLocaleDateString()}"]`);
+    await expect(completedFromDay).toHaveAttribute("aria-label", /početak izabranog perioda/i);
+
+    await calendar.getByRole("button", { name: "Sledeći mesec" }).click();
+    const middleDate = new Date(2026, 7, 1);
+    const middleDay = calendar.locator(`button[data-day="${middleDate.toLocaleDateString()}"]`);
+    await expect(middleDay).toHaveAttribute("aria-label", /u izabranom periodu/i);
+    await expect(calendar.locator(`button[data-day="${toDate.toLocaleDateString()}"]`))
+      .toHaveAttribute("aria-label", /kraj izabranog perioda/i);
   });
 
   test("an invalid ?period falls back to 'Sve vreme' and the URL is cleaned", async ({ page }) => {
