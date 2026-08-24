@@ -1233,6 +1233,15 @@ export default function OwnerAutomations() {
             onCustomRangeChange={setCustomRange}
             testId="stats-period-selector"
           />
+          <p
+            className="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            data-testid="stats-period-status"
+          >
+            Izabran period: {periodDescription(statsPeriod, customRange)}
+          </p>
           {isStatsLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
           ) : statsData ? (

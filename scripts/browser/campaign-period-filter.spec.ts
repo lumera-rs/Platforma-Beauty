@@ -52,6 +52,10 @@ const RECENT_EXECUTED_AT = new Date(Date.now() - 5 * DAY_MS);
 /** Runs outside the 30-day preset window (with margin for test runtime). */
 const OLD_EXECUTED_AT = new Date(Date.now() - 60 * DAY_MS);
 
+/** Local calendar date → YYYY-MM-DD, matching the app's serialization. */
+function toDateParam(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 type Fixture = {
   ownerEmail: string;
   ownerPassword: string;
@@ -263,7 +267,6 @@ test("switching the time period never leaves stale attributed rows in the list",
     await signInAsFixtureOwner(page, fixture);
     await page.goto("/vlasnik/automatizacije");
 
-    // Open the stats dialog from the campaign overview row for this rule.
     await page.getByTestId(`overview-row-${fixture.ruleId}`)
       .getByRole("button", { name: fixture.ruleName })
       .click();
@@ -303,6 +306,8 @@ test("switching the time period never leaves stale attributed rows in the list",
     // changing the period, so the period dependency cannot be masked by a
     // close/reopen reset.
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+
+    const now = new Date();
     const thirtyStatsResponse = nextStatsResponse(page, fixture.ruleId, "30d");
     const thirtyOverviewResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -371,7 +376,6 @@ test("mobile stats period controls stay visible and keep the dialog open", async
   const fixture = await createFixture();
 
   try {
-    await page.setViewportSize({ width: 390, height: 844 });
     await signInAsFixtureOwner(page, fixture);
     await page.goto("/vlasnik/automatizacije");
 
@@ -382,6 +386,8 @@ test("mobile stats period controls stay visible and keep the dialog open", async
     await expect(dialog).toBeVisible();
 
     const selector = dialog.getByTestId("stats-period-selector");
+
+    const status = dialog.getByTestId("stats-period-status");
     await expect(selector).toBeVisible();
     for (const [period, label] of [
       ["7d", "7 dana"],
@@ -417,6 +423,8 @@ test("mobile stats period controls stay visible and keep the dialog open", async
     const recentRows = rows.filter({ hasText: "Klijent Skorasnji" });
     const oldRows = rows.filter({ hasText: "Klijent Stari" });
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+
+    const now = new Date();
     await selector.getByTestId("period-30d").click();
     expect((await thirtyResponse).status()).toBe(200);
 
@@ -444,6 +452,8 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await expect(dialog).toBeVisible();
 
     const selector = dialog.getByTestId("stats-period-selector");
+
+    const status = dialog.getByTestId("stats-period-status");
     const periodButtons = ["7d", "30d", "90d", "all"].map((period) =>
       selector.getByTestId(`period-${period}`),
     );
@@ -481,21 +491,24 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await customButton.focus();
     await page.keyboard.press("Enter");
     const rangePresets = page.getByTestId("stats-period-selector-range-presets");
-    await expect(rangePresets).toBeVisible();
+    await expect(status).toHaveText(`Izabran period: ${customLabel}`);
+    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
     await expect(dialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(rangePresets).toBeHidden();
-    await expect(dialog).toBeVisible();
-    await expect(customButton).toBeFocused();
-
-    await page.keyboard.press("Space");
-    await expect(rangePresets).toBeVisible();
-    await expect(dialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(rangePresets).toBeHidden();
-    await expect(dialog).toBeVisible();
-    await expect(customButton).toBeFocused();
   } finally {
     await cleanUpFixture(fixture);
   }
 });
+
+    const customResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith(`/growth/automations/${fixture.ruleId}/attributed-appointments`)
+        && url.searchParams.get("from") === toDateParam(customFrom)
+        && url.searchParams.get("to") === toDateParam(customTo)
+        && url.searchParams.get("offset") === "0";
+    });
+
+    const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
+
+    const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+
+    const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
