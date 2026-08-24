@@ -17,7 +17,7 @@ function collectBrowserErrors(page: Page): string[] {
   return errors;
 }
 
-test("customer mobile menu closes with Escape and restores focus", async ({ page }) => {
+test("customer mobile menu traps keyboard focus and restores focus on close", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null } }));
   await page.route("**/api/retail/cart-summary", (route) => route.fulfill({ json: { itemCount: 0 } }));
@@ -33,6 +33,17 @@ test("customer mobile menu closes with Escape and restores focus", async ({ page
   await mobileMenuButton.press("Enter");
   await expect(mobileMenuButton).toHaveAttribute("aria-label", "Zatvori meni");
   await expect(mobileMenu).toBeVisible();
+
+  const mobileMenuLinks = page.getByTestId("mobile-menu").locator("a:visible");
+  const firstMobileMenuLink = mobileMenuLinks.first();
+  const lastMobileMenuLink = mobileMenuLinks.last();
+
+  await mobileMenuButton.press("Tab");
+  await expect(firstMobileMenuLink).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastMobileMenuLink).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstMobileMenuLink).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(mobileMenuButton).toHaveAttribute("aria-label", "Otvori meni");

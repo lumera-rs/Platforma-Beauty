@@ -20,6 +20,7 @@ export function Navbar() {
   const user = userResp?.user;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const { data: cartSummary } = useGetRetailCartSummary({
     query: { queryKey: getGetRetailCartSummaryQueryKey(), staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
   });
@@ -34,9 +35,30 @@ export function Navbar() {
     if (!isMobileMenuOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeMobileMenu();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMobileMenu();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusableElements = Array.from(
+        mobileMenuRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const focusIsOutsideMenu = !mobileMenuRef.current?.contains(document.activeElement);
+
+      if ((event.shiftKey && (document.activeElement === firstElement || focusIsOutsideMenu))
+        || (!event.shiftKey && document.activeElement === lastElement)) {
+        event.preventDefault();
+        (event.shiftKey ? lastElement : firstElement).focus();
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -185,7 +207,7 @@ export function Navbar() {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden border-t bg-background">
+        <div ref={mobileMenuRef} className="md:hidden border-t bg-background" data-testid="mobile-menu">
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             {navLinks.map((link) => (
               <Link 
