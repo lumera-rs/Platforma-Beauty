@@ -686,18 +686,17 @@ export async function runIsolatedApiSuite(
       configuration.testLabel,
     );
   } finally {
-    try {
-      if (databaseMayExist) {
-        await runCommand(
-          "dropdb",
-          ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
-          process.env,
-          "Removing the disposable API test database",
-        );
-      }
-    } finally {
-      await removeHarnessDatabaseManifest(manifestPath);
+    if (databaseMayExist) {
+      await runCommand(
+        "dropdb",
+        ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
+        process.env,
+        "Removing the disposable API test database",
+      );
     }
+    // Remove the manifest only after the database has been removed. If cleanup
+    // fails, recovery can retry the database removal on a later run.
+    await removeHarnessDatabaseManifest(manifestPath);
   }
 }
 

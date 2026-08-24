@@ -536,10 +536,12 @@ void runIsolatedBrowserSuiteCommand({
 async function runInterruptedBrowserScenario(
   blockFrontendReadiness = false,
   signal: InterruptSignal = "SIGTERM",
+  failDatabaseCleanup = false,
 ): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const dropDatabaseFailureMarkerPath = path.join(temporaryRoot, "dropdb-failed");
   const frontendPidPath = path.join(temporaryRoot, "frontend-pid");
   const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
   const browserRunnerScriptPath = path.join(temporaryRoot, "run-browser-suite.ts");
@@ -550,11 +552,14 @@ async function runInterruptedBrowserScenario(
   let unrelatedProcess: ChildProcess | undefined;
   let manifestPath: string | undefined;
   let databaseName: string | undefined;
+  let unrelatedDatabaseName: string | undefined;
+  let unrelatedManifestPath: string | undefined;
   let blockerPid: number | undefined;
 
   try {
     const realBash = await commandPath("bash");
     const realPnpm = await commandPath("pnpm");
+    const realDropdb = failDatabaseCleanup ? await commandPath("dropdb") : undefined;
     await mkdir(binDirectory, { recursive: true });
     await writeBrowserCommandShims(
       binDirectory,
@@ -566,6 +571,9 @@ async function runInterruptedBrowserScenario(
       blockerPidPath,
       blockFrontendReadiness,
     );
+    if (failDatabaseCleanup) {
+      await writeDropDatabaseFailureShim(binDirectory, realBash);
+    }
     await writeFile(
       browserRunnerScriptPath,
       `import { runIsolatedBrowserSuiteCommand } from ${JSON.stringify(
@@ -591,6 +599,12 @@ void runIsolatedBrowserSuiteCommand({
       LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
       LUMERA_LIFECYCLE_REAL_NODE: process.execPath,
       LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
+      ...(failDatabaseCleanup
+        ? {
+            LUMERA_LIFECYCLE_DROPDB_FAILURE_MARKER: dropDatabaseFailureMarkerPath,
+            LUMERA_LIFECYCLE_REAL_DROPDB: realDropdb!,
+          }
+        : {}),
     };
     child = spawn(runnerPath, [browserRunnerScriptPath], {
       cwd: workspaceRoot,
@@ -636,11 +650,15 @@ void runIsolatedBrowserSuiteCommand({
     const exit = await waitForExit(child);
     assert.equal(exit.signal, null, `Runner was terminated directly instead of handling ${signal}.\n${output}`);
     const expectedExitCode = 128 + (signal === "SIGINT" ? 2 : 15);
-    assert.equal(
-      exit.code,
-      expectedExitCode,
-      `Runner did not report ${signal} status ${expectedExitCode}.\n${output}`,
-    );
+    if (failDatabaseCleanup) {
+      assert.equal(exit.code, 1, `Cleanup failure was not reported.\n${output}`);
+    } else {
+      assert.equal(
+        exit.code,
+        expectedExitCode,
+        `Runner did not report ${signal} status ${expectedExitCode}.\n${output}`,
+      );
+    }
 
     await waitForOwnedTestServersToStop(testDatabaseUrl);
     await waitForProcessToStop(frontendPid, "The disposable browser frontend");
@@ -648,8 +666,42 @@ void runIsolatedBrowserSuiteCommand({
       await waitForProcessToStop(blockerPid, "The disposable Playwright check");
     }
     await waitForMarkerProcessesToStop(manifest.manifest.processMarker!);
-    await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
-    assert.equal(await databaseExists(databaseName), false, "Disposable database was not removed.");
+    if (!failDatabaseCleanup) {
+      await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
+      assert.equal(await databaseExists(databaseName), false, "Disposable database was not removed.");
+    } else {
+      await readFile(manifestPath);
+      assert.equal(
+        await databaseExists(databaseName),
+        true,
+        "The disposable database unexpectedly disappeared after the injected cleanup failure.",
+      );
+
+      unrelatedDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+      await createDatabase(unrelatedDatabaseName);
+      unrelatedManifestPath = await writeManifest(manifestDirectory, {
+        version: 1,
+        databaseName: unrelatedDatabaseName,
+        databaseTarget: getDatabaseTarget(),
+        ownerPid: process.pid,
+        ownerProcessIdentity: await getProcessIdentity(process.pid),
+      });
+
+      const recovery = await execFileAsync(
+        runnerPath,
+        [browserRunnerScriptPath, "--recover-interrupted-databases"],
+        { cwd: workspaceRoot, env: environment },
+      );
+      const escapedDatabaseName = databaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      assert.match(
+        recovery.stdout,
+        new RegExp(`Removed interrupted browser test database ${escapedDatabaseName}`),
+      );
+      assert.equal(await databaseExists(databaseName), false, "Recovery did not remove the failed run database.");
+      await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
+      assert.equal(await databaseExists(unrelatedDatabaseName), true, "Recovery removed unrelated database state.");
+      await readFile(unrelatedManifestPath);
+    }
     process.kill(unrelatedProcess.pid, 0);
   } finally {
     if (child && child.exitCode === null && child.signalCode === null) {
@@ -665,8 +717,12 @@ void runIsolatedBrowserSuiteCommand({
     if (databaseName) {
       await dropDatabase(databaseName).catch(() => undefined);
     }
+    if (unrelatedDatabaseName) {
+      await dropDatabase(unrelatedDatabaseName).catch(() => undefined);
+    }
     await rm(manifestDirectory, { recursive: true, force: true });
     await unlink(phaseMarkerPath).catch(() => undefined);
+    await unlink(dropDatabaseFailureMarkerPath).catch(() => undefined);
     await unlink(frontendPidPath).catch(() => undefined);
     await unlink(blockerPidPath).catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
@@ -727,6 +783,137 @@ exec "$LUMERA_LIFECYCLE_REAL_DROPDB" "$@"
     { mode: 0o755 },
   );
   await chmod(path.join(binDirectory, "dropdb"), 0o755);
+}
+
+async function writeApiSuiteCommandShims(
+  binDirectory: string,
+  realBash: string,
+  realPnpm: string,
+): Promise<void> {
+  await writeFile(
+    path.join(binDirectory, "pnpm"),
+    `#!${realBash}
+set -euo pipefail
+if [[ "$*" == *"@workspace/db run push-force"* ]]; then
+  printf 'schema' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+  exit 0
+fi
+if [[ "$*" == *"--filter @workspace/scripts exec tsx --test"* ]]; then
+  printf 'test' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+  exit 0
+fi
+exec "$LUMERA_LIFECYCLE_REAL_PNPM" "$@"
+`,
+    { mode: 0o755 },
+  );
+  await chmod(path.join(binDirectory, "pnpm"), 0o755);
+}
+
+async function runFailedApiSuiteCleanupScenario(): Promise<void> {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-api-suite-lifecycle-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const dropDatabaseFailureMarkerPath = path.join(temporaryRoot, "dropdb-failed");
+  const runnerScriptPath = path.join(temporaryRoot, "run-api-suite.ts");
+  const manifestDirectoryName = `api-suite-lifecycle-${process.pid}-${randomUUID()}`;
+  const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
+  const databasePrefix = `lumera_api_suite_lc_${randomUUID().replaceAll("-", "").slice(0, 8)}_`;
+  let child: ChildProcess | undefined;
+  let databaseName: string | undefined;
+  let unrelatedDatabaseName: string | undefined;
+
+  try {
+    const realBash = await commandPath("bash");
+    const realPnpm = await commandPath("pnpm");
+    const realDropdb = await commandPath("dropdb");
+    await mkdir(binDirectory, { recursive: true });
+    await writeApiSuiteCommandShims(binDirectory, realBash, realPnpm);
+    await writeDropDatabaseFailureShim(binDirectory, realBash);
+    await writeFile(
+      runnerScriptPath,
+      `import { runIsolatedApiSuiteCommand } from ${JSON.stringify(
+        path.join(workspaceRoot, "scripts", "src", "run-isolated-browser-suite.ts"),
+      )};
+
+void runIsolatedApiSuiteCommand({
+  databasePrefix: ${JSON.stringify(databasePrefix)},
+  manifestDirectoryName: ${JSON.stringify(manifestDirectoryName)},
+  testFilePath: "unused-test-file.ts",
+  testLabel: "API suite lifecycle checks",
+  environment: {},
+});
+`,
+      "utf8",
+    );
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      DATABASE_URL: databaseUrl,
+      LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
+      LUMERA_LIFECYCLE_DROPDB_FAILURE_MARKER: dropDatabaseFailureMarkerPath,
+      LUMERA_LIFECYCLE_REAL_DROPDB: realDropdb,
+      LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
+    };
+    child = spawn(runnerPath, [runnerScriptPath], {
+      cwd: workspaceRoot,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+
+    await waitForFile(phaseMarkerPath);
+    const manifest = await readManifest(manifestDirectory);
+    databaseName = manifest.manifest.databaseName;
+    assert.equal(await databaseExists(databaseName), true, `Disposable database was not created.\n${output}`);
+
+    const exit = await waitForExit(child);
+    assert.equal(exit.signal, null, `API suite runner was terminated unexpectedly.\n${output}`);
+    assert.equal(exit.code, 1, `Cleanup failure was not reported.\n${output}`);
+    await readFile(manifest.manifestPath);
+    assert.equal(
+      await databaseExists(databaseName),
+      true,
+      "The disposable database unexpectedly disappeared after the injected cleanup failure.",
+    );
+
+    unrelatedDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    await createDatabase(unrelatedDatabaseName);
+    const unrelatedManifestPath = await writeManifest(manifestDirectory, {
+      version: 1,
+      databaseName: unrelatedDatabaseName,
+      databaseTarget: getDatabaseTarget(),
+      ownerPid: process.pid,
+      ownerProcessIdentity: await getProcessIdentity(process.pid),
+    });
+
+    const recovery = await execFileAsync(
+      runnerPath,
+      [runnerScriptPath, "--recover-interrupted-databases"],
+      { cwd: workspaceRoot, env: environment },
+    );
+    assert.equal(await databaseExists(databaseName), false, "Recovery did not remove the failed run database.");
+    await assert.rejects(readFile(manifest.manifestPath), { code: "ENOENT" });
+    assert.equal(await databaseExists(unrelatedDatabaseName), true, "Recovery removed unrelated database state.");
+    await readFile(unrelatedManifestPath);
+    assert.match(recovery.stdout, new RegExp(databaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child, 5_000).catch(() => undefined);
+    }
+    if (databaseName) {
+      await dropDatabase(databaseName).catch(() => undefined);
+    }
+    if (unrelatedDatabaseName) {
+      await dropDatabase(unrelatedDatabaseName).catch(() => undefined);
+    }
+    await rm(manifestDirectory, { recursive: true, force: true });
+    await unlink(phaseMarkerPath).catch(() => undefined);
+    await unlink(dropDatabaseFailureMarkerPath).catch(() => undefined);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 }
 
 async function runInterruptedScenario(
@@ -1068,6 +1255,14 @@ test("SIGTERM during a disposable API regression shell check cleans every resour
 
 test("failed disposable API regression database cleanup remains recoverable", async () => {
   await runInterruptedScenario("shell", "SIGTERM", true);
+});
+
+test("failed disposable browser database cleanup remains recoverable", async () => {
+  await runInterruptedBrowserScenario(false, "SIGTERM", true);
+});
+
+test("failed disposable API test database cleanup remains recoverable", async () => {
+  await runFailedApiSuiteCleanupScenario();
 });
 
 test("SIGINT during disposable API regression schema setup cleans every resource", async () => {
