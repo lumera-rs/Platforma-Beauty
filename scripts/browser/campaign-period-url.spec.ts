@@ -42,9 +42,14 @@ import { promisify } from "node:util";
 import { expect, test, type Page, type Response } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
 import {
+  appointmentsTable,
+  automationDeliveriesTable,
   automationRulesTable,
+  automationRunsTable,
   db,
+  salonCustomersTable,
   salonsTable,
+  servicesTable,
   usersTable,
 } from "@workspace/db";
 
@@ -155,6 +160,76 @@ async function createFixture(): Promise<Fixture> {
       },
     ]).returning({ id: automationRulesTable.id });
     if (rules.length !== 2) throw new Error("Period-URL browser fixture could not create both rules.");
+
+    const [customer] = await db.insert(salonCustomersTable).values({
+      salonId: salon.id,
+      firstName: "Browser",
+      lastName: "Klijent",
+      email: `browser-period-url-customer-${suffix}@example.test`,
+      smsOptOut: false,
+    }).returning({ id: salonCustomersTable.id });
+    if (!customer) throw new Error("Period-URL browser fixture could not create its customer.");
+
+    const [service] = await db.insert(servicesTable).values({
+      salonId: salon.id,
+      categoryName: "Test",
+      name: `Browser period URL usluga ${suffix}`,
+      description: "Usluga za proveru spring-forward URL perioda.",
+      durationMinutes: 60,
+      price: 1200,
+      imageUrl: "/test-browser-period-url.jpg",
+      active: true,
+    }).returning({ id: servicesTable.id });
+    if (!service) throw new Error("Period-URL browser fixture could not create its service.");
+
+    // Keep current and preceding totals deliberately different. If URL
+    // restore shifts either boundary around the Europe/Belgrade spring-forward
+    // transition, these counts and the rendered trend change.
+    const springEvents = [
+      { tag: "previous-first", at: new Date("2026-03-25T12:00:00.000Z"), date: "2026-03-25" },
+      { tag: "previous-last", at: new Date("2026-03-27T12:00:00.000Z"), date: "2026-03-27" },
+      { tag: "current-before-transition", at: new Date("2026-03-28T12:00:00.000Z"), date: "2026-03-28" },
+      { tag: "current-transition-day", at: new Date("2026-03-29T01:30:00.000Z"), date: "2026-03-29" },
+      { tag: "current-after-transition", at: new Date("2026-03-30T12:00:00.000Z"), date: "2026-03-30" },
+    ] as const;
+    for (const event of springEvents) {
+      const [appointment] = await db.insert(appointmentsTable).values({
+        salonId: salon.id,
+        salonCustomerId: customer.id,
+        serviceId: service.id,
+        date: event.date,
+        startTime: "10:00",
+        endTime: "11:00",
+        durationMinutes: 60,
+        status: "completed",
+        price: 1200,
+        treatmentLocation: "salon",
+      }).returning({ id: appointmentsTable.id });
+      if (!appointment) throw new Error(`Period-URL browser fixture could not create ${event.tag} appointment.`);
+
+      const [run] = await db.insert(automationRunsTable).values({
+        eventKey: `browser-period-url-run-${suffix}-${event.tag}`,
+        ruleId: rules[0]!.id,
+        salonId: salon.id,
+        salonCustomerId: customer.id,
+        status: "sent",
+        executedAt: event.at,
+        sentAt: event.at,
+        attributedAppointmentId: appointment.id,
+      }).returning({ id: automationRunsTable.id });
+      if (!run) throw new Error(`Period-URL browser fixture could not create ${event.tag} run.`);
+
+      await db.insert(automationDeliveriesTable).values({
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `browser-period-url-delivery-${suffix}-${event.tag}`,
+        channel: "email",
+        recipientEmail: `browser-period-url-recipient-${suffix}@example.test`,
+        status: "sent",
+        sentAt: event.at,
+        deliveredAt: event.at,
+      });
+    }
 
     return {
       ownerEmail,
@@ -440,6 +515,78 @@ test.describe("shared campaign period links restore the picked window", () => {
     await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
     await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
     await expect(reloadedDialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
+  });
+
+  test.describe("Europe/Belgrade spring-forward shared links", () => {
+    test.use({ timezoneId: "Europe/Belgrade" });
+
+    test("restores the exact custom range and current/previous totals after reload", async ({ page }) => {
+      await page.clock.install({ time: new Date("2026-03-31T12:00:00.000Z") });
+      await signInAsFixtureOwner(page, fixture);
+
+      const expected = { period: null, from: "2026-03-28", to: "2026-03-30" };
+      const sharedStatsUrl = `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}&rule=${fixture.ruleId}`;
+      const expectedPayload = {
+        totalRuns: 3,
+        attributedAppointments: 3,
+        emailSentCount: 3,
+        emailDeliveredCount: 3,
+        previous: {
+          attributedAppointments: 2,
+          emailDeliveredCount: 2,
+        },
+      };
+
+      const overviewResponse = nextOverviewStatsResponse(page, expected);
+      const detailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+      await page.goto(sharedStatsUrl);
+
+      const overviewResponseValue = await overviewResponse;
+      expect(overviewResponseValue.status()).toBe(200);
+      expect(new URL(overviewResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      const overviewPayload = await overviewResponseValue.json() as Array<Record<string, any>>;
+      expect(overviewPayload.find((item) => item.ruleId === fixture.ruleId)).toMatchObject(expectedPayload);
+      const detailResponseValue = await detailResponse;
+      expect(new URL(detailResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      expect(await detailResponseValue.json()).toMatchObject(expectedPayload);
+
+      const expectedRangeLabel = /28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./;
+      const assertRestoredView = async () => {
+        await expect(page).toHaveURL(
+          `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}&rule=${fixture.ruleId}`,
+        );
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+          .toHaveText(expectedRangeLabel);
+        await expect(dialog.getByTestId("stats-period-selector").getByTestId("period-custom"))
+          .toHaveText(expectedRangeLabel);
+        await expect(dialog.getByTestId("stats-period-status")).toContainText("28. 3. 2026.");
+        await expect(dialog.getByTestId("stats-period-status")).toContainText("30. 3. 2026.");
+        await expect(page.getByTestId(`overview-row-${fixture.ruleId}`).locator("td").nth(1))
+          .toContainText("Poslato: 3");
+        await expect(page.getByTestId(`overview-row-${fixture.ruleId}`).locator("td").nth(1))
+          .toContainText("Isporučeno: 3");
+        await expect(dialog.getByTestId("funnel-email")).toContainText("Isporučeno: 3");
+        await expect(dialog.getByTestId("stats-trend-appointments")).toContainText("+50%");
+        await expect(dialog.getByTestId("stats-trend-email-delivered")).toContainText("+50%");
+      };
+      await assertRestoredView();
+
+      const reloadedOverviewResponse = nextOverviewStatsResponse(page, expected);
+      const reloadedDetailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+      await page.reload();
+
+      const reloadedOverviewResponseValue = await reloadedOverviewResponse;
+      expect(reloadedOverviewResponseValue.status()).toBe(200);
+      expect(new URL(reloadedOverviewResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      const reloadedOverviewPayload = await reloadedOverviewResponseValue.json() as Array<Record<string, any>>;
+      expect(reloadedOverviewPayload.find((item) => item.ruleId === fixture.ruleId)).toMatchObject(expectedPayload);
+      const reloadedDetailResponseValue = await reloadedDetailResponse;
+      expect(new URL(reloadedDetailResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      expect(await reloadedDetailResponseValue.json()).toMatchObject(expectedPayload);
+      await assertRestoredView();
+    });
   });
 
   test("manually picking two dates writes exact dates and restores them after reload", async ({ page }) => {

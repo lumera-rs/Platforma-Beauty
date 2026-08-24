@@ -64,6 +64,20 @@ test("a complete valid from/to pair restores the exact custom range", () => {
   assertRange(selection, new Date(2026, 0, 5), new Date(2026, 1, 10));
 });
 
+test("a Belgrade spring-forward range round-trips its exact local calendar dates", () => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = "Europe/Belgrade";
+  try {
+    const search = "?from=2026-03-28&to=2026-03-30";
+    const selection = parsePeriodSelection(search, new Date(2026, 2, 31, 12));
+    assertRange(selection, new Date(2026, 2, 28), new Date(2026, 2, 30));
+    assert.equal(roundTripSearch(search, new Date(2026, 2, 31, 12)), "from=2026-03-28&to=2026-03-30");
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+});
+
 test("a single-day range (from equals to) is valid", () => {
   const selection = parsePeriodSelection("?from=2026-03-15&to=2026-03-15");
   assertRange(selection, new Date(2026, 2, 15), new Date(2026, 2, 15));
