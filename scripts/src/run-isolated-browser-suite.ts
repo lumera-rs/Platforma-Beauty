@@ -431,7 +431,7 @@ export async function recoverInterruptedHarnessDatabases(
     return;
   }
 
-  const cleanupErrors: unknown[] = [];
+  const cleanupErrors: Array<{ databaseName: string; error: unknown }> = [];
   let removedDatabaseCount = 0;
   for (const { manifest, manifestPath } of manifests) {
     try {
@@ -453,14 +453,20 @@ export async function recoverInterruptedHarnessDatabases(
       removedDatabaseCount += 1;
       console.log(`Removed interrupted ${suiteLabel} test database ${manifest.databaseName}.`);
     } catch (error) {
-      cleanupErrors.push(error);
+      cleanupErrors.push({ databaseName: manifest.databaseName, error });
     }
   }
 
   if (cleanupErrors.length > 0) {
+    const cleanupDetails = cleanupErrors
+      .map(({ databaseName, error }) =>
+        `${suiteLabel} test database ${databaseName}: ${
+          error instanceof Error ? error.message : String(error)
+        }`)
+      .join("; ");
     throw new AggregateError(
-      cleanupErrors,
-      `One or more interrupted ${suiteLabel} test databases could not be removed.`,
+      cleanupErrors.map(({ error }) => error),
+      `One or more interrupted ${suiteLabel} test databases could not be removed: ${cleanupDetails}`,
     );
   }
   if (removedDatabaseCount === 0) {

@@ -513,6 +513,108 @@ test("standalone browser cleanup entry points report browser suite wording", asy
   }
 });
 
+test("standalone browser cleanup entry points fail and preserve failed cleanup fixtures", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-standalone-recovery-failure-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const originalPath = process.env.PATH;
+  const standaloneRunners = [
+    {
+      scriptPath: path.join(workspaceRoot, "scripts", "src", "run-retention-preview.ts"),
+      databasePrefix: "lumera_retention_estimate_browser_",
+      manifestDirectoryName: "retention-preview-estimate-browser-databases",
+    },
+    {
+      scriptPath: path.join(workspaceRoot, "scripts", "src", "run-infobip-registration-browser.ts"),
+      databasePrefix: "lumera_infobip_registration_browser_",
+      manifestDirectoryName: "infobip-registration-browser-databases",
+    },
+  ] as const;
+  const manifestPaths: string[] = [];
+  const manifestDirectories = new Set<string>();
+
+  try {
+    await mkdir(binDirectory, { recursive: true });
+    await writeFile(
+      path.join(binDirectory, "dropdb"),
+      "#!/bin/sh\nprintf 'injected standalone cleanup failure\\n' >&2\nexit 1\n",
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+
+    for (const runner of standaloneRunners) {
+      const databaseName =
+        `${runner.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+      const manifestDirectory = path.join(
+        workspaceRoot,
+        ".lumera-test-state",
+        runner.manifestDirectoryName,
+      );
+      manifestDirectories.add(manifestDirectory);
+      await mkdir(manifestDirectory, { recursive: true });
+      const manifestPath = await writeManifest(manifestDirectory, {
+        version: 1,
+        databaseName,
+        databaseTarget: getDatabaseTarget(),
+        ownerPid: 2_147_483_647,
+        ownerProcessIdentity: "stale-process",
+      });
+      manifestPaths.push(manifestPath);
+
+      await assert.rejects(
+        execFileAsync(
+          runnerPath,
+          [runner.scriptPath, "--recover-interrupted-databases"],
+          {
+            cwd: workspaceRoot,
+            env: {
+              ...process.env,
+              DATABASE_URL: databaseUrl,
+            },
+          },
+        ),
+        (error: unknown) => {
+          assert.ok(error && typeof error === "object");
+          const commandError = error as { stdout?: string; stderr?: string; code?: number };
+          assert.equal(commandError.code, 1);
+          assert.equal(commandError.stdout, "");
+          assert.match(
+            commandError.stderr ?? "",
+            new RegExp(
+              `One or more interrupted browser test databases could not be removed: browser test database ${
+                databaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              }`,
+            ),
+          );
+          assert.doesNotMatch(
+            commandError.stderr ?? "",
+            new RegExp(`Removed interrupted browser test database ${
+              databaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            }`),
+          );
+          return true;
+        },
+      );
+      await readFile(manifestPath);
+    }
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
+    await Promise.all(
+      [...manifestDirectories].map(async (manifestDirectory) => {
+        try {
+          if ((await readdir(manifestDirectory)).length === 0) {
+            await rmdir(manifestDirectory);
+          }
+        } catch {
+          // Preserve state directories created by another test or active runner.
+        }
+      }),
+    );
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 async function writeBrowserCommandShims(
   binDirectory: string,
   realBash: string,
