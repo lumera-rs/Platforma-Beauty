@@ -444,6 +444,46 @@ test.describe("shared campaign period links restore the picked window", () => {
     })).toEqual({ from: "2026-04-01", to: "2026-04-30", tracking: "history-custom" });
   });
 
+  test.describe("Europe/Belgrade custom-range history", () => {
+    test.use({ timezoneId: "Europe/Belgrade" });
+
+    test("Back and Forward preserve spring-forward and autumn-rollback dates with tracking params", async ({ page }) => {
+      await page.clock.install({ time: new Date("2026-10-27T12:00:00.000Z") });
+      await signInAsFixtureOwner(page, fixture);
+
+      const springUrl = "/vlasnik/automatizacije?from=2026-03-28&to=2026-03-30&utm_source=history-dst";
+      const autumnUrl = "/vlasnik/automatizacije?from=2026-10-24&to=2026-10-26&utm_source=history-dst";
+      const overview = page.getByTestId("overview-period-selector");
+      const customButton = overview.getByTestId("period-custom");
+      const expectSearchParams = async (from: string, to: string) => {
+        expect(await page.evaluate(() => {
+          const params = new URLSearchParams(window.location.search);
+          return { from: params.get("from"), to: params.get("to"), tracking: params.get("utm_source") };
+        })).toEqual({ from, to, tracking: "history-dst" });
+      };
+
+      await page.goto(springUrl);
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toHaveText(/28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./);
+      await expectSearchParams("2026-03-28", "2026-03-30");
+
+      await page.goto(autumnUrl);
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toHaveText(/24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./);
+      await expectSearchParams("2026-10-24", "2026-10-26");
+
+      await page.goBack();
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toHaveText(/28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./);
+      await expectSearchParams("2026-03-28", "2026-03-30");
+
+      await page.goForward();
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toHaveText(/24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./);
+      await expectSearchParams("2026-10-24", "2026-10-26");
+    });
+  });
+
   test("clicking last month writes exact dates and restores them after reload", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-08-23T12:00:00.000Z") });
     await signInAsFixtureOwner(page, fixture);
