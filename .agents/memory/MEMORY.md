@@ -57,6 +57,7 @@
 - [Polling regression clocks](polling-regression-clocks.md) — install Playwright clock control before navigation when advancing query polling deterministically.
 - [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.
 - [Wouter query-string reactivity](wouter-query-string-reactivity.md) — useLocation() tracks only the pathname; query-driven UI must subscribe via useSearch() or same-path ?param navigation never re-renders.
+- [History URL state rehydration](history-url-state-rehydration.md) — restore every query-backed local state field before the URL mirror runs on Back/Forward.
 - [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
 - [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
 - [Browser suite shared-state locks](browser-suite-shared-state-locks.md) — spec files writing one global table need a file-lifetime advisory lock; fullyParallel:false doesn't serialize across files.

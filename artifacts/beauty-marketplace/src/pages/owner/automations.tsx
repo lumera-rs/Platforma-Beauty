@@ -624,8 +624,8 @@ export default function OwnerAutomations() {
   const searchString = useSearch();
 
   // The picked window is restored from the URL on load (bookmark/shared link).
-  // One-shot read on mount is intentional: after mount, local state leads and
-  // is mirrored back into the URL below.
+  // Browser Back/Forward rehydrates it through the search-string effect below;
+  // after that, local state is mirrored back into the URL.
   const [initialSelection] = useState(() => parsePeriodSelection(window.location.search));
   const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>(initialSelection.period);
   const [customRange, setCustomRange] = useState<DateRange | undefined>(initialSelection.range);
@@ -656,6 +656,9 @@ export default function OwnerAutomations() {
     skipUrlMirrorRef.current = true;
     const params = new URLSearchParams(searchString);
     const urlRuleId = params.get("rule");
+    const restoredSelection = parsePeriodSelection(searchString);
+    setStatsPeriod(restoredSelection.period);
+    setCustomRange(restoredSelection.range);
     setAttributedClientType(parseAttributedClientType(searchString));
     setStatsRuleId(null);
     setPendingRuleId(urlRuleId);

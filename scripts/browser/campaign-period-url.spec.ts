@@ -3,9 +3,10 @@
  *
  * The pure restore/fallback logic is unit-tested in
  * artifacts/beauty-marketplace/src/lib/campaign-period-url.test.ts. This spec
- * guards the wiring that unit tests cannot see: the one-shot mount read of
- * window.location.search in owner/automations.tsx, the wouter-based URL-sync
- * effect, and the period selector actually reflecting the restored value.
+ * guards the wiring that unit tests cannot see: the initial and history reads
+ * of window.location.search in owner/automations.tsx, the wouter-based
+ * URL-sync effect, and the period selector actually reflecting the restored
+ * value.
  * A regression there (e.g. the mount read moving after the selector
  * initializes) would silently break every shared/bookmarked period link.
  *
@@ -21,6 +22,10 @@
  *     rewritten URL both carry the clamped end date.
  *  5. Picking two dates in the calendar → the exact local from/to values are
  *     written without ?period=, and the custom button restores them after reload.
+ *  6. Browser Back/Forward → preset windows are restored in the overview and
+ *     stats dialog without dropping an unrelated tracking parameter.
+ *  7. Browser Back/Forward → valid custom windows are restored in the overview
+ *     and stats dialog with their exact from/to values.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -203,6 +208,82 @@ test.describe("shared campaign period links restore the picked window", () => {
 
     // A complete valid custom range round-trips unchanged.
     await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?from=2026-03-01&to=2026-03-31$/);
+  });
+
+  test("Back and Forward restore preset periods in the overview and stats dialog", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    await page.goto("/vlasnik/automatizacije?period=7d&utm_source=history-preset");
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-7d"))
+      .toHaveAttribute("aria-pressed", "true");
+
+    await page.goto("/vlasnik/automatizacije?period=30d&utm_source=history-preset");
+    const overview = page.getByTestId("overview-period-selector");
+    await expect(overview.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?.*history-preset/);
+    expect(await page.evaluate(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { period: params.get("period"), tracking: params.get("utm_source") };
+    })).toEqual({ period: "7d", tracking: "history-preset" });
+    await expect(overview.getByTestId("period-7d")).toHaveAttribute("aria-pressed", "true");
+    await expect(overview.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "false");
+
+    await page.getByRole("button", { name: "Statistika" }).first().click();
+    const statsSelector = page.getByTestId("stats-period-selector");
+    await expect(statsSelector).toBeVisible();
+    await expect(statsSelector.getByTestId("period-7d")).toHaveAttribute("aria-pressed", "true");
+    await expect(statsSelector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("Escape");
+
+    await page.goForward();
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?.*history-preset/);
+    await expect(overview.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+    await expect(overview.getByTestId("period-7d")).toHaveAttribute("aria-pressed", "false");
+    expect(await page.evaluate(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { period: params.get("period"), tracking: params.get("utm_source") };
+    })).toEqual({ period: "30d", tracking: "history-preset" });
+  });
+
+  test("Back and Forward restore valid custom ranges in the overview and stats dialog", async ({ page }) => {
+    await signInAsFixtureOwner(page, fixture);
+
+    await page.goto("/vlasnik/automatizacije?from=2026-03-01&to=2026-03-31&utm_source=history-custom");
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+      .toContainText("2026");
+
+    await page.goto("/vlasnik/automatizacije?from=2026-04-01&to=2026-04-30&utm_source=history-custom");
+    const overview = page.getByTestId("overview-period-selector");
+    const customButton = overview.getByTestId("period-custom");
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(/1\.\s*4\.\s*2026\.\s*–\s*30\.\s*4\.\s*2026\./);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?.*history-custom/);
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(/1\.\s*3\.\s*2026\.\s*–\s*31\.\s*3\.\s*2026\./);
+    expect(await page.evaluate(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { from: params.get("from"), to: params.get("to"), tracking: params.get("utm_source") };
+    })).toEqual({ from: "2026-03-01", to: "2026-03-31", tracking: "history-custom" });
+
+    await page.getByRole("button", { name: "Statistika" }).first().click();
+    const statsSelector = page.getByTestId("stats-period-selector");
+    await expect(statsSelector).toBeVisible();
+    await expect(statsSelector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
+    await expect(statsSelector.getByTestId("period-custom"))
+      .toHaveText(/1\.\s*3\.\s*2026\.\s*–\s*31\.\s*3\.\s*2026\./);
+    await page.keyboard.press("Escape");
+
+    await page.goForward();
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?.*history-custom/);
+    await expect(customButton).toHaveText(/1\.\s*4\.\s*2026\.\s*–\s*30\.\s*4\.\s*2026\./);
+    expect(await page.evaluate(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { from: params.get("from"), to: params.get("to"), tracking: params.get("utm_source") };
+    })).toEqual({ from: "2026-04-01", to: "2026-04-30", tracking: "history-custom" });
   });
 
   test("clicking last month writes exact dates and restores them after reload", async ({ page }) => {
