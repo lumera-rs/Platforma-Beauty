@@ -25,9 +25,12 @@
  *  6. Picking dates across a calendar-month transition → navigation preserves
  *     the pending start, writes the exact inclusive cross-month range without
  *     ?period=, and the closed/reloaded picker keeps displaying it.
- *  7. Browser Back/Forward → preset windows are restored in the overview and
+ *  7. Keyboard-picking dates across a calendar-month transition → focused
+ *     calendar controls and Enter preserve the exact inclusive range through
+ *     close and reload.
+ *  8. Browser Back/Forward → preset windows are restored in the overview and
  *     stats dialog without dropping an unrelated tracking parameter.
- *  8. Browser Back/Forward → valid custom windows are restored in the overview
+ *  9. Browser Back/Forward → valid custom windows are restored in the overview
  *     and stats dialog with their exact from/to values.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
@@ -498,6 +501,82 @@ test.describe("shared campaign period links restore the picked window", () => {
     await expect(customButton).toHaveAttribute("aria-pressed", "true");
     await expect(customButton).toHaveText(expectedRangeLabel);
     await expect(calendar).toBeHidden();
+
+    const reloadStatsResponse = nextOverviewStatsResponse(page, {
+      period: null,
+      from: toDateParam(fromDate),
+      to: toDateParam(toDate),
+    });
+    await page.reload();
+
+    expect((await reloadStatsResponse).status()).toBe(200);
+    const reloadedCustomButton = page.getByTestId("overview-period-selector")
+      .getByTestId("period-custom");
+    await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
+  });
+
+  test("keyboard-picking dates across calendar months keeps the inclusive range after close and reload", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-08-23T12:00:00.000Z") });
+    await signInAsFixtureOwner(page, fixture);
+
+    await page.goto("/vlasnik/automatizacije?period=30d");
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    const customTrigger = selector.getByTestId("period-custom");
+    await customTrigger.focus();
+    await expect(customTrigger).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const calendar = page.getByTestId("overview-period-selector-range-calendar");
+    await expect(calendar).toBeVisible();
+
+    // Use the actual keyboard focus path for both month navigation and date
+    // selection. The start must survive the month transition before the
+    // second Enter completes the range.
+    const previousMonth = calendar.getByRole("button", { name: /previous month/i });
+    await previousMonth.focus();
+    await expect(previousMonth).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const fromDate = new Date(2026, 6, 31);
+    const toDate = new Date(2026, 7, 3);
+    const fromDay = calendar.locator(`button[data-day="${fromDate.toLocaleDateString()}"]`);
+    await expect(fromDay).toHaveCount(1);
+    await fromDay.focus();
+    await expect(fromDay).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const nextMonth = calendar.getByRole("button", { name: /next month/i });
+    await nextMonth.focus();
+    await expect(nextMonth).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    const toDay = calendar.locator(`button[data-day="${toDate.toLocaleDateString()}"]`);
+    await expect(toDay).toHaveCount(1);
+    await toDay.focus();
+    await expect(toDay).toBeFocused();
+
+    const statsResponse = nextOverviewStatsResponse(page, {
+      period: null,
+      from: toDateParam(fromDate),
+      to: toDateParam(toDate),
+    });
+    await page.keyboard.press("Enter");
+
+    expect((await statsResponse).status()).toBe(200);
+    await expect(page).toHaveURL(
+      new RegExp(`/vlasnik/automatizacije\\?from=${toDateParam(fromDate)}&to=${toDateParam(toDate)}$`),
+    );
+    expect(new URL(page.url()).searchParams.get("period")).toBeNull();
+
+    const expectedRangeLabel = ` ${fromDate.toLocaleDateString("sr-RS")} – ${toDate.toLocaleDateString("sr-RS")}`;
+    const customButton = selector.getByTestId("period-custom");
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(expectedRangeLabel);
+    await expect(calendar).toBeHidden();
+    await expect(customButton).toBeFocused();
 
     const reloadStatsResponse = nextOverviewStatsResponse(page, {
       period: null,
