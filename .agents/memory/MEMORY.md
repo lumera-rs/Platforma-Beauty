@@ -54,6 +54,7 @@
 - [Platform-wide preview guards](platform-wide-preview-guards.md) — admin dry-runs over all tenants must bound rows in memory and enforce the time budget on every step, database-side included.
 - [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form's loaded base version, not the live polled one.
 - [Conflict cancellation freshness](conflict-cancellation-freshness.md) — a conflict dialog must not close until cancelled edits are rebased on a confirmed active version.
+- [Polling regression clocks](polling-regression-clocks.md) — install Playwright clock control before navigation when advancing query polling deterministically.
 - [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.
 - [Wouter query-string reactivity](wouter-query-string-reactivity.md) — useLocation() tracks only the pathname; query-driven UI must subscribe via useSearch() or same-path ?param navigation never re-renders.
 - [Provider repair write selection](provider-repair-write-selection.md) — one-click repair write paths need stateful-fake coverage of which record gets overwritten; verdict softening never guards writes.
