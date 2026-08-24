@@ -169,7 +169,7 @@ async function assertVisibleHelpLinksReachSections(
   page: Page,
   startPath: string,
   expectedIds: readonly string[],
-  options: { mobileMenu?: boolean; keyboard?: boolean } = {},
+  options: { mobileMenu?: boolean; keyboard?: boolean; assertFocusIndicator?: boolean } = {},
 ): Promise<void> {
   await page.goto(startPath);
   await expect(page.locator("body")).not.toContainText("404");
@@ -200,6 +200,28 @@ async function assertVisibleHelpLinksReachSections(
     if (options.keyboard) {
       await shortcut.focus();
       await expect(shortcut).toBeFocused();
+      if (options.assertFocusIndicator) {
+        const focusIndicator = await shortcut.evaluate((element) => {
+          const styles = window.getComputedStyle(element);
+          const outlineWidth = Number.parseFloat(styles.outlineWidth);
+          const shadowDimensions = styles.boxShadow.match(/-?\d*\.?\d+px/g)?.map(Number) ?? [];
+
+          return {
+            hasVisibleOutline: styles.outlineStyle !== "none"
+              && Number.isFinite(outlineWidth)
+              && outlineWidth > 0,
+            hasVisibleShadow: styles.boxShadow !== "none"
+              && shadowDimensions.some((dimension) => dimension !== 0),
+            outlineStyle: styles.outlineStyle,
+            outlineWidth: styles.outlineWidth,
+            boxShadow: styles.boxShadow,
+          };
+        });
+        expect(
+          focusIndicator.hasVisibleOutline || focusIndicator.hasVisibleShadow,
+          `${sectionId} must expose a visible focus outline or ring with non-zero geometry.`,
+        ).toBeTruthy();
+      }
       await Promise.all([navigation, shortcut.press("Enter")]);
     } else {
       await Promise.all([navigation, shortcut.click()]);
@@ -276,7 +298,10 @@ test("owner desktop help shortcuts open their matching guide sections from the k
   try {
     await signIn(page, fixture.owner);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_HELP_IDS, { keyboard: true });
+    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_HELP_IDS, {
+      keyboard: true,
+      assertFocusIndicator: true,
+    });
     expect(browserErrors, "The owner desktop keyboard guide journey must not produce browser errors.").toEqual([]);
   } finally {
     await cleanUpGuideHelpFixture(fixture);
@@ -291,7 +316,10 @@ test("employee desktop help shortcuts open their matching guide sections from th
   try {
     await signIn(page, fixture.employee);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_HELP_IDS, { keyboard: true });
+    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_HELP_IDS, {
+      keyboard: true,
+      assertFocusIndicator: true,
+    });
     expect(browserErrors, "The employee desktop keyboard guide journey must not produce browser errors.").toEqual([]);
   } finally {
     await cleanUpGuideHelpFixture(fixture);
