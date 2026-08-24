@@ -5412,6 +5412,8 @@ components:
         id: { type: string }
         name: { type: string }
         slug: { type: string }
+        active: { type: boolean }
+        isVerified: { type: boolean }
         videoUrl: { type: ["string", "null"] }
         acceptsCards: { type: boolean }
         instantBooking: { type: boolean }
@@ -5423,7 +5425,7 @@ components:
         gallery:
           type: array
           items: { type: string }
-      required: [id, name, slug, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, gallery]
+      required: [id, name, slug, active, isVerified, videoUrl, acceptsCards, instantBooking, homeService, homeServiceRadiusKm, servesMen, openSunday, imageUrl, gallery]
     SalonProfileMediaUpdate:
       type: object
       properties:

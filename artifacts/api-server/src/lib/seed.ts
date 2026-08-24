@@ -251,6 +251,7 @@ async function seed(): Promise<void> {
     await backfillSalonCustomers();
     await setDemoLotosActiveSalon();
     await seedShippingConfig();
+    await seedDemoRetailCatalog();
     return;
   }
 
@@ -386,6 +387,7 @@ async function seed(): Promise<void> {
       unit: index % 2 === 0 ? "kom" : "500 ml",
     })),
   ).returning();
+  await seedDemoRetailCatalog();
 
   const tiers = await db.insert(loyaltyTiersTable).values([
     { name: "START", sortOrder: 1, spendThreshold: 0, subscriptionDiscountPercent: 0, productDiscountPercent: 0, benefits: ["Osnovna podrška", "Pristup B2B shopu"] },
@@ -515,6 +517,44 @@ async function seed(): Promise<void> {
   await synchronizeInferredServesMen();
   await seedCourierServices();
   void customer;
+}
+
+async function seedDemoRetailCatalog() {
+  const [demoAdmin] = await db.select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, "admin@lumera.local"))
+    .limit(1);
+  if (!demoAdmin) return;
+
+  await db.update(productsTable).set({
+    name: "Vitamin C serum 30 ml",
+    unit: "30 ml",
+  }).where(and(
+    eq(productsTable.sku, "LUM-0004"),
+    eq(productsTable.name, "Vitamin C serum 4"),
+  ));
+
+  const [demoSerum] = await db.select({
+    id: productsTable.id,
+    price: productsTable.price,
+    discountPrice: productsTable.discountPrice,
+  }).from(productsTable)
+    .where(and(
+      eq(productsTable.sku, "LUM-0004"),
+      eq(productsTable.retailEnabled, false),
+      sql`${productsTable.publicPrice} is null`,
+    ))
+    .limit(1);
+  if (!demoSerum) return;
+
+  await db.update(productsTable).set({
+    retailEnabled: true,
+    publicDescription: "Vitamin C serum za svakodnevnu kućnu negu lica. Lagana formula pomaže da koža izgleda svežije i ujednačenije. Naneti nekoliko kapi na očišćenu kožu i zatim koristiti hidratantnu kremu; izbegavati direktan kontakt sa očima.",
+    publicPrice: demoSerum.price,
+    publicDiscountPrice: demoSerum.discountPrice,
+    weightGrams: 50,
+    isNew: true,
+  }).where(eq(productsTable.id, demoSerum.id));
 }
 
 async function setDemoLotosActiveSalon() {

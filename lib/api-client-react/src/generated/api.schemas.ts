@@ -607,6 +607,8 @@ export interface SalonProfileMedia {
   id: string;
   name: string;
   slug: string;
+  active: boolean;
+  isVerified: boolean;
   /** @nullable */
   videoUrl: string | null;
   acceptsCards: boolean;

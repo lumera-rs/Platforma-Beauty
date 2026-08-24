@@ -1,12 +1,13 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
+import { BadgeCheck, CircleAlert, Copy, CreditCard, ExternalLink, House, ImagePlus, Loader2, Save, Trash2, UserRoundCheck, Video, Zap } from "lucide-react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
@@ -124,6 +125,7 @@ export default function OwnerSalonProfile() {
   );
   const widgetUrl = salon ? `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/widget/${salon.slug}${widgetColor ? `?boja=${widgetColor.slice(1)}` : ""}` : "";
   const widgetSnippet = `<iframe src="${widgetUrl}" style="border:0;width:100%;max-width:420px;height:640px" title="Zakazivanje"></iframe>`;
+  const widgetAvailable = Boolean(salon?.active && salon.isVerified);
   const copyWidgetSnippet = async () => {
     try {
       await navigator.clipboard.writeText(widgetSnippet);
@@ -156,15 +158,34 @@ export default function OwnerSalonProfile() {
                   <CardDescription>Posetioci rezervišu direktno na vašem sajtu, a zahtev stiže kao pending termin koji vi potvrđujete.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <div className="space-y-2"><label htmlFor="widget-color" className="text-sm font-medium">Boja akcija</label><div className="flex items-center gap-2"><input id="widget-color" type="color" value={widgetColor} onChange={(event) => setWidgetColor(event.target.value)} className="h-10 w-12 rounded border p-1" data-testid="widget-color" /><Input value={widgetColor} onChange={(event) => /^#[0-9a-fA-F]{0,6}$/.test(event.target.value) && setWidgetColor(event.target.value)} className="h-10 w-28" /></div></div>
-                    <a href={widgetUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-muted" data-testid="widget-preview">Pregled widgeta <ExternalLink className="ml-2 h-3.5 w-3.5" /></a>
-                  </div>
-                  <div className="rounded-lg border bg-muted/30 p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kod za kopiranje</p>
-                    <code className="block break-all text-xs leading-5 text-foreground">{widgetSnippet}</code>
-                  </div>
-                  <Button type="button" variant="outline" onClick={() => void copyWidgetSnippet()} data-testid="widget-copy"><Copy className="mr-2 h-4 w-4" />Kopiraj iframe kod</Button>
+                  {widgetAvailable ? (
+                    <>
+                      <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950" data-testid="widget-status-active">
+                        <BadgeCheck className="h-4 w-4" />
+                        <AlertTitle>Widget je aktivan</AlertTitle>
+                        <AlertDescription>Salon je aktivan i verifikovan. Link i iframe kod ispod mogu odmah da se objave na vašem sajtu.</AlertDescription>
+                      </Alert>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <div className="space-y-2"><label htmlFor="widget-color" className="text-sm font-medium">Boja akcija</label><div className="flex items-center gap-2"><input id="widget-color" type="color" value={widgetColor} onChange={(event) => setWidgetColor(event.target.value)} className="h-10 w-12 rounded border p-1" data-testid="widget-color" /><Input value={widgetColor} onChange={(event) => /^#[0-9a-fA-F]{0,6}$/.test(event.target.value) && setWidgetColor(event.target.value)} className="h-10 w-28" /></div></div>
+                        <a href={widgetUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center rounded-md border px-4 text-sm font-medium hover:bg-muted" data-testid="widget-preview">Pregled widgeta <ExternalLink className="ml-2 h-3.5 w-3.5" /></a>
+                      </div>
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Kod za kopiranje</p>
+                        <code className="block break-all text-xs leading-5 text-foreground">{widgetSnippet}</code>
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => void copyWidgetSnippet()} data-testid="widget-copy"><Copy className="mr-2 h-4 w-4" />Kopiraj iframe kod</Button>
+                    </>
+                  ) : (
+                    <Alert className="border-amber-300 bg-amber-50 text-amber-950" data-testid="widget-status-unavailable">
+                      <CircleAlert className="h-4 w-4" />
+                      <AlertTitle>Widget još nije dostupan za objavljivanje</AlertTitle>
+                      <AlertDescription>
+                        {!salon.active
+                          ? "Salon trenutno nije aktivan. Widget će postati dostupan kada administrator aktivira salon i potvrdi verifikaciju."
+                          : "Salon je aktivan, ali verifikacija još nije završena. Nakon administratorske potvrde ovde će se pojaviti pregled i iframe kod; do tada javni widget namerno ostaje nedostupan."}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </CardContent>
               </Card>
 

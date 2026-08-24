@@ -4,6 +4,7 @@ import {
   getGetAuthSignInMethodsQueryKey,
   getGetAppointmentSalonContactQueryKey,
   getGetCustomerDashboardQueryKey,
+  getListCustomerRetailOrdersQueryKey,
   getListFavoritesQueryKey,
   getListMyAppointmentsQueryKey,
   getListCustomerAppointmentTreatmentPhotosQueryKey,
@@ -15,6 +16,7 @@ import {
   useGetAppointmentSalonContact,
   useListFavorites,
   useListMyAppointments,
+  useListCustomerRetailOrders,
   useCustomerListMyPurchases,
   useListCustomerAppointmentTreatmentPhotos,
 } from "@workspace/api-client-react";
@@ -34,7 +36,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Camera, Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box, ChevronDown } from "lucide-react";
+import { AlertTriangle, Camera, Calendar, Clock, MapPin, Loader2, KeyRound, Link2, Link2Off, ShieldCheck, Heart, RotateCcw, Sparkles, GraduationCap, Box, ChevronDown } from "lucide-react";
 import { useLocation, useSearch, Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,10 +52,12 @@ import { EducationPurchases } from "@/components/education-purchases";
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
 
 function CustomerRetailOrders() {
-  const [orders, setOrders] = useState<Array<{ id: string; orderNumber: string; status: string; total: number; createdAt: string; items: Array<{ id: string; name: string; quantity: number }> }> | null>(null);
-  useEffect(() => { void fetch("/api/customer/retail-orders", { credentials: "include" }).then((r) => r.ok ? r.json() : Promise.reject()).then(setOrders).catch(() => setOrders([])); }, []);
-  if (!orders) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
-  if (!orders.length) return <Empty className="border bg-card py-14"><EmptyHeader><EmptyMedia variant="icon"><Box /></EmptyMedia><EmptyTitle>Nemate retail porudžbine</EmptyTitle><EmptyDescription>Proizvode za kućnu negu možete poručiti iz javne prodavnice.</EmptyDescription></EmptyHeader><EmptyContent><Button asChild><Link href="/proizvodi">Istraži proizvode</Link></Button></EmptyContent></Empty>;
+  const { data: orders, isLoading, isError, isFetching, refetch } = useListCustomerRetailOrders({
+    query: { queryKey: getListCustomerRetailOrdersQueryKey(), retry: 1 },
+  });
+  if (isLoading) return <div className="p-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (isError) return <Empty className="border border-destructive/30 bg-card py-14" data-testid="retail-orders-error"><EmptyHeader><EmptyMedia variant="icon"><AlertTriangle /></EmptyMedia><EmptyTitle>Porudžbine trenutno nisu dostupne</EmptyTitle><EmptyDescription>Nismo uspeli da učitamo istoriju retail porudžbina. Vaši podaci nisu izgubljeni — pokušajte ponovo.</EmptyDescription></EmptyHeader><EmptyContent><Button type="button" variant="outline" disabled={isFetching} onClick={() => void refetch()}>{isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}Pokušaj ponovo</Button></EmptyContent></Empty>;
+  if (!orders?.length) return <Empty className="border bg-card py-14"><EmptyHeader><EmptyMedia variant="icon"><Box /></EmptyMedia><EmptyTitle>Nemate retail porudžbine</EmptyTitle><EmptyDescription>Proizvode za kućnu negu možete poručiti iz javne prodavnice.</EmptyDescription></EmptyHeader><EmptyContent><Button asChild><Link href="/proizvodi">Istraži proizvode</Link></Button></EmptyContent></Empty>;
   return <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4 flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">{order.orderNumber}</p><p className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("sr-RS")} · {order.items.map((item) => `${item.quantity}× ${item.name}`).join(", ")}</p></div><div className="text-right"><Badge>{order.status}</Badge><p className="mt-1 font-semibold">{order.total.toLocaleString("sr-RS")} RSD</p></div></CardContent></Card>)}</div>;
 }
 

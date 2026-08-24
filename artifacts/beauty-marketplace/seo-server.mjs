@@ -3,11 +3,13 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import categoryDefinitions from './src/lib/public-category-pages.json' with { type: 'json' };
+import legalPages from './src/content/legal-pages.json' with { type: 'json' };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(here, 'dist', 'public');
 const fallbackDescription = 'Pronađite proverene salone, beauty i wellness tretmane i stručne edukacije na jednom mestu uz LUMERA.';
 const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page]));
+const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
 const staticPages = new Map([
   ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
   ['/za-biznise', ['LUMERA za biznise | Rast vašeg salona', 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', 'Digitalni alati za salone i beauty biznise.']],
@@ -165,7 +167,12 @@ async function renderPublicPage(req, pathname) {
       const meta = makeMeta(pathname, title, description);
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Sadržaj vodiča</h2><div class="seo-grid">${cards || '<p>Vodič je trenutno prazan.</p>'}</div></section>`, origin) };
     }
+    const legalPage = legalPageByPath.get(pathname);
     const meta = makeMeta(pathname, title, description);
+    if (legalPage) {
+      const sections = legalPage.sections.map((section) => `<section><h2>${escapeHtml(section.title)}</h2>${section.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</section>`).join('');
+      return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(legalPage.title)}</h1><p>${escapeHtml(legalPage.lead)}</p><p><strong>Poslednje ažuriranje:</strong> ${escapeHtml(legalPage.lastUpdated)}</p><p><strong>Radna pravna verzija:</strong> tekst mora biti potvrđen od strane odgovornog pravnog lica i pravnog savetnika pre komercijalnog lansiranja.</p>${sections}</article>`, origin) };
+    }
     return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p><p>Za dodatne informacije pogledajte <a href="/saloni">javni katalog salona</a> ili <a href="/edukacije">beauty edukacije</a>.</p></article>`, origin) };
   }
 

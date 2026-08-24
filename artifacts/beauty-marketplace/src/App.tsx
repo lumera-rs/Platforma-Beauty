@@ -31,6 +31,7 @@ const EducationMarketplace = lazy(() => import('./pages/education-marketplace'))
 const EducationPublicCenterPage = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCenterPage })));
 const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketplace').then((module) => ({ default: module.EducationPublicCourseDetail })));
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
+const LegalPage = lazy(() => import('./pages/legal'));
 
 const PublicProducts = lazy(() => import('./pages/public-products'));
 const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCartPage })));
@@ -102,17 +103,6 @@ function NotFound() {
       </div>
     </Layout>
   );
-}
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <Layout>
-      <div className="container mx-auto px-4 py-20 text-center">
-        <h1 className="text-4xl font-serif font-bold mb-4">{title}</h1>
-        <p className="text-muted-foreground max-w-lg mx-auto">Sadržaj ove stranice je u pripremi i biće dostupan uskoro.</p>
-      </div>
-    </Layout>
-  )
 }
 
 function InstructorPublicPage(props: any) {
@@ -300,12 +290,12 @@ function Router() {
         <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
 
-        <Route path="/uslovi-koriscenja"><PlaceholderPage title="Uslovi korišćenja" /></Route>
-        <Route path="/politika-privatnosti"><PlaceholderPage title="Politika privatnosti" /></Route>
-        <Route path="/politika-kolacica"><PlaceholderPage title="Politika kolačića" /></Route>
-        <Route path="/uslovi-kupovine"><PlaceholderPage title="Uslovi kupovine" /></Route>
-        <Route path="/otkazivanje-termina"><PlaceholderPage title="Otkazivanje termina" /></Route>
-        <Route path="/povracaj-sredstava"><PlaceholderPage title="Povraćaj sredstava" /></Route>
+        <Route path="/uslovi-koriscenja"><LegalPage pagePath="/uslovi-koriscenja" /></Route>
+        <Route path="/politika-privatnosti"><LegalPage pagePath="/politika-privatnosti" /></Route>
+        <Route path="/politika-kolacica"><LegalPage pagePath="/politika-kolacica" /></Route>
+        <Route path="/uslovi-kupovine"><LegalPage pagePath="/uslovi-kupovine" /></Route>
+        <Route path="/otkazivanje-termina"><LegalPage pagePath="/otkazivanje-termina" /></Route>
+        <Route path="/povracaj-sredstava"><LegalPage pagePath="/povracaj-sredstava" /></Route>
 
           <Route component={NotFound} />
         </Switch>
