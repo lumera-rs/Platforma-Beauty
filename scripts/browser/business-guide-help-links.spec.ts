@@ -218,6 +218,23 @@ async function assertVisibleHelpLinksReachSections(
       await expect(mobileMenuButton).toBeFocused();
       await mobileMenuButton.press("Enter");
       await expect(mobileMenuShortcuts).toHaveCount(expectedIds.length);
+
+      const mobileMenu = page.getByTestId("business-mobile-menu");
+      const focusableMenuControls = mobileMenu.locator(
+        'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      const focusableMenuControlCount = await focusableMenuControls.count();
+      expect(focusableMenuControlCount, "The open business mobile menu must contain focusable controls.").toBeGreaterThan(1);
+      const firstMenuControl = focusableMenuControls.first();
+      const lastMenuControl = focusableMenuControls.last();
+
+      await firstMenuControl.focus();
+      await expect(firstMenuControl).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(lastMenuControl, "Shift+Tab from the first business-menu control must wrap to the last.").toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(firstMenuControl, "Tab from the last business-menu control must wrap to the first.").toBeFocused();
+
       await mobileMenuButton.press("Enter");
       await expect(mobileMenuShortcuts).toHaveCount(0);
       await expect(mobileMenuButton).toBeFocused();

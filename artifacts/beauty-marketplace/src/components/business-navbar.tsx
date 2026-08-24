@@ -38,6 +38,7 @@ export function BusinessNavbar() {
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [managedSalons, setManagedSalons] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [activeSalonId, setActiveSalonId] = useState<string>("");
   const [isSwitchingSalon, setIsSwitchingSalon] = useState(false);
@@ -52,9 +53,30 @@ export function BusinessNavbar() {
     if (!isMobileMenuOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeMobileMenu();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMobileMenu();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusableElements = Array.from(
+        mobileMenuRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const focusIsOutsideMenu = !mobileMenuRef.current?.contains(document.activeElement);
+
+      if ((event.shiftKey && (document.activeElement === firstElement || focusIsOutsideMenu))
+        || (!event.shiftKey && document.activeElement === lastElement)) {
+        event.preventDefault();
+        (event.shiftKey ? lastElement : firstElement).focus();
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -312,7 +334,7 @@ export function BusinessNavbar() {
       </div>
 
       {isMobileMenuOpen && (
-        <div className="2xl:hidden border-t border-white/10 bg-foreground">
+        <div ref={mobileMenuRef} className="2xl:hidden border-t border-white/10 bg-foreground" data-testid="business-mobile-menu">
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             <Link 
               href="/"
