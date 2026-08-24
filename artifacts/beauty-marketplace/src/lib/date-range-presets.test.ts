@@ -36,6 +36,32 @@ test("toDateParam keeps the Belgrade spring-forward calendar day near local midn
   }
 });
 
+test("presets keep exact local dates across the Belgrade autumn rollback", () => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = "Europe/Belgrade";
+  try {
+    // The rollback occurs on 2026-10-25. Presets must use calendar dates,
+    // rather than elapsed milliseconds, so none of these ranges shifts a day.
+    const now = new Date(2026, 9, 25, 0, 30);
+
+    assert.deepEqual(serialized(preset("last-month").getRange(now)), {
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    assert.deepEqual(serialized(preset("this-month").getRange(now)), {
+      from: "2026-10-01",
+      to: "2026-10-25",
+    });
+    assert.deepEqual(serialized(preset("last-14d").getRange(now)), {
+      from: "2026-10-12",
+      to: "2026-10-25",
+    });
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+});
+
 test("last month from January 1 crosses the year boundary into December", () => {
   const range = preset("last-month").getRange(new Date(2026, 0, 1));
   assert.deepEqual(serialized(range), { from: "2025-12-01", to: "2025-12-31" });
