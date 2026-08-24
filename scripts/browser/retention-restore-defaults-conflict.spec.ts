@@ -646,3 +646,88 @@ test("failed background refresh shows a retry warning and preserves unsaved edit
     await apiB.dispose();
   }
 });
+
+test("failed initial settings load offers recovery and enables editing after retry", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  let allowInitialSettingsLoad = false;
+  await page.route(`**${settingsPath}`, async (route) => {
+    if (
+      !allowInitialSettingsLoad
+      && route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nedostupno" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  // Install the clock before navigation so the query's initial retry backoff
+  // can be advanced without waiting in real time.
+  await page.clock.install();
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+    const activeSettings = await (await apiB.get(settingsPath)).json();
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+
+    const initialFailure = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 503,
+    );
+    await page.goto("/admin/retencija");
+    await initialFailure;
+
+    // TanStack Query retries three times after the first failed request.
+    for (const delay of [1_000, 2_000, 4_000]) {
+      const failedRetry = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname === settingsPath
+        && response.status() === 503,
+      );
+      await page.clock.fastForward(delay);
+      await failedRetry;
+    }
+
+    const initialLoadError = page.getByTestId("retention-initial-load-error");
+    await expect(initialLoadError).toBeVisible();
+    await expect(initialLoadError).toContainText("Pragovi retencije nisu mogli da se učitaju");
+    await expect(initialLoadError).toContainText("Privremeno nedostupno");
+    await expect(page.getByTestId("retry-retention-settings")).toBeEnabled();
+    await expect(page.getByTestId("input-newCustomerWindowDays")).toHaveCount(0);
+
+    allowInitialSettingsLoad = true;
+    const retriedSettingsLoad = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    await page.getByTestId("retry-retention-settings").click();
+    await retriedSettingsLoad;
+
+    await expect(initialLoadError).not.toBeVisible();
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(
+      activeSettings.isDefault ? "Podrazumevano (v0)" : `Verzija ${activeSettings.version}`,
+    );
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(activeSettings.thresholds.newCustomerWindowDays));
+    await expect(windowInput).toBeEnabled();
+    await windowInput.fill(String(activeSettings.thresholds.newCustomerWindowDays + 1));
+    await expect(windowInput).toHaveValue(String(activeSettings.thresholds.newCustomerWindowDays + 1));
+  } finally {
+    await apiB.dispose();
+  }
+});

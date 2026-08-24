@@ -107,8 +107,9 @@ export default function AdminRetentionSettings() {
   const {
     data: settings,
     isLoading,
+    isError: hasRetentionLoadError,
     isRefetchError: hasRetentionRefreshError,
-    error: retentionRefreshError,
+    error: retentionError,
     refetch: retryRetentionRefresh,
     isFetching: isRetentionRefreshing,
   } = useAdminGetRetentionSettings({
@@ -488,6 +489,47 @@ export default function AdminRetentionSettings() {
     );
   }
 
+  if (!settings && hasRetentionLoadError) {
+    return (
+      <AdminLayout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-serif font-bold mb-2 text-foreground">Pragovi Retencije</h1>
+            <p className="text-muted-foreground">
+              Podesite šta se na nivou platforme računa kao VIP klijent, klijent u riziku ili izgubljen klijent.
+            </p>
+          </div>
+          <Alert
+            className="border-destructive/50 bg-destructive/5 [&>svg]:text-destructive"
+            data-testid="retention-initial-load-error"
+          >
+            <TriangleAlert className="h-4 w-4" />
+            <AlertTitle>Pragovi retencije nisu mogli da se učitaju</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {extractApiError(
+                  retentionError,
+                  "Nije moguće učitati aktivna podešavanja. Pokušajte ponovo.",
+                )}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void retryRetentionRefresh()}
+                disabled={isRetentionRefreshing}
+                data-testid="retry-retention-settings"
+              >
+                {isRetentionRefreshing && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Pokušaj ponovo
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -543,7 +585,7 @@ export default function AdminRetentionSettings() {
             <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
               <span>
                 {extractApiError(
-                  retentionRefreshError,
+                  retentionError,
                   "Nije moguće proveriti da li postoje novije vrednosti. Prikazane vrednosti mogu biti zastarele.",
                 )}
                 {" "}Vaše nesačuvane izmene ostaju nepromenjene.
