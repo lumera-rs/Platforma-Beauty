@@ -435,6 +435,7 @@ export * from './salonResourceType';
 export * from './salonResourceUpdate';
 export * from './salonResourceUpdateType';
 export * from './salonShiftSwapRequest';
+export * from './schedulerDatabaseCapacity';
 export * from './schedulerJobHealth';
 export * from './schedulerJobHealthLastFailureClass';
 export * from './schedulerJobHealthState';

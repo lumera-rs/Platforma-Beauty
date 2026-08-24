@@ -7,6 +7,7 @@
  */
 import type { AdminSummaryDeliveryReportStaleProvidersItem } from './adminSummaryDeliveryReportStaleProvidersItem';
 import type { AdminSummaryTopCategoriesItem } from './adminSummaryTopCategoriesItem';
+import type { SchedulerDatabaseCapacity } from './schedulerDatabaseCapacity';
 import type { SchedulerJobHealth } from './schedulerJobHealth';
 
 export interface AdminSummary {
@@ -38,5 +39,6 @@ export interface AdminSummary {
   smsFallbackReachableAdminCount: number;
   /** Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle. */
   schedulerJobs: SchedulerJobHealth[];
+  schedulerDatabaseCapacity: SchedulerDatabaseCapacity;
   topCategories: AdminSummaryTopCategoriesItem[];
 }

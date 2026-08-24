@@ -3286,6 +3286,18 @@ export type AdminSummaryTopCategoriesItem = {
   count: number;
 };
 
+/**
+ * Process-local scheduler limiter state; this does not query or persist database state.
+ */
+export interface SchedulerDatabaseCapacity {
+  /** @minimum 0 */
+  active: number;
+  /** @minimum 1 */
+  limit: number;
+  /** @minimum 0 */
+  queued: number;
+}
+
 export interface AdminSummary {
   totalUsers: number;
   totalSalons: number;
@@ -3315,6 +3327,7 @@ export interface AdminSummary {
   smsFallbackReachableAdminCount: number;
   /** Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle. */
   schedulerJobs: SchedulerJobHealth[];
+  schedulerDatabaseCapacity: SchedulerDatabaseCapacity;
   topCategories: AdminSummaryTopCategoriesItem[];
 }
 

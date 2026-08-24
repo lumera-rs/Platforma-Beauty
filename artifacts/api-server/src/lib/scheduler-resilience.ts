@@ -59,6 +59,12 @@ export type SchedulerJobHealth = {
   nextRetryAt: string | null;
 };
 
+export type SchedulerDatabaseCapacity = {
+  active: number;
+  limit: number;
+  queued: number;
+};
+
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 export type SchedulerTimer = {
@@ -144,6 +150,19 @@ export function schedulerHealthSnapshot(): SchedulerJobHealth[] {
   return [...healthByJob.values()]
     .map(cloneHealth)
     .sort((left, right) => left.job.localeCompare(right.job));
+}
+
+/**
+ * Returns the local scheduler limiter state without inspecting the database.
+ * A queued activity means scheduled work is waiting for one of the slots
+ * intentionally reserved below the shared pool's maximum.
+ */
+export function schedulerDatabaseCapacitySnapshot(): SchedulerDatabaseCapacity {
+  return {
+    active: activeDatabaseActivities,
+    limit: SCHEDULER_DATABASE_ACTIVITY_LIMIT,
+    queued: waitingDatabaseActivities.length,
+  };
 }
 
 function errorCode(error: unknown): string | null {

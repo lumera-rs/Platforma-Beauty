@@ -7178,6 +7178,8 @@ components:
           type: array
           description: Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle.
           items: { $ref: "#/components/schemas/SchedulerJobHealth" }
+        schedulerDatabaseCapacity:
+          $ref: "#/components/schemas/SchedulerDatabaseCapacity"
         topCategories:
           type: array
           items:
@@ -7186,7 +7188,15 @@ components:
               name: { type: string }
               count: { type: number }
             required: [name, count]
-      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, smsFallbackReachableAdminCount, schedulerJobs, topCategories]
+      required: [totalUsers, totalSalons, activeSalons, bookingsThisMonth, bookingsLastMonth, bookingsTrend, grossMerchandiseValue, newSalonsThisMonth, totalReviews, hiddenReviews, activeSubscriptions, galleryCleanupFailedTickets, galleryCleanupFailureAttempts, galleryCleanupOldestEligibleTicketAgeMinutes, galleryCleanupHasRepeatedFailures, deliveryReportStaleProviders, smsFallbackReachableAdminCount, schedulerJobs, schedulerDatabaseCapacity, topCategories]
+    SchedulerDatabaseCapacity:
+      type: object
+      description: Process-local scheduler limiter state; this does not query or persist database state.
+      properties:
+        active: { type: number, minimum: 0, multipleOf: 1 }
+        limit: { type: number, minimum: 1, multipleOf: 1 }
+        queued: { type: number, minimum: 0, multipleOf: 1 }
+      required: [active, limit, queued]
     AdminSalon:
       type: object
       properties:

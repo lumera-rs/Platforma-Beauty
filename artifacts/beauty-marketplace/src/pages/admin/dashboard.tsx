@@ -53,6 +53,7 @@ export default function AdminDashboard() {
   if (isLoading || isLoadingGrowth) return <AdminLayout><div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></AdminLayout>;
   if (error || !summary) return <AdminLayout><div className="p-10 text-destructive bg-destructive/10 rounded-xl text-center border border-destructive/20 font-medium">Došlo je do greške pri učitavanju pregleda platforme.</div></AdminLayout>;
   const delayedSchedulerJobs = summary.schedulerJobs.filter((job) => job.state === "retrying" || job.state === "failed");
+  const schedulerCapacityWait = summary.schedulerDatabaseCapacity.queued > 0;
 
   return (
     <AdminLayout>
@@ -92,6 +93,15 @@ export default function AdminDashboard() {
             <Link href="/admin/integracije" className="font-medium underline underline-offset-2" data-testid="delivery-report-alert-link">
               Proverite webhook podešavanja u sekciji Integracije
             </Link>.
+          </div>
+        )}
+
+        {schedulerCapacityWait && (
+          <div className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100" role="status" data-testid="scheduler-capacity-alert">
+            <strong>Zakazani poslovi trenutno čekaju kapacitet baze.</strong>{" "}
+            {summary.schedulerDatabaseCapacity.queued} {summary.schedulerDatabaseCapacity.queued === 1 ? "posao čeka" : "posla čekaju"} da se oslobodi jedan od{" "}
+            {summary.schedulerDatabaseCapacity.limit} rezervisanih slotova.
+            {" "}Ovo je privremeno čekanje zbog zaštite zahteva administratora, a ne greška posla ili ponovni pokušaj; posao će nastaviti kada kapacitet bude dostupan.
           </div>
         )}
 

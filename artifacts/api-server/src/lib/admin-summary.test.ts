@@ -59,6 +59,11 @@ type Summary = {
     state: "idle" | "running" | "retrying" | "failed";
     deferredCycles: number;
   }>;
+  schedulerDatabaseCapacity: {
+    active: number;
+    limit: number;
+    queued: number;
+  };
   topCategories: Array<{ name: string; count: number }>;
 };
 
@@ -462,6 +467,15 @@ async function run(): Promise<void> {
       )),
       "scheduler health must remain structured for the admin dashboard",
     );
+    assert.deepEqual(
+      summary.schedulerDatabaseCapacity,
+      {
+        active: 0,
+        limit: SCHEDULER_DATABASE_ACTIVITY_LIMIT,
+        queued: 0,
+      },
+      "admin summary must expose an idle process-local scheduler capacity snapshot",
+    );
     assert.ok(
       !summary.topCategories.some((category) => category.name === categoryCounts[5]?.name),
       "the sixth-ranked category must be excluded by the top-five limit",
@@ -512,8 +526,14 @@ async function run(): Promise<void> {
         contentionLatencyMs <= ADMIN_SUMMARY_LATENCY_BUDGET_MS,
         `GET /admin/summary took ${contentionLatencyMs.toFixed(1)}ms with background activity; budget is ${ADMIN_SUMMARY_LATENCY_BUDGET_MS}ms`,
       );
+      const contentionSummary = JSON.parse(contentionResponseText) as Summary;
+      assert.equal(contentionSummary.schedulerDatabaseCapacity.active, SCHEDULER_DATABASE_ACTIVITY_LIMIT);
+      assert.ok(
+        contentionSummary.schedulerDatabaseCapacity.queued > 0,
+        "admin summary must show scheduler work queued behind reserved capacity",
+      );
       assert.deepEqual(
-        dashboardTotals(JSON.parse(contentionResponseText) as Summary),
+        dashboardTotals(contentionSummary),
         dashboardTotals(summary),
         "background scheduler activity must not mix or alter the admin summary snapshot",
       );

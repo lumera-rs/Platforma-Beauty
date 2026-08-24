@@ -3,7 +3,10 @@ import {
   createResilientScheduledJob,
   isTransientDatabaseFailure,
   schedulerFailureDiagnostics,
+  schedulerDatabaseCapacitySnapshot,
+  SCHEDULER_DATABASE_ACTIVITY_LIMIT,
   type SchedulerTimer,
+  withSchedulerDatabaseActivity,
   withSchedulerDependency,
 } from "./scheduler-resilience";
 
@@ -34,6 +37,33 @@ function createFakeTimer(start = "2026-08-23T12:00:00.000Z"): {
 }
 
 async function run(): Promise<void> {
+  {
+    const releases: Array<() => void> = [];
+    const activities = Array.from(
+      { length: SCHEDULER_DATABASE_ACTIVITY_LIMIT + 1 },
+      () => withSchedulerDatabaseActivity(
+        () => new Promise<void>((resolve) => { releases.push(resolve); }),
+      ),
+    );
+    while (releases.length < SCHEDULER_DATABASE_ACTIVITY_LIMIT) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.deepEqual(schedulerDatabaseCapacitySnapshot(), {
+      active: SCHEDULER_DATABASE_ACTIVITY_LIMIT,
+      limit: SCHEDULER_DATABASE_ACTIVITY_LIMIT,
+      queued: 1,
+    }, "scheduler capacity snapshot must expose queued work separately from job failures");
+
+    releases[0]?.();
+    while (releases.length < SCHEDULER_DATABASE_ACTIVITY_LIMIT + 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.equal(schedulerDatabaseCapacitySnapshot().queued, 0);
+    releases.slice(1).forEach((release) => release());
+    await Promise.all(activities);
+    assert.equal(schedulerDatabaseCapacitySnapshot().active, 0);
+  }
+
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("connection timed out"), { code: "08006" })), true);
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("socket reset"), { code: "ECONNRESET" })), true);
   assert.equal(isTransientDatabaseFailure(Object.assign(new Error("missing relation"), { code: "42P01" })), false);

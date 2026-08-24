@@ -7515,6 +7515,14 @@ export const getAdminSummaryResponseSchedulerJobsItemConsecutiveFailuresMultiple
 export const getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMin = 0;
 export const getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMultipleOf = 1;
 
+export const getAdminSummaryResponseSchedulerDatabaseCapacityActiveMin = 0;
+export const getAdminSummaryResponseSchedulerDatabaseCapacityActiveMultipleOf = 1;
+
+export const getAdminSummaryResponseSchedulerDatabaseCapacityLimitMultipleOf = 1;
+
+export const getAdminSummaryResponseSchedulerDatabaseCapacityQueuedMin = 0;
+export const getAdminSummaryResponseSchedulerDatabaseCapacityQueuedMultipleOf = 1;
+
 
 
 export const GetAdminSummaryResponse = zod.object({
@@ -7546,6 +7554,11 @@ export const GetAdminSummaryResponse = zod.object({
   "deferredCycles": zod.number().min(getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMin).multipleOf(getAdminSummaryResponseSchedulerJobsItemDeferredCyclesMultipleOf),
   "nextRetryAt": zod.coerce.date().nullable()
 })).describe('Last known local status of periodic database-backed scheduler jobs, including a pending bounded retry or a failed normal cycle.'),
+  "schedulerDatabaseCapacity": zod.object({
+  "active": zod.number().min(getAdminSummaryResponseSchedulerDatabaseCapacityActiveMin).multipleOf(getAdminSummaryResponseSchedulerDatabaseCapacityActiveMultipleOf),
+  "limit": zod.number().min(1).multipleOf(getAdminSummaryResponseSchedulerDatabaseCapacityLimitMultipleOf),
+  "queued": zod.number().min(getAdminSummaryResponseSchedulerDatabaseCapacityQueuedMin).multipleOf(getAdminSummaryResponseSchedulerDatabaseCapacityQueuedMultipleOf)
+}).describe('Process-local scheduler limiter state; this does not query or persist database state.'),
   "topCategories": zod.array(zod.object({
   "name": zod.string(),
   "count": zod.number()
