@@ -202,11 +202,24 @@ export default function AdminRetentionSettings() {
 
   // The page is stale when the poll saw a newer active version than the one
   // the form was loaded from (the conflict dialog already covers save time).
-  const isStale =
-    !!settings &&
+  const staleSettingsVersion =
+    settings &&
     formBaseVersion !== null &&
     settings.version !== formBaseVersion &&
-    conflict === null;
+    conflict === null
+      ? settings.version
+      : null;
+  const isStale = staleSettingsVersion !== null;
+
+  // When the settings poll discovers a newer active version, refresh the
+  // audit timeline too. This query has its own cache and error state, so the
+  // refresh cannot replace the active settings or any in-progress form edits.
+  useEffect(() => {
+    if (staleSettingsVersion === null) return;
+    void queryClient.invalidateQueries({
+      queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
+    });
+  }, [staleSettingsVersion, queryClient]);
 
   const invalidateAfterSave = () => {
     queryClient.invalidateQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });

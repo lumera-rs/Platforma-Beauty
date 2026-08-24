@@ -66,6 +66,8 @@ const NON_DEFAULT_WINDOW_DAYS = 30;
  * unambiguous about which value it crosses out.
  */
 const ADMIN_B_WINDOW_DAYS = 21;
+/** The second active value used to prove repeated polling stays current. */
+const SECOND_ADMIN_B_WINDOW_DAYS = 18;
 /** The value admin A types but must retain while the background poll runs. */
 const UNSAVED_WINDOW_DAYS = 60;
 
@@ -456,6 +458,7 @@ test("the polling refetch disables restore defaults after another admin saves th
 
 test("background polling preserves unsaved edits until newer values are loaded explicitly", async ({ page }) => {
   test.setTimeout(120_000);
+  const historyPath = `${settingsPath}/history`;
 
   // Install the clock before navigation so the query's interval is controlled
   // from the moment the settings page mounts. No visibility or focus event is
@@ -492,6 +495,7 @@ test("background polling preserves unsaved edits until newer values are loaded e
     await expect(page.getByTestId("retention-settings-version"))
       .toHaveText(`Verzija ${baselineVersion}`);
     await expect(windowInput).toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+    await expect(page.getByTestId(`retention-history-v${baselineVersion}`)).toBeVisible();
 
     // Admin A edits a threshold but leaves the value unsaved.
     await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
@@ -512,23 +516,61 @@ test("background polling preserves unsaved edits until newer values are loaded e
       && new URL(response.url()).pathname === settingsPath
       && response.status() === 200,
     );
+    const historyRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 200,
+    );
     await page.clock.fastForward(30_000);
     await settingsRefetch;
+    await historyRefetch;
 
     // Polling exposes the newer active version without overwriting A's draft.
     await expect(page.getByTestId("retention-settings-version"))
       .toHaveText(`Verzija ${adminBVersion}`);
     await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+    await expect(page.getByTestId(`retention-history-v${adminBVersion}`)).toBeVisible();
     await expect(page.getByTestId("retention-stale-banner")).toBeVisible();
     await expect(page.getByTestId("retention-stale-banner"))
       .toContainText(`Verzija ${adminBVersion} je u međuvremenu aktivirana`);
 
+    // A second remote save must refresh the timeline again even though the
+    // page was already stale; only the explicit action may replace the draft.
+    const secondConcurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: SECOND_ADMIN_B_WINDOW_DAYS,
+        expectedVersion: adminBVersion,
+      },
+    });
+    expect(secondConcurrentResponse.ok(), "the second concurrent save must succeed").toBe(true);
+    const secondAdminBVersion = (await secondConcurrentResponse.json()).version as number;
+
+    const secondSettingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    const secondHistoryRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 200,
+    );
+    await page.clock.fastForward(30_000);
+    await secondSettingsRefetch;
+    await secondHistoryRefetch;
+
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${secondAdminBVersion}`);
+    await expect(page.getByTestId(`retention-history-v${secondAdminBVersion}`)).toBeVisible();
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+
     // Only the explicit action may replace the in-progress values.
     await page.getByTestId("load-stale-retention-settings").click();
-    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+    await expect(windowInput).toHaveValue(String(SECOND_ADMIN_B_WINDOW_DAYS));
     await expect(page.getByTestId("retention-stale-banner")).not.toBeVisible();
     await expect(page.getByTestId("retention-settings-version"))
-      .toHaveText(`Verzija ${adminBVersion}`);
+      .toHaveText(`Verzija ${secondAdminBVersion}`);
   } finally {
     await apiB.dispose();
   }
@@ -641,6 +683,124 @@ test("failed background refresh shows a retry warning and preserves unsaved edit
       .toContainText(`Verzija ${adminBVersion} je u međuvremenu aktivirana`);
     await expect(page.getByTestId("retention-settings-version"))
       .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("failed history refresh shows its retry warning and preserves settings edits", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const historyPath = `${settingsPath}/history`;
+  let failHistoryRefresh = false;
+  let allowHistoryRefresh = false;
+  await page.route(`**${historyPath}`, async (route) => {
+    if (
+      failHistoryRefresh
+      && !allowHistoryRefresh
+      && route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nedostupno" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.clock.install();
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+    await expect(windowInput).toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+    await expect(page.getByTestId(`retention-history-v${baselineVersion}`)).toBeVisible();
+    await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
+
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "the concurrent save must succeed").toBe(true);
+    const adminBVersion = (await concurrentResponse.json()).version as number;
+    failHistoryRefresh = true;
+
+    const settingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    const initialHistoryRefreshFailure = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 503,
+    );
+    await page.clock.fastForward(30_000);
+    await settingsRefetch;
+    await initialHistoryRefreshFailure;
+
+    // The automatic history refresh retries three times before exposing the
+    // same visible recovery state as an initial history-load failure.
+    for (const delay of [1_000, 2_000, 4_000]) {
+      const failedRetry = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname === historyPath
+        && response.status() === 503,
+      );
+      await page.clock.fastForward(delay);
+      await failedRetry;
+    }
+
+    const historyError = page.getByTestId("retention-history-error");
+    await expect(historyError).toBeVisible();
+    await expect(historyError).toContainText("Istorija izmena nije mogla da se učita");
+    await expect(historyError).toContainText("Privremeno nedostupno");
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+
+    allowHistoryRefresh = true;
+    const retriedHistoryRefresh = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 200,
+    );
+    await page.getByTestId("retry-retention-history").click();
+    await retriedHistoryRefresh;
+
+    await expect(historyError).not.toBeVisible();
+    await expect(page.getByTestId(`retention-history-v${adminBVersion}`)).toBeVisible();
     await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
   } finally {
     await apiB.dispose();
