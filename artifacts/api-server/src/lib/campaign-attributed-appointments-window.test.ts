@@ -9,6 +9,8 @@
  *      preset, and all-time.
  *   3. Combining a preset period with from/to is rejected with 400 by both
  *      endpoints.
+ *   4. A future-dated run is excluded from rolling presets but included by an
+ *      explicit future custom range, with list and stats remaining in parity.
  *
  * Run: NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/campaign-attributed-appointments-window.test.ts
  */
@@ -408,14 +410,16 @@ async function main() {
     ]);
   }
 
-  // Two runs are inside the custom range [6 days ago, 1 day ago]. The other
-  // two are outside it, while still giving distinct expected counts for each
-  // rolling preset: 7d → 2, 30d → 3, 90d → 4.
+  // Two runs are inside the past custom range [6 days ago, 1 day ago]. The
+  // future run is intentionally outside every rolling preset but inside an
+  // explicit future custom range. The historical rows still give distinct
+  // expected counts for each rolling preset: 7d → 2, 30d → 3, 90d → 4.
   const cases = [
     { tag: "inside-recent", days: 2 },
     { tag: "inside-early", days: 5 },
     { tag: "outside-30d", days: 10 },
     { tag: "outside-90d", days: 40 },
+    { tag: "future", days: -1 },
   ] as const;
   const appointmentIds = new Map<string, string>();
   for (const item of cases) {
@@ -488,6 +492,23 @@ async function main() {
       "custom range returns exactly the appointments inside its inclusive dates",
     );
     console.log("✓ custom date range list total matches stats and excludes outside runs");
+
+    const futureCustomQuery = `from=${dateDaysAgo(-1)}&to=${dateDaysAgo(-1)}`;
+    await assertParity(futureCustomQuery, 1, "explicit future custom range");
+    const futureCustomList = await get(`${listPath}?${futureCustomQuery}&limit=100`);
+    assert.equal(
+      futureCustomList.body.items[0]?.appointmentId,
+      appointmentIds.get("future"),
+      "explicit future custom range returns the future-dated attributed appointment",
+    );
+    const rollingList = await get(`${listPath}?period=7d&limit=100`);
+    assert.equal(rollingList.status, 200, "rolling list succeeds after the future-range check");
+    assert.equal(
+      rollingList.body.items.some((item: any) => item.appointmentId === appointmentIds.get("future")),
+      false,
+      "rolling period excludes the future-dated attributed appointment",
+    );
+    console.log("✓ explicit future range includes future activity while rolling list and stats stop at request-time now");
 
     const assertBoundaryParity = async (
       ruleId: string,
@@ -639,7 +660,7 @@ async function main() {
       ["period=7d", 2],
       ["period=30d", 3],
       ["period=90d", 4],
-      ["period=all", 4],
+      ["period=all", 5],
     ] as const) {
       await assertParity(query, expected, query);
     }

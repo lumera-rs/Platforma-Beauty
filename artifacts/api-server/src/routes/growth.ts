@@ -541,6 +541,10 @@ function parseStatsDate(raw: string): Date | null {
  * - `period` selects a rolling window (7d/30d/90d) or all time.
  * - `from`/`to` (YYYY-MM-DD, inclusive) select an exact calendar range; either
  *   side may be omitted for an open-ended range.
+ * - Explicit custom ranges intentionally keep their selected calendar
+ *   boundaries, even when `to` is after the request-time instant. This lets an
+ *   owner inspect future-dated provider activity deliberately; only rolling
+ *   presets are capped at request-time `now`.
  * Combining `period` with `from`/`to` is ambiguous and rejected explicitly,
  * as are malformed dates and inverted ranges (from > to).
  * Returns the window, or an error message for a 400 response.
