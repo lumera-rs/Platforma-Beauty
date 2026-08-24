@@ -41,6 +41,7 @@
     "test:service-availability": "playwright test browser/owner-service-availability.spec.ts",
     "test:campaign-client-filter": "playwright test browser/campaign-client-filter.spec.ts",
     "test:campaign-client-profile-link": "playwright test browser/campaign-client-profile-link.spec.ts",
+    "test:campaign-cancellation-warning": "playwright test browser/campaign-cancellation-warning.spec.ts",
     "test:campaign-period-filter": "playwright test browser/campaign-period-filter.spec.ts",
     "test:campaign-period-preset": "playwright test browser/campaign-period-preset.spec.ts",
     "test:campaign-period-url": "playwright test browser/campaign-period-url.spec.ts",
