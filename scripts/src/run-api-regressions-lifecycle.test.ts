@@ -308,6 +308,7 @@ async function writeBrowserCommandShims(
   frontendPidPath: string,
   phaseMarkerPath: string,
   blockerPidPath: string,
+  blockFrontendReadiness = false,
 ): Promise<void> {
   await writeFile(
     path.join(binDirectory, "pnpm"),
@@ -318,6 +319,10 @@ if [[ "$*" == *"@workspace/db run push-force"* ]]; then
 fi
 if [[ "$*" == *"--filter @workspace/beauty-marketplace run dev"* ]]; then
   printf '%s' "$$" > "$LUMERA_LIFECYCLE_FRONTEND_PID"
+  if [[ "${blockFrontendReadiness ? "true" : "false"}" == "true" ]]; then
+    printf 'frontend-readiness' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+    while :; do sleep 1; done
+  fi
   exec "$LUMERA_LIFECYCLE_REAL_NODE" -e '
     const http = require("node:http");
     http.createServer((_request, response) => {
@@ -527,7 +532,7 @@ void runIsolatedBrowserSuiteCommand({
   }
 }
 
-async function runInterruptedBrowserScenario(): Promise<void> {
+async function runInterruptedBrowserScenario(blockFrontendReadiness = false): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
@@ -555,6 +560,7 @@ async function runInterruptedBrowserScenario(): Promise<void> {
       frontendPidPath,
       phaseMarkerPath,
       blockerPidPath,
+      blockFrontendReadiness,
     );
     await writeFile(
       browserRunnerScriptPath,
@@ -603,18 +609,22 @@ void runIsolatedBrowserSuiteCommand({
 
     const frontendPid = Number(await readFile(frontendPidPath, "utf8"));
     assert.ok(Number.isSafeInteger(frontendPid) && frontendPid > 0, "The frontend PID was not recorded.");
-    blockerPid = Number(await readFile(blockerPidPath, "utf8"));
-    assert.ok(
-      Number.isSafeInteger(blockerPid) && blockerPid > 0,
-      "The Playwright blocker PID was not recorded.",
-    );
+    if (!blockFrontendReadiness) {
+      blockerPid = Number(await readFile(blockerPidPath, "utf8"));
+      assert.ok(
+        Number.isSafeInteger(blockerPid) && blockerPid > 0,
+        "The Playwright blocker PID was not recorded.",
+      );
+    }
     unrelatedProcess = spawn(realBash, ["-c", "while :; do sleep 1; done"], {
       env: process.env,
       detached: true,
       stdio: "ignore",
     });
     await waitForProcess(frontendPid, "The disposable browser frontend");
-    await waitForProcess(blockerPid, "The disposable Playwright check");
+    if (blockerPid) {
+      await waitForProcess(blockerPid, "The disposable Playwright check");
+    }
     assert.ok(unrelatedProcess.pid);
     await waitForProcess(unrelatedProcess.pid, "The unrelated local service");
 
@@ -625,7 +635,10 @@ void runIsolatedBrowserSuiteCommand({
 
     await waitForOwnedTestServersToStop(testDatabaseUrl);
     await waitForProcessToStop(frontendPid, "The disposable browser frontend");
-    await waitForProcessToStop(blockerPid, "The disposable Playwright check");
+    if (blockerPid) {
+      await waitForProcessToStop(blockerPid, "The disposable Playwright check");
+    }
+    await waitForMarkerProcessesToStop(manifest.manifest.processMarker!);
     await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
     assert.equal(await databaseExists(databaseName), false, "Disposable database was not removed.");
     process.kill(unrelatedProcess.pid, 0);
@@ -928,4 +941,8 @@ test("forced browser-suite shutdown recovery removes only stale API, frontend, a
 
 test("SIGTERM during a disposable browser check cleans every owned resource", async () => {
   await runInterruptedBrowserScenario();
+});
+
+test("SIGTERM during disposable browser frontend readiness cleans every owned resource", async () => {
+  await runInterruptedBrowserScenario(true);
 });
