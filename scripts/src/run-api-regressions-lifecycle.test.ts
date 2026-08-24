@@ -1003,6 +1003,10 @@ test("SIGINT during disposable API regression server readiness cleans every reso
   await runInterruptedScenario("readiness", "SIGINT");
 });
 
+test("SIGTERM during disposable API regression server readiness cleans every resource", async () => {
+  await runInterruptedScenario("readiness");
+});
+
 test("forced API regression shutdown recovery removes orphaned API and shell-check processes", async () => {
   await runForcedStopScenario();
 });
