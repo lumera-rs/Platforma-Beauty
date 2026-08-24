@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { GuideHelpLink } from "@/components/guide-help-link";
 import { getGetShopCartQueryKey, useGetCurrentUser, useGetShopCart, useListSalonNotifications, useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
 import {
@@ -37,10 +37,29 @@ export function BusinessNavbar() {
     },
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [managedSalons, setManagedSalons] = useState<Array<{ id: string; name: string; slug: string }>>([]);
   const [activeSalonId, setActiveSalonId] = useState<string>("");
   const [isSwitchingSalon, setIsSwitchingSalon] = useState(false);
   const unreadNotificationCount = notifications.filter((notification) => !notification.readAt).length;
+
+  const closeMobileMenu = useCallback(() => {
+    setIsMobileMenuOpen(false);
+    requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeMobileMenu();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [closeMobileMenu, isMobileMenuOpen]);
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -279,10 +298,11 @@ export function BusinessNavbar() {
           </div>
 
           <Button 
+            ref={mobileMenuButtonRef}
             variant="ghost" 
             size="icon" 
             className="2xl:hidden text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             data-testid="button-mobile-menu"
           >
@@ -297,7 +317,7 @@ export function BusinessNavbar() {
             <Link 
               href="/"
               className="flex items-center gap-2 text-sm font-medium py-2 text-background/60"
-              onClick={() => setIsMobileMenuOpen(false)}
+              onClick={closeMobileMenu}
             >
               <ArrowLeft className="w-4 h-4" /> Nazad na Market
             </Link>
@@ -317,7 +337,7 @@ export function BusinessNavbar() {
                     )}
                     aria-label={isNotificationsLink ? `Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}` : undefined}
                     data-testid={isNotificationsLink ? "link-notifications-mobile" : undefined}
-                    onClick={() => setIsMobileMenuOpen(false)}
+                    onClick={closeMobileMenu}
                   >
                     <span>{link.label}</span>
                     {isNotificationsLink && unreadNotificationCount > 0 && (
@@ -333,7 +353,7 @@ export function BusinessNavbar() {
                     <GuideHelpLink
                       sectionId={link.guideId}
                       label={link.label}
-                      onClick={() => setIsMobileMenuOpen(false)}
+                      onClick={closeMobileMenu}
                       className="text-background/70 hover:bg-white/10 hover:text-accent focus-visible:ring-white"
                     />
                   )}
@@ -349,7 +369,7 @@ export function BusinessNavbar() {
                   className="rounded-md border border-white/20 bg-foreground px-2 py-2 text-sm text-background disabled:cursor-wait disabled:opacity-70"
                   value={activeSalonId}
                   onChange={(event) => {
-                    setIsMobileMenuOpen(false);
+                    closeMobileMenu();
                     void switchSalon(event.target.value);
                   }}
                 >
@@ -361,7 +381,7 @@ export function BusinessNavbar() {
               <Link
                 href="/vlasnik/prodavnica/korpa"
                 className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-background"
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={closeMobileMenu}
               >
                 <span className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Korpa</span>
                 <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">{cart?.itemCount ?? 0}</span>
@@ -374,7 +394,7 @@ export function BusinessNavbar() {
               <div className="flex flex-col gap-2">
                 <p className="text-sm text-background/60 px-2 py-1">Ulogovani ste kao {user.firstName}</p>
                 <button 
-                  onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+                  onClick={() => { handleLogout(); closeMobileMenu(); }}
                   className="text-left text-red-400 py-2 px-2 text-sm font-medium hover:text-red-300 transition-colors"
                 >
                   Odjavi se
@@ -385,14 +405,14 @@ export function BusinessNavbar() {
                 <Link 
                   href="/poslovna-prijava" 
                   className="block text-sm font-medium py-2 px-2 text-background"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   Prijavi se
                 </Link>
                 <Link 
                   href="/poslovna-registracija" 
                   className="block text-sm font-medium py-2 px-2 text-accent"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   Registracija
                 </Link>

@@ -184,6 +184,7 @@ async function assertVisibleHelpLinksReachSections(
 
   if (options.mobileMenu) {
     const mobileMenuButton = page.getByTestId("button-mobile-menu");
+    const mobileMenuShortcuts = page.locator("nav").locator('[data-testid^="guide-help-"]');
     await expect(mobileMenuButton).toBeVisible();
     if (options.keyboard) {
       await mobileMenuButton.focus();
@@ -210,6 +211,16 @@ async function assertVisibleHelpLinksReachSections(
           "The mobile business-menu toggle must expose a visible focus outline or ring with non-zero geometry.",
         ).toBeTruthy();
       }
+      await mobileMenuButton.press("Enter");
+      await expect(mobileMenuShortcuts).toHaveCount(expectedIds.length);
+      await page.keyboard.press("Escape");
+      await expect(mobileMenuShortcuts).toHaveCount(0);
+      await expect(mobileMenuButton).toBeFocused();
+      await mobileMenuButton.press("Enter");
+      await expect(mobileMenuShortcuts).toHaveCount(expectedIds.length);
+      await mobileMenuButton.press("Enter");
+      await expect(mobileMenuShortcuts).toHaveCount(0);
+      await expect(mobileMenuButton).toBeFocused();
       await mobileMenuButton.press("Enter");
     } else {
       await mobileMenuButton.click();
