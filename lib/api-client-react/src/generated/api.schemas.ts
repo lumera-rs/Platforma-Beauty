@@ -263,6 +263,10 @@ export type AdminWebhookIntegrationCard = AdminIntegrationCard & ({
   webhookConfirmationMaxAgeDays: number;
 });
 
+export type AdminBrevoWebhookIntegrationCard = AdminWebhookIntegrationCard & {
+  brevoRegistrationMissingEvents: string[];
+};
+
 export type AdminDeliveryReportStatusMalformedWebhookState = typeof AdminDeliveryReportStatusMalformedWebhookState[keyof typeof AdminDeliveryReportStatusMalformedWebhookState];
 
 
@@ -341,7 +345,7 @@ export interface AdminSmsReminder {
 
 export type AdminGetIntegrationsResponseIntegrations = {
   sms: AdminWebhookIntegrationCard;
-  brevo: AdminWebhookIntegrationCard;
+  brevo: AdminBrevoWebhookIntegrationCard;
   google_oauth: AdminIntegrationCard;
   facebook_oauth: AdminIntegrationCard;
   cloudflare: AdminIntegrationCard;

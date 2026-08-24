@@ -303,8 +303,8 @@ export const AdminListSmsDeliveriesResponse = zod.array(AdminListSmsDeliveriesRe
 export const adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMin = 0;
 export const adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
 
-export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMin = 0;
-export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
+export const adminGetIntegrationsResponseIntegrationsBrevoOneTwoWebhookConfirmationMaxAgeDaysMin = 0;
+export const adminGetIntegrationsResponseIntegrationsBrevoOneTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
 
 export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRejectedPayloadCountMin = 0;
 
@@ -352,7 +352,9 @@ export const AdminGetIntegrationsResponse = zod.object({
   "webhookSecretPendingReconfirmation": zod.boolean(),
   "webhookVerifiedAt": zod.coerce.date().nullable(),
   "webhookVerificationStale": zod.boolean(),
-  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMultipleOf)
+  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetIntegrationsResponseIntegrationsBrevoOneTwoWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetIntegrationsResponseIntegrationsBrevoOneTwoWebhookConfirmationMaxAgeDaysMultipleOf)
+})).and(zod.object({
+  "brevoRegistrationMissingEvents": zod.array(zod.string())
 })),
   "google_oauth": zod.object({
   "enabled": zod.boolean(),

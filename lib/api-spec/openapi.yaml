@@ -5137,6 +5137,15 @@ components:
             webhookVerificationStale: { type: boolean }
             webhookConfirmationMaxAgeDays: { type: number, minimum: 0, multipleOf: 1 }
           required: [webhookSecretPendingReconfirmation, webhookVerifiedAt, webhookVerificationStale, webhookConfirmationMaxAgeDays]
+    AdminBrevoWebhookIntegrationCard:
+      allOf:
+        - $ref: "#/components/schemas/AdminWebhookIntegrationCard"
+        - type: object
+          properties:
+            brevoRegistrationMissingEvents:
+              type: array
+              items: { type: string }
+          required: [brevoRegistrationMissingEvents]
     AdminDeliveryReportStatus:
       type: object
       properties:
@@ -5200,7 +5209,7 @@ components:
           type: object
           properties:
             sms: { $ref: "#/components/schemas/AdminWebhookIntegrationCard" }
-            brevo: { $ref: "#/components/schemas/AdminWebhookIntegrationCard" }
+            brevo: { $ref: "#/components/schemas/AdminBrevoWebhookIntegrationCard" }
             google_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
             facebook_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
             cloudflare: { $ref: "#/components/schemas/AdminIntegrationCard" }

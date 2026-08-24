@@ -9,6 +9,7 @@
 export * from './adminBrand';
 export * from './adminBrandInput';
 export * from './adminBrandUpdate';
+export * from './adminBrevoWebhookIntegrationCard';
 export * from './adminBulkResult';
 export * from './adminCreateEmailCampaignInput';
 export * from './adminCreateEmailCampaignInputAudience';

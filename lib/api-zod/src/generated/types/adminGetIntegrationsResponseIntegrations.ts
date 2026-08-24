@@ -5,12 +5,13 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminBrevoWebhookIntegrationCard } from './adminBrevoWebhookIntegrationCard';
 import type { AdminIntegrationCard } from './adminIntegrationCard';
 import type { AdminWebhookIntegrationCard } from './adminWebhookIntegrationCard';
 
 export type AdminGetIntegrationsResponseIntegrations = {
   sms: AdminWebhookIntegrationCard;
-  brevo: AdminWebhookIntegrationCard;
+  brevo: AdminBrevoWebhookIntegrationCard;
   google_oauth: AdminIntegrationCard;
   facebook_oauth: AdminIntegrationCard;
   cloudflare: AdminIntegrationCard;
