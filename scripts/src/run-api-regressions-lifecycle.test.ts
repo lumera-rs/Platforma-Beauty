@@ -7,6 +7,11 @@ import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  runIsolatedApiRegressionSuiteCommand,
+  runIsolatedApiSuiteCommand,
+  runIsolatedBrowserSuiteCommand,
+} from "./run-isolated-browser-suite";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = path.resolve(import.meta.dirname, "..", "..");
@@ -300,6 +305,107 @@ async function waitForOwnedTestServersToStop(testDatabaseUrl: string): Promise<v
   }
   assert.deepEqual(remaining, [], `Owned disposable test-server processes remain: ${remaining.join(", ")}`);
 }
+
+test("recovery dispatch sends each wrapper's originating suite label", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-recovery-dispatch-"));
+  const originalPath = process.env.PATH;
+  const originalArgv = process.argv;
+  const originalConsoleLog = console.log;
+
+  await writeFile(path.join(temporaryRoot, "dropdb"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+
+  const dispatchCases = [
+    {
+      suiteLabel: "browser",
+      databasePrefix: "lumera_recovery_dispatch_browser_",
+      manifestDirectoryName: `recovery-dispatch-browser-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedBrowserSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          specPath: "unused-browser.spec.ts",
+          testLabel: "Browser dispatch checks",
+          environment: {},
+        }),
+    },
+    {
+      suiteLabel: "API",
+      databasePrefix: "lumera_recovery_dispatch_api_",
+      manifestDirectoryName: `recovery-dispatch-api-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedApiSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          testFilePath: "unused-api.test.ts",
+          testLabel: "API dispatch checks",
+          environment: {},
+        }),
+    },
+    {
+      suiteLabel: "API regression",
+      databasePrefix: "lumera_recovery_dispatch_regression_",
+      manifestDirectoryName: `recovery-dispatch-regression-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedApiRegressionSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          scriptPaths: [],
+          testLabel: "API regression dispatch checks",
+          environment: {},
+        }),
+    },
+  ] as const;
+
+  const output: string[] = [];
+  console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+  try {
+    for (const dispatchCase of dispatchCases) {
+      const databaseName =
+        `${dispatchCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+      const manifestDirectory = path.join(
+        workspaceRoot,
+        ".lumera-test-state",
+        dispatchCase.manifestDirectoryName,
+      );
+      await mkdir(manifestDirectory, { recursive: true });
+      const manifestPath = await writeManifest(manifestDirectory, {
+        version: 1,
+        databaseName,
+        databaseTarget: getDatabaseTarget(),
+        ownerPid: 2_147_483_647,
+        ownerProcessIdentity: "stale-process",
+      });
+
+      output.length = 0;
+      process.argv = [
+        originalArgv[0] ?? process.execPath,
+        originalArgv[1] ?? "recovery-dispatch-test",
+        "--recover-interrupted-databases",
+      ];
+      await dispatchCase.run(dispatchCase.databasePrefix, dispatchCase.manifestDirectoryName);
+
+      assert.deepEqual(
+        output,
+        [`Removed interrupted ${dispatchCase.suiteLabel} test database ${databaseName}.`],
+      );
+      await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
+      await rm(manifestDirectory, { recursive: true, force: true });
+    }
+  } finally {
+    console.log = originalConsoleLog;
+    process.argv = originalArgv;
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await rm(temporaryRoot, { recursive: true, force: true });
+    for (const dispatchCase of dispatchCases) {
+      await rm(
+        path.join(workspaceRoot, ".lumera-test-state", dispatchCase.manifestDirectoryName),
+        { recursive: true, force: true },
+      );
+    }
+  }
+});
 
 async function writeBrowserCommandShims(
   binDirectory: string,

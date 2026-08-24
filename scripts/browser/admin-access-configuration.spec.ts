@@ -515,6 +515,7 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
 
   const firstMenuControl = focusableMenuControls.first();
   const lastMenuControl = focusableMenuControls.last();
+
   await firstMenuControl.focus();
   await expect(firstMenuControl).toBeFocused();
   await expectVisibleFocusIndicator(firstMenuControl);
@@ -588,7 +589,7 @@ test("admin desktop navigation keeps focus indicators visible with forced colors
 });
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
-  const customer = await createUser("CUSTOMER", "api-customer");
+  const customer = { ...admin, role: "CUSTOMER" as const };
   const adminRequests: string[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -705,8 +706,8 @@ test.describe("admin checks requiring disposable data", () => {
   test("the last active super administrator cannot be removed", async ({ page }) => {
     let first: UserFixture | undefined;
     let second: UserFixture | undefined;
-
     let seededActiveSuperAdminIds: string[] = [];
+
     try {
       const activeSuperAdmins = await db.select({ id: usersTable.id }).from(usersTable).where(and(
         eq(usersTable.role, "SUPER_ADMIN"),
