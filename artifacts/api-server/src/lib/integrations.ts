@@ -122,7 +122,7 @@ export async function saveIntegrationSettings(input: {
   updatedByUserId: string;
   expectedVersion?: string | null;
 }) {
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     // A provider may not have a row yet, so row-level locks alone cannot
     // serialize the first two saves. The transaction lock covers both the
     // empty and populated cases while keeping different providers independent.
@@ -146,6 +146,16 @@ export async function saveIntegrationSettings(input: {
       encryptedValue: integrationSettingsTable.encryptedValue,
     }).from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
     const existingValues = new Map(existingRows.map((row) => [row.settingKey, row.encryptedValue]));
+    // Capture this only after the version check while the provider lock is
+    // held, so a stale request cannot participate in the marker decision.
+    const previousWebhookSecret = (input.integration === "sms" || input.integration === "brevo")
+      && input.values["webhookSecret"]?.trim()
+      ? existingValues.has("webhookSecret")
+        ? decrypt(existingValues.get("webhookSecret")!)
+        : input.integration === "sms"
+          ? process.env["SMS_WEBHOOK_SECRET"]
+          : process.env["BREVO_WEBHOOK_SECRET"]
+      : undefined;
 
     for (const [settingKey, value] of [...Object.entries(input.values), ["__enabled", "1"]]) {
       if (!value.trim()) continue;
@@ -187,6 +197,7 @@ export async function saveIntegrationSettings(input: {
       target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
       set: { encryptedValue: encryptedVersion, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
     });
+    return { previousWebhookSecret };
   });
 }
 

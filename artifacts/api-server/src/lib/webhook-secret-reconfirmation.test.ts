@@ -40,6 +40,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, integrationSettingsTable, pool, usersTable } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { integrationSettings, markWebhookReconfirmed, saveIntegrationSettings, webhookVerificationIsStale, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS } from "./integrations";
 import { BREVO_WEBHOOK_EVENTS } from "./brevo";
 
@@ -69,6 +70,10 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
 type CardFlags = { version?: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 
 async function run() {
+  // App startup applies additive schema rollouts before serving requests, but
+  // this focused harness imports the Express app directly. Keep its endpoint
+  // reads aligned with the runtime entrypoint after schema additions.
+  await ensureBusinessGrowthSchema();
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const port = (server.address() as AddressInfo).port;
@@ -439,7 +444,53 @@ async function run() {
       console.log("✓ one-click Brevo registration clears the reminder persistently");
     }
 
-    // ── 8. Markers are metadata: never surfaced as integration values ──────
+    // ── 8. Stale secret saves preserve webhook-health metadata ─────────────
+    {
+      const assertRejectedStaleSecretKeepsHealth = async (integration: "sms" | "brevo") => {
+        const loadedVersion = (await getCards())[integration]?.version ?? null;
+        const winner = await putIntegrationRaw(integration, {
+          webhookSecret: `wsr-${integration}-newer-secret-${suffix}`,
+        }, loadedVersion);
+        assert.equal(winner.response.status, 200,
+          `newer ${integration} webhook-secret save must succeed: ${JSON.stringify(winner.body)}`);
+
+        const rowsBeforeStaleSave = await db.select().from(integrationSettingsTable)
+          .where(eq(integrationSettingsTable.integration, integration));
+        const markerRowsBeforeStaleSave = rowsBeforeStaleSave
+          .filter((row) => row.settingKey === "webhookSecretChangedAt" || row.settingKey === "webhookVerifiedAt");
+        assert.equal(markerRowsBeforeStaleSave.length, 2,
+          `${integration} must retain both reconfirmation timestamps before the stale save`);
+        const freshnessBeforeStaleSave = await getWebhookFreshness();
+
+        const rejected = await putIntegrationRaw(integration, {
+          webhookSecret: `wsr-${integration}-stale-secret-${suffix}`,
+        }, loadedVersion);
+        assert.equal(rejected.response.status, 409,
+          `stale ${integration} webhook-secret save must be rejected: ${JSON.stringify(rejected.body)}`);
+        assert.equal(rejected.body.code, "INTEGRATION_SETTINGS_VERSION_CONFLICT",
+          `stale ${integration} webhook-secret save must preserve the structured conflict`);
+        assert.equal(rejected.body.expectedVersion, loadedVersion);
+        assert.equal(rejected.body.currentVersion, winner.body.version);
+
+        const rowsAfterStaleSave = await db.select().from(integrationSettingsTable)
+          .where(eq(integrationSettingsTable.integration, integration));
+        assert.deepEqual(rowsAfterStaleSave, rowsBeforeStaleSave,
+          `stale ${integration} webhook-secret save must not change any persisted setting or timestamp`);
+        assert.deepEqual(
+          rowsAfterStaleSave.filter((row) => row.settingKey === "webhookSecretChangedAt" || row.settingKey === "webhookVerifiedAt"),
+          markerRowsBeforeStaleSave,
+          `stale ${integration} webhook-secret save must leave reconfirmation marker bytes unchanged`,
+        );
+        assert.deepEqual(await getWebhookFreshness(), freshnessBeforeStaleSave,
+          `stale ${integration} webhook-secret save must leave the admin freshness response unchanged`);
+      };
+
+      await assertRejectedStaleSecretKeepsHealth("sms");
+      await assertRejectedStaleSecretKeepsHealth("brevo");
+      console.log("✓ stale SMS and Brevo webhook-secret saves preserve health markers and freshness");
+    }
+
+    // ── 9. Markers are metadata: never surfaced as integration values ──────
     {
       for (const integration of ["sms", "brevo"] as const) {
         const settings = await integrationSettings(integration);
@@ -453,7 +504,7 @@ async function run() {
       console.log("✓ marker rows never leak into integration values");
     }
 
-    // ── 9. Integration saves roll back every Brevo row on failure ───────────
+    // ── 10. Integration saves roll back every Brevo row on failure ──────────
     {
       const beforeRows = await db.select().from(integrationSettingsTable)
         .where(eq(integrationSettingsTable.integration, "brevo"));

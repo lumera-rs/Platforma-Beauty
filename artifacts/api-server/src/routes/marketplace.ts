@@ -3351,15 +3351,15 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   // identical secret changes nothing and must not raise the reminder.
   const webhookIntegration = req.params.integration === "sms" || req.params.integration === "brevo" ? req.params.integration : null;
   const savedWebhookSecret = webhookIntegration ? values["webhookSecret"]?.trim() || undefined : undefined;
-  const previousWebhookSecret = webhookIntegration && savedWebhookSecret ? await resolveWebhookSecret(webhookIntegration) : undefined;
+  let previousWebhookSecret: string | undefined;
   try {
-    await saveIntegrationSettings({
+    ({ previousWebhookSecret } = await saveIntegrationSettings({
       integration: req.params.integration,
       enabled: body.enabled,
       values,
       updatedByUserId: user.id,
       expectedVersion: body.expectedVersion,
-    });
+    }));
   } catch (error) {
     if (error instanceof IntegrationSettingsVersionConflictError) {
       res.status(409).json({
