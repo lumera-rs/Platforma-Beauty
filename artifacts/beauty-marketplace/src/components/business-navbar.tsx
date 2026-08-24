@@ -113,7 +113,11 @@ export function BusinessNavbar() {
     // stale data from the previous location.
     await queryClient.cancelQueries();
     queryClient.clear();
-    window.location.assign(location.startsWith("/vlasnik") ? location : "/vlasnik");
+    // wouter's location is pathname-only. Preserve the browser's complete
+    // URL so campaign period selections remain intentional across a salon
+    // switch (and other shareable query state is not silently discarded).
+    const nextLocation = window.location.pathname + window.location.search + window.location.hash;
+    window.location.assign(nextLocation.startsWith("/vlasnik") ? nextLocation : "/vlasnik");
   };
 
   const getNavLinks = (): BusinessNavLink[] => {

@@ -30,7 +30,7 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test, type Page, type Response } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   automationRulesTable,
   db,
@@ -51,6 +51,8 @@ type Fixture = {
   ownerId: string;
   salonId: string;
   ruleId: string;
+  secondSalonId: string;
+  secondRuleId: string;
 };
 
 async function hashPassword(password: string): Promise<string> {
@@ -70,7 +72,7 @@ async function createFixture(): Promise<Fixture> {
   const ownerEmail = `browser-period-url-owner-${suffix}@example.test`;
   const ownerPassword = "browser-period-url-password";
   let ownerId: string | undefined;
-  let salonId: string | undefined;
+  let salonIds: string[] = [];
 
   try {
     const [owner] = await db.insert(usersTable).values({
@@ -84,39 +86,77 @@ async function createFixture(): Promise<Fixture> {
     if (!owner) throw new Error("Period-URL browser fixture could not create its owner.");
     ownerId = owner.id;
 
-    const [salon] = await db.insert(salonsTable).values({
-      ownerId: owner.id,
-      name: `Browser salon za period URL ${suffix}`,
-      slug: `browser-period-url-${suffix}`,
-      city: "Beograd",
-      municipality: "Vračar",
-      address: "Test 93",
-      phone: "+381110000093",
-      email: `browser-period-url-salon-${suffix}@example.test`,
-      shortDescription: "Izolovan salon za proveru URL perioda kampanja.",
-      description: "Salon je napravljen samo za browser regresioni test deljivih linkova perioda.",
-      imageUrl: "/test-browser-period-url.jpg",
-    }).returning({ id: salonsTable.id });
-    if (!salon) throw new Error("Period-URL browser fixture could not create its salon.");
-    salonId = salon.id;
+    const firstSalonName = `Browser salon za period URL ${suffix}`;
+    const secondSalonName = `Browser druga lokacija za period URL ${suffix}`;
+    const salons = await db.insert(salonsTable).values([
+      {
+        ownerId: owner.id,
+        name: firstSalonName,
+        slug: `browser-period-url-${suffix}`,
+        city: "Beograd",
+        municipality: "Vračar",
+        address: "Test 93",
+        phone: "+381110000093",
+        email: `browser-period-url-salon-${suffix}@example.test`,
+        shortDescription: "Izolovan salon za proveru URL perioda kampanja.",
+        description: "Salon je napravljen samo za browser regresioni test deljivih linkova perioda.",
+        imageUrl: "/test-browser-period-url.jpg",
+      },
+      {
+        ownerId: owner.id,
+        name: secondSalonName,
+        slug: `browser-period-url-second-${suffix}`,
+        city: "Novi Sad",
+        municipality: "Centar",
+        address: "Test 94",
+        phone: "+381110000094",
+        email: `browser-period-url-second-salon-${suffix}@example.test`,
+        shortDescription: "Druga lokacija za proveru promene kampanja.",
+        description: "Druga lokacija za browser proveru promene salona uz sačuvan period.",
+        imageUrl: "/test-browser-period-url.jpg",
+      },
+    ]).returning({ id: salonsTable.id });
+    if (salons.length !== 2) throw new Error("Period-URL browser fixture could not create both salons.");
+    salonIds = salons.map((salon) => salon.id);
+    const [salon, secondSalon] = salons;
 
     await db.update(usersTable).set({ activeSalonId: salon.id }).where(eq(usersTable.id, owner.id));
 
-    const [rule] = await db.insert(automationRulesTable).values({
-      salonId: salon.id,
-      name: `Browser period URL kampanja ${suffix}`,
-      trigger: "inactive_days",
-      triggerConfig: { inactiveDays: 30 },
-      action: "send_email",
-      emailSubject: "Test",
-      emailBody: "Test",
-      status: "active",
-    }).returning({ id: automationRulesTable.id });
-    if (!rule) throw new Error("Period-URL browser fixture could not create its rule.");
+    const rules = await db.insert(automationRulesTable).values([
+      {
+        salonId: salon.id,
+        name: `Browser period URL kampanja ${suffix}`,
+        trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 },
+        action: "send_email",
+        emailSubject: "Test",
+        emailBody: "Test",
+        status: "active",
+      },
+      {
+        salonId: secondSalon.id,
+        name: `Browser druga period URL kampanja ${suffix}`,
+        trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 },
+        action: "send_email",
+        emailSubject: "Test",
+        emailBody: "Test",
+        status: "active",
+      },
+    ]).returning({ id: automationRulesTable.id });
+    if (rules.length !== 2) throw new Error("Period-URL browser fixture could not create both rules.");
 
-    return { ownerEmail, ownerPassword, ownerId: owner.id, salonId: salon.id, ruleId: rule.id };
+    return {
+      ownerEmail,
+      ownerPassword,
+      ownerId: owner.id,
+      salonId: salon.id,
+      ruleId: rules[0]!.id,
+      secondSalonId: secondSalon.id,
+      secondRuleId: rules[1]!.id,
+    };
   } catch (error) {
-    if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
+    if (salonIds.length) await db.delete(salonsTable).where(inArray(salonsTable.id, salonIds));
     if (ownerId) await db.delete(usersTable).where(eq(usersTable.id, ownerId));
     throw error;
   }
@@ -124,7 +164,8 @@ async function createFixture(): Promise<Fixture> {
 
 async function cleanUpFixture(fixture: Fixture): Promise<void> {
   // Salon delete cascades the automation rule.
-  await db.delete(salonsTable).where(eq(salonsTable.id, fixture.salonId));
+  await db.update(usersTable).set({ activeSalonId: null }).where(eq(usersTable.id, fixture.ownerId));
+  await db.delete(salonsTable).where(inArray(salonsTable.id, [fixture.salonId, fixture.secondSalonId]));
   await db.delete(usersTable).where(eq(usersTable.id, fixture.ownerId));
 }
 
@@ -151,6 +192,24 @@ function nextOverviewStatsResponse(
       && url.searchParams.get("from") === expected.from
       && url.searchParams.get("to") === expected.to;
   });
+}
+
+function nextAutomationStatsResponse(
+  page: Page,
+  automationId: string,
+  expected: { period: string | null; from: string | null; to: string | null },
+): Promise<Response> {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith(`/growth/automations/${automationId}/stats`)
+      && url.searchParams.get("period") === expected.period
+      && url.searchParams.get("from") === expected.from
+      && url.searchParams.get("to") === expected.to;
+  });
+}
+
+async function resetFixtureActiveSalon(fixture: Fixture, salonId: string): Promise<void> {
+  await db.update(usersTable).set({ activeSalonId: salonId }).where(eq(usersTable.id, fixture.ownerId));
 }
 
 test.describe("shared campaign period links restore the picked window", () => {
@@ -432,5 +491,70 @@ test.describe("shared campaign period links restore the picked window", () => {
     await expect(page).toHaveURL(
       new RegExp(`/vlasnik/automatizacije\\?from=${fromParam}&to=${todayParam}$`),
     );
+  });
+
+  test("switching salons preserves a preset for overview and campaign detail", async ({ page }) => {
+    await resetFixtureActiveSalon(fixture, fixture.salonId);
+    await signInAsFixtureOwner(page, fixture);
+
+    const initialOverview = nextOverviewStatsResponse(page, { period: "30d", from: null, to: null });
+    await page.goto("/vlasnik/automatizacije?period=30d");
+    expect((await initialOverview).status()).toBe(200);
+    await expect(page.getByTestId(`overview-row-${fixture.ruleId}`)).toBeVisible();
+
+    const salonSelect = page.getByLabel("Aktivni salon");
+    await expect(salonSelect).toHaveValue(fixture.salonId);
+    const switchResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === "/api/salon/active-salon",
+    );
+    const switchedOverview = nextOverviewStatsResponse(page, { period: "30d", from: null, to: null });
+    await salonSelect.selectOption(fixture.secondSalonId);
+
+    expect((await switchResponse).status()).toBe(200);
+    expect((await switchedOverview).status()).toBe(200);
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?period=30d$/);
+    await expect(page.getByLabel("Aktivni salon")).toHaveValue(fixture.secondSalonId);
+    await expect(page.getByTestId(`overview-row-${fixture.secondRuleId}`)).toBeVisible();
+    await expect(page.getByTestId(`overview-row-${fixture.ruleId}`)).toHaveCount(0);
+
+    const detailStats = nextAutomationStatsResponse(page, fixture.secondRuleId, { period: "30d", from: null, to: null });
+    await page.getByTestId(`overview-row-${fixture.secondRuleId}`).getByRole("button").click();
+    expect((await detailStats).status()).toBe(200);
+    await expect(page.getByTestId("stats-period-selector").getByTestId("period-30d"))
+      .toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("switching salons preserves a custom range for overview and campaign detail", async ({ page }) => {
+    await resetFixtureActiveSalon(fixture, fixture.salonId);
+    await signInAsFixtureOwner(page, fixture);
+
+    const expected = { period: null, from: "2026-03-01", to: "2026-03-31" };
+    const initialOverview = nextOverviewStatsResponse(page, expected);
+    await page.goto("/vlasnik/automatizacije?from=2026-03-01&to=2026-03-31");
+    expect((await initialOverview).status()).toBe(200);
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+      .toContainText("2026");
+
+    const salonSelect = page.getByLabel("Aktivni salon");
+    const switchResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === "/api/salon/active-salon",
+    );
+    const switchedOverview = nextOverviewStatsResponse(page, expected);
+    await salonSelect.selectOption(fixture.secondSalonId);
+
+    expect((await switchResponse).status()).toBe(200);
+    expect((await switchedOverview).status()).toBe(200);
+    await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?from=2026-03-01&to=2026-03-31$/);
+    await expect(page.getByLabel("Aktivni salon")).toHaveValue(fixture.secondSalonId);
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+      .toContainText("2026");
+
+    const detailStats = nextAutomationStatsResponse(page, fixture.secondRuleId, expected);
+    await page.getByTestId(`overview-row-${fixture.secondRuleId}`).getByRole("button").click();
+    expect((await detailStats).status()).toBe(200);
+    await expect(page.getByTestId("stats-period-selector").getByTestId("period-custom"))
+      .toContainText("2026");
   });
 });
