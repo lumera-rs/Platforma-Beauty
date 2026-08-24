@@ -17,4 +17,5 @@ export interface User {
   role: UserRole;
   active: boolean;
   mustChangePassword: boolean;
+  marketingEmailsEnabled: boolean;
 }

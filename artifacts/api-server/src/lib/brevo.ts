@@ -12,6 +12,7 @@ import {
 
 type Recipient = { email: string; name?: string | null };
 type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
+type EmailDeliveryWriter = { insert: typeof db.insert };
 export type TransactionalEmailTransport = {
   send(input: {
     idempotencyKey: string;
@@ -21,15 +22,32 @@ export type TransactionalEmailTransport = {
     scheduledAt?: Date | null;
   }): Promise<{ messageId?: string } | { skipped: true; errorMessage: string }>;
 };
+export type TransactionalEmailInput = {
+  eventKey: string;
+  emailType: string;
+  to: Recipient;
+  subject: string;
+  htmlContent: string;
+  salonId?: string;
+  appointmentId?: string;
+  metadata?: Record<string, unknown>;
+  scheduledAt?: Date;
+};
 
 const RESCHEDULED_EMAIL_TYPE = "appointment_rescheduled";
 const AUTOMATION_EMAIL_TYPE = "automation";
+export const BEAUTY_JOB_EMAIL_TYPES = [
+  "beauty_job_new_contact",
+  "beauty_job_author_reply",
+  "beauty_job_moderation",
+  "beauty_job_expiry_warning",
+] as const;
 // Email types that participate in the durable outbox retry lifecycle:
 // insert as queued with a due nextRetryAt, CAS processing claim/lease, bounded
 // backoff retries, temporary-vs-permanent classification, and idempotent
 // provider dedup (via the stable delivery id). Any other emailType is a
 // single-shot send with no retry.
-const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE] as const;
+const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES] as const;
 const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
 const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [
   ...RETRYABLE_EMAIL_TYPES,
@@ -109,18 +127,12 @@ export function lumeraEmailHtml(title: string, content: string) {
   </table></td></tr></table></body></html>`;
 }
 
-export async function sendTransactionalEmail(input: {
-  eventKey: string;
-  emailType: string;
-  to: Recipient;
-  subject: string;
-  htmlContent: string;
-  salonId?: string;
-  appointmentId?: string;
-  metadata?: Record<string, unknown>;
-  scheduledAt?: Date;
-}, transport: TransactionalEmailTransport = brevoTransactionalEmailTransport) {
-  const [delivery] = await db.insert(emailDeliveriesTable).values({
+export async function enqueueTransactionalEmail(
+  writer: EmailDeliveryWriter,
+  input: TransactionalEmailInput,
+  now = new Date(),
+) {
+  const [delivery] = await writer.insert(emailDeliveriesTable).values({
     eventKey: input.eventKey,
     emailType: input.emailType,
     salonId: input.salonId ?? null,
@@ -132,15 +144,34 @@ export async function sendTransactionalEmail(input: {
     scheduledAt: input.scheduledAt ?? null,
     // Retryable types enter the outbox as "due now" so the first attempt (and any
     // subsequent retries) flow through the CAS claim/lease path below.
-    nextRetryAt: retryableEmailType(input.emailType) ? new Date() : null,
+    nextRetryAt: retryableEmailType(input.emailType) ? now : null,
     metadata: input.metadata ?? {},
   }).onConflictDoNothing().returning();
+  return delivery ?? null;
+}
+
+export async function deliverQueuedTransactionalEmail(
+  eventKey: string,
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
+  const [delivery] = await db.select().from(emailDeliveriesTable)
+    .where(eq(emailDeliveriesTable.eventKey, eventKey)).limit(1);
+  if (!delivery) return { missing: true } as const;
+  if (!delivery.htmlContent) return { failed: true } as const;
+  return reconcileExistingDelivery(eventKey, delivery.htmlContent, transport);
+}
+
+export async function sendTransactionalEmail(
+  input: TransactionalEmailInput,
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+) {
+  const delivery = await enqueueTransactionalEmail(db, input);
 
   // Insert conflict: a row for this eventKey already exists. NEVER assume "sent"
   // merely because the eventKey exists — inspect the real status so callers can
   // distinguish a genuine prior success from a still-retrying/failed delivery.
   if (!delivery) {
-    return reconcileExistingDelivery(input.eventKey, input.htmlContent, transport);
+    return deliverQueuedTransactionalEmail(input.eventKey, transport);
   }
 
   if (retryable(delivery)) {
@@ -429,7 +460,7 @@ async function deliverEmail(
 /**
  * Generalized durable outbox retry worker. Reclaims stale processing rows whose
  * lease has expired, then claims and re-sends queued+due rows within retry caps.
- * Processes ALL retryable email types (appointment_rescheduled, automation).
+ * Processes all retryable email types, including Beauty Poslovi events.
  */
 export async function retryFailedRetryableEmails(
   now = new Date(),

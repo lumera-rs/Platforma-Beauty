@@ -108,6 +108,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentUserResponse"
+  /auth/email-preferences:
+    patch:
+      operationId: updateEmailPreferences
+      tags: [auth]
+      summary: Update marketing email preference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailPreferencesInput"
+      responses:
+        "200":
+          description: Updated email preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailPreferences"
+        "400": { description: Invalid preference }
+        "401": { description: Authentication required }
   /auth/sign-in-methods:
     get:
       operationId: getAuthSignInMethods
@@ -5213,7 +5233,18 @@ components:
           enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER, STUDENT]
         active: { type: boolean }
         mustChangePassword: { type: boolean }
-      required: [id, firstName, lastName, email, role, active, mustChangePassword]
+        marketingEmailsEnabled: { type: boolean }
+      required: [id, firstName, lastName, email, role, active, mustChangePassword, marketingEmailsEnabled]
+    EmailPreferencesInput:
+      type: object
+      properties:
+        marketingEmailsEnabled: { type: boolean }
+      required: [marketingEmailsEnabled]
+    EmailPreferences:
+      type: object
+      properties:
+        marketingEmailsEnabled: { type: boolean }
+      required: [marketingEmailsEnabled]
     RegisterInput:
       type: object
       properties:

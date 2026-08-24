@@ -87,8 +87,12 @@ export interface User {
   role: UserRole;
   active: boolean;
   mustChangePassword: boolean;
+  marketingEmailsEnabled: boolean;
 }
 
+export interface EmailPreferencesInput {
+  marketingEmailsEnabled: boolean;
+}
 export interface RegisterInput {
   /** @minLength 1 */
   firstName: string;
@@ -6886,3 +6890,7 @@ export const ListBeautyJobsSort = {
   price_desc: 'price_desc',
   nearest: 'nearest',
 } as const;
+
+export interface EmailPreferences {
+  marketingEmailsEnabled: boolean;
+}

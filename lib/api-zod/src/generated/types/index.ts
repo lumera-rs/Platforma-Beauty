@@ -285,6 +285,8 @@ export * from './educationWaitlistOfferStatus';
 export * from './emailMarketingCampaign';
 export * from './emailMarketingCampaignAudience';
 export * from './emailMarketingCampaignStatus';
+export * from './emailPreferences';
+export * from './emailPreferencesInput';
 export * from './employee';
 export * from './employeeAppointmentSeriesInput';
 export * from './employeeAppointmentSeriesInputGuest';

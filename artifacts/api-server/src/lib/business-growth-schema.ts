@@ -65,6 +65,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   // Existing enum evolved during Phase 2: ensure it exists AND carries every
   // label (notably `processing`) BEFORE any column/default/worker uses it.
   sms_delivery_status: ["queued", "processing", "sent", "failed", "skipped"],
+  email_delivery_status: ["queued", "processing", "sent", "failed", "skipped"],
   // Existing message-type enum: Phase 2 added `automation`. Ensure the type
   // exists AND carries every current core.ts label (mirrored exactly, not just
   // `automation`) BEFORE any sms_deliveries insert / automation worker startup.
@@ -402,6 +403,21 @@ function tableStatements(s: string): string[] {
     // every scheduler tick; this partial index keeps those history scans
     // bounded to the small alert history as email_deliveries grows. Mirrors
     // email_deliveries_report_alert_history_idx in lib/db/src/schema/core.ts.
+    // Legacy installations can predate the durable lease/retry columns now
+    // required by every retryable transactional email.
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS appointment_id uuid REFERENCES ${s}.appointments(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS recipient_name text`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS html_content text`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS status ${s}.email_delivery_status NOT NULL DEFAULT 'queued'`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS error_message text`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS scheduled_at timestamptz`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS sent_at timestamptz`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS next_retry_at timestamptz`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS processing_token text`,
+    `CREATE INDEX IF NOT EXISTS email_deliveries_retry_index ON ${s}.email_deliveries (status, next_retry_at)`,
+    `CREATE INDEX IF NOT EXISTS email_deliveries_salon_idx ON ${s}.email_deliveries (salon_id)`,
+    `CREATE INDEX IF NOT EXISTS email_deliveries_appointment_idx ON ${s}.email_deliveries (appointment_id)`,
     `CREATE INDEX IF NOT EXISTS email_deliveries_report_alert_history_idx
        ON ${s}.email_deliveries (email_type, recipient_email)
        WHERE email_type IN ('delivery_report_silence_alert', 'delivery_report_recovery_alert')`,
@@ -418,6 +434,11 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_provider_message_idx
        ON ${s}.email_deliveries (provider_message_id)
        WHERE email_type = 'automation'`,
+
+    // v22: marketing consent is separate from transactional delivery. Existing
+    // accounts remain opted in so this additive rollout never changes consent
+    // without an explicit user action.
+    `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS marketing_emails_enabled boolean NOT NULL DEFAULT true`,
 
     // ── platform_retention_settings (v4: admin-tunable retention thresholds) ─
     // Append-only versioned platform config; highest version is active. Mirrors
@@ -932,6 +953,9 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS beauty_job_notifications_recipient_created_idx ON ${s}.beauty_job_notifications (recipient_user_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_notifications_listing_idx ON ${s}.beauty_job_notifications (listing_id)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_notifications_contact_idx ON ${s}.beauty_job_notifications (contact_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS beauty_job_notifications_expiry_warning_unique
+       ON ${s}.beauty_job_notifications (recipient_user_id, listing_id)
+       WHERE type = 'expiry_warning' AND listing_id IS NOT NULL`,
     `INSERT INTO ${s}.beauty_job_categories (slug, name, subtype_labels, enabled, feature_flag) VALUES
       ('frizeri', 'Frizeri', '["Ženski frizer", "Muški frizer", "Kolorista"]'::jsonb, true, NULL),
       ('nokti', 'Nokti (Manikir/Pedikir)', '["Manikir", "Pedikir", "Nail artist"]'::jsonb, true, NULL),

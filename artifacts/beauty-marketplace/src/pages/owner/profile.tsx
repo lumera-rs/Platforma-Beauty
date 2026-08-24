@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
+import { MarketingEmailPreferences } from "@/components/marketing-email-preferences";
 import { uploadOptimizedImage, type FinalizedMediaAsset } from "@/lib/media-upload";
 import {
   getGetManagedSalonProfileQueryKey,
@@ -301,6 +302,7 @@ export default function OwnerSalonProfile() {
               </Card>
             </form>
           )}
+          <MarketingEmailPreferences />
         </main>
       </div>
     </BusinessLayout>

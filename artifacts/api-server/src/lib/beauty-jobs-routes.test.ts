@@ -2,14 +2,23 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import {
   beautyJobCategoriesTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
-  beautyJobPlatformSettingsTable, db, pool, salonsTable, usersTable,
+  beautyJobNotificationsTable, beautyJobPlatformSettingsTable, db, emailDeliveriesTable,
+  pool, salonsTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
+import {
+  sendBeautyJobEmail,
+  setBeautyJobEmailTransportForTests,
+} from "./beauty-jobs-email";
+import {
+  retryFailedRetryableEmails,
+  type TransactionalEmailTransport,
+} from "./brevo";
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
@@ -70,6 +79,18 @@ async function insertApproved(categoryId: string, authorId: string, title: strin
 async function run(): Promise<void> {
   await ensureBusinessGrowthSchema();
   let originalSettings: typeof beautyJobPlatformSettingsTable.$inferSelect | undefined;
+  const sentEmails: Array<{ email: string; subject: string; idempotencyKey: string }> = [];
+  const routeTransport: TransactionalEmailTransport = {
+    async send(input) {
+      sentEmails.push({
+        email: input.to.email,
+        subject: input.subject,
+        idempotencyKey: input.idempotencyKey,
+      });
+      return { messageId: `beauty-jobs-test-${sentEmails.length}` };
+    },
+  };
+  setBeautyJobEmailTransportForTests(routeTransport);
   try {
     const [settings] = await db.select().from(beautyJobPlatformSettingsTable).limit(1);
     originalSettings = settings;
@@ -118,8 +139,23 @@ async function run(): Promise<void> {
     assert.ok(ownerMine.body.items.some((x: any) => x.id === ownerListing.id) && !ownerMine.body.items.some((x: any) => x.id === customerListing.id), "owner scope must exclude customer-author listings");
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`, otherOwner.token, "PATCH", { title: "steal" })).status, 403);
 
-    const approveCustomer = await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" });
-    assert.equal(approveCustomer.status, 200);
+    const concurrentApprovals = await Promise.all([
+      request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" }),
+      request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" }),
+    ]);
+    assert.deepEqual(concurrentApprovals.map((result) => result.status), [200, 200]);
+    assert.equal(
+      sentEmails.filter((email) => email.subject.includes("Oglas je odobren")).length,
+      1,
+      "concurrent identical moderation emits one email",
+    );
+    const initialModerationNotifications = await db.select().from(beautyJobNotificationsTable)
+      .where(eq(beautyJobNotificationsTable.listingId, customerListing.id));
+    assert.equal(
+      initialModerationNotifications.filter((item) => item.type === "moderation").length,
+      1,
+      "concurrent identical moderation emits one in-app notification",
+    );
     const edited = await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", { title: `Edited ${suffix}` });
     assert.equal(edited.status, 200);
     assert.equal(edited.body.moderationStatus, "pending", "editing must re-enter moderation");
@@ -236,11 +272,69 @@ async function run(): Promise<void> {
     const save = await request(base, `/beauty-jobs/${customerListing.id}/save`, applicant.token, "POST");
     assert.equal(save.status, 200); assert.equal(save.body.saved, true);
     assert.equal((await request(base, "/beauty-jobs/saved", applicant.token)).body.items.some((x: any) => x.id === customerListing.id), true);
+    const preference = await request(base, "/auth/email-preferences", customer.token, "PATCH", { marketingEmailsEnabled: false });
+    assert.equal(preference.status, 200);
+    assert.equal(preference.body.marketingEmailsEnabled, false);
     const contact = await request(base, `/beauty-jobs/${customerListing.id}/contact`, applicant.token, "POST", { message: "Želim da se prijavim." });
     assert.equal(contact.status, 201);
+    const contactEmails = sentEmails.filter((email) => email.subject.includes("Novi kontakt za vaš oglas"));
+    assert.equal(contactEmails.length, 1, "new contact sends exactly one email");
+    assert.equal(contactEmails[0]!.email, customer.user.email.toLowerCase(), "contact email is isolated to listing author");
+    assert.notEqual(contactEmails[0]!.email, applicant.user.email.toLowerCase(), "contact email is never sent back to applicant");
     assert.equal((await request(base, "/beauty-jobs/inbox", customer.token)).body.contacts.some((x: any) => x.id === contact.body.id), true);
     assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, otherOwner.token, "PATCH", { authorReply: "Neovlašćeno" })).status, 404);
-    assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Hvala" })).status, 200);
+    const concurrentReplies = await Promise.all([
+      request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Hvala" }),
+      request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Javljamo se uskoro" }),
+    ]);
+    assert.deepEqual(concurrentReplies.map((result) => result.status), [200, 200]);
+    assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, customer.token, "PATCH", { authorReply: "Dopuna" })).status, 200);
+    const replyEmails = sentEmails.filter((email) => email.subject.includes("Dobili ste odgovor"));
+    assert.equal(replyEmails.length, 1, "editing an existing reply does not duplicate the reply email");
+    assert.equal(replyEmails[0]!.email, applicant.user.email.toLowerCase(), "reply email is isolated to the applicant");
+    const replyNotifications = await db.select().from(beautyJobNotificationsTable)
+      .where(eq(beautyJobNotificationsTable.contactId, contact.body.id));
+    assert.equal(
+      replyNotifications.filter((item) => item.type === "author_reply").length,
+      1,
+      "concurrent first replies emit one in-app notification",
+    );
+
+    const retryEventKey = `beauty-job:test-retry:${suffix}`;
+    let failureCalls = 0;
+    const temporaryFailure: TransactionalEmailTransport = {
+      async send() {
+        failureCalls += 1;
+        throw new Error("Brevo 503: temporarily unavailable");
+      },
+    };
+    const firstRetryAttempt = await sendBeautyJobEmail({
+      eventKey: retryEventKey,
+      emailType: "beauty_job_new_contact",
+      recipientUserId: customer.user.id,
+      subject: "Retry test",
+      title: "Retry test",
+      content: "Prolazni kvar mora ostati u outbox redu.",
+    }, temporaryFailure);
+    assert.deepEqual(firstRetryAttempt, { failed: true });
+    assert.equal(failureCalls, 1);
+    const [queuedRetry] = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.eventKey, retryEventKey)).limit(1);
+    assert.equal(queuedRetry?.status, "queued", "temporary Beauty Poslovi failure remains queued");
+    assert.ok(queuedRetry?.nextRetryAt, "temporary Beauty Poslovi failure receives a retry timestamp");
+    const retriedRecipients: string[] = [];
+    const retrySuccess: TransactionalEmailTransport = {
+      async send(input) {
+        retriedRecipients.push(input.to.email);
+        return { messageId: `retry-success-${suffix}` };
+      },
+    };
+    await retryFailedRetryableEmails(new Date(queuedRetry!.nextRetryAt!.getTime() + 1), retrySuccess);
+    const [sentRetry] = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.eventKey, retryEventKey)).limit(1);
+    assert.equal(sentRetry?.status, "sent", "retry worker sends the queued Beauty Poslovi email");
+    assert.deepEqual(retriedRecipients, [customer.user.email.toLowerCase()], "retry preserves the isolated recipient");
+    assert.equal(sentRetry?.retryCount, 1);
 
     const report = await request(base, `/beauty-jobs/${customerListing.id}/report`, undefined, "POST", { reason: "Anonimna prijava" });
     assert.equal(report.status, 201); assert.equal(report.body.reporterUserId, null);
@@ -252,9 +346,21 @@ async function run(): Promise<void> {
     assert.equal((await request(base, "/admin/beauty-jobs/settings", admin.token)).status, 200);
     assert.equal((await request(base, "/admin/beauty-jobs/settings", admin.token, "PATCH", { listingExpiryDays: 2, hourlyPostingLimit: 1 })).status, 200);
     const expired = await insertApproved(hairCategory.id, customer.user.id, `Expired ${suffix}`, { expiresAt: new Date(Date.now() - 1000) });
+    const warning = await insertApproved(hairCategory.id, customer.user.id, `Warning ${suffix}`, { expiresAt: new Date(Date.now() + 2 * 86400000) });
+    assert.equal((await request(base, "/admin/beauty-jobs/expiry-sweep", admin.token, "POST")).status, 200);
     assert.equal((await request(base, "/admin/beauty-jobs/expiry-sweep", admin.token, "POST")).status, 200);
     const [expiredAfterSweep] = await db.select({ status: beautyJobListingsTable.status }).from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, expired.id));
     assert.equal(expiredAfterSweep?.status, "expired", "expiry sweep must expire past-due listings");
+    const warningDeliveries = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.eventKey, `beauty-job:expiry-warning:${warning.id}:recipient:${customer.user.id}`));
+    assert.equal(warningDeliveries.length, 1, "repeated expiry sweeps keep one durable email delivery");
+    const warningNotifications = await db.select().from(beautyJobNotificationsTable)
+      .where(eq(beautyJobNotificationsTable.listingId, warning.id));
+    assert.equal(
+      warningNotifications.filter((item) => item.type === "expiry_warning").length,
+      1,
+      "repeated expiry sweeps keep one in-app warning",
+    );
     assert.equal((await request(base, `/beauty-jobs/${expired.id}/renew`, customer.token, "POST")).status, 200);
 
     // A fresh author proves the advisory-lock hourly limit under concurrent requests.
@@ -266,6 +372,7 @@ async function run(): Promise<void> {
     assert.deepEqual(concurrent.map((x) => x.status).sort(), [201, 429], "one concurrent create must be rate limited");
     for (const result of concurrent) if (result.status === 201) createdListingIds.push(result.body.id);
   } finally {
+    setBeautyJobEmailTransportForTests(undefined);
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     if (originalSettings) await db.update(beautyJobPlatformSettingsTable).set({
       listingExpiryDays: originalSettings.listingExpiryDays, hourlyPostingLimit: originalSettings.hourlyPostingLimit,
@@ -273,6 +380,7 @@ async function run(): Promise<void> {
     }).where(eq(beautyJobPlatformSettingsTable.id, originalSettings.id));
     else await db.delete(beautyJobPlatformSettingsTable);
     if (createdListingIds.length) await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
+    await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.recipientEmail, `%${suffix}%`));
     await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUsers));
     if (createdUsers.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUsers));
   }

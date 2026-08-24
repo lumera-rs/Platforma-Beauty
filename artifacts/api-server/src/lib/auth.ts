@@ -68,6 +68,7 @@ export function publicUser(user: typeof usersTable.$inferSelect) {
     role: user.role,
     active: user.active,
     mustChangePassword: user.mustChangePassword,
+    marketingEmailsEnabled: user.marketingEmailsEnabled,
   };
 }
 

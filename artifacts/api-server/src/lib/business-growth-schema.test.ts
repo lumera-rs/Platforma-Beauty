@@ -355,6 +355,13 @@ async function run() {
     assert.ok(await columnExists("retail_cart_items", "product_catalog_reference"), "retail cart reference snapshot column added");
     assert.ok(await columnExists("retail_order_items", "product_catalog_reference"), "retail order reference snapshot column added");
     assert.ok(await columnExists("reviews", "employee_id"), "reviews.employee_id added");
+    assert.ok(await columnExists("users", "marketing_emails_enabled"), "users.marketing_emails_enabled added");
+    for (const column of [
+      "appointment_id", "recipient_name", "html_content", "status", "scheduled_at",
+      "retry_count", "next_retry_at", "processing_token",
+    ]) {
+      assert.ok(await columnExists("email_deliveries", column), `email_deliveries.${column} added`);
+    }
     assert.ok(await columnExists("sms_deliveries", "processing_started_at"), "sms_deliveries.processing_started_at added");
     assert.ok(await columnExists("sms_deliveries", "submission_started_at"), "sms_deliveries.submission_started_at added");
     assert.ok(await columnExists("sms_deliveries", "claim_expires_at"), "sms_deliveries.claim_expires_at added");
@@ -408,6 +415,8 @@ async function run() {
       "platform_retention_settings_version_unique",
       "email_deliveries_report_alert_history_idx",
       "email_deliveries_provider_message_idx",
+      "email_deliveries_retry_index",
+      "beauty_job_notifications_expiry_warning_unique",
       "appointments_salon_customer_completed_date_idx",
       "salon_customers_salon_id_idx",
     ]) {

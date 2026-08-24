@@ -202,6 +202,9 @@ export const beautyJobNotificationsTable = pgTable("beauty_job_notifications", {
   index("beauty_job_notifications_recipient_created_idx").on(table.recipientUserId, table.createdAt),
   index("beauty_job_notifications_listing_idx").on(table.listingId),
   index("beauty_job_notifications_contact_idx").on(table.contactId),
+  uniqueIndex("beauty_job_notifications_expiry_warning_unique")
+    .on(table.recipientUserId, table.listingId)
+    .where(sql`${table.type} = 'expiry_warning' AND ${table.listingId} IS NOT NULL`),
 ]);
 
 export type BeautyJobListing = typeof beautyJobListingsTable.$inferSelect;

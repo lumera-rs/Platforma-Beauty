@@ -94,6 +94,7 @@ export const usersTable = pgTable("users", {
   role: userRoleEnum("role").notNull().default("CUSTOMER"),
   avatarUrl: text("avatar_url"),
   active: boolean("active").notNull().default(true),
+  marketingEmailsEnabled: boolean("marketing_emails_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

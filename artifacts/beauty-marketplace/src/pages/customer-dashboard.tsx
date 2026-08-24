@@ -48,6 +48,7 @@ import { SalonFavoriteButton } from "@/components/salon-favorite-button";
 import { useBookingDraft } from "@/hooks/use-booking-draft";
 import { DiscoveryCarousel } from "@/components/discovery-carousel";
 import { EducationPurchases } from "@/components/education-purchases";
+import { MarketingEmailPreferences } from "@/components/marketing-email-preferences";
 
 const appointmentStatusesWithSalonContact = new Set(["pending", "confirmed", "completed"]);
 
@@ -328,7 +329,6 @@ export default function CustomerDashboard() {
     toast.success("Telefon je potvrđen i istorija termina je povezana.");
     queryClient.invalidateQueries({ queryKey: getListMyAppointmentsQueryKey(undefined) });
   };
-
   const getStatusBadge = (status: string) => {
     switch(status) {
       case 'confirmed': return <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/20">Potvrđeno</Badge>;
@@ -615,6 +615,7 @@ export default function CustomerDashboard() {
                   </div>
                </CardContent>
              </Card>
+             <MarketingEmailPreferences />
              <Card>
                <CardHeader>
                  <div className="flex items-center gap-3">

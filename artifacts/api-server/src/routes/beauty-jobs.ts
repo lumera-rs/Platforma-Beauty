@@ -34,8 +34,13 @@ import {
 import { getCurrentUser, isAdmin } from "../lib/auth";
 import { attachReadyImageAssets } from "./image-media";
 import { expireBeautyJobListings } from "../lib/beauty-jobs-maintenance";
+import {
+  deliverBeautyJobEmail,
+  enqueueBeautyJobEmail,
+} from "../lib/beauty-jobs-email";
 
 const router = Router();
+type BeautyJobTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const RENTAL_TYPES = new Set(["equipment_rental", "space_rental"]);
 const MANAGED_URL = /^\/api\/media\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -206,12 +211,27 @@ async function canManage(user: typeof usersTable.$inferSelect, listing: typeof b
   return salon?.id === listing.salonId;
 }
 async function notification(recipientUserId: string, type: string, title: string, body: string, listingId?: string, contactId?: string) {
-  await db.insert(beautyJobNotificationsTable).values({ recipientUserId, type, title, body, listingId, contactId });
+  const [created] = await db.insert(beautyJobNotificationsTable).values({ recipientUserId, type, title, body, listingId, contactId }).returning();
+  return created;
 }
 async function listingRecipient(listing: typeof beautyJobListingsTable.$inferSelect) {
   if (listing.userId) return listing.userId;
   const [salon] = listing.salonId ? await db.select({ ownerId: salonsTable.ownerId }).from(salonsTable).where(eq(salonsTable.id, listing.salonId)).limit(1) : [];
   return salon?.ownerId;
+}
+async function transactionListingRecipient(
+  tx: BeautyJobTransaction,
+  listing: typeof beautyJobListingsTable.$inferSelect,
+) {
+  if (listing.userId) return listing.userId;
+  const [salon] = listing.salonId
+    ? await tx.select({ ownerId: salonsTable.ownerId }).from(salonsTable)
+      .where(eq(salonsTable.id, listing.salonId)).limit(1)
+    : [];
+  return salon?.ownerId;
+}
+async function lockBeautyJobEvent(tx: BeautyJobTransaction, id: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${id}, 0))`);
 }
 
 router.get("/beauty-jobs/categories", async (req, res, next) => { try {
@@ -561,7 +581,37 @@ router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const p = ContactBeautyJobAuthorParams.safeParse(req.params), b = ContactBeautyJobAuthorBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
   const [listing] = await db.select().from(beautyJobListingsTable).where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), sql`${beautyJobListingsTable.expiresAt} > now()`)).limit(1);
   if (!listing) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" }); const recipient = await listingRecipient(listing); if (!recipient || recipient === user.id) return res.status(403).json({ error: "Kontakt nije dozvoljen.", code: "FORBIDDEN" });
-  const contact = await db.transaction(async (tx) => { const [c] = await tx.insert(beautyJobContactsTable).values({ listingId: listing.id, applicantUserId: user.id, applicantMessage: b.data.message }).returning(); await tx.update(beautyJobListingsTable).set({ contactCount: sql`${beautyJobListingsTable.contactCount} + 1` }).where(eq(beautyJobListingsTable.id, listing.id)); await tx.insert(beautyJobNotificationsTable).values({ recipientUserId: recipient, listingId: listing.id, contactId: c!.id, type: "new_contact", title: "Novi kontakt za oglas", body: listing.title }); return c!; });
+  const contact = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(beautyJobContactsTable).values({
+      listingId: listing.id,
+      applicantUserId: user.id,
+      applicantMessage: b.data.message,
+    }).returning();
+    await tx.update(beautyJobListingsTable)
+      .set({ contactCount: sql`${beautyJobListingsTable.contactCount} + 1` })
+      .where(eq(beautyJobListingsTable.id, listing.id));
+    const [createdNotification] = await tx.insert(beautyJobNotificationsTable).values({
+      recipientUserId: recipient,
+      listingId: listing.id,
+      contactId: created!.id,
+      type: "new_contact",
+      title: "Novi kontakt za oglas",
+      body: listing.title,
+    }).returning();
+    await enqueueBeautyJobEmail(tx, {
+      eventKey: `beauty-job:contact:${created!.id}:recipient:${recipient}`,
+      emailType: "beauty_job_new_contact",
+      recipientUserId: recipient,
+      subject: "Novi kontakt za vaš oglas",
+      title: "Novi kontakt za vaš oglas",
+      content: `${user.firstName} ${user.lastName} je poslao/la poruku za oglas „${listing.title}“.`,
+      listingId: listing.id,
+      contactId: created!.id,
+      metadata: { notificationId: createdNotification!.id },
+    });
+    return created!;
+  });
+  await deliverBeautyJobEmail(`beauty-job:contact:${contact.id}:recipient:${recipient}`);
   res.status(201).json(ContactBeautyJobAuthorResponse.parse(contactView(contact)));
 } catch (e) { next(e); } });
 
@@ -575,9 +625,46 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
   const user = await authenticated(req, res); if (!user) return; const p = ReplyToBeautyJobContactParams.safeParse(req.params), b = ReplyToBeautyJobContactBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
   const [row] = await db.select({ contact: beautyJobContactsTable, listing: beautyJobListingsTable }).from(beautyJobContactsTable).innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id)).where(eq(beautyJobContactsTable.id, p.data.contactId)).limit(1);
   if (!row || !(await canManage(user, row.listing))) return res.status(404).json({ error: "Kontakt nije pronađen.", code: "NOT_FOUND" });
-  const [updated] = await db.update(beautyJobContactsTable).set({ authorReply: b.data.authorReply ?? row.contact.authorReply, authorStatus: b.data.authorStatus ?? (b.data.authorReply ? "replied" : row.contact.authorStatus), repliedAt: b.data.authorReply ? new Date() : row.contact.repliedAt, updatedAt: new Date() }).where(eq(beautyJobContactsTable.id, row.contact.id)).returning();
-  if (b.data.authorReply) await notification(updated!.applicantUserId, "author_reply", "Odgovor na vaš kontakt", row.listing.title, row.listing.id, updated!.id);
-  res.json(ReplyToBeautyJobContactResponse.parse(contactView(updated!)));
+  const replyResult = await db.transaction(async (tx) => {
+    await lockBeautyJobEvent(tx, row.contact.id);
+    const [fresh] = await tx.select({ contact: beautyJobContactsTable, listing: beautyJobListingsTable })
+      .from(beautyJobContactsTable)
+      .innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id))
+      .where(eq(beautyJobContactsTable.id, row.contact.id)).limit(1);
+    if (!fresh) return null;
+    const isFirstReply = Boolean(b.data.authorReply && !fresh.contact.authorReply);
+    const [updated] = await tx.update(beautyJobContactsTable).set({
+      authorReply: b.data.authorReply ?? fresh.contact.authorReply,
+      authorStatus: b.data.authorStatus ?? (b.data.authorReply ? "replied" : fresh.contact.authorStatus),
+      repliedAt: b.data.authorReply ? new Date() : fresh.contact.repliedAt,
+      updatedAt: new Date(),
+    }).where(eq(beautyJobContactsTable.id, fresh.contact.id)).returning();
+    if (!isFirstReply) return { updated: updated!, eventKey: null };
+    const [replyNotification] = await tx.insert(beautyJobNotificationsTable).values({
+      recipientUserId: updated!.applicantUserId,
+      listingId: fresh.listing.id,
+      contactId: updated!.id,
+      type: "author_reply",
+      title: "Odgovor na vaš kontakt",
+      body: fresh.listing.title,
+    }).returning();
+    const eventKey = `beauty-job:reply:${updated!.id}:recipient:${updated!.applicantUserId}`;
+    await enqueueBeautyJobEmail(tx, {
+      eventKey,
+      emailType: "beauty_job_author_reply",
+      recipientUserId: updated!.applicantUserId,
+      subject: "Dobili ste odgovor na Beauty Poslovi kontakt",
+      title: "Dobili ste odgovor na vaš kontakt",
+      content: `Autor oglasa „${fresh.listing.title}“ je odgovorio/la na vašu poruku.`,
+      listingId: fresh.listing.id,
+      contactId: updated!.id,
+      metadata: { notificationId: replyNotification!.id },
+    });
+    return { updated: updated!, eventKey };
+  });
+  if (!replyResult) return res.status(404).json({ error: "Kontakt nije pronađen.", code: "NOT_FOUND" });
+  if (replyResult.eventKey) await deliverBeautyJobEmail(replyResult.eventKey);
+  res.json(ReplyToBeautyJobContactResponse.parse(contactView(replyResult.updated)));
 } catch (e) { next(e); } });
 
 router.post("/beauty-jobs/:listingId/report", async (req, res, next) => { try {
@@ -614,24 +701,92 @@ router.get("/admin/beauty-jobs/queue", async (req, res, next) => { try {
 router.post("/admin/beauty-jobs/:listingId/moderation", async (req, res, next) => { try {
   const user = await admin(req, res); if (!user) return; const p = ModerateBeautyJobParams.safeParse(req.params), b = ModerateBeautyJobBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
   if (b.data.action === "reject" && !b.data.reason?.trim()) return res.status(400).json({ error: "Razlog odbijanja je obavezan.", code: "REJECTION_REASON_REQUIRED" });
-  const values = b.data.action === "approve" ? { moderationStatus: "approved" as const, status: "active" as const } : b.data.action === "reject" ? { moderationStatus: "rejected" as const, status: "rejected" as const } : b.data.action === "close" ? { status: "closed" as const, closedAt: new Date() } : { moderationStatus: "approved" as const, status: "active" as const };
-  const [l] = await db.update(beautyJobListingsTable).set({ ...values, updatedAt: new Date() }).where(eq(beautyJobListingsTable.id, p.data.listingId)).returning(); if (!l) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" }); const recipient = await listingRecipient(l); if (recipient) await notification(recipient, "moderation", "Status oglasa je ažuriran", b.data.reason?.trim() || l.title, l.id); const [row] = await listingQuery().where(eq(beautyJobListingsTable.id, l.id)).limit(1);
+  const moderationResult = await db.transaction(async (tx) => {
+    await lockBeautyJobEvent(tx, p.data.listingId);
+    const [existing] = await tx.select().from(beautyJobListingsTable)
+      .where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1);
+    if (!existing) return null;
+    const values = b.data.action === "approve"
+      ? { moderationStatus: "approved" as const, status: "active" as const }
+      : b.data.action === "reject"
+        ? { moderationStatus: "rejected" as const, status: "rejected" as const }
+        : b.data.action === "close"
+          ? { status: "closed" as const, closedAt: new Date() }
+          : { moderationStatus: "approved" as const, status: "active" as const };
+    const stateChanged = b.data.action === "approve" || b.data.action === "reactivate"
+      ? existing.moderationStatus !== "approved" || existing.status !== "active"
+      : b.data.action === "reject"
+        ? existing.moderationStatus !== "rejected" || existing.status !== "rejected"
+        : existing.status !== "closed";
+    const [listing] = await tx.update(beautyJobListingsTable)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(beautyJobListingsTable.id, p.data.listingId))
+      .returning();
+    if (!stateChanged) return { listing: listing!, eventKey: null };
+    const recipient = await transactionListingRecipient(tx, listing!);
+    if (!recipient) return { listing: listing!, eventKey: null };
+    const [moderationNotification] = await tx.insert(beautyJobNotificationsTable).values({
+      recipientUserId: recipient,
+      listingId: listing!.id,
+      type: "moderation",
+      title: "Status oglasa je ažuriran",
+      body: b.data.reason?.trim() || listing!.title,
+    }).returning();
+    const subject = b.data.action === "approve" || b.data.action === "reactivate" ? "Oglas je odobren" : b.data.action === "reject" ? "Oglas je odbijen" : "Status oglasa je ažuriran";
+    const eventKey = `beauty-job:moderation:${moderationNotification!.id}:recipient:${recipient}`;
+    await enqueueBeautyJobEmail(tx, {
+      eventKey,
+      emailType: "beauty_job_moderation",
+      recipientUserId: recipient,
+      subject,
+      title: subject,
+      content: b.data.reason?.trim() || `Oglas „${listing!.title}“ je dobio novu odluku moderatora.`,
+      listingId: listing!.id,
+      metadata: { action: b.data.action, notificationId: moderationNotification!.id },
+    });
+    return { listing: listing!, eventKey };
+  });
+  if (!moderationResult) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
+  if (moderationResult.eventKey) await deliverBeautyJobEmail(moderationResult.eventKey);
+  const [row] = await listingQuery().where(eq(beautyJobListingsTable.id, moderationResult.listing.id)).limit(1);
   res.json(ModerateBeautyJobResponse.parse(view({ ...row!.listing, ...row! })));
 } catch (e) { next(e); } });
 router.post("/admin/beauty-jobs/reports/:reportId/resolve", async (req, res, next) => { try {
   const user = await admin(req, res); if (!user) return; const p = ResolveBeautyJobReportParams.safeParse(req.params), b = ResolveBeautyJobReportBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
-  const report = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
+    await lockBeautyJobEvent(tx, p.data.reportId);
     const [updated] = await tx.update(beautyJobReportsTable).set({ status: b.data.status, resolutionNote: b.data.resolutionNote ?? null, resolvedAt: new Date(), resolvedByUserId: user.id }).where(and(eq(beautyJobReportsTable.id, p.data.reportId), eq(beautyJobReportsTable.status, "pending"))).returning();
     if (!updated) return null;
-    if (b.data.status === "resolved") await tx.update(beautyJobListingsTable).set({ moderationStatus: "rejected", status: "rejected", updatedAt: new Date() }).where(eq(beautyJobListingsTable.id, updated.listingId));
-    return updated;
+    if (b.data.status !== "resolved") return { report: updated, eventKey: null };
+    const [listing] = await tx.update(beautyJobListingsTable)
+      .set({ moderationStatus: "rejected", status: "rejected", updatedAt: new Date() })
+      .where(eq(beautyJobListingsTable.id, updated.listingId)).returning();
+    if (!listing) return { report: updated, eventKey: null };
+    const recipient = await transactionListingRecipient(tx, listing);
+    if (!recipient) return { report: updated, eventKey: null };
+    const [reportNotification] = await tx.insert(beautyJobNotificationsTable).values({
+      recipientUserId: recipient,
+      listingId: listing.id,
+      type: "moderation",
+      title: "Oglas je uklonjen nakon prijave",
+      body: b.data.resolutionNote || listing.title,
+    }).returning();
+    const eventKey = `beauty-job:moderation-report:${updated.id}:recipient:${recipient}`;
+    await enqueueBeautyJobEmail(tx, {
+      eventKey,
+      emailType: "beauty_job_moderation",
+      recipientUserId: recipient,
+      subject: "Oglas je uklonjen nakon prijave",
+      title: "Oglas je uklonjen nakon prijave",
+      content: b.data.resolutionNote || `Oglas „${listing.title}“ je uklonjen nakon provere prijave.`,
+      listingId: listing.id,
+      metadata: { reportId: updated.id, notificationId: reportNotification!.id },
+    });
+    return { report: updated, eventKey };
   });
-  if (!report) return res.status(404).json({ error: "Prijava nije pronađena ili je već rešena.", code: "NOT_FOUND" });
-  if (b.data.status === "resolved") {
-    const [listing] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, report.listingId)).limit(1);
-    if (listing) { const recipient = await listingRecipient(listing); if (recipient) await notification(recipient, "moderation", "Oglas je uklonjen nakon prijave", b.data.resolutionNote || listing.title, listing.id); }
-  }
-  res.json(ResolveBeautyJobReportResponse.parse(reportView(report)));
+  if (!result) return res.status(404).json({ error: "Prijava nije pronađena ili je već rešena.", code: "NOT_FOUND" });
+  if (result.eventKey) await deliverBeautyJobEmail(result.eventKey);
+  res.json(ResolveBeautyJobReportResponse.parse(reportView(result.report)));
 } catch (e) { next(e); } });
 
 // This must be registered after fixed /beauty-jobs paths (mine, saved, inbox,

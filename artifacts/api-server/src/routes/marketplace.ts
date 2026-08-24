@@ -230,6 +230,8 @@ import
   GetAdminSummaryResponse,
   GetAuthSignInMethodsResponse,
   GetCurrentUserResponse,
+  UpdateEmailPreferencesBody,
+  UpdateEmailPreferencesResponse,
   GetCustomerDashboardResponse,
   GetAppointmentSalonContactParams,
   GetAppointmentSalonContactResponse,
@@ -670,12 +672,16 @@ async function sendAppointmentEmails(input: {
 
 async function campaignRecipients(audience: "customers" | "salons" | "loyalty", loyaltyTierId?: string | null) {
   if (audience === "customers") {
-    const users = await db.select().from(usersTable).where(eq(usersTable.role, "CUSTOMER"));
+    const users = await db.select().from(usersTable).where(and(
+      eq(usersTable.role, "CUSTOMER"),
+      eq(usersTable.marketingEmailsEnabled, true),
+    ));
     return users.filter((user) => user.active).map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
   }
   if (audience === "salons") {
     const rows = await db.select({ email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName })
-      .from(salonsTable).innerJoin(usersTable, eq(salonsTable.ownerId, usersTable.id));
+      .from(salonsTable).innerJoin(usersTable, eq(salonsTable.ownerId, usersTable.id))
+      .where(eq(usersTable.marketingEmailsEnabled, true));
     return rows.map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
   }
   if (!loyaltyTierId) return [];
@@ -683,7 +689,10 @@ async function campaignRecipients(audience: "customers" | "salons" | "loyalty", 
     .from(salonLoyaltyStatusesTable)
     .innerJoin(salonsTable, eq(salonLoyaltyStatusesTable.salonId, salonsTable.id))
     .innerJoin(usersTable, eq(salonsTable.ownerId, usersTable.id))
-    .where(eq(salonLoyaltyStatusesTable.tierId, loyaltyTierId));
+    .where(and(
+      eq(salonLoyaltyStatusesTable.tierId, loyaltyTierId),
+      eq(usersTable.marketingEmailsEnabled, true),
+    ));
   return rows.map((user) => ({ email: user.email, name: `${user.firstName} ${user.lastName}`.trim() }));
 }
 
@@ -4392,6 +4401,23 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   await ensureDemoData();
   const user = await getCurrentUser(req);
   res.json(GetCurrentUserResponse.parse({ user: user ? publicUser(user) : null }));
+});
+
+router.patch("/auth/email-preferences", async (req, res): Promise<void> => {
+  const user = await current(req, res);
+  if (!user) return;
+  const parsed = UpdateEmailPreferencesBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Podešavanje marketinških poruka mora biti tačno ili netačno." });
+    return;
+  }
+  const [updated] = await db.update(usersTable).set({
+    marketingEmailsEnabled: parsed.data.marketingEmailsEnabled,
+    updatedAt: new Date(),
+  }).where(eq(usersTable.id, user.id)).returning();
+  res.json(UpdateEmailPreferencesResponse.parse({
+    marketingEmailsEnabled: updated!.marketingEmailsEnabled,
+  }));
 });
 
 router.post("/auth/change-password", async (req, res): Promise<void> => {
