@@ -23,6 +23,8 @@ import {
 } from "@workspace/db";
 
 const scrypt = promisify(scryptCallback);
+const DAY_MS = 24 * 60 * 60 * 1000;
+test.use({ timezoneId: "UTC" });
 
 type Fixture = {
   ownerEmail: string;
@@ -35,6 +37,11 @@ type Fixture = {
   recentFlaggedRuleName: string;
   lowVolumeRuleId: string;
   lowVolumeRuleName: string;
+  customBoundaryRuleId: string;
+  customBoundaryRuleName: string;
+  customRangeFrom: string;
+  customRangeTo: string;
+  browserNow: Date;
 };
 
 async function hashPassword(password: string): Promise<string> {
@@ -45,11 +52,17 @@ async function hashPassword(password: string): Promise<string> {
 
 async function createFixture(): Promise<Fixture> {
   const suffix = randomUUID();
+  const browserNow = new Date();
   const ownerEmail = `browser-cancellation-warning-owner-${suffix}@example.test`;
   const ownerPassword = "browser-cancellation-warning-password";
   const flaggedRuleName = `Browser 2 realna 1 otkazana ${suffix}`;
   const recentFlaggedRuleName = `Browser 4 realna 1 otkazana ${suffix}`;
   const lowVolumeRuleName = `Browser manje od 3 termina ${suffix}`;
+  const customBoundaryRuleName = `Browser granica prilagođenog perioda ${suffix}`;
+  const customRangeFrom = new Date(browserNow.getTime() - 7 * DAY_MS);
+  const customRangeTo = new Date(browserNow.getTime() - 5 * DAY_MS);
+  const dateDaysAgo = (days: number) =>
+    new Date(browserNow.getTime() - days * DAY_MS).toISOString().slice(0, 10);
   let ownerId: string | undefined;
   let salonId: string | undefined;
 
@@ -160,9 +173,19 @@ async function createFixture(): Promise<Fixture> {
           emailBody: "Test",
           status: "active",
         },
+        {
+          salonId: salon.id,
+          name: customBoundaryRuleName,
+          trigger: "inactive_days",
+          triggerConfig: { inactiveDays: 30 },
+          action: "send_email",
+          emailSubject: "Test",
+          emailBody: "Test",
+          status: "active",
+        },
       ])
       .returning({ id: automationRulesTable.id, name: automationRulesTable.name });
-    if (rules.length !== 3) {
+    if (rules.length !== 4) {
       throw new Error("Cancellation-warning browser fixture could not create all campaign rules.");
     }
 
@@ -170,7 +193,8 @@ async function createFixture(): Promise<Fixture> {
     const flaggedRuleId = ruleByName.get(flaggedRuleName);
     const recentFlaggedRuleId = ruleByName.get(recentFlaggedRuleName);
     const lowVolumeRuleId = ruleByName.get(lowVolumeRuleName);
-    if (!flaggedRuleId || !recentFlaggedRuleId || !lowVolumeRuleId) {
+    const customBoundaryRuleId = ruleByName.get(customBoundaryRuleName);
+    if (!flaggedRuleId || !recentFlaggedRuleId || !lowVolumeRuleId || !customBoundaryRuleId) {
       throw new Error("Cancellation-warning browser fixture returned incomplete campaign rules.");
     }
 
@@ -178,33 +202,48 @@ async function createFixture(): Promise<Fixture> {
       {
         ruleId: flaggedRuleId,
         entries: [
-          { recent: true, cancelled: false },
-          { recent: true, cancelled: false },
-          { recent: false, cancelled: true },
+          { daysAgo: 5, cancelled: false },
+          { daysAgo: 5, cancelled: false },
+          { daysAgo: 60, cancelled: true },
         ],
       },
       {
         ruleId: recentFlaggedRuleId,
         entries: [
-          { recent: true, cancelled: false },
-          { recent: true, cancelled: false },
-          { recent: true, cancelled: true },
-          { recent: false, cancelled: false },
-          { recent: false, cancelled: false },
+          { daysAgo: 3, cancelled: false },
+          { daysAgo: 3, cancelled: false },
+          { daysAgo: 3, cancelled: true },
+          { daysAgo: 60, cancelled: false },
+          { daysAgo: 60, cancelled: false },
         ],
       },
       {
         ruleId: lowVolumeRuleId,
         entries: [
-          { recent: true, cancelled: false },
-          { recent: true, cancelled: true },
+          { daysAgo: 5, cancelled: false },
+          { daysAgo: 5, cancelled: true },
+        ],
+      },
+      {
+        ruleId: customBoundaryRuleId,
+        entries: [
+          // Both the start and inclusive end dates belong to the custom
+          // window: one realized appointment starts the volume, while the
+          // cancellation on the end date must still be counted.
+          { daysAgo: 7, cancelled: false },
+          { daysAgo: 5, cancelled: false },
+          { daysAgo: 5, cancelled: true },
+          // These two rows sit immediately outside the selected window and
+          // must not change its warning ratio.
+          { daysAgo: 8, cancelled: true },
+          { daysAgo: 4, cancelled: false },
         ],
       },
     ];
     const appointmentRows = cases.flatMap(({ entries }) =>
       entries.map((entry) => ({
         id: randomUUID(),
-        recent: entry.recent,
+        daysAgo: entry.daysAgo,
         cancelled: entry.cancelled,
       })),
     );
@@ -214,9 +253,7 @@ async function createFixture(): Promise<Fixture> {
         salonId: salon.id,
         salonCustomerId: customer.id,
         serviceId: service.id,
-        date: new Date(
-          Date.now() - (appointment.recent ? 5 : 60) * 24 * 60 * 60 * 1000,
-        ).toISOString().slice(0, 10),
+        date: dateDaysAgo(appointment.daysAgo),
         startTime: `${String(9 + index).padStart(2, "0")}:00`,
         endTime: `${String(10 + index).padStart(2, "0")}:00`,
         durationMinutes: 60,
@@ -241,12 +278,8 @@ async function createFixture(): Promise<Fixture> {
           salonCustomerId: customer.id,
           status: "sent" as const,
           attributedAppointmentId: appointment.id,
-          executedAt: appointment.recent
-            ? new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
-            : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
-          sentAt: appointment.recent
-            ? new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
-            : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+          executedAt: new Date(browserNow.getTime() - appointment.daysAgo * DAY_MS),
+          sentAt: new Date(browserNow.getTime() - appointment.daysAgo * DAY_MS),
         }));
       }),
     );
@@ -262,6 +295,11 @@ async function createFixture(): Promise<Fixture> {
       recentFlaggedRuleName,
       lowVolumeRuleId,
       lowVolumeRuleName,
+      customBoundaryRuleId,
+      customBoundaryRuleName,
+      customRangeFrom: customRangeFrom.toISOString().slice(0, 10),
+      customRangeTo: customRangeTo.toISOString().slice(0, 10),
+      browserNow,
     };
   } catch (error) {
     if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
@@ -293,29 +331,45 @@ function nextOverviewStatsResponse(page: Page, period: string | null) {
   });
 }
 
+function nextCustomOverviewStatsResponse(page: Page, from: string, to: string) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("/growth/automation-stats")
+      && url.searchParams.get("from") === from
+      && url.searchParams.get("to") === to
+      && !url.searchParams.has("period");
+  });
+}
+
 test("campaign cancellation warnings follow the selected overview period", async ({ page }) => {
   const fixture = await createFixture();
 
   try {
+    await page.clock.install({ time: fixture.browserNow });
     await signInAsFixtureOwner(page, fixture);
     await page.goto("/vlasnik/automatizacije");
 
     const flaggedRow = page.getByTestId(`overview-row-${fixture.flaggedRuleId}`);
     const recentFlaggedRow = page.getByTestId(`overview-row-${fixture.recentFlaggedRuleId}`);
     const lowVolumeRow = page.getByTestId(`overview-row-${fixture.lowVolumeRuleId}`);
+    const customBoundaryRow = page.getByTestId(`overview-row-${fixture.customBoundaryRuleId}`);
     await expect(flaggedRow).toContainText(fixture.flaggedRuleName);
     await expect(recentFlaggedRow).toContainText(fixture.recentFlaggedRuleName);
     await expect(lowVolumeRow).toContainText(fixture.lowVolumeRuleName);
+    await expect(customBoundaryRow).toContainText(fixture.customBoundaryRuleName);
 
     const flaggedWarning = page.getByTestId(`overview-cancellation-flag-${fixture.flaggedRuleId}`);
     const recentFlaggedWarning = page.getByTestId(`overview-cancellation-flag-${fixture.recentFlaggedRuleId}`);
     const lowVolumeWarning = page.getByTestId(`overview-cancellation-flag-${fixture.lowVolumeRuleId}`);
+    const customBoundaryWarning = page.getByTestId(`overview-cancellation-flag-${fixture.customBoundaryRuleId}`);
     await expect(flaggedWarning).toHaveCount(1);
     await expect(recentFlaggedWarning).toHaveCount(0);
     await expect(lowVolumeWarning).toHaveCount(0);
+    await expect(customBoundaryWarning).toHaveCount(1);
     await expect(flaggedRow).toHaveClass(/bg-amber-50\/70/);
     await expect(recentFlaggedRow).not.toHaveClass(/bg-amber-50\/70/);
     await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(customBoundaryRow).toHaveClass(/bg-amber-50\/70/);
 
     // The all-time row has two recent realized appointments and one old
     // cancellation, so its Serbian warning must describe exactly 1 of 3.
@@ -355,9 +409,60 @@ test("campaign cancellation warnings follow the selected overview period", async
     await expect(flaggedWarning).toHaveCount(1);
     await expect(recentFlaggedWarning).toHaveCount(0);
     await expect(lowVolumeWarning).toHaveCount(0);
+    await expect(customBoundaryWarning).toHaveCount(1);
     await expect(flaggedRow).toHaveClass(/bg-amber-50\/70/);
     await expect(recentFlaggedRow).not.toHaveClass(/bg-amber-50\/70/);
     await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
+
+    // The custom window contains the realized appointment on its start date,
+    // the realized appointment and cancellation on its inclusive end date,
+    // and excludes one cancellation immediately before and one realized
+    // appointment immediately after it.
+    const selector = page.getByTestId("overview-period-selector");
+    await selector.getByTestId("period-custom").click();
+    const calendar = page.getByTestId("overview-period-selector-range-calendar");
+    await expect(calendar).toBeVisible();
+
+    const fromDate = new Date(`${fixture.customRangeFrom}T12:00:00.000Z`);
+    const toDate = new Date(`${fixture.customRangeTo}T12:00:00.000Z`);
+    const fromDay = calendar.getByRole("gridcell").locator("button").filter({ hasText: new RegExp(`^${fromDate.getUTCDate()}$`) });
+    const toDay = calendar.getByRole("gridcell").locator("button").filter({ hasText: new RegExp(`^${toDate.getUTCDate()}$`) });
+    await expect(fromDay).toHaveCount(1);
+    await expect(toDay).toHaveCount(1);
+    await fromDay.click();
+    const customResponse = nextCustomOverviewStatsResponse(
+      page,
+      fixture.customRangeFrom,
+      fixture.customRangeTo,
+    );
+    await toDay.click();
+
+    expect((await customResponse).status()).toBe(200);
+    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
+    await expect(customBoundaryWarning).toHaveCount(1);
+    await expect(customBoundaryRow).toHaveClass(/bg-amber-50\/70/);
+    await expect(customBoundaryWarning).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("33%"),
+    );
+    await expect(customBoundaryWarning).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("1 od 3"),
+    );
+
+    // The other campaigns remain period-scoped as well: the old cancellation
+    // for the first row is outside this exact range, while the recent row's
+    // three appointments are on a different day.
+    await expect(flaggedWarning).toHaveCount(0);
+    await expect(recentFlaggedWarning).toHaveCount(0);
+    await expect(lowVolumeWarning).toHaveCount(0);
+    await expect(flaggedRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(recentFlaggedRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
+
+    await customBoundaryWarning.hover();
+    await expect(page.getByRole("tooltip")).toContainText("33%");
+    await expect(page.getByRole("tooltip")).toContainText("1 od 3");
   } finally {
     await cleanUpFixture(fixture);
   }
