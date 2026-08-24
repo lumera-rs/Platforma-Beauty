@@ -278,6 +278,7 @@ test("switching the time period never leaves stale attributed rows in the list",
     const oldRows = rows.filter({ hasText: "Klijent Stari" });
     const loadMore = dialog.getByTestId("button-load-more-attributed");
     const overviewRow = page.getByTestId(`overview-row-${fixture.ruleId}`);
+    const status = dialog.getByTestId("stats-period-status");
 
     // Page 1 of "Sve vreme": full page, unfiltered counter, both run windows present.
     await expect(rows).toHaveCount(PAGE_SIZE);
@@ -307,7 +308,6 @@ test("switching the time period never leaves stale attributed rows in the list",
     // close/reopen reset.
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
 
-    const now = new Date();
     const thirtyStatsResponse = nextStatsResponse(page, fixture.ruleId, "30d");
     const thirtyOverviewResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -341,6 +341,7 @@ test("switching the time period never leaves stale attributed rows in the list",
       smsDeliveredCount: 0,
     });
     await expect(dialog, "The stats dialog must stay open across a period switch.").toBeVisible();
+    await expect(status).toHaveText("Izabran period: poslednjih 30 dana");
     await expect(page.getByTestId("overview-period-selector").getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => new URL(page.url()).searchParams.get("period")).toBe("30d");
     await expect(rows).toHaveCount(PAGE_SIZE);
@@ -361,6 +362,7 @@ test("switching the time period never leaves stale attributed rows in the list",
     await dialog.getByTestId("stats-period-selector").getByTestId("period-all").click();
     expect((await allResponse).status()).toBe(200);
     await expect(dialog).toBeVisible();
+    await expect(status).toHaveText("Izabran period: sve vreme");
     await expect(page.getByTestId("overview-period-selector").getByTestId("period-all")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => new URL(page.url()).searchParams.get("period")).toBeNull();
     await expect(rows).toHaveCount(PAGE_SIZE);
@@ -425,11 +427,11 @@ test("mobile stats period controls stay visible and keep the dialog open", async
     const oldRows = rows.filter({ hasText: "Klijent Stari" });
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
 
-    const now = new Date();
     await selector.getByTestId("period-30d").click();
     expect((await thirtyResponse).status()).toBe(200);
 
     await expect(dialog, "Switching period on mobile must not close the stats dialog.").toBeVisible();
+    await expect(status).toHaveText("Izabran period: poslednjih 30 dana");
     await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
     await expect(rows).toHaveCount(PAGE_SIZE);
     await expect(recentRows).toHaveCount(PAGE_SIZE);
@@ -455,10 +457,6 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     const selector = dialog.getByTestId("stats-period-selector");
 
     const status = dialog.getByTestId("stats-period-status");
-    const now = new Date();
-    const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
-    const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
     const periodButtons = ["7d", "30d", "90d", "all"].map((period) =>
       selector.getByTestId(`period-${period}`),
     );
@@ -481,6 +479,7 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await page.keyboard.press("Enter");
     expect((await sevenDayResponse).status()).toBe(200);
     await expect(periodButtons[0]).toHaveAttribute("aria-pressed", "true");
+    await expect(status).toHaveText("Izabran period: poslednjih 7 dana");
     await expect(dialog).toBeVisible();
 
     const thirtyDayResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
@@ -488,12 +487,22 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await page.keyboard.press("Space");
     expect((await thirtyDayResponse).status()).toBe(200);
     await expect(periodButtons[1]).toHaveAttribute("aria-pressed", "true");
+    await expect(status).toHaveText("Izabran period: poslednjih 30 dana");
     await expect(dialog).toBeVisible();
 
     // Opening the custom picker with Enter and Space must keep it inside the
-    // dialog's interaction, and Escape must dismiss only the picker. Radix
-    // should return focus to the trigger after either keyboard dismissal.
+    // dialog's interaction. Choosing a preset must announce its exact date
+    // range before Escape dismisses a later open picker and returns focus to
+    // the trigger.
+    const now = new Date();
+    const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+    const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
     await customButton.focus();
+    await page.keyboard.press("Enter");
+    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
     const customResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname.endsWith(`/growth/automations/${fixture.ruleId}/attributed-appointments`)
@@ -501,19 +510,13 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
         && url.searchParams.get("to") === toDateParam(customTo)
         && url.searchParams.get("offset") === "0";
     });
-    await page.keyboard.press("Enter");
-    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
-    await expect(rangePresets).toBeVisible();
-    await expect(dialog).toBeVisible();
-    await expect(status).toHaveText("Izabran period: izabrani period");
-
     await rangePresets.getByTestId("range-preset-last-14d").click();
     expect((await customResponse).status()).toBe(200);
     await expect(status).toHaveText(`Izabran period: ${customLabel}`);
-    await expect(customButton).toContainText(customLabel);
+    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
     await expect(dialog).toBeVisible();
+    await expect(customButton).toBeFocused();
 
-    await customButton.focus();
     await page.keyboard.press("Space");
     await expect(rangePresets).toBeVisible();
     await expect(dialog).toBeVisible();

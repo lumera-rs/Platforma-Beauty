@@ -20,7 +20,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   automationDeliveriesTable,
   automationRulesTable,
@@ -46,8 +46,32 @@ let adminId = "";
 let salonId = "";
 let deliveryId = "";
 const priorSmsIntegrationRows: Array<typeof integrationSettingsTable.$inferSelect> = [];
+const priorInfobipReceiptRows: Array<typeof providerWebhookReceiptsTable.$inferSelect> = [];
+const fixtureReceiptTimes: Date[] = [];
 let capturedPriorSmsIntegrationRows = false;
+let capturedPriorInfobipReceiptRows = false;
 let releaseIntegrationSettingsLock: (() => Promise<void>) | undefined;
+
+async function addFixtureReceipt() {
+  const lastEventAt = new Date();
+  fixtureReceiptTimes.push(lastEventAt);
+  await db.insert(providerWebhookReceiptsTable).values({
+    provider: "infobip",
+    lastEventAt,
+    updatedAt: lastEventAt,
+  }).onConflictDoUpdate({
+    target: providerWebhookReceiptsTable.provider,
+    set: { lastEventAt, updatedAt: lastEventAt },
+  });
+}
+
+async function deleteFixtureReceipts() {
+  if (fixtureReceiptTimes.length === 0) return;
+  await db.delete(providerWebhookReceiptsTable).where(and(
+    eq(providerWebhookReceiptsTable.provider, "infobip"),
+    inArray(providerWebhookReceiptsTable.lastEventAt, fixtureReceiptTimes),
+  ));
+}
 
 async function setupFixture() {
   const [admin] = await db.insert(usersTable).values({
@@ -129,10 +153,7 @@ async function setupFixture() {
   // The aged send is deliberately inserted before this receipt. It exercises
   // the same precedence as the API fixture: a report after the secret save
   // confirms the current registration and suppresses the silence warning.
-  await db.insert(providerWebhookReceiptsTable).values({
-    provider: "infobip",
-    lastEventAt: new Date(),
-  });
+  await addFixtureReceipt();
 }
 
 async function cleanUpFixture() {
@@ -146,8 +167,24 @@ async function cleanUpFixture() {
     }
   } finally {
     try {
-      await db.delete(providerWebhookReceiptsTable)
-        .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+      if (capturedPriorInfobipReceiptRows) {
+        const [currentReceipt] = await db.select({
+          lastEventAt: providerWebhookReceiptsTable.lastEventAt,
+        }).from(providerWebhookReceiptsTable)
+          .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+        const currentReceiptBelongsToFixture = currentReceipt
+          && fixtureReceiptTimes.some((at) => at.getTime() === currentReceipt.lastEventAt.getTime());
+
+        // The provider table is a singleton keyed by provider. Restore the
+        // saved row only while the singleton still contains fixture evidence;
+        // never remove a receipt that arrived independently during the run.
+        if (!currentReceipt || currentReceiptBelongsToFixture) {
+          await deleteFixtureReceipts();
+          if (priorInfobipReceiptRows.length > 0) {
+            await db.insert(providerWebhookReceiptsTable).values(priorInfobipReceiptRows);
+          }
+        }
+      }
       if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
       if (adminId) await db.delete(usersTable).where(eq(usersTable.id, adminId));
     } finally {
@@ -166,7 +203,12 @@ test.beforeAll(async () => {
       ...(await db.select().from(integrationSettingsTable)
         .where(eq(integrationSettingsTable.integration, "sms"))),
     );
+    priorInfobipReceiptRows.push(
+      ...(await db.select().from(providerWebhookReceiptsTable)
+        .where(eq(providerWebhookReceiptsTable.provider, "infobip"))),
+    );
     capturedPriorSmsIntegrationRows = true;
+    capturedPriorInfobipReceiptRows = true;
     await setupFixture();
   } catch (error) {
     await cleanUpFixture();
@@ -205,8 +247,7 @@ test("the Infobip registration panel and check guide an admin through live verdi
   await db.update(automationDeliveriesTable)
     .set({ sentAt: new Date() })
     .where(eq(automationDeliveriesTable.id, deliveryId));
-  await db.delete(providerWebhookReceiptsTable)
-    .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+  await deleteFixtureReceipts();
 
   const noTrafficResponsePromise = page.waitForResponse((response) =>
     response.url().includes("/api/admin/integrations/sms/verify-registration")
@@ -256,8 +297,7 @@ test("keeps the last Infobip verdict and exposes a retry when post-check refresh
   // Start from a deterministic "no evidence yet" verdict. The following
   // receipt is added only after the failed refresh, so a successful retry
   // must visibly update the already-mounted panel.
-  await db.delete(providerWebhookReceiptsTable)
-    .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+  await deleteFixtureReceipts();
   await db.update(automationDeliveriesTable)
     .set({ sentAt: new Date() })
     .where(eq(automationDeliveriesTable.id, deliveryId));
@@ -334,10 +374,7 @@ test("keeps the last Infobip verdict and exposes a retry when post-check refresh
   await expect(retry).toBeEnabled();
 
   // New provider evidence arrives while the admin is deciding to retry.
-  await db.insert(providerWebhookReceiptsTable).values({
-    provider: "infobip",
-    lastEventAt: new Date(),
-  });
+  await addFixtureReceipt();
 
   const successfulRefreshPromise = page.waitForResponse((response) =>
     new URL(response.url()).pathname === "/api/admin/integrations"
