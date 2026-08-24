@@ -12,6 +12,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { inArray } from "drizzle-orm";
 import { db, integrationSettingsTable, usersTable } from "@workspace/db";
 import { saveIntegrationSettings } from "../../artifacts/api-server/src/lib/integrations";
+import { acquireIntegrationSettingsLock } from "./integration-settings-lock";
 
 const scrypt = promisify(scryptCallback);
 const publishedHost = "lumera-published.example.test";
@@ -30,6 +31,8 @@ const webhookSecrets = {
 } as const;
 const createdUserIds: string[] = [];
 const priorIntegrationRows: Array<typeof integrationSettingsTable.$inferSelect> = [];
+let capturedPriorIntegrationRows = false;
+let releaseIntegrationSettingsLock: (() => Promise<void>) | undefined;
 
 async function hashPassword(value: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -37,52 +40,68 @@ async function hashPassword(value: string): Promise<string> {
   return `${salt}:${derived.toString("hex")}`;
 }
 
-test.beforeAll(async () => {
-  priorIntegrationRows.push(
-    ...(await db.select().from(integrationSettingsTable)
-      .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]))),
-  );
-
-  const inserted = await db.insert(usersTable).values({
-    firstName: "Browser",
-    lastName: "Integrations Host",
-    email: adminEmail,
-    passwordHash: await hashPassword(password),
-    passwordSetAt: new Date(),
-    role: "ADMIN",
-  }).returning();
-  if (inserted.length !== 1) throw new Error("The host-matrix fixture could not create the admin.");
-  createdUserIds.push(...inserted.map((user) => user.id));
-
-  const adminId = inserted[0]!.id;
-  await Promise.all([
-    saveIntegrationSettings({
-      integration: "sms",
-      enabled: true,
-      values: { webhookSecret: webhookSecrets.sms },
-      updatedByUserId: adminId,
-    }),
-    saveIntegrationSettings({
-      integration: "brevo",
-      enabled: true,
-      values: { webhookSecret: webhookSecrets.brevo },
-      updatedByUserId: adminId,
-    }),
-  ]);
-});
-
-test.afterAll(async () => {
+async function cleanUpFixture() {
   try {
-    await db.delete(integrationSettingsTable)
-      .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]));
-    if (priorIntegrationRows.length > 0) {
-      await db.insert(integrationSettingsTable).values(priorIntegrationRows);
+    if (capturedPriorIntegrationRows) {
+      await db.delete(integrationSettingsTable)
+        .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]));
+      if (priorIntegrationRows.length > 0) {
+        await db.insert(integrationSettingsTable).values(priorIntegrationRows);
+      }
     }
   } finally {
     if (createdUserIds.length > 0) {
       await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
     }
+    await releaseIntegrationSettingsLock?.();
   }
+}
+test.beforeAll(async () => {
+  // A sibling integration-settings spec may hold the lock through its cleanup.
+  test.setTimeout(300_000);
+  releaseIntegrationSettingsLock = await acquireIntegrationSettingsLock();
+
+  try {
+    priorIntegrationRows.push(
+      ...(await db.select().from(integrationSettingsTable)
+        .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]))),
+    );
+    capturedPriorIntegrationRows = true;
+
+    const inserted = await db.insert(usersTable).values({
+      firstName: "Browser",
+      lastName: "Integrations Host",
+      email: adminEmail,
+      passwordHash: await hashPassword(password),
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    }).returning();
+    if (inserted.length !== 1) throw new Error("The host-matrix fixture could not create the admin.");
+    createdUserIds.push(...inserted.map((user) => user.id));
+
+    const adminId = inserted[0]!.id;
+    await Promise.all([
+      saveIntegrationSettings({
+        integration: "sms",
+        enabled: true,
+        values: { webhookSecret: webhookSecrets.sms },
+        updatedByUserId: adminId,
+      }),
+      saveIntegrationSettings({
+        integration: "brevo",
+        enabled: true,
+        values: { webhookSecret: webhookSecrets.brevo },
+        updatedByUserId: adminId,
+      }),
+    ]);
+  } catch (error) {
+    await cleanUpFixture();
+    throw error;
+  }
+});
+
+test.afterAll(async () => {
+  await cleanUpFixture();
 });
 
 async function openIntegrationsPage(page: Page, origin: string) {

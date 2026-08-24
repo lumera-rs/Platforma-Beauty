@@ -292,3 +292,37 @@ test("direct CRM client links survive a hard refresh and close cleanly", async (
     await cleanUpFixture(fixture);
   }
 });
+
+test("stale CRM client links keep the not-found state through Back and Forward", async ({ page }) => {
+  const fixture = await createFixture();
+  const staleCustomerId = randomUUID();
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+
+    const clientUrl = `/vlasnik/klijenti?klijent=${fixture.customerId}`;
+    const staleClientUrl = `/vlasnik/klijenti?klijent=${staleCustomerId}`;
+    await page.goto("/vlasnik/klijenti");
+    await page.goto(clientUrl);
+
+    const customerDialog = page.getByRole("dialog");
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toBeVisible();
+
+    // Simulate opening an old copied link after a valid client dialog was
+    // already visited, then exercise the same history entries owners use.
+    await page.goto(staleClientUrl);
+    await expect(page.getByTestId("text-customer-not-found")).toBeVisible();
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/vlasnik/klijenti\\?klijent=${fixture.customerId}$`));
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toBeVisible();
+
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/vlasnik/klijenti\\?klijent=${staleCustomerId}$`));
+    await expect(page.getByTestId("text-customer-not-found")).toBeVisible();
+    await expect(customerDialog.getByRole("heading", { name: "Povezani Klijent" })).toHaveCount(0);
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});

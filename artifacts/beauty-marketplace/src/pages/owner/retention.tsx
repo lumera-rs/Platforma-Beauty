@@ -28,27 +28,22 @@ export default function OwnerRetention() {
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   // Deep link: /vlasnik/klijenti?klijent=<salonCustomerId> opens the client
   // detail dialog directly (used by the campaign drill-down in automations).
   // useSearch() (not useLocation()) so same-path ?klijent= navigations re-render.
   const searchString = useSearch();
   const [, navigate] = useLocation();
-  useEffect(() => {
-    const linkedCustomerId = new URLSearchParams(searchString).get("klijent");
-    // The URL is the source of truth for this dialog. Clearing the query on
-    // Back/Forward must also clear the selected customer, otherwise the
-    // previous dialog stays open on the plain CRM list URL.
-    setSelectedCustomerId(linkedCustomerId);
-  }, [searchString]);
+  const selectedCustomerId = useMemo(
+    () => new URLSearchParams(searchString).get("klijent"),
+    [searchString],
+  );
 
   const openCustomerDetail = (customerId: string) => {
     navigate(`/vlasnik/klijenti?klijent=${encodeURIComponent(customerId)}`);
   };
 
   const closeCustomerDetail = () => {
-    setSelectedCustomerId(null);
     // Drop the ?klijent= param so closing the dialog doesn't reopen it on
     // re-render and the URL reflects the closed state.
     if (new URLSearchParams(searchString).get("klijent")) {
@@ -56,15 +51,28 @@ export default function OwnerRetention() {
     }
   };
 
-  const { data: detailData, isLoading: isDetailLoading } = useOwnerGetRetentionDetail(
+  const {
+    data: detailData,
+    isLoading: isDetailLoading,
+    isFetching: isDetailFetching,
+  } = useOwnerGetRetentionDetail(
     selectedCustomerId ?? "",
     {
       query: {
         enabled: !!selectedCustomerId,
-        queryKey: getOwnerGetRetentionDetailQueryKey(selectedCustomerId ?? "")
+        queryKey: getOwnerGetRetentionDetailQueryKey(selectedCustomerId ?? ""),
+        // A copied client URL may refer to a deleted or inaccessible record.
+        // A 404 is final for this view, so retries must not delay the
+        // established not-found state.
+        retry: false,
       }
     }
   );
+  // A query result can briefly belong to the previous URL while React Query
+  // switches keys. Never let that result render under a different deep link.
+  const selectedDetailData = detailData?.salonCustomerId === selectedCustomerId
+    ? detailData
+    : undefined;
 
   const updateCustomerMutation = useUpdateSalonCustomer();
   const [birthDate, setBirthDate] = useState("");
@@ -72,12 +80,12 @@ export default function OwnerRetention() {
 
   // Initialize birthDate when detailData is loaded or changes
   useEffect(() => {
-    if (detailData) {
-      setBirthDate(detailData.birthDate || "");
+    if (selectedDetailData) {
+      setBirthDate(selectedDetailData.birthDate || "");
       // Also close edit mode when switching customers
       setIsEditingBirthDate(false);
     }
-  }, [detailData, selectedCustomerId]);
+  }, [selectedDetailData, selectedCustomerId]);
 
   const customers = retentionData || [];
   
@@ -259,20 +267,20 @@ export default function OwnerRetention() {
 
       <Dialog open={!!selectedCustomerId} onOpenChange={(open) => !open && closeCustomerDetail()}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          {isDetailLoading ? (
+          {isDetailLoading || (isDetailFetching && !selectedDetailData) ? (
              <div className="flex justify-center p-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-          ) : detailData ? (
+          ) : selectedDetailData ? (
             <>
               <DialogHeader className="pb-4 border-b">
                 <div className="flex items-start justify-between">
                   <div>
                     <DialogTitle className="text-2xl flex items-center gap-2">
-                      {detailData.firstName} {detailData.lastName}
-                      {getStatusBadge(detailData.status)}
+                      {selectedDetailData.firstName} {selectedDetailData.lastName}
+                      {getStatusBadge(selectedDetailData.status)}
                     </DialogTitle>
                     <div className="flex gap-4 text-sm text-muted-foreground mt-2">
-                      {detailData.phone && <span className="flex items-center gap-1"><Phone className="w-4 h-4" /> {detailData.phone}</span>}
-                      {detailData.email && <span className="flex items-center gap-1"><Mail className="w-4 h-4" /> {detailData.email}</span>}
+                      {selectedDetailData.phone && <span className="flex items-center gap-1"><Phone className="w-4 h-4" /> {selectedDetailData.phone}</span>}
+                      {selectedDetailData.email && <span className="flex items-center gap-1"><Mail className="w-4 h-4" /> {selectedDetailData.email}</span>}
                     </div>
                   </div>
                 </div>
@@ -282,28 +290,28 @@ export default function OwnerRetention() {
                 <div className="flex items-center justify-between gap-2">
                   <h4 className="font-semibold text-sm">Zašto ovaj status?</h4>
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    Pragovi {detailData.thresholdVersion === 0 ? "— podrazumevani" : `v${detailData.thresholdVersion}`}
+                    Pragovi {selectedDetailData.thresholdVersion === 0 ? "— podrazumevani" : `v${selectedDetailData.thresholdVersion}`}
                   </span>
                 </div>
-                <p className="text-sm text-foreground">{detailData.explanation}</p>
+                <p className="text-sm text-foreground">{selectedDetailData.explanation}</p>
                 <p className="text-sm text-muted-foreground flex items-start gap-1.5">
                   <HeartHandshake className="w-4 h-4 shrink-0 mt-0.5" />
-                  {detailData.recommendedAction}
+                  {selectedDetailData.recommendedAction}
                 </p>
               </div>
 
               <div className="grid grid-cols-3 gap-4 my-4">
                 <div className="bg-muted/30 p-3 rounded-lg text-center">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Ukupna potrošnja</p>
-                  <p className="text-lg font-bold mt-1">{detailData.totalSpend.toLocaleString()} RSD</p>
+                  <p className="text-lg font-bold mt-1">{selectedDetailData.totalSpend.toLocaleString()} RSD</p>
                 </div>
                 <div className="bg-muted/30 p-3 rounded-lg text-center">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Završeni termini</p>
-                  <p className="text-lg font-bold mt-1">{detailData.completedCount}</p>
+                  <p className="text-lg font-bold mt-1">{selectedDetailData.completedCount}</p>
                 </div>
                 <div className="bg-muted/30 p-3 rounded-lg text-center">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Poslednja poseta</p>
-                  <p className="text-lg font-bold mt-1">{detailData.lastVisitDaysAgo !== null ? `Pre ${detailData.lastVisitDaysAgo} dana` : 'Nema'}</p>
+                  <p className="text-lg font-bold mt-1">{selectedDetailData.lastVisitDaysAgo !== null ? `Pre ${selectedDetailData.lastVisitDaysAgo} dana` : 'Nema'}</p>
                 </div>
               </div>
 
@@ -334,12 +342,12 @@ export default function OwnerRetention() {
               </div>
 
               <div>
-                <h4 className="font-semibold text-sm mb-3">Istorija termina ({detailData.recentAppointments.length})</h4>
-                {detailData.recentAppointments.length === 0 ? (
+                <h4 className="font-semibold text-sm mb-3">Istorija termina ({selectedDetailData.recentAppointments.length})</h4>
+                {selectedDetailData.recentAppointments.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">Nema zabeleženih termina.</p>
                 ) : (
                   <div className="space-y-3">
-                    {detailData.recentAppointments.map(appt => (
+                    {selectedDetailData.recentAppointments.map(appt => (
                       <div key={appt.id} className="flex justify-between items-center p-3 rounded-lg border bg-card">
                         <div>
                           <p className="font-medium text-sm">{appt.serviceName}</p>
