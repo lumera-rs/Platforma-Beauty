@@ -355,11 +355,12 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
             },
             deliveryReports: {
               providers: {
-                brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-                infobip: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+                brevo: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+                infobip: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
               },
               windowHours: 24,
               graceMinutes: 30,
+              rejectionAlertThreshold: 3,
             },
             smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
             smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
