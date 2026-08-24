@@ -176,6 +176,36 @@ async function main() {
     }
   }
 
+  // Keep a separate campaign with activity only in the current window. Its
+  // absent previous run/delivery aggregate rows must still become an explicit
+  // zero-valued comparison block on both stats endpoints.
+  const [currentOnlyRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id, name: `WB Current Only Rule ${suffix}`,
+    trigger: "inactive_days", triggerConfig: { inactiveDays: 30 },
+    action: "send_email", emailSubject: "T", emailBody: "T",
+    status: "active",
+  }).returning();
+  assert.ok(currentOnlyRule);
+  const [currentOnlyAppointment] = await db.insert(appointmentsTable).values({
+    salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+    date: "2026-04-07", startTime: "14:00", endTime: "15:00", durationMinutes: 60,
+    status: "completed", price: 1500, treatmentLocation: "salon",
+  }).returning();
+  assert.ok(currentOnlyAppointment);
+  const [currentOnlyRun] = await db.insert(automationRunsTable).values({
+    eventKey: `wb-current-only-run-${suffix}`, ruleId: currentOnlyRule.id, salonId: salon.id,
+    salonCustomerId: cust.id, status: "sent",
+    executedAt: new Date(FROZEN_NOW - 2_000), sentAt: new Date(FROZEN_NOW - 2_000),
+    attributedAppointmentId: currentOnlyAppointment.id,
+  }).returning();
+  assert.ok(currentOnlyRun);
+  await db.insert(automationDeliveriesTable).values({
+    runId: currentOnlyRun.id, salonId: salon.id, eventKey: `wb-current-only-delivery-${suffix}`,
+    channel: "email", recipientEmail: `wb-current-only-${suffix}@bg.test`, status: "sent",
+    sentAt: new Date(FROZEN_NOW - 2_000), deliveredAt: new Date(FROZEN_NOW - 1_000),
+    openedAt: new Date(FROZEN_NOW - 500),
+  });
+
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -305,6 +335,39 @@ async function main() {
         `${label}: previous window keeps its own known-client basis`);
     }
     console.log("✓ new-client share exposes its known-client denominator and excludes unknown clients");
+
+    // ── 4b. Empty preceding comparison remains explicit ────────────────────
+    const emptyOverviewPrevious = {
+      attributedAppointments: 0,
+      attributedRevenue: 0,
+      newClientCount: 0,
+      knownClientCount: 0,
+      newClientShare: null,
+      emailDeliveredCount: 0,
+      emailOpenedCount: 0,
+      smsDeliveredCount: 0,
+    };
+    const emptyPerRulePrevious = {
+      ...emptyOverviewPrevious,
+      returningClientCount: 0,
+      unknownClientCount: 0,
+    };
+    const overviewCurrentOnly = await overviewRow("?period=30d&compare=previous", currentOnlyRule.id);
+    assert.equal(overviewCurrentOnly.totalRuns, 1, "overview: current-only campaign has one current run");
+    assert.equal(overviewCurrentOnly.attributedAppointments, 1, "overview: current-only campaign has one current attribution");
+    assert.equal(overviewCurrentOnly.emailDeliveredCount, 1, "overview: current-only campaign has one current delivery");
+    assert.equal(overviewCurrentOnly.emailOpenedCount, 1, "overview: current-only campaign has one current open");
+    assert.deepEqual(overviewCurrentOnly.previous, emptyOverviewPrevious,
+      "overview: no previous aggregate rows become an explicit zero-valued comparison block");
+
+    const perRuleCurrentOnly = await perRule("?period=30d&compare=previous", currentOnlyRule.id);
+    assert.equal(perRuleCurrentOnly.totalRuns, 1, "per-rule: current-only campaign has one current run");
+    assert.equal(perRuleCurrentOnly.attributedAppointments, 1, "per-rule: current-only campaign has one current attribution");
+    assert.equal(perRuleCurrentOnly.emailDeliveredCount, 1, "per-rule: current-only campaign has one current delivery");
+    assert.equal(perRuleCurrentOnly.emailOpenedCount, 1, "per-rule: current-only campaign has one current open");
+    assert.deepEqual(perRuleCurrentOnly.previous, emptyPerRulePrevious,
+      "per-rule: no previous aggregate rows become an explicit zero-valued comparison block");
+    console.log("✓ current-only campaign keeps an explicit zero previous block on both stats endpoints");
 
     // ── 5. compare validation on both endpoints ─────────────────────────────
     const expect400 = async (qs: string, label: string) => {

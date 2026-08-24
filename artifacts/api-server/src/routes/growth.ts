@@ -952,19 +952,23 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       const runs = runsByRule.get(rule.id);
       const clientMix = clientMixByRule.get(rule.id);
       const deliveries = deliveriesByRule.get(rule.id);
-      const previous = prevRunsByRule && prevDeliveriesByRule
+      // A rule can have current-window activity without any matching rows in
+      // either previous aggregate. The maps are intentionally empty in that
+      // case, but the comparison block must still be present so the trend UI
+      // can distinguish zero from a missing comparison.
+      const previous = previousWindow
         ? {
-            attributedAppointments: prevRunsByRule.get(rule.id)?.attributedAppointments ?? 0,
-            attributedRevenue: prevRunsByRule.get(rule.id)?.attributedRevenue ?? 0,
-            newClientCount: prevRunsByRule.get(rule.id)?.newClientCount ?? 0,
-            knownClientCount: prevRunsByRule.get(rule.id)?.knownClientCount ?? 0,
+            attributedAppointments: prevRunsByRule?.get(rule.id)?.attributedAppointments ?? 0,
+            attributedRevenue: prevRunsByRule?.get(rule.id)?.attributedRevenue ?? 0,
+            newClientCount: prevRunsByRule?.get(rule.id)?.newClientCount ?? 0,
+            knownClientCount: prevRunsByRule?.get(rule.id)?.knownClientCount ?? 0,
             newClientShare: calculateNewClientShare(
-              prevRunsByRule.get(rule.id)?.newClientCount,
-              prevRunsByRule.get(rule.id)?.returningClientCount,
+              prevRunsByRule?.get(rule.id)?.newClientCount,
+              prevRunsByRule?.get(rule.id)?.returningClientCount,
             ),
-            emailDeliveredCount: prevDeliveriesByRule.get(rule.id)?.emailDeliveredCount ?? 0,
-            emailOpenedCount: prevDeliveriesByRule.get(rule.id)?.emailOpenedCount ?? 0,
-            smsDeliveredCount: prevDeliveriesByRule.get(rule.id)?.smsDeliveredCount ?? 0,
+            emailDeliveredCount: prevDeliveriesByRule?.get(rule.id)?.emailDeliveredCount ?? 0,
+            emailOpenedCount: prevDeliveriesByRule?.get(rule.id)?.emailOpenedCount ?? 0,
+            smsDeliveredCount: prevDeliveriesByRule?.get(rule.id)?.smsDeliveredCount ?? 0,
           }
         : undefined;
       return {
