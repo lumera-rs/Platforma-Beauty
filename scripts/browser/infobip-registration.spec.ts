@@ -26,6 +26,7 @@ import {
   automationRulesTable,
   automationRunsTable,
   db,
+  integrationSettingsTable,
   providerWebhookReceiptsTable,
   salonCustomersTable,
   salonsTable,
@@ -33,6 +34,7 @@ import {
 } from "@workspace/db";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
 import { saveIntegrationSettings } from "../../artifacts/api-server/src/lib/integrations";
+import { acquireIntegrationSettingsLock } from "./integration-settings-lock";
 
 const HOUR_MS = 60 * 60 * 1000;
 const suffix = randomUUID();
@@ -43,8 +45,11 @@ const webhookSecret = `browser-infobip-registration-secret-${suffix}`;
 let adminId = "";
 let salonId = "";
 let deliveryId = "";
+const priorSmsIntegrationRows: Array<typeof integrationSettingsTable.$inferSelect> = [];
+let capturedPriorSmsIntegrationRows = false;
+let releaseIntegrationSettingsLock: (() => Promise<void>) | undefined;
 
-test.beforeAll(async () => {
+async function setupFixture() {
   const [admin] = await db.insert(usersTable).values({
     firstName: "Browser",
     lastName: "Infobip Registration",
@@ -128,13 +133,49 @@ test.beforeAll(async () => {
     provider: "infobip",
     lastEventAt: new Date(),
   });
+}
+
+async function cleanUpFixture() {
+  try {
+    if (capturedPriorSmsIntegrationRows) {
+      await db.delete(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"));
+      if (priorSmsIntegrationRows.length > 0) {
+        await db.insert(integrationSettingsTable).values(priorSmsIntegrationRows);
+      }
+    }
+  } finally {
+    try {
+      await db.delete(providerWebhookReceiptsTable)
+        .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+      if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
+      if (adminId) await db.delete(usersTable).where(eq(usersTable.id, adminId));
+    } finally {
+      await releaseIntegrationSettingsLock?.();
+    }
+  }
+}
+
+test.beforeAll(async () => {
+  // A sibling integration-settings spec may hold the lock through its cleanup.
+  test.setTimeout(300_000);
+  releaseIntegrationSettingsLock = await acquireIntegrationSettingsLock();
+
+  try {
+    priorSmsIntegrationRows.push(
+      ...(await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"))),
+    );
+    capturedPriorSmsIntegrationRows = true;
+    await setupFixture();
+  } catch (error) {
+    await cleanUpFixture();
+    throw error;
+  }
 });
 
 test.afterAll(async () => {
-  await db.delete(providerWebhookReceiptsTable)
-    .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
-  if (salonId) await db.delete(salonsTable).where(eq(salonsTable.id, salonId));
-  if (adminId) await db.delete(usersTable).where(eq(usersTable.id, adminId));
+  await cleanUpFixture();
 });
 
 test("the Infobip registration panel and check guide an admin through live verdicts", async ({ page }) => {
