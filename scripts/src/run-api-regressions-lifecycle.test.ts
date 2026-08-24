@@ -15,6 +15,7 @@ const runnerScriptPath = path.join(workspaceRoot, "scripts", "src", "run-api-reg
 const databaseUrl = process.env.DATABASE_URL;
 
 type InterruptedPhase = "schema" | "shell";
+type InterruptSignal = "SIGINT" | "SIGTERM";
 
 type HarnessManifest = {
   databaseName: string;
@@ -532,7 +533,10 @@ void runIsolatedBrowserSuiteCommand({
   }
 }
 
-async function runInterruptedBrowserScenario(blockFrontendReadiness = false): Promise<void> {
+async function runInterruptedBrowserScenario(
+  blockFrontendReadiness = false,
+  signal: InterruptSignal = "SIGTERM",
+): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
@@ -628,10 +632,15 @@ void runIsolatedBrowserSuiteCommand({
     assert.ok(unrelatedProcess.pid);
     await waitForProcess(unrelatedProcess.pid, "The unrelated local service");
 
-    child.kill("SIGTERM");
+    child.kill(signal);
     const exit = await waitForExit(child);
-    assert.equal(exit.signal, null, `Runner was terminated directly instead of handling SIGTERM.\n${output}`);
-    assert.equal(exit.code, 143, `Runner did not report SIGTERM status 143.\n${output}`);
+    assert.equal(exit.signal, null, `Runner was terminated directly instead of handling ${signal}.\n${output}`);
+    const expectedExitCode = 128 + (signal === "SIGINT" ? 2 : 15);
+    assert.equal(
+      exit.code,
+      expectedExitCode,
+      `Runner did not report ${signal} status ${expectedExitCode}.\n${output}`,
+    );
 
     await waitForOwnedTestServersToStop(testDatabaseUrl);
     await waitForProcessToStop(frontendPid, "The disposable browser frontend");
@@ -945,4 +954,8 @@ test("SIGTERM during a disposable browser check cleans every owned resource", as
 
 test("SIGTERM during disposable browser frontend readiness cleans every owned resource", async () => {
   await runInterruptedBrowserScenario(true);
+});
+
+test("SIGINT during disposable browser frontend readiness cleans every owned resource", async () => {
+  await runInterruptedBrowserScenario(true, "SIGINT");
 });
