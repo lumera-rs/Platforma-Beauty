@@ -28,6 +28,10 @@ export interface AutomationStats {
   cancelledAttributedAppointments: number;
   /** Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations. */
   cancelledAttributedRevenue: number;
+  /** Attributed appointments that became no-shows (excluded from realized numbers). */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   deliveredCount: number;
   openedCount: number;
   emailSentCount: number;

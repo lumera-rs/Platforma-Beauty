@@ -696,6 +696,11 @@ const appointmentIsCancelledAttributed = inArray(
   CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.cancelledAttributed,
 );
 
+const appointmentIsNoShowAttributed = inArray(
+  appointmentsTable.status,
+  CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.excluded,
+);
+
 /**
  * NEW vs RETURNING derivation for an attributed appointment: a client is
  * returning when they had a completed appointment strictly before the
@@ -775,8 +780,8 @@ function calculateKnownClientCount(
  * Realized attribution: only the statuses in the completed and upcoming
  * campaign buckets count as realized (neither cancelled nor excluded statuses
  * do). The join brings in every attributed appointment and the conditional
- * aggregates split it, so the cancelled line can be reported separately
- * without changing the realized numbers.
+ * aggregates split it, so cancelled and no-show outcomes can be reported
+ * separately without changing the realized numbers.
  */
 function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
   return db
@@ -802,6 +807,11 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       // booked that later fell through — revenue lost to cancellations.
       cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentIsCancelledAttributed} then 1 else 0 end)::int`,
       cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentIsCancelledAttributed} then ${appointmentsTable.price} end), 0)::int`,
+      // No-show-attributed line: campaign bookings that were missed. These
+      // remain outside realized revenue, but are visible so the outcome
+      // buckets reconcile to every attributed appointment.
+      noShowAttributedAppointments: sql<number>`sum(case when ${appointmentIsNoShowAttributed} then 1 else 0 end)::int`,
+      noShowAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentIsNoShowAttributed} then ${appointmentsTable.price} end), 0)::int`,
       lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
     })
     .from(automationRunsTable)
@@ -988,6 +998,8 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         upcomingRevenue: runs?.upcomingRevenue ?? 0,
         cancelledAttributedAppointments: runs?.cancelledAttributedAppointments ?? 0,
         cancelledAttributedRevenue: runs?.cancelledAttributedRevenue ?? 0,
+        noShowAttributedAppointments: runs?.noShowAttributedAppointments ?? 0,
+        noShowAttributedRevenue: runs?.noShowAttributedRevenue ?? 0,
         newClientCount: clientMix?.newClientCount ?? 0,
         returningClientCount: clientMix?.returningClientCount ?? 0,
         unknownClientCount: clientMix?.unknownClientCount ?? 0,
@@ -1099,6 +1111,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       upcomingRevenue: stats?.upcomingRevenue ?? 0,
       cancelledAttributedAppointments: stats?.cancelledAttributedAppointments ?? 0,
       cancelledAttributedRevenue: stats?.cancelledAttributedRevenue ?? 0,
+      noShowAttributedAppointments: stats?.noShowAttributedAppointments ?? 0,
+      noShowAttributedRevenue: stats?.noShowAttributedRevenue ?? 0,
       newClientCount: stats?.newClientCount ?? 0,
       knownClientCount: calculateKnownClientCount(stats?.newClientCount, stats?.returningClientCount),
       unknownClientCount: stats?.unknownClientCount ?? 0,

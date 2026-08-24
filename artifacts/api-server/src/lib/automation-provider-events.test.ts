@@ -1775,7 +1775,8 @@ async function run() {
       );
 
       // A confirmed appointment counts toward both the attributed count and
-      // the attributed revenue; a cancelled one contributes to neither.
+      // the attributed revenue; cancelled and no-show appointments contribute
+      // to neither realized total.
       const [service] = await db.insert(servicesTable).values({
         salonId: a.salon.id, categoryName: "PE", name: `PE Service ${suffix}`,
         description: "Test", durationMinutes: 30, price: 3000, imageUrl: "/t.jpg",
@@ -1817,10 +1818,21 @@ async function run() {
       // separately: count and lost revenue, without touching realized numbers.
       assert.equal(attributionStats["cancelledAttributedAppointments"], 1, "cancelled appointment must be reported in the separate cancelled count");
       assert.equal(attributionStats["cancelledAttributedRevenue"], 5000, "cancelled revenue must be reported separately as lost revenue");
+      assert.equal(attributionStats["noShowAttributedAppointments"], 1, "no-show appointment must be reported in the separate no-show count");
+      assert.equal(attributionStats["noShowAttributedRevenue"], 7000, "no-show revenue must be reported separately as not realized");
       assert.equal(
-        (attributionStats["attributedAppointments"] ?? 0) + (attributionStats["cancelledAttributedAppointments"] ?? 0),
-        3,
-        "realized + cancelled must reconcile with attributed runs (no-show excluded from both)",
+        (attributionStats["attributedAppointments"] ?? 0)
+          + (attributionStats["cancelledAttributedAppointments"] ?? 0)
+          + (attributionStats["noShowAttributedAppointments"] ?? 0),
+        4,
+        "realized + cancelled + no-show must reconcile with every attributed run",
+      );
+      assert.equal(
+        (attributionStats["attributedRevenue"] ?? 0)
+          + (attributionStats["cancelledAttributedRevenue"] ?? 0)
+          + (attributionStats["noShowAttributedRevenue"] ?? 0),
+        17000,
+        "realized + cancelled + no-show revenue must reconcile with every attributed appointment price",
       );
       // Completed vs upcoming split: completed money is separated from the
       // still-upcoming (confirmed) appointment, the no-show lands in neither
@@ -1855,7 +1867,23 @@ async function run() {
       assert.equal(overviewRow["upcomingRevenue"], 3000, "overview must expose the same upcoming revenue — no-show money is excluded");
       assert.equal(overviewRow["cancelledAttributedAppointments"], 1, "overview must report the cancelled count separately");
       assert.equal(overviewRow["cancelledAttributedRevenue"], 5000, "overview must report cancelled (lost) revenue separately");
-      console.log("✓ cancelled and no-show appointments are excluded from realized numbers; completed/upcoming split and the separate cancelled line reconcile in both endpoints");
+      assert.equal(overviewRow["noShowAttributedAppointments"], 1, "overview must report the no-show count separately");
+      assert.equal(overviewRow["noShowAttributedRevenue"], 7000, "overview must report no-show (not realized) revenue separately");
+      assert.equal(
+        (overviewRow["attributedAppointments"] as number)
+          + (overviewRow["cancelledAttributedAppointments"] as number)
+          + (overviewRow["noShowAttributedAppointments"] as number),
+        4,
+        "overview outcome counts must reconcile to every attributed run",
+      );
+      assert.equal(
+        (overviewRow["attributedRevenue"] as number)
+          + (overviewRow["cancelledAttributedRevenue"] as number)
+          + (overviewRow["noShowAttributedRevenue"] as number),
+        17000,
+        "overview outcome revenue must reconcile to every attributed appointment price",
+      );
+      console.log("✓ cancelled and no-show appointments are excluded from realized numbers; all outcome buckets reconcile in both endpoints");
     }
 
     // ── 8d. compare=previous: previous-window counts share the same filters ─

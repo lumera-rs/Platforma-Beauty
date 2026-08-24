@@ -7863,6 +7863,12 @@ components:
         cancelledAttributedRevenue:
           type: number
           description: Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.
+        noShowAttributedAppointments:
+          type: number
+          description: Attributed appointments that became no-shows (excluded from realized numbers).
+        noShowAttributedRevenue:
+          type: number
+          description: Total price (RSD) of no-show attributed appointments — not realized as campaign revenue.
         deliveredCount: { type: number }
         openedCount: { type: number }
         emailSentCount: { type: number }
@@ -7916,7 +7922,7 @@ components:
           minimum: 0
           maximum: 100
           description: Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
-      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientCount, knownClientCount, unknownClientCount, newClientShare, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, noShowAttributedAppointments, noShowAttributedRevenue, newClientCount, knownClientCount, unknownClientCount, newClientShare, deliveredCount, openedCount, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationAttributedAppointment:
       type: object
@@ -8000,6 +8006,12 @@ components:
         cancelledAttributedRevenue:
           type: number
           description: Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.
+        noShowAttributedAppointments:
+          type: number
+          description: Attributed appointments that became no-shows (excluded from realized numbers).
+        noShowAttributedRevenue:
+          type: number
+          description: Total price (RSD) of no-show attributed appointments — not realized as campaign revenue.
         newClientCount:
           type: number
           description: Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response.
@@ -8048,7 +8060,7 @@ components:
           minimum: 0
           maximum: 100
           description: Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
-      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, newClientCount, returningClientCount, unknownClientCount, knownClientCount, newClientShare, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
+      required: [ruleId, ruleName, ruleStatus, action, totalRuns, sentCount, skippedCount, failedCount, attributedAppointments, attributedRevenue, completedAppointments, completedRevenue, upcomingAppointments, upcomingRevenue, cancelledAttributedAppointments, cancelledAttributedRevenue, noShowAttributedAppointments, noShowAttributedRevenue, newClientCount, returningClientCount, unknownClientCount, knownClientCount, newClientShare, emailSentCount, emailDeliveredCount, emailOpenedCount, emailFailedCount, smsSentCount, smsDeliveredCount, smsFailedCount]
 
     AutomationTestRunResult:
       type: object

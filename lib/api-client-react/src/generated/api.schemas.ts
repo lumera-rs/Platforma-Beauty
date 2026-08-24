@@ -4322,6 +4322,10 @@ export interface AutomationStats {
   cancelledAttributedAppointments: number;
   /** Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations. */
   cancelledAttributedRevenue: number;
+  /** Attributed appointments that became no-shows (excluded from realized numbers). */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   deliveredCount: number;
   openedCount: number;
   emailSentCount: number;
@@ -4442,6 +4446,10 @@ export interface AutomationStatsOverviewItem {
   cancelledAttributedAppointments: number;
   /** Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations. */
   cancelledAttributedRevenue: number;
+  /** Attributed appointments that became no-shows (excluded from realized numbers). */
+  noShowAttributedAppointments: number;
+  /** Total price (RSD) of no-show attributed appointments — not realized as campaign revenue. */
+  noShowAttributedRevenue: number;
   /** Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response. */
   newClientCount: number;
   /** Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */

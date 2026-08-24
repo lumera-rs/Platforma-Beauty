@@ -249,6 +249,11 @@ async function main() {
       3 + expectedBucketCounts.cancelledAttributed,
       "stats cancelled count must include every status mapped to cancelledAttributed",
     );
+    assert.equal(
+      stats.body.noShowAttributedAppointments,
+      1 + expectedBucketCounts.excluded,
+      "stats no-show count must include every status mapped to excluded",
+    );
     const dates = all.body.items.map((i: any) => i.date);
     const sorted = [...dates].sort((x: string, y: string) => (x < y ? 1 : x > y ? -1 : 0));
     assert.deepEqual(dates, sorted, "newest-first ordering");
