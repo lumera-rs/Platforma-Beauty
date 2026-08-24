@@ -486,7 +486,7 @@ test("retail checkout backs out to the empty-cart state when the cart is emptied
   }
 
   // The poll must drop the stale quote and leave the payment form entirely.
-  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("paragraph").filter({ hasText: "Korpa je prazna." })).toBeVisible({ timeout: 15_000 });
   const browseProductsLink = page.getByRole("link", { name: "Pregledajte proizvode" });
   await expect(browseProductsLink).toBeVisible();
   await expect(browseProductsLink).toHaveAttribute("href", "/proizvodi");
@@ -534,7 +534,7 @@ test("retail checkout recovers when an item is added after the cart was emptied 
     expect(deleteResponse.ok()).toBe(true);
   }
 
-  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("paragraph").filter({ hasText: "Korpa je prazna." })).toBeVisible({ timeout: 15_000 });
   await expect(paymentForm).toHaveCount(0);
 
   holdRecoveryPreview = true;
@@ -600,6 +600,32 @@ test("retail cart page updates lines and totals when the cart changes in another
   expect(mainFrameNavigations).toBe(1);
 });
 
+test("retail cart page announces a cross-tab line change without reloading", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/korpa");
+    await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    await otherTab.getByRole("button", { name: `Povećaj količinu proizvoda ${productName}` }).click();
+
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 2 stavki.");
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(
+      `Proizvod ${productName} sada ima količinu 2.`,
+    );
+    await expect(page.getByText(money(4_000), { exact: true }).first()).toBeVisible();
+    expect(mainFrameNavigations).toBe(1);
+  } finally {
+    await otherTab.close();
+  }
+});
+
 test("retail cart page empties without a reload when the cart is cleared in another tab", async ({ page }) => {
   let mainFrameNavigations = 0;
   page.on("framenavigated", (frame) => {
@@ -616,7 +642,7 @@ test("retail cart page empties without a reload when the cart is cleared in anot
   const deleteResponse = await page.request.delete(`/api/retail/cart/items/${cart.items[0]!.id}`);
   expect(deleteResponse.ok()).toBe(true);
 
-  await expect(page.getByText("Korpa je prazna.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("paragraph").filter({ hasText: "Korpa je prazna." })).toBeVisible({ timeout: 15_000 });
   expect(mainFrameNavigations).toBe(1);
 });
 

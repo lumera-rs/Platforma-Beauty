@@ -376,6 +376,7 @@ test("mobile stats period controls stay visible and keep the dialog open", async
   const fixture = await createFixture();
 
   try {
+    await page.setViewportSize({ width: 390, height: 844 });
     await signInAsFixtureOwner(page, fixture);
     await page.goto("/vlasnik/automatizacije");
 
@@ -454,6 +455,10 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     const selector = dialog.getByTestId("stats-period-selector");
 
     const status = dialog.getByTestId("stats-period-status");
+    const now = new Date();
+    const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+    const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
     const periodButtons = ["7d", "30d", "90d", "all"].map((period) =>
       selector.getByTestId(`period-${period}`),
     );
@@ -489,16 +494,6 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     // dialog's interaction, and Escape must dismiss only the picker. Radix
     // should return focus to the trigger after either keyboard dismissal.
     await customButton.focus();
-    await page.keyboard.press("Enter");
-    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
-    await expect(status).toHaveText(`Izabran period: ${customLabel}`);
-    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
-    await expect(dialog).toBeVisible();
-  } finally {
-    await cleanUpFixture(fixture);
-  }
-});
-
     const customResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname.endsWith(`/growth/automations/${fixture.ruleId}/attributed-appointments`)
@@ -506,9 +501,27 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
         && url.searchParams.get("to") === toDateParam(customTo)
         && url.searchParams.get("offset") === "0";
     });
+    await page.keyboard.press("Enter");
+    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(status).toHaveText("Izabran period: izabrani period");
 
-    const customLabel = `${customFrom.toLocaleDateString("sr-RS")} – ${customTo.toLocaleDateString("sr-RS")}`;
+    await rangePresets.getByTestId("range-preset-last-14d").click();
+    expect((await customResponse).status()).toBe(200);
+    await expect(status).toHaveText(`Izabran period: ${customLabel}`);
+    await expect(customButton).toContainText(customLabel);
+    await expect(dialog).toBeVisible();
 
-    const customFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
-
-    const customTo = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    await customButton.focus();
+    await page.keyboard.press("Space");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(rangePresets).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(customButton).toBeFocused();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});

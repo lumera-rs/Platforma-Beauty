@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
+import { changedRetailCartItem, notifyRetailCartChanged } from "@/lib/retail-cart-events";
 
 type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
@@ -66,18 +66,23 @@ function CartLines({ cart, change, remove }: { cart: Cart; change: (item: Cart["
 export function RetailCartPage() {
   const { toast } = useToast();
   const [cart, setCart] = useState<Cart | null>(null);
+  const cartRef = useRef<Cart | null>(null);
   // Guards against cross-tab polling clobbering an in-progress local edit: while a
   // local mutation (and its follow-up reload) is in flight the poll skips applying,
   // and bumping the generation discards any poll response that started earlier.
   const localOpsRef = useRef(0);
   const generationRef = useRef(0);
-  const loadCart = () => retail<Cart>("/retail/cart").then((latest) => { setCart(latest); return latest; }).catch(() => { setCart(null); return null; });
+  const applyCart = (next: Cart | null) => {
+    cartRef.current = next;
+    setCart(next);
+  };
+  const loadCart = () => retail<Cart>("/retail/cart").then((latest) => { applyCart(latest); return latest; }).catch(() => { applyCart(null); return null; });
   const runLocalCartOp = async (op: () => Promise<Cart>, failureMessage: string, changedItem: ChangedCartItem) => {
     generationRef.current += 1;
     localOpsRef.current += 1;
     try {
       const latest = await op();
-      setCart(latest);
+      applyCart(latest);
       notifyRetailCartChanged(latest.itemCount, changedItem);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : failureMessage);
@@ -106,11 +111,15 @@ export function RetailCartPage() {
       try {
         const latest = await retail<Cart>("/retail/cart");
         if (!active || localOpsRef.current > 0 || generation !== generationRef.current) return;
-        setCart((current) =>
-          current && cartItemsFingerprint(latest) === cartItemsFingerprint(current) && latest.subtotal === current.subtotal
-            ? current
-            : latest,
-        );
+        const current = cartRef.current;
+        if (!current) {
+          applyCart(latest);
+          return;
+        }
+        if (cartItemsFingerprint(latest) === cartItemsFingerprint(current) && latest.subtotal === current.subtotal) return;
+        const changedItem = changedRetailCartItem(current.items, latest.items);
+        applyCart(latest);
+        notifyRetailCartChanged(latest.itemCount, changedItem);
       } catch {
         // Transient poll failures are ignored; the next tick retries.
       } finally {
@@ -202,6 +211,8 @@ export function RetailCheckoutPage() {
       try {
         const latest = await retail<Cart>("/retail/cart");
         if (!active || cartItemsFingerprint(latest) === cartFingerprint) return;
+        const changedItem = changedRetailCartItem(cart.items, latest.items);
+        notifyRetailCartChanged(latest.itemCount, changedItem);
         if (!latest.items.length) {
           setCart(latest);
           setPreview(null);

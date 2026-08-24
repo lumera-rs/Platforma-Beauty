@@ -19,6 +19,36 @@ function cartItemAnnouncement(changedItem: NonNullable<RetailCartChangedDetail["
     : `Proizvod ${changedItem.name} sada ima količinu ${changedItem.quantity}.`;
 }
 
+function parseCartChange(value: string | null): RetailCartChangedDetail | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as {
+      itemCount?: unknown;
+      changedItem?: { name?: unknown; quantity?: unknown } | null;
+    };
+    if (!Number.isInteger(parsed.itemCount) || (parsed.itemCount as number) < 0) return null;
+    const changedItem = parsed.changedItem;
+    if (changedItem == null) return { itemCount: parsed.itemCount as number };
+    if (
+      typeof changedItem.name !== "string"
+      || !changedItem.name
+      || (changedItem.quantity !== null
+        && (!Number.isInteger(changedItem.quantity) || (changedItem.quantity as number) < 0))
+    ) {
+      return null;
+    }
+    return {
+      itemCount: parsed.itemCount as number,
+      changedItem: {
+        name: changedItem.name,
+        quantity: changedItem.quantity as number | null,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function RetailCartStatus() {
   const queryClient = useQueryClient();
   const [cartAnnouncement, setCartAnnouncement] = useState("");
@@ -31,27 +61,30 @@ export function RetailCartStatus() {
         refetchType: "active",
       });
     };
+    const announceCartChange = (detail: RetailCartChangedDetail) => {
+      if (!Number.isInteger(detail?.itemCount) || detail.itemCount < 0) return false;
+      const queryKey = getGetRetailCartSummaryQueryKey();
+      void queryClient.cancelQueries({ queryKey }).then(() => {
+        queryClient.setQueryData(queryKey, (current: { itemCount?: number } | undefined) => ({
+          ...current,
+          itemCount: detail.itemCount,
+        }));
+        setCartAnnouncement(cartQuantityAnnouncement(detail.itemCount));
+        setCartItemAnnouncementText(detail.changedItem ? cartItemAnnouncement(detail.changedItem) : "");
+      });
+      return true;
+    };
     const onCartChanged = (event: Event) => {
       const detail = (event as CustomEvent<RetailCartChangedDetail>).detail;
-      if (Number.isInteger(detail?.itemCount) && detail.itemCount >= 0) {
-        const queryKey = getGetRetailCartSummaryQueryKey();
-        void queryClient.cancelQueries({ queryKey }).then(() => {
-          queryClient.setQueryData(queryKey, (current: { itemCount?: number } | undefined) => ({
-            ...current,
-            itemCount: detail.itemCount,
-          }));
-          setCartAnnouncement(cartQuantityAnnouncement(detail.itemCount));
-          setCartItemAnnouncementText(detail.changedItem ? cartItemAnnouncement(detail.changedItem) : "");
-        });
-        return;
-      }
-      refreshCartSummary();
+      if (!announceCartChange(detail)) refreshCartSummary();
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") refreshCartSummary();
     };
     const onStorage = (event: StorageEvent) => {
-      if (event.key === RETAIL_CART_SYNC_STORAGE_KEY) refreshCartSummary();
+      if (event.key !== RETAIL_CART_SYNC_STORAGE_KEY) return;
+      const detail = parseCartChange(event.newValue);
+      if (!detail || !announceCartChange(detail)) refreshCartSummary();
     };
 
     window.addEventListener("focus", onVisible);
