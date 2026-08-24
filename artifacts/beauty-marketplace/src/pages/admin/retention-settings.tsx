@@ -707,10 +707,10 @@ export default function AdminRetentionSettings() {
                   </div>
                 )}
 
-                {preview.isEstimate && (
+                {preview.isEstimate && !preview.salonRankingAvailable && (
                   <p className="text-xs text-muted-foreground italic" data-testid="retention-preview-no-salons-note">
                     {preview.shareRankingMinCustomers !== undefined && preview.shareRankingMinCustomers !== null
-                      ? `Podešeni prag od najmanje ${preview.shareRankingMinCustomers.toLocaleString("sr-Latn-RS")} klijenata i dalje važi za tačna rangiranja po salonu, ali uzorkovani pregled ne prikazuje rangiranja po salonima — uzorak je premali za pouzdane brojeve po pojedinačnom salonu.`
+                      ? `Podešeni prag od najmanje ${preview.shareRankingMinCustomers.toLocaleString("sr-Latn-RS")} klijenata i dalje važi za tačna rangiranja po salonu, ali ovaj uzorak nije stratifikovan po salonima, pa se rangiranja ne prikazuju kako približni brojevi ne bi bili pogrešno shvaćeni kao pouzdani.`
                       : "Rangiranja po salonima nisu dostupna u uzorkovanoj proceni — uzorak je premali za pouzdane brojeve po pojedinačnom salonu."}
                   </p>
                 )}
@@ -719,7 +719,7 @@ export default function AdminRetentionSettings() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                         <Store className="w-3.5 h-3.5 shrink-0" />
-                        Najviše pogođeni saloni:
+                        {preview.isEstimate ? "~ Procena najviše pogođenih salona:" : "Najviše pogođeni saloni:"}
                       </p>
                       <div className="flex items-center gap-1" role="group" aria-label="Rangiranje pogođenih salona">
                         <Button
@@ -753,6 +753,15 @@ export default function AdminRetentionSettings() {
                         klijenata.
                       </p>
                     )}
+                    {preview.isEstimate && (
+                      <p
+                        className="text-xs text-amber-600 dark:text-amber-500"
+                        data-testid="retention-preview-salon-estimate-note"
+                      >
+                        Rangiranje je procena iz zasebnog nasumičnog uzorka po salonu. Znak „~“ i ±
+                        prikazuju približnu 95% marginu greške za broj klijenata koji menjaju status.
+                      </p>
+                    )}
                     {(salonRanking === "share" ? preview.topShareAffectedSalons : preview.topAffectedSalons).length === 0 ? (
                       <p className="text-sm text-muted-foreground" data-testid="retention-preview-share-empty">
                         Nijedan pogođeni salon nema najmanje {preview.shareRankingMinCustomers} klijenata.
@@ -775,11 +784,24 @@ export default function AdminRetentionSettings() {
                               {salon.salonName}
                               <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
                             </a>
-                            <span className="font-semibold text-foreground">{salon.reclassifiedCount}</span>
+                            <span className="font-semibold text-foreground">
+                              {preview.isEstimate ? "~" : ""}{salon.reclassifiedCount}
+                              {preview.isEstimate && salon.reclassifiedCountMarginOfError !== null
+                                ? ` ±${salon.reclassifiedCountMarginOfError}`
+                                : ""}
+                            </span>
                             {`od ${salon.totalCustomers} ${salon.totalCustomers === 1 ? "klijenta" : "klijenata"}`}
                             {salon.totalCustomers > 0 && (
                               <span className="text-foreground">
                                 ({Math.round((salon.reclassifiedCount / salon.totalCustomers) * 100)}%)
+                              </span>
+                            )}
+                            {preview.isEstimate && salon.sampleSize !== null && (
+                              <span
+                                className="text-xs text-amber-600 dark:text-amber-500"
+                                data-testid={`retention-preview-salon-sample-${salon.salonId}`}
+                              >
+                                uzorak: {salon.sampleSize}
                               </span>
                             )}
                           </li>

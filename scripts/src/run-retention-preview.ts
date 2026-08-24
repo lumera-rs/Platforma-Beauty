@@ -26,7 +26,26 @@ const exactConfiguration: IsolatedBrowserSuiteConfiguration = {
   environment: {
     LUMERA_ISOLATED_RETENTION_PREVIEW_BROWSER_TEST: "1",
     LUMERA_RETENTION_PREVIEW_EXPECT_ESTIMATE: "0",
-    RETENTION_PREVIEW_MAX_CUSTOMERS: "10",
+    RETENTION_PREVIEW_MAX_CUSTOMERS: "100",
+    RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS: "40",
+    LUMERA_RELEASE_BROWSER_TEST: "1",
+  },
+};
+
+const stratifiedEstimateConfiguration: IsolatedBrowserSuiteConfiguration = {
+  databasePrefix: "lumera_retention_stratified_browser_",
+  manifestDirectoryName: "retention-preview-stratified-browser-databases",
+  specPath: "browser/retention-preview-estimate.spec.ts",
+  testLabel: "Retention preview stratified estimate browser checks",
+  environment: {
+    LUMERA_ISOLATED_RETENTION_PREVIEW_BROWSER_TEST: "1",
+    LUMERA_RETENTION_PREVIEW_EXPECT_ESTIMATE: "1",
+    LUMERA_RETENTION_PREVIEW_EXPECT_SALON_ESTIMATE: "1",
+    RETENTION_PREVIEW_MAX_CUSTOMERS: "79",
+    RETENTION_PREVIEW_SAMPLE_SIZE: "80",
+    RETENTION_PREVIEW_SALON_SAMPLE_SIZE: "30",
+    RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE: "3",
+    RETENTION_PREVIEW_SALON_MAX_STRATA: "5",
     LUMERA_RELEASE_BROWSER_TEST: "1",
   },
 };
@@ -36,6 +55,7 @@ async function run(): Promise<void> {
   if (commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases") {
     await recoverInterruptedHarnessDatabases(estimateConfiguration);
     await recoverInterruptedHarnessDatabases(exactConfiguration);
+    await recoverInterruptedHarnessDatabases(stratifiedEstimateConfiguration);
     return;
   }
   if (commandArguments.length > 0) {
@@ -46,6 +66,7 @@ async function run(): Promise<void> {
   // server startup and the exact control run cannot inherit estimate mode.
   await runIsolatedBrowserSuite(estimateConfiguration);
   await runIsolatedBrowserSuite(exactConfiguration);
+  await runIsolatedBrowserSuite(stratifiedEstimateConfiguration);
 }
 
 void run().catch((error) => {

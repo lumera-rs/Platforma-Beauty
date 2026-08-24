@@ -352,6 +352,10 @@ export interface RetentionPreviewAffectedSalon {
   reclassifiedCount: number;
   /** Total customers this salon has — puts the reclassified count in proportion. */
   totalCustomers: number;
+  /** Approximate 95% margin for an estimate; null for exact counts/censuses. */
+  reclassifiedCountMarginOfError: number | null;
+  /** Customers classified for this salon; null for exact counts. */
+  sampleSize: number | null;
 }
 
 export interface RetentionPreviewResult {
@@ -397,16 +401,20 @@ export interface RetentionPreviewResult {
 
   shareRankingMinCustomers: number;
   /**
-   * True when the platform exceeded the exact-preview cap and every count
-   * (except totalCustomers, which is the real platform-wide count) was
-   * extrapolated from a uniform random sample. Estimates must be rendered as
-   * approximate ("~"), never as exact numbers. In estimate mode the per-salon
-   * rankings are empty — per-salon numbers are too noisy to trust.
+   * True when the platform exceeded the exact-preview cap and counts were
+   * estimated. Estimates must be rendered as approximate ("~"), never as
+   * exact numbers.
    */
   isEstimate: boolean;
   /** Customers actually classified when isEstimate; null in exact mode. */
 
   sampleSize: number | null;
+  /**
+   * True when estimate mode used the opt-in stratified per-salon design and
+   * can safely return salon rankings. False means the uniform sample was used
+   * or the configured design was not supportable.
+   */
+  salonRankingAvailable: boolean;
 }
 
 /** How many most-affected salons the preview reports. */
@@ -426,6 +434,15 @@ const RETENTION_STATUSES: RetentionStatus[] = ["NEW", "ACTIVE", "VIP", "AT_RISK"
 
 function emptyStatusCounts(): RetentionStatusCounts {
   return { NEW: 0, ACTIVE: 0, VIP: 0, AT_RISK: 0, LOST: 0 };
+}
+
+interface StratifiedSalonStats {
+  populationSize: number;
+  sampleSize: number;
+  currentCounts: RetentionStatusCounts;
+  candidateCounts: RetentionStatusCounts;
+  shiftCounts: Map<string, number>;
+  reclassifiedCount: number;
 }
 
 /**
@@ -482,6 +499,19 @@ export const RETENTION_PREVIEW_DEFAULT_MAX_CUSTOMERS = 250_000;
 export const RETENTION_PREVIEW_DEFAULT_SAMPLE_SIZE = 25_000;
 
 /**
+ * Opt-in per-salon sample size for estimate-mode rankings. A salon smaller
+ * than this is fully censused; larger salons need at least the minimum sample
+ * below to qualify for a statistically bounded ranking.
+ */
+export const RETENTION_PREVIEW_DEFAULT_SALON_MIN_SAMPLE_SIZE = 30;
+export const RETENTION_PREVIEW_DEFAULT_SALON_MAX_STRATA = 500;
+/**
+ * Stratified sampling can require an expensive whole-table random-order query.
+ * Reserve most of the preview deadline for the established uniform fallback.
+ */
+const RETENTION_PREVIEW_STRATIFIED_ATTEMPT_BUDGET_FRACTION = 0.4;
+
+/**
  * Estimate-mode page oversampling factor. TABLESAMPLE SYSTEM surfaces whole
  * table pages, so the row count it returns is approximate — requesting a few
  * times more rows than the target sample makes a single pass almost always
@@ -517,12 +547,13 @@ const RETENTION_PREVIEW_SAMPLE_MIN_SOURCE_ROWS = 1_000;
  * preview switches to sampled-estimate mode instead of refusing: a bounded
  * page-level random sample (TABLESAMPLE SYSTEM, uniformly thinned in memory)
  * is classified through the same pipeline and extrapolated to the platform
- * size, flagged via isEstimate/sampleSize; salon medians are then computed
- * only for sampled salons, so no estimate-mode query scales with the whole
- * platform. A wall-clock deadline (checked before and after every query and
- * batch) and a database statement_timeout set to the remaining budget still
- * abort with RetentionPreviewOverloadError instead of stalling the admin
- * page, in both modes.
+ * size, flagged via isEstimate/sampleSize. Operators can opt into a bounded
+ * random sample within each salon to recover ranking estimates; it is refused
+ * when the number of salons, total sample budget, or per-salon precision is
+ * insufficient. Salon medians are then computed only for sampled salons. A
+ * wall-clock deadline (checked before and after every query and batch) and a
+ * database statement_timeout set to the remaining budget still abort with
+ * RetentionPreviewOverloadError instead of stalling the admin page.
  */
 export async function previewRetentionThresholds(
   candidate: RetentionThresholds,
@@ -538,6 +569,9 @@ export async function previewRetentionThresholds(
     appointmentRowBudget,
     sampleSize,
     shareRankingMinCustomers,
+    salonSampleSize,
+    salonMinSampleSize,
+    salonMaxStrata,
   } =
     retentionPreviewGuardLimits();
   const deadlineAt = Date.now() + timeBudgetMs;
@@ -625,6 +659,13 @@ export async function previewRetentionThresholds(
   // Total customers per salon (accumulated across batches) — puts each
   // affected salon's reclassified count in proportion (swing vs base).
   const totalCustomersBySalon = new Map<string, number>();
+  /**
+   * Populated only by the opt-in stratified estimate path. The ordinary
+   * TABLESAMPLE fallback deliberately leaves this empty so it cannot
+   * accidentally be treated as a trustworthy salon comparison.
+   */
+  const stratifiedSalonStats = new Map<string, StratifiedSalonStats>();
+  let salonRankingAvailable = !isEstimate;
 
   // Classify one page of customers into the shared accumulators. Used by
   // both modes: exact mode feeds keyset-paginated pages of ALL customers,
@@ -721,10 +762,6 @@ export async function previewRetentionThresholds(
           classifiedSinceCheck = 0;
           assertWithinBudget();
         }
-        totalCustomersBySalon.set(
-          customer.salonId,
-          (totalCustomersBySalon.get(customer.salonId) ?? 0) + 1,
-        );
         const appointments = apptsByCustomer.get(customer.id) ?? [];
         const salonMedianSpend = medianBySalon.get(customer.salonId);
         const currentStatus = classifyRetention({
@@ -736,10 +773,29 @@ export async function previewRetentionThresholds(
 
         currentCounts[currentStatus] += 1;
         candidateCounts[candidateStatus] += 1;
+        const stratifiedStats = stratifiedSalonStats.get(customer.salonId);
+        if (!stratifiedStats) {
+          totalCustomersBySalon.set(
+            customer.salonId,
+            (totalCustomersBySalon.get(customer.salonId) ?? 0) + 1,
+          );
+        }
+        if (stratifiedStats) {
+          stratifiedStats.sampleSize += 1;
+          stratifiedStats.currentCounts[currentStatus] += 1;
+          stratifiedStats.candidateCounts[candidateStatus] += 1;
+        }
         if (currentStatus !== candidateStatus) {
           reclassifiedCount += 1;
           const key = `${currentStatus}\u0000${candidateStatus}`;
           shiftCounts.set(key, (shiftCounts.get(key) ?? 0) + 1);
+          if (stratifiedStats) {
+            stratifiedStats.reclassifiedCount += 1;
+            stratifiedStats.shiftCounts.set(
+              key,
+              (stratifiedStats.shiftCounts.get(key) ?? 0) + 1,
+            );
+          }
           reclassifiedBySalon.set(
             customer.salonId,
             (reclassifiedBySalon.get(customer.salonId) ?? 0) + 1,
@@ -762,82 +818,155 @@ export async function previewRetentionThresholds(
   };
 
   if (isEstimate) {
-    // Sampled-estimate mode. The sample must be drawn with WORK BOUNDED by
-    // the configured sample size, never the platform size — ORDER BY
-    // random() would visit and heap-sort every customer row, which at
-    // estimate-mode scale could itself exhaust the time budget. Strategy (a
-    // two-stage cluster sample, single pass, no escalation):
-    //   1. TABLESAMPLE SYSTEM reads a uniformly random subset of table PAGES
-    //      (I/O proportional to the requested percentage, cancelled by
-    //      statement_timeout like every other preview query). The percentage
-    //      is derived from a hard source-row budget — a few times the target
-    //      sample (plus a small constant floor so page-granular sampling
-    //      stays reliable on tiny tables) — and a LIMIT of that budget caps
-    //      the transferred rows outright. The percentage reaches 100 ONLY
-    //      when the whole table fits inside the source-row budget, so a
-    //      full-page read is bounded by the budget itself, never by the
-    //      platform. The percentage is NEVER raised afterwards: if page
-    //      sampling under-delivers, the smaller sample is used as-is and
-    //      reported truthfully via sampleSize; an empty sample refuses under
-    //      the friendly overload contract instead of widening the scan.
-    //   2. A Fisher–Yates prefix shuffle thins the surfaced rows uniformly
-    //      down to the target, breaking up the physical row-order clustering
-    //      that page sampling introduces.
-    // Residual page-cluster correlation slightly widens the error of the
-    // estimate; that is acceptable for a clearly-flagged approximation (and
-    // is one more reason per-salon numbers are never extrapolated).
-    const targetSample = estimateSampleSize!;
-    const expectedSourceRows = Math.min(
-      customerCount,
-      Math.max(
-        targetSample * RETENTION_PREVIEW_SAMPLE_OVERSAMPLE,
-        RETENTION_PREVIEW_SAMPLE_MIN_SOURCE_ROWS,
-      ),
-    );
-    // Hard cap on transferred rows: double the expectation so the LIMIT
-    // virtually never truncates (truncation would bias against late pages).
-    const sourceRowLimit = expectedSourceRows * 2;
-    const samplePct =
-      testOnlySamplePctOverride() ??
-      Math.min(100, Math.max(0.01, (expectedSourceRows / customerCount) * 100));
-    assertWithinBudget();
-    const sampleRes = await withPreviewStatementTimeout(remainingMs(), (tx) =>
-      tx.execute(
-        // samplePct/sourceRowLimit are locally computed finite numbers
-        // rendered via toFixed/String — inlined because TABLESAMPLE
-        // arguments predate plan parameters on some planners; never user
-        // input.
-        sql`select id, salon_id from ${salonCustomersTable} tablesample system (${sql.raw(samplePct.toFixed(4))}) limit ${sql.raw(String(sourceRowLimit))}`,
-      ),
-      "customer-sample",
-    );
-    const sampleRows = (sampleRes as unknown as { rows?: Record<string, unknown>[] }).rows
-      ?? (sampleRes as unknown as Record<string, unknown>[]);
-    const sampled: { id: string; salonId: string }[] = sampleRows.map((row) => ({
-      id: String(row.id),
-      salonId: String(row.salon_id),
-    }));
-    if (sampled.length === 0) {
-      // Pathological under-sampling (in practice only reachable with a
-      // test-forced percentage): without a single sampled customer there is
-      // nothing to extrapolate from — refuse honestly rather than answer
-      // all-zero "estimates".
-      throw new RetentionPreviewOverloadError(
-        "PREVIEW_TOO_LARGE",
-        "Pregled uticaja je privremeno nedostupan: nije bilo moguće izvući uzorak klijenata za procenu. " +
-          "Pokušajte ponovo — pragovi se i dalje mogu sačuvati bez pregleda.",
+    let sampled: { id: string; salonId: string }[] = [];
+
+    // Operators can opt into a true stratified sample for salon comparisons.
+    // Its sample is drawn independently within every salon, unlike the
+    // bounded platform-wide TABLESAMPLE fallback below. A row-number window is
+    // intentionally protected by the same statement/deadline guards; if the
+    // platform has too many strata or the requested sample is underpowered we
+    // discard it and keep the established empty-ranking fallback.
+    if (salonSampleSize !== null) {
+      // This optional query needs a random ordering across each salon and can
+      // therefore be more expensive than TABLESAMPLE. Give it only a bounded
+      // slice of the deadline; a timeout is not an error for the preview — it
+      // means rankings remain unavailable and the proven uniform path runs.
+      const stratifiedDeadlineAt =
+        Date.now() + Math.max(1, Math.floor(remainingMs() * RETENTION_PREVIEW_STRATIFIED_ATTEMPT_BUDGET_FRACTION));
+      const stratifiedRemainingMs = () =>
+        Math.max(1, Math.min(remainingMs(), stratifiedDeadlineAt - Date.now()));
+      const assertWithinStratifiedBudget = () => {
+        if (remainingMs() <= 0 || Date.now() > stratifiedDeadlineAt) {
+          throw new RetentionPreviewOverloadError("PREVIEW_TIMEOUT", PREVIEW_TIMEOUT_MESSAGE);
+        }
+      };
+      try {
+        const populations = await withPreviewStatementTimeout(stratifiedRemainingMs(), (tx) =>
+          tx
+            .select({
+              salonId: salonCustomersTable.salonId,
+              customerCount: sql<number>`count(*)::int`,
+            })
+            .from(salonCustomersTable)
+            .groupBy(salonCustomersTable.salonId)
+            .limit(salonMaxStrata + 1),
+          "salon-strata",
+        );
+        assertWithinStratifiedBudget();
+        const requiredStratifiedSampleSize = populations.reduce(
+          (sum, row) => sum + Math.min(row.customerCount, salonSampleSize),
+          0,
+        );
+        const stratifiedSampleBudget = estimateSampleSize!;
+        const hasEnoughPerSalonPrecision = populations.every(
+          (row) => row.customerCount <= salonSampleSize || salonSampleSize >= salonMinSampleSize,
+        );
+        if (
+          populations.length <= salonMaxStrata &&
+          hasEnoughPerSalonPrecision &&
+          requiredStratifiedSampleSize <= stratifiedSampleBudget
+        ) {
+          const sampleRes = await withPreviewStatementTimeout(stratifiedRemainingMs(), (tx) =>
+            tx.execute(sql`
+              select id, salon_id
+              from (
+                select id, salon_id,
+                  row_number() over (partition by salon_id order by random()) as sample_rank
+                from ${salonCustomersTable}
+              ) as stratified_customers
+              where sample_rank <= ${salonSampleSize}
+            `),
+            "salon-stratified-sample",
+          );
+          assertWithinStratifiedBudget();
+          const sampleRows = (sampleRes as unknown as { rows?: Record<string, unknown>[] }).rows
+            ?? (sampleRes as unknown as Record<string, unknown>[]);
+          sampled = sampleRows.map((row) => ({
+            id: String(row.id),
+            salonId: String(row.salon_id),
+          }));
+          const sampleCountBySalon = new Map<string, number>();
+          for (const customer of sampled) {
+            sampleCountBySalon.set(
+              customer.salonId,
+              (sampleCountBySalon.get(customer.salonId) ?? 0) + 1,
+            );
+          }
+          const complete = populations.every(
+            (row) =>
+              (sampleCountBySalon.get(row.salonId) ?? 0) === Math.min(row.customerCount, salonSampleSize),
+          );
+          if (complete) {
+            salonRankingAvailable = true;
+            for (const row of populations) {
+              totalCustomersBySalon.set(row.salonId, row.customerCount);
+              stratifiedSalonStats.set(row.salonId, {
+                populationSize: row.customerCount,
+                sampleSize: 0,
+                currentCounts: emptyStatusCounts(),
+                candidateCounts: emptyStatusCounts(),
+                shiftCounts: new Map(),
+                reclassifiedCount: 0,
+              });
+            }
+          } else {
+            sampled = [];
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof RetentionPreviewOverloadError)) throw error;
+        sampled = [];
+        totalCustomersBySalon.clear();
+        stratifiedSalonStats.clear();
+      }
+    }
+
+    if (!salonRankingAvailable) {
+      // Bounded platform-wide fallback: TABLESAMPLE SYSTEM reads a random
+      // subset of pages, then an in-memory shuffle thins it to the target.
+      // It is safe for platform totals but deliberately not used for
+      // per-salon rankings.
+      const targetSample = estimateSampleSize!;
+      const expectedSourceRows = Math.min(
+        customerCount,
+        Math.max(
+          targetSample * RETENTION_PREVIEW_SAMPLE_OVERSAMPLE,
+          RETENTION_PREVIEW_SAMPLE_MIN_SOURCE_ROWS,
+        ),
       );
+      const sourceRowLimit = expectedSourceRows * 2;
+      const samplePct =
+        testOnlySamplePctOverride() ??
+        Math.min(100, Math.max(0.01, (expectedSourceRows / customerCount) * 100));
+      assertWithinBudget();
+      const sampleRes = await withPreviewStatementTimeout(remainingMs(), (tx) =>
+        tx.execute(
+          sql`select id, salon_id from ${salonCustomersTable} tablesample system (${sql.raw(samplePct.toFixed(4))}) limit ${sql.raw(String(sourceRowLimit))}`,
+        ),
+        "customer-sample",
+      );
+      const sampleRows = (sampleRes as unknown as { rows?: Record<string, unknown>[] }).rows
+        ?? (sampleRes as unknown as Record<string, unknown>[]);
+      sampled = sampleRows.map((row) => ({
+        id: String(row.id),
+        salonId: String(row.salon_id),
+      }));
+      if (sampled.length === 0) {
+        throw new RetentionPreviewOverloadError(
+          "PREVIEW_TOO_LARGE",
+          "Pregled uticaja je privremeno nedostupan: nije bilo moguće izvući uzorak klijenata za procenu. " +
+            "Pokušajte ponovo — pragovi se i dalje mogu sačuvati bez pregleda.",
+        );
+      }
+      assertWithinBudget();
+      for (let i = 0; i < Math.min(targetSample, sampled.length); i += 1) {
+        const j = i + Math.floor(Math.random() * (sampled.length - i));
+        const a = sampled[i]!;
+        sampled[i] = sampled[j]!;
+        sampled[j] = a;
+      }
+      if (sampled.length > targetSample) sampled.length = targetSample;
     }
-    assertWithinBudget();
-    // Uniform in-memory thinning down to the target (prefix shuffle — only
-    // the first targetSample positions need to be randomized).
-    for (let i = 0; i < Math.min(targetSample, sampled.length); i += 1) {
-      const j = i + Math.floor(Math.random() * (sampled.length - i));
-      const a = sampled[i]!;
-      sampled[i] = sampled[j]!;
-      sampled[j] = a;
-    }
-    if (sampled.length > targetSample) sampled.length = targetSample;
 
     // Medians only for the salons the sample actually touches, in bounded
     // chunks — never a platform-wide aggregate in estimate mode.
@@ -879,27 +1008,155 @@ export async function previewRetentionThresholds(
     }
   }
 
-  const shifts: RetentionPreviewShift[] = [...shiftCounts.entries()]
-    .map(([key, count]) => {
-      const [fromStatus, toStatus] = key.split("\u0000") as [RetentionStatus, RetentionStatus];
-      return { fromStatus, toStatus, count };
-    })
-    .sort(
-      (a, b) =>
-        b.count - a.count ||
-        RETENTION_STATUSES.indexOf(a.fromStatus) - RETENTION_STATUSES.indexOf(b.fromStatus) ||
-        RETENTION_STATUSES.indexOf(a.toStatus) - RETENTION_STATUSES.indexOf(b.toStatus),
-    );
+  const toSortedShifts = (counts: Map<string, number>): RetentionPreviewShift[] =>
+    [...counts.entries()]
+      .map(([key, count]) => {
+        const [fromStatus, toStatus] = key.split("\u0000") as [RetentionStatus, RetentionStatus];
+        return { fromStatus, toStatus, count };
+      })
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          RETENTION_STATUSES.indexOf(a.fromStatus) - RETENTION_STATUSES.indexOf(b.fromStatus) ||
+          RETENTION_STATUSES.indexOf(a.toStatus) - RETENTION_STATUSES.indexOf(b.toStatus),
+      );
+  const shifts = toSortedShifts(shiftCounts);
 
   if (isEstimate) {
-    // Extrapolate sample counts to the platform size. The scale factor uses
-    // the customers actually classified (the sample), and every scaled number
-    // is an estimate — reclassifiedCount is derived from the scaled shifts so
-    // the estimate stays internally consistent (shifts always sum to the
-    // total). BOTH per-salon rankings (absolute and share-based) are
-    // intentionally omitted: a uniform customer sample is far too noisy at
-    // individual-salon granularity, and a misleading "most affected salons"
-    // list is worse than none.
+    // The stratified path has a random sample inside every salon. Weight each
+    // stratum back to its known population before ranking; a uniform
+    // TABLESAMPLE never reaches this branch and continues to omit rankings.
+    if (salonRankingAvailable) {
+      const estimatedCountsFromStrata = (
+        pick: (stats: StratifiedSalonStats) => RetentionStatusCounts,
+      ): RetentionStatusCounts => {
+        const estimated = emptyStatusCounts();
+        for (const stats of stratifiedSalonStats.values()) {
+          const factor = stats.populationSize / stats.sampleSize;
+          const counts = pick(stats);
+          for (const status of RETENTION_STATUSES) {
+            estimated[status] += Math.round(counts[status] * factor);
+          }
+        }
+        return estimated;
+      };
+      const estimatedMarginsFromStrata = (
+        pick: (stats: StratifiedSalonStats) => RetentionStatusCounts,
+      ): RetentionStatusCounts => {
+        const margins = emptyStatusCounts();
+        for (const stats of stratifiedSalonStats.values()) {
+          const counts = pick(stats);
+          for (const status of RETENTION_STATUSES) {
+            // A sum of stratum intervals is intentionally conservative: it
+            // avoids claiming that independently estimated salons are more
+            // precise than the evidence supports.
+            margins[status] += calculateEstimatedCountMarginOfError(
+              counts[status],
+              stats.sampleSize,
+              stats.populationSize,
+            );
+          }
+        }
+        return margins;
+      };
+      const estimatedShiftCounts = new Map<string, number>();
+      let estimatedReclassifiedCount = 0;
+      let reclassifiedMargin = 0;
+      const estimatedReclassifiedBySalon = new Map<string, number>();
+      for (const [salonId, stats] of stratifiedSalonStats) {
+        const factor = stats.populationSize / stats.sampleSize;
+        const estimatedSalonCount = Math.round(stats.reclassifiedCount * factor);
+        estimatedReclassifiedBySalon.set(salonId, estimatedSalonCount);
+        estimatedReclassifiedCount += estimatedSalonCount;
+        reclassifiedMargin += calculateEstimatedCountMarginOfError(
+          stats.reclassifiedCount,
+          stats.sampleSize,
+          stats.populationSize,
+        );
+        for (const [key, count] of stats.shiftCounts) {
+          estimatedShiftCounts.set(
+            key,
+            (estimatedShiftCounts.get(key) ?? 0) + Math.round(count * factor),
+          );
+        }
+      }
+      const estimatedShifts = toSortedShifts(estimatedShiftCounts);
+      // Derive the aggregate from the shifts so the API's familiar invariant
+      // remains true even after each stratum was rounded independently.
+      estimatedReclassifiedCount = estimatedShifts.reduce((sum, shift) => sum + shift.count, 0);
+      reclassifiedBySalon.clear();
+      for (const [salonId, count] of estimatedReclassifiedBySalon) {
+        if (count > 0) reclassifiedBySalon.set(salonId, count);
+      }
+      const currentEstimatedCounts = estimatedCountsFromStrata((stats) => stats.currentCounts);
+      const candidateEstimatedCounts = estimatedCountsFromStrata((stats) => stats.candidateCounts);
+
+      const topAffected = [...reclassifiedBySalon.entries()]
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+        .slice(0, PREVIEW_TOP_AFFECTED_SALONS_LIMIT);
+      const shareOf = (salonId: string, count: number) => {
+        const total = totalCustomersBySalon.get(salonId) ?? 0;
+        return total > 0 ? count / total : 0;
+      };
+      const topByShare = [...reclassifiedBySalon.entries()]
+        .filter(([salonId]) => (totalCustomersBySalon.get(salonId) ?? 0) >= shareRankingMinCustomers)
+        .sort(
+          (a, b) =>
+            shareOf(b[0], b[1]) - shareOf(a[0], a[1]) ||
+            b[1] - a[1] ||
+            (a[0] < b[0] ? -1 : 1),
+        )
+        .slice(0, PREVIEW_TOP_AFFECTED_SALONS_LIMIT);
+      const namedIds = [...new Set([...topAffected, ...topByShare].map(([salonId]) => salonId))];
+      const nameById = new Map<string, string>();
+      if (namedIds.length > 0) {
+        const namedRows = await withPreviewStatementTimeout(remainingMs(), (tx) =>
+          tx
+            .select({ id: salonsTable.id, name: salonsTable.name })
+            .from(salonsTable)
+            .where(inArray(salonsTable.id, namedIds)),
+          "salon-names",
+        );
+        for (const row of namedRows) nameById.set(row.id, row.name);
+      }
+      const toEstimatedSalon = ([salonId, count]: [string, number]): RetentionPreviewAffectedSalon => {
+        const stats = stratifiedSalonStats.get(salonId)!;
+        const margin = calculateEstimatedCountMarginOfError(
+          stats.reclassifiedCount,
+          stats.sampleSize,
+          stats.populationSize,
+        );
+        return {
+          salonId,
+          salonName: nameById.get(salonId) ?? "Nepoznat salon",
+          reclassifiedCount: count,
+          totalCustomers: stats.populationSize,
+          reclassifiedCountMarginOfError: margin === 0 ? null : margin,
+          sampleSize: stats.sampleSize,
+        };
+      };
+      assertWithinBudget();
+      return {
+        currentVersion: active.version,
+        totalCustomers: customerCount,
+        reclassifiedCount: estimatedReclassifiedCount,
+        reclassifiedCountMarginOfError: reclassifiedMargin,
+        currentCounts: currentEstimatedCounts,
+        currentCountMarginsOfError: estimatedMarginsFromStrata((stats) => stats.currentCounts),
+        candidateCounts: candidateEstimatedCounts,
+        candidateCountMarginsOfError: estimatedMarginsFromStrata((stats) => stats.candidateCounts),
+        shifts: estimatedShifts,
+        topAffectedSalons: topAffected.map(toEstimatedSalon),
+        topShareAffectedSalons: topByShare.map(toEstimatedSalon),
+        shareRankingMinCustomers,
+        isEstimate: true,
+        sampleSize: totalCustomers,
+        salonRankingAvailable: true,
+      };
+    }
+
+    // Uniform platform samples remain useful for aggregate counts, but their
+    // individual-salon slices are too noisy to rank. Keep rankings empty.
     const sampledCount = totalCustomers;
     const factor = sampledCount > 0 ? customerCount / sampledCount : 0;
     const scale = (n: number) => Math.round(n * factor);
@@ -942,6 +1199,7 @@ export async function previewRetentionThresholds(
       shareRankingMinCustomers,
       isEstimate: true,
       sampleSize: sampledCount,
+      salonRankingAvailable: false,
     };
   }
 
@@ -996,6 +1254,8 @@ export async function previewRetentionThresholds(
       salonName: nameById.get(salonId) ?? "Nepoznat salon",
       reclassifiedCount: count,
       totalCustomers: totalCustomersBySalon.get(salonId) ?? 0,
+      reclassifiedCountMarginOfError: null,
+      sampleSize: null,
     });
     topAffectedSalons = topAffected.map(toAffectedSalon);
     topShareAffectedSalons = topByShare.map(toAffectedSalon);
@@ -1019,6 +1279,7 @@ export async function previewRetentionThresholds(
     shareRankingMinCustomers,
     isEstimate: false,
     sampleSize: null,
+    salonRankingAvailable: true,
   };
 }
 
@@ -1140,6 +1401,9 @@ export function retentionPreviewGuardLimits(): {
   appointmentRowBudget: number;
   sampleSize: number;
   shareRankingMinCustomers: number;
+  salonSampleSize: number | null;
+  salonMinSampleSize: number;
+  salonMaxStrata: number;
 } {
   return {
     maxCustomers:
@@ -1157,6 +1421,16 @@ export function retentionPreviewGuardLimits(): {
     shareRankingMinCustomers:
       readPositiveIntEnv("RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS") ??
       RETENTION_PREVIEW_DEFAULT_SHARE_RANKING_MIN_CUSTOMERS,
+    salonSampleSize: readPositiveIntEnv("RETENTION_PREVIEW_SALON_SAMPLE_SIZE") ?? null,
+    salonMinSampleSize:
+      Math.max(
+        RETENTION_PREVIEW_DEFAULT_SALON_MIN_SAMPLE_SIZE,
+        readPositiveIntEnv("RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE") ??
+          RETENTION_PREVIEW_DEFAULT_SALON_MIN_SAMPLE_SIZE,
+      ),
+    salonMaxStrata:
+      readPositiveIntEnv("RETENTION_PREVIEW_SALON_MAX_STRATA") ??
+      RETENTION_PREVIEW_DEFAULT_SALON_MAX_STRATA,
   };
 }
 

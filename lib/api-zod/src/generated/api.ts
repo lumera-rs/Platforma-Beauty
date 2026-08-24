@@ -10421,17 +10421,22 @@ export const AdminPreviewRetentionSettingsResponse = zod.object({
   "salonId": zod.string(),
   "salonName": zod.string(),
   "reclassifiedCount": zod.number().describe('Customers of this salon whose status would change under the candidate thresholds'),
-  "totalCustomers": zod.number().describe('Total customers this salon has — puts the reclassified count in proportion')
-})).describe('Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample'),
+  "totalCustomers": zod.number().describe('Total customers this salon has — puts the reclassified count in proportion'),
+  "reclassifiedCountMarginOfError": zod.number().nullable().describe('Approximate 95% Wilson margin of error for reclassifiedCount in a stratified estimate; null for exact counts and full-salon censuses'),
+  "sampleSize": zod.number().nullable().describe('Customers classified for this salon in a stratified estimate; null for exact counts')
+})).describe('Salons with the most reclassified customers, largest first (top 10); estimate mode returns rows only when salonRankingAvailable is true'),
   "topShareAffectedSalons": zod.array(zod.object({
   "salonId": zod.string(),
   "salonName": zod.string(),
   "reclassifiedCount": zod.number().describe('Customers of this salon whose status would change under the candidate thresholds'),
-  "totalCustomers": zod.number().describe('Total customers this salon has — puts the reclassified count in proportion')
-})).describe('Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify'),
+  "totalCustomers": zod.number().describe('Total customers this salon has — puts the reclassified count in proportion'),
+  "reclassifiedCountMarginOfError": zod.number().nullable().describe('Approximate 95% Wilson margin of error for reclassifiedCount in a stratified estimate; null for exact counts and full-salon censuses'),
+  "sampleSize": zod.number().nullable().describe('Customers classified for this salon in a stratified estimate; null for exact counts')
+})).describe('Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify; estimate mode returns rows only when salonRankingAvailable is true'),
   "shareRankingMinCustomers": zod.number().describe('Minimum customers a salon needs to qualify for the share-based ranking'),
-  "isEstimate": zod.boolean().describe('True when the platform exceeded the exact-preview cap and counts (except totalCustomers) were extrapolated from a uniform random customer sample; render such values as approximate (~), never as exact; both per-salon rankings are empty in estimate mode'),
-  "sampleSize": zod.number().nullable().describe('Customers actually classified when isEstimate is true; null in exact mode')
+  "isEstimate": zod.boolean().describe('True when the platform exceeded the exact-preview cap and counts are approximate; render such values as approximate (~), never as exact. Salon rankings are returned only when salonRankingAvailable is true for the opt-in stratified design.'),
+  "sampleSize": zod.number().nullable().describe('Customers actually classified when isEstimate is true; null in exact mode'),
+  "salonRankingAvailable": zod.boolean().describe('True for exact previews and for estimate previews backed by the opt-in stratified per-salon sample; false means per-salon rankings are intentionally unavailable')
 })
 
 

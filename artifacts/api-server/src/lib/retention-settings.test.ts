@@ -75,6 +75,7 @@ import {
 import {
   RetentionPreviewOverloadError,
   calculateEstimatedCountMarginOfError,
+  retentionPreviewGuardLimits,
   validateRetentionThresholds,
   withPreviewStatementTimeout,
 } from "./retention-settings";
@@ -696,6 +697,11 @@ async function integrationTests() {
       assert.equal(overCap.reclassifiedCount, 0, "identity thresholds reclassify nobody, even sampled");
       assert.deepEqual(overCap.shifts, [], "no shifts under identity thresholds");
       assert.deepEqual(overCap.topAffectedSalons, [], "per-salon breakdown is never extrapolated");
+      assert.equal(
+        overCap.salonRankingAvailable,
+        false,
+        "the default uniform sample explicitly withholds salon rankings",
+      );
       // Extrapolated status counts cover approximately the whole platform
       // (rounding each of the 5 statuses independently drifts by < 0.5 each).
       const overCapSum = Object.values(overCap.currentCounts as Record<string, number>)
@@ -806,6 +812,7 @@ async function integrationTests() {
     const recovered = (await recoveredRes.json()) as any;
     assert.equal(recovered.isEstimate, false, "default limits restore exact mode");
     assert.equal(recovered.sampleSize, null, "exact mode reports no sample size");
+      assert.equal(recovered.salonRankingAvailable, true, "exact previews support salon rankings");
     console.log("✓ Preview guards: sampled fallback, setup/step cancellation, final-batch overrun → then exact recovery");
 
     // ── 11d. Preview building blocks ────────────────────────────────────────
@@ -1228,6 +1235,11 @@ async function integrationTests() {
       assert.equal(estShiftSum, est.reclassifiedCount, "estimated shifts add up to the estimated total");
       assert.deepEqual(est.topAffectedSalons, [], "per-salon breakdown stays empty in estimate mode");
       assert.deepEqual(est.topShareAffectedSalons, [], "share ranking stays empty in estimate mode");
+      assert.equal(
+        est.salonRankingAvailable,
+        false,
+        "a platform-wide sample never claims it can rank individual salons",
+      );
       for (const counts of [est.currentCounts, est.candidateCounts]) {
         const countSum = Object.values(counts as Record<string, number>)
           .reduce((s: number, n) => s + (n as number), 0);
@@ -1239,6 +1251,90 @@ async function integrationTests() {
       console.log(
         `✓ Oversized-platform estimate: 1,000-row sample previewed ${est.totalCustomers} customers in ${estElapsedMs} ms`,
       );
+
+      // Opt-in stratified sampling draws a separate random sample within every
+      // salon, so rankings are safe to restore with a per-salon confidence
+      // margin. The combined strata stay within the explicitly configured
+      // sample budget, and
+      // each 400-customer salon receives 30 observations — at the 30-row
+      // minimum. Small salons are censused, so their margin is null.
+      process.env.RETENTION_PREVIEW_SAMPLE_SIZE = "20000";
+      process.env.RETENTION_PREVIEW_SALON_SAMPLE_SIZE = "30";
+      process.env.RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE = "30";
+      process.env.RETENTION_PREVIEW_SALON_MAX_STRATA = "1000";
+      const stratifiedRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      assert.equal(stratifiedRes.status, 200, "stratified estimate succeeds");
+      const stratified = (await stratifiedRes.json()) as any;
+      assert.equal(stratified.isEstimate, true);
+      assert.equal(stratified.salonRankingAvailable, true, "validated strata unlock salon rankings");
+      assert.ok(stratified.topAffectedSalons.length > 0, "stratified estimate returns a count ranking");
+      for (const affectedSalon of stratified.topAffectedSalons as any[]) {
+        assert.ok(
+          affectedSalon.sampleSize >= 1 && affectedSalon.sampleSize <= 30,
+          "each estimated salon reports its actual within-salon sample size",
+        );
+        assert.equal(
+          affectedSalon.reclassifiedCountMarginOfError === null ||
+            Number.isInteger(affectedSalon.reclassifiedCountMarginOfError),
+          true,
+          "each estimated salon exposes a confidence indicator (number or null for a census)",
+        );
+        assert.ok(
+          affectedSalon.reclassifiedCount >= 0 &&
+            affectedSalon.reclassifiedCount <= affectedSalon.totalCustomers,
+          "estimated salon changes stay within its known population",
+        );
+      }
+      const stratifiedShareSalon = (stratified.topShareAffectedSalons as any[]).find(
+        (entry) => entry.salonId === shareSalonRow.id,
+      );
+      assert.ok(stratifiedShareSalon, "the fully sampled small salon is eligible for the share ranking");
+      assert.equal(stratifiedShareSalon.sampleSize, 5, "small salons are fully sampled");
+      assert.equal(
+        stratifiedShareSalon.reclassifiedCountMarginOfError,
+        null,
+        "a full-salon census has no sampling uncertainty",
+      );
+
+      // The optional random-order query receives only a fraction of the
+      // deadline. If it cannot finish, the preview must preserve enough time
+      // for the bounded uniform estimate rather than returning an error or
+      // exposing partial salon rankings.
+      process.env.RETENTION_PREVIEW_TIME_BUDGET_MS = "3000";
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_AT = "salon-stratified-sample";
+      process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_MS = "60000";
+      const timedOutStrataRes = await postPreview({
+        ...DEFAULT_RETENTION_THRESHOLDS,
+        vipMinCompletedVisits: 2,
+      });
+      assert.equal(timedOutStrataRes.status, 200, "a slow optional strata query falls back to an estimate");
+      const timedOutStrata = (await timedOutStrataRes.json()) as any;
+      assert.equal(timedOutStrata.isEstimate, true);
+      assert.equal(timedOutStrata.salonRankingAvailable, false, "timed-out strata keep rankings hidden");
+      assert.deepEqual(timedOutStrata.topAffectedSalons, [], "timed-out strata return no partial ranking");
+      delete process.env.RETENTION_PREVIEW_TIME_BUDGET_MS;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_AT;
+      delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SLEEP_MS;
+
+      // An opt-in request with too few observations per large salon must fail
+      // closed: retain the useful platform estimate but never rank noisy salon
+      // slices merely because the flag was present.
+      process.env.RETENTION_PREVIEW_SALON_SAMPLE_SIZE = "10";
+      process.env.RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE = "1";
+      const underpoweredRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+      assert.equal(underpoweredRes.status, 200, "underpowered strata still return the aggregate estimate");
+      const underpowered = (await underpoweredRes.json()) as any;
+      assert.equal(underpowered.salonRankingAvailable, false, "underpowered strata keep rankings unavailable");
+      assert.deepEqual(underpowered.topAffectedSalons, [], "underpowered strata return no count ranking");
+      assert.deepEqual(underpowered.topShareAffectedSalons, [], "underpowered strata return no share ranking");
+      assert.equal(
+        retentionPreviewGuardLimits().salonMinSampleSize,
+        30,
+        "operators cannot lower the statistical precision floor",
+      );
+      delete process.env.RETENTION_PREVIEW_SALON_SAMPLE_SIZE;
+      delete process.env.RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE;
+      delete process.env.RETENTION_PREVIEW_SALON_MAX_STRATA;
 
       // Regression: an under-delivering page sample must NEVER widen the
       // scan. Force a tiny sampling percentage (test-only hook): the preview
@@ -1279,6 +1375,9 @@ async function integrationTests() {
       delete process.env.RETENTION_PREVIEW_MAX_CUSTOMERS;
       delete process.env.RETENTION_PREVIEW_SAMPLE_SIZE;
       delete process.env.RETENTION_PREVIEW_SHARE_MIN_CUSTOMERS;
+      delete process.env.RETENTION_PREVIEW_SALON_SAMPLE_SIZE;
+      delete process.env.RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE;
+      delete process.env.RETENTION_PREVIEW_SALON_MAX_STRATA;
       delete process.env.LUMERA_TEST_RETENTION_PREVIEW_SAMPLE_PCT;
     }
 

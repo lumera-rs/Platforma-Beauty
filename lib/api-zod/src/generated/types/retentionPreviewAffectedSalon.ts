@@ -13,4 +13,14 @@ export interface RetentionPreviewAffectedSalon {
   reclassifiedCount: number;
   /** Total customers this salon has — puts the reclassified count in proportion */
   totalCustomers: number;
+  /**
+     * Approximate 95% Wilson margin of error for reclassifiedCount in a stratified estimate; null for exact counts and full-salon censuses
+     * @nullable
+     */
+  reclassifiedCountMarginOfError: number | null;
+  /**
+     * Customers classified for this salon in a stratified estimate; null for exact counts
+     * @nullable
+     */
+  sampleSize: number | null;
 }

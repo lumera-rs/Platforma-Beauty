@@ -6,13 +6,16 @@
  * the admin page's promise that sampled counts are visibly approximate:
  *
  *  1. The dedicated harness runs this spec with
- *     RETENTION_PREVIEW_MAX_CUSTOMERS=1, while the fixture has seven customers.
+ *     RETENTION_PREVIEW_MAX_CUSTOMERS=1, while the fixture has 80 customers.
  *  2. The page changes the new-customer window and VIP threshold, then clicks
  *     "Proveri uticaj".
  *  3. Estimate mode must show its badge and both explanatory notes, and every
  *     table/shift count must carry the "~" prefix.
- *  4. The harness runs the same spec again with a cap above the fixture size;
- *     the exact control run must show none of those estimate indicators.
+ *  4. The harness also runs a dedicated per-salon sample: those rankings must
+ *     carry a sample-size and uncertainty label rather than the normal
+ *     "rankings unavailable" notice.
+ *  5. The same spec runs again with a cap above the fixture size; the exact
+ *     control run must show none of the estimate indicators.
  */
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
@@ -27,6 +30,7 @@ import {
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
 
 const expectEstimate = process.env.LUMERA_RETENTION_PREVIEW_EXPECT_ESTIMATE === "1";
+const expectSalonEstimate = process.env.LUMERA_RETENTION_PREVIEW_EXPECT_SALON_ESTIMATE === "1";
 
 // This file is intentionally exercised by the disposable two-pass runner.
 // Keep it out of the shared workflow, whose API process cannot be restarted
@@ -116,26 +120,20 @@ async function seedFixture(): Promise<void> {
   if (!smallService || !largeService) throw new Error("The retention preview fixture services are incomplete.");
 
   const customers = await db.insert(salonCustomersTable).values([
-    {
+    ...Array.from({ length: 30 }, (_, index) => ({
       salonId: smallSalon.id,
-      firstName: "Prvi",
-      lastName: "Mali",
-      email: `retention-preview-small-a-${suffix}@example.test`,
-    },
-    {
-      salonId: smallSalon.id,
-      firstName: "Drugi",
-      lastName: "Mali",
-      email: `retention-preview-small-b-${suffix}@example.test`,
-    },
-    ...Array.from({ length: 5 }, (_, index) => ({
+      firstName: `Mali${index + 1}`,
+      lastName: "Klijent",
+      email: `retention-preview-small-${index + 1}-${suffix}@example.test`,
+    })),
+    ...Array.from({ length: 50 }, (_, index) => ({
       salonId: largeSalon.id,
       firstName: `Veliki${index + 1}`,
       lastName: "Klijent",
       email: `retention-preview-large-${index + 1}-${suffix}@example.test`,
     })),
   ]).returning();
-  if (customers.length !== 7) {
+  if (customers.length !== 80) {
     throw new Error("The retention preview fixture could not create all customers.");
   }
 
@@ -146,7 +144,7 @@ async function seedFixture(): Promise<void> {
     .toISOString()
     .slice(0, 10);
   await db.insert(appointmentsTable).values([
-    ...customers.slice(0, 2).map((customer) => ({
+    ...customers.slice(0, 30).map((customer) => ({
       salonId: smallSalon.id,
       salonCustomerId: customer.id,
       serviceId: smallService.id,
@@ -157,7 +155,7 @@ async function seedFixture(): Promise<void> {
       price: 1000,
       status: "completed" as const,
     })),
-    ...customers.slice(2).flatMap((customer) => [
+    ...customers.slice(30).flatMap((customer) => [
       {
         salonId: largeSalon.id,
         salonCustomerId: customer.id,
@@ -223,10 +221,22 @@ test("marks sampled retention counts as approximate and keeps exact counts unmar
   if (expectEstimate) {
     await expect(page.getByTestId("retention-preview-estimate")).toBeVisible();
     await expect(page.getByTestId("retention-preview-estimate-note")).toBeVisible();
-    await expect(page.getByTestId("retention-preview-no-salons-note")).toBeVisible();
     await expect(reclassifiedSummary).toHaveText(/^~\d+ ±\d+ od \d+ klijenata menja status$/);
-    await expect(affectedSalons).toHaveCount(0);
     await expect(tableRows).toHaveCount(5);
+
+    if (expectSalonEstimate) {
+      await expect(page.getByTestId("retention-preview-no-salons-note")).toHaveCount(0);
+      await expect(affectedSalons).toBeVisible();
+      await expect(page.getByTestId("retention-preview-salon-estimate-note")).toBeVisible();
+      await expect(page.getByTestId(/^retention-preview-salon-sample-/)).toHaveCount(2);
+      await expect(affectedSalons.locator("li").first().locator("span.font-semibold")).toHaveText(
+        /^~\d+ ±\d+$/,
+      );
+      await expect(affectedSalons.locator("li").first()).toContainText(/od \d+ klijenata/);
+    } else {
+      await expect(page.getByTestId("retention-preview-no-salons-note")).toBeVisible();
+      await expect(affectedSalons).toHaveCount(0);
+    }
 
     for (let index = 0; index < 5; index += 1) {
       const cells = tableRows.nth(index).locator("td");
@@ -239,7 +249,7 @@ test("marks sampled retention counts as approximate and keeps exact counts unmar
       await expect(page.getByTestId(`retention-preview-range-candidate-${status}`)).toHaveText(/^Raspon: \d+–\d+$/);
     }
 
-    await expect(shiftRows).toHaveCount(1);
+    await expect(shiftRows).toHaveCount(expectSalonEstimate ? 2 : 1);
     await expect(shiftRows.first().locator("span.font-semibold")).toHaveText(/^~/);
   } else {
     await expect(page.getByTestId("retention-preview-estimate")).toHaveCount(0);
@@ -280,9 +290,9 @@ test("switches salon ranking between count and share views and preserves the tog
   await expect(windowInput).toHaveValue("45");
   await expect(vipInput).toHaveValue("5");
 
-  // First preview: the large salon moves five customers to VIP and the small
-  // salon moves two NEW customers to ACTIVE. Both appear by count, but only
-  // the large salon qualifies for the share ranking's five-customer floor.
+  // First preview: the large salon moves customers to VIP and the small salon
+  // moves NEW customers to ACTIVE. The exact harness raises the share floor
+  // above the small salon's 30 customers, so only the large salon qualifies.
   await windowInput.fill("1");
   await vipInput.fill("2");
   const firstPreviewResponse = page.waitForResponse((response) =>
@@ -315,7 +325,7 @@ test("switches salon ranking between count and share views and preserves the tog
   await expect(salonRows.first()).not.toContainText(smallSalonName);
   await expect(page.getByTestId("retention-preview-share-empty")).toHaveCount(0);
 
-  // Second preview: retain the share toggle, but only the two-customer salon
+  // Second preview: retain the share toggle, but only the smaller salon
   // changes. The UI must replace the old share list with its friendly empty
   // state rather than leaving a blank section or crashing.
   await vipInput.fill("5");

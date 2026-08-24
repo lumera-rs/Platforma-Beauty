@@ -8310,7 +8310,13 @@ components:
         salonName: { type: string }
         reclassifiedCount: { type: number, description: "Customers of this salon whose status would change under the candidate thresholds" }
         totalCustomers: { type: number, description: "Total customers this salon has — puts the reclassified count in proportion" }
-      required: [salonId, salonName, reclassifiedCount, totalCustomers]
+        reclassifiedCountMarginOfError:
+          type: ["number", "null"]
+          description: "Approximate 95% Wilson margin of error for reclassifiedCount in a stratified estimate; null for exact counts and full-salon censuses"
+        sampleSize:
+          type: ["number", "null"]
+          description: "Customers classified for this salon in a stratified estimate; null for exact counts"
+      required: [salonId, salonName, reclassifiedCount, totalCustomers, reclassifiedCountMarginOfError, sampleSize]
 
     RetentionSettingsPreview:
       type: object
@@ -8339,20 +8345,23 @@ components:
           items: { $ref: "#/components/schemas/RetentionReclassificationShift" }
         topAffectedSalons:
           type: array
-          description: "Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample"
+          description: "Salons with the most reclassified customers, largest first (top 10); estimate mode returns rows only when salonRankingAvailable is true"
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
         topShareAffectedSalons:
           type: array
-          description: "Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify"
+          description: "Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify; estimate mode returns rows only when salonRankingAvailable is true"
           items: { $ref: "#/components/schemas/RetentionPreviewAffectedSalon" }
         shareRankingMinCustomers: { type: number, description: "Minimum customers a salon needs to qualify for the share-based ranking" }
         isEstimate:
           type: boolean
-          description: "True when the platform exceeded the exact-preview cap and counts (except totalCustomers) were extrapolated from a uniform random customer sample; render such values as approximate (~), never as exact; both per-salon rankings are empty in estimate mode"
+          description: "True when the platform exceeded the exact-preview cap and counts are approximate; render such values as approximate (~), never as exact. Salon rankings are returned only when salonRankingAvailable is true for the opt-in stratified design."
         sampleSize:
           type: ["number", "null"]
           description: "Customers actually classified when isEstimate is true; null in exact mode"
-      required: [currentVersion, totalCustomers, reclassifiedCount, reclassifiedCountMarginOfError, currentCounts, currentCountMarginsOfError, candidateCounts, candidateCountMarginsOfError, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize]
+        salonRankingAvailable:
+          type: boolean
+          description: "True for exact previews and for estimate previews backed by the opt-in stratified per-salon sample; false means per-salon rankings are intentionally unavailable"
+      required: [currentVersion, totalCustomers, reclassifiedCount, reclassifiedCountMarginOfError, currentCounts, currentCountMarginsOfError, candidateCounts, candidateCountMarginsOfError, shifts, topAffectedSalons, topShareAffectedSalons, shareRankingMinCustomers, isEstimate, sampleSize, salonRankingAvailable]
 
     RetentionSettingsUpdate:
       allOf:

@@ -29,17 +29,19 @@ export interface RetentionSettingsPreview {
   candidateCountMarginsOfError: RetentionStatusCounts | null;
   /** Status moves under the candidate thresholds, largest first */
   shifts: RetentionReclassificationShift[];
-  /** Salons with the most reclassified customers, largest first (top 10); empty in estimate mode — per-salon numbers are too noisy to extrapolate from a uniform sample */
+  /** Salons with the most reclassified customers, largest first (top 10); estimate mode returns rows only when salonRankingAvailable is true */
   topAffectedSalons: RetentionPreviewAffectedSalon[];
-  /** Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify */
+  /** Salons with the highest SHARE of reclassified customers, largest first (top 10); only salons with at least shareRankingMinCustomers customers qualify; estimate mode returns rows only when salonRankingAvailable is true */
   topShareAffectedSalons: RetentionPreviewAffectedSalon[];
   /** Minimum customers a salon needs to qualify for the share-based ranking */
   shareRankingMinCustomers: number;
-  /** True when the platform exceeded the exact-preview cap and counts (except totalCustomers) were extrapolated from a uniform random customer sample; render such values as approximate (~), never as exact; both per-salon rankings are empty in estimate mode */
+  /** True when the platform exceeded the exact-preview cap and counts are approximate; render such values as approximate (~), never as exact. Salon rankings are returned only when salonRankingAvailable is true for the opt-in stratified design. */
   isEstimate: boolean;
   /**
      * Customers actually classified when isEstimate is true; null in exact mode
      * @nullable
      */
   sampleSize: number | null;
+  /** True for exact previews and for estimate previews backed by the opt-in stratified per-salon sample; false means per-salon rankings are intentionally unavailable */
+  salonRankingAvailable: boolean;
 }

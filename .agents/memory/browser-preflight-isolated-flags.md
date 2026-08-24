@@ -7,4 +7,4 @@ The shared Playwright config runs a globalSetup preflight that probes the live d
 
 **Why:** Stopped dev workflows otherwise surface as opaque 502/net::ERR failures inside every spec, which look like app or test bugs and waste full runs.
 
-**How to apply:** The preflight skips itself when any LUMERA_ISOLATED_* env flag is "1" because those suites provision their own harness servers. When adding a new isolated suite (new LUMERA_ISOLATED_* flag in playwright.config.ts), also add the flag to the preflight's skip list — otherwise the new suite will wrongly probe localhost:80.
+**How to apply:** An isolated suite must register both its preflight bypass and the identity of its disposable resources with the shared harness. Otherwise the suite can be rejected before its own locally provisioned services start.

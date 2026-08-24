@@ -80,7 +80,7 @@ if (isolatedBrowserTest) {
         : isolatedRetailCheckoutBrowserTest
           ? /^lumera_retail_browser_\d+_[a-f0-9]{32}$/
           : isolatedRetentionPreviewBrowserTest
-            ? /^(?:lumera_retention_estimate_browser_|lumera_retention_exact_browser_)\d+_[a-f0-9]{32}$/
+            ? /^(?:lumera_retention_estimate_browser_|lumera_retention_exact_browser_|lumera_retention_stratified_browser_)\d+_[a-f0-9]{32}$/
             : /^lumera_infobip_registration_browser_\d+_[a-f0-9]{32}$/;
   if (
     !testDatabaseUrl
