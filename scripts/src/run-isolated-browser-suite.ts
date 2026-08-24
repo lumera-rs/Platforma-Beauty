@@ -612,6 +612,7 @@ export async function runIsolatedApiRegressionSuite(
   let activeCommand: ChildProcess | undefined;
   let interruptedSignal: NodeJS.Signals | undefined;
   let isCleaningUp = false;
+  let interruptedProcessCleanup: Promise<void> | undefined;
   const throwIfInterrupted = () => {
     if (interruptedSignal) {
       throw new Error(`API regression checks interrupted by ${interruptedSignal}.`);
@@ -638,8 +639,10 @@ export async function runIsolatedApiRegressionSuite(
   const onSignal = (signal: NodeJS.Signals) => {
     interruptedSignal ??= signal;
     if (isCleaningUp) return;
-    void stopProcess(activeCommand);
-    void stopProcess(apiProcess);
+    interruptedProcessCleanup ??= Promise.allSettled([
+      stopProcess(activeCommand),
+      stopProcess(apiProcess),
+    ]).then(() => undefined);
   };
   process.once("SIGINT", onSignal);
   process.once("SIGTERM", onSignal);
@@ -685,6 +688,7 @@ export async function runIsolatedApiRegressionSuite(
     if (!interruptedSignal) throw error;
   } finally {
     isCleaningUp = true;
+    await interruptedProcessCleanup;
     try {
       await stopProcess(apiProcess);
     } finally {

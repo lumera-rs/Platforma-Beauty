@@ -4,8 +4,9 @@ import {
 } from "./run-isolated-browser-suite";
 
 const configuration: IsolatedApiRegressionSuiteConfiguration = {
-  databasePrefix: "lumera_api_regression_",
-  manifestDirectoryName: "api-regression-databases",
+  databasePrefix: process.env.LUMERA_API_REGRESSION_DATABASE_PREFIX ?? "lumera_api_regression_",
+  manifestDirectoryName:
+    process.env.LUMERA_API_REGRESSION_MANIFEST_DIRECTORY ?? "api-regression-databases",
   testLabel: "API regression checks",
   scriptPaths: [
     "scripts/test-admin-authorization.sh",
