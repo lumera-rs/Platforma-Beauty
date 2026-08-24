@@ -26,6 +26,7 @@ import type {
   AdminBulkResult,
   AdminCreateEmailCampaignInput,
   AdminGetIntegrationsResponse,
+  AdminIntegrationCard,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
   AdminListProductsParams,
@@ -49,6 +50,7 @@ import type {
   AdminSalon,
   AdminSalonDetail,
   AdminSalonUpdate,
+  AdminSaveIntegrationInput,
   AdminServiceCategory,
   AdminServiceCategoryImageUpdate,
   AdminServiceTemplateInput,
@@ -160,6 +162,7 @@ import type {
   GrowthAiAnswer,
   GrowthAiQuestionBody,
   HealthStatus,
+  IntegrationSettingsVersionConflict,
   LeaveRequestReviewBody,
   LeaveRequestReviewResult,
   LinkEducationCourseInstructorBody,
@@ -1199,6 +1202,78 @@ export function useAdminGetIntegrations<TData = Awaited<ReturnType<typeof adminG
 
 
 
+
+export const getAdminSaveIntegrationUrl = (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth',) => {
+
+
+
+
+  return `/api/admin/integrations/${integration}`
+}
+
+/**
+ * @summary Save administrator integration settings
+ */
+export const adminSaveIntegration = async (integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth',
+    adminSaveIntegrationInput: AdminSaveIntegrationInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminIntegrationCard> => {
+
+  return customFetch<AdminIntegrationCard>(getAdminSaveIntegrationUrl(integration),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminSaveIntegrationInput)
+  }
+);}
+
+
+
+
+
+export const getAdminSaveIntegrationMutationOptions = <TError = ErrorType<void | IntegrationSettingsVersionConflict>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext> => {
+
+const mutationKey = ['adminSaveIntegration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminSaveIntegration>>, {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}> = (props) => {
+          const {integration,data} = props ?? {};
+
+          return  adminSaveIntegration(integration,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminSaveIntegrationMutationResult = NonNullable<Awaited<ReturnType<typeof adminSaveIntegration>>>
+    export type AdminSaveIntegrationMutationBody = BodyType<AdminSaveIntegrationInput>
+    export type AdminSaveIntegrationMutationError = ErrorType<void | IntegrationSettingsVersionConflict>
+
+    /**
+ * @summary Save administrator integration settings
+ */
+export const useAdminSaveIntegration = <TError = ErrorType<void | IntegrationSettingsVersionConflict>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminSaveIntegration>>, TError,{integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminSaveIntegration>>,
+        TError,
+        {integration: 'sms' | 'brevo' | 'google_oauth' | 'facebook_oauth';data: BodyType<AdminSaveIntegrationInput>},
+        TContext
+      > => {
+      return useMutation(getAdminSaveIntegrationMutationOptions(options));
+    }
 
 export const getListSalonsUrl = (params?: ListSalonsParams,) => {
   const normalizedParams = new URLSearchParams();

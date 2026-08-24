@@ -65,7 +65,7 @@ import {
   smsWebhookRegistrationState,
   webhookSecretSavedAt,
 } from "./provider-events";
-import { saveIntegrationSettings } from "./integrations";
+import { integrationSettings, saveIntegrationSettings } from "./integrations";
 
 const suffix = randomUUID().slice(0, 8);
 const cleanup = { userIds: [] as string[], salonIds: [] as string[] };
@@ -130,6 +130,7 @@ async function run() {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const port = (server.address() as AddressInfo).port;
+  const baseUrl = `http://127.0.0.1:${port}`;
 
   const prodHost = `lumera-prod-${suffix}.example.com`;
   const devHost = `swr-${suffix}.riker.replit.dev`;
@@ -207,6 +208,15 @@ async function run() {
       assert.ok(body.smsWebhookRegistration, "GET /admin/integrations must expose the standing sms registration verdict");
       return body.smsWebhookRegistration;
     };
+    const putIntegration = async (expectedVersion: string | null, enabled: boolean, values: Record<string, string>) => {
+      const response = await fetch(`${baseUrl}/api/admin/integrations/sms`, {
+        method: "PUT",
+        headers: { cookie: adminCookie, "content-type": "application/json" },
+        body: JSON.stringify({ enabled, expectedVersion, values }),
+      });
+      const body = await response.json() as { version?: string | null; error?: string; code?: string; currentVersion?: string | null };
+      return { response, body };
+    };
 
     // ── 2. Access control ────────────────────────────────────────────────
     {
@@ -215,6 +225,29 @@ async function run() {
       const forbidden = await verify(customerCookie);
       assert.equal(forbidden.status, 403, "non-admin check must be rejected");
       console.log("✓ registration check is admin-only");
+    }
+
+    // ── 2a. Stale SMS saves are rejected without partial writes ─────────────
+    {
+      const integrationsResponse = await requestWithHost("/api/admin/integrations", { cookie: adminCookie });
+      const integrationsBody = JSON.parse(integrationsResponse.raw) as { integrations: { sms: { version: string | null } } };
+      const loadedVersion = integrationsBody.integrations.sms.version;
+      const newer = await putIntegration(loadedVersion, true, { senderName: `SWR-newer-${suffix}` });
+      assert.equal(newer.response.status, 200, `newer SMS save must succeed: ${JSON.stringify(newer.body)}`);
+      assert.notEqual(newer.body.version, loadedVersion, "a successful SMS save must advance its configuration version");
+      const rowsAfterNewerSave = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"));
+      const stale = await putIntegration(loadedVersion, false, { senderName: `SWR-stale-${suffix}` });
+      assert.equal(stale.response.status, 409, `stale SMS save must be rejected: ${JSON.stringify(stale.body)}`);
+      assert.equal(stale.body.code, "INTEGRATION_SETTINGS_VERSION_CONFLICT");
+      assert.equal(stale.body.currentVersion, newer.body.version);
+      const rowsAfterStaleSave = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"));
+      assert.deepEqual(rowsAfterStaleSave, rowsAfterNewerSave, "a rejected SMS save must not change values, timestamps, enabled state, or version");
+      const current = await integrationSettings("sms");
+      assert.equal(current.values.senderName, `SWR-newer-${suffix}`, "the newer SMS configuration must remain active");
+      assert.equal(current.enabled, true, "a rejected stale SMS save must not change enabled state");
+      console.log("✓ stale SMS save → 409 with exact newer configuration preserved");
     }
 
     // ── 3. Missing secret → local 400 (no self-check possible) ────────────

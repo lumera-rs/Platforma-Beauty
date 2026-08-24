@@ -196,6 +196,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminGetIntegrationsResponse"
+  /admin/integrations/{integration}:
+    put:
+      operationId: adminSaveIntegration
+      tags: [admin]
+      summary: Save administrator integration settings
+      parameters:
+        - name: integration
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [sms, brevo, google_oauth, facebook_oauth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSaveIntegrationInput"
+      responses:
+        "200":
+          description: Saved integration card with its next concurrency version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminIntegrationCard"
+        "400": { description: Invalid integration fields or missing loaded version }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "404": { description: Unknown integration }
+        "409":
+          description: The integration was changed after the settings page loaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationSettingsVersionConflict"
   /salons:
     get:
       operationId: listSalons
@@ -5068,10 +5103,30 @@ components:
         enabled: { type: boolean }
         configuredInDatabase: { type: boolean }
         complete: { type: boolean }
+        version: { type: ["string", "null"] }
         values:
           type: object
           additionalProperties: { type: ["string", "null"] }
-      required: [enabled, configuredInDatabase, complete, values]
+      required: [enabled, configuredInDatabase, complete, version, values]
+    AdminSaveIntegrationInput:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        expectedVersion:
+          type: ["string", "null"]
+          description: Configuration version returned when this settings card was loaded; stale versions are rejected with 409.
+        values:
+          type: object
+          additionalProperties: { type: string }
+      required: [enabled, expectedVersion, values]
+    IntegrationSettingsVersionConflict:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [INTEGRATION_SETTINGS_VERSION_CONFLICT] }
+        expectedVersion: { type: ["string", "null"] }
+        currentVersion: { type: ["string", "null"] }
+      required: [error, code, expectedVersion, currentVersion]
     AdminWebhookIntegrationCard:
       allOf:
         - $ref: "#/components/schemas/AdminIntegrationCard"

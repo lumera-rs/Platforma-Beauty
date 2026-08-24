@@ -11,7 +11,7 @@ import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshC
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
-type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
+type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; version: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportProvider = "brevo" | "infobip";
 type DeliveryReportStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
@@ -151,8 +151,11 @@ export default function AdminIntegrations() {
     for (const [k, v] of Object.entries(form[integration])) {
       if (v.trim()) trimmedValues[k] = v.trim();
     }
-    const response = await fetch(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, values: trimmedValues }) });
+    const response = await fetch(`/api/admin/integrations/${integration}`, { method: "PUT", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: data!.integrations[integration].enabled, expectedVersion: data!.integrations[integration].version, values: trimmedValues }) });
     const result = await response.json();
+    if (response.status === 409 && result.code === "INTEGRATION_SETTINGS_VERSION_CONFLICT") {
+      throw new Error("Podešavanja su promenjena u drugom administratorskom prozoru. Osvežite stranicu, proverite najnovije vrednosti i pokušajte ponovo.");
+    }
     if (!response.ok) throw new Error(result.error ?? "Čuvanje nije uspelo.");
     setData({ ...data!, integrations: { ...data!.integrations, [integration]: result } });
     setForm({ ...form, [integration]: {} });

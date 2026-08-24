@@ -52,7 +52,7 @@
 - [Campaign attribution buckets](campaign-attribution-buckets.md) — status splits need explicit buckets per status; complement buckets silently misclassify no-shows as upcoming money.
 - [Alert fallback channels](alert-fallback-channels.md) — fallbacks fire only when every attempted primary send failed/skipped, and dedup by embedding the primary alert sequence in the outbox key.
 - [Platform-wide preview guards](platform-wide-preview-guards.md) — admin dry-runs over all tenants must bound rows in memory and enforce the time budget on every step, database-side included.
-- [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form's loaded base version, not the live polled one.
+- [Versioned form staleness polling](versioned-form-staleness-polling.md) — version polls must never reset in-progress edits, and saves must send the form’s loaded base version, not the live polled one.
 - [Conflict cancellation freshness](conflict-cancellation-freshness.md) — a conflict dialog must not close until cancelled edits are rebased on a confirmed active version.
 - [Polling regression clocks](polling-regression-clocks.md) — install Playwright clock control before navigation when advancing query polling deterministically.
 - [Compare-window attribution parity](compare-window-attribution-parity.md) — previous-window trend queries must mirror the current-window attribution join exactly, in every endpoint that duplicates it.
@@ -61,14 +61,14 @@
 - [Integration settings marker rows](integration-settings-markers.md) — metadata timestamps live in integration_settings but must stay excluded from values/configuredInDatabase.
 - [Browser suite shared-state locks](browser-suite-shared-state-locks.md) — spec files writing one global table need a file-lifetime advisory lock; fullyParallel:false doesn't serialize across files.
 - [SPA unsaved-navigation guard](spa-unsaved-navigation-guard.md) — Back/Forward guards must hook history ahead of the router; page-local popstate listeners are removed mid-dispatch on unmount.
-- [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path's exact audience and phone predicate, never a re-derived query.
+- [SMS fallback audience parity](sms-fallback-audience-parity.md) — reachability warnings must reuse the send path’s exact audience and phone predicate, never a re-derived query.
 - [Modal dialog background controls](modal-dialog-background-controls.md) — modal overlays block real clicks on page controls; test dialog-open state changes via dispatchEvent("click") and mutation-check the guard.
 - [Retention preview estimate mode](retention-preview-estimate-mode.md) — above the cap the preview extrapolates a flagged sample; never render estimates as exact or extrapolate per-salon numbers.
 - [Stale provider webhook cleanup](stale-provider-webhook-cleanup.md) — deletable sets must be re-derived from a fresh provider listing server-side and refused from dev origins whose secret differs from production.
 - [Admin 4xx error normalization](admin-error-normalizer.md) — admin-route 4xx JSON bodies lose every extra field unless the body already sets a string code itself.
 - [Batched provider event matching](batched-provider-event-matching.md) — batch only the reference→key lookup per webhook batch; state application stays per-event guarded and monotonic.
 - [URL restore picker parity](url-restore-picker-parity.md) — state restored from shared links must obey the same constraints the UI picker enforces; clamp to the reachable boundary or fall back.
-- [Browser preflight isolated flags](browser-preflight-isolated-flags.md) — new LUMERA_ISOLATED_* suites must be added to the shared Playwright preflight's skip list or they'll probe localhost:80.
+- [Browser preflight isolated flags](browser-preflight-isolated-flags.md) — new LUMERA_ISOLATED_* suites must be added to the shared Playwright preflight’s skip list or they’ll probe localhost:80.
 - [Retail checkout quote refresh](retail-checkout-quote-refresh.md) — one stable conflict code covers price, delivery, and availability changes so clients can safely replace stale totals.
 - [Shipping rule row order](shipping-rule-row-order.md) — the retail shipping config is an unordered first-row read; extra shipping_rules rows make checkout and its browser fixtures order-dependent.
 - [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
@@ -78,3 +78,4 @@
 - [Radix tooltip browser assertions](radix-tooltip-browser-assertions.md) — pointer hover can keep one tooltip open while focus is added; assert one shared tooltip and focused trigger instead of forced close.
 - [Admin summary snapshot consistency](admin-summary-snapshot-consistency.md) — aggregate dashboards need one repeatable-read transaction and a post-snapshot barrier for deterministic race coverage.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
+- [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.

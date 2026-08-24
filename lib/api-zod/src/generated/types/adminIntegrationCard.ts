@@ -11,5 +11,7 @@ export interface AdminIntegrationCard {
   enabled: boolean;
   configuredInDatabase: boolean;
   complete: boolean;
+  /** @nullable */
+  version: string | null;
   values: AdminIntegrationCardValues;
 }

@@ -221,9 +221,12 @@ export interface AdminIntegrationCard {
   enabled: boolean;
   configuredInDatabase: boolean;
   complete: boolean;
+  /** @nullable */
+  version: string | null;
   values: AdminIntegrationCardValues;
 }
 
+export type AdminSaveIntegrationInputValues = {[key: string]: string};
 export type AdminWebhookIntegrationCard = AdminIntegrationCard & ({
   webhookSecretPendingReconfirmation: boolean;
   /** @nullable */
@@ -6188,3 +6191,28 @@ export type TrackRetailOrderParams = {
  */
 token: string;
 };
+
+export const IntegrationSettingsVersionConflictCode = {
+  INTEGRATION_SETTINGS_VERSION_CONFLICT: 'INTEGRATION_SETTINGS_VERSION_CONFLICT',
+} as const;
+
+export interface AdminSaveIntegrationInput {
+  enabled: boolean;
+  /**
+     * Configuration version returned when this settings card was loaded; stale versions are rejected with 409.
+     * @nullable
+     */
+  expectedVersion: string | null;
+  values: AdminSaveIntegrationInputValues;
+}
+
+export type IntegrationSettingsVersionConflictCode = typeof IntegrationSettingsVersionConflictCode[keyof typeof IntegrationSettingsVersionConflictCode];
+
+export interface IntegrationSettingsVersionConflict {
+  error: string;
+  code: IntegrationSettingsVersionConflictCode;
+  /** @nullable */
+  expectedVersion: string | null;
+  /** @nullable */
+  currentVersion: string | null;
+}

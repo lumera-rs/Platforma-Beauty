@@ -1,6 +1,6 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { db, integrationSettingsTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 
@@ -26,7 +26,8 @@ const WEBHOOK_MARKER_KEYS = [
 ] as const;
 type WebhookMarkerKey = (typeof WEBHOOK_MARKER_KEYS)[number];
 type WebhookTimestampMarkerKey = Exclude<WebhookMarkerKey, "brevoRegistrationMissingEvents">;
-const WEBHOOK_MARKER_KEY_SET: ReadonlySet<string> = new Set(WEBHOOK_MARKER_KEYS);
+const INTEGRATION_VERSION_KEY = "__configVersion";
+const METADATA_KEY_SET: ReadonlySet<string> = new Set([...WEBHOOK_MARKER_KEYS, INTEGRATION_VERSION_KEY]);
 /** A confirmation is a point-in-time health check, not permanent proof. */
 export const WEBHOOK_CONFIRMATION_MAX_AGE_DAYS = 7;
 const WEBHOOK_CONFIRMATION_MAX_AGE_MS = WEBHOOK_CONFIRMATION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -67,6 +68,18 @@ export function infobipBaseUrl(value: string | undefined) {
   return url.toString().replace(/\/$/, "");
 }
 
+export class IntegrationSettingsVersionConflictError extends Error {
+  readonly code = "INTEGRATION_SETTINGS_VERSION_CONFLICT";
+
+  constructor(
+    readonly expectedVersion: string | null,
+    readonly currentVersion: string | null,
+  ) {
+    super("Podešavanja integracije su u međuvremenu promenjena. Osvežite stranicu i potvrdite najnovije vrednosti pre ponovnog čuvanja.");
+    this.name = "IntegrationSettingsVersionConflictError";
+  }
+}
+
 function fallbackValues(integration: IntegrationName): Record<string, string | undefined> {
   if (integration === "sms") return { apiKey: process.env["SMS_PROVIDER_API_KEY"], senderName: process.env["SMS_SENDER_NAME"], baseUrl: process.env["SMS_PROVIDER_BASE_URL"] };
   if (integration === "brevo") return { apiKey: process.env["BREVO_API_KEY"], senderEmail: process.env["BREVO_SENDER_EMAIL"], senderName: process.env["BREVO_SENDER_NAME"] };
@@ -75,14 +88,24 @@ function fallbackValues(integration: IntegrationName): Record<string, string | u
 }
 
 export async function integrationSettings(integration: IntegrationName) {
-  const rows = (await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, integration)))
+  // Configuration rows and their concurrency token must come from one query
+  // snapshot. Reading them separately could pair stale displayed values with a
+  // newer token, allowing that stale form to overwrite an intervening save.
+  const allRows = await db.select().from(integrationSettingsTable)
+    .where(eq(integrationSettingsTable.integration, integration));
+  const rows = allRows
     // Marker rows are metadata, not configuration: they must neither surface
     // as values nor flip an env-fallback integration to "database-configured".
-    .filter((row) => !WEBHOOK_MARKER_KEY_SET.has(row.settingKey));
-  if (!rows.length) return { configuredInDatabase: false, enabled: true, values: {} as Record<string, string> };
+    .filter((row) => !METADATA_KEY_SET.has(row.settingKey));
+  const versionRow = allRows.find((row) => row.settingKey === INTEGRATION_VERSION_KEY);
+  let version: string | null = null;
+  if (versionRow) {
+    try { version = decrypt(versionRow.encryptedValue); } catch { version = null; }
+  }
+  if (!rows.length) return { configuredInDatabase: false, enabled: true, values: {} as Record<string, string>, version };
   const values: Record<string, string> = {};
   for (const row of rows) values[row.settingKey] = decrypt(row.encryptedValue);
-  return { configuredInDatabase: true, enabled: rows[0]!.enabled, values };
+  return { configuredInDatabase: true, enabled: rows[0]!.enabled, values, version };
 }
 
 export async function integrationValue(integration: IntegrationName, settingKey: string, fallback?: string) {
@@ -96,8 +119,27 @@ export async function saveIntegrationSettings(input: {
   enabled: boolean;
   values: Record<string, string>;
   updatedByUserId: string;
+  expectedVersion?: string | null;
 }) {
   await db.transaction(async (tx) => {
+    // A provider may not have a row yet, so row-level locks alone cannot
+    // serialize the first two saves. The transaction lock covers both the
+    // empty and populated cases while keeping different providers independent.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:integration-settings:${input.integration}`}))`);
+    const [versionRow] = await tx.select({
+      encryptedValue: integrationSettingsTable.encryptedValue,
+    }).from(integrationSettingsTable).where(and(
+      eq(integrationSettingsTable.integration, input.integration),
+      eq(integrationSettingsTable.settingKey, INTEGRATION_VERSION_KEY),
+    )).limit(1);
+    let currentVersion: string | null = null;
+    if (versionRow) {
+      try { currentVersion = decrypt(versionRow.encryptedValue); } catch { currentVersion = null; }
+    }
+    if (input.expectedVersion !== undefined && input.expectedVersion !== currentVersion) {
+      throw new IntegrationSettingsVersionConflictError(input.expectedVersion, currentVersion);
+    }
+
     const existingRows = await tx.select({
       settingKey: integrationSettingsTable.settingKey,
       encryptedValue: integrationSettingsTable.encryptedValue,
@@ -133,6 +175,17 @@ export async function saveIntegrationSettings(input: {
         .set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId })
         .where(eq(integrationSettingsTable.integration, input.integration));
     }
+    const encryptedVersion = encrypt(randomUUID());
+    await tx.insert(integrationSettingsTable).values({
+      integration: input.integration,
+      settingKey: INTEGRATION_VERSION_KEY,
+      encryptedValue: encryptedVersion,
+      enabled: true,
+      updatedByUserId: input.updatedByUserId,
+    }).onConflictDoUpdate({
+      target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+      set: { encryptedValue: encryptedVersion, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
+    });
   });
 }
 
@@ -242,5 +295,5 @@ export async function integrationDisplay(integration: IntegrationName, keys: str
   const effective = { ...fallbackValues(integration), ...settings.values };
   const values = Object.fromEntries(keys.map((settingKey) => [settingKey, settings.values[settingKey] ? maskIntegrationValue(settings.values[settingKey]!) : effective[settingKey] ? "Environment fallback" : null]));
   const complete = required.every((settingKey) => Boolean(effective[settingKey]));
-  return { enabled: settings.configuredInDatabase ? settings.enabled : complete, configuredInDatabase: settings.configuredInDatabase, complete, values };
+  return { enabled: settings.configuredInDatabase ? settings.enabled : complete, configuredInDatabase: settings.configuredInDatabase, complete, values, version: settings.version };
 }

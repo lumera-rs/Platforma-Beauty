@@ -66,7 +66,7 @@ globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters
   return realFetch(input, init);
 }) as typeof fetch;
 
-type CardFlags = { webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
+type CardFlags = { version?: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 
 async function run() {
   const server = app.listen(0, "127.0.0.1");
@@ -136,10 +136,11 @@ async function run() {
       const body = await response.json() as { integrations: Record<"sms" | "brevo", CardFlags> };
       return body.integrations;
     };
-    const putIntegration = async (integration: string, values: Record<string, string>) => {
+    const putIntegration = async (integration: string, values: Record<string, string>, expectedVersion?: string | null) => {
+      const version = expectedVersion === undefined ? (await getCards())[integration]?.version ?? null : expectedVersion;
       const response = await fetch(`${baseUrl}/api/admin/integrations/${integration}`, {
         method: "PUT", headers: { cookie, "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true, values }),
+        body: JSON.stringify({ enabled: true, expectedVersion: version, values }),
       });
       const body = await response.json() as CardFlags & { error?: string };
       assert.equal(response.status, 200, `saving ${integration} settings must succeed: ${JSON.stringify(body)}`);
@@ -161,6 +162,36 @@ async function run() {
       const body = JSON.parse(response.raw) as { message?: string; error?: string; reconfirmed?: boolean; missingEvents?: string[] };
       return { response, body };
     };
+
+    // ── 0. Stale Brevo saves are rejected without partial writes ────────────
+    {
+      const loadedVersion = (await getCards())["brevo"]?.version ?? null;
+      const first = await putIntegration("brevo", { senderName: `WSR-newer-${suffix}` }, loadedVersion);
+      assert.notEqual(first.version, loadedVersion, "a successful Brevo save must advance its configuration version");
+      const rowsAfterFirstSave = await db.select().from(integrationSettingsTable)
+        .where(inArray(integrationSettingsTable.integration, ["brevo"]));
+      const staleResponse = await fetch(`${baseUrl}/api/admin/integrations/brevo`, {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          enabled: false,
+          expectedVersion: loadedVersion,
+          values: { senderName: `WSR-stale-${suffix}` },
+        }),
+      });
+      const staleBody = await staleResponse.json() as { error?: string; code?: string; expectedVersion?: string | null; currentVersion?: string | null };
+      assert.equal(staleResponse.status, 409, `stale Brevo save must be rejected: ${JSON.stringify(staleBody)}`);
+      assert.equal(staleBody.code, "INTEGRATION_SETTINGS_VERSION_CONFLICT");
+      assert.equal(staleBody.expectedVersion, loadedVersion);
+      assert.equal(staleBody.currentVersion, first.version);
+      const rowsAfterStaleSave = await db.select().from(integrationSettingsTable)
+        .where(inArray(integrationSettingsTable.integration, ["brevo"]));
+      assert.deepEqual(rowsAfterStaleSave, rowsAfterFirstSave, "a rejected Brevo save must not change values, timestamps, enabled state, or version");
+      const current = await integrationSettings("brevo");
+      assert.equal(current.values.senderName, `WSR-newer-${suffix}`, "the newer Brevo configuration must remain active");
+      assert.equal(current.enabled, true, "a rejected stale Brevo save must not change enabled state");
+      console.log("✓ stale Brevo save → 409 with exact newer configuration preserved");
+    }
 
     // ── 1. Baseline: never-changed secrets carry no reminder ───────────────
     {

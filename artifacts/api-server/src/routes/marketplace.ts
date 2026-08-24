@@ -364,7 +364,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
+import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, IntegrationSettingsVersionConflictError, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { schedulerHealthSnapshot, withSchedulerDependency } from "../lib/scheduler-resilience";
@@ -3325,9 +3325,10 @@ router.get("/admin/integrations/webhook-freshness", async (req, res): Promise<vo
 router.put("/admin/integrations/:integration", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   if (!integrationName(req.params.integration)) { res.status(404).json({ error: "Nepoznata integracija." }); return; }
-  const body = req.body as { enabled?: unknown; values?: unknown };
-  if (typeof body.enabled !== "boolean" || !body.values || typeof body.values !== "object" || Array.isArray(body.values)) {
-    res.status(400).json({ error: "Pošaljite enabled vrednost i polja integracije." }); return;
+  const body = req.body as { enabled?: unknown; values?: unknown; expectedVersion?: unknown };
+  if (typeof body.enabled !== "boolean" || !body.values || typeof body.values !== "object" || Array.isArray(body.values)
+    || (typeof body.expectedVersion !== "string" && body.expectedVersion !== null)) {
+    res.status(400).json({ error: "Pošaljite enabled vrednost, verziju učitanih podešavanja i polja integracije." }); return;
   }
   const definition = integrationDefinitions[req.params.integration];
   const submittedValues = Object.entries(body.values as Record<string, unknown>)
@@ -3348,7 +3349,26 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   const webhookIntegration = req.params.integration === "sms" || req.params.integration === "brevo" ? req.params.integration : null;
   const savedWebhookSecret = webhookIntegration ? values["webhookSecret"]?.trim() || undefined : undefined;
   const previousWebhookSecret = webhookIntegration && savedWebhookSecret ? await resolveWebhookSecret(webhookIntegration) : undefined;
-  await saveIntegrationSettings({ integration: req.params.integration, enabled: body.enabled, values, updatedByUserId: user.id });
+  try {
+    await saveIntegrationSettings({
+      integration: req.params.integration,
+      enabled: body.enabled,
+      values,
+      updatedByUserId: user.id,
+      expectedVersion: body.expectedVersion,
+    });
+  } catch (error) {
+    if (error instanceof IntegrationSettingsVersionConflictError) {
+      res.status(409).json({
+        error: error.message,
+        code: error.code,
+        expectedVersion: error.expectedVersion,
+        currentVersion: error.currentVersion,
+      });
+      return;
+    }
+    throw error;
+  }
   if (webhookIntegration && savedWebhookSecret && savedWebhookSecret !== previousWebhookSecret) {
     await markWebhookSecretChanged(webhookIntegration, user.id);
     // A new secret invalidates the previous provider comparison. Do not carry
