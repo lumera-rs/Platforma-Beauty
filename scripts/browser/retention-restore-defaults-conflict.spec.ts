@@ -358,6 +358,89 @@ test("a live refetch disables restore defaults after another admin saves the def
   }
 });
 
+test("returning to the tab refreshes audit history without replacing unsaved edits", async ({ page }) => {
+  test.setTimeout(120_000);
+  const historyPath = `${settingsPath}/history`;
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Start from a deterministic active version before admin A opens the page.
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+    await expect(windowInput).toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+    await expect(page.getByTestId(`retention-history-v${baselineVersion}`)).toBeVisible();
+
+    // Admin A leaves an unsaved edit in place while admin B advances the
+    // active settings and appends a newer audit entry.
+    await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+    const adminBVersion = (await concurrentResponse.json()).version as number;
+
+    const settingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    const historyRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 200,
+    );
+
+    // TanStack Query's window-focus listener is driven by visibilitychange.
+    // Dispatch the event directly to model admin A returning to the tab
+    // without waiting for the 30-second polling interval.
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await settingsRefetch;
+    await historyRefetch;
+
+    // The active badge and audit timeline catch up, while the draft remains
+    // untouched until the admin explicitly loads the newer settings.
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(page.getByTestId(`retention-history-v${adminBVersion}`)).toBeVisible();
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-stale-banner")).toBeVisible();
+
+    await page.getByTestId("load-stale-retention-settings").click();
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-stale-banner")).not.toBeVisible();
+  } finally {
+    await apiB.dispose();
+  }
+});
+
 test("the polling refetch disables restore defaults after another admin saves the defaults", async ({ page }) => {
   test.setTimeout(120_000);
 
