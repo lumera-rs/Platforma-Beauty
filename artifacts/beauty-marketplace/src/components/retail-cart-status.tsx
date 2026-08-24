@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetRetailCartSummaryQueryKey } from "@workspace/api-client-react";
 import {
   RETAIL_CART_CHANGED_EVENT,
+  RETAIL_CART_CROSS_TAB_ANNOUNCEMENT_DELAY_MS,
   RETAIL_CART_SYNC_STORAGE_KEY,
+  coalesceRetailCartChanges,
   type RetailCartChangedDetail,
 } from "@/lib/retail-cart-events";
 
@@ -24,7 +26,7 @@ function parseCartChange(value: string | null): RetailCartChangedDetail | null {
   try {
     const parsed = JSON.parse(value) as {
       itemCount?: unknown;
-      changedItem?: { name?: unknown; quantity?: unknown } | null;
+      changedItem?: { productId?: unknown; name?: unknown; quantity?: unknown } | null;
     };
     if (!Number.isInteger(parsed.itemCount) || (parsed.itemCount as number) < 0) return null;
     const changedItem = parsed.changedItem;
@@ -40,6 +42,9 @@ function parseCartChange(value: string | null): RetailCartChangedDetail | null {
     return {
       itemCount: parsed.itemCount as number,
       changedItem: {
+        ...(typeof changedItem.productId === "string" && changedItem.productId
+          ? { productId: changedItem.productId }
+          : {}),
         name: changedItem.name,
         quantity: changedItem.quantity as number | null,
       },
@@ -53,6 +58,8 @@ export function RetailCartStatus() {
   const queryClient = useQueryClient();
   const [cartAnnouncement, setCartAnnouncement] = useState("");
   const [cartItemAnnouncementText, setCartItemAnnouncementText] = useState("");
+  const pendingCrossTabChangesRef = useRef<RetailCartChangedDetail[]>([]);
+  const crossTabAnnouncementTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const refreshCartSummary = () => {
@@ -74,8 +81,35 @@ export function RetailCartStatus() {
       });
       return true;
     };
+    const cancelPendingCrossTabAnnouncement = () => {
+      if (crossTabAnnouncementTimerRef.current !== null) {
+        window.clearTimeout(crossTabAnnouncementTimerRef.current);
+        crossTabAnnouncementTimerRef.current = null;
+      }
+      pendingCrossTabChangesRef.current = [];
+    };
+    const flushPendingCrossTabAnnouncement = () => {
+      crossTabAnnouncementTimerRef.current = null;
+      const changes = pendingCrossTabChangesRef.current;
+      pendingCrossTabChangesRef.current = [];
+      const coalesced = coalesceRetailCartChanges(changes);
+      if (coalesced) announceCartChange(coalesced);
+    };
+    const queueCrossTabAnnouncement = (detail: RetailCartChangedDetail) => {
+      pendingCrossTabChangesRef.current.push(detail);
+      if (crossTabAnnouncementTimerRef.current !== null) {
+        window.clearTimeout(crossTabAnnouncementTimerRef.current);
+      }
+      crossTabAnnouncementTimerRef.current = window.setTimeout(
+        flushPendingCrossTabAnnouncement,
+        RETAIL_CART_CROSS_TAB_ANNOUNCEMENT_DELAY_MS,
+      );
+    };
     const onCartChanged = (event: Event) => {
       const detail = (event as CustomEvent<RetailCartChangedDetail>).detail;
+      // A local mutation is the freshest signal for this tab and supersedes
+      // any cross-tab burst that has not been spoken yet.
+      cancelPendingCrossTabAnnouncement();
       if (!announceCartChange(detail)) refreshCartSummary();
     };
     const onVisible = () => {
@@ -84,7 +118,12 @@ export function RetailCartStatus() {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== RETAIL_CART_SYNC_STORAGE_KEY) return;
       const detail = parseCartChange(event.newValue);
-      if (!detail || !announceCartChange(detail)) refreshCartSummary();
+      if (!detail) {
+        cancelPendingCrossTabAnnouncement();
+        refreshCartSummary();
+        return;
+      }
+      queueCrossTabAnnouncement(detail);
     };
 
     window.addEventListener("focus", onVisible);
@@ -97,6 +136,7 @@ export function RetailCartStatus() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener(RETAIL_CART_CHANGED_EVENT, onCartChanged);
       window.removeEventListener("storage", onStorage);
+      cancelPendingCrossTabAnnouncement();
     };
   }, [queryClient]);
 

@@ -36,6 +36,7 @@ function PublicProductCard({ product }: { product: PublicProduct }) {
     const cart = await response.json() as { itemCount: number; items?: Array<{ productId: string; name: string; quantity: number }> };
     const changedItem = cart.items?.find((item) => item.productId === product.id);
     notifyRetailCartChanged(cart.itemCount, {
+      productId: product.id,
       name: changedItem?.name ?? product.name,
       quantity: changedItem?.quantity ?? 1,
     });
@@ -149,6 +150,7 @@ export function PublicProductDetailPage() {
     const cart = await response.json() as { itemCount: number; items?: Array<{ productId: string; name: string; quantity: number }> };
     const changedItem = cart.items?.find((item) => item.productId === productId);
     notifyRetailCartChanged(cart.itemCount, {
+      productId,
       name: changedItem?.name ?? productName,
       quantity: changedItem?.quantity ?? 1,
     });

@@ -1,9 +1,11 @@
 export const RETAIL_CART_CHANGED_EVENT = "lumera:retail-cart-changed";
 export const RETAIL_CART_SYNC_STORAGE_KEY = "lumera:retail-cart-sync";
+export const RETAIL_CART_CROSS_TAB_ANNOUNCEMENT_DELAY_MS = 250;
 
 export type RetailCartChangedDetail = {
   itemCount: number;
   changedItem?: {
+    productId?: string;
     name: string;
     quantity: number | null;
   };
@@ -36,7 +38,31 @@ export function changedRetailCartItem(
   const latest = latestById.get(id);
   return {
     name: latest?.name ?? previous!.name,
+    productId: latest?.productId ?? previous!.productId,
     quantity: latest?.quantity ?? null,
+  };
+}
+
+function changedItemKey(changedItem: NonNullable<RetailCartChangedDetail["changedItem"]>) {
+  return changedItem.productId ?? `name:${changedItem.name}`;
+}
+
+export function coalesceRetailCartChanges(
+  changes: readonly RetailCartChangedDetail[],
+): RetailCartChangedDetail | undefined {
+  const latest = changes.at(-1);
+  if (!latest) return undefined;
+
+  const firstChangedItem = changes[0]?.changedItem;
+  const canKeepItemAnnouncement = firstChangedItem
+    && changes.every((change) => change.changedItem
+      && changedItemKey(change.changedItem) === changedItemKey(firstChangedItem));
+
+  return {
+    itemCount: latest.itemCount,
+    ...(canKeepItemAnnouncement && latest.changedItem
+      ? { changedItem: latest.changedItem }
+      : {}),
   };
 }
 

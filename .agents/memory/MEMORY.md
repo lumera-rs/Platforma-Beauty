@@ -1,5 +1,6 @@
 - [EventSource navigation teardown](eventsource-navigation-teardown.md) — ignore only deliberate aborted stream cleanup when browser tests navigate away.
 - [Retail cart live announcements](retail-cart-live-announcements.md) — carry server-confirmed counts through a persistent app-shell announcer and cancel stale summary loads first.
+- [Cross-tab cart burst tests](cross-tab-cart-burst-tests.md) — emit storage updates in separate sub-debounce tasks so browser fixtures observe the actual burst.
 - [Orval and Zod compatibility](orval-zod-compatibility.md) — shared API generation needs Zod v3-safe OpenAPI schemas and a duplicate-export check.
 - [Variant inventory model](variant-inventory-model.md) — variants use either shared product stock or complete, sum-validated per-variant stock.
 - [Social sign-in safety](social-signin-safety.md) — safe provider removal and initiator-bound OAuth linking prevent account loss or switching.

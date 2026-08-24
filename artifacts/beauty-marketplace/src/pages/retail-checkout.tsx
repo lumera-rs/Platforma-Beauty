@@ -11,7 +11,7 @@ import { changedRetailCartItem, notifyRetailCartChanged } from "@/lib/retail-car
 type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
 type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
-type ChangedCartItem = { name: string; quantity: number | null };
+type ChangedCartItem = { productId?: string; name: string; quantity: number | null };
 
 type UnavailableItem = { productId: string; name: string };
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
@@ -93,12 +93,12 @@ export function RetailCartPage() {
   const change = (item: Cart["items"][number], quantity: number) => void runLocalCartOp(
     () => retail<Cart>(`/retail/cart/items/${item.id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
     "Promena nije uspela.",
-    { name: item.name, quantity },
+    { productId: item.productId, name: item.name, quantity },
   );
   const remove = (item: Cart["items"][number]) => void runLocalCartOp(
     () => retail<Cart>(`/retail/cart/items/${item.id}`, { method: "DELETE" }),
     "Brisanje nije uspelo.",
-    { name: item.name, quantity: null },
+    { productId: item.productId, name: item.name, quantity: null },
   );
   useEffect(() => { void loadCart(); }, []);
   useEffect(() => {

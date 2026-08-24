@@ -628,6 +628,68 @@ test("retail cart page announces a cross-tab line change without reloading", asy
   }
 });
 
+test("retail cart coalesces rapid cross-tab announcements to the settled count", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  await page.evaluate(() => {
+    const values: string[] = [];
+    const count = document.querySelector('[data-testid="status-cart-announcement"]');
+    const observer = new MutationObserver(() => {
+      const value = count?.textContent ?? "";
+      if (value && !values.includes(value)) values.push(value);
+    });
+    if (count) observer.observe(count, { childList: true, characterData: true, subtree: true });
+    (window as Window & { __cartAnnouncementValues?: string[] }).__cartAnnouncementValues = values;
+  });
+
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/korpa");
+    await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    const cartResponse = await otherTab.request.get("/api/retail/cart");
+    expect(cartResponse.ok()).toBe(true);
+    const cart = await cartResponse.json() as { items: Array<{ id: string }> };
+    expect(cart.items).toHaveLength(1);
+    const patchResponse = await otherTab.request.patch(`/api/retail/cart/items/${cart.items[0]!.id}`, {
+      data: { quantity: 4 },
+    });
+    expect(patchResponse.ok()).toBe(true);
+
+    await otherTab.evaluate(async () => {
+      const key = "lumera:retail-cart-sync";
+      for (const [itemCount, quantity] of [[2, 2], [3, 3], [4, 4]]) {
+        localStorage.setItem(key, JSON.stringify({
+          itemCount,
+          changedItem: { name: "settled test item", productId: "settled-test-product", quantity },
+          nonce: `${itemCount}-${quantity}`,
+        }));
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+      }
+    });
+
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 4 stavki.", {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(
+      "Proizvod settled test item sada ima količinu 4.",
+    );
+    await expect.poll(() => page.evaluate(() =>
+      (window as Window & { __cartAnnouncementValues?: string[] }).__cartAnnouncementValues ?? [],
+    )).toEqual(["Korpa sada ima 4 stavki."]);
+    await expect(page.getByText(money(8_000), { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    expect(page.url()).toContain("/korpa");
+    expect(mainFrameNavigations).toBe(1);
+  } finally {
+    await otherTab.close();
+  }
+});
+
 test("retail cart page clears a stale item announcement for a multi-line cross-tab update", async ({ page }) => {
   let mainFrameNavigations = 0;
   page.on("framenavigated", (frame) => {
