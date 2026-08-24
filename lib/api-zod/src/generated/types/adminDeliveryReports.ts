@@ -13,4 +13,6 @@ export interface AdminDeliveryReports {
   windowHours: number;
   /** @minimum 0 */
   graceMinutes: number;
+  /** @minimum 1 */
+  rejectionAlertThreshold: number;
 }

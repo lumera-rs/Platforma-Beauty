@@ -263,9 +263,24 @@ export type AdminWebhookIntegrationCard = AdminIntegrationCard & ({
   webhookConfirmationMaxAgeDays: number;
 });
 
+export type AdminDeliveryReportStatusMalformedWebhookState = typeof AdminDeliveryReportStatusMalformedWebhookState[keyof typeof AdminDeliveryReportStatusMalformedWebhookState];
+
+
+export const AdminDeliveryReportStatusMalformedWebhookState = {
+  normal: 'normal',
+  observing: 'observing',
+  alerted: 'alerted',
+  recovered: 'recovered',
+} as const;
+
 export interface AdminDeliveryReportStatus {
   /** @nullable */
   lastEventAt: string | null;
+  /** @minimum 0 */
+  rejectedPayloadCount: number;
+  /** @nullable */
+  lastRejectedAt: string | null;
+  malformedWebhookState: AdminDeliveryReportStatusMalformedWebhookState;
   /** @nullable */
   lastAutomationSentAt: string | null;
   /** @minimum 0 */
@@ -284,6 +299,8 @@ export interface AdminDeliveryReports {
   windowHours: number;
   /** @minimum 0 */
   graceMinutes: number;
+  /** @minimum 1 */
+  rejectionAlertThreshold: number;
 }
 
 export interface AdminSmsFallbackReachableAdmin {

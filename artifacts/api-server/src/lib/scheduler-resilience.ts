@@ -9,6 +9,7 @@ export const SCHEDULER_DEPENDENCIES = [
   "delivery-report-statuses",
   "delivery-report-recipients",
   "delivery-report-history",
+  "malformed-webhook-statuses",
   "education-gallery-candidates",
 ] as const;
 

@@ -507,11 +507,13 @@ function tableStatements(s: string): string[] {
       provider text PRIMARY KEY,
       last_event_at timestamptz,
       rejected_payload_count integer NOT NULL DEFAULT 0,
+       rejected_payload_times jsonb NOT NULL DEFAULT '[]'::jsonb,
       last_rejected_at timestamptz,
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE ${s}.provider_webhook_receipts ALTER COLUMN last_event_at DROP NOT NULL`,
     `ALTER TABLE ${s}.provider_webhook_receipts ADD COLUMN IF NOT EXISTS rejected_payload_count integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.provider_webhook_receipts ADD COLUMN IF NOT EXISTS rejected_payload_times jsonb NOT NULL DEFAULT '[]'::jsonb`,
     `ALTER TABLE ${s}.provider_webhook_receipts ADD COLUMN IF NOT EXISTS last_rejected_at timestamptz`,
 
     // ── treatment_packages ───────────────────────────────────────────────────

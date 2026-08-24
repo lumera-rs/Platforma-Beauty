@@ -14,8 +14,8 @@ type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth" | "cloudf
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; version: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportProvider = "brevo" | "infobip";
-type DeliveryReportStatus = { lastEventAt: string | null; rejectedPayloadCount: number; lastRejectedAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
-type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number };
+type DeliveryReportStatus = { lastEventAt: string | null; rejectedPayloadCount: number; lastRejectedAt: string | null; malformedWebhookState: "normal" | "observing" | "alerted" | "recovered"; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
+type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number; rejectionAlertThreshold: number };
 
 type SmsWebhookRegistrationState = "no_secret" | "confirmed" | "misconfigured" | "stale_secret" | "unconfirmed";
 
@@ -59,7 +59,7 @@ export default function AdminIntegrations() {
     try {
       const response = await fetch("/api/admin/integrations/webhook-freshness", { credentials: "include", signal: controller.signal });
       if (!response.ok) throw new Error("Svežina webhook potvrde nije osvežena.");
-      const payload = await response.json() as { integrations?: Record<"sms" | "brevo", WebhookFreshness> };
+      const payload = await response.json() as { integrations?: Record<"sms" | "brevo", WebhookFreshness>; deliveryReports?: DeliveryReports };
       if (sequence !== freshnessRefreshSequence.current || controller.signal.aborted) return;
       const sms = payload.integrations?.sms;
       const brevo = payload.integrations?.brevo;
@@ -75,6 +75,7 @@ export default function AdminIntegrations() {
             sms: { ...previous.integrations.sms, ...sms },
             brevo: { ...previous.integrations.brevo, ...brevo },
           },
+          deliveryReports: payload.deliveryReports ?? previous.deliveryReports,
         }
         : previous);
       setWebhookFreshnessRefreshFailed(false);
@@ -606,6 +607,37 @@ export default function AdminIntegrations() {
           {(integration === "sms" || integration === "brevo") && (() => {
             const report = deliveryReport(integration);
             if (!report) return null;
+             const rejectionThreshold = data.deliveryReports?.rejectionAlertThreshold ?? 5;
+             const rejectionPanels: Record<DeliveryReportStatus["malformedWebhookState"], { tone: "neutral" | "warn" | "alert" | "ok"; label: string; text: string }> = {
+               normal: {
+                 tone: "neutral",
+                 label: "Format webhooka uredan",
+                 text: "Nema evidentiranih nevažećih webhook batch-eva u poslednjem operativnom prozoru.",
+               },
+               observing: {
+                 tone: "warn",
+                 label: "Greške se prate",
+                 text: `Evidentirano je ${report.rejectedPayloadCount} nevažećih autentifikovanih webhook batch-eva. Upozorenje administratorima šalje se tek kada se dostigne prag od ${rejectionThreshold} u poslednja ${data.deliveryReports?.windowHours ?? 24} h.`,
+               },
+               alerted: {
+                 tone: "alert",
+                 label: "Upozorenje zbog formata",
+                 text: `Evidentirano je ${report.rejectedPayloadCount} nevažećih autentifikovanih webhook batch-eva u poslednja ${data.deliveryReports?.windowHours ?? 24} h — prag od ${rejectionThreshold} je dostignut i administratori dobijaju operativno upozorenje.`,
+               },
+               recovered: {
+                 tone: "ok",
+                 label: "Format webhooka se smirio",
+                 text: `U poslednja ${data.deliveryReports?.windowHours ?? 24} h nema novih nevažećih webhook batch-eva. Prethodno evidentirani problem sa formatom trenutno je razrešen.`,
+               },
+             };
+             const rejectionPanel = rejectionPanels[report.malformedWebhookState] ?? rejectionPanels.normal;
+             const rejectionTone = rejectionPanel.tone === "alert"
+               ? "border-red-300 bg-red-50 text-red-800"
+               : rejectionPanel.tone === "warn"
+                 ? "border-amber-300 bg-amber-50 text-amber-800"
+                 : rejectionPanel.tone === "ok"
+                   ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                   : "bg-muted/30 text-muted-foreground";
             return <div className={`rounded-lg border p-3 space-y-2 ${report.warning ? "border-amber-300 bg-amber-50" : "bg-muted/30"}`}>
               <div className="flex items-center justify-between gap-2">
                 <Label className={report.warning ? "text-amber-800" : undefined}>Izveštaji o isporuci</Label>
@@ -614,7 +646,11 @@ export default function AdminIntegrations() {
               <p className={`text-xs ${report.warning ? "text-amber-800" : "text-muted-foreground"}`}>Poslednji primljen izveštaj: <span className="font-medium">{formatTimestamp(report.lastEventAt) ?? "nijedan do sada"}</span></p>
               {report.lastAutomationSentAt && <p className={`text-xs ${report.warning ? "text-amber-800" : "text-muted-foreground"}`}>Poslednja automatska poruka poslata: <span className="font-medium">{formatTimestamp(report.lastAutomationSentAt)}</span> ({report.recentSendCount} u poslednja {data.deliveryReports?.windowHours ?? 24} h)</p>}
               {report.warning && <p className="text-xs font-medium text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Automatske poruke su nedavno poslate, ali provajder nije javio nijedan izveštaj o isporuci u očekivanom roku ({data.deliveryReports?.graceMinutes ?? 30} min). Proverite da li je webhook URL registrovan kod provajdera i da li se webhook tajna poklapa sa sačuvanom.</p>}
-              {report.rejectedPayloadCount > 0 && <div className="rounded-lg border border-red-300 bg-red-50 p-2.5 text-xs text-red-800" role="alert" data-testid={`rejected-webhook-payloads-${integration}`}><p className="font-semibold"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Provajder je nedavno poslao nevažeći webhook ({report.rejectedPayloadCount} {report.rejectedPayloadCount === 1 ? "zahtev" : "zahteva"}).</p><p className="mt-1">Poslednji odbijeni zahtev: {formatTimestamp(report.lastRejectedAt) ?? "nepoznato vreme"}. Proverite format događaja i podešavanja provajdera; sadržaj zahteva se ne čuva.</p></div>}
+               <div className={`rounded-lg border p-2.5 text-xs ${rejectionTone}`} role={report.malformedWebhookState === "alerted" ? "alert" : "status"} aria-live="polite" data-testid={`webhook-format-status-${integration}`} data-state={report.malformedWebhookState}>
+                 <p className="font-semibold">{report.malformedWebhookState === "alerted" || report.malformedWebhookState === "observing" ? <AlertTriangle className="mr-1 inline h-3.5 w-3.5" /> : report.malformedWebhookState === "recovered" ? <CheckCircle2 className="mr-1 inline h-3.5 w-3.5" /> : null}{rejectionPanel.label}</p>
+                 <p className="mt-1">{rejectionPanel.text}</p>
+                 {report.lastRejectedAt && report.malformedWebhookState !== "normal" && <p className="mt-1">Poslednji odbijeni zahtev: {formatTimestamp(report.lastRejectedAt) ?? "nepoznato vreme"}. Sadržaj zahteva se ne čuva.</p>}
+               </div>
             </div>;
           })()}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg bg-muted/30 p-3 space-y-2"><Label>{integration === "sms" ? "Broj za test SMS" : "E-mail za test poruku"}</Label><Input value={testRecipient[integration]} onChange={(event) => setTestRecipient({ ...testRecipient, [integration]: event.target.value })} placeholder={integration === "sms" ? "+381..." : "admin@vasdomen.rs"} /></div>}

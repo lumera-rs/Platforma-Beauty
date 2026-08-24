@@ -1,12 +1,43 @@
-import { Router, type IRouter, type Request, type Response } from "express";
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
-import {
+import 
+{
+ Router, type IRouter, type Request, type Response 
+}
+ from "express"
+;
+
+import 
+{
+ and, asc, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql 
+}
+ from "drizzle-orm"
+;
+
+import 
+{
+ createHash, randomBytes, randomUUID 
+}
+ from "node:crypto"
+;
+
+import 
+{
+ Readable 
+}
+ from "node:stream"
+;
+
+import 
+{
+
   publishSalonNotificationUpdate,
   subscribeToSalonNotificationEvents,
-} from "../lib/salon-notification-events";
-import {
+}
+ from "../lib/salon-notification-events"
+;
+
+import 
+{
+
   appointmentSeriesTable,
   appointmentsTable,
   beautyGlossaryTable,
@@ -85,9 +116,20 @@ import {
   subscriptionsTable,
   smsDeliveriesTable,
   usersTable,
-} from "@workspace/db";
-import { getOrCreateShippingConfig } from "../lib/shipping-config";
-import {
+}
+ from "@workspace/db"
+;
+
+import 
+{
+ getOrCreateShippingConfig 
+}
+ from "../lib/shipping-config"
+;
+
+import 
+{
+
   AdminBulkUpdateProductsBody,
   AdminListServiceCategoriesResponse,
   AdminListServiceTemplatesQueryParams,
@@ -345,9 +387,20 @@ import {
   UpdateSalonResourceParams,
   UpdateSalonResourceResponse,
   DeleteSalonResourceParams,
-} from "@workspace/api-zod";
-import { createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword } from "../lib/auth";
-import {
+}
+ from "@workspace/api-zod"
+;
+
+import 
+{
+ createSession, destroySession, getCurrentUser, hashPassword, isAdmin, publicUser, sessionCookieName, verifyPassword 
+}
+ from "../lib/auth"
+;
+
+import 
+{
+
   BrevoConfigurationError,
   createBrevoMarketingCampaign,
   createBrevoTransactionalWebhook,
@@ -359,22 +412,111 @@ import {
   sendEducationGalleryCleanupAlert,
   sendTransactionalEmail,
   type EducationGalleryCleanupAlert,
-} from "../lib/brevo";
-import { ensureDemoData } from "../lib/seed";
-import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
-import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
-import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, IntegrationSettingsVersionConflictError, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
-import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
-import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
-import { schedulerDatabaseCapacitySnapshot, schedulerHealthSnapshot, withSchedulerDependency } from "../lib/scheduler-resilience";
-import { logger } from "../lib/logger";
-import { catalogCache, publishCatalogInvalidation } from "../lib/catalog-cache";
-import { lockAppointmentResources } from "../lib/appointment-locks";
-import { consumeInventoryForAppointmentInTx, creditInventoryForOrderInTx } from "../lib/salon-inventory";
-import { redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx } from "../lib/package-entitlement";
-import { cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter } from "../lib/education-sessions";
-import {
+}
+ from "../lib/brevo"
+;
+
+import 
+{
+ ensureDemoData 
+}
+ from "../lib/seed"
+;
+
+import 
+{
+ maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms 
+}
+ from "../lib/sms"
+;
+
+import 
+{
+ sendDailyAppointmentReminders 
+}
+ from "../lib/sms-reminders"
+;
+
+import 
+{
+ runRescheduledConfirmationRetries 
+}
+ from "../lib/rescheduled-confirmation-retries"
+;
+
+import 
+{
+ brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, IntegrationSettingsVersionConflictError, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName 
+}
+ from "../lib/integrations"
+;
+
+import 
+{
+ deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_REJECTION_ALERT_THRESHOLD, WEBHOOK_VERIFICATION_REFERENCE_PREFIX 
+}
+ from "../lib/provider-events"
+;
+
+import 
+{
+ smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders 
+}
+ from "../lib/delivery-report-alerts"
+;
+
+import 
+{
+ schedulerDatabaseCapacitySnapshot, schedulerHealthSnapshot, withSchedulerDependency 
+}
+ from "../lib/scheduler-resilience"
+;
+
+import 
+{
+ logger 
+}
+ from "../lib/logger"
+;
+
+import 
+{
+ catalogCache, publishCatalogInvalidation 
+}
+ from "../lib/catalog-cache"
+;
+
+import 
+{
+ lockAppointmentResources 
+}
+ from "../lib/appointment-locks"
+;
+
+import 
+{
+ consumeInventoryForAppointmentInTx, creditInventoryForOrderInTx 
+}
+ from "../lib/salon-inventory"
+;
+
+import 
+{
+ redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx 
+}
+ from "../lib/package-entitlement"
+;
+
+import 
+{
+ cancelEducationEnrollment, cancelEducationSession, notifyPromotedWaiter, processUpcomingEducationSessions, releaseSeatAndPromoteWaiter 
+}
+ from "../lib/education-sessions"
+;
+
+import 
+{
+
   canClaimMediaReference,
   claimMediaReference,
   mediaAssetIdFromUrl,
@@ -383,13 +525,23 @@ import {
   requireMediaCachePurgeForVisibilityRevocation,
   releaseMediaReferenceClaims,
   stableMediaUrl,
-} from "./media";
-import { attachReadyImageAssets } from "./image-media";
+}
+ from "./media"
+;
+
+import 
+{
+ attachReadyImageAssets 
+}
+ from "./image-media"
+;
+
 
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 
 let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
+
 
 /**
  * Controlled only by the integration regression suite. It pauses a summary
@@ -3287,6 +3439,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
       providers: deliveryReportsByProvider,
       windowHours: DELIVERY_REPORT_WINDOW_HOURS,
       graceMinutes: DELIVERY_REPORT_GRACE_MINUTES,
+      rejectionAlertThreshold: WEBHOOK_REJECTION_ALERT_THRESHOLD,
     },
     // Emergency-SMS audience health: how many active administrators the
     // total-email-outage SMS fallback could reach (same audience + phone
@@ -3318,11 +3471,20 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
 
 router.get("/admin/integrations/webhook-freshness", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const [sms, brevo] = await Promise.all([
+  const [sms, brevo, deliveryReports] = await Promise.all([
     webhookConfirmationMetadata("sms"),
     webhookConfirmationMetadata("brevo"),
+    deliveryReportStatuses(),
   ]);
-  res.json({ integrations: { sms, brevo } });
+  res.json({
+    integrations: { sms, brevo },
+    deliveryReports: {
+      providers: deliveryReports,
+      windowHours: DELIVERY_REPORT_WINDOW_HOURS,
+      graceMinutes: DELIVERY_REPORT_GRACE_MINUTES,
+      rejectionAlertThreshold: WEBHOOK_REJECTION_ALERT_THRESHOLD,
+    },
+  });
 });
 
 router.put("/admin/integrations/:integration", async (req, res): Promise<void> => {

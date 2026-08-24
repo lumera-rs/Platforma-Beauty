@@ -306,8 +306,12 @@ export const adminGetIntegrationsResponseIntegrationsSmsTwoWebhookConfirmationMa
 export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMin = 0;
 export const adminGetIntegrationsResponseIntegrationsBrevoTwoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
 
+export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRejectedPayloadCountMin = 0;
+
 export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMin = 0;
 export const adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRejectedPayloadCountMin = 0;
 
 export const adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMin = 0;
 export const adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf = 1;
@@ -316,6 +320,8 @@ export const adminGetIntegrationsResponseDeliveryReportsWindowHoursMultipleOf = 
 
 export const adminGetIntegrationsResponseDeliveryReportsGraceMinutesMin = 0;
 export const adminGetIntegrationsResponseDeliveryReportsGraceMinutesMultipleOf = 1;
+
+export const adminGetIntegrationsResponseDeliveryReportsRejectionAlertThresholdMultipleOf = 1;
 
 export const adminGetIntegrationsResponseSmsFallbackReachableAdminCountMin = 0;
 export const adminGetIntegrationsResponseSmsFallbackReachableAdminCountMultipleOf = 1;
@@ -374,19 +380,26 @@ export const AdminGetIntegrationsResponse = zod.object({
   "providers": zod.object({
   "brevo": zod.object({
   "lastEventAt": zod.coerce.date().nullable(),
+  "rejectedPayloadCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRejectedPayloadCountMin),
+  "lastRejectedAt": zod.coerce.date().nullable(),
+  "malformedWebhookState": zod.enum(['normal', 'observing', 'alerted', 'recovered']),
   "lastAutomationSentAt": zod.coerce.date().nullable(),
   "recentSendCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf),
   "warning": zod.boolean()
 }),
   "infobip": zod.object({
   "lastEventAt": zod.coerce.date().nullable(),
+  "rejectedPayloadCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRejectedPayloadCountMin),
+  "lastRejectedAt": zod.coerce.date().nullable(),
+  "malformedWebhookState": zod.enum(['normal', 'observing', 'alerted', 'recovered']),
   "lastAutomationSentAt": zod.coerce.date().nullable(),
   "recentSendCount": zod.number().min(adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf),
   "warning": zod.boolean()
 })
 }),
   "windowHours": zod.number().min(1).multipleOf(adminGetIntegrationsResponseDeliveryReportsWindowHoursMultipleOf),
-  "graceMinutes": zod.number().min(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMultipleOf)
+  "graceMinutes": zod.number().min(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMin).multipleOf(adminGetIntegrationsResponseDeliveryReportsGraceMinutesMultipleOf),
+  "rejectionAlertThreshold": zod.number().min(1).multipleOf(adminGetIntegrationsResponseDeliveryReportsRejectionAlertThresholdMultipleOf)
 }),
   "smsFallback": zod.object({
   "reachableAdminCount": zod.number().min(adminGetIntegrationsResponseSmsFallbackReachableAdminCountMin).multipleOf(adminGetIntegrationsResponseSmsFallbackReachableAdminCountMultipleOf),

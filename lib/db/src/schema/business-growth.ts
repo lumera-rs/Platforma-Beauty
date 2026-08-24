@@ -240,6 +240,11 @@ export const providerWebhookReceiptsTable = pgTable("provider_webhook_receipts",
   lastEventAt: timestamp("last_event_at", { withTimezone: true }),
   /** Number of malformed authenticated payloads in the current bounded window. */
   rejectedPayloadCount: integer("rejected_payload_count").notNull().default(0),
+  /**
+   * Capped server timestamps for authenticated malformed batches. This contains
+   * no request data and lets monitoring count an actual rolling time window.
+   */
+  rejectedPayloadTimes: jsonb("rejected_payload_times").$type<string[]>().notNull().default([]),
   /** Server receipt time of the most recent malformed authenticated payload. */
   lastRejectedAt: timestamp("last_rejected_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -13,8 +13,8 @@ description: Security and idempotency model for ingesting Brevo/Infobip delivery
 
 **Freshness monitoring:** Webhook-silence warnings must key off a per-provider "last accepted verified event" receipt compared against grace-aged recent sends — never off per-message delivery state, which replays and out-of-order events make unreliable. Receipt tracking is monitoring metadata: keep it non-fatal so it can never alter webhook response semantics.
 
-**Malformed payload monitoring:** Count only authenticated structurally rejected batches in separate, capped per-provider metadata with the server receipt time; do not retain request contents and never let a rejection advance the accepted-event freshness watermark.
+**Malformed payload monitoring:** Count only authenticated structurally rejected batches in separate, capped per-provider metadata with server receipt timestamps; do not retain request contents and never let a rejection advance the accepted-event freshness watermark. Thresholds must filter those timestamps to the exact displayed rolling window, not a count that merely resets after a quiet gap.
 
 **Why:** Providers can silently drift from their expected schema. Administrators need a bounded operational signal, but raw payloads may contain customer or provider data and a malformed request is not proof that a valid delivery event arrived.
 
-**How to apply:** Keep the signal non-fatal and short-lived, expose only the provider, aggregate count, and server time to authorized administrators, and preserve the accepted-event timestamp when the malformed-payload write is made.
+**How to apply:** Keep the signal non-fatal and short-lived, expose only the provider, aggregate count, and server time to authorized administrators, and preserve the accepted-event timestamp when the malformed-payload write is made. Store only capped server timestamps, prune/filter them by the alert window, and use the same window for UI, threshold, and alert content.

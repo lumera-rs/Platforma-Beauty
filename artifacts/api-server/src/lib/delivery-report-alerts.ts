@@ -74,6 +74,7 @@ import { withSchedulerDependency } from "./scheduler-resilience";
 import {
   deliveryReportStatuses,
   DELIVERY_REPORT_WINDOW_HOURS,
+  WEBHOOK_REJECTION_WINDOW_HOURS,
   type DeliveryReportProvider,
   type DeliveryReportStatus,
 } from "./provider-events";
@@ -86,8 +87,11 @@ const DELIVERY_REPORT_ALERT_EMAIL_TYPE = "delivery_report_silence_alert";
 /** Outbox eventKey prefix of the total-email-outage fallback SMS. */
 export const DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX = "delivery-report-silence-alert-sms";
 const DELIVERY_REPORT_RECOVERY_EMAIL_TYPE = "delivery_report_recovery_alert";
+const MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE = "malformed_webhook_alert";
 /** Rolling cooldown: at least this long between two alerts to the same admin about the same provider. */
 export const DELIVERY_REPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
+/** Rolling cooldown for repeated malformed-webhook alerts per provider/admin. */
+export const MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
 
 /** Admin-facing provider labels (Serbian UI copy uses the same names). */
 export const DELIVERY_REPORT_PROVIDER_LABELS: Record<DeliveryReportProvider, string> = {
@@ -104,6 +108,21 @@ export function staleDeliveryReportProviders(
   statuses: Record<DeliveryReportProvider, DeliveryReportStatus>,
 ): DeliveryReportProvider[] {
   return (["brevo", "infobip"] as const).filter((provider) => statuses[provider].warning);
+}
+
+export function malformedWebhookAlertProviders(
+  statuses: Record<DeliveryReportProvider, DeliveryReportStatus>,
+): DeliveryReportProvider[] {
+  return (["brevo", "infobip"] as const).filter(
+    (provider) => statuses[provider].malformedWebhookState === "alerted",
+  );
+}
+
+function malformedWebhookWindow(now: Date): { start: Date; end: Date } {
+  return {
+    start: new Date(now.getTime() - WEBHOOK_REJECTION_WINDOW_HOURS * 60 * 60_000),
+    end: now,
+  };
 }
 
 /** True when this phone value can actually receive the fallback SMS. */
@@ -127,6 +146,18 @@ function formatBelgradeTime(iso: string | null): string {
     timeStyle: "short",
     timeZone: "Europe/Belgrade",
   }).format(date);
+}
+
+/**
+ * A missing timestamp means no prior alert. A malformed timestamp is treated
+ * conservatively as still inside the cooldown, so corrupt legacy metadata can
+ * never turn a scheduler tick into an email flood.
+ */
+function isInsideAlertCooldown(now: Date, priorAlertAtIso: string | null | undefined, cooldownMs: number): boolean {
+  if (!priorAlertAtIso) return false;
+  const priorTime = Date.parse(String(priorAlertAtIso));
+  if (!Number.isFinite(priorTime)) return true;
+  return now.getTime() < priorTime + cooldownMs;
 }
 
 /**
@@ -217,12 +248,10 @@ export async function runDeliveryReportSilenceAlerts(
     for (const recipient of recipients) {
       const normalizedEmail = recipient.email.toLowerCase();
       const prior = historyByKey.get(`${provider}:${normalizedEmail}`);
-      const lastAlertAt = prior?.lastAlertAtIso ? new Date(prior.lastAlertAtIso) : null;
       // Rolling cooldown: a full DELIVERY_REPORT_ALERT_COOLDOWN_MS must have
       // elapsed since this recipient's newest alert about this provider. An
       // unparseable/future anchor also suppresses — never risks spam.
-      if (lastAlertAt && !Number.isNaN(lastAlertAt.getTime())
-        && now.getTime() - lastAlertAt.getTime() < DELIVERY_REPORT_ALERT_COOLDOWN_MS) {
+      if (isInsideAlertCooldown(now, prior?.lastAlertAtIso, DELIVERY_REPORT_ALERT_COOLDOWN_MS)) {
         cooldownSuppressedCount += 1;
         continue;
       }
@@ -327,6 +356,133 @@ export async function runDeliveryReportSilenceAlerts(
     failedDeliveryCount,
     skippedDeliveryCount,
     smsFallback,
+  };
+}
+
+/**
+ * Email administrators when authenticated malformed webhook batches sustain a
+ * provider/schema failure. The content is intentionally aggregate-only:
+ * provider label, count, and the bounded server-time window. History is keyed
+ * by provider and recipient so cooldowns survive restarts and racing instances
+ * collapse onto one durable outbox event.
+ */
+export async function runMalformedWebhookAlerts(
+  now = new Date(),
+  transport?: TransactionalEmailTransport,
+): Promise<{
+  malformedProviders: DeliveryReportProvider[];
+  recipientCount: number;
+  attemptedEventKeys: string[];
+  cooldownSuppressedCount: number;
+  failedDeliveryCount: number;
+  skippedDeliveryCount: number;
+}> {
+  const statuses = await withSchedulerDependency(
+    "malformed-webhook-statuses",
+    () => deliveryReportStatuses(now),
+  );
+  const malformedProviders = malformedWebhookAlertProviders(statuses);
+  const empty = {
+    malformedProviders,
+    recipientCount: 0,
+    attemptedEventKeys: [] as string[],
+    cooldownSuppressedCount: 0,
+    failedDeliveryCount: 0,
+    skippedDeliveryCount: 0,
+  };
+  if (!malformedProviders.length) return empty;
+
+  const recipients = await db.select({ email: usersTable.email })
+    .from(usersTable)
+    .where(smsFallbackAdminAudiencePredicate());
+  if (!recipients.length) {
+    logger.warn(
+      { malformedProviders },
+      "Malformed webhook alert has no configured administrator recipients",
+    );
+    return empty;
+  }
+
+  const providerExpr = sql<string>`${emailDeliveriesTable.metadata}->>'provider'`;
+  const history = await db.select({
+    recipientEmail: emailDeliveriesTable.recipientEmail,
+    provider: providerExpr,
+    alertCount: sql<number>`count(*)::int`,
+    lastAlertAtIso: sql<string | null>`max(${emailDeliveriesTable.metadata}->>'windowEnd')`,
+  })
+    .from(emailDeliveriesTable)
+    .where(eq(emailDeliveriesTable.emailType, MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE))
+    .groupBy(emailDeliveriesTable.recipientEmail, providerExpr);
+  const historyByKey = new Map(history.map((row) => [`${row.provider}:${row.recipientEmail}`, row]));
+
+  const window = malformedWebhookWindow(now);
+  let cooldownSuppressedCount = 0;
+  const attemptedEventKeys: string[] = [];
+  const sends: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>[] = [];
+
+  for (const provider of malformedProviders) {
+    const status = statuses[provider];
+    const label = DELIVERY_REPORT_PROVIDER_LABELS[provider];
+    const subject = `LUMERA — format webhooka provajdera ${label}`;
+    const htmlContent = lumeraEmailHtml(
+      "Ponavljajuće greške formata webhooka",
+      `<p>Provajder: <strong>${label}</strong></p>
+       <p>Broj odbijenih autentifikovanih webhook batch-eva: <strong>${status.rejectedPayloadCount}</strong></p>
+       <p>Vremenski prozor: <strong>${formatBelgradeTime(window.start.toISOString())} – ${formatBelgradeTime(window.end.toISOString())}</strong></p>`,
+    );
+    for (const recipient of recipients) {
+      const normalizedEmail = recipient.email.toLowerCase();
+      const prior = historyByKey.get(`${provider}:${normalizedEmail}`);
+      if (isInsideAlertCooldown(now, prior?.lastAlertAtIso, MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS)) {
+        cooldownSuppressedCount += 1;
+        continue;
+      }
+      const sequence = (prior?.alertCount ?? 0) + 1;
+      const recipientKey = createHash("sha256").update(normalizedEmail).digest("hex").slice(0, 16);
+      const eventKey = `malformed-webhook-alert:${provider}:${recipientKey}:${sequence}`;
+      attemptedEventKeys.push(eventKey);
+      sends.push(sendTransactionalEmail({
+        eventKey,
+        emailType: MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE,
+        to: { email: recipient.email },
+        subject,
+        htmlContent,
+        metadata: {
+          provider,
+          count: status.rejectedPayloadCount,
+          windowStart: window.start.toISOString(),
+          windowEnd: window.end.toISOString(),
+        },
+      }, transport));
+    }
+  }
+
+  const results = await Promise.allSettled(sends);
+  const failedDeliveryCount = results.filter(
+    (result) => result.status === "rejected" || ("failed" in result.value && result.value.failed),
+  ).length;
+  const skippedDeliveryCount = results.filter(
+    (result) => result.status === "fulfilled" && "skipped" in result.value && result.value.skipped,
+  ).length;
+  if (failedDeliveryCount || skippedDeliveryCount) {
+    logger.warn(
+      { malformedProviders, recipientCount: recipients.length, cooldownSuppressedCount, failedDeliveryCount, skippedDeliveryCount },
+      "Malformed webhook alert delivery did not complete for every administrator",
+    );
+  } else if (attemptedEventKeys.length) {
+    logger.info(
+      { malformedProviders, recipientCount: recipients.length, cooldownSuppressedCount },
+      "Malformed webhook alert delivery queued",
+    );
+  }
+
+  return {
+    malformedProviders,
+    recipientCount: recipients.length,
+    attemptedEventKeys,
+    cooldownSuppressedCount,
+    failedDeliveryCount,
+    skippedDeliveryCount,
   };
 }
 

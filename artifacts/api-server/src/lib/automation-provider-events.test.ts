@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   automationDeliveriesTable,
@@ -48,10 +48,15 @@ import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
   applyBrevoEvents,
   applyInfobipReports,
+  deliveryReportStatuses,
   deliveryReportWarning,
+  malformedWebhookState,
   missingBrevoWebhookEvents,
+  recordWebhookRejection,
   recordWebhookReceipt,
   resolveWebhookSecret,
+  WEBHOOK_REJECTION_ALERT_THRESHOLD,
+  WEBHOOK_REJECTION_WINDOW_HOURS,
   WEBHOOK_VERIFICATION_REFERENCE_PREFIX,
   type DeliveryReportProvider,
   type DeliveryReportStatus,
@@ -59,10 +64,14 @@ import {
 import {
   DELIVERY_REPORT_ALERT_COOLDOWN_MS,
   DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX,
+  MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS,
+  malformedWebhookAlertProviders,
   runDeliveryReportRecoveryAlerts,
   runDeliveryReportSilenceAlerts,
+  runMalformedWebhookAlerts,
   staleDeliveryReportProviders,
 } from "./delivery-report-alerts";
+import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { BREVO_WEBHOOK_EVENTS, type TransactionalEmailTransport } from "./brevo";
 import type { SmsProvider } from "./sms";
 
@@ -204,6 +213,9 @@ async function captureWebhookLogs(): Promise<{ output: string; exitCode: number 
 
 // hint: Logic changed on both sides. Requires understanding intent of each change.
 async function run() {
+  // This direct Express harness bypasses production startup, which normally
+  // performs additive schema rollout before webhook routes can query receipts.
+  await ensureBusinessGrowthSchema();
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -883,6 +895,7 @@ async function run() {
         lastEventAt: string | null;
         rejectedPayloadCount: number;
         lastRejectedAt: string | null;
+        malformedWebhookState: "normal" | "observing" | "alerted" | "recovered";
         lastAutomationSentAt: string | null;
         recentSendCount: number;
         warning: boolean;
@@ -892,11 +905,13 @@ async function run() {
           providers?: Record<string, ReportedStatus>;
           windowHours?: number;
           graceMinutes?: number;
+           rejectionAlertThreshold?: number;
         };
       };
       assert.ok(body.deliveryReports, "admin integrations response must include deliveryReports");
       assert.equal(typeof body.deliveryReports.windowHours, "number");
       assert.equal(typeof body.deliveryReports.graceMinutes, "number");
+       assert.equal(body.deliveryReports.rejectionAlertThreshold, WEBHOOK_REJECTION_ALERT_THRESHOLD);
       for (const provider of ["brevo", "infobip"] as const) {
         const providerStatus: ReportedStatus | undefined = body.deliveryReports.providers?.[provider];
         assert.ok(providerStatus, `deliveryReports.providers.${provider} present`);
@@ -904,6 +919,11 @@ async function run() {
         assert.equal(typeof providerStatus.warning, "boolean");
         assert.ok(providerStatus.rejectedPayloadCount > 0, `admin response must expose the recent malformed ${provider} payload count`);
         assert.ok(providerStatus.lastRejectedAt, `admin response must expose when ${provider} last sent malformed payload data`);
+         assert.equal(
+           providerStatus.malformedWebhookState === "observing" || providerStatus.malformedWebhookState === "alerted",
+           true,
+           `recent malformed ${provider} batches are visibly being monitored`,
+         );
         // This suite just accepted verified events for both providers, so the
         // receipt is newer than any grace-aged send — never a warning here.
         assert.ok(providerStatus.lastEventAt, `last accepted event surfaced for ${provider}`);
@@ -1017,6 +1037,7 @@ async function run() {
         lastEventAt: null,
         rejectedPayloadCount: 0,
         lastRejectedAt: null,
+        malformedWebhookState: "normal",
         lastAutomationSentAt: null,
         recentSendCount: 0,
         warning: false,
@@ -1430,6 +1451,137 @@ async function run() {
         assert.equal(combinedRepeatRun.smsFallback.triggered, false, "combined repeat tick never evaluates the fallback");
         assert.equal(combinedRepeatSms.calls.length, 0, "combined repeat tick sends no SMS inside the cooldown");
         console.log("✓ SMS fallback pages admins exactly when the alert email path is fully down, once per window");
+
+        // ── 7f2. Repeated malformed webhook format alerts ─────────────────
+        // This must remain aggregate-only: malformed payloads increment a
+        // bounded provider counter, but the alert never receives request data.
+        const formatAdminEmail = `pe-format-admin-${suffix}@bg.test`;
+        const [formatAdmin] = await db.insert(usersTable).values({
+          firstName: "Admin", lastName: "Webhook format",
+          email: formatAdminEmail, passwordHash: await hashPassword(`pe-format-${suffix}`),
+          passwordSetAt: new Date(), role: "ADMIN",
+        }).returning();
+        assert.ok(formatAdmin);
+        cleanup.userIds.push(formatAdmin.id);
+
+        // Start from a deterministic count for both providers so the
+        // provider-isolation and below-threshold assertions do not depend on
+        // malformed fixtures earlier in this suite.
+        await db.update(providerWebhookReceiptsTable).set({
+          rejectedPayloadCount: 0,
+          rejectedPayloadTimes: [],
+          lastRejectedAt: null,
+        }).where(inArray(providerWebhookReceiptsTable.provider, ["brevo", "infobip"]));
+        const formatAlertNow = new Date();
+        const noFormatAlert = makeFakeTransport();
+        const baselineFormatRun = await runMalformedWebhookAlerts(formatAlertNow, noFormatAlert.transport);
+        assert.deepEqual(baselineFormatRun.malformedProviders, [], "quiet providers never alert");
+        assert.equal(noFormatAlert.calls.length, 0, "quiet providers never contact the email transport");
+
+        for (let index = 0; index < WEBHOOK_REJECTION_ALERT_THRESHOLD - 1; index += 1) {
+          await recordWebhookRejection("brevo", formatAlertNow);
+        }
+        const observingFormatRun = await runMalformedWebhookAlerts(formatAlertNow, makeFakeTransport().transport);
+        assert.deepEqual(observingFormatRun.malformedProviders, [], "below the deliberate malformed-batch threshold stays quiet");
+        assert.equal(
+          malformedWebhookState({
+            rejectedPayloadCount: WEBHOOK_REJECTION_ALERT_THRESHOLD - 1,
+            lastRejectedAt: formatAlertNow,
+            now: formatAlertNow,
+          }),
+          "observing",
+          "below-threshold traffic is visibly monitored without an alert",
+        );
+
+        await recordWebhookRejection("brevo", formatAlertNow);
+        const firstFormatAlert = makeFakeTransport();
+        const firstFormatRun = await runMalformedWebhookAlerts(formatAlertNow, firstFormatAlert.transport);
+        cleanup.emailEventKeys.push(...firstFormatRun.attemptedEventKeys);
+        assert.deepEqual(firstFormatRun.malformedProviders, ["brevo"], "only the provider crossing the threshold alerts");
+        assert.ok(firstFormatRun.recipientCount >= 1, "administrators are an audience for the format alert");
+        assert.equal(firstFormatAlert.calls.length, firstFormatRun.recipientCount, "one aggregate alert is sent to every administrator");
+        assert.ok(firstFormatAlert.calls.some((call) => call.email === formatAdminEmail), "the dedicated administrator receives the format alert");
+        assert.ok(firstFormatAlert.calls.every((call) => call.subject.includes("Brevo")), "the alert names the affected provider");
+        assert.deepEqual(
+          malformedWebhookAlertProviders({
+            brevo: {
+              lastEventAt: null, rejectedPayloadCount: WEBHOOK_REJECTION_ALERT_THRESHOLD,
+              lastRejectedAt: formatAlertNow.toISOString(), malformedWebhookState: "alerted",
+              lastAutomationSentAt: null, recentSendCount: 0, warning: false,
+            },
+            infobip: {
+              lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null,
+              malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false,
+            },
+          }),
+          ["brevo"],
+          "the selector preserves per-provider isolation",
+        );
+        const [formatAlertRow] = await db.select().from(emailDeliveriesTable).where(and(
+          eq(emailDeliveriesTable.emailType, "malformed_webhook_alert"),
+          eq(emailDeliveriesTable.recipientEmail, formatAdminEmail),
+        ));
+        assert.ok(formatAlertRow, "the format alert is persisted in the durable email outbox");
+        assert.deepEqual(Object.keys(formatAlertRow.metadata).sort(), ["count", "provider", "windowEnd", "windowStart"]);
+        assert.equal(formatAlertRow.metadata.provider, "brevo");
+        assert.equal(formatAlertRow.metadata.count, WEBHOOK_REJECTION_ALERT_THRESHOLD);
+        assert.ok(formatAlertRow.htmlContent, "the format alert has an aggregate-only email body");
+        assert.equal(formatAlertRow.htmlContent.includes(brevoSecret), false, "alert body never includes a webhook secret");
+        assert.equal(formatAlertRow.htmlContent.includes(smsSecret), false, "alert body never includes another provider secret");
+        assert.equal(formatAlertRow.htmlContent.includes(runA.brevoMessageId), false, "alert body never includes a message reference");
+
+        const repeatFormatAlert = makeFakeTransport();
+        const repeatFormatRun = await runMalformedWebhookAlerts(
+          new Date(formatAlertNow.getTime() + 15 * 60_000),
+          repeatFormatAlert.transport,
+        );
+        assert.equal(repeatFormatRun.attemptedEventKeys.length, 0, "same provider is rate-limited inside the cooldown");
+        assert.ok(repeatFormatRun.cooldownSuppressedCount >= 1, "the durable provider cooldown suppresses the next scheduler tick");
+        assert.equal(repeatFormatAlert.calls.length, 0, "suppressed format alerts never contact the email transport");
+
+        const recoveryNow = new Date(formatAlertNow.getTime() + WEBHOOK_REJECTION_WINDOW_HOURS * 60 * 60_000 + 1);
+        assert.equal(
+          malformedWebhookState({
+            rejectedPayloadCount: WEBHOOK_REJECTION_ALERT_THRESHOLD,
+            lastRejectedAt: formatAlertNow,
+            now: recoveryNow,
+          }),
+          "recovered",
+          "the integrations lifecycle visibly reports recovery after a quiet window",
+        );
+        const renewedFormatNow = new Date(formatAlertNow.getTime() + MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS + 1);
+        for (let index = 0; index < WEBHOOK_REJECTION_ALERT_THRESHOLD; index += 1) {
+          await recordWebhookRejection("brevo", renewedFormatNow);
+        }
+        const renewedFormatAlert = makeFakeTransport();
+        const renewedFormatRun = await runMalformedWebhookAlerts(renewedFormatNow, renewedFormatAlert.transport);
+        cleanup.emailEventKeys.push(...renewedFormatRun.attemptedEventKeys);
+        assert.ok(renewedFormatRun.attemptedEventKeys.length >= 1, "a new sustained episode can alert after the rolling cooldown");
+        assert.ok(renewedFormatAlert.calls.some((call) => call.email === formatAdminEmail), "the new episode notifies administrators again");
+
+        // Four batches in the current 24h window must remain below the
+        // threshold even when four much older batches were previously
+        // recorded in an uninterrupted low-rate stream.
+        await db.update(providerWebhookReceiptsTable).set({
+          rejectedPayloadCount: 0,
+          rejectedPayloadTimes: [],
+          lastRejectedAt: null,
+        }).where(eq(providerWebhookReceiptsTable.provider, "brevo"));
+        const rollingNow = new Date();
+        const expiredBatchAt = new Date(rollingNow.getTime() - 26 * 60 * 60_000);
+        const currentBatchAt = new Date(rollingNow.getTime() - 60 * 60_000);
+        for (let index = 0; index < WEBHOOK_REJECTION_ALERT_THRESHOLD - 1; index += 1) {
+          await recordWebhookRejection("brevo", expiredBatchAt);
+          await recordWebhookRejection("brevo", currentBatchAt);
+        }
+        const rollingBelowThreshold = await deliveryReportStatuses(rollingNow);
+        assert.equal(rollingBelowThreshold.brevo.rejectedPayloadCount, WEBHOOK_REJECTION_ALERT_THRESHOLD - 1);
+        assert.equal(rollingBelowThreshold.brevo.malformedWebhookState, "observing");
+        await recordWebhookRejection("brevo", currentBatchAt);
+        const rollingThreshold = await deliveryReportStatuses(rollingNow);
+        assert.equal(rollingThreshold.brevo.rejectedPayloadCount, WEBHOOK_REJECTION_ALERT_THRESHOLD);
+        assert.equal(rollingThreshold.brevo.malformedWebhookState, "alerted");
+        console.log("✓ malformed webhook alerts are thresholded, private, provider-scoped, rate-limited, and recover visibly");
       }
     }
 

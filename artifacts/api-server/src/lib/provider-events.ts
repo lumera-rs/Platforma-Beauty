@@ -137,6 +137,12 @@ export const DELIVERY_REPORT_GRACE_MINUTES = 30;
 export const WEBHOOK_REJECTION_WINDOW_HOURS = 24;
 /** Prevent malformed traffic from growing monitoring metadata without bound. */
 export const MAX_REJECTED_WEBHOOK_PAYLOADS = 100;
+/**
+ * Require several authenticated malformed batches before paging administrators.
+ * A single bad request can be a provider retry or an unrelated probe; five
+ * batches in the bounded window is a deliberate sustained-schema-drift signal.
+ */
+export const WEBHOOK_REJECTION_ALERT_THRESHOLD = 5;
 
 /**
  * Record that a verified webhook request with at least one parseable event
@@ -160,28 +166,42 @@ export async function recordWebhookReceipt(provider: DeliveryReportProvider, at 
 /**
  * Count one authenticated but malformed provider payload. This is deliberately
  * separate from recordWebhookReceipt: a rejected request must never look like
- * an accepted provider event to freshness monitoring. The counter resets after
- * a quiet window and is capped so provider/schema failures cannot create
- * unbounded metadata.
+ * an accepted provider event to freshness monitoring. We retain only a capped
+ * list of server timestamps, never request contents, so the displayed count
+ * and alert threshold are an actual rolling 24-hour window.
  */
 export async function recordWebhookRejection(provider: DeliveryReportProvider, at = new Date()): Promise<void> {
+  const cutoff = new Date(at.getTime() - WEBHOOK_REJECTION_WINDOW_HOURS * 60 * 60_000).toISOString();
+  const rejectedAt = at.toISOString();
+  const retainedTimes = sql`(
+    select coalesce(jsonb_agg(rejected_at order by rejected_at), '[]'::jsonb)
+    from (
+      select rejected_at
+      from (
+        select value as rejected_at
+        from jsonb_array_elements_text(coalesce(${providerWebhookReceiptsTable.rejectedPayloadTimes}, '[]'::jsonb))
+        where value >= ${cutoff}
+        union all
+        select ${rejectedAt}
+      ) as current_window
+      order by rejected_at desc
+      limit ${MAX_REJECTED_WEBHOOK_PAYLOADS}
+    ) as capped_window
+  )`;
   await db.insert(providerWebhookReceiptsTable)
     .values({
       provider,
       lastEventAt: null,
       rejectedPayloadCount: 1,
+      rejectedPayloadTimes: [rejectedAt],
       lastRejectedAt: at,
       updatedAt: at,
     })
     .onConflictDoUpdate({
       target: providerWebhookReceiptsTable.provider,
       set: {
-        rejectedPayloadCount: sql`case
-          when ${providerWebhookReceiptsTable.lastRejectedAt} is null
-            or ${providerWebhookReceiptsTable.lastRejectedAt} < (${at}::timestamptz - interval '${sql.raw(String(WEBHOOK_REJECTION_WINDOW_HOURS))} hours')
-          then 1
-          else least(${providerWebhookReceiptsTable.rejectedPayloadCount} + 1, ${MAX_REJECTED_WEBHOOK_PAYLOADS})
-        end`,
+        rejectedPayloadCount: sql<number>`jsonb_array_length(${retainedTimes})`,
+        rejectedPayloadTimes: retainedTimes,
         lastRejectedAt: at,
         updatedAt: at,
       },
@@ -195,12 +215,34 @@ export interface DeliveryReportStatus {
   rejectedPayloadCount: number;
   /** Server receipt time of the most recent authenticated malformed payload (ISO). */
   lastRejectedAt: string | null;
+  /** Bounded malformed-webhook lifecycle shown to administrators. */
+  malformedWebhookState: "normal" | "observing" | "alerted" | "recovered";
   /** Most recent automation send on this provider's channel within the window (ISO). */
   lastAutomationSentAt: string | null;
   /** Automation sends on this provider's channel within the window. */
   recentSendCount: number;
   /** True when recent sends exist but no event has arrived since the newest grace-aged send. */
   warning: boolean;
+}
+
+export type MalformedWebhookState = DeliveryReportStatus["malformedWebhookState"];
+
+/**
+ * Classify malformed authenticated webhook traffic without looking at request
+ * contents. A quiet bounded window is explicitly represented as recovery once
+ * this provider has recorded any prior malformed traffic.
+ */
+export function malformedWebhookState(input: {
+  rejectedPayloadCount: number;
+  lastRejectedAt: Date | null;
+  now?: Date;
+}): MalformedWebhookState {
+  if (!input.lastRejectedAt) return "normal";
+  const now = input.now ?? new Date();
+  const rejectionIsCurrent = now.getTime() - input.lastRejectedAt.getTime()
+    <= WEBHOOK_REJECTION_WINDOW_HOURS * 60 * 60_000;
+  if (!rejectionIsCurrent || input.rejectedPayloadCount === 0) return "recovered";
+  return input.rejectedPayloadCount >= WEBHOOK_REJECTION_ALERT_THRESHOLD ? "alerted" : "observing";
 }
 
 /**
@@ -225,6 +267,18 @@ function asDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** Parse only server-generated rejection timestamps from bounded metadata. */
+function rejectionTimes(value: unknown, windowStart: Date, now: Date): Date[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => asDate(entry))
+    .filter((entry): entry is Date => entry != null
+      && entry.getTime() >= windowStart.getTime()
+      && entry.getTime() <= now.getTime())
+    .sort((left, right) => left.getTime() - right.getTime())
+    .slice(-MAX_REJECTED_WEBHOOK_PAYLOADS);
+}
+
 /**
  * Per-provider delivery-report freshness for the admin integrations page.
  * Compares recent automation sends (per channel) with the last accepted
@@ -245,6 +299,7 @@ export async function deliveryReportStatuses(
     provider: providerWebhookReceiptsTable.provider,
     lastEventAt: providerWebhookReceiptsTable.lastEventAt,
     rejectedPayloadCount: providerWebhookReceiptsTable.rejectedPayloadCount,
+    rejectedPayloadTimes: providerWebhookReceiptsTable.rejectedPayloadTimes,
     lastRejectedAt: providerWebhookReceiptsTable.lastRejectedAt,
   }).from(providerWebhookReceiptsTable);
   const sends = await executor.select({
@@ -268,9 +323,7 @@ export async function deliveryReportStatuses(
     const receipt = receipts.find((row) => row.provider === provider);
     const lastEventAt = receipt?.lastEventAt ?? null;
     const lastRejectedAt = asDate(receipt?.lastRejectedAt);
-    const rejectionCount = lastRejectedAt && lastRejectedAt.getTime() >= windowStart.getTime()
-      ? Math.min(Number(receipt?.rejectedPayloadCount ?? 0), MAX_REJECTED_WEBHOOK_PAYLOADS)
-      : 0;
+    const rejectionCount = rejectionTimes(receipt?.rejectedPayloadTimes, windowStart, now).length;
     const channelSends = sendsByChannel.get(channelForProvider[provider]);
     const lastSentAt = asDate(channelSends?.lastSentAt);
     const lastQualifyingSentAt = asDate(channelSends?.lastQualifyingSentAt);
@@ -278,6 +331,11 @@ export async function deliveryReportStatuses(
       lastEventAt: lastEventAt ? lastEventAt.toISOString() : null,
       rejectedPayloadCount: rejectionCount,
       lastRejectedAt: lastRejectedAt ? lastRejectedAt.toISOString() : null,
+      malformedWebhookState: malformedWebhookState({
+        rejectedPayloadCount: rejectionCount,
+        lastRejectedAt,
+        now,
+      }),
       lastAutomationSentAt: lastSentAt ? lastSentAt.toISOString() : null,
       recentSendCount: channelSends?.recentSendCount ?? 0,
       warning: deliveryReportWarning({ lastEventAt, lastQualifyingSentAt }),

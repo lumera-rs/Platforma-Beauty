@@ -16,6 +16,7 @@ export * from './adminCreateEmailCampaignInputSendMode';
 export * from './adminDeliveryReports';
 export * from './adminDeliveryReportsProviders';
 export * from './adminDeliveryReportStatus';
+export * from './adminDeliveryReportStatusMalformedWebhookState';
 export * from './adminGetIntegrationsResponse';
 export * from './adminGetIntegrationsResponseIntegrations';
 export * from './adminGetIntegrationsResponseRedirectUris';

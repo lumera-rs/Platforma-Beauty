@@ -5,10 +5,16 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminDeliveryReportStatusMalformedWebhookState } from './adminDeliveryReportStatusMalformedWebhookState';
 
 export interface AdminDeliveryReportStatus {
   /** @nullable */
   lastEventAt: Date | null;
+  /** @minimum 0 */
+  rejectedPayloadCount: number;
+  /** @nullable */
+  lastRejectedAt: Date | null;
+  malformedWebhookState: AdminDeliveryReportStatusMalformedWebhookState;
   /** @nullable */
   lastAutomationSentAt: Date | null;
   /** @minimum 0 */

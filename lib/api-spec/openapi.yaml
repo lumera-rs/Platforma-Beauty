@@ -5141,10 +5141,13 @@ components:
       type: object
       properties:
         lastEventAt: { type: ["string", "null"], format: date-time }
+        rejectedPayloadCount: { type: number, minimum: 0 }
+        lastRejectedAt: { type: ["string", "null"], format: date-time }
+        malformedWebhookState: { type: string, enum: [normal, observing, alerted, recovered] }
         lastAutomationSentAt: { type: ["string", "null"], format: date-time }
         recentSendCount: { type: number, minimum: 0, multipleOf: 1 }
         warning: { type: boolean }
-      required: [lastEventAt, lastAutomationSentAt, recentSendCount, warning]
+      required: [lastEventAt, rejectedPayloadCount, lastRejectedAt, malformedWebhookState, lastAutomationSentAt, recentSendCount, warning]
     AdminDeliveryReports:
       type: object
       properties:
@@ -5156,7 +5159,8 @@ components:
           required: [brevo, infobip]
         windowHours: { type: number, minimum: 1, multipleOf: 1 }
         graceMinutes: { type: number, minimum: 0, multipleOf: 1 }
-      required: [providers, windowHours, graceMinutes]
+        rejectionAlertThreshold: { type: number, minimum: 1, multipleOf: 1 }
+      required: [providers, windowHours, graceMinutes, rejectionAlertThreshold]
     AdminSmsFallbackReachableAdmin:
       type: object
       properties:

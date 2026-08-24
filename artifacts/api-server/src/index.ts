@@ -22,7 +22,7 @@ import {
 import { runCommunicationArchiveBatch } from "./lib/communication-archive";
 import { registerFatalHandlers } from "./lib/process-lifecycle";
 import { runAutomationWorker } from "./lib/automation-worker";
-import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts } from "./lib/delivery-report-alerts";
+import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts, runMalformedWebhookAlerts } from "./lib/delivery-report-alerts";
 import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
 import { createResilientScheduledJob } from "./lib/scheduler-resilience";
 
@@ -103,6 +103,10 @@ const deliveryReportRecoveryAlerts = createResilientScheduledJob({
   job: "delivery-report-recovery-alerts",
   run: runDeliveryReportRecoveryAlerts,
 });
+const malformedWebhookAlerts = createResilientScheduledJob({
+  job: "malformed-webhook-alerts",
+  run: runMalformedWebhookAlerts,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -113,6 +117,7 @@ const scheduledJobs = [
   automationWorker,
   deliveryReportSilenceAlerts,
   deliveryReportRecoveryAlerts,
+  malformedWebhookAlerts,
 ];
 
 const retryInterval = setInterval(() => {
@@ -164,10 +169,12 @@ void automationWorker.run();
 const deliveryReportAlertInterval = setInterval(() => {
   void deliveryReportSilenceAlerts.run();
   void deliveryReportRecoveryAlerts.run();
+  void malformedWebhookAlerts.run();
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
 void deliveryReportSilenceAlerts.run();
 void deliveryReportRecoveryAlerts.run();
+void malformedWebhookAlerts.run();
 compatibilityImageCleanupInterval.unref();
 void compatibilityImageCleanup.run();
 void communicationArchive.run();
