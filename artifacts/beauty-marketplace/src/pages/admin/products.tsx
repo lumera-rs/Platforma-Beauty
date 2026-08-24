@@ -42,6 +42,7 @@ import { useDebouncedSearch } from "@/hooks/use-debounce";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
 import { extractApiError, parseStrictDecimal, parseStrictInt } from "@/lib/admin-form-utils";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ function ProductFormDialog({
   const createBrand = useAdminCreateBrand();
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
+  const actionGuard = useImmediateActionGuard();
 
   const parents = categories.filter((c) => !c.parentId);
   const [form, setForm] = useState<AdminProductInput>(
@@ -250,6 +252,7 @@ function ProductFormDialog({
 
   const handleCreateCategory = () => {
     if (!newCategoryName.trim()) return;
+    if (!actionGuard.begin("create-category")) return;
     createCategory.mutate(
       { data: { name: newCategoryName.trim(), parentId: newCategoryParent || null } },
       {
@@ -265,14 +268,19 @@ function ProductFormDialog({
           setShowNewCategory(false);
           setNewCategoryName("");
           setNewCategoryParent("");
+          actionGuard.end("create-category");
         },
-        onError: () => toast.error("Greška", { description: "Kategorija nije kreirana." }),
+        onError: () => {
+          toast.error("Greška", { description: "Kategorija nije kreirana." });
+          actionGuard.end("create-category");
+        },
       }
     );
   };
 
   const handleCreateBrand = () => {
     if (!newBrandName.trim()) return;
+    if (!actionGuard.begin("create-brand")) return;
     createBrand.mutate(
       { data: { name: newBrandName.trim() } },
       {
@@ -282,8 +290,12 @@ function ProductFormDialog({
           setForm((f) => ({ ...f, brand: brand.name }));
           setShowNewBrand(false);
           setNewBrandName("");
+          actionGuard.end("create-brand");
         },
-        onError: () => toast.error("Greška", { description: "Brend nije kreiran." }),
+        onError: () => {
+          toast.error("Greška", { description: "Brend nije kreiran." });
+          actionGuard.end("create-brand");
+        },
       }
     );
   };
@@ -352,14 +364,17 @@ function ProductFormDialog({
       weightGrams,
       images: form.images?.length ? form.images : [form.imageUrl],
     };
+    if (!actionGuard.begin("save-product")) return;
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Proizvod je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
         queryClient.invalidateQueries({ queryKey: getAdminListProductsQueryKey() });
         onSaved();
+        actionGuard.end("save-product");
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Proizvod nije sačuvan.") });
+        actionGuard.end("save-product");
       },
     };
     if (editing) updateProduct.mutate({ productId: editing.id, data: payload }, opts);
@@ -388,7 +403,7 @@ function ProductFormDialog({
                 {showNewBrand ? (
                   <div className="flex gap-2">
                     <Input value={newBrandName} onChange={(e) => setNewBrandName(e.target.value)} placeholder="Naziv novog brenda" />
-                    <Button type="button" size="sm" onClick={handleCreateBrand} disabled={createBrand.isPending}>
+                    <Button type="button" size="sm" onClick={handleCreateBrand} disabled={createBrand.isPending || actionGuard.isActive("create-brand")}>
                       {createBrand.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Dodaj"}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setShowNewBrand(false)}><X className="w-4 h-4" /></Button>
@@ -456,7 +471,7 @@ function ProductFormDialog({
                         {parents.map((p) => <SelectItem key={p.id} value={p.id}>Podkategorija: {p.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    <Button type="button" size="sm" onClick={handleCreateCategory} disabled={createCategory.isPending}>
+                    <Button type="button" size="sm" onClick={handleCreateCategory} disabled={createCategory.isPending || actionGuard.isActive("create-category")}>
                       {createCategory.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Kreiraj"}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => setShowNewCategory(false)}><X className="w-4 h-4" /></Button>
@@ -714,7 +729,7 @@ function ProductFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Odustani</Button>
-          <Button onClick={handleSave} disabled={isPending} data-testid="btn-save-product">
+          <Button onClick={handleSave} disabled={isPending || actionGuard.isActive("save-product")} data-testid="btn-save-product">
             {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Sačuvaj proizvod
           </Button>
@@ -759,6 +774,7 @@ export default function AdminProducts() {
   const { data: brands = [] } = useAdminListBrands();
   const deleteProduct = useAdminDeleteProduct();
   const bulkUpdate = useAdminBulkUpdateProducts();
+  const actionGuard = useImmediateActionGuard();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminProduct | null>(null);
@@ -782,6 +798,8 @@ export default function AdminProducts() {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
+    const actionKey = `delete:${deleteTarget.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     deleteProduct.mutate({ productId: deleteTarget.id }, {
       onSuccess: (result) => {
         toast.success(result.active === false && result.id === deleteTarget.id ? "Uklonjeno" : "Obrisano", {
@@ -789,13 +807,18 @@ export default function AdminProducts() {
         });
         invalidate();
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
-      onError: () => toast.error("Greška", { description: "Proizvod nije obrisan." }),
+      onError: () => {
+        toast.error("Greška", { description: "Proizvod nije obrisan." });
+        actionGuard.end(actionKey);
+      },
     });
   };
 
   const runBulk = () => {
     if (!bulkAction || selected.length === 0) return;
+    if (!actionGuard.begin("bulk")) return;
     const payload: Parameters<typeof bulkUpdate.mutate>[0] = {
       data: {
         productIds: selected,
@@ -810,9 +833,11 @@ export default function AdminProducts() {
         invalidate();
         setSelected([]);
         setBulkAction("");
+        actionGuard.end("bulk");
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Masovna izmena nije uspela.") });
+        actionGuard.end("bulk");
       },
     });
   };
@@ -909,7 +934,7 @@ export default function AdminProducts() {
                 </SelectContent>
               </Select>
             )}
-            <Button size="sm" onClick={runBulk} disabled={!bulkAction || bulkUpdate.isPending} data-testid="btn-run-bulk">
+            <Button size="sm" onClick={runBulk} disabled={!bulkAction || bulkUpdate.isPending || actionGuard.isActive("bulk")} data-testid="btn-run-bulk">
               {bulkUpdate.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Primeni
             </Button>
@@ -1066,7 +1091,7 @@ export default function AdminProducts() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Odustani</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteProduct.isPending} data-testid="btn-confirm-delete">
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteProduct.isPending || (deleteTarget ? actionGuard.isActive(`delete:${deleteTarget.id}`) : false)} data-testid="btn-confirm-delete">
               {deleteProduct.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Obriši
             </Button>

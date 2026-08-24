@@ -19,6 +19,7 @@ import {
   getAdminListServiceTemplatesQueryKey,
 } from "@workspace/api-client-react";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 // Local types until the client is updated
 interface ServiceTemplate {
@@ -51,6 +52,7 @@ export default function AdminServiceTemplates() {
   const deleteTemplate = useAdminDeleteServiceTemplate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedSearch(search);
@@ -119,15 +121,18 @@ export default function AdminServiceTemplates() {
       priceMin: priceMinParsed.value,
       priceMax: priceMaxParsed.value,
     };
+    if (!actionGuard.begin("save")) return;
 
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Predložak je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
         invalidate();
         setModalOpen(false);
+        actionGuard.end("save");
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Pokušajte ponovo.") });
+        actionGuard.end("save");
       },
     };
 
@@ -140,15 +145,19 @@ export default function AdminServiceTemplates() {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
+    const actionKey = `delete:${deleteTarget.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     deleteTemplate.mutate({ templateId: deleteTarget.id }, {
       onSuccess: () => {
         toast.success("Obrisano", { description: "Predložak je uklonjen." });
         invalidate();
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
       onError: () => {
         toast.error("Greška", { description: "Nije moguće obrisati predložak." });
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
     });
   };
@@ -286,7 +295,7 @@ export default function AdminServiceTemplates() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={createTemplate?.isPending || updateTemplate?.isPending} data-testid="btn-save-template">
+            <Button onClick={handleSave} disabled={createTemplate?.isPending || updateTemplate?.isPending || actionGuard.isActive("save")} data-testid="btn-save-template">
               {(createTemplate?.isPending || updateTemplate?.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>
@@ -304,7 +313,7 @@ export default function AdminServiceTemplates() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Odustani</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteTemplate?.isPending}>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteTemplate?.isPending || (deleteTarget ? actionGuard.isActive(`delete:${deleteTarget.id}`) : false)}>
               {deleteTemplate?.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Obriši
             </Button>

@@ -35,6 +35,8 @@ type DeleteOutcome = {
 
 async function mockAdminReviewScreen(page: Page, outcome: DeleteOutcome) {
   let listRequestCount = 0;
+  let deleteRequestCount = 0;
+  let nextDeleteHold: Promise<void> | null = null;
   let reviewIsListed = true;
 
   await page.route("**/api/auth/me", async (route) => {
@@ -51,6 +53,10 @@ async function mockAdminReviewScreen(page: Page, outcome: DeleteOutcome) {
     }
 
     if (request.method() === "DELETE") {
+      deleteRequestCount += 1;
+      const hold = nextDeleteHold;
+      nextDeleteHold = null;
+      if (hold) await hold;
       if (outcome.status !== 500) reviewIsListed = false;
 
       if (outcome.failure) {
@@ -77,6 +83,12 @@ async function mockAdminReviewScreen(page: Page, outcome: DeleteOutcome) {
 
   return {
     getListRequestCount: () => listRequestCount,
+    getDeleteRequestCount: () => deleteRequestCount,
+    holdNextDelete: () => {
+      let release = () => undefined;
+      nextDeleteHold = new Promise<void>((resolve) => { release = resolve; });
+      return release;
+    },
   };
 }
 
@@ -147,3 +159,19 @@ for (const outcome of outcomes) {
     }
   });
 }
+
+test("a rapid confirmed deletion sends one request and stays disabled while pending", async ({ page }) => {
+  const screen = await mockAdminReviewScreen(page, outcomes[0]);
+  const remove = page.getByTestId(`btn-delete-${reviewId}`);
+  page.on("dialog", (dialog) => dialog.accept());
+  const release = screen.holdNextDelete();
+
+  await remove.evaluate((element) => {
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+
+  await expect.poll(screen.getDeleteRequestCount).toBe(1);
+  await expect(remove).toBeDisabled();
+  release();
+});

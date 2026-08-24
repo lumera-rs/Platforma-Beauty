@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, Truck, Info, PackageCheck, MapPin, Pencil, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 function formatWeight(grams: number) {
   return grams >= 1000 ? `${(grams / 1000).toLocaleString("sr-RS")} kg` : `${grams} g`;
@@ -31,6 +32,7 @@ function CourierServices() {
   const remove = useAdminDeleteCourierService();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("");
   const [editing, setEditing] = useState<CourierService | null>(null);
@@ -47,23 +49,31 @@ function CourierServices() {
   };
   const createService = () => {
     if (!name.trim()) { toast.error("Greška", { description: "Unesite naziv kurirske službe." }); return; }
+    if (!actionGuard.begin("create")) return;
     create.mutate({ data: { name: name.trim(), trackingUrlTemplate: template.trim() || null, active: true } }, {
-      onSuccess: () => { setName(""); setTemplate(""); invalidate(); toast.success("Kurirska služba je dodata."); },
-      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+      onSuccess: () => { setName(""); setTemplate(""); invalidate(); toast.success("Kurirska služba je dodata."); actionGuard.end("create"); },
+      onError: (error) => { toast.error("Greška", { description: errorMessage(error) }); actionGuard.end("create"); },
     });
   };
   const saveEdit = () => {
     if (!editing || !editName.trim()) return;
+    const actionKey = `save:${editing.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     update.mutate({ courierServiceId: editing.id, data: { name: editName.trim(), trackingUrlTemplate: editTemplate.trim() || null, active: editActive } }, {
-      onSuccess: () => { setEditing(null); invalidate(); toast.success("Kurirska služba je ažurirana."); },
-      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+      onSuccess: () => { setEditing(null); invalidate(); toast.success("Kurirska služba je ažurirana."); actionGuard.end(actionKey); },
+      onError: (error) => { toast.error("Greška", { description: errorMessage(error) }); actionGuard.end(actionKey); },
     });
   };
   const deleteService = (service: CourierService) => {
-    if (!window.confirm(`Obrisati kurirsku službu „${service.name}“? Stare porudžbine će zadržati naziv, ali više neće imati eksterni tracking link.`)) return;
+    const actionKey = `delete:${service.id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    if (!window.confirm(`Obrisati kurirsku službu „${service.name}“? Stare porudžbine će zadržati naziv, ali više neće imati eksterni tracking link.`)) {
+      actionGuard.end(actionKey);
+      return;
+    }
     remove.mutate({ courierServiceId: service.id }, {
-      onSuccess: () => { if (editing?.id === service.id) setEditing(null); invalidate(); toast.success("Kurirska služba je obrisana."); },
-      onError: (error) => toast.error("Greška", { description: errorMessage(error) }),
+      onSuccess: () => { if (editing?.id === service.id) setEditing(null); invalidate(); toast.success("Kurirska služba je obrisana."); actionGuard.end(actionKey); },
+      onError: (error) => { toast.error("Greška", { description: errorMessage(error) }); actionGuard.end(actionKey); },
     });
   };
 
@@ -77,18 +87,18 @@ function CourierServices() {
           <div className="space-y-1"><Label>URL šablon za praćenje</Label><Input value={editTemplate} onChange={(event) => setEditTemplate(event.target.value)} placeholder="https://.../{trackingNumber}" /></div>
         </div>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editActive} onChange={(event) => setEditActive(event.target.checked)} /> Dostupna za nove porudžbine</label>
-        <div className="flex gap-2"><Button size="sm" onClick={saveEdit} disabled={update.isPending}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button><Button size="sm" variant="outline" onClick={() => setEditing(null)}><X className="mr-2 h-4 w-4" />Otkaži</Button></div>
+        <div className="flex gap-2"><Button size="sm" onClick={saveEdit} disabled={update.isPending || actionGuard.isActive(`save:${service.id}`)}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button><Button size="sm" variant="outline" onClick={() => setEditing(null)}><X className="mr-2 h-4 w-4" />Otkaži</Button></div>
       </div> : <div key={service.id} className="flex flex-wrap items-center gap-3 p-4">
         <div className="min-w-52 flex-1"><p className="font-medium">{service.name}</p><p className="break-all text-xs text-muted-foreground">{service.trackingUrlTemplate ?? "Nema eksternog praćenja (lična dostava)"}</p></div>
         {!service.active && <Badge variant="secondary">Neaktivna</Badge>}
         <Button size="sm" variant="outline" onClick={() => beginEdit(service)}><Pencil className="mr-2 h-4 w-4" />Izmeni</Button>
-        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => deleteService(service)} disabled={remove.isPending}><Trash2 className="mr-2 h-4 w-4" />Obriši</Button>
+        <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => deleteService(service)} disabled={remove.isPending || actionGuard.isActive(`delete:${service.id}`)}><Trash2 className="mr-2 h-4 w-4" />Obriši</Button>
       </div>)}
     </div>}
     <div className="grid gap-3 rounded-lg border border-dashed p-4 md:grid-cols-[1fr_2fr_auto] md:items-end">
       <div className="space-y-1"><Label>Naziv nove službe</Label><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="npr. X kurir" data-testid="input-courier-name" /></div>
       <div className="space-y-1"><Label>URL šablon za praćenje</Label><Input value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="https://.../{trackingNumber}" data-testid="input-courier-template" /></div>
-      <Button onClick={createService} disabled={create.isPending} data-testid="btn-add-courier"><Plus className="mr-2 h-4 w-4" />Dodaj kurira</Button>
+      <Button onClick={createService} disabled={create.isPending || actionGuard.isActive("create")} data-testid="btn-add-courier"><Plus className="mr-2 h-4 w-4" />Dodaj kurira</Button>
     </div>
   </div>;
 }
@@ -98,6 +108,7 @@ export default function AdminShipping() {
   const updateConfig = useAdminUpdateShippingConfig();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
 
   const [tiers, setTiers] = useState<ShippingTier[]>([]);
   const [threshold, setThreshold] = useState(0);
@@ -152,6 +163,7 @@ export default function AdminShipping() {
     if (!thresholdParsed.ok) { toast.error("Greška", { description: thresholdParsed.message }); return; }
     const personalPriceParsed = parseStrictInt(personalPriceRaw, { label: "Cena lične dostave", allowNegative: false, allowZero: true });
     if (!personalPriceParsed.ok) { toast.error("Greška", { description: personalPriceParsed.message }); return; }
+    if (!actionGuard.begin("save-config")) return;
     updateConfig.mutate(
       { data: { freeShippingThreshold: thresholdParsed.value, tiers, personalDeliveryEnabled: personalEnabled, personalDeliveryName: personalName, personalDeliveryPrice: personalPriceParsed.value, personalDeliveryDescription: personalDescription } },
       {
@@ -161,9 +173,11 @@ export default function AdminShipping() {
           toast.success("Sačuvano", { description: "Podešavanja dostave su ažurirana." });
           queryClient.invalidateQueries({ queryKey: getAdminGetShippingConfigQueryKey() });
           setDirty(false);
+          actionGuard.end("save-config");
         },
         onError: (err: unknown) => {
           toast.error("Greška", { description: extractApiError(err, "Podešavanja nisu sačuvana.") });
+          actionGuard.end("save-config");
         },
       }
     );
@@ -281,7 +295,7 @@ export default function AdminShipping() {
 
             <div className="flex justify-end gap-3">
               {dirty && <span className="text-xs text-muted-foreground self-center">Imate nesačuvane izmene</span>}
-              <Button onClick={handleSave} disabled={updateConfig.isPending || !dirty} data-testid="btn-save-shipping">
+              <Button onClick={handleSave} disabled={updateConfig.isPending || actionGuard.isActive("save-config") || !dirty} data-testid="btn-save-shipping">
                 {updateConfig.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Sačuvaj podešavanja
               </Button>

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 const initial = {
   audience: "customers" as AdminCreateEmailCampaignInput["audience"],
@@ -32,10 +33,13 @@ export default function AdminEmailMarketing() {
   const createCampaign = useAdminCreateEmailCampaign();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
 
   const submit = () => {
+    if (!actionGuard.begin("campaign-submit")) return;
     if (form.audience === "loyalty" && !form.loyaltyTierId) {
       toast.error("Izaberite loyalty nivo", { description: "Ova publika zahteva konkretan nivo." });
+      actionGuard.end("campaign-submit");
       return;
     }
     const scheduledAt = form.sendMode === "scheduled" && form.scheduledAt ? new Date(form.scheduledAt).toISOString() : null;
@@ -56,8 +60,12 @@ export default function AdminEmailMarketing() {
         });
         queryClient.invalidateQueries({ queryKey: getAdminListEmailCampaignsQueryKey() });
         setForm(initial);
+        actionGuard.end("campaign-submit");
       },
-      onError: () => toast.error("Kampanja nije poslata", { description: "Proverite Brevo sender podešavanje i sadržaj." }),
+      onError: () => {
+        toast.error("Kampanja nije poslata", { description: "Proverite Brevo sender podešavanje i sadržaj." });
+        actionGuard.end("campaign-submit");
+      },
     });
   };
 
@@ -94,7 +102,7 @@ export default function AdminEmailMarketing() {
               </div>
               {form.sendMode === "scheduled" && <div className="space-y-2"><Label>Datum i vreme</Label><Input type="datetime-local" value={form.scheduledAt} onChange={(event) => setForm({ ...form, scheduledAt: event.target.value })} /></div>}
             </div>
-            <Button className="w-full sm:w-auto" onClick={submit} disabled={createCampaign.isPending}>
+            <Button className="w-full sm:w-auto" onClick={submit} disabled={createCampaign.isPending || actionGuard.isActive("campaign-submit")}>
               {createCampaign.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : form.sendMode === "now" ? <Send className="mr-2 h-4 w-4" /> : <CalendarClock className="mr-2 h-4 w-4" />}
               {form.sendMode === "now" ? "Pošalji kampanju" : "Zakaži kampanju"}
             </Button>

@@ -18,6 +18,7 @@ import { Loader2, Plus, Edit2, Trash2, CreditCard, Check, X } from "lucide-react
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 export default function AdminSubscriptions() {
   const { data: plans, isLoading, error } = useAdminListSubscriptionPlans();
@@ -27,6 +28,7 @@ export default function AdminSubscriptions() {
   const { data: currentUserResponse } = useGetCurrentUser();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   const canManagePlans = currentUserResponse?.user?.role === "SUPER_ADMIN";
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -104,6 +106,7 @@ export default function AdminSubscriptions() {
       trialDays: trialParsed.value,
       limits: { ...(formData.limits || {}), employees: empParsed.value, services: srvParsed.value },
     };
+    if (!actionGuard.begin("save")) return;
 
     if (editingPlan) {
       updatePlan.mutate({ planId: editingPlan.id, data: payload }, {
@@ -111,8 +114,12 @@ export default function AdminSubscriptions() {
           toast.success("Sačuvano", { description: "Pretplatnički plan je ažuriran." });
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
+          actionGuard.end("save");
         },
-        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije sačuvan.") }),
+        onError: (err: unknown) => {
+          toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije sačuvan.") });
+          actionGuard.end("save");
+        },
       });
     } else {
       createPlan.mutate({ data: payload }, {
@@ -120,22 +127,35 @@ export default function AdminSubscriptions() {
           toast.success("Kreirano", { description: "Novi plan je uspešno kreiran." });
           queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
           setIsModalOpen(false);
+          actionGuard.end("save");
         },
-        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije kreiran.") }),
+        onError: (err: unknown) => {
+          toast.error("Greška", { description: extractApiError(err, "Pretplatnički plan nije kreiran.") });
+          actionGuard.end("save");
+        },
       });
     }
   };
 
   const handleDelete = (id: string) => {
     if (!canManagePlans) return;
-    if (!window.confirm("Da li ste sigurni da želite obrisati ovaj plan? Saloni na ovom planu će izgubiti pristup.")) return;
+    const actionKey = `delete:${id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    if (!window.confirm("Da li ste sigurni da želite obrisati ovaj plan? Saloni na ovom planu će izgubiti pristup.")) {
+      actionGuard.end(actionKey);
+      return;
+    }
     
     deletePlan.mutate({ planId: id }, {
       onSuccess: () => {
         toast.success("Obrisano", { description: "Plan je uklonjen." });
         queryClient.invalidateQueries({ queryKey: getAdminListSubscriptionPlansQueryKey() });
+        actionGuard.end(actionKey);
       },
-      onError: () => toast.error("Greška", { description: "Pretplatnički plan nije uklonjen." }),
+      onError: () => {
+        toast.error("Greška", { description: "Pretplatnički plan nije uklonjen." });
+        actionGuard.end(actionKey);
+      },
     });
   };
 
@@ -218,7 +238,7 @@ export default function AdminSubscriptions() {
                     <Button variant="outline" className="flex-1 bg-background hover:bg-muted" onClick={() => handleOpenEdit(plan)} disabled={!canManagePlans} data-testid={`btn-edit-${plan.id}`}>
                       <Edit2 className="w-4 h-4 mr-2" /> Izmeni
                     </Button>
-                    <Button variant="outline" size="icon" className="shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground border-border" onClick={() => handleDelete(plan.id)} disabled={!canManagePlans} data-testid={`btn-delete-${plan.id}`}>
+                    <Button variant="outline" size="icon" className="shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground border-border" onClick={() => handleDelete(plan.id)} disabled={!canManagePlans || actionGuard.isActive(`delete:${plan.id}`)} data-testid={`btn-delete-${plan.id}`}>
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -295,7 +315,7 @@ export default function AdminSubscriptions() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={!canManagePlans || createPlan.isPending || updatePlan.isPending}>
+            <Button onClick={handleSave} disabled={!canManagePlans || createPlan.isPending || updatePlan.isPending || actionGuard.isActive("save")}>
               {(createPlan.isPending || updatePlan.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>

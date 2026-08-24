@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 const money = (amount: number) => `${amount.toLocaleString("sr-RS")} RSD`;
 const statusLabel: Record<string, string> = {
@@ -25,20 +26,23 @@ export default function AdminSalonDetail() {
   const updateSalon = useAdminUpdateSalon();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   const [videoUrl, setVideoUrl] = useState("");
 
   useEffect(() => {
     setVideoUrl(salon?.videoUrl ?? "");
   }, [salon?.videoUrl]);
 
-  const update = (data: { isVerified?: boolean; featured?: boolean; topSalon?: boolean; videoUrl?: string | null }) => {
+  const update = (key: string, data: { isVerified?: boolean; featured?: boolean; topSalon?: boolean; videoUrl?: string | null }) => {
+    if (!actionGuard.begin(key)) return;
     updateSalon.mutate({ salonId, data }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getAdminGetSalonQueryKey(salonId) });
         queryClient.invalidateQueries({ queryKey: getAdminListSalonsQueryKey() });
         toast.success("Podaci salona su ažurirani.");
+        actionGuard.end(key);
       },
-      onError: () => toast.error("Podaci salona nisu ažurirani."),
+      onError: () => { toast.error("Podaci salona nisu ažurirani."); actionGuard.end(key); },
     });
   };
 
@@ -73,21 +77,21 @@ export default function AdminSalonDetail() {
             <CardContent className="space-y-5">
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                 <div><p className="font-medium">Verifikovan salon</p><p className="text-sm text-muted-foreground">Bedž je vidljiv klijentima tek kada ga administracija potvrdi.</p></div>
-                <Switch checked={salon.isVerified} onCheckedChange={(checked) => update({ isVerified: checked })} disabled={updateSalon.isPending} />
+                <Switch checked={salon.isVerified} onCheckedChange={(checked) => update("verified", { isVerified: checked })} disabled={actionGuard.isActive("verified")} />
               </div>
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                 <div><p className="font-medium">Istaknuti salon</p><p className="text-sm text-muted-foreground">Administracija odlučuje da li je salon prikazan u istaknutoj kolekciji.</p></div>
-                <Switch checked={salon.featured} onCheckedChange={(checked) => update({ featured: checked })} disabled={updateSalon.isPending} />
+                <Switch checked={salon.featured} onCheckedChange={(checked) => update("featured", { featured: checked })} disabled={actionGuard.isActive("featured")} />
               </div>
               <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
                 <div><p className="font-medium">Top Salon</p><p className="text-sm text-muted-foreground">Administrativni bedž za preporučene salone na platformi.</p></div>
-                <Switch checked={salon.topSalon} onCheckedChange={(checked) => update({ topSalon: checked })} disabled={updateSalon.isPending} />
+                <Switch checked={salon.topSalon} onCheckedChange={(checked) => update("top", { topSalon: checked })} disabled={actionGuard.isActive("top")} />
               </div>
               <div className="space-y-2">
                 <label htmlFor="admin-video-url" className="text-sm font-medium">Video URL</label>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Input id="admin-video-url" type="url" placeholder="https://..." value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} />
-                  <Button type="button" disabled={updateSalon.isPending} onClick={() => update({ videoUrl: videoUrl.trim() || null })}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button>
+                  <Button type="button" disabled={actionGuard.isActive("video")} onClick={() => update("video", { videoUrl: videoUrl.trim() || null })}><Save className="mr-2 h-4 w-4" />Sačuvaj</Button>
                 </div>
               </div>
             </CardContent>

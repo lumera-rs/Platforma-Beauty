@@ -10,6 +10,7 @@ import { Loader2, Search, MessageSquare, Star, Trash2, EyeOff, FilterX } from "l
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 export default function AdminReviews() {
   const [search, setSearch] = useState("");
@@ -31,11 +32,14 @@ export default function AdminReviews() {
   const deleteReview = useAdminDeleteReview();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   
   const mutateFnRef = useRef(updateReview.mutate);
   mutateFnRef.current = updateReview.mutate;
 
   const handleToggleVisibility = (id: string, currentVisible: boolean) => {
+    const actionKey = `visibility:${id}`;
+    if (!actionGuard.begin(actionKey)) return;
     mutateFnRef.current({
       reviewId: id,
       data: { visible: !currentVisible }
@@ -43,20 +47,28 @@ export default function AdminReviews() {
       onSuccess: () => {
         toast.success("Recenzija ažurirana", { description: `Recenzija je sada ${!currentVisible ? 'vidljiva' : 'skrivena'}.` });
         queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+        actionGuard.end(actionKey);
       },
       onError: () => {
         toast.error("Greška", { description: "Nije moguće ažurirati recenziju." });
+        actionGuard.end(actionKey);
       }
     });
   };
 
   const handleDelete = (id: string) => {
-    if (!window.confirm("Trajno obrisati ovu recenziju? Ova akcija se ne može poništiti.")) return;
+    const actionKey = `delete:${id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    if (!window.confirm("Trajno obrisati ovu recenziju? Ova akcija se ne može poništiti.")) {
+      actionGuard.end(actionKey);
+      return;
+    }
     
     deleteReview.mutate({ reviewId: id }, {
       onSuccess: () => {
         toast.success("Obrisano", { description: "Recenzija je uklonjena iz sistema." });
         queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+        actionGuard.end(actionKey);
       },
       onError: (error: unknown) => {
         if ((error as { status?: number }).status === 404) {
@@ -64,6 +76,7 @@ export default function AdminReviews() {
             description: "Klijent je u međuvremenu povukao ovu recenziju. Lista je osvežena.",
           });
           queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+          actionGuard.end(actionKey);
           return;
         }
         if (error instanceof NetworkError) {
@@ -71,9 +84,11 @@ export default function AdminReviews() {
             description: "Veza sa serverom je prekinuta. Lista je osvežena; proverite da li je recenzija obrisana.",
           });
           queryClient.invalidateQueries({ queryKey: getAdminListReviewsQueryKey() });
+          actionGuard.end(actionKey);
           return;
         }
         toast.error("Greška", { description: "Nije moguće obrisati recenziju." });
+        actionGuard.end(actionKey);
       }
     });
   };
@@ -201,12 +216,12 @@ export default function AdminReviews() {
                         id={`vis-${review.id}`}
                         checked={review.visible} 
                         onCheckedChange={() => handleToggleVisibility(review.id, review.visible)}
-                        disabled={updateReview.isPending}
+                        disabled={actionGuard.isActive(`visibility:${review.id}`)}
                         data-testid={`toggle-visibility-${review.id}`}
                       />
                     </div>
                     
-                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/30" onClick={() => handleDelete(review.id)} disabled={deleteReview.isPending} data-testid={`btn-delete-${review.id}`}>
+                    <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/30" onClick={() => handleDelete(review.id)} disabled={actionGuard.isActive(`delete:${review.id}`)} data-testid={`btn-delete-${review.id}`}>
                       <Trash2 className="w-4 h-4 mr-2" /> Obriši trajno
                     </Button>
                   </div>

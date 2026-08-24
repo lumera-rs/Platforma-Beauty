@@ -22,6 +22,7 @@ import {
 import { Loader2, Plus, Edit2, Trash2, Tags, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 const emptyForm: AdminBrandInput = { name: "", description: "", logoUrl: null, active: true };
 
@@ -32,6 +33,7 @@ export default function AdminBrands() {
   const deleteBrand = useAdminDeleteBrand();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedSearch(search);
@@ -54,14 +56,17 @@ export default function AdminBrands() {
   const handleSave = () => {
     if (!form.name.trim()) { toast.error("Greška", { description: "Naziv je obavezan." }); return; }
     if (createBrand.isPending || updateBrand.isPending) return;
+    if (!actionGuard.begin("save")) return;
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Brend je uspešno ${editing ? "ažuriran" : "kreiran"}.` });
         invalidate();
         setModalOpen(false);
+        actionGuard.end("save");
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Brend nije sačuvan.") });
+        actionGuard.end("save");
       },
     };
     if (editing) updateBrand.mutate({ brandId: editing.id, data: form }, opts);
@@ -70,6 +75,8 @@ export default function AdminBrands() {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
+    const actionKey = `delete:${deleteTarget.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     deleteBrand.mutate({ brandId: deleteTarget.id }, {
       onSuccess: (result) => {
         toast.success(result.active ? "Deaktivirano" : "Obrisano", {
@@ -79,8 +86,12 @@ export default function AdminBrands() {
         });
         invalidate();
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
-      onError: () => toast.error("Greška", { description: "Brend nije obrisan." }),
+      onError: () => {
+        toast.error("Greška", { description: "Brend nije obrisan." });
+        actionGuard.end(actionKey);
+      },
     });
   };
 
@@ -182,7 +193,7 @@ export default function AdminBrands() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={createBrand.isPending || updateBrand.isPending} data-testid="btn-save-brand">
+            <Button onClick={handleSave} disabled={createBrand.isPending || updateBrand.isPending || actionGuard.isActive("save")} data-testid="btn-save-brand">
               {(createBrand.isPending || updateBrand.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>
@@ -204,7 +215,7 @@ export default function AdminBrands() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Odustani</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteBrand.isPending} data-testid="btn-confirm-delete-brand">
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteBrand.isPending || (deleteTarget ? actionGuard.isActive(`delete:${deleteTarget.id}`) : false)} data-testid="btn-confirm-delete-brand">
               {deleteBrand.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Obriši
             </Button>

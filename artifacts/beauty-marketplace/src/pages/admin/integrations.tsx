@@ -8,6 +8,7 @@ import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
@@ -35,6 +36,7 @@ export default function AdminIntegrations() {
   const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {} });
   const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
+  const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
   const freshnessRefreshController = useRef<AbortController | null>(null);
@@ -565,7 +567,7 @@ export default function AdminIntegrations() {
             </div>;
           })()}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg bg-muted/30 p-3 space-y-2"><Label>{integration === "sms" ? "Broj za test SMS" : "E-mail za test poruku"}</Label><Input value={testRecipient[integration]} onChange={(event) => setTestRecipient({ ...testRecipient, [integration]: event.target.value })} placeholder={integration === "sms" ? "+381..." : "admin@vasdomen.rs"} /></div>}
-          <div className="flex flex-wrap gap-2"><Button onClick={() => save(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Čuvanje nije uspelo."))}><CheckCircle2 className="mr-2 h-4 w-4" />Sačuvaj</Button><Button variant="outline" onClick={() => test(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Test nije uspeo."))}><Send className="mr-2 h-4 w-4" />{integration === "sms" ? "Pošalji test SMS" : integration === "brevo" ? "Pošalji test e-mail" : "Testiraj konfiguraciju"}</Button></div>
+          <div className="flex flex-wrap gap-2"><Button onClick={() => { const key = `save:${integration}`; if (!actionGuard.begin(key)) return; void save(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Čuvanje nije uspelo.")).finally(() => actionGuard.end(key)); }} disabled={actionGuard.isActive(`save:${integration}`)}><CheckCircle2 className="mr-2 h-4 w-4" />Sačuvaj</Button><Button variant="outline" onClick={() => { const key = `test:${integration}`; if (!actionGuard.begin(key)) return; void test(integration).catch((error) => toast.error(error instanceof Error ? error.message : "Test nije uspeo.")).finally(() => actionGuard.end(key)); }} disabled={actionGuard.isActive(`test:${integration}`)}><Send className="mr-2 h-4 w-4" />{integration === "sms" ? "Pošalji test SMS" : integration === "brevo" ? "Pošalji test e-mail" : "Testiraj konfiguraciju"}</Button></div>
         </section>;
       })}</div>
       <section className="rounded-xl border bg-card p-6 shadow-sm"><div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-primary" /><div><h2 className="text-xl font-semibold">SMS podsetnik · Scheduled Job</h2><p className="text-sm text-muted-foreground">Status: <span className="font-medium text-slate-600">Platforma ne prijavljuje ovaj status aplikaciji</span></p></div></div><ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">{data.smsReminder.instructions.map((item) => <li key={item}>{item}</li>)}</ol><div className="mt-4 rounded-lg bg-muted p-3 font-mono text-sm">{data.smsReminder.command}</div></section>

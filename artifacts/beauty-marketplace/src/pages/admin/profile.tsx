@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 type PhoneVerificationResponse = {
   error?: string;
@@ -22,12 +23,14 @@ export default function AdminProfile() {
   const [phone, setPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneBusy, setPhoneBusy] = useState(false);
+  const actionGuard = useImmediateActionGuard();
 
   useEffect(() => {
     if (userResponse?.user) setPhone(userResponse.user.phone ?? "");
   }, [userResponse?.user]);
 
   const requestPhoneCode = async () => {
+    if (!actionGuard.begin("request-phone-code")) return;
     setPhoneBusy(true);
     try {
       const response = await fetch("/api/auth/phone-verification/request", {
@@ -48,10 +51,12 @@ export default function AdminProfile() {
       toast.error("Kod nije poslat", { description: "Pokušajte ponovo." });
     } finally {
       setPhoneBusy(false);
+      actionGuard.end("request-phone-code");
     }
   };
 
   const confirmPhone = async () => {
+    if (!actionGuard.begin("confirm-phone")) return;
     setPhoneBusy(true);
     try {
       const response = await fetch("/api/auth/phone-verification/confirm", {
@@ -70,6 +75,7 @@ export default function AdminProfile() {
       toast.error("Broj nije potvrđen", { description: "Pokušajte ponovo." });
     } finally {
       setPhoneBusy(false);
+      actionGuard.end("confirm-phone");
     }
   };
 
@@ -129,10 +135,10 @@ export default function AdminProfile() {
                       onChange={(event) => setPhoneCode(event.target.value)}
                     />
                   </div>
-                  <Button type="button" variant="outline" disabled={phoneBusy} onClick={requestPhoneCode}>
+                  <Button type="button" variant="outline" disabled={phoneBusy || actionGuard.isActive("request-phone-code")} onClick={requestPhoneCode}>
                     Pošalji kod
                   </Button>
-                  <Button type="button" disabled={phoneBusy || !phoneCode} onClick={confirmPhone}>
+                  <Button type="button" disabled={phoneBusy || actionGuard.isActive("confirm-phone") || !phoneCode} onClick={confirmPhone}>
                     Potvrdi broj
                   </Button>
                 </div>

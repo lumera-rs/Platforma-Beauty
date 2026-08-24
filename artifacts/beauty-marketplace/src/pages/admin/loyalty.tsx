@@ -18,6 +18,7 @@ import { Loader2, Plus, Edit2, Trash2, Crown, ChevronRight, XCircle } from "luci
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { extractApiError, parseStrictInt } from "@/lib/admin-form-utils";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 export default function AdminLoyalty() {
   const { data: tiers, isLoading, error } = useAdminListLoyaltyTiers();
@@ -27,6 +28,7 @@ export default function AdminLoyalty() {
   const { data: currentUserResponse } = useGetCurrentUser();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   const canManageLoyalty = currentUserResponse?.user?.role === "SUPER_ADMIN";
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -114,6 +116,7 @@ export default function AdminLoyalty() {
       subscriptionDiscountPercent: subDiscParsed.value,
       productDiscountPercent: prodDiscParsed.value,
     };
+    if (!actionGuard.begin("save")) return;
 
     if (editingTier) {
       updateTier.mutate({ tierId: editingTier.id, data: payload }, {
@@ -121,8 +124,12 @@ export default function AdminLoyalty() {
           toast.success("Sačuvano", { description: "Loyalty nivo je uspešno ažuriran." });
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
+          actionGuard.end("save");
         },
-        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije sačuvan.") }),
+        onError: (err: unknown) => {
+          toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije sačuvan.") });
+          actionGuard.end("save");
+        },
       });
     } else {
       createTier.mutate({ data: payload }, {
@@ -130,22 +137,35 @@ export default function AdminLoyalty() {
           toast.success("Kreirano", { description: "Novi loyalty nivo je uspešno kreiran." });
           queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
           setIsModalOpen(false);
+          actionGuard.end("save");
         },
-        onError: (err: unknown) => toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije kreiran.") }),
+        onError: (err: unknown) => {
+          toast.error("Greška", { description: extractApiError(err, "Loyalty nivo nije kreiran.") });
+          actionGuard.end("save");
+        },
       });
     }
   };
 
   const handleDelete = (id: string) => {
     if (!canManageLoyalty) return;
-    if (!window.confirm("Da li ste sigurni da želite obrisati ovaj nivo? Ovo može uticati na salone koji su trenutno u ovom nivou.")) return;
+    const actionKey = `delete:${id}`;
+    if (!actionGuard.begin(actionKey)) return;
+    if (!window.confirm("Da li ste sigurni da želite obrisati ovaj nivo? Ovo može uticati na salone koji su trenutno u ovom nivou.")) {
+      actionGuard.end(actionKey);
+      return;
+    }
     
     deleteTier.mutate({ tierId: id }, {
       onSuccess: () => {
         toast.success("Obrisano", { description: "Loyalty nivo je uklonjen." });
         queryClient.invalidateQueries({ queryKey: getAdminListLoyaltyTiersQueryKey() });
+        actionGuard.end(actionKey);
       },
-      onError: () => toast.error("Greška", { description: "Loyalty nivo nije uklonjen." }),
+      onError: () => {
+        toast.error("Greška", { description: "Loyalty nivo nije uklonjen." });
+        actionGuard.end(actionKey);
+      },
     });
   };
 
@@ -219,7 +239,7 @@ export default function AdminLoyalty() {
                     <Button variant="outline" size="sm" className="flex-1 lg:flex-none justify-start" onClick={() => handleOpenEdit(tier)} disabled={!canManageLoyalty} data-testid={`btn-edit-${tier.id}`}>
                       <Edit2 className="w-4 h-4 mr-2 text-muted-foreground" /> Izmeni
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1 lg:flex-none justify-start text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(tier.id)} disabled={!canManageLoyalty} data-testid={`btn-delete-${tier.id}`}>
+                    <Button variant="outline" size="sm" className="flex-1 lg:flex-none justify-start text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(tier.id)} disabled={!canManageLoyalty || actionGuard.isActive(`delete:${tier.id}`)} data-testid={`btn-delete-${tier.id}`}>
                       <Trash2 className="w-4 h-4 mr-2" /> Obriši
                     </Button>
                   </div>
@@ -319,7 +339,7 @@ export default function AdminLoyalty() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={!canManageLoyalty || createTier.isPending || updateTier.isPending}>
+            <Button onClick={handleSave} disabled={!canManageLoyalty || createTier.isPending || updateTier.isPending || actionGuard.isActive("save")}>
               {(createTier.isPending || updateTier.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj Nivo
             </Button>

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Search, Store, Building2, MapPin, CheckCircle, Crown, FilterX, BadgeCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedSearch } from "@/hooks/use-debounce";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 export default function AdminSalons() {
   const [search, setSearch] = useState("");
@@ -43,11 +44,14 @@ export default function AdminSalons() {
   const updateSalon = useAdminUpdateSalon();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
   
   const mutateFnRef = useRef(updateSalon.mutate);
   mutateFnRef.current = updateSalon.mutate;
 
   const handleToggle = (id: string, field: 'active' | 'featured' | 'isVerified' | 'topSalon', currentValue: boolean) => {
+    const actionKey = `${id}:${field}`;
+    if (!actionGuard.begin(actionKey)) return;
     mutateFnRef.current({
       salonId: id,
       data: { [field]: !currentValue }
@@ -55,9 +59,11 @@ export default function AdminSalons() {
       onSuccess: () => {
         toast.success("Salon uspešno ažuriran", { description: "Status salona je promenjen." });
         queryClient.invalidateQueries({ queryKey: getAdminListSalonsQueryKey() });
+        actionGuard.end(actionKey);
       },
       onError: () => {
         toast.error("Greška", { description: "Nije moguće ažurirati salon." });
+        actionGuard.end(actionKey);
       }
     });
   };
@@ -197,7 +203,7 @@ export default function AdminSalons() {
                           <Switch 
                             checked={salon.active} 
                             onCheckedChange={() => handleToggle(salon.id, 'active', salon.active)}
-                            disabled={updateSalon.isPending}
+                            disabled={actionGuard.isActive(`${salon.id}:active`)}
                             data-testid={`toggle-active-${salon.id}`}
                           />
                         </div>
@@ -207,7 +213,7 @@ export default function AdminSalons() {
                           <Switch
                             checked={salon.featured}
                             onCheckedChange={() => handleToggle(salon.id, 'featured', salon.featured)}
-                            disabled={updateSalon.isPending}
+                            disabled={actionGuard.isActive(`${salon.id}:featured`)}
                             aria-label={`Izdvoji salon ${salon.name}`}
                             data-testid={`toggle-featured-${salon.id}`}
                           />
@@ -218,7 +224,7 @@ export default function AdminSalons() {
                           <Switch
                             checked={salon.topSalon}
                             onCheckedChange={() => handleToggle(salon.id, 'topSalon', salon.topSalon)}
-                            disabled={updateSalon.isPending}
+                            disabled={actionGuard.isActive(`${salon.id}:topSalon`)}
                             aria-label={`Označi ${salon.name} kao Top Salon`}
                             data-testid={`toggle-top-salon-${salon.id}`}
                           />
@@ -229,7 +235,7 @@ export default function AdminSalons() {
                           <Switch
                             checked={salon.isVerified}
                             onCheckedChange={() => handleToggle(salon.id, 'isVerified', salon.isVerified)}
-                            disabled={updateSalon.isPending}
+                            disabled={actionGuard.isActive(`${salon.id}:isVerified`)}
                             aria-label={`Verifikuj salon ${salon.name}`}
                             data-testid={`toggle-verified-${salon.id}`}
                           />

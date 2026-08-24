@@ -29,6 +29,7 @@ import { Loader2, Plus, Edit2, Trash2, FolderTree, ArrowUp, ArrowDown, CornerDow
 import { useToast } from "@/hooks/use-toast";
 import { OptimizedImage } from "@/components/optimized-image";
 import { uploadOptimizedImage } from "@/lib/media-upload";
+import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
 const emptyForm: AdminProductCategoryInput & { sortOrderRaw: string } = { name: "", parentId: null, sortOrder: 0, sortOrderRaw: "0", icon: null, imageUrl: null, active: true };
 
@@ -41,6 +42,7 @@ export default function AdminCategories() {
   const updateServiceCategory = useAdminUpdateServiceCategory();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const actionGuard = useImmediateActionGuard();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminProductCategory | null>(null);
@@ -62,6 +64,8 @@ export default function AdminCategories() {
   const serviceImageValue = (category: AdminServiceCategory) => serviceImageDrafts[category.id] ?? category.fallbackImageUrl ?? "";
 
   const saveServiceImage = async (category: AdminServiceCategory) => {
+    const actionKey = `service-image:${category.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     setSavingServiceCategoryId(category.id);
     try {
       await updateServiceCategory.mutateAsync({
@@ -79,6 +83,7 @@ export default function AdminCategories() {
       toast.error("Slika nije sačuvana", { description: extractApiError(err, "Pokušajte ponovo.") });
     } finally {
       setSavingServiceCategoryId(null);
+      actionGuard.end(actionKey);
     }
   };
 
@@ -143,14 +148,17 @@ export default function AdminCategories() {
     const data: AdminProductCategoryInput = { ...form, sortOrder: sortParsed.value };
     const isPending = createCategory.isPending || updateCategory.isPending;
     if (isPending) return;
+    if (!actionGuard.begin("save")) return;
     const opts = {
       onSuccess: () => {
         toast.success(editing ? "Sačuvano" : "Kreirano", { description: `Kategorija je uspešno ${editing ? "ažurirana" : "kreirana"}.` });
         invalidate();
         setModalOpen(false);
+        actionGuard.end("save");
       },
       onError: (err: unknown) => {
         toast.error("Greška", { description: extractApiError(err, "Kategorija nije sačuvana.") });
+        actionGuard.end("save");
       },
     };
     if (editing) updateCategory.mutate({ categoryId: editing.id, data }, opts);
@@ -159,30 +167,41 @@ export default function AdminCategories() {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
+    const actionKey = `delete:${deleteTarget.id}`;
+    if (!actionGuard.begin(actionKey)) return;
     deleteCategory.mutate({ categoryId: deleteTarget.id }, {
       onSuccess: () => {
         toast.success("Obrisano", { description: "Kategorija je uklonjena." });
         invalidate();
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
       onError: (err: unknown) => {
         toast.error("Nije moguće obrisati", { description: extractApiError(err, "Kategorija nije obrisana.") });
         setDeleteTarget(null);
+        actionGuard.end(actionKey);
       },
     });
   };
 
-  const move = (cat: AdminProductCategory, dir: -1 | 1) => {
+  const move = async (cat: AdminProductCategory, dir: -1 | 1) => {
     const siblings = cat.parentId ? childrenOf(cat.parentId) : parents;
     const idx = siblings.findIndex((s) => s.id === cat.id);
     const swap = siblings[idx + dir];
     if (!swap) return;
-    Promise.all([
-      updateCategory.mutateAsync({ categoryId: cat.id, data: { sortOrder: swap.sortOrder } }),
-      updateCategory.mutateAsync({ categoryId: swap.id, data: { sortOrder: cat.sortOrder } }),
-    ])
-      .then(() => invalidate())
-      .catch(() => toast.error("Greška", { description: "Redosled nije promenjen." }));
+    const actionKey = `reorder:${cat.parentId ?? "root"}`;
+    if (!actionGuard.begin(actionKey)) return;
+    try {
+      await Promise.all([
+        updateCategory.mutateAsync({ categoryId: cat.id, data: { sortOrder: swap.sortOrder } }),
+        updateCategory.mutateAsync({ categoryId: swap.id, data: { sortOrder: cat.sortOrder } }),
+      ]);
+      invalidate();
+    } catch {
+      toast.error("Greška", { description: "Redosled nije promenjen." });
+    } finally {
+      actionGuard.end(actionKey);
+    }
   };
 
   const CategoryRow = ({ cat, isChild }: { cat: AdminProductCategory; isChild: boolean }) => (
@@ -198,10 +217,10 @@ export default function AdminCategories() {
         <p className="text-xs text-muted-foreground">{cat.productCount} proizvoda{!cat.active ? " · neaktivna" : ""}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => move(cat, -1)} title="Pomeri gore">
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => void move(cat, -1)} title="Pomeri gore" disabled={actionGuard.isActive(`reorder:${cat.parentId ?? "root"}`)}>
           <ArrowUp className="w-3.5 h-3.5 text-muted-foreground" />
         </Button>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => move(cat, 1)} title="Pomeri dole">
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => void move(cat, 1)} title="Pomeri dole" disabled={actionGuard.isActive(`reorder:${cat.parentId ?? "root"}`)}>
           <ArrowDown className="w-3.5 h-3.5 text-muted-foreground" />
         </Button>
         {!isChild && (
@@ -304,7 +323,7 @@ export default function AdminCategories() {
                   <Button
                     className="w-full sm:w-auto"
                     onClick={() => void saveServiceImage(category)}
-                    disabled={savingServiceCategoryId === category.id || uploadingServiceCategoryId === category.id}
+                    disabled={savingServiceCategoryId === category.id || uploadingServiceCategoryId === category.id || actionGuard.isActive(`service-image:${category.id}`)}
                     data-testid={`service-category-fallback-save-${category.id}`}
                   >
                     {savingServiceCategoryId === category.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -382,7 +401,7 @@ export default function AdminCategories() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Odustani</Button>
-             <Button onClick={handleSave} disabled={createCategory.isPending || updateCategory.isPending || uploadingProductCategoryImage} data-testid="btn-save-category">
+             <Button onClick={handleSave} disabled={createCategory.isPending || updateCategory.isPending || uploadingProductCategoryImage || actionGuard.isActive("save")} data-testid="btn-save-category">
               {(createCategory.isPending || updateCategory.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj
             </Button>
@@ -404,7 +423,7 @@ export default function AdminCategories() {
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Odustani</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteCategory.isPending} data-testid="btn-confirm-delete-category">
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteCategory.isPending || (deleteTarget ? actionGuard.isActive(`delete:${deleteTarget.id}`) : false)} data-testid="btn-confirm-delete-category">
               {deleteCategory.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Obriši
             </Button>
