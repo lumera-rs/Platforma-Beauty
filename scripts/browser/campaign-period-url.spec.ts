@@ -192,7 +192,17 @@ async function createFixture(): Promise<Fixture> {
       { tag: "current-transition-day", at: new Date("2026-03-29T01:30:00.000Z"), date: "2026-03-29" },
       { tag: "current-after-transition", at: new Date("2026-03-30T12:00:00.000Z"), date: "2026-03-30" },
     ] as const;
-    for (const event of springEvents) {
+    // Keep a second, deliberately different window around the Europe/Belgrade
+    // autumn rollback. Shared-link regressions must preserve this local
+    // calendar range too, without weakening the existing spring coverage.
+    const autumnEvents = [
+      { tag: "autumn-previous-first", at: new Date("2026-10-21T12:00:00.000Z"), date: "2026-10-21" },
+      { tag: "autumn-previous-last", at: new Date("2026-10-23T12:00:00.000Z"), date: "2026-10-23" },
+      { tag: "autumn-current-before-transition", at: new Date("2026-10-24T12:00:00.000Z"), date: "2026-10-24" },
+      { tag: "autumn-current-transition-day", at: new Date("2026-10-25T01:30:00.000Z"), date: "2026-10-25" },
+      { tag: "autumn-current-after-transition", at: new Date("2026-10-26T12:00:00.000Z"), date: "2026-10-26" },
+    ] as const;
+    for (const event of [...springEvents, ...autumnEvents]) {
       const [appointment] = await db.insert(appointmentsTable).values({
         salonId: salon.id,
         salonCustomerId: customer.id,
@@ -583,6 +593,80 @@ test.describe("shared campaign period links restore the picked window", () => {
       const reloadedOverviewPayload = await reloadedOverviewResponseValue.json() as Array<Record<string, any>>;
       expect(reloadedOverviewPayload.find((item) => item.ruleId === fixture.ruleId)).toMatchObject(expectedPayload);
       const reloadedDetailResponseValue = await reloadedDetailResponse;
+      expect(new URL(reloadedDetailResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      expect(await reloadedDetailResponseValue.json()).toMatchObject(expectedPayload);
+      await assertRestoredView();
+    });
+  });
+
+  test.describe("Europe/Belgrade autumn-rollback shared links", () => {
+    test.use({ timezoneId: "Europe/Belgrade" });
+
+    test("restores the exact custom range and current/previous totals after reload", async ({ page }) => {
+      await page.clock.install({ time: new Date("2026-10-27T12:00:00.000Z") });
+      await signInAsFixtureOwner(page, fixture);
+
+      const expected = { period: null, from: "2026-10-24", to: "2026-10-26" };
+      const sharedStatsUrl = `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}&rule=${fixture.ruleId}`;
+      const expectedPayload = {
+        totalRuns: 3,
+        attributedAppointments: 3,
+        emailSentCount: 3,
+        emailDeliveredCount: 3,
+        previous: {
+          attributedAppointments: 2,
+          emailDeliveredCount: 2,
+        },
+      };
+
+      const overviewResponse = nextOverviewStatsResponse(page, expected);
+      const detailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+      await page.goto(sharedStatsUrl);
+
+      const overviewResponseValue = await overviewResponse;
+      expect(overviewResponseValue.status()).toBe(200);
+      expect(new URL(overviewResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      const overviewPayload = await overviewResponseValue.json() as Array<Record<string, any>>;
+      expect(overviewPayload.find((item) => item.ruleId === fixture.ruleId)).toMatchObject(expectedPayload);
+      const detailResponseValue = await detailResponse;
+      expect(detailResponseValue.status()).toBe(200);
+      expect(new URL(detailResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      expect(await detailResponseValue.json()).toMatchObject(expectedPayload);
+
+      const expectedRangeLabel = /24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./;
+      const assertRestoredView = async () => {
+        await expect(page).toHaveURL(
+          `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}&rule=${fixture.ruleId}`,
+        );
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+        await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+          .toHaveText(expectedRangeLabel);
+        await expect(dialog.getByTestId("stats-period-selector").getByTestId("period-custom"))
+          .toHaveText(expectedRangeLabel);
+        await expect(dialog.getByTestId("stats-period-status")).toContainText("24. 10. 2026.");
+        await expect(dialog.getByTestId("stats-period-status")).toContainText("26. 10. 2026.");
+        await expect(page.getByTestId(`overview-row-${fixture.ruleId}`).locator("td").nth(1))
+          .toContainText("Poslato: 3");
+        await expect(page.getByTestId(`overview-row-${fixture.ruleId}`).locator("td").nth(1))
+          .toContainText("Isporučeno: 3");
+        await expect(dialog.getByTestId("funnel-email")).toContainText("Isporučeno: 3");
+        await expect(dialog.getByTestId("stats-trend-appointments")).toContainText("+50%");
+        await expect(dialog.getByTestId("stats-trend-email-delivered")).toContainText("+50%");
+      };
+      await assertRestoredView();
+
+      const reloadedOverviewResponse = nextOverviewStatsResponse(page, expected);
+      const reloadedDetailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+      await page.reload();
+
+      const reloadedOverviewResponseValue = await reloadedOverviewResponse;
+      expect(reloadedOverviewResponseValue.status()).toBe(200);
+      expect(new URL(reloadedOverviewResponseValue.url()).searchParams.get("compare")).toBe("previous");
+      const reloadedOverviewPayload = await reloadedOverviewResponseValue.json() as Array<Record<string, any>>;
+      expect(reloadedOverviewPayload.find((item) => item.ruleId === fixture.ruleId)).toMatchObject(expectedPayload);
+      const reloadedDetailResponseValue = await reloadedDetailResponse;
+      expect(reloadedDetailResponseValue.status()).toBe(200);
       expect(new URL(reloadedDetailResponseValue.url()).searchParams.get("compare")).toBe("previous");
       expect(await reloadedDetailResponseValue.json()).toMatchObject(expectedPayload);
       await assertRestoredView();
