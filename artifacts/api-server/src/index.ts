@@ -25,6 +25,7 @@ import { runAutomationWorker } from "./lib/automation-worker";
 import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts, runMalformedWebhookAlerts } from "./lib/delivery-report-alerts";
 import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
 import { createResilientScheduledJob } from "./lib/scheduler-resilience";
+import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 
 const rawPort = process.env["PORT"];
 
@@ -103,6 +104,11 @@ const deliveryReportRecoveryAlerts = createResilientScheduledJob({
   job: "delivery-report-recovery-alerts",
   run: runDeliveryReportRecoveryAlerts,
 });
+
+const brevoWebhookCoverageMonitor = createResilientScheduledJob({
+  job: "brevo-webhook-coverage-monitor",
+  run: runBrevoWebhookCoverageMonitor,
+});
 const malformedWebhookAlerts = createResilientScheduledJob({
   job: "malformed-webhook-alerts",
   run: runMalformedWebhookAlerts,
@@ -117,6 +123,7 @@ const scheduledJobs = [
   automationWorker,
   deliveryReportSilenceAlerts,
   deliveryReportRecoveryAlerts,
+  brevoWebhookCoverageMonitor,
   malformedWebhookAlerts,
 ];
 
@@ -169,11 +176,13 @@ void automationWorker.run();
 const deliveryReportAlertInterval = setInterval(() => {
   void deliveryReportSilenceAlerts.run();
   void deliveryReportRecoveryAlerts.run();
+  void brevoWebhookCoverageMonitor.run();
   void malformedWebhookAlerts.run();
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
 void deliveryReportSilenceAlerts.run();
 void deliveryReportRecoveryAlerts.run();
+void brevoWebhookCoverageMonitor.run();
 void malformedWebhookAlerts.run();
 compatibilityImageCleanupInterval.unref();
 void compatibilityImageCleanup.run();

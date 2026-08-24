@@ -68,7 +68,7 @@ export async function resolveWebhookSecret(provider: WebhookProvider): Promise<s
  * Infobip notifyUrl is sent to an external provider and must not expose a
  * preview endpoint as the production delivery destination.
  */
-function deploymentPublicOrigin(): string | null {
+export function deploymentPublicOrigin(): string | null {
   const configured = process.env["APP_BASE_URL"]?.trim();
   if (!configured) return null;
 

@@ -17,12 +17,15 @@ export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth
  *     passed)
  *   - brevoRegistrationMissingEvents — the last provider-verified list of
  *     delivery event groups missing from an otherwise matching Brevo webhook
+ *   - brevoRegistrationCoverageCheckedAt — newest successful background
+ *     provider observation, used to prevent an older check overwriting it
  * The reminder is pending while changedAt exists and verifiedAt is older.
  */
 const WEBHOOK_MARKER_KEYS = [
   "webhookSecretChangedAt",
   "webhookVerifiedAt",
   "brevoRegistrationMissingEvents",
+  "brevoRegistrationCoverageCheckedAt",
 ] as const;
 type WebhookMarkerKey = (typeof WEBHOOK_MARKER_KEYS)[number];
 type WebhookTimestampMarkerKey = Exclude<WebhookMarkerKey, "brevoRegistrationMissingEvents">;
@@ -241,7 +244,12 @@ async function integrationMarker(integration: IntegrationName, settingKey: Webho
   return Number.isNaN(at.getTime()) ? null : at;
 }
 
-async function setIntegrationMetadata(integration: IntegrationName, settingKey: WebhookMarkerKey, value: string, updatedByUserId: string) {
+async function setIntegrationMetadata(
+  integration: IntegrationName,
+  settingKey: WebhookMarkerKey,
+  value: string,
+  updatedByUserId: string | null,
+) {
   await db.insert(integrationSettingsTable).values({
     integration, settingKey, encryptedValue: encrypt(value), enabled: true, updatedByUserId,
   }).onConflictDoUpdate({
@@ -274,14 +282,88 @@ export async function markWebhookReconfirmed(integration: "sms" | "brevo", updat
 }
 
 /** Persist actionable missing Brevo registration coverage so the admin card
- * keeps the exact repair instruction after the page is reopened. */
-export async function markBrevoRegistrationIncomplete(missingEvents: string[], updatedByUserId: string) {
+ * keeps the exact repair instruction after the page is reopened. The returned
+ * episode key stays stable for an unchanged incident, but changes after a
+ * healthy check clears it or the missing groups change. */
+export async function markBrevoRegistrationIncomplete(
+  missingEvents: string[],
+  updatedByUserId: string | null = null,
+  observedAt?: Date,
+): Promise<string | null> {
   const normalized = [...new Set(missingEvents.filter((event) => typeof event === "string" && event.trim()))];
   if (!normalized.length) {
     await clearBrevoRegistrationIncomplete();
-    return;
+    return null;
   }
-  await setIntegrationMetadata("brevo", "brevoRegistrationMissingEvents", JSON.stringify(normalized), updatedByUserId);
+  return db.transaction(async (tx) => {
+    // Scheduler processes can overlap during a rollout. Serialize the state
+    // transition so they share one durable alert episode instead of creating
+    // parallel email keys for the same provider finding.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:brevo-registration-coverage`}))`);
+    const [current] = await tx.select({
+      encryptedValue: integrationSettingsTable.encryptedValue,
+      updatedAt: integrationSettingsTable.updatedAt,
+    }).from(integrationSettingsTable).where(and(
+      eq(integrationSettingsTable.integration, "brevo"),
+      eq(integrationSettingsTable.settingKey, "brevoRegistrationMissingEvents"),
+    )).limit(1);
+    if (observedAt) {
+      const [lastCheck] = await tx.select({
+        encryptedValue: integrationSettingsTable.encryptedValue,
+      }).from(integrationSettingsTable).where(and(
+        eq(integrationSettingsTable.integration, "brevo"),
+        eq(integrationSettingsTable.settingKey, "brevoRegistrationCoverageCheckedAt"),
+      )).limit(1);
+      if (lastCheck) {
+        try {
+          const previousObservation = new Date(decrypt(lastCheck.encryptedValue));
+          if (!Number.isNaN(previousObservation.getTime()) && previousObservation >= observedAt) return null;
+        } catch {
+          // Replace a corrupt ordering marker with this successful observation.
+        }
+      }
+      const encryptedObservedAt = encrypt(observedAt.toISOString());
+      await tx.insert(integrationSettingsTable).values({
+        integration: "brevo",
+        settingKey: "brevoRegistrationCoverageCheckedAt",
+        encryptedValue: encryptedObservedAt,
+        enabled: true,
+        updatedByUserId,
+      }).onConflictDoUpdate({
+        target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+        set: { encryptedValue: encryptedObservedAt, updatedByUserId, updatedAt: new Date() },
+      });
+    }
+    if (current) {
+      try {
+        const previous = JSON.parse(decrypt(current.encryptedValue));
+        if (
+          Array.isArray(previous)
+          && previous.length === normalized.length
+          && previous.every((event, index) => event === normalized[index])
+        ) {
+          return current.updatedAt.toISOString();
+        }
+      } catch {
+        // Replace unreadable metadata with a fresh provider-verified verdict.
+      }
+    }
+
+    const episodeAt = new Date();
+    const encryptedValue = encrypt(JSON.stringify(normalized));
+    await tx.insert(integrationSettingsTable).values({
+      integration: "brevo",
+      settingKey: "brevoRegistrationMissingEvents",
+      encryptedValue,
+      enabled: true,
+      updatedByUserId,
+      updatedAt: episodeAt,
+    }).onConflictDoUpdate({
+      target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+      set: { encryptedValue, updatedByUserId, updatedAt: episodeAt },
+    });
+    return episodeAt.toISOString();
+  });
 }
 
 /** Read the last provider-verified incomplete-event verdict without exposing
@@ -304,8 +386,44 @@ export async function brevoRegistrationMissingEvents(): Promise<string[]> {
   }
 }
 
-export async function clearBrevoRegistrationIncomplete() {
-  await clearIntegrationMetadata("brevo", "brevoRegistrationMissingEvents");
+export async function clearBrevoRegistrationIncomplete(observedAt?: Date): Promise<boolean> {
+  if (!observedAt) {
+    await clearIntegrationMetadata("brevo", "brevoRegistrationMissingEvents");
+    return true;
+  }
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`lumera:brevo-registration-coverage`}))`);
+    const [lastCheck] = await tx.select({
+      encryptedValue: integrationSettingsTable.encryptedValue,
+    }).from(integrationSettingsTable).where(and(
+      eq(integrationSettingsTable.integration, "brevo"),
+      eq(integrationSettingsTable.settingKey, "brevoRegistrationCoverageCheckedAt"),
+    )).limit(1);
+    if (lastCheck) {
+      try {
+        const previousObservation = new Date(decrypt(lastCheck.encryptedValue));
+        if (!Number.isNaN(previousObservation.getTime()) && previousObservation >= observedAt) return false;
+      } catch {
+        // A provider-verified healthy result can repair a corrupt ordering marker.
+      }
+    }
+    const encryptedObservedAt = encrypt(observedAt.toISOString());
+    await tx.insert(integrationSettingsTable).values({
+      integration: "brevo",
+      settingKey: "brevoRegistrationCoverageCheckedAt",
+      encryptedValue: encryptedObservedAt,
+      enabled: true,
+      updatedByUserId: null,
+    }).onConflictDoUpdate({
+      target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+      set: { encryptedValue: encryptedObservedAt, updatedByUserId: null, updatedAt: new Date() },
+    });
+    await tx.delete(integrationSettingsTable).where(and(
+      eq(integrationSettingsTable.integration, "brevo"),
+      eq(integrationSettingsTable.settingKey, "brevoRegistrationMissingEvents"),
+    ));
+    return true;
+  });
 }
 
 /** Return the last successful webhook confirmation without exposing marker

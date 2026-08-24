@@ -4,7 +4,11 @@ import { db, emailDeliveriesTable, usersTable } from "@workspace/db";
 import { and, eq, inArray, isNotNull, lt, lte } from "drizzle-orm";
 import { logger } from "./logger";
 import { integrationSettings, integrationValue } from "./integrations";
-import { BREVO_WEBHOOK_REGISTRATION_EVENTS } from "./provider-events";
+import {
+  BREVO_WEBHOOK_REGISTRATION_EVENTS,
+  missingBrevoWebhookEvents,
+  webhookTokenMatches,
+} from "./provider-events";
 
 type Recipient = { email: string; name?: string | null };
 type EmailDelivery = typeof emailDeliveriesTable.$inferSelect;
@@ -26,6 +30,11 @@ const AUTOMATION_EMAIL_TYPE = "automation";
 // provider dedup (via the stable delivery id). Any other emailType is a
 // single-shot send with no retry.
 const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE] as const;
+const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
+const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [
+  ...RETRYABLE_EMAIL_TYPES,
+  BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE,
+] as const;
 const EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE = "education_gallery_cleanup_alert";
 const EDUCATION_GALLERY_CLEANUP_ALERT_COOLDOWN_MS = 60 * 60_000;
 const RETRY_DELAYS_MS = [5 * 60_000, 30 * 60_000, 2 * 60 * 60_000, 12 * 60 * 60_000] as const;
@@ -301,11 +310,11 @@ function nextRetryAt(retryCount: number, now = new Date()) {
 }
 
 function retryable(delivery: EmailDelivery) {
-  return (RETRYABLE_EMAIL_TYPES as readonly string[]).includes(delivery.emailType);
+  return (RETRYABLE_EMAIL_TYPES_WITH_MONITORING as readonly string[]).includes(delivery.emailType);
 }
 
 function retryableEmailType(emailType: string) {
-  return (RETRYABLE_EMAIL_TYPES as readonly string[]).includes(emailType);
+  return (RETRYABLE_EMAIL_TYPES_WITH_MONITORING as readonly string[]).includes(emailType);
 }
 
 function temporaryFailure(error: unknown) {
@@ -432,13 +441,13 @@ export async function retryFailedRetryableEmails(
     processingToken: null,
     nextRetryAt: now,
   }).where(and(
-    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES as unknown as string[]),
+    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES_WITH_MONITORING as unknown as string[]),
     eq(emailDeliveriesTable.status, "processing"),
     lte(emailDeliveriesTable.nextRetryAt, now),
   ));
 
   const due = await db.select().from(emailDeliveriesTable).where(and(
-    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES as unknown as string[]),
+    inArray(emailDeliveriesTable.emailType, RETRYABLE_EMAIL_TYPES_WITH_MONITORING as unknown as string[]),
     eq(emailDeliveriesTable.status, "queued"),
     isNotNull(emailDeliveriesTable.nextRetryAt),
     lte(emailDeliveriesTable.nextRetryAt, now),
@@ -537,7 +546,10 @@ export type BrevoTransactionalWebhook = {
  * the webhook id to update in place.
  * Brevo answers 404 when no webhook is registered; treated as an empty list.
  */
-export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransactionalWebhook[]> {
+export async function listBrevoTransactionalWebhooks(options: {
+  /** A background health check must treat an ambiguous 200 response as unavailable. */
+  requireRecognizedResponse?: boolean;
+} = {}): Promise<BrevoTransactionalWebhook[]> {
   const response = await brevoFetch("/webhooks?type=transactional", {
     method: "GET",
     signal: AbortSignal.timeout(15_000),
@@ -547,12 +559,31 @@ export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransaction
     const error = await response.text();
     throw new Error(`Brevo ${response.status}: ${error.slice(0, 500)}`);
   }
-  const body = await response.json().catch(() => null) as unknown;
+  const body = await response.json().catch(() => undefined) as unknown;
   const entries = Array.isArray(body)
     ? body
     : body && typeof body === "object" && Array.isArray((body as { webhooks?: unknown }).webhooks)
       ? (body as { webhooks: unknown[] }).webhooks
-      : [];
+      : null;
+  if (!entries) {
+    if (options.requireRecognizedResponse) {
+      throw new Error("Brevo returned an unrecognized webhook-list response");
+    }
+    return [];
+  }
+  if (options.requireRecognizedResponse) {
+    const malformedEntry = entries.some((entry) => {
+      if (!entry || typeof entry !== "object") return true;
+      const record = entry as { id?: unknown; url?: unknown; events?: unknown };
+      return typeof record.id !== "number"
+        || typeof record.url !== "string"
+        || !Array.isArray(record.events)
+        || record.events.some((event) => typeof event !== "string");
+    });
+    if (malformedEntry) {
+      throw new Error("Brevo returned an invalid webhook-list entry");
+    }
+  }
   return entries.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const record = entry as { id?: unknown; url?: unknown; events?: unknown };
@@ -562,6 +593,37 @@ export async function listBrevoTransactionalWebhooks(): Promise<BrevoTransaction
       : [];
     return [{ id: record.id, url: record.url, events }];
   });
+}
+
+/**
+ * Find the active LUMERA registration for this deployment and report the
+ * delivery capabilities it does not subscribe to. A null result means there
+ * is no current-secret registration at an accepted deployment origin; callers
+ * can decide whether that is a missing-registration incident or a
+ * configuration problem.
+ *
+ * URL tokens are compared server-side and are never returned to callers.
+ * Multiple matching registrations are treated as one union, just like the
+ * admin-facing registration check.
+ */
+export function missingEventsForActiveBrevoRegistration(
+  webhooks: readonly BrevoTransactionalWebhook[],
+  secret: string,
+  acceptedOrigins: ReadonlySet<string>,
+): string[] | null {
+  const matching = webhooks.filter((webhook) => {
+    let parsed: URL;
+    try { parsed = new URL(webhook.url); } catch { return false; }
+    if (!acceptedOrigins.has(parsed.origin)) return false;
+    const tokenMatch = /^\/api\/webhooks\/brevo\/([^/]+)\/?$/.exec(parsed.pathname);
+    if (!tokenMatch) return false;
+    let token = tokenMatch[1]!;
+    try { token = decodeURIComponent(token); } catch { /* compare the raw token */ }
+    return webhookTokenMatches(secret, token);
+  });
+
+  if (!matching.length) return null;
+  return missingBrevoWebhookEvents(matching.flatMap((webhook) => webhook.events));
 }
 
 /**
