@@ -210,6 +210,11 @@ async function run() {
     return { status: response.status, body: parsed as Record<string, unknown> | null };
   };
 
+  // Receipt tracking is shared monitoring state rather than a salon-scoped
+  // fixture. Snapshot it so this suite can exercise accepted and rejected
+  // requests without leaking freshness changes into other tests.
+  const priorReceiptRows = await db.select().from(providerWebhookReceiptsTable);
+
   try {
     // ── 0a. Log redaction: token-bearing webhook paths never reach logs ────
     {
@@ -539,6 +544,10 @@ async function run() {
       const malformedRun = await makeSentRun(
         malformed.salon.id, ruleMalformed.id, customerMalformed.id, "malformed",
       );
+      const receiptsBeforeMalformedBatches = {
+        brevo: await webhookReceipt("brevo"),
+        infobip: await webhookReceipt("infobip"),
+      };
       const emailBeforeMalformedBatch = await automationDelivery(malformedRun.emailKey);
       const invalidBrevoBatch = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
         { event: "delivered", "message-id": malformedRun.brevoMessageId },
@@ -550,6 +559,16 @@ async function run() {
         await automationDelivery(malformedRun.emailKey),
         emailBeforeMalformedBatch,
         "a malformed Brevo batch must not partially update a delivery",
+      );
+      assert.equal(
+        (await webhookReceipt("brevo"))?.getTime() ?? null,
+        receiptsBeforeMalformedBatches.brevo?.getTime() ?? null,
+        "a rejected Brevo batch must not advance the freshness timestamp",
+      );
+      assert.equal(
+        (await webhookReceipt("infobip"))?.getTime() ?? null,
+        receiptsBeforeMalformedBatches.infobip?.getTime() ?? null,
+        "a rejected Brevo batch must not change Infobip freshness either",
       );
 
       // The same all-or-nothing guarantee applies to malformed nested
@@ -568,7 +587,17 @@ async function run() {
         smsBeforeMalformedBatch,
         "a malformed Infobip batch must not partially update a delivery",
       );
-      console.log("✓ malformed mixed Brevo and Infobip batches reject atomically and leave delivery state unchanged");
+      assert.equal(
+        (await webhookReceipt("brevo"))?.getTime() ?? null,
+        receiptsBeforeMalformedBatches.brevo?.getTime() ?? null,
+        "a rejected Infobip batch must not change Brevo freshness either",
+      );
+      assert.equal(
+        (await webhookReceipt("infobip"))?.getTime() ?? null,
+        receiptsBeforeMalformedBatches.infobip?.getTime() ?? null,
+        "a rejected Infobip batch must not advance the freshness timestamp",
+      );
+      console.log("✓ malformed mixed Brevo and Infobip batches reject atomically without changing delivery state or freshness");
 
       // Same mixed shape for Infobip: matched + unknown UUID + synthetic
       // self-check (non-UUID) + PENDING in one payload.
@@ -1961,6 +1990,11 @@ async function run() {
     console.log("\n✅ All automation provider-event tests passed");
   } finally {
     server.close();
+    // Restore shared monitoring state after accepted webhook coverage.
+    await db.delete(providerWebhookReceiptsTable).where(
+      inArray(providerWebhookReceiptsTable.provider, ["brevo", "infobip"]),
+    );
+    if (priorReceiptRows.length) await db.insert(providerWebhookReceiptsTable).values(priorReceiptRows);
     // Cleanup in dependency order.
     if (cleanup.emailEventKeys.length) {
       await db.delete(emailDeliveriesTable).where(inArray(emailDeliveriesTable.eventKey, cleanup.emailEventKeys));
