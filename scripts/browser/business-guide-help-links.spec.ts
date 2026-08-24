@@ -169,10 +169,18 @@ async function assertVisibleHelpLinksReachSections(
   page: Page,
   startPath: string,
   expectedIds: readonly string[],
-  options: { mobileMenu?: boolean; keyboard?: boolean; assertFocusIndicator?: boolean } = {},
+  options: {
+    mobileMenu?: boolean;
+    keyboard?: boolean;
+    assertFocusIndicator?: boolean;
+    darkTheme?: boolean;
+  } = {},
 ): Promise<void> {
   await page.goto(startPath);
   await expect(page.locator("body")).not.toContainText("404");
+  if (options.darkTheme) {
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+  }
 
   if (options.mobileMenu) {
     await expect(page.getByTestId("button-mobile-menu")).toBeVisible();
@@ -232,6 +240,9 @@ async function assertVisibleHelpLinksReachSections(
     await expect(section.locator("h3")).toBeVisible();
 
     await page.goto(startPath);
+    if (options.darkTheme) {
+      await page.evaluate(() => document.documentElement.classList.add("dark"));
+    }
     if (options.mobileMenu) {
       await page.getByTestId("button-mobile-menu").click();
     }
@@ -301,6 +312,7 @@ test("owner desktop help shortcuts open their matching guide sections from the k
     await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_HELP_IDS, {
       keyboard: true,
       assertFocusIndicator: true,
+      darkTheme: true,
     });
     expect(browserErrors, "The owner desktop keyboard guide journey must not produce browser errors.").toEqual([]);
   } finally {
@@ -319,6 +331,7 @@ test("employee desktop help shortcuts open their matching guide sections from th
     await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_HELP_IDS, {
       keyboard: true,
       assertFocusIndicator: true,
+      darkTheme: true,
     });
     expect(browserErrors, "The employee desktop keyboard guide journey must not produce browser errors.").toEqual([]);
   } finally {
