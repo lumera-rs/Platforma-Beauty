@@ -40,7 +40,10 @@ import {
   usersTable,
 } from "@workspace/db";
 import app, { safePathname, redactPathSecrets } from "../app";
-import { CAMPAIGN_APPOINTMENT_STATUS_BUCKETS } from "../routes/growth";
+import {
+  CAMPAIGN_APPOINTMENT_STATUS_BUCKETS,
+  getCampaignAppointmentStatusBucket,
+} from "../routes/growth";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import {
   applyBrevoEvents,
@@ -1682,6 +1685,11 @@ async function run() {
           buckets.length,
           1,
           `appointment status "${status}" must be explicitly classified into exactly one campaign bucket (completed, upcoming, cancelled-attributed, or excluded); update CAMPAIGN_APPOINTMENT_STATUS_BUCKETS`,
+        );
+        assert.equal(
+          getCampaignAppointmentStatusBucket(status),
+          buckets[0],
+          `campaign consumers must resolve "${status}" through the canonical campaign bucket`,
         );
       }
       assert.deepEqual(

@@ -9,7 +9,7 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, gte, inArray, isNull, lte, ne, notInArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql, type SQL } from "drizzle-orm";
 import {
   db,
   automationRulesTable,
@@ -631,17 +631,8 @@ function previousStatsWindow(query: Record<string, unknown>, window: StatsWindow
  */
 type StatsScope = { ruleIds: string[] } | { ruleId: string };
 
-/**
- * Appointment statuses that never count as realized ("earned") attribution:
- * neither is money earned or still expected. Defined once and shared by
- * aggregateRunStats and the attributed-appointments drill-down join, so the
- * list an owner opens can never disagree with the counts shown above it if a
- * status is added or the realized-attribution rules change.
- */
-const NON_REALIZED_APPOINTMENT_STATUSES = ["cancelled", "no-show"] satisfies (typeof appointmentsTable.status.enumValues)[number][];
-
-type CampaignAppointmentBucket = "completed" | "upcoming" | "cancelledAttributed" | "excluded";
-type AppointmentStatus = (typeof appointmentsTable.status.enumValues)[number];
+export type CampaignAppointmentBucket = "completed" | "upcoming" | "cancelledAttributed" | "excluded";
+export type AppointmentStatus = (typeof appointmentsTable.status.enumValues)[number];
 
 /**
  * Every appointment status must be assigned to exactly one campaign bucket.
@@ -656,16 +647,38 @@ export const CAMPAIGN_APPOINTMENT_STATUS_BUCKETS = {
 } as const satisfies Record<CampaignAppointmentBucket, readonly AppointmentStatus[]>;
 
 /**
+ * Return the canonical campaign bucket for a status. Consumers that need to
+ * classify campaign appointments should use this instead of maintaining their
+ * own status switch; the exhaustive integration contract exercises this lookup
+ * against every database enum value.
+ */
+export function getCampaignAppointmentStatusBucket(status: AppointmentStatus): CampaignAppointmentBucket {
+  const buckets: CampaignAppointmentBucket[] = ["completed", "upcoming", "cancelledAttributed", "excluded"];
+  const bucket = buckets.find((candidate) => {
+    const statuses = CAMPAIGN_APPOINTMENT_STATUS_BUCKETS[candidate] as readonly AppointmentStatus[];
+    return statuses.includes(status);
+  });
+  if (!bucket) {
+    throw new Error(`Unclassified campaign appointment status: ${status}`);
+  }
+  return bucket;
+}
+
+const CAMPAIGN_REALIZED_APPOINTMENT_STATUSES = [
+  ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.completed,
+  ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
+] as const;
+
+/**
  * Attributed appointment counts as realized (money earned or still expected).
  * NULL for rows without an attributed appointment, so `case when` aggregates
  * over the left join fall through to their else/0 branch as before.
  */
-const appointmentCountsAsRealized = and(
-  notInArray(appointmentsTable.status, NON_REALIZED_APPOINTMENT_STATUSES),
-  inArray(appointmentsTable.status, [
-    ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.completed,
-    ...CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
-  ]),
+const appointmentCountsAsRealized = inArray(appointmentsTable.status, CAMPAIGN_REALIZED_APPOINTMENT_STATUSES);
+
+const appointmentIsCompletedRealized = inArray(
+  appointmentsTable.status,
+  CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.completed,
 );
 
 /**
@@ -676,6 +689,11 @@ const appointmentCountsAsRealized = and(
 const appointmentIsUpcomingRealized = inArray(
   appointmentsTable.status,
   CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.upcoming,
+);
+
+const appointmentIsCancelledAttributed = inArray(
+  appointmentsTable.status,
+  CAMPAIGN_APPOINTMENT_STATUS_BUCKETS.cancelledAttributed,
 );
 
 /**
@@ -754,11 +772,11 @@ function calculateKnownClientCount(
  * Returns one row per rule that has runs in the window; rules without runs
  * yield no row and callers default every count to zero.
  *
- * Realized attribution: the statuses in NON_REALIZED_APPOINTMENT_STATUSES
- * never count as realized (neither is money earned or still expected). The
- * join brings in every attributed appointment and the conditional aggregates
- * split it, so the cancelled line can be reported separately without changing
- * the realized numbers.
+ * Realized attribution: only the statuses in the completed and upcoming
+ * campaign buckets count as realized (neither cancelled nor excluded statuses
+ * do). The join brings in every attributed appointment and the conditional
+ * aggregates split it, so the cancelled line can be reported separately
+ * without changing the realized numbers.
  */
 function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
   return db
@@ -776,14 +794,14 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       // Completed vs upcoming split of the realized rows. Both status lists
       // are explicit, so the two buckets sum exactly to the attributed totals
       // without absorbing an unclassified future status.
-      completedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'completed' then 1 else 0 end)::int`,
-      completedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'completed' then ${appointmentsTable.price} end), 0)::int`,
+      completedAppointments: sql<number>`sum(case when ${appointmentIsCompletedRealized} then 1 else 0 end)::int`,
+      completedRevenue: sql<number>`coalesce(sum(case when ${appointmentIsCompletedRealized} then ${appointmentsTable.price} end), 0)::int`,
       upcomingAppointments: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentIsUpcomingRealized} then 1 else 0 end)::int`,
       upcomingRevenue: sql<number>`coalesce(sum(case when ${appointmentIsUpcomingRealized} then ${appointmentsTable.price} end), 0)::int`,
       // Cancelled-attributed line ("otkazano"): appointments the campaign
       // booked that later fell through — revenue lost to cancellations.
-      cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentsTable.status} = 'cancelled' then 1 else 0 end)::int`,
-      cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentsTable.status} = 'cancelled' then ${appointmentsTable.price} end), 0)::int`,
+      cancelledAttributedAppointments: sql<number>`sum(case when ${appointmentIsCancelledAttributed} then 1 else 0 end)::int`,
+      cancelledAttributedRevenue: sql<number>`coalesce(sum(case when ${appointmentIsCancelledAttributed} then ${appointmentsTable.price} end), 0)::int`,
       lastRunAt: sql<string | null>`max(${automationRunsTable.executedAt})`,
     })
     .from(automationRunsTable)

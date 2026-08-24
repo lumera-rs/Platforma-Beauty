@@ -226,6 +226,29 @@ async function main() {
         `${fixture.status} (${fixture.bucket}) must ${shouldBeListed ? "" : "not "}appear in the drill-down`,
       );
     }
+    const stats = await get(`/api/growth/automations/${rule.id}/stats?period=all`);
+    assert.equal(stats.status, 200);
+    const expectedBucketCounts = Object.fromEntries(
+      Object.entries(CAMPAIGN_APPOINTMENT_STATUS_BUCKETS).map(([bucket, statuses]) => [
+        bucket,
+        statuses.length,
+      ]),
+    ) as Record<string, number>;
+    assert.equal(
+      stats.body.completedAppointments,
+      TOTAL + expectedBucketCounts.completed,
+      "stats completed count must include every status mapped to completed",
+    );
+    assert.equal(
+      stats.body.upcomingAppointments,
+      expectedBucketCounts.upcoming,
+      "stats upcoming count must include every status mapped to upcoming",
+    );
+    assert.equal(
+      stats.body.cancelledAttributedAppointments,
+      3 + expectedBucketCounts.cancelledAttributed,
+      "stats cancelled count must include every status mapped to cancelledAttributed",
+    );
     const dates = all.body.items.map((i: any) => i.date);
     const sorted = [...dates].sort((x: string, y: string) => (x < y ? 1 : x > y ? -1 : 0));
     assert.deepEqual(dates, sorted, "newest-first ordering");
