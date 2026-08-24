@@ -5,7 +5,7 @@
  *   - SALON_OWNER routes: owner role + activeSalon ownership verification
  *   - SALON_EMPLOYEE routes: employee role, self-only reads
  *   - CUSTOMER routes: authenticated user, ownership strictly derived (no salonCustomerId from body)
- *   - ADMIN read-only: /growth/admin/summary
+ *   - ADMIN and SUPER_ADMIN read-only: /growth/admin/summary
  */
 
 import { Router } from "express";
@@ -2043,7 +2043,7 @@ router.post("/growth/ai/ask", async (req, res, next) => {
 router.get("/growth/admin/summary", async (req, res, next) => {
   try {
     const user = await getCurrentUser(req);
-    if (!user || user.role !== "ADMIN") {
+    if (!user || !isAdmin(user)) {
       res.status(403).json({ error: "Admin access required.", code: "FORBIDDEN" }); return;
     }
 

@@ -39,6 +39,11 @@ const DEFAULT_ADMIN_SUMMARY = {
     deferredCycles: 0,
     nextRetryAt: null,
   }],
+  schedulerDatabaseCapacity: {
+    active: 0,
+    limit: 4,
+    queued: 0,
+  },
 };
 
 export type AdminSummaryFixtureOverrides = Partial<typeof DEFAULT_ADMIN_SUMMARY>;

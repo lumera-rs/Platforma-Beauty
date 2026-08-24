@@ -533,13 +533,20 @@ async function runIntegrationTests(): Promise<void> {
   }).returning();
   assert.ok(adminUser);
   const adminToken = await createSession(adminUser.id);
+  const superAdminHash = await hashPassword(`pass-super-admin-${suffix}`);
+  const [superAdminUser] = await db.insert(usersTable).values({
+    firstName: "Super Admin", lastName: suffix,
+    email: `super-admin-${suffix}@bg.test`, passwordHash: superAdminHash, passwordSetAt: new Date(), role: "SUPER_ADMIN",
+  }).returning();
+  assert.ok(superAdminUser);
+  const superAdminToken = await createSession(superAdminUser.id);
 
   const server = app.listen(0, "127.0.0.1");
   const baseUrl = await listenAndGetBaseUrl(server);
 
   // Cleanup helpers
   const toCleanup = {
-    userIds: [ownerA.owner.id, ownerB.owner.id, custInfo.user.id, empInfo.user.id, empInfo2.user.id, adminUser.id],
+    userIds: [ownerA.owner.id, ownerB.owner.id, custInfo.user.id, empInfo.user.id, empInfo2.user.id, adminUser.id, superAdminUser.id],
     salonIds: [ownerA.salon.id, ownerB.salon.id],
     purchaseIds: [] as string[],
     automationIds: [] as string[],
@@ -553,6 +560,7 @@ async function runIntegrationTests(): Promise<void> {
   function custHeaders() { return { "Content-Type": "application/json", cookie: `${sessionCookieName}=${custInfo.token}` }; }
   function emp1Headers() { return { "Content-Type": "application/json", cookie: `${sessionCookieName}=${empInfo.token}` }; }
   function adminHeaders() { return { "Content-Type": "application/json", cookie: `${sessionCookieName}=${adminToken}` }; }
+  function superAdminHeaders() { return { "Content-Type": "application/json", cookie: `${sessionCookieName}=${superAdminToken}` }; }
 
   try {
     // ── Test 12: Cross-tenant package isolation ──────────────────────────
@@ -777,6 +785,13 @@ async function runIntegrationTests(): Promise<void> {
       assert.equal(typeof summary.automation.totalRules, "number");
       assert.equal(typeof summary.packages.total, "number");
       assert.equal(typeof summary.purchases.total, "number");
+
+      const rSuperAdmin = await fetch(`${baseUrl}/growth/admin/summary`, { headers: superAdminHeaders() });
+      assert.equal(rSuperAdmin.status, 200, "Super admin must access admin summary");
+      const superAdminSummary = await rSuperAdmin.json() as typeof summary;
+      assert.equal(typeof superAdminSummary.automation.totalRules, "number");
+      assert.equal(typeof superAdminSummary.packages.total, "number");
+      assert.equal(typeof superAdminSummary.purchases.total, "number");
 
       // Owner cannot access admin endpoint
       const rOwner = await fetch(`${baseUrl}/growth/admin/summary`, { headers: ownerAHeaders() });

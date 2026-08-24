@@ -167,6 +167,16 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
       });
       return;
     }
+    if (path === "/api/growth/admin/summary" && method === "GET") {
+      await route.fulfill({
+        json: checkedApiFixture("/api/growth/admin/summary", apiSchemas.AdminGetGrowthSummaryResponse, {
+          automation: { totalRules: 4, activeRules: 2, byStatus: { active: 2, paused: 2 } },
+          packages: { total: 3, active: 2 },
+          purchases: { total: 5, active: 4, pendingPayment: 1 },
+        }),
+      });
+      return;
+    }
 
     if (path.startsWith("/api/admin/")) {
       if (path === "/api/admin/summary") {
@@ -416,6 +426,7 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
   await page.getByRole("button", { name: "Prijavi se u poslovni portal" }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
 
   for (const [index, link] of ADMIN_NAV.entries()) {
     if (index > 0) {
@@ -424,6 +435,21 @@ test("an admin can sign in and reach every admin section on desktop", async ({ p
     }
     await expect(page.getByTestId(link.testId)).toBeVisible();
   }
+});
+
+test("a super administrator receives growth data on the dashboard without a forbidden response", async ({ page }) => {
+  const growthResponses: number[] = [];
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname === "/api/growth/admin/summary") {
+      growthResponses.push(response.status());
+    }
+  });
+
+  await openAdminPage(page, "/admin", "SUPER_ADMIN");
+
+  await expect(page.getByRole("heading", { name: "Aktivnost novih modula" })).toBeVisible();
+  await expect(page.getByText("Automatizacije (Kampanje)")).toBeVisible();
+  await expect.poll(() => growthResponses).toEqual([200]);
 });
 
 test("an admin can reach every admin section from the mobile menu", async ({ page }) => {
