@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
+import { isDeepStrictEqual } from "node:util";
 import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
@@ -26,6 +27,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { setAdminSummaryAfterFirstReadForTest } from "../routes/marketplace";
 
 type Summary = {
   totalUsers: number;
@@ -49,6 +51,23 @@ type Summary = {
 
 function monthStart(date: Date, offset: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function dashboardTotals(summary: Summary) {
+  return {
+    totalUsers: summary.totalUsers,
+    totalSalons: summary.totalSalons,
+    activeSalons: summary.activeSalons,
+    bookingsThisMonth: summary.bookingsThisMonth,
+    bookingsLastMonth: summary.bookingsLastMonth,
+    bookingsTrend: summary.bookingsTrend,
+    grossMerchandiseValue: summary.grossMerchandiseValue,
+    newSalonsThisMonth: summary.newSalonsThisMonth,
+    totalReviews: summary.totalReviews,
+    hiddenReviews: summary.hiddenReviews,
+    activeSubscriptions: summary.activeSubscriptions,
+    topCategories: summary.topCategories,
+  };
 }
 
 async function run(): Promise<void> {
@@ -359,6 +378,173 @@ async function run(): Promise<void> {
       !summary.topCategories.some((category) => category.name === categoryCounts[5]?.name),
       "the sixth-ranked category must be excluded by the top-five limit",
     );
+
+    const fetchSummary = async (): Promise<Summary> => {
+      const response = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
+      const text = await response.text();
+      assert.equal(response.status, 200, `concurrent GET /admin/summary: ${text.slice(0, 500)}`);
+      return JSON.parse(text) as Summary;
+    };
+    const beforeConcurrentWrite = await fetchSummary();
+    const raceCategoryName = `Summary Concurrent Category ${suffix}`;
+    const raceAppointmentCount = categoryCounts[0]!.count + 1;
+    let releaseWriter = () => {};
+    const writerRelease = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
+    });
+    let writerReady = () => {};
+    const writerPrepared = new Promise<void>((resolve) => {
+      writerReady = resolve;
+    });
+    let releaseSummaryBarrier = () => {};
+    const summaryBarrierRelease = new Promise<void>((resolve) => {
+      releaseSummaryBarrier = resolve;
+    });
+    let summaryReadStarted = () => {};
+    const firstSummaryRead = new Promise<void>((resolve) => {
+      summaryReadStarted = resolve;
+    });
+    let clearSummaryBarrier: (() => void) | undefined;
+    let concurrentWriter: Promise<void> | undefined;
+    let firstReadTimeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      clearSummaryBarrier = setAdminSummaryAfterFirstReadForTest(async () => {
+        summaryReadStarted();
+        await summaryBarrierRelease;
+      });
+      concurrentWriter = db.transaction(async (tx) => {
+        const [raceUser] = await tx.insert(usersTable).values({
+          firstName: "Summary",
+          lastName: "Concurrent Writer",
+          email: `admin-summary-writer-${suffix}@example.test`,
+          passwordHash: "test-only-password-hash",
+          passwordSetAt: new Date(),
+          role: "CUSTOMER",
+        }).returning();
+        assert.ok(raceUser);
+        fixture.userIds.push(raceUser.id);
+
+        const [raceSalon] = await tx.insert(salonsTable).values({
+          ownerId: admin.id,
+          name: `Admin Summary Concurrent ${suffix}`,
+          slug: `admin-summary-concurrent-${suffix}`,
+          city: "Beograd",
+          municipality: "Vračar",
+          address: "Summary concurrent",
+          phone: "+381600000003",
+          email: `admin-summary-concurrent-${suffix}@example.test`,
+          shortDescription: "Admin summary concurrent fixture",
+          description: "Admin summary concurrent fixture",
+          imageUrl: "",
+          active: true,
+          createdAt: currentMonthCreatedAt,
+        }).returning();
+        assert.ok(raceSalon);
+        fixture.salonIds.push(raceSalon.id);
+
+        const [raceService] = await tx.insert(servicesTable).values({
+          salonId: raceSalon.id,
+          categoryName: raceCategoryName,
+          name: `Summary Concurrent Service ${suffix}`,
+          description: "Admin summary concurrent fixture",
+          durationMinutes: 60,
+          price: 1000,
+          imageUrl: "",
+        }).returning();
+        assert.ok(raceService);
+        fixture.serviceIds.push(raceService.id);
+
+        const raceAppointments = await tx.insert(appointmentsTable).values(
+          Array.from({ length: raceAppointmentCount }, (_, index) => ({
+            salonId: raceSalon.id,
+            customerId: raceUser.id,
+            serviceId: raceService.id,
+            date: appointmentDate,
+            startTime: `${String(8 + (index % 8)).padStart(2, "0")}:00`,
+            endTime: `${String(9 + (index % 8)).padStart(2, "0")}:00`,
+            durationMinutes: 60,
+            price: 1000,
+            status: "completed" as const,
+            createdAt: currentMonthCreatedAt,
+          })),
+        ).returning();
+        fixture.appointmentIds.push(...raceAppointments.map((appointment) => appointment.id));
+
+        const [raceOrder] = await tx.insert(ordersTable).values({
+          salonId: raceSalon.id,
+          total: 4321,
+          shippingName: "Summary Concurrent",
+          shippingAddress: "Summary concurrent order",
+          paymentMethod: "CASH_ON_DELIVERY",
+        }).returning();
+        assert.ok(raceOrder);
+        fixture.orderIds.push(raceOrder.id);
+
+        const [raceReview] = await tx.insert(reviewsTable).values({
+          salonId: raceSalon.id,
+          customerId: raceUser.id,
+          serviceName: "Summary Concurrent Service",
+          rating: 5,
+          text: "Concurrent summary review",
+          visible: false,
+        }).returning();
+        assert.ok(raceReview);
+        fixture.reviewIds.push(raceReview.id);
+
+        const [raceSubscription] = await tx.insert(subscriptionsTable).values({
+          salonId: raceSalon.id,
+          planId: plan.id,
+          status: "active",
+          dueAmount: 1999,
+        }).returning();
+        assert.ok(raceSubscription);
+        fixture.subscriptionIds.push(raceSubscription.id);
+
+        writerReady();
+        await writerRelease;
+      });
+
+      // If any fixture insert fails before it reaches writerReady(), surface
+      // that failure instead of waiting forever for the readiness signal.
+      await Promise.race([writerPrepared, concurrentWriter]);
+      const concurrentSummaryPromise = fetchSummary();
+      await Promise.race([
+        firstSummaryRead,
+        new Promise<never>((_, reject) => {
+          firstReadTimeout = setTimeout(
+            () => reject(new Error("admin summary did not complete its first aggregate read within 5 seconds")),
+            5_000,
+          );
+        }),
+      ]);
+      clearTimeout(firstReadTimeout);
+      firstReadTimeout = undefined;
+      // The first aggregate already established the summary snapshot. Commit
+      // this related batch before later aggregates are allowed to run.
+      releaseWriter();
+      await concurrentWriter;
+      releaseSummaryBarrier();
+      const concurrentSummary = await concurrentSummaryPromise;
+      clearSummaryBarrier();
+      clearSummaryBarrier = undefined;
+      const afterConcurrentWrite = await fetchSummary();
+      const concurrentTotals = dashboardTotals(concurrentSummary);
+      assert.ok(isDeepStrictEqual(concurrentTotals, dashboardTotals(beforeConcurrentWrite)),
+        "GET /admin/summary must retain its pre-commit snapshot while related records commit",
+      );
+      assert.equal(
+        afterConcurrentWrite.topCategories[0]?.name,
+        raceCategoryName,
+        "the concurrent batch must change the category ranking covered by the snapshot assertion",
+      );
+    } finally {
+      if (firstReadTimeout) clearTimeout(firstReadTimeout);
+      clearSummaryBarrier?.();
+      releaseWriter();
+      releaseSummaryBarrier();
+      await concurrentWriter?.catch(() => undefined);
+    }
+
     process.stdout.write("✓ admin summary regression suite passed\n");
   } finally {
     await new Promise<void>((resolve, reject) => {

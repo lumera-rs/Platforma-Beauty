@@ -387,6 +387,30 @@ import { attachReadyImageAssets } from "./image-media";
 const router: IRouter = Router();
 const OAUTH_STATE_COOKIE = "lumera_oauth_state";
 
+let adminSummaryAfterFirstReadForTest: (() => Promise<void>) | undefined;
+
+/**
+ * Controlled only by the integration regression suite. It pauses a summary
+ * after its first aggregate has fixed the transaction snapshot, so the test
+ * can commit a related batch before the remaining aggregates run.
+ */
+export function setAdminSummaryAfterFirstReadForTest(
+  barrier: () => Promise<void>,
+): () => void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Admin summary read barriers are available only in tests.");
+  }
+  if (adminSummaryAfterFirstReadForTest) {
+    throw new Error("An admin summary read barrier is already active.");
+  }
+  adminSummaryAfterFirstReadForTest = barrier;
+  return () => {
+    if (adminSummaryAfterFirstReadForTest === barrier) {
+      adminSummaryAfterFirstReadForTest = undefined;
+    }
+  };
+}
+
 class MediaClaimConflictError extends Error {}
 
 function cookieOptions() {
@@ -11961,7 +11985,7 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-  const [
+  const {
     userSummary,
     salonSummary,
     appointmentSummary,
@@ -11972,28 +11996,34 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
     eligibleGalleryUploadTickets,
     deliveryReports,
     reachableAdminCount,
-  ] = await Promise.all([
-    db.select({ total: count() }).from(usersTable),
-    db.select({
+  } = await db.transaction(async (tx) => {
+    // PostgreSQL's default READ COMMITTED level gives each aggregate query a
+    // different snapshot. Keep every database-backed summary field, including
+    // helper-derived alerts and the category ranking, on one repeatable read.
+    // A Drizzle transaction owns one pg client, so these must not be fired in
+    // parallel. Sequential reads still share this transaction's snapshot.
+    const userSummary = await tx.select({ total: count() }).from(usersTable);
+    await adminSummaryAfterFirstReadForTest?.();
+    const salonSummary = await tx.select({
       total: count(),
       active: sql<number>`count(*) filter (where ${salonsTable.active})::int`,
       newThisMonth: sql<number>`count(*) filter (where ${salonsTable.createdAt} >= ${thisMonthStart})::int`,
-    }).from(salonsTable),
-    db.select({
+    }).from(salonsTable);
+    const appointmentSummary = await tx.select({
       thisMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${thisMonthStart})::int`,
       lastMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${lastMonthStart} and ${appointmentsTable.createdAt} < ${thisMonthStart})::int`,
-    }).from(appointmentsTable),
-    db.select({
+    }).from(appointmentsTable);
+    const orderSummary = await tx.select({
       total: sql<number>`coalesce(sum(${ordersTable.total}), 0)::double precision`,
-    }).from(ordersTable),
-    db.select({
+    }).from(ordersTable);
+    const reviewSummary = await tx.select({
       total: count(),
       hidden: sql<number>`count(*) filter (where not ${reviewsTable.visible})::int`,
-    }).from(reviewsTable),
-    db.select({ total: count() })
+    }).from(reviewsTable);
+    const subscriptionSummary = await tx.select({ total: count() })
       .from(subscriptionsTable)
-      .where(inArray(subscriptionsTable.status, ["active", "free_via_loyalty"])),
-    db.select({
+      .where(inArray(subscriptionsTable.status, ["active", "free_via_loyalty"]));
+    const topCategories = await tx.select({
       name: servicesTable.categoryName,
       count: count(),
     })
@@ -12002,16 +12032,31 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
       .where(ne(servicesTable.categoryName, ""))
       .groupBy(servicesTable.categoryName)
       .orderBy(desc(count()), asc(servicesTable.categoryName))
-      .limit(5),
-    db.select({
+      .limit(5);
+    const eligibleGalleryUploadTickets = await tx.select({
       cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
       createdAt: educationMediaUploadsTable.createdAt,
     })
       .from(educationMediaUploadsTable)
-      .where(educationMediaUploadCleanupEligibility(now)),
-    deliveryReportStatuses(now),
-    smsFallbackReachableAdminCount(),
-  ]);
+      .where(educationMediaUploadCleanupEligibility(now));
+    const deliveryReports = await deliveryReportStatuses(now, tx);
+    const reachableAdminCount = await smsFallbackReachableAdminCount(tx);
+    return {
+      userSummary,
+      salonSummary,
+      appointmentSummary,
+      orderSummary,
+      reviewSummary,
+      subscriptionSummary,
+      topCategories,
+      eligibleGalleryUploadTickets,
+      deliveryReports,
+      reachableAdminCount,
+    };
+  }, {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
 
   const bookingsThisMonth = Number(appointmentSummary[0]?.thisMonth ?? 0);
   const bookingsLastMonth = Number(appointmentSummary[0]?.lastMonth ?? 0);

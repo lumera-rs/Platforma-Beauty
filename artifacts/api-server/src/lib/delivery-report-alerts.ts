@@ -79,6 +79,8 @@ import {
 } from "./provider-events";
 import { sendSms, type SmsProvider } from "./sms";
 
+type DatabaseQueryExecutor = Pick<typeof db, "select">;
+
 const DELIVERY_REPORT_ALERT_EMAIL_TYPE = "delivery_report_silence_alert";
 
 /** Outbox eventKey prefix of the total-email-outage fallback SMS. */
@@ -650,12 +652,16 @@ export interface SmsFallbackReachableAdmin {
  * actually reach. Keep this derived from the same audience-list helper so
  * count and names cannot drift apart.
  */
-export async function smsFallbackReachableAdminCount(): Promise<number> {
-  return (await smsFallbackReachableAdmins()).length;
+export async function smsFallbackReachableAdminCount(
+  executor: DatabaseQueryExecutor = db,
+): Promise<number> {
+  return (await smsFallbackReachableAdmins(executor)).length;
 }
 
-export async function smsFallbackReachableAdmins(): Promise<SmsFallbackReachableAdmin[]> {
-  const names = await db.select({
+export async function smsFallbackReachableAdmins(
+  executor: DatabaseQueryExecutor = db,
+): Promise<SmsFallbackReachableAdmin[]> {
+  const names = await executor.select({
     firstName: usersTable.firstName,
     lastName: usersTable.lastName,
     phone: usersTable.phone,

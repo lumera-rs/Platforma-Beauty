@@ -39,10 +39,6 @@ import {
 import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { integrationSettings, type IntegrationName } from "./integrations";
 
-// ---------------------------------------------------------------------------
-// Webhook secret resolution + verification
-// ---------------------------------------------------------------------------
-
 export type WebhookProvider = "brevo" | "sms";
 
 const WEBHOOK_SECRET_ENV: Record<WebhookProvider, string> = {
@@ -196,29 +192,33 @@ function asDate(value: unknown): Date | null {
  * verified webhook event per provider. Read-only monitoring — no effect on
  * webhook authentication or delivery-state transitions.
  */
-export async function deliveryReportStatuses(now = new Date()): Promise<Record<DeliveryReportProvider, DeliveryReportStatus>> {
+export async function deliveryReportStatuses(
+  now = new Date(),
+  executor: DatabaseQueryExecutor = db,
+): Promise<Record<DeliveryReportProvider, DeliveryReportStatus>> {
   const windowStart = new Date(now.getTime() - DELIVERY_REPORT_WINDOW_HOURS * 60 * 60 * 1000);
   const graceCutoff = new Date(now.getTime() - DELIVERY_REPORT_GRACE_MINUTES * 60 * 1000);
 
-  const [receipts, sends] = await Promise.all([
-    db.select({
-      provider: providerWebhookReceiptsTable.provider,
-      lastEventAt: providerWebhookReceiptsTable.lastEventAt,
-    }).from(providerWebhookReceiptsTable),
-    db.select({
-      channel: automationDeliveriesTable.channel,
-      recentSendCount: sql<number>`count(*)::int`,
-      lastSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt})`,
-      lastQualifyingSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt}) filter (where ${automationDeliveriesTable.sentAt} <= ${graceCutoff})`,
-    })
-      .from(automationDeliveriesTable)
-      .where(and(
-        eq(automationDeliveriesTable.status, "sent"),
-        isNotNull(automationDeliveriesTable.sentAt),
-        gte(automationDeliveriesTable.sentAt, windowStart),
-      ))
-      .groupBy(automationDeliveriesTable.channel),
-  ]);
+  // A transaction uses one pg client. Run its reads in sequence so node-postgres
+  // never receives overlapping client.query calls, while retaining the same
+  // repeatable-read snapshot when a caller supplies a transaction executor.
+  const receipts = await executor.select({
+    provider: providerWebhookReceiptsTable.provider,
+    lastEventAt: providerWebhookReceiptsTable.lastEventAt,
+  }).from(providerWebhookReceiptsTable);
+  const sends = await executor.select({
+    channel: automationDeliveriesTable.channel,
+    recentSendCount: sql<number>`count(*)::int`,
+    lastSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt})`,
+    lastQualifyingSentAt: sql<unknown>`max(${automationDeliveriesTable.sentAt}) filter (where ${automationDeliveriesTable.sentAt} <= ${graceCutoff})`,
+  })
+    .from(automationDeliveriesTable)
+    .where(and(
+      eq(automationDeliveriesTable.status, "sent"),
+      isNotNull(automationDeliveriesTable.sentAt),
+      gte(automationDeliveriesTable.sentAt, windowStart),
+    ))
+    .groupBy(automationDeliveriesTable.channel);
 
   const receiptByProvider = new Map(receipts.map((row) => [row.provider, row.lastEventAt]));
   const sendsByChannel = new Map(sends.map((row) => [row.channel, row]));
@@ -960,3 +960,5 @@ function infobipReference(report: InfobipDeliveryReport): string | null {
   if (!reference || typeof reference !== "string" || !UUID_PATTERN.test(reference)) return null;
   return reference;
 }
+
+type DatabaseQueryExecutor = Pick<typeof db, "select">;
