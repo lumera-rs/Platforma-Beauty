@@ -260,3 +260,96 @@ test("a defaults restore from a stale page opens the conflict dialog and re-conf
     await apiB.dispose();
   }
 });
+
+test("a live refetch disables restore defaults after another admin saves the defaults", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Start from a known non-default active version so the defaults restore
+    // action is available and its dialog initially shows a real diff.
+    const before = await (await apiB.get(settingsPath)).json();
+    const nonDefaultResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(nonDefaultResponse.ok(), "the non-default save must succeed").toBe(true);
+    const nonDefaultVersion = (await nonDefaultResponse.json()).version as number;
+    expect(nonDefaultVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${nonDefaultVersion}`);
+    await expect(page.getByTestId("input-newCustomerWindowDays"))
+      .toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+
+    // Admin A opens the defaults dialog while the active thresholds differ
+    // from the defaults.
+    await page.getByTestId("restore-retention-defaults").click();
+    const restoreDialog = page.getByTestId("restore-retention-dialog");
+    await expect(restoreDialog).toBeVisible();
+    await expect(restoreDialog.locator(".line-through"))
+      .toHaveText(String(NON_DEFAULT_WINDOW_DAYS));
+    await expect(page.getByTestId("restore-retention-noop-notice")).not.toBeVisible();
+    await expect(page.getByTestId("confirm-restore-retention")).toBeEnabled();
+
+    // While the dialog is open, admin B applies the exact defaults that
+    // admin A was about to restore.
+    const defaultsResponse = await apiB.put(settingsPath, {
+      data: { ...PLATFORM_DEFAULTS, expectedVersion: nonDefaultVersion },
+    });
+    expect(defaultsResponse.ok(), "admin B's defaults save must succeed").toBe(true);
+    const adminBVersion = (await defaultsResponse.json()).version as number;
+
+    // The page's visibility/focus refetch must update the open dialog, not
+    // leave the stale diff and enabled confirm action on screen.
+    const settingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await settingsRefetch;
+
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(page.getByTestId("restore-retention-noop-notice")).toBeVisible();
+    await expect(restoreDialog.locator(".line-through")).toHaveCount(0);
+    await expect(page.getByTestId("confirm-restore-retention")).toBeDisabled();
+
+    // Closing the disabled dialog must not write another version or change
+    // admin B's active defaults.
+    await page.getByTestId("cancel-restore-retention").click();
+    await expect(restoreDialog).not.toBeVisible();
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+
+    const historyAfterClose = await (await page.request.get(settingsPath + "/history")).json();
+    expect(
+      Math.max(...historyAfterClose.map((entry: { version: number }) => entry.version)),
+      "closing the disabled defaults dialog must not append a version",
+    ).toBe(adminBVersion);
+    expect(historyAfterClose.some(
+      (entry: { version: number }) => entry.version === adminBVersion,
+    )).toBe(true);
+
+    const activeAfterClose = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterClose.version).toBe(adminBVersion);
+    expect(activeAfterClose.thresholds).toEqual(PLATFORM_DEFAULTS);
+  } finally {
+    await apiB.dispose();
+  }
+});
