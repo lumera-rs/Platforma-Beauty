@@ -65,19 +65,19 @@ SQL
 cleanup_media_fixtures() {
   ((${#MEDIA_ASSET_IDS[@]})) || return 0
   MEDIA_FIXTURE_IDS="$(IFS=,; echo "${MEDIA_ASSET_IDS[*]}")" \
-    pnpm --filter @workspace/scripts exec tsx -e '
-      import { db, mediaAssetsTable, mediaUploadTicketsTable, mediaVariantsTable, pool } from "@workspace/db";
-      import { inArray } from "drizzle-orm";
-      import { deletePrivateStorageObject } from "../artifacts/api-server/src/routes/media";
-      const ids = (process.env.MEDIA_FIXTURE_IDS ?? "").split(",").filter(Boolean);
-      const variants = await db.select().from(mediaVariantsTable).where(inArray(mediaVariantsTable.assetId, ids));
-      const tickets = await db.select().from(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
-      for (const variant of variants) await deletePrivateStorageObject(variant.objectPath).catch(() => undefined);
-      for (const ticket of tickets) await deletePrivateStorageObject(ticket.stagingObjectPath).catch(() => undefined);
-      await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, ids));
-      await db.delete(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
-      await pool.end();
-    ' >/dev/null
+    pnpm --filter @workspace/scripts exec tsx - <<'TS' >/dev/null
+import { db, mediaAssetsTable, mediaUploadTicketsTable, mediaVariantsTable, pool } from "@workspace/db";
+import { inArray } from "drizzle-orm";
+import { deletePrivateStorageObject } from "../artifacts/api-server/src/routes/media";
+const ids = (process.env.MEDIA_FIXTURE_IDS ?? "").split(",").filter(Boolean);
+const variants = await db.select().from(mediaVariantsTable).where(inArray(mediaVariantsTable.assetId, ids));
+const tickets = await db.select().from(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
+for (const variant of variants) await deletePrivateStorageObject(variant.objectPath).catch(() => undefined);
+for (const ticket of tickets) await deletePrivateStorageObject(ticket.stagingObjectPath).catch(() => undefined);
+await db.delete(mediaAssetsTable).where(inArray(mediaAssetsTable.id, ids));
+await db.delete(mediaUploadTicketsTable).where(inArray(mediaUploadTicketsTable.id, ids));
+await pool.end();
+TS
 }
 
 restore_shared_state() {
