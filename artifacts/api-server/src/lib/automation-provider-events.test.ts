@@ -65,6 +65,7 @@ import {
   DELIVERY_REPORT_ALERT_COOLDOWN_MS,
   DELIVERY_REPORT_ALERT_SMS_EVENT_PREFIX,
   MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS,
+  MALFORMED_WEBHOOK_ALERT_SMS_EVENT_PREFIX,
   malformedWebhookAlertProviders,
   runDeliveryReportRecoveryAlerts,
   runDeliveryReportSilenceAlerts,
@@ -1502,6 +1503,7 @@ async function run() {
         assert.equal(firstFormatAlert.calls.length, firstFormatRun.recipientCount, "one aggregate alert is sent to every administrator");
         assert.ok(firstFormatAlert.calls.some((call) => call.email === formatAdminEmail), "the dedicated administrator receives the format alert");
         assert.ok(firstFormatAlert.calls.every((call) => call.subject.includes("Brevo")), "the alert names the affected provider");
+        assert.equal(firstFormatRun.smsFallback.triggered, false, "successful format-alert emails never trigger the SMS fallback");
         assert.deepEqual(
           malformedWebhookAlertProviders({
             brevo: {
@@ -1531,13 +1533,17 @@ async function run() {
         assert.equal(formatAlertRow.htmlContent.includes(runA.brevoMessageId), false, "alert body never includes a message reference");
 
         const repeatFormatAlert = makeFakeTransport();
+        const repeatFormatSms = makeFakeSms();
         const repeatFormatRun = await runMalformedWebhookAlerts(
           new Date(formatAlertNow.getTime() + 15 * 60_000),
           repeatFormatAlert.transport,
+          repeatFormatSms.provider,
         );
         assert.equal(repeatFormatRun.attemptedEventKeys.length, 0, "same provider is rate-limited inside the cooldown");
         assert.ok(repeatFormatRun.cooldownSuppressedCount >= 1, "the durable provider cooldown suppresses the next scheduler tick");
         assert.equal(repeatFormatAlert.calls.length, 0, "suppressed format alerts never contact the email transport");
+        assert.equal(repeatFormatRun.smsFallback.triggered, false, "a cooldown-suppressed format check never evaluates the SMS fallback");
+        assert.equal(repeatFormatSms.calls.length, 0, "a cooldown-suppressed format check never sends SMS");
 
         const recoveryNow = new Date(formatAlertNow.getTime() + WEBHOOK_REJECTION_WINDOW_HOURS * 60 * 60_000 + 1);
         assert.equal(
@@ -1553,11 +1559,79 @@ async function run() {
         for (let index = 0; index < WEBHOOK_REJECTION_ALERT_THRESHOLD; index += 1) {
           await recordWebhookRejection("brevo", renewedFormatNow);
         }
-        const renewedFormatAlert = makeFakeTransport();
-        const renewedFormatRun = await runMalformedWebhookAlerts(renewedFormatNow, renewedFormatAlert.transport);
+        const partialFormatTransport: TransactionalEmailTransport = {
+          async send(input) {
+            if (input.to.email === formatAdminEmail) throw new Error("Brevo 503: send API unavailable");
+            return { messageId: `pe-format-partial-${input.to.email}` };
+          },
+        };
+        const partialFormatSms = makeFakeSms();
+        const renewedFormatRun = await runMalformedWebhookAlerts(
+          renewedFormatNow,
+          partialFormatTransport,
+          partialFormatSms.provider,
+        );
         cleanup.emailEventKeys.push(...renewedFormatRun.attemptedEventKeys);
         assert.ok(renewedFormatRun.attemptedEventKeys.length >= 1, "a new sustained episode can alert after the rolling cooldown");
-        assert.ok(renewedFormatAlert.calls.some((call) => call.email === formatAdminEmail), "the new episode notifies administrators again");
+        assert.ok(renewedFormatRun.failedDeliveryCount >= 1, "one format-alert email can fail during a partial outage");
+        assert.ok(
+          renewedFormatRun.failedDeliveryCount < renewedFormatRun.attemptedEventKeys.length,
+          "other format-alert emails still succeed during a partial outage",
+        );
+        assert.equal(renewedFormatRun.smsFallback.triggered, false, "a partially working format-alert email path does not page by SMS");
+        assert.equal(partialFormatSms.calls.length, 0, "partial format-alert email failure sends no SMS");
+
+        const formatOutageNow = new Date(renewedFormatNow.getTime() + MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS + 60_000);
+        for (let index = 0; index < WEBHOOK_REJECTION_ALERT_THRESHOLD; index += 1) {
+          await recordWebhookRejection("brevo", formatOutageNow);
+        }
+        const failingFormatTransport: TransactionalEmailTransport = {
+          async send() { throw new Error("Brevo 503: send API unavailable"); },
+        };
+        const formatOutageSms = makeFakeSms();
+        const formatOutageRun = await runMalformedWebhookAlerts(
+          formatOutageNow,
+          failingFormatTransport,
+          formatOutageSms.provider,
+        );
+        cleanup.emailEventKeys.push(...formatOutageRun.attemptedEventKeys);
+        cleanup.smsEventKeys.push(...formatOutageRun.smsFallback.attemptedEventKeys);
+        assert.equal(
+          formatOutageRun.failedDeliveryCount,
+          formatOutageRun.attemptedEventKeys.length,
+          "a total format-alert email outage fails every attempted administrator alert",
+        );
+        assert.equal(formatOutageRun.smsFallback.triggered, true, "a total format-alert email outage triggers the SMS fallback");
+        assert.ok(
+          formatOutageRun.smsFallback.attemptedEventKeys.length >= 1,
+          "a total format-alert email outage creates durable SMS outbox work",
+        );
+        assert.ok(
+          formatOutageRun.smsFallback.attemptedEventKeys.every((eventKey) =>
+            eventKey.startsWith(`${MALFORMED_WEBHOOK_ALERT_SMS_EVENT_PREFIX}:brevo:`),
+          ),
+          "format-alert fallback keys are provider-scoped and episode-deduplicated",
+        );
+        const formatSmsCall = formatOutageSms.calls.find((call) => call.to === alertAdminPhone);
+        assert.ok(formatSmsCall, "a phone-carrying administrator receives the format-alert fallback");
+        assert.ok(formatSmsCall.text.includes("Brevo"), "the fallback names the malformed provider");
+        assert.ok(
+          formatSmsCall.text.includes(String(WEBHOOK_REJECTION_ALERT_THRESHOLD)),
+          "the fallback contains only the aggregate rejected-batch count",
+        );
+        assert.ok(formatSmsCall.text.includes("u periodu"), "the fallback contains the bounded time window");
+        assert.equal(formatSmsCall.text.includes(brevoSecret), false, "the fallback never includes a webhook secret");
+        assert.equal(formatSmsCall.text.includes(runA.brevoMessageId), false, "the fallback never includes a message reference");
+
+        const duplicateFormatSms = makeFakeSms();
+        const duplicateFormatRun = await runMalformedWebhookAlerts(
+          formatOutageNow,
+          failingFormatTransport,
+          duplicateFormatSms.provider,
+        );
+        assert.equal(duplicateFormatRun.attemptedEventKeys.length, 0, "duplicate scheduler ticks attempt no format-alert emails");
+        assert.equal(duplicateFormatRun.smsFallback.triggered, false, "duplicate scheduler ticks never re-evaluate the format-alert fallback");
+        assert.equal(duplicateFormatSms.calls.length, 0, "duplicate scheduler ticks send no format-alert fallback SMS");
 
         // Four batches in the current 24h window must remain below the
         // threshold even when four much older batches were previously

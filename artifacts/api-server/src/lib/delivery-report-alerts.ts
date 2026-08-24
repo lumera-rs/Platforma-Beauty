@@ -92,6 +92,8 @@ const MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE = "malformed_webhook_alert";
 export const DELIVERY_REPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
 /** Rolling cooldown for repeated malformed-webhook alerts per provider/admin. */
 export const MALFORMED_WEBHOOK_ALERT_COOLDOWN_MS = 24 * 60 * 60_000;
+/** Outbox eventKey prefix for the malformed-webhook email-outage fallback SMS. */
+export const MALFORMED_WEBHOOK_ALERT_SMS_EVENT_PREFIX = "malformed-webhook-alert-sms";
 
 /** Admin-facing provider labels (Serbian UI copy uses the same names). */
 export const DELIVERY_REPORT_PROVIDER_LABELS: Record<DeliveryReportProvider, string> = {
@@ -369,6 +371,8 @@ export async function runDeliveryReportSilenceAlerts(
 export async function runMalformedWebhookAlerts(
   now = new Date(),
   transport?: TransactionalEmailTransport,
+  /** Optional SMS provider override for the fallback path — used in tests. */
+  smsProvider?: SmsProvider,
 ): Promise<{
   malformedProviders: DeliveryReportProvider[];
   recipientCount: number;
@@ -376,6 +380,7 @@ export async function runMalformedWebhookAlerts(
   cooldownSuppressedCount: number;
   failedDeliveryCount: number;
   skippedDeliveryCount: number;
+  smsFallback: SmsFallbackSummary;
 }> {
   const statuses = await withSchedulerDependency(
     "malformed-webhook-statuses",
@@ -389,10 +394,11 @@ export async function runMalformedWebhookAlerts(
     cooldownSuppressedCount: 0,
     failedDeliveryCount: 0,
     skippedDeliveryCount: 0,
+    smsFallback: emptySmsFallbackSummary(),
   };
   if (!malformedProviders.length) return empty;
 
-  const recipients = await db.select({ email: usersTable.email })
+  const recipients = await db.select({ email: usersTable.email, phone: usersTable.phone })
     .from(usersTable)
     .where(smsFallbackAdminAudiencePredicate());
   if (!recipients.length) {
@@ -418,7 +424,11 @@ export async function runMalformedWebhookAlerts(
   const window = malformedWebhookWindow(now);
   let cooldownSuppressedCount = 0;
   const attemptedEventKeys: string[] = [];
-  const sends: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>[] = [];
+  const sends: {
+    provider: DeliveryReportProvider;
+    sequence: number;
+    promise: Promise<Awaited<ReturnType<typeof sendTransactionalEmail>>>;
+  }[] = [];
 
   for (const provider of malformedProviders) {
     const status = statuses[provider];
@@ -441,23 +451,31 @@ export async function runMalformedWebhookAlerts(
       const recipientKey = createHash("sha256").update(normalizedEmail).digest("hex").slice(0, 16);
       const eventKey = `malformed-webhook-alert:${provider}:${recipientKey}:${sequence}`;
       attemptedEventKeys.push(eventKey);
-      sends.push(sendTransactionalEmail({
-        eventKey,
-        emailType: MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE,
-        to: { email: recipient.email },
-        subject,
-        htmlContent,
-        metadata: {
-          provider,
-          count: status.rejectedPayloadCount,
-          windowStart: window.start.toISOString(),
-          windowEnd: window.end.toISOString(),
-        },
-      }, transport));
+      sends.push({
+        provider,
+        sequence,
+        promise: sendTransactionalEmail({
+          eventKey,
+          emailType: MALFORMED_WEBHOOK_ALERT_EMAIL_TYPE,
+          to: { email: recipient.email },
+          subject,
+          htmlContent,
+          metadata: {
+            provider,
+            count: status.rejectedPayloadCount,
+            windowStart: window.start.toISOString(),
+            windowEnd: window.end.toISOString(),
+          },
+        }, transport),
+      });
     }
   }
 
-  const results = await Promise.allSettled(sends);
+  const results = await Promise.allSettled(sends.map((send) => send.promise));
+  const emailFailedOrSkipped = (result: (typeof results)[number]) =>
+    result.status === "rejected"
+    || ("failed" in result.value && result.value.failed)
+    || ("skipped" in result.value && result.value.skipped);
   const failedDeliveryCount = results.filter(
     (result) => result.status === "rejected" || ("failed" in result.value && result.value.failed),
   ).length;
@@ -476,6 +494,34 @@ export async function runMalformedWebhookAlerts(
     );
   }
 
+  // The malformed-webhook alert uses the same email send path as every other
+  // alert. If that path fails for every attempted recipient, page the same
+  // administrator audience through the independent SMS channel. Cooldown-
+  // suppressed ticks have no attempted email results, so they never reach
+  // this branch. The primary alert sequence is embedded in the durable SMS
+  // key to deduplicate racing scheduler ticks within one episode.
+  const fallbackProviders: DeliveryReportProvider[] = [];
+  const fallbackSequences: { provider: DeliveryReportProvider; sequence: number }[] = [];
+  for (const provider of malformedProviders) {
+    const providerResults = results.filter((_, index) => sends[index]?.provider === provider);
+    if (!providerResults.length || !providerResults.every(emailFailedOrSkipped)) continue;
+    const providerSequences = sends
+      .filter((send) => send.provider === provider)
+      .map((send) => send.sequence);
+    fallbackProviders.push(provider);
+    fallbackSequences.push({ provider, sequence: Math.max(...providerSequences) });
+  }
+  const smsFallback = fallbackProviders.length
+    ? await sendMalformedWebhookAlertSmsFallback({
+      providers: fallbackProviders,
+      sequences: fallbackSequences,
+      statuses,
+      window,
+      admins: recipients,
+      smsProvider,
+    })
+    : emptySmsFallbackSummary();
+
   return {
     malformedProviders,
     recipientCount: recipients.length,
@@ -483,6 +529,7 @@ export async function runMalformedWebhookAlerts(
     cooldownSuppressedCount,
     failedDeliveryCount,
     skippedDeliveryCount,
+    smsFallback,
   };
 }
 
@@ -783,6 +830,97 @@ async function sendSilenceAlertSmsFallback(input: {
     logger.warn(
       { providers, sequences: input.sequences, recipientCount: summary.recipientCount, sentCount: summary.sentCount },
       "Delivery-report silence alert emails all failed — SMS fallback sent to administrators",
+    );
+  }
+  return summary;
+}
+
+/**
+ * Page administrators over SMS when malformed-webhook alert email could not
+ * be sent to anyone. The message contains only the provider label, aggregate
+ * rejection count, and bounded server-time window — never request payloads,
+ * webhook secrets, or message references.
+ *
+ * The provider set and primary email alert sequence(s) are part of each
+ * durable eventKey. This keeps one SMS per administrator for a combined
+ * incident and makes duplicate scheduler ticks collide in the SMS outbox.
+ */
+async function sendMalformedWebhookAlertSmsFallback(input: {
+  providers: DeliveryReportProvider[];
+  sequences: { provider: DeliveryReportProvider; sequence: number }[];
+  statuses: Record<DeliveryReportProvider, DeliveryReportStatus>;
+  window: { start: Date; end: Date };
+  admins: { email: string; phone: string | null }[];
+  smsProvider?: SmsProvider;
+}): Promise<SmsFallbackSummary> {
+  const providers = (["brevo", "infobip"] as const).filter((provider) =>
+    input.providers.includes(provider),
+  );
+  const sequencesByProvider = new Map(input.sequences.map((entry) => [entry.provider, entry.sequence]));
+  const providerSetKey = providers.join("+");
+  const sequenceKey = providers.length === 1
+    ? String(sequencesByProvider.get(providers[0]))
+    : providers.map((provider) => `${provider}-${sequencesByProvider.get(provider)}`).join("+");
+  const phoneAdmins = input.admins.filter(
+    (admin): admin is { email: string; phone: string } => hasUsablePhone(admin.phone),
+  );
+  if (!phoneAdmins.length) {
+    logger.warn(
+      { providers, sequences: input.sequences },
+      "Malformed webhook alert email failed for every administrator and no administrator has a phone number for the SMS fallback",
+    );
+    return { ...emptySmsFallbackSummary(), triggered: true };
+  }
+
+  const details = providers.map((provider) =>
+    `${DELIVERY_REPORT_PROVIDER_LABELS[provider]}: ${input.statuses[provider].rejectedPayloadCount}`,
+  ).join(", ");
+  const windowText = `${formatBelgradeTime(input.window.start.toISOString())} – ${formatBelgradeTime(input.window.end.toISOString())}`;
+  const text = `LUMERA upozorenje: greška formata webhooka (${details}) u periodu ${windowText}. Upozorenje e-poštom nije moglo da se pošalje. Proverite Integracije u admin panelu.`;
+  const attemptedEventKeys: string[] = [];
+  const sends = phoneAdmins.map((admin) => {
+    const recipientKey = createHash("sha256")
+      .update(admin.phone.replace(/\s+/g, ""))
+      .digest("hex")
+      .slice(0, 16);
+    const eventKey = `${MALFORMED_WEBHOOK_ALERT_SMS_EVENT_PREFIX}:${providerSetKey}:${recipientKey}:${sequenceKey}`;
+    attemptedEventKeys.push(eventKey);
+    return sendSms({
+      eventKey,
+      salonId: null,
+      appointmentId: null,
+      type: "admin_alert",
+      phone: admin.phone,
+      text,
+    }, input.smsProvider);
+  });
+  const results = await Promise.allSettled(sends);
+
+  const has = (key: "skipped" | "deduplicated" | "failed") => (result: (typeof results)[number]) =>
+    result.status === "fulfilled" && key in result.value && (result.value as Record<string, unknown>)[key] === true;
+  const summary: SmsFallbackSummary = {
+    triggered: true,
+    recipientCount: phoneAdmins.length,
+    attemptedEventKeys,
+    sentCount: results.filter(
+      (result) => result.status === "fulfilled" && "messageId" in result.value,
+    ).length,
+    failedCount: results.filter(
+      (result) => result.status === "rejected" || has("failed")(result),
+    ).length,
+    skippedCount: results.filter(has("skipped")).length,
+    deduplicatedCount: results.filter(has("deduplicated")).length,
+  };
+
+  if (summary.failedCount || summary.skippedCount) {
+    logger.warn(
+      { providers, sequences: input.sequences, ...summary, attemptedEventKeys: undefined },
+      "Malformed webhook alert SMS fallback did not reach every administrator",
+    );
+  } else if (summary.sentCount) {
+    logger.warn(
+      { providers, sequences: input.sequences, recipientCount: summary.recipientCount, sentCount: summary.sentCount },
+      "Malformed webhook alert emails all failed — SMS fallback sent to administrators",
     );
   }
   return summary;
