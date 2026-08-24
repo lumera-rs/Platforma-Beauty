@@ -26,6 +26,7 @@ import { runDeliveryReportRecoveryAlerts, runDeliveryReportSilenceAlerts, runMal
 import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performance-schema";
 import { createResilientScheduledJob } from "./lib/scheduler-resilience";
 import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
+import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 
 const rawPort = process.env["PORT"];
 
@@ -113,6 +114,10 @@ const malformedWebhookAlerts = createResilientScheduledJob({
   job: "malformed-webhook-alerts",
   run: runMalformedWebhookAlerts,
 });
+const beautyJobsExpirySweep = createResilientScheduledJob({
+  job: "beauty-jobs-expiry-sweep",
+  run: expireBeautyJobListings,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -125,6 +130,7 @@ const scheduledJobs = [
   deliveryReportRecoveryAlerts,
   brevoWebhookCoverageMonitor,
   malformedWebhookAlerts,
+  beautyJobsExpirySweep,
 ];
 
 const retryInterval = setInterval(() => {
@@ -141,6 +147,12 @@ const educationMaintenanceInterval = setInterval(() => {
 }, 5 * 60_000);
 educationMaintenanceInterval.unref();
 void educationSessionMaintenance.run();
+
+const beautyJobsExpiryInterval = setInterval(() => {
+  void beautyJobsExpirySweep.run();
+}, 5 * 60_000);
+beautyJobsExpiryInterval.unref();
+void beautyJobsExpirySweep.run();
 
 const educationGalleryCleanupInterval = setInterval(() => {
   void educationGalleryCleanup.run();
@@ -210,6 +222,7 @@ let shuttingDown = false;
 function clearScheduledTasks(): void {
   clearInterval(retryInterval);
   clearInterval(educationMaintenanceInterval);
+  clearInterval(beautyJobsExpiryInterval);
   clearInterval(educationGalleryCleanupInterval);
   clearInterval(mediaCleanupInterval);
   clearInterval(compatibilityImageCleanupInterval);

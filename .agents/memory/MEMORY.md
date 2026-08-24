@@ -96,3 +96,4 @@
 - [Disposable database name limits](disposable-database-name-limits.md) — keep generated PostgreSQL test database names under the identifier length limit to avoid silent collisions.
 - [Index-first exact searches](index-first-exact-searches.md) — split canonical exact terms from broad OR searches so the indexed relation drives the normal plan.
 - [tsx inline module execution](tsx-inline-module-execution.md) — use stdin for top-level await; eval is CommonJS and forced input-type can poison imported loaders.
+- [URL numeric filter absence](url-numeric-filter-absence.md) — missing numeric query parameters must stay absent instead of silently becoming zero.

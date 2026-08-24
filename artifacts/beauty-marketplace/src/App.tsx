@@ -33,6 +33,12 @@ const EducationPublicCourseDetail = lazy(() => import('./pages/education-marketp
 const MarketplaceGuides = lazy(() => import('./pages/marketplace-guides'));
 const LegalPage = lazy(() => import('./pages/legal'));
 
+const BeautyJobs = lazy(() => import('./pages/beauty-jobs'));
+const BeautyJobDetail = lazy(() => import('./pages/beauty-jobs-detail'));
+const CustomerBeautyJobs = lazy(() => import('./pages/customer-beauty-jobs'));
+const BusinessBeautyJobs = lazy(() => import('./pages/business-beauty-jobs'));
+const AdminBeautyJobs = lazy(() => import('./pages/admin/beauty-jobs'));
+
 const PublicProducts = lazy(() => import('./pages/public-products'));
 const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCartPage })));
 const RetailCheckoutPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCheckoutPage })));
@@ -181,6 +187,8 @@ function Router() {
         <Route path="/saloni" component={Salons} />
         <Route path="/saloni/kategorija/:categorySlug" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
+        <Route path="/poslovi" component={BeautyJobs} />
+        <Route path="/poslovi/:slug/:listingId" component={BeautyJobDetail} />
         <Route path="/proizvodi" component={PublicProducts} />
         <Route path="/proizvodi/:productId" component={PublicProductDetail} />
         <Route path="/korpa" component={RetailCartPage} />
@@ -193,6 +201,11 @@ function Router() {
         <Route path="/moj-nalog">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
             <CustomerDashboard />
+          </RoleGuard>
+        </Route>
+        <Route path="/moji-oglasi">
+          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+            <CustomerBeautyJobs />
           </RoleGuard>
         </Route>
         <Route path="/biznis/vodic">
@@ -259,6 +272,7 @@ function Router() {
         <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
         <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
+        <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>
@@ -274,6 +288,7 @@ function Router() {
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/poslovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBeautyJobs /></RoleGuard></Route>
         <Route path="/admin/profil"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProfile /></RoleGuard></Route>
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
         <Route path="/admin/retencija"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRetentionSettings /></RoleGuard></Route>

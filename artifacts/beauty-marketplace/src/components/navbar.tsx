@@ -74,6 +74,7 @@ export function Navbar() {
   const navLinks = [
     { href: "/saloni", label: "Saloni" },
     { href: "/proizvodi", label: "Proizvodi" },
+    ...(user?.role !== "SALON_EMPLOYEE" ? [{ href: "/poslovi", label: "Poslovi" }] : []),
     { href: "/inspiracija", label: "Inspiracija" },
     { href: "/recnik", label: "Rečnik" },
   ];
@@ -147,6 +148,10 @@ export function Navbar() {
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=favorites')}>
                         <Heart className="mr-2 h-4 w-4" />
                         Omiljeni saloni
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/moji-oglasi')}>
+                        <BriefcaseBusiness className="mr-2 h-4 w-4" />
+                        Moji oglasi
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=settings')}>
                         <Settings className="mr-2 h-4 w-4" />
@@ -245,6 +250,7 @@ export function Navbar() {
                   <>
                     <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji termini</Link>
                     <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Omiljeni saloni</Link>
+                    <Link href="/moji-oglasi" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji oglasi</Link>
                     <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Profil</Link>
                   </>
                 )}

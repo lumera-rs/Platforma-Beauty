@@ -181,3 +181,52 @@ test('public product pages render only approved customer data and enter the site
     global.fetch = originalFetch;
   }
 });
+
+test('Beauty Poslovi index, detail metadata and sitemap use only public data', async () => {
+  const originalFetch = global.fetch;
+  const job = {
+    id: '8e75f170-bf62-4587-a80f-f9cd385f75d2',
+    slug: 'potreban-frizer',
+    type: 'job',
+    intent: 'offering',
+    title: 'Potreban frizer u Beogradu',
+    description: 'Tražimo pouzdanu osobu za rad u modernom salonu.',
+    city: 'Beograd',
+    region: 'Vračar',
+    authorDisplayName: 'Studio Kosa',
+    photos: [],
+    priceAmount: 80000,
+    pricePeriod: 'month',
+    negotiable: false,
+    availabilityPattern: null,
+    createdAt: '2026-08-24T10:00:00.000Z',
+    updatedAt: '2026-08-24T11:00:00.000Z',
+    expiresAt: '2026-09-23T10:00:00.000Z',
+    privateApplicantEmail: 'private@example.test',
+  };
+  global.fetch = async (url) => {
+    const pathname = new URL(url).pathname;
+    const body = pathname === '/api/beauty-jobs'
+      ? { items: [job], total: 1, page: 1, pageSize: 24 }
+      : pathname === `/api/beauty-jobs/${job.id}`
+        ? job
+        : [];
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const listing = await createSeoResponse(request('/poslovi'), template);
+    const detail = await createSeoResponse(request(`/poslovi/${job.slug}/${job.id}`), template);
+    const wrongSlug = await createSeoResponse(request(`/poslovi/pogresan-slug/${job.id}`), template);
+    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(listing.status, 200);
+    assert.match(listing.body, /<h1>Beauty poslovi, angažmani i iznajmljivanje<\/h1>/);
+    assert.match(listing.body, /Potreban frizer u Beogradu/);
+    assert.match(detail.body, /<title>Potreban frizer u Beogradu \| LUMERA Poslovi<\/title>/);
+    assert.match(detail.body, /"@type":"JobPosting"/);
+    assert.doesNotMatch(detail.body, /private@example\.test/);
+    assert.match(wrongSlug.body, new RegExp(`rel="canonical" href="https://lumera\\.example/poslovi/${job.slug}/${job.id}"`));
+    assert.match(sitemap.body, new RegExp(`https://lumera\\.example/poslovi/${job.slug}/${job.id}`));
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

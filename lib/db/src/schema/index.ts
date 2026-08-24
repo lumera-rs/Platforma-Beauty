@@ -4,3 +4,4 @@ export * from "./education";
 export * from "./media";
 export * from "./business-growth";
 export * from "./phase3";
+export * from "./beauty-jobs";

@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 19;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 21;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -90,6 +90,14 @@ const ENUM_LABELS: Record<string, string[]> = {
     "approved",
     "cancelled",
   ],
+  beauty_job_listing_type: ["job", "equipment_rental", "space_rental", "freelance"],
+  beauty_job_listing_intent: ["offering", "seeking"],
+  beauty_job_listing_status: ["active", "expired", "closed", "rejected"],
+  beauty_job_moderation_status: ["pending", "approved", "rejected"],
+  beauty_job_posted_by_type: ["salon", "user"],
+  beauty_job_price_period: ["hour", "day", "week", "month", "project", "fixed"],
+  beauty_job_contact_status: ["pending", "viewed", "accepted", "declined", "replied"],
+  beauty_job_report_status: ["pending", "resolved", "dismissed"],
 };
 
 /**
@@ -762,6 +770,152 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS shift_swap_requests_salon_status_idx ON ${s}.shift_swap_requests (salon_id, status, created_at)`,
     `CREATE INDEX IF NOT EXISTS shift_swap_requests_requester_idx ON ${s}.shift_swap_requests (requester_employee_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS shift_swap_requests_target_idx ON ${s}.shift_swap_requests (target_employee_id, created_at)`,
+
+    // ── Beauty Poslovi marketplace (v20) ────────────────────────────────────
+    // Exact street addresses are intentionally absent from every marketplace
+    // table. Rentals expose city/region and a free-form availability pattern only.
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_categories (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      slug text NOT NULL UNIQUE,
+      name text NOT NULL UNIQUE,
+      subtype_labels jsonb NOT NULL DEFAULT '[]'::jsonb,
+      enabled boolean NOT NULL DEFAULT true,
+      feature_flag text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_platform_settings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_expiry_days integer NOT NULL DEFAULT 30,
+      hourly_posting_limit integer NOT NULL DEFAULT 5,
+      updated_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_platform_settings_updated_by_idx ON ${s}.beauty_job_platform_settings (updated_by_user_id)`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_platform_settings_expiry_positive' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_platform_settings ADD CONSTRAINT beauty_job_platform_settings_expiry_positive CHECK (listing_expiry_days > 0);
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_platform_settings_limit_positive' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_platform_settings ADD CONSTRAINT beauty_job_platform_settings_limit_positive CHECK (hourly_posting_limit > 0);
+       END IF;
+     END $$`,
+    `INSERT INTO ${s}.beauty_job_platform_settings (listing_expiry_days, hourly_posting_limit)
+       SELECT 30, 5 WHERE NOT EXISTS (SELECT 1 FROM ${s}.beauty_job_platform_settings)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_listings (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      category_id uuid NOT NULL REFERENCES ${s}.beauty_job_categories(id) ON DELETE RESTRICT,
+      salon_id uuid REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      posted_by_type ${s}.beauty_job_posted_by_type NOT NULL,
+      type ${s}.beauty_job_listing_type NOT NULL,
+      intent ${s}.beauty_job_listing_intent NOT NULL DEFAULT 'offering',
+      title text NOT NULL,
+      description text NOT NULL,
+      city text NOT NULL,
+      region text NOT NULL,
+      latitude double precision,
+      longitude double precision,
+      price_amount integer,
+      price_period ${s}.beauty_job_price_period,
+      negotiable boolean NOT NULL DEFAULT false,
+      photos jsonb NOT NULL DEFAULT '[]'::jsonb,
+      status ${s}.beauty_job_listing_status NOT NULL DEFAULT 'active',
+      moderation_status ${s}.beauty_job_moderation_status NOT NULL DEFAULT 'pending',
+      contact_count integer NOT NULL DEFAULT 0,
+      view_count integer NOT NULL DEFAULT 0,
+      expires_at timestamptz NOT NULL,
+      closed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS intent ${s}.beauty_job_listing_intent NOT NULL DEFAULT 'offering'`,
+    `DROP INDEX IF EXISTS ${s}.beauty_job_listings_category_visibility_created_idx`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_category_visibility_created_idx ON ${s}.beauty_job_listings (category_id, intent, status, moderation_status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_city_region_idx ON ${s}.beauty_job_listings (city, region)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_salon_created_idx ON ${s}.beauty_job_listings (salon_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_user_created_idx ON ${s}.beauty_job_listings (user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_expiry_idx ON ${s}.beauty_job_listings (status, expires_at)`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_exactly_one_author' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_exactly_one_author CHECK (((salon_id IS NOT NULL)::integer + (user_id IS NOT NULL)::integer) = 1);
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_posted_by_matches_author' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_posted_by_matches_author CHECK ((posted_by_type = 'salon' AND salon_id IS NOT NULL AND user_id IS NULL) OR (posted_by_type = 'user' AND user_id IS NOT NULL AND salon_id IS NULL));
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_price_nonnegative' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_price_nonnegative CHECK (price_amount IS NULL OR price_amount >= 0);
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_coordinates_pair' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_coordinates_pair CHECK ((latitude IS NULL) = (longitude IS NULL));
+       END IF;
+     END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_listing_availability (
+      listing_id uuid PRIMARY KEY REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      availability_pattern text NOT NULL,
+      day_labels jsonb NOT NULL DEFAULT '[]'::jsonb,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_contacts (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      applicant_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      applicant_message text NOT NULL,
+      applicant_status ${s}.beauty_job_contact_status NOT NULL DEFAULT 'pending',
+      author_reply text,
+      author_status ${s}.beauty_job_contact_status NOT NULL DEFAULT 'pending',
+      replied_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_contacts_listing_created_idx ON ${s}.beauty_job_contacts (listing_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_contacts_applicant_created_idx ON ${s}.beauty_job_contacts (applicant_user_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_saved_listings (
+      user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (user_id, listing_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_saved_listings_listing_idx ON ${s}.beauty_job_saved_listings (listing_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_reports (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      reporter_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      reason text NOT NULL,
+      status ${s}.beauty_job_report_status NOT NULL DEFAULT 'pending',
+      resolved_by_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      resolution_note text,
+      resolved_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_reports_listing_status_idx ON ${s}.beauty_job_reports (listing_id, status)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_reports_reporter_idx ON ${s}.beauty_job_reports (reporter_user_id)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_reports_resolved_by_idx ON ${s}.beauty_job_reports (resolved_by_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_notifications (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      recipient_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      listing_id uuid REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      contact_id uuid REFERENCES ${s}.beauty_job_contacts(id) ON DELETE CASCADE,
+      type text NOT NULL,
+      title text NOT NULL,
+      body text NOT NULL,
+      read_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_notifications_recipient_created_idx ON ${s}.beauty_job_notifications (recipient_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_notifications_listing_idx ON ${s}.beauty_job_notifications (listing_id)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_notifications_contact_idx ON ${s}.beauty_job_notifications (contact_id)`,
+    `INSERT INTO ${s}.beauty_job_categories (slug, name, subtype_labels, enabled, feature_flag) VALUES
+      ('frizeri', 'Frizeri', '["Ženski frizer", "Muški frizer", "Kolorista"]'::jsonb, true, NULL),
+      ('nokti', 'Nokti (Manikir/Pedikir)', '["Manikir", "Pedikir", "Nail artist"]'::jsonb, true, NULL),
+      ('make-up', 'Make-up', '["Dnevna šminka", "Svečana šminka", "PMU"]'::jsonb, true, NULL),
+      ('kozmetika', 'Kozmetika', '[]'::jsonb, true, NULL),
+      ('estetika-masaza', 'Estetika i masaža', '["Estetika", "Masaža", "Terapeut"]'::jsonb, true, NULL),
+      ('tattoo-piercing', 'Tattoo/Piercing', '["Tattoo", "Piercing"]'::jsonb, false, 'beauty_jobs_tattoo_piercing'),
+      ('iznajmljivanje-opreme', 'Iznajmljivanje opreme', '[]'::jsonb, true, NULL),
+      ('iznajmljivanje-prostora-stolice', 'Iznajmljivanje prostora/stolice', '["Stolica", "Kabina", "Prostor"]'::jsonb, true, NULL),
+      ('freelance-angazmani', 'Freelance/angažmani', '[]'::jsonb, true, NULL)
+      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, subtype_labels = EXCLUDED.subtype_labels, feature_flag = EXCLUDED.feature_flag`,
   ];
 }
 

@@ -67,6 +67,7 @@
     "test:business-guide-help": "pnpm --filter @workspace/scripts run test:business-guide-help",
     "test:media": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/media-routes.test.ts",
     "test:business-growth": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/business-growth.test.ts",
+    "test:beauty-jobs": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/beauty-jobs-routes.test.ts",
     "test:business-guide-pdf": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-guide-pdf.test.ts",
     "test:business-guide-links": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx --test ../artifacts/api-server/src/lib/business-guide-links.test.ts",
     "test:retention-settings": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/retention-settings.test.ts",

@@ -182,6 +182,7 @@ export function BusinessNavbar() {
           { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine" },
           { href: "/vlasnik/obavestenja", label: "Obaveštenja", guideId: "vl-obavestenja" },
           { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije" },
+          { href: "/biznis/poslovi", label: "Poslovi", guideId: "vl-poslovi" },
           { href: "/biznis/vodic", label: "Pomoć" },
         ];
       case 'SALON_EMPLOYEE':

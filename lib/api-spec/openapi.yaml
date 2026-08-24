@@ -19,6 +19,7 @@ tags:
   - name: education
   - name: admin
   - name: growth
+  - name: beauty-jobs
 
 paths:
   /healthz:
@@ -4917,6 +4918,156 @@ paths:
       responses:
         "200": { description: Retail review saved }
 
+  /beauty-jobs/categories:
+    get:
+      operationId: listBeautyJobCategories
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Categories, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobCategoriesResponse" } } } }
+  /beauty-jobs:
+    get:
+      operationId: listBeautyJobs
+      tags: [beauty-jobs]
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string, enum: [job, equipment_rental, space_rental, freelance] } }
+        - { name: intent, in: query, schema: { type: string, enum: [offering, seeking] } }
+        - { name: city, in: query, schema: { type: string } }
+        - { name: region, in: query, schema: { type: string } }
+        - { name: minPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxPrice, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: availability, in: query, schema: { type: string } }
+        - { name: query, in: query, schema: { type: string } }
+        - { name: latitude, in: query, schema: { type: number } }
+        - { name: longitude, in: query, schema: { type: number } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, price_asc, price_desc, nearest], default: newest } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      responses:
+        "200": { description: Listing page, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
+    post:
+      operationId: createBeautyJob
+      tags: [beauty-jobs]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobCreateInput" } } } }
+      responses:
+        "201": { description: Created listing, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } }
+  /beauty-jobs/mine:
+    get:
+      operationId: listMyBeautyJobs
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Owned listings, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
+  /beauty-jobs/saved:
+    get:
+      operationId: listSavedBeautyJobs
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Saved listings, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
+  /beauty-jobs/notifications:
+    get:
+      operationId: listBeautyJobNotifications
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Notifications, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobNotificationsResponse" } } } }
+  /beauty-jobs/notifications/{notificationId}/read:
+    post:
+      operationId: markBeautyJobNotificationRead
+      tags: [beauty-jobs]
+      parameters: [{ name: notificationId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      responses:
+        "200": { description: Notification, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobNotification" } } } }
+  /beauty-jobs/{listingId}:
+    get:
+      operationId: getBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      responses:
+        "200": { description: Listing, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } }
+    patch:
+      operationId: updateBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobUpdateInput" } } } }
+      responses:
+        "200": { description: Updated listing, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } }
+  /beauty-jobs/{listingId}/renew:
+    post:
+      operationId: renewBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      responses: { "200": { description: Renewed, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } } }
+  /beauty-jobs/{listingId}/close:
+    post:
+      operationId: closeBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      responses: { "200": { description: Closed, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } } }
+  /beauty-jobs/{listingId}/save:
+    post:
+      operationId: toggleSavedBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      responses: { "200": { description: Saved state, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSaveResult" } } } } }
+  /beauty-jobs/{listingId}/contact:
+    post:
+      operationId: contactBeautyJobAuthor
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContactCreateInput" } } } }
+      responses: { "201": { description: Contact, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContact" } } } } }
+  /beauty-jobs/{listingId}/report:
+    post:
+      operationId: reportBeautyJob
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReportCreateInput" } } } }
+      responses: { "201": { description: Reported, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReport" } } } } }
+  /beauty-jobs/inbox:
+    get:
+      operationId: listBeautyJobInbox
+      tags: [beauty-jobs]
+      responses: { "200": { description: Contacts, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContactsResponse" } } } } }
+  /beauty-jobs/contacts/{contactId}:
+    patch:
+      operationId: replyToBeautyJobContact
+      tags: [beauty-jobs]
+      parameters: [{ name: contactId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContactUpdateInput" } } } }
+      responses: { "200": { description: Contact, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContact" } } } } }
+  /admin/beauty-jobs/settings:
+    get:
+      operationId: getBeautyJobSettings
+      tags: [admin]
+      responses: { "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSettings" } } } } }
+    patch:
+      operationId: updateBeautyJobSettings
+      tags: [admin]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSettingsUpdateInput" } } } }
+      responses: { "200": { description: Settings, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSettings" } } } } }
+  /admin/beauty-jobs/expiry-sweep:
+    post:
+      operationId: sweepExpiredBeautyJobs
+      tags: [admin]
+      responses: { "200": { description: Sweep result, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSweepResult" } } } } }
+  /admin/beauty-jobs/queue:
+    get:
+      operationId: getBeautyJobModerationQueue
+      tags: [admin]
+      responses: { "200": { description: Queue, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobModerationQueue" } } } } }
+  /admin/beauty-jobs/{listingId}/moderation:
+    post:
+      operationId: moderateBeautyJob
+      tags: [admin]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobModerationInput" } } } }
+      responses: { "200": { description: Moderated listing, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } } }
+  /admin/beauty-jobs/reports/{reportId}/resolve:
+    post:
+      operationId: resolveBeautyJobReport
+      tags: [admin]
+      parameters: [{ name: reportId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReportResolveInput" } } } }
+      responses: { "200": { description: Resolved report, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobReport" } } } } }
 components:
   parameters:
     CityQuery:
@@ -8837,3 +8988,201 @@ components:
         serviceName: { type: string }
         salonName: { type: string }
       required: [appointmentId, status, date, startTime, endTime, employeeName, serviceName, salonName]
+    BeautyJobListing:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        categoryId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        categorySlug: { type: string }
+        categoryName: { type: string }
+        type: { type: string, enum: [job, equipment_rental, space_rental, freelance] }
+        intent: { type: string, enum: [offering, seeking] }
+        title: { type: string }
+        description: { type: string }
+        city: { type: string }
+        region: { type: string }
+        latitude: { type: [number, "null"] }
+        longitude: { type: [number, "null"] }
+        priceAmount: { type: [integer, "null"] }
+        pricePeriod: { type: [string, "null"] }
+        negotiable: { type: boolean }
+        photos: { type: array, items: { type: string } }
+        status: { type: string }
+        moderationStatus: { type: string }
+        contactCount: { type: integer }
+        viewCount: { type: integer }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        availabilityPattern: { type: [string, "null"] }
+        dayLabels: { type: array, items: { type: string } }
+        authorDisplayName: { type: string }
+        postedByType: { type: string, enum: [salon, user] }
+        updatedAt: { type: string, format: date-time }
+        isSaved: { type: boolean }
+        isOwner: { type: boolean }
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner]
+    BeautyJobCreateInput:
+      type: object
+      properties:
+        categoryId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        type: { type: string, enum: [job, equipment_rental, space_rental, freelance] }
+        intent: { type: string, enum: [offering, seeking] }
+        title: { type: string, minLength: 3, maxLength: 160 }
+        description: { type: string, minLength: 10, maxLength: 10000 }
+        city: { type: string, minLength: 1, maxLength: 120 }
+        region: { type: string, minLength: 1, maxLength: 120 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        priceAmount: { type: integer, minimum: 0 }
+        pricePeriod: { type: string, enum: [hour, day, week, month, project, fixed] }
+        negotiable: { type: boolean }
+        photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
+        dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
+      required: [categoryId, type, intent, title, description, city, region]
+    BeautyJobUpdateInput:
+      type: object
+      properties:
+        categoryId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        type: { type: string, enum: [job, equipment_rental, space_rental, freelance] }
+        intent: { type: string, enum: [offering, seeking] }
+        title: { type: string, minLength: 3, maxLength: 160 }
+        description: { type: string, minLength: 10, maxLength: 10000 }
+        city: { type: string, minLength: 1, maxLength: 120 }
+        region: { type: string, minLength: 1, maxLength: 120 }
+        latitude: { type: [number, "null"], minimum: -90, maximum: 90 }
+        longitude: { type: [number, "null"], minimum: -180, maximum: 180 }
+        priceAmount: { type: [integer, "null"], minimum: 0 }
+        pricePeriod: { type: [string, "null"], enum: [hour, day, week, month, project, fixed] }
+        negotiable: { type: boolean }
+        photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
+        availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
+        dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
+    BeautyJobContactCreateInput:
+      type: object
+      properties: { message: { type: string, minLength: 1, maxLength: 4000 } }
+      required: [message]
+    BeautyJobContactUpdateInput:
+      type: object
+      properties:
+        authorReply: { type: string, minLength: 1, maxLength: 4000 }
+        authorStatus: { type: string, enum: [pending, viewed, accepted, declined, replied] }
+    BeautyJobReportCreateInput:
+      type: object
+      properties: { reason: { type: string, minLength: 3, maxLength: 1000 } }
+      required: [reason]
+    BeautyJobSettingsUpdateInput:
+      type: object
+      properties:
+        listingExpiryDays: { type: integer, minimum: 1, maximum: 365 }
+        hourlyPostingLimit: { type: integer, minimum: 1, maximum: 100 }
+      required: [listingExpiryDays, hourlyPostingLimit]
+    BeautyJobModerationInput:
+      type: object
+      properties:
+        action: { type: string, enum: [approve, reject, close, reactivate] }
+        reason: { type: string, maxLength: 1000 }
+      required: [action]
+    BeautyJobReportResolveInput:
+      type: object
+      properties:
+        status: { type: string, enum: [resolved, dismissed] }
+        resolutionNote: { type: string, maxLength: 1000 }
+      required: [status]
+    BeautyJobCategory:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        slug: { type: string }
+        name: { type: string }
+        subtypeLabels: { type: array, items: { type: string } }
+        featureFlag: { type: [string, "null"] }
+      required: [id, slug, name, subtypeLabels, featureFlag]
+    BeautyJobContact:
+      type: object
+      properties:
+        id: { type: string }
+        listingId: { type: string }
+        applicantUserId: { type: string }
+        applicantMessage: { type: string }
+        applicantStatus: { type: string }
+        authorReply: { type: [string, "null"] }
+        authorStatus: { type: string }
+        repliedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        listingTitle: { type: string }
+        applicantDisplayName: { type: string }
+      required: [id, listingId, applicantUserId, applicantMessage, applicantStatus, authorReply, authorStatus, repliedAt, createdAt, updatedAt]
+    BeautyJobReport:
+      type: object
+      properties:
+        id: { type: string }
+        listingId: { type: string }
+        reporterUserId: { type: [string, "null"] }
+        reason: { type: string }
+        status: { type: string }
+        resolvedByUserId: { type: [string, "null"] }
+        resolutionNote: { type: [string, "null"] }
+        resolvedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        listingTitle: { type: string }
+        authorSalonId: { type: [string, "null"] }
+        authorUserId: { type: [string, "null"] }
+      required: [id, listingId, reporterUserId, reason, status, resolvedByUserId, resolutionNote, resolvedAt, createdAt]
+    BeautyJobNotification:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        recipientUserId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        listingId: { type: [string, "null"] }
+        contactId: { type: [string, "null"] }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        readAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, recipientUserId, listingId, contactId, type, title, body, readAt, createdAt]
+    BeautyJobSettings:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        listingExpiryDays: { type: integer }
+        hourlyPostingLimit: { type: integer }
+        updatedByUserId: { type: [string, "null"] }
+        updatedAt: { type: string, format: date-time }
+      required: [id, listingExpiryDays, hourlyPostingLimit, updatedByUserId, updatedAt]
+    BeautyJobSaveResult:
+      type: object
+      properties: { saved: { type: boolean } }
+      required: [saved]
+    BeautyJobSweepResult:
+      type: object
+      properties: { expired: { type: integer } }
+      required: [expired]
+    BeautyJobCategoriesResponse:
+      type: object
+      properties: { categories: { type: array, items: { $ref: "#/components/schemas/BeautyJobCategory" } } }
+      required: [categories]
+    BeautyJobListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/BeautyJobListing" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+      required: [items, total, page, pageSize]
+    BeautyJobContactsResponse:
+      type: object
+      properties: { contacts: { type: array, items: { $ref: "#/components/schemas/BeautyJobContact" } } }
+      required: [contacts]
+    BeautyJobNotificationsResponse:
+      type: object
+      properties: { notifications: { type: array, items: { $ref: "#/components/schemas/BeautyJobNotification" } } }
+      required: [notifications]
+    BeautyJobModerationQueue:
+      type: object
+      properties:
+        listings: { type: array, items: { $ref: "#/components/schemas/BeautyJobListing" } }
+        reports: { type: array, items: { $ref: "#/components/schemas/BeautyJobReport" } }
+      required: [listings, reports]

@@ -746,6 +746,42 @@ async function run() {
     assert.equal(restoredRow.change_source, "restore_version", "restore-labelled row stores its change source");
     assert.equal(restoredRow.restored_from_version, 900, "restore-labelled row stores the source version");
 
+    // ── Beauty Poslovi author and rental privacy invariants ────────────────
+    const beautyCategory = (await q<{ id: string }>(
+      `SELECT id FROM "${s}".beauty_job_categories WHERE slug = 'iznajmljivanje-opreme'`,
+    )).rows[0]!;
+    const beautyListing = (await q<{ id: string }>(
+      `INSERT INTO "${s}".beauty_job_listings
+        (category_id, salon_id, posted_by_type, type, title, description, city, region, expires_at)
+       VALUES ($1, $2, 'salon', 'equipment_rental', 'Sto', 'Iznajmljivanje profesionalnog stola.', 'Beograd', 'Vračar', now() + interval '30 days')
+       RETURNING id`,
+      [beautyCategory.id, fixtures.salon.id],
+    )).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".beauty_job_listing_availability (listing_id, availability_pattern)
+       VALUES ($1, 'Po dogovoru')`,
+      [beautyListing.id],
+    );
+    await assert.rejects(
+      q(
+        `INSERT INTO "${s}".beauty_job_listings
+          (category_id, salon_id, user_id, posted_by_type, type, title, description, city, region, expires_at)
+         VALUES ($1, $2, $3, 'salon', 'equipment_rental', 'Nevažeće', 'Nevažeći autor.', 'Beograd', 'Vračar', now())`,
+        [beautyCategory.id, fixtures.salon.id, fixtures.user.id],
+      ),
+      /beauty_job_listings_exactly_one_author|check constraint/i,
+      "Beauty Poslovi requires exactly one author",
+    );
+    assert.equal(
+      (await q<{ address_count: number }>(
+        `SELECT count(*)::integer AS address_count FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'beauty_job_listings' AND column_name ILIKE '%address%'`,
+        [s],
+      )).rows[0]!.address_count,
+      0,
+      "Beauty Poslovi listings have no exact-address storage column",
+    );
+
     // ── Unique constraint actually enforced ────────────────────────────────
     await assert.rejects(
       q(

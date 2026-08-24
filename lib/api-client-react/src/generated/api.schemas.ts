@@ -5483,6 +5483,439 @@ export interface WidgetAppointmentCreated {
   salonName: string;
 }
 
+export type BeautyJobListingType = typeof BeautyJobListingType[keyof typeof BeautyJobListingType];
+
+
+export const BeautyJobListingType = {
+  job: 'job',
+  equipment_rental: 'equipment_rental',
+  space_rental: 'space_rental',
+  freelance: 'freelance',
+} as const;
+
+export type BeautyJobListingIntent = typeof BeautyJobListingIntent[keyof typeof BeautyJobListingIntent];
+
+
+export const BeautyJobListingIntent = {
+  offering: 'offering',
+  seeking: 'seeking',
+} as const;
+
+export type BeautyJobListingPostedByType = typeof BeautyJobListingPostedByType[keyof typeof BeautyJobListingPostedByType];
+
+
+export const BeautyJobListingPostedByType = {
+  salon: 'salon',
+  user: 'user',
+} as const;
+
+export interface BeautyJobListing {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  categoryId: string;
+  categorySlug: string;
+  categoryName: string;
+  type: BeautyJobListingType;
+  intent: BeautyJobListingIntent;
+  title: string;
+  description: string;
+  city: string;
+  region: string;
+  /** @nullable */
+  latitude: number | null;
+  /** @nullable */
+  longitude: number | null;
+  /** @nullable */
+  priceAmount: number | null;
+  /** @nullable */
+  pricePeriod: string | null;
+  negotiable: boolean;
+  photos: string[];
+  status: string;
+  moderationStatus: string;
+  contactCount: number;
+  viewCount: number;
+  expiresAt: string;
+  createdAt: string;
+  /** @nullable */
+  availabilityPattern: string | null;
+  dayLabels: string[];
+  authorDisplayName: string;
+  postedByType: BeautyJobListingPostedByType;
+  updatedAt: string;
+  isSaved: boolean;
+  isOwner: boolean;
+}
+
+export type BeautyJobCreateInputType = typeof BeautyJobCreateInputType[keyof typeof BeautyJobCreateInputType];
+
+
+export const BeautyJobCreateInputType = {
+  job: 'job',
+  equipment_rental: 'equipment_rental',
+  space_rental: 'space_rental',
+  freelance: 'freelance',
+} as const;
+
+export type BeautyJobCreateInputIntent = typeof BeautyJobCreateInputIntent[keyof typeof BeautyJobCreateInputIntent];
+
+
+export const BeautyJobCreateInputIntent = {
+  offering: 'offering',
+  seeking: 'seeking',
+} as const;
+
+export type BeautyJobCreateInputPricePeriod = typeof BeautyJobCreateInputPricePeriod[keyof typeof BeautyJobCreateInputPricePeriod];
+
+
+export const BeautyJobCreateInputPricePeriod = {
+  hour: 'hour',
+  day: 'day',
+  week: 'week',
+  month: 'month',
+  project: 'project',
+  fixed: 'fixed',
+} as const;
+
+export interface BeautyJobCreateInput {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  categoryId: string;
+  type: BeautyJobCreateInputType;
+  intent: BeautyJobCreateInputIntent;
+  /**
+     * @minLength 3
+     * @maxLength 160
+     */
+  title: string;
+  /**
+     * @minLength 10
+     * @maxLength 10000
+     */
+  description: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  city: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  region: string;
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude?: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude?: number;
+  /** @minimum 0 */
+  priceAmount?: number;
+  pricePeriod?: BeautyJobCreateInputPricePeriod;
+  negotiable?: boolean;
+  /**
+     * @maxItems 8
+     * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
+     */
+  photos?: string[];
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  availabilityPattern?: string;
+  /**
+     * @maxItems 14
+     * @items.maxLength 80
+     */
+  dayLabels?: string[];
+}
+
+export type BeautyJobUpdateInputType = typeof BeautyJobUpdateInputType[keyof typeof BeautyJobUpdateInputType];
+
+
+export const BeautyJobUpdateInputType = {
+  job: 'job',
+  equipment_rental: 'equipment_rental',
+  space_rental: 'space_rental',
+  freelance: 'freelance',
+} as const;
+
+export type BeautyJobUpdateInputIntent = typeof BeautyJobUpdateInputIntent[keyof typeof BeautyJobUpdateInputIntent];
+
+
+export const BeautyJobUpdateInputIntent = {
+  offering: 'offering',
+  seeking: 'seeking',
+} as const;
+
+/**
+ * @nullable
+ */
+export type BeautyJobUpdateInputPricePeriod = typeof BeautyJobUpdateInputPricePeriod[keyof typeof BeautyJobUpdateInputPricePeriod] | null;
+
+
+export const BeautyJobUpdateInputPricePeriod = {
+  hour: 'hour',
+  day: 'day',
+  week: 'week',
+  month: 'month',
+  project: 'project',
+  fixed: 'fixed',
+} as const;
+
+export interface BeautyJobUpdateInput {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  categoryId?: string;
+  type?: BeautyJobUpdateInputType;
+  intent?: BeautyJobUpdateInputIntent;
+  /**
+     * @minLength 3
+     * @maxLength 160
+     */
+  title?: string;
+  /**
+     * @minLength 10
+     * @maxLength 10000
+     */
+  description?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  city?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  region?: string;
+  /**
+     * @minimum -90
+     * @maximum 90
+     * @nullable
+     */
+  latitude?: number | null;
+  /**
+     * @minimum -180
+     * @maximum 180
+     * @nullable
+     */
+  longitude?: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  priceAmount?: number | null;
+  /** @nullable */
+  pricePeriod?: BeautyJobUpdateInputPricePeriod;
+  negotiable?: boolean;
+  /**
+     * @maxItems 8
+     * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
+     */
+  photos?: string[];
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     * @nullable
+     */
+  availabilityPattern?: string | null;
+  /**
+     * @maxItems 14
+     * @items.maxLength 80
+     */
+  dayLabels?: string[];
+}
+
+export interface BeautyJobContactCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  message: string;
+}
+
+export type BeautyJobContactUpdateInputAuthorStatus = typeof BeautyJobContactUpdateInputAuthorStatus[keyof typeof BeautyJobContactUpdateInputAuthorStatus];
+
+
+export const BeautyJobContactUpdateInputAuthorStatus = {
+  pending: 'pending',
+  viewed: 'viewed',
+  accepted: 'accepted',
+  declined: 'declined',
+  replied: 'replied',
+} as const;
+
+export interface BeautyJobContactUpdateInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  authorReply?: string;
+  authorStatus?: BeautyJobContactUpdateInputAuthorStatus;
+}
+
+export interface BeautyJobReportCreateInput {
+  /**
+     * @minLength 3
+     * @maxLength 1000
+     */
+  reason: string;
+}
+
+export interface BeautyJobSettingsUpdateInput {
+  /**
+     * @minimum 1
+     * @maximum 365
+     */
+  listingExpiryDays: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  hourlyPostingLimit: number;
+}
+
+export type BeautyJobModerationInputAction = typeof BeautyJobModerationInputAction[keyof typeof BeautyJobModerationInputAction];
+
+
+export const BeautyJobModerationInputAction = {
+  approve: 'approve',
+  reject: 'reject',
+  close: 'close',
+  reactivate: 'reactivate',
+} as const;
+
+export interface BeautyJobModerationInput {
+  action: BeautyJobModerationInputAction;
+  /** @maxLength 1000 */
+  reason?: string;
+}
+
+export type BeautyJobReportResolveInputStatus = typeof BeautyJobReportResolveInputStatus[keyof typeof BeautyJobReportResolveInputStatus];
+
+
+export const BeautyJobReportResolveInputStatus = {
+  resolved: 'resolved',
+  dismissed: 'dismissed',
+} as const;
+
+export interface BeautyJobReportResolveInput {
+  status: BeautyJobReportResolveInputStatus;
+  /** @maxLength 1000 */
+  resolutionNote?: string;
+}
+
+export interface BeautyJobCategory {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  slug: string;
+  name: string;
+  subtypeLabels: string[];
+  /** @nullable */
+  featureFlag: string | null;
+}
+
+export interface BeautyJobContact {
+  id: string;
+  listingId: string;
+  applicantUserId: string;
+  applicantMessage: string;
+  applicantStatus: string;
+  /** @nullable */
+  authorReply: string | null;
+  authorStatus: string;
+  /** @nullable */
+  repliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  listingTitle?: string;
+  applicantDisplayName?: string;
+}
+
+export interface BeautyJobReport {
+  id: string;
+  listingId: string;
+  /** @nullable */
+  reporterUserId: string | null;
+  reason: string;
+  status: string;
+  /** @nullable */
+  resolvedByUserId: string | null;
+  /** @nullable */
+  resolutionNote: string | null;
+  /** @nullable */
+  resolvedAt: string | null;
+  createdAt: string;
+  listingTitle?: string;
+  /** @nullable */
+  authorSalonId?: string | null;
+  /** @nullable */
+  authorUserId?: string | null;
+}
+
+export interface BeautyJobNotification {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  recipientUserId: string;
+  /** @nullable */
+  listingId: string | null;
+  /** @nullable */
+  contactId: string | null;
+  type: string;
+  title: string;
+  body: string;
+  /** @nullable */
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface BeautyJobSettings {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  listingExpiryDays: number;
+  hourlyPostingLimit: number;
+  /** @nullable */
+  updatedByUserId: string | null;
+  updatedAt: string;
+}
+
+export interface BeautyJobSaveResult {
+  saved: boolean;
+}
+
+export interface BeautyJobSweepResult {
+  expired: number;
+}
+
+export interface BeautyJobCategoriesResponse {
+  categories: BeautyJobCategory[];
+}
+
+export interface BeautyJobListResponse {
+  items: BeautyJobListing[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface BeautyJobContactsResponse {
+  contacts: BeautyJobContact[];
+}
+
+export interface BeautyJobNotificationsResponse {
+  notifications: BeautyJobNotification[];
+}
+
+export interface BeautyJobModerationQueue {
+  listings: BeautyJobListing[];
+  reports: BeautyJobReport[];
+}
+
 export type CityQueryParameter = string;
 
 export type CategoryQueryParameter = string;
@@ -6317,4 +6750,63 @@ export const AdminListRetailOrdersStatus = {
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+} as const;
+
+export type ListBeautyJobsParams = {
+category?: string;
+type?: ListBeautyJobsType;
+intent?: ListBeautyJobsIntent;
+city?: string;
+region?: string;
+/**
+ * @minimum 0
+ */
+minPrice?: number;
+/**
+ * @minimum 0
+ */
+maxPrice?: number;
+availability?: string;
+query?: string;
+latitude?: number;
+longitude?: number;
+sort?: ListBeautyJobsSort;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListBeautyJobsType = typeof ListBeautyJobsType[keyof typeof ListBeautyJobsType];
+
+
+export const ListBeautyJobsType = {
+  job: 'job',
+  equipment_rental: 'equipment_rental',
+  space_rental: 'space_rental',
+  freelance: 'freelance',
+} as const;
+
+export type ListBeautyJobsIntent = typeof ListBeautyJobsIntent[keyof typeof ListBeautyJobsIntent];
+
+
+export const ListBeautyJobsIntent = {
+  offering: 'offering',
+  seeking: 'seeking',
+} as const;
+
+export type ListBeautyJobsSort = typeof ListBeautyJobsSort[keyof typeof ListBeautyJobsSort];
+
+
+export const ListBeautyJobsSort = {
+  newest: 'newest',
+  oldest: 'oldest',
+  price_asc: 'price_asc',
+  price_desc: 'price_desc',
+  nearest: 'nearest',
 } as const;
