@@ -442,7 +442,7 @@ test("category form rejects empty, whitespace, text, and negative sort order", a
   await expectNoServerErrors();
 });
 
-test("webhook freshness refresh preserves unsaved integration edits", async ({ page }) => {
+test("webhook freshness refresh reports failure, preserves unsaved edits, and recovers", async ({ page }) => {
   await openAdmin(page, "/admin/integracije");
   await expect(page.getByRole("heading", { name: "E-mail · Brevo" })).toBeVisible();
 
@@ -453,6 +453,26 @@ test("webhook freshness refresh preserves unsaved integration edits", async ({ p
 
   await brevoSecret.fill(draftSecret);
   await brevoToggle.setChecked(!initiallyEnabled);
+
+  let freshnessRefreshShouldFail = true;
+  await page.route("**/api/admin/integrations/webhook-freshness", async (route) => {
+    if (freshnessRefreshShouldFail) {
+      freshnessRefreshShouldFail = false;
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+
+  const failedFreshnessRequest = page.waitForRequest((request) => {
+    return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await failedFreshnessRequest;
+  await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeVisible();
+  await expect(brevoSecret).toHaveValue(draftSecret);
+  expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
 
   const freshnessResponse = page.waitForResponse((response) => {
     const request = response.request();
@@ -465,8 +485,11 @@ test("webhook freshness refresh preserves unsaved integration edits", async ({ p
   expect(response.ok(), "the visibility freshness request must succeed").toBe(true);
   await expect(brevoSecret).toHaveValue(draftSecret);
   expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
+  await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeHidden();
   await expect(page.getByTestId("webhook-confirmation-status-sms")).toBeVisible();
   await expect(page.getByTestId("webhook-confirmation-status-brevo")).toBeVisible();
+  await expect(page.getByTestId("webhook-confirmation-status-sms")).toContainText("potvrda je zastarela");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("potvrda je zastarela");
   await expectNoServerErrors();
 });
 

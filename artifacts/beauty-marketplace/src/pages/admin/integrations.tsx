@@ -40,6 +40,7 @@ export default function AdminIntegrations() {
   const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
+  const [webhookFreshnessRefreshFailed, setWebhookFreshnessRefreshFailed] = useState(false);
   const freshnessRefreshController = useRef<AbortController | null>(null);
   const freshnessRefreshSequence = useRef(0);
   const load = async () => {
@@ -61,7 +62,7 @@ export default function AdminIntegrations() {
       if (sequence !== freshnessRefreshSequence.current || controller.signal.aborted) return;
       const sms = payload.integrations?.sms;
       const brevo = payload.integrations?.brevo;
-      if (!sms || !brevo) return;
+      if (!sms || !brevo) throw new Error("Nedostaju podaci o svežini webhook potvrde.");
       // This endpoint intentionally returns only time-derived webhook metadata.
       // Never replace the cards wholesale: an administrator may be typing a
       // secret or changing an enabled switch while the poll completes.
@@ -75,8 +76,13 @@ export default function AdminIntegrations() {
           },
         }
         : previous);
+      setWebhookFreshnessRefreshFailed(false);
     } catch {
       // Poll failures are transient and should not interrupt an admin's edits.
+      // Ignore aborts and superseded requests; only report the current request's
+      // actual failure so an old poll cannot resurrect a stale warning.
+      if (sequence !== freshnessRefreshSequence.current || controller.signal.aborted) return;
+      setWebhookFreshnessRefreshFailed(true);
     } finally {
       if (freshnessRefreshController.current === controller) freshnessRefreshController.current = null;
     }
@@ -404,6 +410,10 @@ export default function AdminIntegrations() {
       <p className="font-semibold text-amber-800"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Otvoreno je razvojno okruženje</p>
       <p className="mt-1 text-sm text-amber-800">Webhook i redirect URL-ovi prikazani na ovoj stranici sadrže adresu razvojne probe. Provera i kopiranje odnose se na ovu adresu; registraciju kod provajdera obavite iz objavljene aplikacije, a ne iz preview-a.</p>
     </div>}
+     {webhookFreshnessRefreshFailed && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4" role="status" aria-live="polite" data-testid="webhook-freshness-refresh-error">
+       <p className="font-semibold text-amber-800"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Potvrda webhook-a nije osvežena.</p>
+       <p className="mt-1 text-sm text-amber-800">Prikazana je poslednja poznata potvrda; vaši uneti podaci i prekidači nisu promenjeni. Pokušaćemo ponovo pri sledećem osvežavanju.</p>
+     </div>}
     {!data ? <p className="text-muted-foreground">Učitavanje integracija…</p> : <>
       {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
         <p className="font-semibold text-destructive"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Hitna SMS upozorenja trenutno ne mogu nikoga da dosegnu</p>
