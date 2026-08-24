@@ -33,7 +33,10 @@ interface HarnessDatabaseManifest {
   databaseTarget: string;
   ownerPid: number;
   ownerProcessIdentity: string;
+  processMarker?: string;
 }
+
+const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 
 function requireDevelopmentDatabaseUrl(): string {
   const databaseUrl = process.env.DATABASE_URL;
@@ -85,6 +88,15 @@ function isProcessMissing(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "ESRCH");
 }
 
+function isProcessInaccessible(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === "object"
+    && "code" in error
+    && (error.code === "EACCES" || error.code === "EPERM"),
+  );
+}
+
 async function getProcessIdentity(processId: number): Promise<string | undefined> {
   try {
     const [bootId, stat] = await Promise.all([
@@ -99,6 +111,19 @@ async function getProcessIdentity(processId: number): Promise<string | undefined
     }
 
     return `${bootId.trim()}:${startTime}`;
+  } catch (error) {
+    if (isFileNotFound(error)) return undefined;
+    throw error;
+  }
+}
+
+async function getProcessGroupId(processId: number): Promise<number | undefined> {
+  try {
+    const stat = await readFile(`/proc/${processId}/stat`, "utf8");
+    const commandEnd = stat.lastIndexOf(")");
+    const statFields = commandEnd >= 0 ? stat.slice(commandEnd + 2).trim().split(/\s+/) : [];
+    const processGroupId = Number(statFields[2]);
+    return Number.isSafeInteger(processGroupId) && processGroupId > 0 ? processGroupId : undefined;
   } catch (error) {
     if (isFileNotFound(error)) return undefined;
     throw error;
@@ -161,6 +186,10 @@ function parseHarnessDatabaseManifest(
       || !("ownerProcessIdentity" in manifest)
       || typeof manifest.ownerProcessIdentity !== "string"
       || !manifest.ownerProcessIdentity
+      || (
+        "processMarker" in manifest
+        && (typeof manifest.processMarker !== "string" || !manifest.processMarker)
+      )
     ) {
       return undefined;
     }
@@ -251,6 +280,30 @@ function startProcess(
   return child;
 }
 
+async function findProcessGroups(processMarker: string | undefined): Promise<number[]> {
+  if (process.platform === "win32" || !processMarker) return [];
+
+  const processEntries = await readdir("/proc", { withFileTypes: true });
+  const processIds = processEntries
+    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .map((entry) => Number(entry.name));
+  const processGroups = new Set<number>();
+
+  await Promise.all(processIds.map(async (processId) => {
+    try {
+      const environment = await readFile(`/proc/${processId}/environ`, "utf8");
+      if (!environment.includes(`${processMarkerEnvironmentName}=${processMarker}\u0000`)) return;
+      const processGroupId = await getProcessGroupId(processId);
+      if (processGroupId) processGroups.add(processGroupId);
+    } catch (error) {
+      if (!isFileNotFound(error) && !isProcessInaccessible(error)) throw error;
+      // Processes can exit between reading /proc entries and their files.
+    }
+  }));
+
+  return [...processGroups].sort((left, right) => left - right);
+}
+
 async function waitForHttp(
   url: string,
   label: string,
@@ -285,37 +338,7 @@ async function stopProcess(child: ChildProcess | undefined): Promise<void> {
   if (!child) return;
 
   if (process.platform !== "win32" && child.pid) {
-    const processGroupId = child.pid;
-    const processGroupExists = () => {
-      try {
-        process.kill(-processGroupId, 0);
-        return true;
-      } catch (error) {
-        return !isProcessMissing(error);
-      }
-    };
-    const waitForProcessGroupExit = async (timeoutMilliseconds: number) => {
-      const deadline = Date.now() + timeoutMilliseconds;
-      while (processGroupExists() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      return !processGroupExists();
-    };
-    const signalProcessGroup = (signal: NodeJS.Signals) => {
-      try {
-        process.kill(-processGroupId, signal);
-      } catch (error) {
-        if (!isProcessMissing(error)) throw error;
-      }
-    };
-
-    signalProcessGroup("SIGTERM");
-    if (!await waitForProcessGroupExit(5_000)) {
-      signalProcessGroup("SIGKILL");
-      if (!await waitForProcessGroupExit(5_000)) {
-        throw new Error(`Could not stop disposable service process group ${processGroupId}.`);
-      }
-    }
+    await stopProcessGroup(child.pid);
     return;
   }
 
@@ -330,6 +353,45 @@ async function stopProcess(child: ChildProcess | undefined): Promise<void> {
   if (!exited && child.exitCode === null && child.signalCode === null) {
     child.kill("SIGKILL");
     await once(child, "exit");
+  }
+}
+
+async function stopProcessGroup(processGroupId: number): Promise<void> {
+  const processGroupExists = () => {
+    try {
+      process.kill(-processGroupId, 0);
+      return true;
+    } catch (error) {
+      return !isProcessMissing(error);
+    }
+  };
+  const waitForProcessGroupExit = async (timeoutMilliseconds: number) => {
+    const deadline = Date.now() + timeoutMilliseconds;
+    while (processGroupExists() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return !processGroupExists();
+  };
+  const signalProcessGroup = (signal: NodeJS.Signals) => {
+    try {
+      process.kill(-processGroupId, signal);
+    } catch (error) {
+      if (!isProcessMissing(error)) throw error;
+    }
+  };
+
+  signalProcessGroup("SIGTERM");
+  if (!await waitForProcessGroupExit(5_000)) {
+    signalProcessGroup("SIGKILL");
+    if (!await waitForProcessGroupExit(5_000)) {
+      throw new Error(`Could not stop disposable service process group ${processGroupId}.`);
+    }
+  }
+}
+
+async function stopOrphanedHarnessProcesses(processMarker: string | undefined): Promise<void> {
+  for (const processGroupId of await findProcessGroups(processMarker)) {
+    await stopProcessGroup(processGroupId);
   }
 }
 
@@ -378,6 +440,7 @@ export async function recoverInterruptedHarnessDatabases(
       const currentOwnerIdentity = await getProcessIdentity(manifest.ownerPid);
       if (currentOwnerIdentity === manifest.ownerProcessIdentity) continue;
 
+      await stopOrphanedHarnessProcesses(manifest.processMarker);
       await runCommand(
         "dropdb",
         ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, manifest.databaseName],
@@ -409,6 +472,7 @@ export async function runIsolatedBrowserSuite(
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const processMarker = randomUUID();
   const ownerProcessIdentity = await getProcessIdentity(process.pid);
   if (!ownerProcessIdentity) {
     throw new Error("Could not identify the isolated browser test harness process.");
@@ -419,6 +483,7 @@ export async function runIsolatedBrowserSuite(
     databaseTarget: getDatabaseTarget(developmentDatabaseUrl),
     ownerPid: process.pid,
     ownerProcessIdentity,
+    processMarker,
   });
   const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
   const apiPort = await findAvailablePort();
@@ -430,6 +495,7 @@ export async function runIsolatedBrowserSuite(
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
     LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
+    [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",
   };
   let databaseMayExist = false;
@@ -516,6 +582,7 @@ export async function runIsolatedApiSuite(
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const processMarker = randomUUID();
   const ownerProcessIdentity = await getProcessIdentity(process.pid);
   if (!ownerProcessIdentity) {
     throw new Error("Could not identify the isolated API test harness process.");
@@ -526,6 +593,7 @@ export async function runIsolatedApiSuite(
     databaseTarget: getDatabaseTarget(developmentDatabaseUrl),
     ownerPid: process.pid,
     ownerProcessIdentity,
+    processMarker,
   });
   const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
   const testEnvironment = {
@@ -533,6 +601,7 @@ export async function runIsolatedApiSuite(
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
     LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
+    [processMarkerEnvironmentName]: processMarker,
     NODE_ENV: "test",
   };
   let databaseMayExist = false;
@@ -580,6 +649,7 @@ export async function runIsolatedApiRegressionSuite(
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const databaseName =
     `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const processMarker = randomUUID();
   const ownerProcessIdentity = await getProcessIdentity(process.pid);
   if (!ownerProcessIdentity) {
     throw new Error("Could not identify the isolated API regression harness process.");
@@ -590,6 +660,7 @@ export async function runIsolatedApiRegressionSuite(
     databaseTarget: getDatabaseTarget(developmentDatabaseUrl),
     ownerPid: process.pid,
     ownerProcessIdentity,
+    processMarker,
   });
   const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
   const apiPort = await findAvailablePort();
@@ -599,6 +670,7 @@ export async function runIsolatedApiRegressionSuite(
     ...configuration.environment,
     DATABASE_URL: testDatabaseUrl,
     LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
+    [processMarkerEnvironmentName]: processMarker,
     LUMERA_TEST_SEED: "1",
     NODE_ENV: "test",
     PORT: String(apiPort),

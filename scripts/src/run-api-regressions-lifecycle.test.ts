@@ -21,8 +21,11 @@ type HarnessManifest = {
   databaseTarget: string;
   ownerPid: number;
   ownerProcessIdentity: string;
+  processMarker?: string;
   version: 1;
 };
+
+const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 
 type ChildExit = {
   code: number | null;
@@ -77,7 +80,12 @@ async function readManifest(manifestDirectory: string): Promise<{
 }> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const entries = await readdir(manifestDirectory);
+    const entries = await readdir(manifestDirectory).catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    });
     const manifestName = entries.find((entry) => entry.endsWith(".json"));
     if (manifestName) {
       const manifestPath = path.join(manifestDirectory, manifestName);
@@ -101,6 +109,15 @@ async function getProcessIdentity(processId: number): Promise<string> {
   const startTime = statFields[19];
   assert.ok(bootId.trim() && startTime, `Could not identify process ${processId}.`);
   return `${bootId.trim()}:${startTime}`;
+}
+
+async function getProcessGroupId(processId: number): Promise<number> {
+  const stat = await readFile(`/proc/${processId}/stat`, "utf8");
+  const commandEnd = stat.lastIndexOf(")");
+  const statFields = commandEnd >= 0 ? stat.slice(commandEnd + 2).trim().split(/\s+/) : [];
+  const processGroupId = Number(statFields[2]);
+  assert.ok(Number.isSafeInteger(processGroupId) && processGroupId > 0);
+  return processGroupId;
 }
 
 function getDatabaseTarget(databaseName = new URL(databaseUrl!).pathname.slice(1)): string {
@@ -158,6 +175,49 @@ async function stopProcessGroup(processId: number): Promise<void> {
       throw error;
     }
   }
+}
+
+async function findProcessesWithMarker(processMarker: string): Promise<number[]> {
+  const processEntries = await readdir("/proc", { withFileTypes: true });
+  const processIds = processEntries
+    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .map((entry) => Number(entry.name));
+  const ownedPids: number[] = [];
+
+  await Promise.all(processIds.map(async (processId) => {
+    try {
+      const environment = await readFile(`/proc/${processId}/environ`, "utf8");
+      if (environment.includes(`${processMarkerEnvironmentName}=${processMarker}\u0000`)) {
+        ownedPids.push(processId);
+      }
+    } catch {
+      // Processes can exit between reading /proc entries and their files.
+    }
+  }));
+
+  return ownedPids.sort((left, right) => left - right);
+}
+
+async function waitForOwnedTestServers(testDatabaseUrl: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  let ownedPids: number[] = [];
+  while (Date.now() < deadline) {
+    ownedPids = await findOwnedTestServers(testDatabaseUrl);
+    if (ownedPids.length > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.notDeepEqual(ownedPids, [], "The disposable API regression server did not start.");
+}
+
+async function waitForMarkerProcessesToStop(processMarker: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  let remaining: number[] = [];
+  while (Date.now() < deadline) {
+    remaining = await findProcessesWithMarker(processMarker);
+    if (remaining.length === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.deepEqual(remaining, [], `Orphaned regression processes remain: ${remaining.join(", ")}`);
 }
 
 async function findOwnedTestServers(testDatabaseUrl: string): Promise<number[]> {
@@ -327,13 +387,15 @@ async function runForcedStopScenario(): Promise<void> {
   const databasePrefix = `lumera_forced_${process.pid}_`;
   let child: ChildProcess | undefined;
   let blockerPid: number | undefined;
+  let activeProcess: ChildProcess | undefined;
+  let unrelatedProcess: ChildProcess | undefined;
   const databaseNames: string[] = [];
 
   try {
     const realBash = await commandPath("bash");
     const realPnpm = await commandPath("pnpm");
     await mkdir(binDirectory, { recursive: true });
-    await writeCommandShims(binDirectory, "schema", realBash, realPnpm);
+    await writeCommandShims(binDirectory, "shell", realBash, realPnpm);
     const environment = {
       ...process.env,
       PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
@@ -354,11 +416,18 @@ async function runForcedStopScenario(): Promise<void> {
     child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
 
-    await waitForFile(markerPath);
     const staleManifest = await readManifest(manifestDirectory);
     const staleDatabaseName = staleManifest.manifest.databaseName;
     databaseNames.push(staleDatabaseName);
+    const isolatedDatabaseUrl = new URL(databaseUrl!);
+    isolatedDatabaseUrl.pathname = `/${staleDatabaseName}`;
+    const testDatabaseUrl = isolatedDatabaseUrl.toString();
+    assert.ok(staleManifest.manifest.processMarker, "The regression process marker was not recorded.");
+    await waitForFile(markerPath);
     assert.equal(await databaseExists(staleDatabaseName), true, `Disposable database was not created.\n${output}`);
+    await waitForOwnedTestServers(testDatabaseUrl);
+    const orphanedProcesses = await findProcessesWithMarker(staleManifest.manifest.processMarker);
+    assert.ok(orphanedProcesses.length > 0, "No detached processes were found for the interrupted run.");
     blockerPid = Number(await readFile(blockerPidPath, "utf8"));
     assert.ok(
       Number.isSafeInteger(blockerPid) && blockerPid > 0,
@@ -380,6 +449,7 @@ async function runForcedStopScenario(): Promise<void> {
       databaseTarget: getDatabaseTarget(),
       ownerPid: process.pid,
       ownerProcessIdentity: await getProcessIdentity(process.pid),
+      processMarker: `active-${randomUUID()}`,
     });
     const unrelatedManifestPath = await writeManifest(manifestDirectory, {
       version: 1,
@@ -388,6 +458,21 @@ async function runForcedStopScenario(): Promise<void> {
       ownerPid: 1,
       ownerProcessIdentity: "unrelated-process",
     });
+    const activeManifest = JSON.parse(await readFile(activeManifestPath, "utf8")) as HarnessManifest;
+    activeProcess = spawn(realBash, ["-c", "while :; do sleep 1; done"], {
+      env: {
+        ...process.env,
+        [processMarkerEnvironmentName]: activeManifest.processMarker,
+      },
+      detached: true,
+      stdio: "ignore",
+    });
+    unrelatedProcess = spawn(realBash, ["-c", "while :; do sleep 1; done"], {
+      env: process.env,
+      detached: true,
+      stdio: "ignore",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const recovery = await execFileAsync(
       runnerPath,
@@ -405,6 +490,14 @@ async function runForcedStopScenario(): Promise<void> {
     assert.equal(await databaseExists(unrelatedDatabaseName), true, "Recovery removed an unrelated database.");
     await readFile(activeManifestPath);
     await readFile(unrelatedManifestPath);
+    assert.ok(activeProcess.pid);
+    assert.ok(
+      (await findProcessesWithMarker(activeManifest.processMarker!)).includes(activeProcess.pid),
+      "Recovery terminated an active regression process.",
+    );
+    assert.ok(unrelatedProcess.pid);
+    process.kill(unrelatedProcess.pid, 0);
+    await waitForMarkerProcessesToStop(staleManifest.manifest.processMarker);
   } finally {
     if (child && child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
@@ -412,6 +505,12 @@ async function runForcedStopScenario(): Promise<void> {
     }
     if (blockerPid) {
       await stopProcessGroup(blockerPid).catch(() => undefined);
+    }
+    if (activeProcess?.pid) {
+      await stopProcessGroup(await getProcessGroupId(activeProcess.pid)).catch(() => undefined);
+    }
+    if (unrelatedProcess?.pid) {
+      await stopProcessGroup(await getProcessGroupId(unrelatedProcess.pid)).catch(() => undefined);
     }
     await Promise.all(databaseNames.map((databaseName) => dropDatabase(databaseName).catch(() => undefined)));
     await rm(manifestDirectory, { recursive: true, force: true });
@@ -429,6 +528,6 @@ test("SIGTERM during a disposable API regression shell check cleans every resour
   await runInterruptedScenario("shell");
 });
 
-test("forced API regression shutdown recovery removes only stale disposable resources", async () => {
+test("forced API regression shutdown recovery removes orphaned API and shell-check processes", async () => {
   await runForcedStopScenario();
 });

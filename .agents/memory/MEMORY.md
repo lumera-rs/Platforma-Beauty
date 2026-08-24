@@ -83,3 +83,4 @@
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
 - [Campaign period portal tests](campaign-period-portal-tests.md) — Radix picker presets render outside the selector subtree, so browser locators must use the page-level portal test id.
 - [Browser fixture schema boundaries](browser-fixture-schema-boundaries.md) — scripts helpers receive generated schemas from specs so shared payloads validate without crossing TypeScript rootDir.
+- [Isolated process recovery](isolated-process-recovery.md) — stale-run cleanup targets unique child markers, while protected foreign /proc entries remain non-fatal.
