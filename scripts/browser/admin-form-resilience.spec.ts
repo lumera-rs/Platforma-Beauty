@@ -194,6 +194,17 @@ async function mockAdminApi(page: Page): Promise<void> {
             galleryCleanupHasRepeatedFailures: false,
             deliveryReportStaleProviders: [],
             smsFallbackReachableAdminCount: 0,
+            schedulerJobs: [{
+              job: "rescheduled-confirmation-retries",
+              state: "idle",
+              lastStartedAt: null,
+              lastSucceededAt: null,
+              lastFailedAt: null,
+              lastFailureClass: null,
+              consecutiveFailures: 0,
+              deferredCycles: 0,
+              nextRetryAt: null,
+            }],
             topCategories: [],
           }),
         });
@@ -284,7 +295,7 @@ async function mockAdminApi(page: Page): Promise<void> {
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
-        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {}, version: null };
         const webhookCard = {
           ...card,
           webhookSecretPendingReconfirmation: false,
