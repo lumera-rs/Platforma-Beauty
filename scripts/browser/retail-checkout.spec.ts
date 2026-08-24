@@ -755,10 +755,13 @@ test("retail cart announces every shopper mutation through completed checkout", 
 
   await page.getByTestId("link-cart").click();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
-  await page.getByRole("button").filter({ has: page.locator("svg.lucide-plus") }).first().click();
+  await page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName}` }).click();
   await expectCartAnnouncement(2);
 
-  await page.getByRole("button").filter({ has: page.locator("svg.lucide-trash-2") }).first().click();
+  await page.getByRole("button", { name: `Smanji količinu proizvoda ${productName}` }).click();
+  await expectCartAnnouncement(1);
+
+  await page.getByRole("button", { name: `Ukloni ${productName} iz korpe` }).click();
   await expectCartAnnouncement(0);
 
   await page.goto("/proizvodi");

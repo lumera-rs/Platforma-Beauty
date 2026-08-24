@@ -56,8 +56,8 @@ function CartLines({ cart, change, remove }: { cart: Cart; change: (id: string, 
   return <div className="space-y-3">{cart.items.map((item) => <div key={item.id} className="flex gap-3 rounded-xl border p-3">
     <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
     <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
-      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" onClick={() => item.quantity > 1 ? change(item.id, item.quantity - 1) : remove(item.id)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" onClick={() => change(item.id, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
-      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" onClick={() => remove(item.id)}><Trash2 className="h-4 w-4" /></Button></div>
+      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Smanji količinu proizvoda ${item.name}`} onClick={() => item.quantity > 1 ? change(item.id, item.quantity - 1) : remove(item.id)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Povećaj količinu proizvoda ${item.name}`} onClick={() => change(item.id, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
+      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" aria-label={`Ukloni ${item.name} iz korpe`} onClick={() => remove(item.id)}><Trash2 className="h-4 w-4" /></Button></div>
     </div><strong>{money(item.lineTotal)}</strong>
   </div>)}</div>;
 }
