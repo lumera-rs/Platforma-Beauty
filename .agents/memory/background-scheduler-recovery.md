@@ -19,3 +19,15 @@ multiple processes.
 classify only connection/transient database failures as retryable, and retain
 their own durable concurrency and idempotency protections. A later normal interval
 may begin a fresh bounded retry window after an outage exhausts the prior one.
+
+**Rule:** Scheduler-owned work must leave two shared-pool connections available
+for interactive requests, and queued background work must retain FIFO order.
+
+**Why:** Several independent timers can start together during boot or recovery.
+Without a shared concurrency bound, those jobs can occupy every database
+connection and make the administrator dashboard wait behind maintenance work.
+
+**How to apply:** Route every new resilient scheduled job through the shared
+scheduler database-activity gate. Contention regressions should use the same
+gate with checked-out, read-only database clients rather than altering global
+scheduler health or production timers.

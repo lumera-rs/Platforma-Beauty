@@ -18,6 +18,7 @@ import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   db,
+  databasePoolStats,
   observeDatabaseQueries,
   ordersTable,
   pool,
@@ -30,11 +31,16 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import {
+  SCHEDULER_DATABASE_ACTIVITY_LIMIT,
+  withSchedulerDatabaseActivity,
+} from "./scheduler-resilience";
 import { setAdminSummaryAfterFirstReadForTest } from "../routes/marketplace";
 
 const APPOINTMENTS_PER_CATEGORY = 500;
 const ADMIN_SUMMARY_READ_QUERY_BUDGET = 4;
 const ADMIN_SUMMARY_LATENCY_BUDGET_MS = 2_000;
+const BACKGROUND_QUERY_HOLD_MS = 2_500;
 
 type Summary = {
   totalUsers: number;
@@ -460,6 +466,64 @@ async function run(): Promise<void> {
       !summary.topCategories.some((category) => category.name === categoryCounts[5]?.name),
       "the sixth-ranked category must be excluded by the top-five limit",
     );
+
+    let backgroundActivitiesStarted = 0;
+    let releaseBackgroundStart: () => void = () => {};
+    const backgroundStart = new Promise<void>((resolve) => {
+      releaseBackgroundStart = resolve;
+    });
+    const backgroundActivities = Array.from(
+      { length: databasePoolStats().max },
+      () => withSchedulerDatabaseActivity(async () => {
+        const client = await pool.connect();
+        try {
+          backgroundActivitiesStarted += 1;
+          if (backgroundActivitiesStarted === SCHEDULER_DATABASE_ACTIVITY_LIMIT) {
+            releaseBackgroundStart();
+          }
+          await client.query("SELECT count(*) FROM appointments");
+          await client.query("SELECT pg_sleep($1)", [BACKGROUND_QUERY_HOLD_MS / 1_000]);
+        } finally {
+          client.release();
+        }
+      }),
+    );
+    try {
+      await Promise.race([
+        backgroundStart,
+        Promise.all(backgroundActivities).then(() => {
+          throw new Error("background activity completed before filling its reserved slots");
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("background activity did not start within 5 seconds")), 5_000);
+        }),
+      ]);
+
+      const contentionStartedAt = performance.now();
+      const contentionResponse = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
+      const contentionResponseText = await contentionResponse.text();
+      const contentionLatencyMs = performance.now() - contentionStartedAt;
+      assert.equal(
+        contentionResponse.status,
+        200,
+        `GET /admin/summary under scheduler activity: ${contentionResponseText.slice(0, 500)}`,
+      );
+      assert.ok(
+        contentionLatencyMs <= ADMIN_SUMMARY_LATENCY_BUDGET_MS,
+        `GET /admin/summary took ${contentionLatencyMs.toFixed(1)}ms with background activity; budget is ${ADMIN_SUMMARY_LATENCY_BUDGET_MS}ms`,
+      );
+      assert.deepEqual(
+        dashboardTotals(JSON.parse(contentionResponseText) as Summary),
+        dashboardTotals(summary),
+        "background scheduler activity must not mix or alter the admin summary snapshot",
+      );
+      process.stdout.write(
+        `✓ admin summary remains responsive with ${SCHEDULER_DATABASE_ACTIVITY_LIMIT} scheduler database slots active `
+        + `(${contentionLatencyMs.toFixed(1)}ms)\n`,
+      );
+    } finally {
+      await Promise.allSettled(backgroundActivities);
+    }
 
     const fetchSummary = async (): Promise<Summary> => {
       const response = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });

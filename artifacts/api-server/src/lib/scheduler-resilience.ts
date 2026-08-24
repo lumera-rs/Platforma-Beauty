@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import { randomUUID } from "node:crypto";
+import { databasePoolStats } from "@workspace/db";
 
 export type SchedulerFailureClass = "transient_database" | "permanent";
 export type SchedulerRunState = "idle" | "running" | "retrying" | "failed";
@@ -77,6 +78,57 @@ export type ResilientSchedulerOptions = {
 };
 
 const healthByJob = new Map<string, SchedulerJobHealth>();
+
+/**
+ * Keep a small portion of the shared pool available for interactive requests.
+ * Scheduled work is intentionally bounded here rather than by each job: several
+ * independent timers can fire together during boot or after an outage.
+ */
+export const SCHEDULER_DATABASE_ACTIVITY_LIMIT = Math.max(
+  1,
+  databasePoolStats().max - 2,
+);
+
+let activeDatabaseActivities = 0;
+const waitingDatabaseActivities: Array<() => void> = [];
+
+async function acquireSchedulerDatabaseActivity(): Promise<() => void> {
+  if (
+    activeDatabaseActivities < SCHEDULER_DATABASE_ACTIVITY_LIMIT
+    && waitingDatabaseActivities.length === 0
+  ) {
+    activeDatabaseActivities += 1;
+    return releaseSchedulerDatabaseActivity;
+  }
+
+  await new Promise<void>((resolve) => {
+    waitingDatabaseActivities.push(resolve);
+  });
+  activeDatabaseActivities += 1;
+  return releaseSchedulerDatabaseActivity;
+}
+
+function releaseSchedulerDatabaseActivity(): void {
+  activeDatabaseActivities -= 1;
+  const next = waitingDatabaseActivities.shift();
+  next?.();
+}
+
+/**
+ * Runs one unit of scheduler-owned work while preserving pool capacity for
+ * interactive requests. This is exported so contention regressions can model
+ * real scheduler activity without creating health entries or timers.
+ */
+export async function withSchedulerDatabaseActivity<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  const release = await acquireSchedulerDatabaseActivity();
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
 
 const defaultTimer: SchedulerTimer = {
   now: () => new Date(),
@@ -292,7 +344,9 @@ export class ResilientScheduledJob {
     const startedAt = this.timer.now();
     const runId = randomUUID();
     this.health.lastStartedAt = startedAt.toISOString();
+    const releaseDatabaseActivity = await acquireSchedulerDatabaseActivity();
     try {
+      if (this.stopped) return;
       await this.runJob();
       this.retryAttempts = 0;
       this.health.state = "idle";
@@ -344,6 +398,7 @@ export class ResilientScheduledJob {
         );
       }
     } finally {
+      releaseDatabaseActivity();
       this.running = false;
     }
   }
