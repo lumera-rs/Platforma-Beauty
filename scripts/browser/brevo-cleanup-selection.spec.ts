@@ -26,7 +26,7 @@ const staleWebhooks = [
 ];
 
 function integrationsPayload() {
-  const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+  const card = { enabled: false, configuredInDatabase: false, complete: false, version: null, values: {} };
   const webhookCard = {
     ...card,
     webhookSecretPendingReconfirmation: false,
