@@ -504,29 +504,45 @@ async function run() {
       console.log("✓ marker rows never leak into integration values");
     }
 
-    // ── 10. Integration saves roll back every Brevo row on failure ──────────
+    // ── 10. Integration saves roll back settings and webhook health together
     {
-      const beforeRows = await db.select().from(integrationSettingsTable)
-        .where(eq(integrationSettingsTable.integration, "brevo"));
-      await assert.rejects(
-        () => saveIntegrationSettings({
-          integration: "brevo",
-          enabled: !Boolean(beforeRows[0]?.enabled),
-          // The first field is written before the second field fails. The
-          // transaction must roll back the value, timestamp, and enabled flag.
-          values: {
-            senderName: `WSR-rollback-${suffix}`,
-            apiKey: undefined as unknown as string,
-          },
-          updatedByUserId: admin.id,
-        }),
-        TypeError,
-      );
-      const afterRows = await db.select().from(integrationSettingsTable)
-        .where(eq(integrationSettingsTable.integration, "brevo"));
-      assert.deepEqual(afterRows, beforeRows,
-        "a failed Brevo save must leave every value, timestamp, and enabled state unchanged");
-      console.log("✓ failed Brevo integration save rolls back all prior writes");
+      for (const integration of ["sms", "brevo"] as const) {
+        const beforeRows = await db.select().from(integrationSettingsTable)
+          .where(eq(integrationSettingsTable.integration, integration));
+        const markerRowsBeforeFailure = beforeRows.filter((row) =>
+          row.settingKey === "webhookSecretChangedAt"
+          || row.settingKey === "webhookVerifiedAt"
+          || row.settingKey === "brevoRegistrationMissingEvents");
+        assert.ok(markerRowsBeforeFailure.length >= 2,
+          `${integration} must have webhook health metadata before the rollback check`);
+        await assert.rejects(
+          () => saveIntegrationSettings({
+            integration,
+            enabled: !Boolean(beforeRows[0]?.enabled),
+            // The webhook secret is written before the second field fails.
+            // The transaction must roll back that new secret and the pending
+            // marker together, rather than leaving health metadata stale.
+            values: {
+              webhookSecret: `WSR-rollback-${integration}-${suffix}`,
+              apiKey: undefined as unknown as string,
+            },
+            updatedByUserId: admin.id,
+          }),
+          TypeError,
+        );
+        const afterRows = await db.select().from(integrationSettingsTable)
+          .where(eq(integrationSettingsTable.integration, integration));
+        assert.deepEqual(afterRows, beforeRows,
+          `a failed ${integration} webhook-secret save must leave configuration and health metadata unchanged`);
+        assert.deepEqual(
+          afterRows.filter((row) =>
+            row.settingKey === "webhookSecretChangedAt"
+            || row.settingKey === "webhookVerifiedAt"
+            || row.settingKey === "brevoRegistrationMissingEvents"),
+          markerRowsBeforeFailure,
+          `a failed ${integration} webhook-secret save must roll back its health metadata`);
+      }
+      console.log("✓ failed SMS and Brevo webhook-secret saves roll back configuration and health metadata together");
     }
 
     console.log("\n✅ All webhook secret re-confirmation tests passed");

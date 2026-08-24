@@ -175,6 +175,36 @@ export async function saveIntegrationSettings(input: {
         set: { encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
       });
     }
+    const savedWebhookSecret = (input.integration === "sms" || input.integration === "brevo")
+      ? input.values["webhookSecret"]?.trim() || undefined
+      : undefined;
+    const webhookSecretChanged = Boolean(savedWebhookSecret && savedWebhookSecret !== previousWebhookSecret);
+    if (webhookSecretChanged) {
+      // Keep the pending re-confirmation marker in the same transaction as the
+      // secret. Otherwise an interrupted save can activate a secret while
+      // losing the warning that the provider URL must be re-confirmed.
+      const changedAt = new Date();
+      const encryptedChangedAt = encrypt(changedAt.toISOString());
+      await tx.insert(integrationSettingsTable).values({
+        integration: input.integration,
+        settingKey: "webhookSecretChangedAt",
+        encryptedValue: encryptedChangedAt,
+        enabled: true,
+        updatedByUserId: input.updatedByUserId,
+      }).onConflictDoUpdate({
+        target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+        set: { encryptedValue: encryptedChangedAt, updatedByUserId: input.updatedByUserId, updatedAt: changedAt },
+      });
+      // A new secret invalidates Brevo's previous provider comparison. Clear
+      // that advice atomically as well; it will be repopulated by the next
+      // provider verification if still applicable.
+      if (input.integration === "brevo") {
+        await tx.delete(integrationSettingsTable).where(and(
+          eq(integrationSettingsTable.integration, "brevo"),
+          eq(integrationSettingsTable.settingKey, "brevoRegistrationMissingEvents"),
+        ));
+      }
+    }
     // Apply the integration-level enabled flag to every row WITHOUT touching
     // updatedAt: per-row updatedAt must reflect when THAT setting's value was
     // last (re)written — the SMS registration check compares delivery-report
@@ -197,7 +227,7 @@ export async function saveIntegrationSettings(input: {
       target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
       set: { encryptedValue: encryptedVersion, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
     });
-    return { previousWebhookSecret };
+    return { previousWebhookSecret, webhookSecretChanged };
   });
 }
 

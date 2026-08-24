@@ -364,7 +364,7 @@ import { ensureDemoData } from "../lib/seed";
 import { maskPhone, sendPhoneVerificationCode, sendSms, sendTestSms } from "../lib/sms";
 import { sendDailyAppointmentReminders } from "../lib/sms-reminders";
 import { runRescheduledConfirmationRetries } from "../lib/rescheduled-confirmation-retries";
-import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, IntegrationSettingsVersionConflictError, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, markWebhookSecretChanged, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
+import { brevoRegistrationMissingEvents, clearBrevoRegistrationIncomplete, infobipBaseUrl, IntegrationSettingsVersionConflictError, integrationDisplay, integrationSettings, integrationValue, markBrevoRegistrationIncomplete, markWebhookReconfirmed, saveIntegrationSettings, webhookSecretPendingReconfirmation, webhookVerificationIsStale, webhookVerifiedAt, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS, type IntegrationName } from "../lib/integrations";
 import { deliveryReportStatuses, missingBrevoWebhookEvents, resolveWebhookSecret, smsWebhookRegistrationStatus, webhookTokenMatches, DELIVERY_REPORT_GRACE_MINUTES, DELIVERY_REPORT_WINDOW_HOURS, WEBHOOK_VERIFICATION_REFERENCE_PREFIX } from "../lib/provider-events";
 import { smsFallbackReachableAdmins, smsFallbackReachableAdminCount, staleDeliveryReportProviders } from "../lib/delivery-report-alerts";
 import { schedulerHealthSnapshot, withSchedulerDependency } from "../lib/scheduler-resilience";
@@ -3350,16 +3350,14 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
   // moment so the re-registration reminder survives reloads; re-saving an
   // identical secret changes nothing and must not raise the reminder.
   const webhookIntegration = req.params.integration === "sms" || req.params.integration === "brevo" ? req.params.integration : null;
-  const savedWebhookSecret = webhookIntegration ? values["webhookSecret"]?.trim() || undefined : undefined;
-  let previousWebhookSecret: string | undefined;
   try {
-    ({ previousWebhookSecret } = await saveIntegrationSettings({
+    await saveIntegrationSettings({
       integration: req.params.integration,
       enabled: body.enabled,
       values,
       updatedByUserId: user.id,
       expectedVersion: body.expectedVersion,
-    }));
+    });
   } catch (error) {
     if (error instanceof IntegrationSettingsVersionConflictError) {
       res.status(409).json({
@@ -3371,12 +3369,6 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
       return;
     }
     throw error;
-  }
-  if (webhookIntegration && savedWebhookSecret && savedWebhookSecret !== previousWebhookSecret) {
-    await markWebhookSecretChanged(webhookIntegration, user.id);
-    // A new secret invalidates the previous provider comparison. Do not carry
-    // old missing-event advice forward until Brevo verifies this URL + secret.
-    if (webhookIntegration === "brevo") await clearBrevoRegistrationIncomplete();
   }
   res.json({
     ...(await integrationDisplay(req.params.integration, definition.keys, definition.required)),
