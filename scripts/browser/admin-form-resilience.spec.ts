@@ -311,6 +311,25 @@ async function mockAdminApi(page: Page): Promise<void> {
         });
         return;
       }
+      if (path === "/api/admin/integrations/webhook-freshness" && method === "GET") {
+        await route.fulfill({
+          json: {
+            integrations: {
+              sms: {
+                webhookVerifiedAt: "2026-08-24T10:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+              brevo: {
+                webhookVerifiedAt: "2026-08-24T11:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+            },
+          },
+        });
+        return;
+      }
 
       // Any mutation that slips through invalid client-side validation is
       // answered with a structured 400 — never a 500 — proving the error path.
@@ -409,6 +428,34 @@ test("category form rejects empty, whitespace, text, and negative sort order", a
 
   // Dialog is still usable after all rejected submits.
   await expect(page.getByTestId("btn-save-category")).toBeEnabled();
+  await expectNoServerErrors();
+});
+
+test("webhook freshness refresh preserves unsaved integration edits", async ({ page }) => {
+  await openAdmin(page, "/admin/integracije");
+  await expect(page.getByRole("heading", { name: "E-mail · Brevo" })).toBeVisible();
+
+  const brevoSecret = page.getByTestId("input-webhook-secret-brevo");
+  const brevoToggle = page.getByTestId("toggle-enabled-brevo");
+  const initiallyEnabled = await brevoToggle.isChecked();
+  const draftSecret = "unsaved-brevo-webhook-secret";
+
+  await brevoSecret.fill(draftSecret);
+  await brevoToggle.setChecked(!initiallyEnabled);
+
+  const freshnessResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    return new URL(response.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+
+  const response = await freshnessResponse;
+  expect(response.ok(), "the visibility freshness request must succeed").toBe(true);
+  await expect(brevoSecret).toHaveValue(draftSecret);
+  expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
+  await expect(page.getByTestId("webhook-confirmation-status-sms")).toBeVisible();
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toBeVisible();
   await expectNoServerErrors();
 });
 
