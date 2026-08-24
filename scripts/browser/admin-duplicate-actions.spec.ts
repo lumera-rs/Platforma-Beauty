@@ -20,12 +20,18 @@ type MutationCounts = {
   educationSettings: number;
 };
 
-type MutationHarness = MutationCounts & { holdNextMutation: () => () => void };
+type MutationHarness = MutationCounts & {
+  holdNextMutation: () => () => void;
+  failNextBrevoRegistration: () => void;
+  failNextBrevoCleanup: () => void;
+};
 
 async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
   const counts: MutationCounts = { campaign: 0, integrationSave: 0, integrationTest: 0, brevoRegistration: 0, brevoCleanup: 0, settlement: 0, educationSettings: 0 };
   const integrationCard = { enabled: true, configuredInDatabase: true, complete: true, values: {} };
   let nextMutationHold: Promise<void> | null = null;
+  let shouldFailNextBrevoRegistration = false;
+  let shouldFailNextBrevoCleanup = false;
 
   const holdNextMutation = () => {
     let release = () => undefined;
@@ -97,12 +103,22 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
     if (pathname === "/api/admin/integrations/brevo/register-webhook" && method === "POST") {
       counts.brevoRegistration += 1;
       await waitForHeldMutation();
+      if (shouldFailNextBrevoRegistration) {
+        shouldFailNextBrevoRegistration = false;
+        await route.fulfill({ status: 502, json: { error: "Brevo je odbio registraciju." } });
+        return;
+      }
       await route.fulfill({ json: { message: "Brevo webhook je registrovan.", webhookVerifiedAt: null, webhookVerificationStale: false, staleWebhooks: [] } });
       return;
     }
     if (pathname === "/api/admin/integrations/brevo/cleanup-webhooks" && method === "POST") {
       counts.brevoCleanup += 1;
       await waitForHeldMutation();
+      if (shouldFailNextBrevoCleanup) {
+        shouldFailNextBrevoCleanup = false;
+        await route.fulfill({ status: 502, json: { error: "Brevo je odbio uklanjanje registracija." } });
+        return;
+      }
       await route.fulfill({ json: { message: "Zaostale registracije su uklonjene.", staleWebhooks: [] } });
       return;
     }
@@ -154,7 +170,19 @@ async function mockAdminMutationPages(page: Page): Promise<MutationHarness> {
     await route.fallback();
   });
 
-  return { ...counts, get campaign() { return counts.campaign; }, get integrationSave() { return counts.integrationSave; }, get integrationTest() { return counts.integrationTest; }, get brevoRegistration() { return counts.brevoRegistration; }, get brevoCleanup() { return counts.brevoCleanup; }, get settlement() { return counts.settlement; }, get educationSettings() { return counts.educationSettings; }, holdNextMutation };
+  return {
+    ...counts,
+    get campaign() { return counts.campaign; },
+    get integrationSave() { return counts.integrationSave; },
+    get integrationTest() { return counts.integrationTest; },
+    get brevoRegistration() { return counts.brevoRegistration; },
+    get brevoCleanup() { return counts.brevoCleanup; },
+    get settlement() { return counts.settlement; },
+    get educationSettings() { return counts.educationSettings; },
+    holdNextMutation,
+    failNextBrevoRegistration: () => { shouldFailNextBrevoRegistration = true; },
+    failNextBrevoCleanup: () => { shouldFailNextBrevoCleanup = true; },
+  };
 }
 
 async function clickTwiceInTheSameTurn(button: Locator) {
@@ -212,6 +240,25 @@ test("Brevo webhook registration reaches the API once after rapid clicks", async
   release();
 });
 
+test("failed Brevo webhook registration releases its guard for one deliberate retry", async ({ page }) => {
+  const mutations = await mockAdminMutationPages(page);
+  await page.goto("/admin/integracije");
+  const register = page.getByRole("button", { name: "Registruj webhook" });
+  await expect(register).toBeVisible();
+
+  mutations.failNextBrevoRegistration();
+  const release = mutations.holdNextMutation();
+  await clickTwiceInTheSameTurn(register);
+  await expect.poll(() => mutations.brevoRegistration).toBe(1);
+  await expect(page.getByRole("button", { name: "Registrujem…" })).toBeDisabled();
+  release();
+
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Brevo je odbio registraciju." })).toBeVisible();
+  await expect(register).toBeEnabled();
+  await register.click();
+  await expect.poll(() => mutations.brevoRegistration).toBe(2);
+});
+
 test("Brevo stale webhook cleanup reaches the API once after rapid confirmation", async ({ page }) => {
   const mutations = await mockAdminMutationPages(page);
   await page.goto("/admin/integracije");
@@ -224,6 +271,26 @@ test("Brevo stale webhook cleanup reaches the API once after rapid confirmation"
   await expect.poll(() => mutations.brevoCleanup).toBe(1);
   await expect(page.getByRole("button", { name: "Uklanjam…" })).toBeDisabled();
   release();
+});
+
+test("failed Brevo stale webhook cleanup releases its guard for one deliberate retry", async ({ page }) => {
+  const mutations = await mockAdminMutationPages(page);
+  await page.goto("/admin/integracije");
+  const cleanup = page.getByRole("button", { name: "Ukloni zaostale registracije" });
+  await expect(cleanup).toBeVisible();
+
+  page.on("dialog", (dialog) => dialog.accept());
+  mutations.failNextBrevoCleanup();
+  const release = mutations.holdNextMutation();
+  await clickTwiceInTheSameTurn(cleanup);
+  await expect.poll(() => mutations.brevoCleanup).toBe(1);
+  await expect(page.getByRole("button", { name: "Uklanjam…" })).toBeDisabled();
+  release();
+
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: "Brevo je odbio uklanjanje registracija." })).toBeVisible();
+  await expect(cleanup).toBeEnabled();
+  await cleanup.click();
+  await expect.poll(() => mutations.brevoCleanup).toBe(2);
 });
 
 test("manual education settlement reaches the API once after rapid confirmation", async ({ page }) => {
