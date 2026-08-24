@@ -136,13 +136,22 @@ async function run() {
       const body = await response.json() as { integrations: Record<"sms" | "brevo", CardFlags> };
       return body.integrations;
     };
-    const putIntegration = async (integration: string, values: Record<string, string>, expectedVersion?: string | null) => {
-      const version = expectedVersion === undefined ? (await getCards())[integration]?.version ?? null : expectedVersion;
+    const putIntegrationRaw = async (integration: string, values: Record<string, string>, expectedVersion: string | null, enabled = true) => {
       const response = await fetch(`${baseUrl}/api/admin/integrations/${integration}`, {
         method: "PUT", headers: { cookie, "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true, expectedVersion: version, values }),
+        body: JSON.stringify({ enabled, expectedVersion, values }),
       });
-      const body = await response.json() as CardFlags & { error?: string };
+      const body = await response.json() as CardFlags & {
+        error?: string;
+        code?: string;
+        expectedVersion?: string | null;
+        currentVersion?: string | null;
+      };
+      return { response, body };
+    };
+    const putIntegration = async (integration: string, values: Record<string, string>, expectedVersion?: string | null) => {
+      const version = expectedVersion === undefined ? (await getCards())[integration]?.version ?? null : expectedVersion;
+      const { response, body } = await putIntegrationRaw(integration, values, version);
       assert.equal(response.status, 200, `saving ${integration} settings must succeed: ${JSON.stringify(body)}`);
       return body;
     };
@@ -163,7 +172,60 @@ async function run() {
       return { response, body };
     };
 
-    // ── 0. Stale Brevo saves are rejected without partial writes ────────────
+    // ── 0. First Brevo saves serialize from the empty state ────────────────
+    {
+      // Use Brevo as an isolated provider configuration: no rows means both
+      // requests must submit the same null version, including the absence of
+      // the version marker itself.
+      await db.delete(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      const emptyRows = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      assert.equal(emptyRows.length, 0, "the first-save race must begin with no Brevo rows");
+      const emptySettings = await integrationSettings("brevo");
+      assert.equal(emptySettings.version, null, "an empty provider configuration must expose a null version");
+
+      const candidates = [
+        { enabled: true, values: { senderName: `WSR-first-a-${suffix}` } },
+        { enabled: false, values: { senderName: `WSR-first-b-${suffix}` } },
+      ];
+      const results = await Promise.all(candidates.map((candidate) =>
+        putIntegrationRaw("brevo", candidate.values, emptySettings.version, candidate.enabled)));
+      assert.equal(results.filter(({ response }) => response.status === 200).length, 1,
+        "exactly one concurrent first Brevo save must succeed");
+      assert.equal(results.filter(({ response }) => response.status === 409).length, 1,
+        "the other concurrent first Brevo save must receive a conflict");
+
+      const winnerIndex = results.findIndex(({ response }) => response.status === 200);
+      const rejectedIndex = results.findIndex(({ response }) => response.status === 409);
+      assert.notEqual(winnerIndex, -1);
+      assert.notEqual(rejectedIndex, -1);
+      const winner = candidates[winnerIndex]!;
+      const winningResponse = results[winnerIndex]!;
+      const rejectedResponse = results[rejectedIndex]!;
+      assert.equal(rejectedResponse.body.code, "INTEGRATION_SETTINGS_VERSION_CONFLICT",
+        "the rejected first save must use the structured version-conflict response");
+      assert.equal(rejectedResponse.body.expectedVersion, null);
+      assert.equal(rejectedResponse.body.currentVersion, winningResponse.body.version);
+
+      const rowsAfterWinner = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      const afterWinner = await integrationSettings("brevo");
+      assert.equal(afterWinner.values.senderName, winner.values.senderName,
+        "the winning first save must remain active");
+      assert.equal(afterWinner.enabled, winner.enabled,
+        "the rejected first save must not change the winning enabled state");
+      assert.equal(afterWinner.version, winningResponse.body.version,
+        "the winning response version must match the stored version token");
+
+      const rowsAfterRejectedSave = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      assert.deepEqual(rowsAfterRejectedSave, rowsAfterWinner,
+        "the rejected first save must not change values, enabled state, timestamps, or version");
+      console.log("✓ concurrent first Brevo saves → one success, one structured conflict with exact winner preserved");
+    }
+
+    // ── 0a. Stale Brevo saves are rejected without partial writes ───────────
     {
       const loadedVersion = (await getCards())["brevo"]?.version ?? null;
       const first = await putIntegration("brevo", { senderName: `WSR-newer-${suffix}` }, loadedVersion);
