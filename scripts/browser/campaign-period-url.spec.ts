@@ -972,4 +972,38 @@ test.describe("shared campaign period links restore the picked window", () => {
     await expect(page.getByTestId("stats-period-selector").getByTestId("period-custom"))
       .toContainText("2026");
   });
+
+  test("keeps the selected period visible after the last campaign is deleted", async ({ page }) => {
+    await resetFixtureActiveSalon(fixture, fixture.salonId);
+    await signInAsFixtureOwner(page, fixture);
+
+    const expected = { period: null, from: "2026-03-01", to: "2026-03-31" };
+    const overviewResponse = nextOverviewStatsResponse(page, expected);
+    await page.goto(`/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`);
+    expect((await overviewResponse).status()).toBe(200);
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
+    await expect(selector.getByTestId("period-custom")).toContainText("2026");
+
+    page.once("dialog", (dialog) => dialog.accept());
+    const deleteResponse = page.waitForResponse((response) =>
+      response.request().method() === "DELETE"
+      && new URL(response.url()).pathname.endsWith(`/automations/${fixture.ruleId}`),
+    );
+    const campaignCard = page.getByText(`Browser period URL kampanja`).last()
+      .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+    await campaignCard.getByRole("button").last().click();
+    expect((await deleteResponse).status()).toBe(204);
+
+    await expect(page.getByTestId(`overview-row-${fixture.ruleId}`)).toHaveCount(0);
+    await expect(page.getByTestId("campaign-overview")).toBeVisible();
+    await expect(page.getByTestId("campaign-overview-empty")).toBeVisible();
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
+      .toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("campaign-overview").getByText("Izabrani period možete promeniti iznad."))
+      .toBeVisible();
+    await expect(page.getByRole("button", { name: "Kreirajte prvu automatizaciju" })).toBeVisible();
+    await expect(page).toHaveURL(`/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`);
+  });
 });

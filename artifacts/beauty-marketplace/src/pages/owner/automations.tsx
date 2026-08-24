@@ -586,7 +586,7 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="overflow-x-auto">
+        {items.length > 0 ? <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs uppercase text-muted-foreground">
@@ -752,7 +752,11 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
               })}
             </tbody>
           </table>
-        </div>
+        </div> : (
+          <p className="py-3 text-sm text-muted-foreground" data-testid="campaign-overview-empty">
+            Nema kampanja za prikaz u izabranom periodu. Izabrani period možete promeniti iznad.
+          </p>
+        )}
          {previousTrendWindowLabel(period, customRange) && (
           <p className="text-xs text-muted-foreground mt-3" data-testid="overview-trend-note">
              Trend u odnosu na prethodni period iste dužine ({previousTrendWindowLabel(period, customRange)}).
@@ -1241,7 +1245,7 @@ export default function OwnerAutomations() {
             Sve kampanje koje predloži AI Asistent biće kreirane u stanju "Pauzirano". Samo vi možete aktivirati slanje.
           </div>
 
-          {overviewStats && overviewStats.length > 0 && (
+          {overviewStats && (overviewStats.length > 0 || rules?.length === 0) && (
             <CampaignOverview items={overviewStats} period={statsPeriod} onPeriodChange={setStatsPeriod} customRange={customRange} onCustomRangeChange={setCustomRange} onShowStats={openStats} />
           )}
 
