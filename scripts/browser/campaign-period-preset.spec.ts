@@ -237,7 +237,7 @@ test("clicking a date shortcut closes the picker and refetches inclusive stats d
     // Clicking the custom-period trigger opens the popover and puts the page
     // into custom mode without changing the last complete stats request.
     await selector.getByTestId("period-custom").click();
-    const presets = page.getByTestId("overview-range-presets");
+    const presets = page.getByTestId("overview-period-selector-range-presets");
     await expect(presets).toBeVisible();
 
     // The frozen browser date makes the shortcut's inclusive last-month
