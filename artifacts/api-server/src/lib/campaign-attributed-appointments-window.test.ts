@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
+  automationDeliveriesTable,
   automationRulesTable,
   automationRunsTable,
   db,
@@ -169,6 +170,22 @@ async function main() {
   }).returning();
   assert.ok(overviewBoundaryRule);
 
+  // Keep delivery boundary coverage separate from the per-rule and rolling-
+  // period fixtures above. Each run has one email and one SMS delivery so the
+  // overview must exclude both channels at the exclusive end of the range.
+  const [deliveryBoundaryRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id,
+    name: `Delivery Boundary Rule ${suffix}`,
+    trigger: "inactive_days",
+    triggerConfig: { inactiveDays: 30 },
+    action: "send_email_and_sms",
+    emailSubject: "Test",
+    emailBody: "Test",
+    smsBody: "Test",
+    status: "active",
+  }).returning();
+  assert.ok(deliveryBoundaryRule);
+
   const boundaryQuery = `from=${dateDaysAgo(6)}&to=${dateDaysAgo(1)}`;
   const boundaryCases = [
     {
@@ -258,6 +275,53 @@ async function main() {
       sentAt: item.runAt,
       attributedAppointmentId: appointment.id,
     });
+  }
+
+  const deliveryBoundaryCases = [
+    {
+      tag: "inclusive-start",
+      sentAt: startOfDateDaysAgo(6),
+    },
+    {
+      tag: "exclusive-end",
+      sentAt: new Date(startOfDateDaysAgo(1).getTime() + DAY_MS),
+    },
+  ] as const;
+  for (const item of deliveryBoundaryCases) {
+    const [run] = await db.insert(automationRunsTable).values({
+      eventKey: `window-delivery-boundary-run-${item.tag}-${suffix}`,
+      ruleId: deliveryBoundaryRule.id,
+      salonId: salon.id,
+      salonCustomerId: customer.id,
+      status: "sent",
+      executedAt: item.sentAt,
+      sentAt: item.sentAt,
+      createdAt: item.sentAt,
+    }).returning();
+    assert.ok(run);
+
+    await db.insert(automationDeliveriesTable).values([
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-delivery-boundary-email-${item.tag}-${suffix}`,
+        channel: "email",
+        status: "sent",
+        sentAt: item.sentAt,
+        deliveredAt: item.sentAt,
+        createdAt: item.sentAt,
+      },
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-delivery-boundary-sms-${item.tag}-${suffix}`,
+        channel: "sms",
+        status: "sent",
+        sentAt: item.sentAt,
+        deliveredAt: item.sentAt,
+        createdAt: item.sentAt,
+      },
+    ]);
   }
 
   // Two runs are inside the custom range [6 days ago, 1 day ago]. The other
@@ -392,6 +456,24 @@ async function main() {
     );
     console.log("✓ campaign overview honors inclusive start and exclusive end boundaries");
 
+    const deliveryBoundaryRow = overviewResponse.body.find(
+      (row: any) => row.ruleId === deliveryBoundaryRule.id,
+    );
+    assert.ok(deliveryBoundaryRow, "overview includes the isolated delivery boundary rule");
+    assert.equal(
+      deliveryBoundaryRow.emailDeliveredCount,
+      1,
+      "overview includes the email delivered at the inclusive start only",
+    );
+    assert.equal(
+      deliveryBoundaryRow.smsDeliveredCount,
+      1,
+      "overview includes the SMS delivered at the inclusive start only",
+    );
+    assert.equal(deliveryBoundaryRow.emailSentCount, 1, "overview excludes the out-of-range email send");
+    assert.equal(deliveryBoundaryRow.smsSentCount, 1, "overview excludes the out-of-range SMS send");
+    console.log("✓ campaign delivery totals honor inclusive start and exclusive end boundaries");
+
     for (const [query, expected] of [
       ["period=7d", 2],
       ["period=30d", 3],
@@ -417,6 +499,7 @@ async function main() {
       inclusiveToRule.id,
       exclusiveEndRule.id,
       overviewBoundaryRule.id,
+      deliveryBoundaryRule.id,
     ]));
     await db.delete(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id));
     await db.delete(automationRulesTable).where(inArray(automationRulesTable.id, [
@@ -425,6 +508,7 @@ async function main() {
       inclusiveToRule.id,
       exclusiveEndRule.id,
       overviewBoundaryRule.id,
+      deliveryBoundaryRule.id,
     ]));
     await db.delete(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
     await db.delete(servicesTable).where(eq(servicesTable.salonId, salon.id));
