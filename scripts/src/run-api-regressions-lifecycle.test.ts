@@ -1069,7 +1069,7 @@ async function runInterruptedScenario(
       const escapedDatabaseName = databaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(
         recovery.stdout,
-        new RegExp(`Removed interrupted browser test database ${escapedDatabaseName}`),
+        new RegExp(`Removed interrupted API regression test database ${escapedDatabaseName}`),
       );
       assert.equal(await databaseExists(databaseName), false, "Recovery did not remove the failed run database.");
       await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
@@ -1207,7 +1207,7 @@ async function runForcedStopScenario(): Promise<void> {
     const escapedStaleDatabaseName = staleDatabaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       recovery.stdout,
-      new RegExp(`Removed interrupted browser test database ${escapedStaleDatabaseName}`),
+      new RegExp(`Removed interrupted API regression test database ${escapedStaleDatabaseName}`),
     );
     assert.equal(await databaseExists(staleDatabaseName), false, "Recovery did not remove the stale database.");
     await assert.rejects(readFile(staleManifest.manifestPath), { code: "ENOENT" });

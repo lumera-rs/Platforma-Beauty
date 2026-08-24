@@ -398,6 +398,7 @@ async function stopOrphanedHarnessProcesses(processMarker: string | undefined): 
 
 export async function recoverInterruptedHarnessDatabases(
   configuration: IsolatedSuiteConfiguration,
+  suiteLabel: "browser" | "API" | "API regression" = "browser",
 ): Promise<void> {
   const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
   const developmentDatabaseName = getDatabaseName(developmentDatabaseUrl);
@@ -446,11 +447,11 @@ export async function recoverInterruptedHarnessDatabases(
         "dropdb",
         ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, manifest.databaseName],
         process.env,
-        `Removing interrupted browser test database ${manifest.databaseName}`,
+        `Removing interrupted ${suiteLabel} test database ${manifest.databaseName}`,
       );
       await removeHarnessDatabaseManifest(manifestPath);
       removedDatabaseCount += 1;
-      console.log(`Removed interrupted browser test database ${manifest.databaseName}.`);
+      console.log(`Removed interrupted ${suiteLabel} test database ${manifest.databaseName}.`);
     } catch (error) {
       cleanupErrors.push(error);
     }
@@ -459,7 +460,7 @@ export async function recoverInterruptedHarnessDatabases(
   if (cleanupErrors.length > 0) {
     throw new AggregateError(
       cleanupErrors,
-      "One or more interrupted browser test databases could not be removed.",
+      `One or more interrupted ${suiteLabel} test databases could not be removed.`,
     );
   }
   if (removedDatabaseCount === 0) {
@@ -851,7 +852,7 @@ export async function runIsolatedBrowserSuiteCommand(
   const command = commandArguments.length === 0
     ? runIsolatedBrowserSuite(configuration)
     : commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases"
-      ? recoverInterruptedHarnessDatabases(configuration)
+      ? recoverInterruptedHarnessDatabases(configuration, "browser")
       : Promise.reject(new Error(
         `Usage: ${path.basename(process.argv[1] ?? "isolated-browser-suite")} [--recover-interrupted-databases]`,
       ));
@@ -871,7 +872,7 @@ export async function runIsolatedApiSuiteCommand(
   const command = commandArguments.length === 0
     ? runIsolatedApiSuite(configuration)
     : commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases"
-      ? recoverInterruptedHarnessDatabases(configuration)
+      ? recoverInterruptedHarnessDatabases(configuration, "API")
       : Promise.reject(new Error(
         `Usage: ${path.basename(process.argv[1] ?? "isolated-api-suite")} [--recover-interrupted-databases]`,
       ));
@@ -891,7 +892,7 @@ export async function runIsolatedApiRegressionSuiteCommand(
   const command = commandArguments.length === 0
     ? runIsolatedApiRegressionSuite(configuration)
     : commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases"
-      ? recoverInterruptedHarnessDatabases(configuration)
+      ? recoverInterruptedHarnessDatabases(configuration, "API regression")
       : Promise.reject(new Error(
         `Usage: ${path.basename(process.argv[1] ?? "isolated-api-regressions")} [--recover-interrupted-databases]`,
       ));
