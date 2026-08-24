@@ -326,7 +326,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
-        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+        const card = { enabled: false, configuredInDatabase: false, complete: false, values: {}, version: null };
         const webhookCard = {
           ...card,
           webhookSecretPendingReconfirmation: false,
