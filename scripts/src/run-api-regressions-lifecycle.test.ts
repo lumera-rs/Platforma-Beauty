@@ -709,7 +709,10 @@ exec "$LUMERA_LIFECYCLE_REAL_BASH" "$@"
   await chmod(path.join(binDirectory, "bash"), 0o755);
 }
 
-async function runInterruptedScenario(phase: InterruptedPhase): Promise<void> {
+async function runInterruptedScenario(
+  phase: InterruptedPhase,
+  signal: InterruptSignal = "SIGTERM",
+): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-api-regression-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const markerPath = path.join(temporaryRoot, "phase-reached");
@@ -756,17 +759,37 @@ async function runInterruptedScenario(phase: InterruptedPhase): Promise<void> {
     const manifest = await readManifest(manifestDirectory);
     manifestPath = manifest.manifestPath;
     databaseName = manifest.manifest.databaseName;
+    const processMarker = manifest.manifest.processMarker;
+    assert.ok(processMarker, "The API regression process marker was not recorded.");
     const isolatedDatabaseUrl = new URL(databaseUrl!);
     isolatedDatabaseUrl.pathname = `/${databaseName}`;
     testDatabaseUrl = isolatedDatabaseUrl.toString();
     assert.equal(await databaseExists(databaseName), true, `Disposable database was not created.\n${output}`);
 
-    child.kill("SIGTERM");
+    const blockerPid = Number(await readFile(blockerPidPath, "utf8"));
+    assert.ok(
+      Number.isSafeInteger(blockerPid) && blockerPid > 0,
+      `The ${phase} blocker PID was not recorded.`,
+    );
+    await waitForProcess(blockerPid, `The disposable API regression ${phase} check`);
+    assert.ok(
+      (await findProcessesWithMarker(processMarker)).includes(blockerPid),
+      `The disposable API regression ${phase} check did not carry the run marker.`,
+    );
+
+    child.kill(signal);
     const exit = await waitForExit(child);
-    assert.equal(exit.signal, null, `Runner was terminated directly instead of handling SIGTERM.\n${output}`);
-    assert.equal(exit.code, 143, `Runner did not report SIGTERM status 143.\n${output}`);
+    assert.equal(exit.signal, null, `Runner was terminated directly instead of handling ${signal}.\n${output}`);
+    const expectedExitCode = 128 + (signal === "SIGINT" ? 2 : 15);
+    assert.equal(
+      exit.code,
+      expectedExitCode,
+      `Runner did not report ${signal} status ${expectedExitCode}.\n${output}`,
+    );
 
     await waitForOwnedTestServersToStop(testDatabaseUrl);
+    await waitForProcessToStop(blockerPid, `The disposable API regression ${phase} check`);
+    await waitForMarkerProcessesToStop(processMarker);
     await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
     assert.equal(await databaseExists(databaseName), false, "Disposable database was not removed.");
   } finally {
@@ -938,6 +961,14 @@ test("SIGTERM during disposable API regression schema setup cleans every resourc
 
 test("SIGTERM during a disposable API regression shell check cleans every resource", async () => {
   await runInterruptedScenario("shell");
+});
+
+test("SIGINT during disposable API regression schema setup cleans every resource", async () => {
+  await runInterruptedScenario("schema", "SIGINT");
+});
+
+test("SIGINT during a disposable API regression shell check cleans every resource", async () => {
+  await runInterruptedScenario("shell", "SIGINT");
 });
 
 test("forced API regression shutdown recovery removes orphaned API and shell-check processes", async () => {
