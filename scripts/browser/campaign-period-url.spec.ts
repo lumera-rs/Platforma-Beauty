@@ -600,6 +600,20 @@ test.describe("shared campaign period links restore the picked window", () => {
       expect(new URL(reloadedDetailResponseValue.url()).searchParams.get("compare")).toBe("previous");
       expect(await reloadedDetailResponseValue.json()).toMatchObject(expectedPayload);
       await assertRestoredView();
+
+      // Reopen the restored picker after a full reload: the label and URL are
+      // not enough to catch a range that looks correct but rehydrates the
+      // calendar's selected day objects on opposite sides of DST.
+      const reloadedSelector = page.getByRole("dialog").getByTestId("stats-period-selector");
+      await reloadedSelector.getByTestId("period-custom").click();
+      const reloadedCalendar = page.getByTestId("stats-period-selector-range-calendar");
+      await expect(reloadedCalendar).toBeVisible();
+      await expect(
+        reloadedCalendar.locator(`button[data-day="${new Date(2026, 2, 28).toLocaleDateString()}"]`),
+      ).toHaveAttribute("data-range-start", "true");
+      await expect(
+        reloadedCalendar.locator(`button[data-day="${new Date(2026, 2, 30).toLocaleDateString()}"]`),
+      ).toHaveAttribute("data-range-end", "true");
     });
   });
 
@@ -674,6 +688,19 @@ test.describe("shared campaign period links restore the picked window", () => {
       expect(new URL(reloadedDetailResponseValue.url()).searchParams.get("compare")).toBe("previous");
       expect(await reloadedDetailResponseValue.json()).toMatchObject(expectedPayload);
       await assertRestoredView();
+
+      // The rollback transition must restore the selected calendar endpoints
+      // exactly too, not merely the serialized query values and range label.
+      const reloadedSelector = page.getByRole("dialog").getByTestId("stats-period-selector");
+      await reloadedSelector.getByTestId("period-custom").click();
+      const reloadedCalendar = page.getByTestId("stats-period-selector-range-calendar");
+      await expect(reloadedCalendar).toBeVisible();
+      await expect(
+        reloadedCalendar.locator(`button[data-day="${new Date(2026, 9, 24).toLocaleDateString()}"]`),
+      ).toHaveAttribute("data-range-start", "true");
+      await expect(
+        reloadedCalendar.locator(`button[data-day="${new Date(2026, 9, 26).toLocaleDateString()}"]`),
+      ).toHaveAttribute("data-range-end", "true");
     });
   });
 
