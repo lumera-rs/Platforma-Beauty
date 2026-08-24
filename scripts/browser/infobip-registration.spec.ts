@@ -12,7 +12,7 @@
  *     nepotvrđena".
  *  3. With a grace-aged SMS send and no receipt, the check returns 409,
  *     shows an error toast containing the guided URL, and refreshes the panel
- *     to "Verovatno nije registrovan".
+ *     to "Izveštaji još ne stižu".
  *
  * This file is intentionally run through the disposable browser harness. The
  * fixture changes provider receipt and automation-delivery evidence that the
@@ -205,6 +205,92 @@ test("the Infobip registration panel and check guide an admin through live verdi
   await expect(errorToast).toBeVisible();
   await expect(errorToast).toHaveAttribute("data-type", "error");
   await expect(errorToast).toContainText("/api/webhooks/infobip/<tajna>");
-  await expect(panel).toContainText("Verovatno nije registrovan");
+  await expect(panel).toContainText("Izveštaji još ne stižu");
   await expect(panel).toContainText("Automatske SMS poruke se šalju");
+});
+
+test("keeps the last Infobip verdict and exposes a retry when the post-check refresh fails", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // Start from a deterministic "no evidence yet" verdict. The following
+  // receipt is added only after the failed refresh, so a successful retry
+  // must visibly update the already-mounted panel.
+  await db.delete(providerWebhookReceiptsTable)
+    .where(eq(providerWebhookReceiptsTable.provider, "infobip"));
+  await db.update(automationDeliveriesTable)
+    .set({ sentAt: new Date() })
+    .where(eq(automationDeliveriesTable.id, deliveryId));
+
+  let failNextIntegrationsRead = false;
+  let failedIntegrationsReadCount = 0;
+  await page.route("**/api/admin/integrations", async (route) => {
+    if (route.request().method() === "GET" && failNextIntegrationsRead) {
+      failNextIntegrationsRead = false;
+      failedIntegrationsReadCount += 1;
+      await route.fulfill({
+        status: 503,
+        json: { error: "Simulirani pad osvežavanja integracija." },
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  const login = await page.request.post("/api/auth/login", {
+    data: { email: adminEmail, password },
+  });
+  expect(login, "the fixture admin must be able to sign in").toBeOK();
+
+  await page.goto("/admin/integracije");
+  await expect(page.getByRole("heading", { name: "Integracije i konektori" })).toBeVisible();
+
+  const panel = page.getByTestId("sms-webhook-registration-panel");
+  await expect(panel).toContainText("Još nepotvrđena");
+
+  // Arm the failure after the initial page read, so this is specifically the
+  // GET issued by verifySmsRegistration's finally block.
+  failNextIntegrationsRead = true;
+  const verifyResponsePromise = page.waitForResponse((response) =>
+    response.url().includes("/api/admin/integrations/sms/verify-registration")
+    && response.request().method() === "POST",
+  );
+  const failedRefreshPromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === "/api/admin/integrations"
+    && response.request().method() === "GET"
+    && response.status() === 503,
+  );
+  await page.getByRole("button", {
+    name: "Proveri registraciju (Infobip)",
+    exact: true,
+  }).click();
+  expect((await verifyResponsePromise).status()).toBe(200);
+  await failedRefreshPromise;
+
+  expect(failedIntegrationsReadCount).toBe(1);
+  // The failed read must not blank the card or replace its last known verdict.
+  await expect(panel).toContainText("Još nepotvrđena");
+  await expect(panel).toContainText("Nema nedavnih automatskih SMS poruka");
+  await expect(page.getByTestId("sms-registration-refresh-error")).toBeVisible();
+  const retry = page.getByTestId("retry-sms-registration-refresh");
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeEnabled();
+
+  // New provider evidence arrives while the admin is deciding to retry.
+  await db.insert(providerWebhookReceiptsTable).values({
+    provider: "infobip",
+    lastEventAt: new Date(),
+  });
+
+  const successfulRefreshPromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === "/api/admin/integrations"
+    && response.request().method() === "GET"
+    && response.status() === 200,
+  );
+  await retry.click();
+  await successfulRefreshPromise;
+
+  await expect(panel).toContainText("Registracija potvrđena");
+  await expect(panel).toContainText("Infobip zaista dostavlja izveštaje");
+  await expect(page.getByTestId("sms-registration-refresh-error")).toHaveCount(0);
+  await expect(retry).toHaveCount(0);
 });
