@@ -3,6 +3,8 @@
  *
  * The endpoint aggregates global marketplace tables, so this fixture calculates
  * the expected response independently from the rows that exist after seeding.
+ * Each category receives hundreds of appointments, giving the query budget a
+ * production-sized ranking and date-window workload instead of a toy fixture.
  * Its category counts are intentionally larger than the pre-existing maximum:
  * that makes the six-fixture-category set deterministic while still proving
  * that the endpoint applies its top-five limit.
@@ -16,6 +18,7 @@ import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
   db,
+  observeDatabaseQueries,
   ordersTable,
   pool,
   reviewsTable,
@@ -28,6 +31,10 @@ import {
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
 import { setAdminSummaryAfterFirstReadForTest } from "../routes/marketplace";
+
+const APPOINTMENTS_PER_CATEGORY = 500;
+const ADMIN_SUMMARY_READ_QUERY_BUDGET = 4;
+const ADMIN_SUMMARY_LATENCY_BUDGET_MS = 2_000;
 
 type Summary = {
   totalUsers: number;
@@ -68,6 +75,24 @@ function dashboardTotals(summary: Summary) {
     activeSubscriptions: summary.activeSubscriptions,
     topCategories: summary.topCategories,
   };
+}
+
+function relationScanCounts(plan: unknown): Map<string, number> {
+  const counts = new Map<string, number>();
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    const relation = record["Relation Name"];
+    if (typeof relation === "string") {
+      counts.set(relation, (counts.get(relation) ?? 0) + 1);
+    }
+    for (const value of Object.values(record)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else visit(value);
+    }
+  };
+  visit(plan);
+  return counts;
 }
 
 async function run(): Promise<void> {
@@ -177,7 +202,7 @@ async function run(): Promise<void> {
 
   const categoryCounts = [6, 5, 4, 3, 2, 1].map((count, index) => ({
     name: `Summary Category ${suffix} ${index + 1}`,
-    count: existingMaximumCategoryCount + count,
+    count: existingMaximumCategoryCount + APPOINTMENTS_PER_CATEGORY + count,
   }));
   const insertedServices = await db.insert(servicesTable).values(categoryCounts.map((category, index) => ({
     salonId: currentSalon.id,
@@ -327,8 +352,65 @@ async function run(): Promise<void> {
     )).length;
     const expectedNewSalonsThisMonth = salons.filter((salon) => salon.createdAt >= thisMonthStart).length;
 
-    const response = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
-    const responseText = await response.text();
+    const observedSummaryQueries: string[] = [];
+    let aggregateQuery: { sql: string; params: unknown[] } | undefined;
+    const stopObserving = observeDatabaseQueries(({ sql, params }) => {
+      observedSummaryQueries.push(sql);
+      if (sql.includes(`AS "totalUsers"`)) aggregateQuery = { sql, params };
+    });
+    const startedAt = performance.now();
+    let response: Response;
+    let responseText: string;
+    try {
+      response = await fetch(`${baseUrl}/admin/summary`, { headers: { cookie } });
+      responseText = await response.text();
+    } finally {
+      stopObserving();
+    }
+    const latencyMs = performance.now() - startedAt;
+    const summaryReadQueryCount = observedSummaryQueries.filter((query) => (
+      query.includes(`AS "totalUsers"`)
+      || (query.includes(`from "appointments"`) && query.includes(`inner join "services"`))
+      || query.includes(`from "provider_webhook_receipts"`)
+      || query.includes(`from "automation_deliveries"`)
+    )).length;
+    assert.ok(
+      summaryReadQueryCount <= ADMIN_SUMMARY_READ_QUERY_BUDGET,
+      `GET /admin/summary used ${summaryReadQueryCount} summary read queries; budget is ${ADMIN_SUMMARY_READ_QUERY_BUDGET}`,
+    );
+    assert.ok(
+      latencyMs <= ADMIN_SUMMARY_LATENCY_BUDGET_MS,
+      `GET /admin/summary took ${latencyMs.toFixed(1)}ms; budget is ${ADMIN_SUMMARY_LATENCY_BUDGET_MS}ms`,
+    );
+    assert.ok(aggregateQuery, "GET /admin/summary must issue its consolidated aggregate query");
+    const explainedAggregate = await pool.query(
+      `EXPLAIN (FORMAT JSON) ${aggregateQuery.sql}`,
+      aggregateQuery.params as any[],
+    );
+    const queryPlan = explainedAggregate.rows[0]?.["QUERY PLAN"];
+    const planRoot = Array.isArray(queryPlan) && queryPlan[0] && typeof queryPlan[0] === "object"
+      ? (queryPlan[0] as { Plan?: unknown }).Plan
+      : undefined;
+    const aggregateRelationScans = relationScanCounts(planRoot);
+    for (const relation of [
+      "users",
+      "salons",
+      "appointments",
+      "orders",
+      "reviews",
+      "subscriptions",
+      "education_media_uploads",
+    ]) {
+      assert.equal(
+        aggregateRelationScans.get(relation),
+        1,
+        `the consolidated aggregate query must scan ${relation} exactly once`,
+      );
+    }
+    process.stdout.write(
+      `✓ admin summary performance budget: ${summaryReadQueryCount} reads in ${latencyMs.toFixed(1)}ms `
+      + `over ${APPOINTMENTS_PER_CATEGORY * categoryCounts.length} fixture appointments\n`,
+    );
     assert.equal(response.status, 200, `GET /admin/summary: ${responseText.slice(0, 500)}`);
     const summary = JSON.parse(responseText) as Summary;
 

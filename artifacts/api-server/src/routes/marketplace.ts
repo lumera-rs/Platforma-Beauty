@@ -12032,43 +12032,119 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
   const {
-    userSummary,
-    salonSummary,
-    appointmentSummary,
-    orderSummary,
-    reviewSummary,
-    subscriptionSummary,
     topCategories,
-    eligibleGalleryUploadTickets,
     deliveryReports,
-    reachableAdminCount,
+    aggregateSummary,
   } = await db.transaction(async (tx) => {
     // PostgreSQL's default READ COMMITTED level gives each aggregate query a
     // different snapshot. Keep every database-backed summary field, including
     // helper-derived alerts and the category ranking, on one repeatable read.
     // A Drizzle transaction owns one pg client, so these must not be fired in
     // parallel. Sequential reads still share this transaction's snapshot.
-    const userSummary = await tx.select({ total: count() }).from(usersTable);
+    // Keep each growing relation to one aggregate scan. Combining scalar
+    // subqueries would reduce round trips but make PostgreSQL rescan a table
+    // for every dashboard metric derived from it.
+    const aggregateResult = await tx.execute(sql<AdminSummaryAggregateRow>`
+      WITH
+        user_summary AS (
+          SELECT
+            count(*)::int AS "totalUsers",
+            count(*) FILTER (
+              WHERE ${usersTable.active}
+                AND ${usersTable.role} IN ('ADMIN', 'SUPER_ADMIN')
+                AND ${usersTable.phone} IS NOT NULL
+                AND btrim(${usersTable.phone}) <> ''
+            )::int AS "smsFallbackReachableAdminCount"
+          FROM ${usersTable}
+        ),
+        salon_summary AS (
+          SELECT
+            count(*)::int AS "totalSalons",
+            count(*) FILTER (WHERE ${salonsTable.active})::int AS "activeSalons",
+            count(*) FILTER (WHERE ${salonsTable.createdAt} >= ${thisMonthStart})::int AS "newSalonsThisMonth"
+          FROM ${salonsTable}
+        ),
+        appointment_summary AS (
+          SELECT
+            count(*) FILTER (WHERE ${appointmentsTable.createdAt} >= ${thisMonthStart})::int AS "bookingsThisMonth",
+            count(*) FILTER (
+              WHERE ${appointmentsTable.createdAt} >= ${lastMonthStart}
+                AND ${appointmentsTable.createdAt} < ${thisMonthStart}
+            )::int AS "bookingsLastMonth"
+          FROM ${appointmentsTable}
+        ),
+        order_summary AS (
+          SELECT coalesce(sum(${ordersTable.total}), 0)::double precision AS "grossMerchandiseValue"
+          FROM ${ordersTable}
+        ),
+        review_summary AS (
+          SELECT
+            count(*)::int AS "totalReviews",
+            count(*) FILTER (WHERE NOT ${reviewsTable.visible})::int AS "hiddenReviews"
+          FROM ${reviewsTable}
+        ),
+        subscription_summary AS (
+          SELECT count(*) FILTER (
+            WHERE ${subscriptionsTable.status} IN ('active', 'free_via_loyalty')
+          )::int AS "activeSubscriptions"
+          FROM ${subscriptionsTable}
+        ),
+        gallery_summary AS (
+          SELECT
+            count(*) FILTER (
+              WHERE (
+                ${educationMediaUploadsTable.attachedAt} IS NOT NULL
+                OR (
+                  ${educationMediaUploadsTable.attachedAt} IS NULL
+                  AND ${educationMediaUploadsTable.expiresAt} < ${now}
+                )
+              )
+              AND ${educationMediaUploadsTable.cleanupFailureCount} > 0
+            )::int AS "galleryCleanupFailedTickets",
+            coalesce(sum(${educationMediaUploadsTable.cleanupFailureCount}) FILTER (
+              WHERE (
+                ${educationMediaUploadsTable.attachedAt} IS NOT NULL
+                OR (
+                  ${educationMediaUploadsTable.attachedAt} IS NULL
+                  AND ${educationMediaUploadsTable.expiresAt} < ${now}
+                )
+              )
+              AND ${educationMediaUploadsTable.cleanupFailureCount} > 0
+            ), 0)::int AS "galleryCleanupFailureAttempts",
+            min(${educationMediaUploadsTable.createdAt}) FILTER (
+              WHERE (
+                ${educationMediaUploadsTable.attachedAt} IS NOT NULL
+                OR (
+                  ${educationMediaUploadsTable.attachedAt} IS NULL
+                  AND ${educationMediaUploadsTable.expiresAt} < ${now}
+                )
+              )
+              AND ${educationMediaUploadsTable.cleanupFailureCount} > 0
+            ) AS "galleryCleanupOldestEligibleAt",
+            coalesce(bool_or(${educationMediaUploadsTable.cleanupFailureCount} >= ${EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT}) FILTER (
+              WHERE (
+                ${educationMediaUploadsTable.attachedAt} IS NOT NULL
+                OR (
+                  ${educationMediaUploadsTable.attachedAt} IS NULL
+                  AND ${educationMediaUploadsTable.expiresAt} < ${now}
+                )
+              )
+              AND ${educationMediaUploadsTable.cleanupFailureCount} > 0
+            ), false) AS "galleryCleanupHasRepeatedFailures"
+          FROM ${educationMediaUploadsTable}
+        )
+      SELECT *
+      FROM user_summary
+      CROSS JOIN salon_summary
+      CROSS JOIN appointment_summary
+      CROSS JOIN order_summary
+      CROSS JOIN review_summary
+      CROSS JOIN subscription_summary
+      CROSS JOIN gallery_summary
+    `);
+    const aggregateSummary = aggregateResult.rows[0] as AdminSummaryAggregateRow | undefined;
+    if (!aggregateSummary) throw new Error("Admin summary aggregate query returned no row.");
     await adminSummaryAfterFirstReadForTest?.();
-    const salonSummary = await tx.select({
-      total: count(),
-      active: sql<number>`count(*) filter (where ${salonsTable.active})::int`,
-      newThisMonth: sql<number>`count(*) filter (where ${salonsTable.createdAt} >= ${thisMonthStart})::int`,
-    }).from(salonsTable);
-    const appointmentSummary = await tx.select({
-      thisMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${thisMonthStart})::int`,
-      lastMonth: sql<number>`count(*) filter (where ${appointmentsTable.createdAt} >= ${lastMonthStart} and ${appointmentsTable.createdAt} < ${thisMonthStart})::int`,
-    }).from(appointmentsTable);
-    const orderSummary = await tx.select({
-      total: sql<number>`coalesce(sum(${ordersTable.total}), 0)::double precision`,
-    }).from(ordersTable);
-    const reviewSummary = await tx.select({
-      total: count(),
-      hidden: sql<number>`count(*) filter (where not ${reviewsTable.visible})::int`,
-    }).from(reviewsTable);
-    const subscriptionSummary = await tx.select({ total: count() })
-      .from(subscriptionsTable)
-      .where(inArray(subscriptionsTable.status, ["active", "free_via_loyalty"]));
     const topCategories = await tx.select({
       name: servicesTable.categoryName,
       count: count(),
@@ -12079,72 +12155,52 @@ router.get("/admin/summary", async (req, res): Promise<void> => {
       .groupBy(servicesTable.categoryName)
       .orderBy(desc(count()), asc(servicesTable.categoryName))
       .limit(5);
-    const eligibleGalleryUploadTickets = await tx.select({
-      cleanupFailureCount: educationMediaUploadsTable.cleanupFailureCount,
-      createdAt: educationMediaUploadsTable.createdAt,
-    })
-      .from(educationMediaUploadsTable)
-      .where(educationMediaUploadCleanupEligibility(now));
     const deliveryReports = await deliveryReportStatuses(now, tx);
-    const reachableAdminCount = await smsFallbackReachableAdminCount(tx);
     return {
-      userSummary,
-      salonSummary,
-      appointmentSummary,
-      orderSummary,
-      reviewSummary,
-      subscriptionSummary,
       topCategories,
-      eligibleGalleryUploadTickets,
       deliveryReports,
-      reachableAdminCount,
+      aggregateSummary,
     };
   }, {
     isolationLevel: "repeatable read",
     accessMode: "read only",
   });
 
-  const bookingsThisMonth = Number(appointmentSummary[0]?.thisMonth ?? 0);
-  const bookingsLastMonth = Number(appointmentSummary[0]?.lastMonth ?? 0);
+  const bookingsThisMonth = Number(aggregateSummary.bookingsThisMonth ?? 0);
+  const bookingsLastMonth = Number(aggregateSummary.bookingsLastMonth ?? 0);
   const bookingsTrend = bookingsLastMonth > 0 ? Math.round(((bookingsThisMonth - bookingsLastMonth) / bookingsLastMonth) * 100) : 0;
-  const newSalonsThisMonth = Number(salonSummary[0]?.newThisMonth ?? 0);
-  const hiddenReviews = Number(reviewSummary[0]?.hidden ?? 0);
-  const activeSubscriptions = Number(subscriptionSummary[0]?.total ?? 0);
-  const galleryCleanupFailedTickets = eligibleGalleryUploadTickets.filter((ticket) => ticket.cleanupFailureCount > 0);
-  const oldestEligibleGalleryUploadTicket = eligibleGalleryUploadTickets.reduce<Date | null>(
-    (oldest, ticket) => !oldest || ticket.createdAt < oldest ? ticket.createdAt : oldest,
-    null,
-  );
+  const newSalonsThisMonth = Number(aggregateSummary.newSalonsThisMonth ?? 0);
+  const hiddenReviews = Number(aggregateSummary.hiddenReviews ?? 0);
+  const activeSubscriptions = Number(aggregateSummary.activeSubscriptions ?? 0);
+  const oldestEligibleGalleryUploadTicket = aggregateSummary.galleryCleanupOldestEligibleAt;
   const galleryCleanupOldestEligibleTicketAgeMinutes = oldestEligibleGalleryUploadTicket
     ? Math.max(0, Math.floor((now.getTime() - oldestEligibleGalleryUploadTicket.getTime()) / 60_000))
     : null;
   const schedulerJobs = schedulerHealthSnapshot();
 
   res.json(GetAdminSummaryResponse.parse({
-    totalUsers: Number(userSummary[0]?.total ?? 0),
-    totalSalons: Number(salonSummary[0]?.total ?? 0),
-    activeSalons: Number(salonSummary[0]?.active ?? 0),
+    totalUsers: Number(aggregateSummary.totalUsers ?? 0),
+    totalSalons: Number(aggregateSummary.totalSalons ?? 0),
+    activeSalons: Number(aggregateSummary.activeSalons ?? 0),
     bookingsThisMonth,
     bookingsLastMonth,
     bookingsTrend,
-    grossMerchandiseValue: Number(orderSummary[0]?.total ?? 0),
+    grossMerchandiseValue: Number(aggregateSummary.grossMerchandiseValue ?? 0),
     newSalonsThisMonth,
-    totalReviews: Number(reviewSummary[0]?.total ?? 0),
+    totalReviews: Number(aggregateSummary.totalReviews ?? 0),
     hiddenReviews,
     activeSubscriptions,
-    galleryCleanupFailedTickets: galleryCleanupFailedTickets.length,
-    galleryCleanupFailureAttempts: galleryCleanupFailedTickets.reduce((total, ticket) => total + ticket.cleanupFailureCount, 0),
+    galleryCleanupFailedTickets: Number(aggregateSummary.galleryCleanupFailedTickets ?? 0),
+    galleryCleanupFailureAttempts: Number(aggregateSummary.galleryCleanupFailureAttempts ?? 0),
     galleryCleanupOldestEligibleTicketAgeMinutes,
-    galleryCleanupHasRepeatedFailures: galleryCleanupFailedTickets.some(
-      (ticket) => ticket.cleanupFailureCount >= EDUCATION_GALLERY_CLEANUP_ALERT_FAILURE_COUNT,
-    ),
+    galleryCleanupHasRepeatedFailures: aggregateSummary.galleryCleanupHasRepeatedFailures,
     // Same staleness signal as the integrations page — surfaces the
     // "Potrebna je intervencija" alert on the dashboard proactively.
     deliveryReportStaleProviders: staleDeliveryReportProviders(deliveryReports),
     // Same audience + phone predicate as the emergency-SMS send path (shared
     // helper) — zero means a total email outage would reach no administrator,
     // so the dashboard shows the same standing warning as the integrations page.
-    smsFallbackReachableAdminCount: reachableAdminCount,
+    smsFallbackReachableAdminCount: Number(aggregateSummary.smsFallbackReachableAdminCount ?? 0),
     schedulerJobs,
     topCategories,
   }));
@@ -12168,6 +12224,24 @@ async function requireSuperAdmin(req: Request, res: Response) {
   }
   return user;
 }
+
+type AdminSummaryAggregateRow = {
+  totalUsers: number;
+  totalSalons: number;
+  activeSalons: number;
+  newSalonsThisMonth: number;
+  bookingsThisMonth: number;
+  bookingsLastMonth: number;
+  grossMerchandiseValue: number;
+  totalReviews: number;
+  hiddenReviews: number;
+  activeSubscriptions: number;
+  galleryCleanupFailedTickets: number;
+  galleryCleanupFailureAttempts: number;
+  galleryCleanupOldestEligibleAt: Date | null;
+  galleryCleanupHasRepeatedFailures: boolean;
+  smsFallbackReachableAdminCount: number;
+};
 
 function educationSettingsView(settings: typeof educationPlatformSettingsTable.$inferSelect) {
   return {

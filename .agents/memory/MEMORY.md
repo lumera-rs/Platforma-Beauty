@@ -77,5 +77,6 @@
 - [Background scheduler recovery](background-scheduler-recovery.md) — retry stays process-local and bounded; job-level leases and idempotency remain the durable source of truth.
 - [Radix tooltip browser assertions](radix-tooltip-browser-assertions.md) — pointer hover can keep one tooltip open while focus is added; assert one shared tooltip and focused trigger instead of forced close.
 - [Admin summary snapshot consistency](admin-summary-snapshot-consistency.md) — aggregate dashboards need one repeatable-read transaction and a post-snapshot barrier for deterministic race coverage.
+- [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
