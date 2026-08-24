@@ -300,6 +300,86 @@ test("cancelling the conflict keeps the newer version and resets the form", asyn
   }
 });
 
+test("dismissing the conflict with Escape keeps the newer version and resets the form", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // Admin B works through a separate API session, like a second browser.
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Establish a known baseline version for deterministic assertions.
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    // Admin A signs in and loads the settings page at the baseline version.
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion}`);
+
+    // Admin A edits a threshold but has not saved yet.
+    await windowInput.fill(String(ADMIN_A_WINDOW_DAYS));
+
+    // Admin B saves a different value first — the active version moves on.
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...BASELINE_THRESHOLDS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+    expect((await concurrentResponse.json()).version).toBe(baselineVersion + 1);
+
+    // Admin A saves → the server answers 409 and the conflict dialog opens.
+    const conflictSave = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("save-retention-settings").click();
+    expect((await conflictSave).status(), "the stale save must be rejected with 409").toBe(409);
+
+    const conflictDialog = page.getByTestId("retention-conflict-dialog");
+    await expect(conflictDialog).toBeVisible();
+
+    // Escape must take the same safe cancellation path as the explicit
+    // button: wait for the active settings read before closing.
+    await page.keyboard.press("Escape");
+    await expect(conflictDialog).not.toBeVisible();
+
+    const activeAfterEscape = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterEscape.version).toBe(baselineVersion + 1);
+    expect(activeAfterEscape.thresholds).toEqual({
+      ...BASELINE_THRESHOLDS,
+      newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+    });
+
+    // The form follows admin B's active settings rather than retaining admin
+    // A's abandoned value after keyboard dismissal.
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+    for (const [key, value] of Object.entries(activeAfterEscape.thresholds)) {
+      await expect(page.getByTestId(`input-${key}`)).toHaveValue(String(value));
+    }
+  } finally {
+    await apiB.dispose();
+  }
+});
+
 test("immediately cancelling a conflict waits for newer settings before closing", async ({ page }) => {
   test.setTimeout(120_000);
 
