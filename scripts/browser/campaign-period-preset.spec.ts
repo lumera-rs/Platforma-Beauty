@@ -30,6 +30,9 @@ const BEFORE_LAST_MONTH = new Date("2026-06-30T12:00:00.000Z");
 // The browser clock is intentionally fixed before the app renders. That makes
 // the shortcut date math and fixture windows stable at every month boundary.
 test.use({ timezoneId: "UTC" });
+// Keep this regression on a short desktop viewport where the calendar popover
+// must constrain itself instead of moving its preset row outside the viewport.
+test.use({ viewport: { width: 1280, height: 600 } });
 
 type Fixture = {
   ownerEmail: string;

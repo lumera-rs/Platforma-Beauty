@@ -357,7 +357,10 @@ function PeriodSelector({
               {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
+          <PopoverContent
+            className="max-h-[var(--radix-popover-content-available-height)] w-auto overflow-y-auto p-0"
+            align="end"
+          >
             <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid={`${testId}-range-presets`}>
               {rangePresets.map((preset) => (
                 <button
