@@ -474,6 +474,37 @@ async function main() {
     assert.equal(deliveryBoundaryRow.smsSentCount, 1, "overview excludes the out-of-range SMS send");
     console.log("✓ campaign delivery totals honor inclusive start and exclusive end boundaries");
 
+    const deliveryStatsResponse = await get(
+      `/api/growth/automations/${deliveryBoundaryRule.id}/stats?${boundaryQuery}`,
+    );
+    assert.equal(deliveryStatsResponse.status, 200, "per-rule delivery stats custom date range succeeds");
+    assert.equal(
+      deliveryStatsResponse.body.emailSentCount,
+      1,
+      "per-rule stats includes only the email sent at the inclusive start",
+    );
+    assert.equal(
+      deliveryStatsResponse.body.emailDeliveredCount,
+      1,
+      "per-rule stats includes only the email delivered at the inclusive start",
+    );
+    assert.equal(
+      deliveryStatsResponse.body.smsSentCount,
+      1,
+      "per-rule stats includes only the SMS sent at the inclusive start",
+    );
+    assert.equal(
+      deliveryStatsResponse.body.smsDeliveredCount,
+      1,
+      "per-rule stats includes only the SMS delivered at the inclusive start",
+    );
+    assert.equal(
+      deliveryStatsResponse.body.deliveredCount,
+      2,
+      "per-rule stats excludes both out-of-range deliveries from the combined total",
+    );
+    console.log("✓ per-rule delivery totals honor inclusive start and exclusive end boundaries");
+
     for (const [query, expected] of [
       ["period=7d", 2],
       ["period=30d", 3],
