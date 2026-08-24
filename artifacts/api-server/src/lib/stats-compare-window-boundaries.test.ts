@@ -28,8 +28,8 @@
  *      transition keeps the repeated local hour on the correct side of both
  *      windows, on both stats endpoints
  *   6. a future-dated run and provider delivery are excluded from rolling
- *      presets but included by an explicit future custom range, on both the
- *      overview and per-campaign stats endpoints
+ *      presets but included by an explicit future custom range; compare=previous
+ *      uses the immediately preceding calendar range on both stats endpoints
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
@@ -269,6 +269,26 @@ async function main() {
   }).returning();
   assert.ok(futureRule);
   const futureEventAt = FROZEN_NOW + DAY_MS;
+  const futurePreviousEventAt = FROZEN_NOW - DAY_MS;
+  const [futurePreviousAppointment] = await db.insert(appointmentsTable).values({
+    salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+    date: "2026-04-07", startTime: "12:00", endTime: "13:00", durationMinutes: 60,
+    status: "completed", price: 1700, treatmentLocation: "salon",
+  }).returning();
+  assert.ok(futurePreviousAppointment);
+  const [futurePreviousRun] = await db.insert(automationRunsTable).values({
+    eventKey: `wb-future-previous-run-${suffix}`, ruleId: futureRule.id, salonId: salon.id,
+    salonCustomerId: cust.id, status: "sent",
+    executedAt: new Date(futurePreviousEventAt), sentAt: new Date(futurePreviousEventAt),
+    attributedAppointmentId: futurePreviousAppointment.id,
+  }).returning();
+  assert.ok(futurePreviousRun);
+  await db.insert(automationDeliveriesTable).values({
+    runId: futurePreviousRun.id, salonId: salon.id,
+    eventKey: `wb-future-previous-delivery-${suffix}`, channel: "email",
+    recipientEmail: `wb-future-previous-${suffix}@bg.test`, status: "sent",
+    sentAt: new Date(futurePreviousEventAt), deliveredAt: new Date(futurePreviousEventAt),
+  });
   const [futureAppointment] = await db.insert(appointmentsTable).values({
     salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
     date: "2026-04-08", startTime: "12:00", endTime: "13:00", durationMinutes: 60,
@@ -501,25 +521,35 @@ async function main() {
 
     // Rolling presets stop at request-time now, while this explicit calendar
     // range reaches into the next day and therefore includes the future run
-    // and its future-dated provider delivery.
-    const futureCustomQuery = "?from=2026-04-08&to=2026-04-09";
+    // and its future-dated provider delivery. compare=previous must use the
+    // immediately preceding two calendar days (Apr 6–7), not a window capped
+    // at request-time now; the dedicated previous-period rows prove that.
+    const futureCustomQuery = "?from=2026-04-08&to=2026-04-09&compare=previous";
     for (const [label, row] of [
       ["overview rolling", await overviewRow("?period=30d", futureRule.id)],
       ["per-rule rolling", await perRule("?period=30d", futureRule.id)],
     ] as const) {
-      assert.equal(row.totalRuns, 0, `${label}: future run is outside a rolling window`);
-      assert.equal(row.attributedAppointments, 0, `${label}: future attribution is outside a rolling window`);
-      assert.equal(row.emailDeliveredCount, 0, `${label}: future provider delivery is outside a rolling window`);
+      assert.equal(row.totalRuns, 1, `${label}: rolling window keeps only the preceding-period run`);
+      assert.equal(row.attributedAppointments, 1, `${label}: future attribution is outside a rolling window`);
+      assert.equal(row.attributedRevenue, 1700, `${label}: rolling window keeps the preceding-period attribution`);
+      assert.equal(row.emailDeliveredCount, 1, `${label}: future provider delivery is outside a rolling window`);
     }
     for (const [label, row] of [
       ["overview custom", await overviewRow(futureCustomQuery, futureRule.id)],
       ["per-rule custom", await perRule(futureCustomQuery, futureRule.id)],
     ] as const) {
-      assert.equal(row.totalRuns, 1, `${label}: explicit future calendar range includes the run`);
-      assert.equal(row.attributedAppointments, 1, `${label}: explicit future calendar range includes the attribution`);
-      assert.equal(row.emailDeliveredCount, 1, `${label}: explicit future calendar range includes the provider delivery`);
+      assert.equal(row.totalRuns, 1, `${label}: explicit future calendar range includes only the current-period run`);
+      assert.equal(row.attributedAppointments, 1, `${label}: current attribution remains aligned with the current-period run`);
+      assert.equal(row.emailDeliveredCount, 1, `${label}: current delivery remains aligned with the current-period run`);
+      assert.ok(row.previous, `${label}: comparison block is present for the future custom range`);
+      assert.equal(row.previous.attributedAppointments, 1,
+        `${label}: previous window is the immediately preceding calendar window`);
+      assert.equal(row.previous.attributedRevenue, 1700,
+        `${label}: previous attribution revenue comes from the preceding window`);
+      assert.equal(row.previous.emailDeliveredCount, 1,
+        `${label}: previous delivery is in the preceding calendar window`);
     }
-    console.log("✓ future activity stays out of rolling periods but is visible in explicit future custom ranges");
+    console.log("✓ future custom ranges compare against the immediately preceding calendar window on both stats endpoints");
 
     // ── 5. compare validation on both endpoints ─────────────────────────────
     const expect400 = async (qs: string, label: string) => {
