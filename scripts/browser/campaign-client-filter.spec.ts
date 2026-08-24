@@ -22,6 +22,9 @@
  *  5. A shared URL with both a custom window and clients=returning → the
  *     exact window and segment survive the initial load and a full reload;
  *     every relevant request keeps its applicable filters.
+ *  6. Back/Forward between two combined shared URLs → the custom window,
+ *     selected segment, open campaign, request filters, and unrelated query
+ *     parameters stay in sync.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -605,6 +608,108 @@ test("shared campaign links keep a custom period and client segment together aft
       rule: fixture.ruleId,
       clients: expectedClientType,
     });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("Back and Forward keep combined campaign window and client segment in sync", async ({ page }) => {
+  const fixture = await createFixture();
+  const firstWindow = {
+    from: "2026-03-01",
+    to: "2026-03-31",
+  };
+  const secondWindow = {
+    from: "2026-04-01",
+    to: "2026-05-15",
+  };
+  const firstUrl = `/vlasnik/automatizacije?utm_source=history-combined&ref=first&from=${firstWindow.from}&to=${firstWindow.to}&rule=${fixture.ruleId}&clients=returning`;
+  const secondUrl = `/vlasnik/automatizacije?utm_source=history-combined&ref=second&from=${secondWindow.from}&to=${secondWindow.to}&rule=${fixture.ruleId}&clients=new`;
+
+  const readUrlState = () => page.evaluate(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      from: params.get("from"),
+      to: params.get("to"),
+      rule: params.get("rule"),
+      clients: params.get("clients"),
+      tracking: params.get("utm_source"),
+      ref: params.get("ref"),
+    };
+  });
+
+  const expectCombinedState = async (
+    window: { from: string; to: string },
+    clientType: "new" | "returning",
+    ref: string,
+  ) => {
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    const periodSelector = dialog.getByTestId("stats-period-selector");
+    const customButton = periodSelector.getByTestId("period-custom");
+    const expectedRangeLabel = ` ${new Date(`${window.from}T00:00:00`).toLocaleDateString("sr-RS")} – ${new Date(`${window.to}T00:00:00`).toLocaleDateString("sr-RS")}`;
+
+    await expect(dialog).toBeVisible();
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(expectedRangeLabel);
+    await expect(dialog.getByTestId(`client-type-${clientType}`)).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.getByTestId(`client-type-${clientType === "new" ? "returning" : "new"}`))
+      .toHaveAttribute("aria-pressed", "false");
+    await expect(dialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
+    await expect.poll(readUrlState).toEqual({
+      ...window,
+      rule: fixture.ruleId,
+      clients: clientType,
+      tracking: "history-combined",
+      ref,
+    });
+  };
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(firstUrl);
+    await expectCombinedState(firstWindow, "returning", "first");
+
+    const secondOverviewResponse = nextCampaignWindowResponse(page, "/growth/automation-stats", secondWindow);
+    const secondDetailResponse = nextCampaignWindowResponse(page, `/growth/automations/${fixture.ruleId}/stats`, secondWindow);
+    const secondAppointmentsResponse = nextCampaignWindowResponse(
+      page,
+      `/growth/automations/${fixture.ruleId}/attributed-appointments`,
+      { ...secondWindow, clientType: "new" },
+    );
+    await page.evaluate((url) => {
+      window.history.pushState({}, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, secondUrl);
+    expect((await secondOverviewResponse).status()).toBe(200);
+    expect((await secondDetailResponse).status()).toBe(200);
+    expect((await secondAppointmentsResponse).status()).toBe(200);
+    await expectCombinedState(secondWindow, "new", "second");
+
+    const firstOverviewResponse = nextCampaignWindowResponse(page, "/growth/automation-stats", firstWindow);
+    const firstDetailResponse = nextCampaignWindowResponse(page, `/growth/automations/${fixture.ruleId}/stats`, firstWindow);
+    const firstAppointmentsResponse = nextCampaignWindowResponse(
+      page,
+      `/growth/automations/${fixture.ruleId}/attributed-appointments`,
+      { ...firstWindow, clientType: "returning" },
+    );
+    await page.goBack();
+    expect((await firstOverviewResponse).status()).toBe(200);
+    expect((await firstDetailResponse).status()).toBe(200);
+    expect((await firstAppointmentsResponse).status()).toBe(200);
+    await expectCombinedState(firstWindow, "returning", "first");
+
+    const restoredSecondOverviewResponse = nextCampaignWindowResponse(page, "/growth/automation-stats", secondWindow);
+    const restoredSecondDetailResponse = nextCampaignWindowResponse(page, `/growth/automations/${fixture.ruleId}/stats`, secondWindow);
+    const restoredSecondAppointmentsResponse = nextCampaignWindowResponse(
+      page,
+      `/growth/automations/${fixture.ruleId}/attributed-appointments`,
+      { ...secondWindow, clientType: "new" },
+    );
+    await page.goForward();
+    expect((await restoredSecondOverviewResponse).status()).toBe(200);
+    expect((await restoredSecondDetailResponse).status()).toBe(200);
+    expect((await restoredSecondAppointmentsResponse).status()).toBe(200);
+    await expectCombinedState(secondWindow, "new", "second");
   } finally {
     await cleanUpFixture(fixture);
   }
