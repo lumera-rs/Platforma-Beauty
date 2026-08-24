@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 
+resolve_api_base_url() {
+  if [[ -n "${LUMERA_API_BASE_URL:-}" ]]; then
+    BASE_URL="${LUMERA_API_BASE_URL%/}"
+  elif [[ -n "${BASE_URL:-}" ]]; then
+    BASE_URL="${BASE_URL%/}"
+  elif [[ -n "${REPLIT_DEV_DOMAIN:-}" ]]; then
+    BASE_URL="https://${REPLIT_DEV_DOMAIN}/api"
+  else
+    echo "Set LUMERA_API_BASE_URL, BASE_URL, or REPLIT_DEV_DOMAIN before running this test." >&2
+    return 1
+  fi
+}
+
 check_api_server() {
   local health_url="${BASE_URL%/}/healthz"
   local status

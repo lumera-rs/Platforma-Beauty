@@ -23,6 +23,10 @@ export interface IsolatedApiSuiteConfiguration extends IsolatedSuiteConfiguratio
   testFilePath: string;
 }
 
+export interface IsolatedApiRegressionSuiteConfiguration extends IsolatedSuiteConfiguration {
+  scriptPaths: string[];
+}
+
 interface HarnessDatabaseManifest {
   version: 1;
   databaseName: string;
@@ -182,20 +186,27 @@ async function findAvailablePort(): Promise<number> {
   return address.port;
 }
 
+interface RunCommandOptions {
+  failOnOutput?: RegExp;
+  onSpawn?: (child: ChildProcess) => void;
+}
+
 function runCommand(
   command: string,
   args: string[],
   environment: NodeJS.ProcessEnv,
   label: string,
-  options?: { failOnOutput?: RegExp },
+  options?: RunCommandOptions,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     let output = "";
     const child = spawn(command, args, {
       cwd: workspaceRoot,
+      detached: process.platform !== "win32",
       env: environment,
       stdio: options?.failOnOutput ? ["ignore", "pipe", "pipe"] : "inherit",
     });
+    options?.onSpawn?.(child);
     if (options?.failOnOutput) {
       const writeOutput = (stream: NodeJS.WriteStream, chunk: Buffer) => {
         output += chunk.toString();
@@ -240,11 +251,18 @@ function startProcess(
   return child;
 }
 
-async function waitForHttp(url: string, label: string): Promise<void> {
+async function waitForHttp(
+  url: string,
+  label: string,
+  isInterrupted?: () => boolean,
+): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError: unknown;
 
   while (Date.now() < deadline) {
+    if (isInterrupted?.()) {
+      throw new Error(`${label} was interrupted.`);
+    }
     try {
       const response = await fetch(url);
       if (response.ok) return;
@@ -556,6 +574,142 @@ export async function runIsolatedApiSuite(
   }
 }
 
+export async function runIsolatedApiRegressionSuite(
+  configuration: IsolatedApiRegressionSuiteConfiguration,
+): Promise<void> {
+  const developmentDatabaseUrl = requireDevelopmentDatabaseUrl();
+  const databaseName =
+    `${configuration.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const ownerProcessIdentity = await getProcessIdentity(process.pid);
+  if (!ownerProcessIdentity) {
+    throw new Error("Could not identify the isolated API regression harness process.");
+  }
+  const manifestPath = await writeHarnessDatabaseManifest(configuration, {
+    version: 1,
+    databaseName,
+    databaseTarget: getDatabaseTarget(developmentDatabaseUrl),
+    ownerPid: process.pid,
+    ownerProcessIdentity,
+  });
+  const testDatabaseUrl = createTestDatabaseUrl(developmentDatabaseUrl, databaseName);
+  const apiPort = await findAvailablePort();
+  const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+  const apiEnvironment = {
+    ...process.env,
+    ...configuration.environment,
+    DATABASE_URL: testDatabaseUrl,
+    LUMERA_TEST_DATABASE_URL: testDatabaseUrl,
+    LUMERA_TEST_SEED: "1",
+    NODE_ENV: "test",
+    PORT: String(apiPort),
+  };
+  const scriptEnvironment = {
+    ...apiEnvironment,
+    LUMERA_API_BASE_URL: `${apiBaseUrl}/api`,
+  };
+  let databaseMayExist = false;
+  let apiProcess: ChildProcess | undefined;
+  let activeCommand: ChildProcess | undefined;
+  let interruptedSignal: NodeJS.Signals | undefined;
+  let isCleaningUp = false;
+  const throwIfInterrupted = () => {
+    if (interruptedSignal) {
+      throw new Error(`API regression checks interrupted by ${interruptedSignal}.`);
+    }
+  };
+  const runRegressionCommand = (
+    command: string,
+    args: string[],
+    environment: NodeJS.ProcessEnv,
+    label: string,
+    options?: Omit<RunCommandOptions, "onSpawn">,
+  ) => {
+    throwIfInterrupted();
+    return runCommand(command, args, environment, label, {
+      ...options,
+      onSpawn: (child) => {
+        activeCommand = child;
+        child.once("close", () => {
+          if (activeCommand === child) activeCommand = undefined;
+        });
+      },
+    });
+  };
+  const onSignal = (signal: NodeJS.Signals) => {
+    interruptedSignal ??= signal;
+    if (isCleaningUp) return;
+    void stopProcess(activeCommand);
+    void stopProcess(apiProcess);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+
+  try {
+    databaseMayExist = true;
+    await runRegressionCommand(
+      "createdb",
+      ["--maintenance-db", developmentDatabaseUrl, databaseName],
+      process.env,
+      "Creating the disposable API regression database",
+    );
+    await runRegressionCommand(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "push-force"],
+      apiEnvironment,
+      "Preparing the disposable API regression schema",
+      { failOnOutput: /(?:^|\n)error(?: response from server)?:/i },
+    );
+
+    throwIfInterrupted();
+    apiProcess = startProcess(
+      path.join(workspaceRoot, "scripts", "node_modules", ".bin", "tsx"),
+      [path.join(workspaceRoot, "artifacts", "api-server", "src", "test-server.ts")],
+      apiEnvironment,
+      "Disposable API regression server",
+    );
+    await waitForHttp(
+      `${apiBaseUrl}/api/healthz`,
+      "Disposable API regression server",
+      () => Boolean(interruptedSignal),
+    );
+
+    for (const scriptPath of configuration.scriptPaths) {
+      await runRegressionCommand(
+        "bash",
+        [path.join(workspaceRoot, scriptPath)],
+        scriptEnvironment,
+        `${configuration.testLabel}: ${path.basename(scriptPath)}`,
+      );
+    }
+  } catch (error) {
+    if (!interruptedSignal) throw error;
+  } finally {
+    isCleaningUp = true;
+    try {
+      await stopProcess(apiProcess);
+    } finally {
+      try {
+        if (databaseMayExist) {
+          await runCommand(
+            "dropdb",
+            ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
+            process.env,
+            "Removing the disposable API regression database",
+          );
+        }
+      } finally {
+        await removeHarnessDatabaseManifest(manifestPath);
+      }
+    }
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+  }
+
+  if (interruptedSignal) {
+    process.exitCode = 128 + (interruptedSignal === "SIGINT" ? 2 : 15);
+  }
+}
+
 export async function runIsolatedBrowserSuiteCommand(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
@@ -586,6 +740,26 @@ export async function runIsolatedApiSuiteCommand(
       ? recoverInterruptedHarnessDatabases(configuration)
       : Promise.reject(new Error(
         `Usage: ${path.basename(process.argv[1] ?? "isolated-api-suite")} [--recover-interrupted-databases]`,
+      ));
+
+  try {
+    await command;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
+}
+
+export async function runIsolatedApiRegressionSuiteCommand(
+  configuration: IsolatedApiRegressionSuiteConfiguration,
+): Promise<void> {
+  const commandArguments = process.argv.slice(2);
+  const command = commandArguments.length === 0
+    ? runIsolatedApiRegressionSuite(configuration)
+    : commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases"
+      ? recoverInterruptedHarnessDatabases(configuration)
+      : Promise.reject(new Error(
+        `Usage: ${path.basename(process.argv[1] ?? "isolated-api-regressions")} [--recover-interrupted-databases]`,
       ));
 
   try {

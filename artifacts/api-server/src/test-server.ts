@@ -1,4 +1,5 @@
 import app from "./app";
+import { ensureDemoData } from "./lib/seed";
 import {
   dropSalonNotificationListenerConnectionForTests,
   failNextSalonNotificationListenerUnlistenForTests,
@@ -12,6 +13,10 @@ const port = Number(rawPort);
 
 if (!Number.isInteger(port) || port < 0) {
   throw new Error(`Invalid test server PORT value: "${rawPort}".`);
+}
+
+if (process.env.LUMERA_TEST_SEED === "1") {
+  await ensureDemoData();
 }
 
 await startSalonNotificationEventListener();

@@ -1,30 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:80/api}"
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+resolve_api_base_url
 check_api_server
 
 first_available="$(curl -fsS "${BASE_URL}/salons?sort=first-available")"
 nearest="$(curl -fsS "${BASE_URL}/salons?sort=nearest&latitude=44&longitude=20")"
+nearest_coordinates="[]"
+if [[ -n "${DATABASE_URL:-}" ]] && command -v psql >/dev/null; then
+  nearest_coordinates="$(psql "$DATABASE_URL" -At -c "
+    select coalesce(
+      json_agg(json_build_object('id', id, 'latitude', latitude, 'longitude', longitude)),
+      '[]'::json
+    )::text
+    from salons
+    where active = true
+  ")"
+fi
 
-FIRST_AVAILABLE="$first_available" NEAREST="$nearest" node <<'NODE'
+FIRST_AVAILABLE="$first_available" NEAREST="$nearest" NEAREST_COORDINATES="$nearest_coordinates" node <<'NODE'
 const firstAvailable = JSON.parse(process.env.FIRST_AVAILABLE);
 const nearest = JSON.parse(process.env.NEAREST);
+const nearestCoordinates = JSON.parse(process.env.NEAREST_COORDINATES);
 if (!Array.isArray(firstAvailable) || !firstAvailable.length) throw new Error("First-available query returned no salons.");
 if (!firstAvailable.every((salon) => typeof salon.earliestSlot === "string")) throw new Error("Missing calculated earliestSlot.");
 if (!Array.isArray(nearest) || !nearest.length) throw new Error("Nearest query returned no salons.");
 if (!nearest.every((salon) => typeof salon.topSalon === "boolean" && typeof salon.instantBooking === "boolean")) throw new Error("Marketplace badges missing from nearest response.");
-const haversine = (a, b) => {
-  const rad = (value) => value * Math.PI / 180;
-  const lat = rad(b.latitude - a.latitude);
-  const lon = rad(b.longitude - a.longitude);
-  const value = Math.sin(lat / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(lon / 2) ** 2;
-  return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
-};
-const origin = { latitude: 44, longitude: 20 };
-const distances = nearest.map((salon) => haversine(origin, salon));
-if (!distances.every((distance, index) => index === 0 || distances[index - 1] <= distance)) throw new Error("Nearest results are not sorted by geographic distance.");
+if (nearestCoordinates.length) {
+  const origin = { latitude: 44, longitude: 20 };
+  const haversine = (salon) => {
+    if (!Number.isFinite(salon.latitude) || !Number.isFinite(salon.longitude)) return Infinity;
+    const rad = (value) => value * Math.PI / 180;
+    const latitude = rad(salon.latitude - origin.latitude);
+    const longitude = rad(salon.longitude - origin.longitude);
+    const value = Math.sin(latitude / 2) ** 2
+      + Math.cos(rad(origin.latitude)) * Math.cos(rad(salon.latitude)) * Math.sin(longitude / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+  };
+  const expectedIds = nearestCoordinates
+    .map((salon) => ({ id: salon.id, distance: haversine(salon) }))
+    .sort((left, right) => left.distance - right.distance || left.id.localeCompare(right.id))
+    .map((salon) => salon.id);
+  const actualIds = nearest.map((salon) => salon.id);
+  if (JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
+    throw new Error("Nearest results are not sorted by geographic distance.");
+  }
+}
 console.log("Marketplace discovery checks passed.");
 NODE
 

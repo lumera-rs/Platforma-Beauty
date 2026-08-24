@@ -3308,7 +3308,12 @@ router.put("/admin/integrations/:integration", async (req, res): Promise<void> =
     res.status(400).json({ error: "Pošaljite enabled vrednost i polja integracije." }); return;
   }
   const definition = integrationDefinitions[req.params.integration];
-  const values = Object.fromEntries(Object.entries(body.values as Record<string, unknown>)
+  const submittedValues = Object.entries(body.values as Record<string, unknown>)
+    .filter(([key, value]) => definition.keys.includes(key) && typeof value === "string");
+  if (submittedValues.some(([, value]) => (value as string).length > 0 && !(value as string).trim())) {
+    res.status(400).json({ error: "Vrednosti integracije ne mogu sadržati samo razmake." }); return;
+  }
+  const values = Object.fromEntries(submittedValues
     .filter(([key, value]) => definition.keys.includes(key) && typeof value === "string")
     .map(([key, value]) => [key, value as string]));
   if (req.params.integration === "sms" && values.baseUrl) {
@@ -12068,12 +12073,14 @@ router.get("/admin/education/settings", async (req, res): Promise<void> => {
 
 router.patch("/admin/education/settings", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const featuredCoursePriceRaw = Number(req.body?.featuredCoursePrice);
+  const parseNumericInput = (value: unknown) =>
+    typeof value === "string" && !value.trim() ? Number.NaN : Number(value);
+  const featuredCoursePriceRaw = parseNumericInput(req.body?.featuredCoursePrice);
   const candidate = {
-    commissionPercent: Number(req.body?.commissionPercent),
-    reservePercent: Number(req.body?.reservePercent),
-    onlineRefundDays: Number(req.body?.onlineRefundDays),
-    liveAppealDays: Number(req.body?.liveAppealDays),
+    commissionPercent: parseNumericInput(req.body?.commissionPercent),
+    reservePercent: parseNumericInput(req.body?.reservePercent),
+    onlineRefundDays: parseNumericInput(req.body?.onlineRefundDays),
+    liveAppealDays: parseNumericInput(req.body?.liveAppealDays),
     featuredCoursePrice: Number.isInteger(featuredCoursePriceRaw) && featuredCoursePriceRaw >= 0 ? featuredCoursePriceRaw : 0,
   };
   if (!Object.values(candidate).every((value) => Number.isInteger(value) && value >= 0)
@@ -12789,6 +12796,7 @@ router.patch("/admin/loyalty-tiers/:tierId", async (req, res): Promise<void> => 
   const parsed = AdminUpdateLoyaltyTierBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const [tier] = await db.update(loyaltyTiersTable).set({
     name: body.name ?? existing.name,
     sortOrder: body.sortOrder ?? existing.sortOrder,
@@ -12882,6 +12890,7 @@ router.patch("/admin/subscription-plans/:planId", async (req, res): Promise<void
   const parsed = AdminUpdateSubscriptionPlanBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const [plan] = await db.update(subscriptionPlansTable).set({
     name: body.name ?? existing.name,
     price: body.price ?? existing.price,
@@ -13152,6 +13161,7 @@ router.patch("/admin/service-templates/:templateId", async (req, res): Promise<v
   const parsed = AdminUpdateServiceTemplateBody.safeParse(req.body);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (!Object.keys(parsed.data).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const [existing] = await db.select().from(serviceTemplatesTable).where(eq(serviceTemplatesTable.id, params.data.templateId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Predložak nije pronađen." }); return; }
   const next = { ...existing, ...parsed.data };
@@ -13477,6 +13487,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateProductBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const nextPrice = body.price ?? existing.price;
   const nextDiscount = body.discountPrice !== undefined ? body.discountPrice : existing.discountPrice;
   if (nextDiscount != null && nextDiscount >= nextPrice) {
@@ -13672,6 +13683,7 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   const parsed = AdminUpdateProductCategoryBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const nextCategoryImageUrl = body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl;
   if (nextCategoryImageUrl && !await canClaimMediaReference({
     userId: user.id,
@@ -13791,6 +13803,7 @@ router.post("/admin/brands", async (req, res): Promise<void> => {
   const parsed = AdminCreateBrandBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!body.name.trim()) { res.status(400).json({ error: "Naziv brenda ne može biti prazan." }); return; }
   const [nameTaken] = await db.select({ id: productBrandsTable.id }).from(productBrandsTable).where(eq(productBrandsTable.name, body.name)).limit(1);
   if (nameTaken) { res.status(409).json({ error: "Brend sa ovim nazivom već postoji." }); return; }
   const [brand] = await db.insert(productBrandsTable).values({
@@ -13814,6 +13827,7 @@ router.patch("/admin/brands/:brandId", async (req, res): Promise<void> => {
   const parsed = AdminUpdateBrandBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const [brand] = await db.update(productBrandsTable).set({
     name: body.name ?? existing.name,
     slug: body.name && body.name !== existing.name ? slugify(body.name) : existing.slug,
@@ -13870,6 +13884,10 @@ router.put("/admin/shipping", async (req, res): Promise<void> => {
   const parsed = AdminUpdateShippingConfigBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const body = parsed.data;
+  if (!body.personalDeliveryName.trim()) {
+    res.status(400).json({ error: "Naziv lične dostave ne može biti prazan." });
+    return;
+  }
   const seen = new Set<number>();
   for (const tier of body.tiers) {
     if (seen.has(tier.maxWeightGrams)) { res.status(400).json({ error: "Dva ranga ne mogu imati istu maksimalnu težinu." }); return; }
@@ -13906,6 +13924,7 @@ router.post("/admin/courier-services", async (req, res): Promise<void> => {
   const parsed = AdminCreateCourierServiceBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const name = parsed.data.name.trim();
+  if (!name) { res.status(400).json({ error: "Naziv kurirske službe ne može biti prazan." }); return; }
   const trackingUrlTemplate = cleanTrackingTemplate(parsed.data.trackingUrlTemplate);
   if (!validTrackingTemplate(trackingUrlTemplate)) {
     res.status(400).json({ error: "URL šablon mora koristiti http/https i sadržati {trackingNumber}." }); return;
@@ -13925,6 +13944,7 @@ router.patch("/admin/courier-services/:courierServiceId", async (req, res): Prom
   const params = AdminUpdateCourierServiceParams.safeParse(req.params);
   const parsed = AdminUpdateCourierServiceBody.safeParse(req.body);
   if (!params.success || !parsed.success) { res.status(400).json({ error: !params.success ? params.error.message : parsed.error?.message ?? "Neispravan zahtev." }); return; }
+  if (!Object.keys(parsed.data).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const [existing] = await db.select().from(courierServicesTable).where(eq(courierServicesTable.id, params.data.courierServiceId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Kurirska služba nije pronađena." }); return; }
   const name = parsed.data.name?.trim();

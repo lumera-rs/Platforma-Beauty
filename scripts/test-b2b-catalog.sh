@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -n "${LUMERA_API_BASE_URL:-}" ]]; then
-  BASE_URL="${LUMERA_API_BASE_URL%/}"
-elif [[ -n "${REPLIT_DEV_DOMAIN:-}" ]]; then
-  BASE_URL="https://${REPLIT_DEV_DOMAIN}/api"
-else
-  echo "Set LUMERA_API_BASE_URL or REPLIT_DEV_DOMAIN before running this test." >&2
-  exit 1
-fi
-
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/src/api-preflight.sh"
+resolve_api_base_url
 check_api_server
 
 if [[ -z "${DATABASE_URL:-}" ]]; then

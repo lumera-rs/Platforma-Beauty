@@ -48,6 +48,8 @@
     "test:multi-location": "playwright test browser/multi-location-owner.spec.ts",
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts",
     "test:retail-checkout-api": "tsx ./src/run-retail-checkout-api.ts",
+    "test:api-regressions": "tsx ./src/run-api-regressions.ts",
+    "cleanup:api-regressions": "tsx ./src/run-api-regressions.ts --recover-interrupted-databases",
     "test:retail-checkout": "tsx ./src/run-retail-checkout.ts",
     "test:shipping-config": "tsx ../artifacts/api-server/src/lib/shipping-config.test.ts"
   },
