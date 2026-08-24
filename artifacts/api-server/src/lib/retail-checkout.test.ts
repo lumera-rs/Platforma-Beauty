@@ -6,6 +6,8 @@ import test from "node:test";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
+  observeDatabaseQueries,
+  pool,
   productCategoriesTable,
   productsTable,
   retailCartItemsTable,
@@ -307,13 +309,29 @@ test("cart and checkout retain the saved catalog reference after an SKU edit", a
     assert.ok(admin);
     try {
       const adminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
-      const byCatalogReference = await fetch(
-        `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(product.catalogReference)}`,
-        { headers: { cookie: adminCookie } },
-      );
+      const searchQueries: string[] = [];
+      const stopObserving = observeDatabaseQueries(({ sql: query }) => searchQueries.push(query));
+      let byCatalogReference: Response;
+      try {
+        byCatalogReference = await fetch(
+          `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(product.catalogReference.toLowerCase())}`,
+          { headers: { cookie: adminCookie } },
+        );
+      } finally {
+        stopObserving();
+      }
       assert.equal(byCatalogReference.status, 200);
       const referenceResults = await byCatalogReference.json() as Array<{ id: string }>;
       assert.ok(referenceResults.some((candidate) => candidate.id === order.id), "an order must remain searchable by its saved catalog reference");
+      const retailOrderSearch = searchQueries.find((query) => (
+        query.includes('from "retail_order_items" inner join "retail_orders"')
+        && query.includes('"product_catalog_reference" =')
+      ));
+      assert.ok(retailOrderSearch, "canonical reference search must begin at retail order items and join matching orders");
+      assert.ok(
+        !searchQueries.some((query) => /^select "order_id" from "retail_order_items"/i.test(query)),
+        "reference search must not load an unbounded order-id list into application memory",
+      );
 
       const byEditedSku = await fetch(
         `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(skuAfterOrder)}`,
@@ -322,6 +340,62 @@ test("cart and checkout retain the saved catalog reference after an SKU edit", a
       assert.equal(byEditedSku.status, 200);
       const skuResults = await byEditedSku.json() as Array<{ id: string }>;
       assert.ok(!skuResults.some((candidate) => candidate.id === order.id), "admin search must not use the product's current editable SKU");
+
+      const planMarker = `retail-reference-plan-${randomUUID()}`;
+      let planText = "";
+      try {
+        await pool.query(
+          `WITH inserted_orders AS (
+             INSERT INTO retail_orders (
+               id, order_number, cart_id, user_id, tracking_token_hash, idempotency_key,
+               status, payment_method, payment_status, delivery_method,
+               subtotal, shipping_cost, total,
+               shipping_name, shipping_address, shipping_city, shipping_postal_code,
+               shipping_phone, shipping_email, shipping_note, created_at, updated_at
+             )
+             SELECT gen_random_uuid(), $2 || '-' || sequence_number, source.cart_id, NULL,
+                    $2 || '-tracking-' || sequence_number, $2 || '-idempotency-' || sequence_number,
+                    'pending', 'BANK_TRANSFER', 'unpaid', 'courier',
+                    1, 0, 1,
+                    'Plan fixture', 'Test ulica 1', 'Novi Sad', '21000',
+                    '+381601234567', $2 || '-' || sequence_number || '@example.test',
+                    'Retail reference plan fixture', now(), now()
+             FROM retail_orders AS source
+             CROSS JOIN generate_series(1, 1500) AS sequence_number
+             WHERE source.id = $1
+             RETURNING id
+           )
+           INSERT INTO retail_order_items (
+             order_id, product_id, product_name, product_image_url,
+             product_catalog_reference, variant_value, variant_label, unit_price, quantity
+           )
+           SELECT inserted_order.id, $3::uuid, 'Plan distractor', '/reference-plan.jpg',
+                  $2 || '-reference-' || inserted_order.id, NULL, NULL, 1, 1
+           FROM inserted_orders AS inserted_order`,
+          [order.id, planMarker, createdProductId],
+        );
+        await pool.query("ANALYZE retail_orders, retail_order_items");
+        const explained = await pool.query(
+          `EXPLAIN (COSTS OFF, FORMAT TEXT)
+           SELECT DISTINCT retail_order.id, retail_order.created_at
+           FROM retail_order_items AS retail_item
+           INNER JOIN retail_orders AS retail_order ON retail_item.order_id = retail_order.id
+           WHERE retail_item.product_catalog_reference = $1
+           ORDER BY retail_order.created_at DESC, retail_order.id DESC
+           LIMIT 100`,
+          [product.catalogReference],
+        );
+        planText = explained.rows.map((row) => String(row["QUERY PLAN"])).join("\n");
+      } finally {
+        await pool.query(`DELETE FROM retail_orders WHERE order_number LIKE $1`, [`${planMarker}-%`]);
+      }
+      assert.match(
+        planText,
+        /retail_order_items_catalog_reference_order_idx/,
+        "normal canonical-reference plan must use the covering item index with a large order history",
+      );
+      assert.doesNotMatch(planText, /Seq Scan on retail_order_items/, "canonical reference lookup must not scan all retail order items");
+      assert.doesNotMatch(planText, /Seq Scan on retail_orders/, "canonical reference lookup must not scan all retail orders");
     } finally {
       await db.delete(usersTable).where(eq(usersTable.id, admin.id));
     }

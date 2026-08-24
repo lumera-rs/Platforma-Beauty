@@ -380,6 +380,7 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
 }, (table) => [
   index("retail_order_items_order_idx").on(table.orderId),
   index("retail_order_items_product_idx").on(table.productId),
+  index("retail_order_items_catalog_reference_order_idx").on(table.productCatalogReference, table.orderId),
 ]);
 
 export const retailProductReviewsTable = pgTable("retail_product_reviews", {

@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 18;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 19;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -337,6 +337,10 @@ function tableStatements(s: string): string[] {
        WHERE product.id = item.product_id AND item.product_catalog_reference IS NULL`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_order_idx ON ${s}.retail_order_items (order_id)`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_product_idx ON ${s}.retail_order_items (product_id)`,
+    // v19: exact immutable-reference searches use this covering lookup before
+    // joining the bounded admin result back to retail_orders.
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS retail_order_items_catalog_reference_order_idx
+       ON ${s}.retail_order_items (product_catalog_reference, order_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_product_reviews (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       product_id uuid NOT NULL REFERENCES ${s}.products(id) ON DELETE CASCADE,

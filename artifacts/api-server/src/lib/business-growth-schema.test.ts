@@ -398,6 +398,7 @@ async function run() {
       "products_professional_active_created_idx",
       "products_catalog_reference_unique",
       "retail_cart_items_cart_product_variant_unique",
+      "retail_order_items_catalog_reference_order_idx",
       "sms_deliveries_claim_expiry_idx",
       "automation_runs_cooldown_idx",
       "automation_deliveries_claim_expiry_idx",

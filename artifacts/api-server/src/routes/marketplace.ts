@@ -7,7 +7,7 @@ import
 
 import 
 {
- and, asc, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql 
+ and, asc, count, desc, eq, exists, getTableColumns, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql
 }
  from "drizzle-orm"
 ;
@@ -8434,27 +8434,51 @@ router.get("/admin/retail-orders", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
   const parsed = AdminListRetailOrdersQueryParams.safeParse(req.query);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const filters: Parameters<typeof and>[0][] = [];
-  if (parsed.data.status) filters.push(eq(retailOrdersTable.status, parsed.data.status));
-  if (parsed.data.search) {
-    const term = `%${parsed.data.search.trim()}%`;
-    // Search the immutable order-item snapshot. Never use products.sku here:
-    // that value is editable after an order is created.
-    const matchingItems = await db.select({ orderId: retailOrderItemsTable.orderId })
+  const search = parsed.data.search?.trim();
+  const canonicalReference = search && /^LUM-[0-9A-F]{12}$/i.test(search)
+    ? search.toUpperCase()
+    : null;
+  let orders: Array<typeof retailOrdersTable.$inferSelect>;
+  if (canonicalReference) {
+    // Begin exact immutable-reference lookups at the covering item index, then
+    // join, filter, sort, and limit the matching orders in PostgreSQL.
+    const exactFilters = [eq(retailOrderItemsTable.productCatalogReference, canonicalReference)];
+    if (parsed.data.status) exactFilters.push(eq(retailOrdersTable.status, parsed.data.status));
+    orders = await db.selectDistinct(getTableColumns(retailOrdersTable))
       .from(retailOrderItemsTable)
-      .where(ilike(retailOrderItemsTable.productCatalogReference, term));
-    const matchingOrderIds = [...new Set(matchingItems.map((item) => item.orderId))];
-    const searchClauses = [
-      ilike(retailOrdersTable.orderNumber, term),
-      ilike(retailOrdersTable.shippingName, term),
-      ilike(retailOrdersTable.shippingEmail, term),
-      ilike(retailOrdersTable.shippingPhone, term),
-    ];
-    if (matchingOrderIds.length) searchClauses.push(inArray(retailOrdersTable.id, matchingOrderIds));
-    filters.push(or(...searchClauses)!);
+      .innerJoin(retailOrdersTable, eq(retailOrderItemsTable.orderId, retailOrdersTable.id))
+      .where(and(...exactFilters))
+      .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id))
+      .limit(100);
+  } else {
+    const filters: Parameters<typeof and>[0][] = [];
+    if (parsed.data.status) filters.push(eq(retailOrdersTable.status, parsed.data.status));
+    if (search) {
+      const term = `%${search}%`;
+      // Search the immutable order-item snapshot. Never use products.sku here:
+      // that value is editable after an order is created. Non-canonical terms
+      // retain the broader contains-search behavior.
+      const searchClauses = [
+        ilike(retailOrdersTable.orderNumber, term),
+        ilike(retailOrdersTable.shippingName, term),
+        ilike(retailOrdersTable.shippingEmail, term),
+        ilike(retailOrdersTable.shippingPhone, term),
+        exists(
+          db.select({ orderId: retailOrderItemsTable.orderId })
+            .from(retailOrderItemsTable)
+            .where(and(
+              eq(retailOrderItemsTable.orderId, retailOrdersTable.id),
+              ilike(retailOrderItemsTable.productCatalogReference, term),
+            )),
+        ),
+      ];
+      filters.push(or(...searchClauses)!);
+    }
+    orders = await db.select().from(retailOrdersTable)
+      .where(filters.length ? and(...filters) : undefined)
+      .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id))
+      .limit(100);
   }
-  const orders = await db.select().from(retailOrdersTable).where(filters.length ? and(...filters) : undefined)
-    .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
   res.json(await Promise.all(orders.map(retailOrderWithItems)));
 });
 

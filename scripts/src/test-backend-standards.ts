@@ -184,6 +184,7 @@ const REQUIRED_INDEXES = [
   "products_category_active_idx",
   "products_active_created_idx",
   "orders_salon_created_idx",
+  "retail_order_items_catalog_reference_order_idx",
   // education.ts
   "course_days_course_sort_idx",
   "course_reviews_course_status_created_idx",
@@ -276,6 +277,12 @@ const EXPLAIN_CHECKS: ExplainCheck[] = [
     name: "orders salon_id + created_at",
     sql: `SELECT id FROM orders WHERE salon_id = '00000000-0000-0000-0000-000000000000' ORDER BY created_at DESC LIMIT 20`,
     indexHint: "orders",
+  },
+  // Retail-order immutable catalog reference lookup.
+  {
+    name: "retail order item catalog reference lookup",
+    sql: `SELECT order_id FROM retail_order_items WHERE product_catalog_reference = 'LUM-000000000000'`,
+    indexHint: "retail_order_items_catalog_reference_order_idx",
   },
   // Courses published + not archived + created_at (education list)
   {

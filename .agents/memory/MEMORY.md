@@ -93,3 +93,4 @@
 - [Isolated process recovery](isolated-process-recovery.md) — target marker-owned child groups and report malformed manifests after valid sibling cleanup.
 - [API test schema readiness](api-test-schema-readiness.md) — direct Express-app harnesses bypass startup rollouts and must ensure newly queried database columns first.
 - [Disposable database name limits](disposable-database-name-limits.md) — keep generated PostgreSQL test database names under the identifier length limit to avoid silent collisions.
+- [Index-first exact searches](index-first-exact-searches.md) — split canonical exact terms from broad OR searches so the indexed relation drives the normal plan.
