@@ -328,6 +328,8 @@ export default function AdminIntegrations() {
     };
   }, []);
   const registerBrevoWebhook = async () => {
+    const key = "register:brevo-webhook";
+    if (!actionGuard.begin(key)) return;
     setRegisteringWebhook(true);
     try {
       const response = await fetch("/api/admin/integrations/brevo/register-webhook", { method: "POST", credentials: "include" });
@@ -346,13 +348,19 @@ export default function AdminIntegrations() {
       toast.error(error instanceof Error ? error.message : "Registracija webhook-a na Brevo nije uspela.");
     } finally {
       setRegisteringWebhook(false);
+      actionGuard.end(key);
     }
   };
   const [cleaningStaleWebhooks, setCleaningStaleWebhooks] = useState(false);
   const cleanupStaleBrevoWebhooks = async () => {
     const selectedIds = staleBrevoWebhooks.filter((hook) => selectedStaleBrevoWebhookIds.includes(hook.id)).map((hook) => hook.id);
     if (!selectedIds.length) return;
-    if (!window.confirm(`Ukloniti izabrane zaostale LUMERA registracije sa Brevo (${selectedIds.length})? Neoznačene registracije ostaju registrovane. Sveža registracija i webhook-ovi koji nisu u LUMERA formatu neće biti dirani.`)) return;
+    const key = "cleanup:brevo-webhooks";
+    if (!actionGuard.begin(key)) return;
+    if (!window.confirm(`Ukloniti izabrane zaostale LUMERA registracije sa Brevo (${selectedIds.length})? Neoznačene registracije ostaju registrovane. Sveža registracija i webhook-ovi koji nisu u LUMERA formatu neće biti dirani.`)) {
+      actionGuard.end(key);
+      return;
+    }
     setCleaningStaleWebhooks(true);
     try {
       const response = await fetch("/api/admin/integrations/brevo/cleanup-webhooks", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: selectedIds }) });
@@ -364,6 +372,7 @@ export default function AdminIntegrations() {
       toast.error(error instanceof Error ? error.message : "Uklanjanje zaostalih registracija nije uspelo.");
     } finally {
       setCleaningStaleWebhooks(false);
+      actionGuard.end(key);
     }
   };
   const generateWebhookSecret = (integration: Integration) => {
@@ -489,7 +498,7 @@ export default function AdminIntegrations() {
                 {refreshingStaleWebhooks ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 {refreshingStaleWebhooks ? "Osvežavam…" : "Osveži zaostale registracije"}
               </Button>}
-              {integration === "brevo" && <Button variant="outline" size="sm" disabled={registeringWebhook} onClick={registerBrevoWebhook}>
+              {integration === "brevo" && <Button variant="outline" size="sm" disabled={registeringWebhook || actionGuard.isActive("register:brevo-webhook")} onClick={registerBrevoWebhook}>
                 {registeringWebhook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
                 {registeringWebhook ? "Registrujem…" : "Registruj webhook"}
               </Button>}
@@ -515,7 +524,7 @@ export default function AdminIntegrations() {
                   </label>
                 </li>)}
               </ul>
-               <Button variant="outline" size="sm" className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100" disabled={cleaningStaleWebhooks || selectedStaleBrevoWebhookIds.length === 0} onClick={cleanupStaleBrevoWebhooks}>
+               <Button variant="outline" size="sm" className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100" disabled={cleaningStaleWebhooks || actionGuard.isActive("cleanup:brevo-webhooks") || selectedStaleBrevoWebhookIds.length === 0} onClick={cleanupStaleBrevoWebhooks}>
                 {cleaningStaleWebhooks ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <AlertTriangle className="mr-2 h-4 w-4" />}
                 {cleaningStaleWebhooks ? "Uklanjam…" : "Ukloni zaostale registracije"}
               </Button>
