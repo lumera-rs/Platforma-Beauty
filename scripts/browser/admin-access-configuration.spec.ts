@@ -563,6 +563,28 @@ test("admin mobile navigation keeps focus indicators visible with forced colors"
   expect(browserErrors, "The forced-colors admin mobile journey must not produce browser errors.").toEqual([]);
 });
 
+test("admin desktop navigation keeps focus indicators visible with forced colors", async ({ page }) => {
+  const browserErrors = collectBrowserErrors(page);
+  await page.emulateMedia({ forcedColors: "active" });
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await openAdminPage(page, "/admin");
+
+  const desktopSidebarLinks = page.locator("aside").locator('a[href]');
+  const desktopSidebarLinkCount = await desktopSidebarLinks.count();
+  expect(desktopSidebarLinkCount, "The desktop admin sidebar must contain focusable links.").toBeGreaterThan(1);
+
+  const firstSidebarLink = desktopSidebarLinks.first();
+  const lastSidebarLink = desktopSidebarLinks.last();
+  await firstSidebarLink.focus();
+  await expect(firstSidebarLink).toBeFocused();
+  await expectVisibleFocusIndicator(firstSidebarLink);
+  await lastSidebarLink.focus();
+  await expect(lastSidebarLink).toBeFocused();
+  await expectVisibleFocusIndicator(lastSidebarLink);
+
+  expect(browserErrors, "The forced-colors admin desktop journey must not produce browser errors.").toEqual([]);
+});
+
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
   const customer = { ...admin, role: "CUSTOMER" as const };
   const adminRequests: string[] = [];
