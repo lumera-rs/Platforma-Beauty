@@ -250,7 +250,7 @@ test("the Infobip registration panel and check guide an admin through live verdi
   await expect(panel).toContainText("Automatske SMS poruke se šalju");
 });
 
-test("keeps the last Infobip verdict and exposes a retry when the post-check refresh fails", async ({ page }) => {
+test("keeps the last Infobip verdict and exposes a retry when post-check refreshes fail repeatedly", async ({ page }) => {
   test.setTimeout(120_000);
 
   // Start from a deterministic "no evidence yet" verdict. The following
@@ -262,11 +262,11 @@ test("keeps the last Infobip verdict and exposes a retry when the post-check ref
     .set({ sentAt: new Date() })
     .where(eq(automationDeliveriesTable.id, deliveryId));
 
-  let failNextIntegrationsRead = false;
+  let remainingFailedIntegrationsReads = 0;
   let failedIntegrationsReadCount = 0;
   await page.route("**/api/admin/integrations", async (route) => {
-    if (route.request().method() === "GET" && failNextIntegrationsRead) {
-      failNextIntegrationsRead = false;
+    if (route.request().method() === "GET" && remainingFailedIntegrationsReads > 0) {
+      remainingFailedIntegrationsReads -= 1;
       failedIntegrationsReadCount += 1;
       await route.fulfill({
         status: 503,
@@ -290,7 +290,7 @@ test("keeps the last Infobip verdict and exposes a retry when the post-check ref
 
   // Arm the failure after the initial page read, so this is specifically the
   // GET issued by verifySmsRegistration's finally block.
-  failNextIntegrationsRead = true;
+  remainingFailedIntegrationsReads = 2;
   const verifyResponsePromise = page.waitForResponse((response) =>
     response.url().includes("/api/admin/integrations/sms/verify-registration")
     && response.request().method() === "POST",
@@ -313,6 +313,23 @@ test("keeps the last Infobip verdict and exposes a retry when the post-check ref
   await expect(panel).toContainText("Nema nedavnih automatskih SMS poruka");
   await expect(page.getByTestId("sms-registration-refresh-error")).toBeVisible();
   const retry = page.getByTestId("retry-sms-registration-refresh");
+  await expect(retry).toBeVisible();
+  await expect(retry).toBeEnabled();
+
+  const secondFailedRefreshPromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === "/api/admin/integrations"
+    && response.request().method() === "GET"
+    && response.status() === 503,
+  );
+  await retry.click();
+  await secondFailedRefreshPromise;
+
+  expect(failedIntegrationsReadCount).toBe(2);
+  // A second failed refresh must preserve both the stale verdict and the
+  // recovery action, rather than stranding the administrator on the page.
+  await expect(panel).toContainText("Još nepotvrđena");
+  await expect(panel).toContainText("Nema nedavnih automatskih SMS poruka");
+  await expect(page.getByTestId("sms-registration-refresh-error")).toBeVisible();
   await expect(retry).toBeVisible();
   await expect(retry).toBeEnabled();
 

@@ -284,7 +284,9 @@ export default function AdminIntegrations() {
       await load();
       setSmsRegistrationRefreshFailed(false);
     } catch {
-      // Keep the action visible so another retry remains possible.
+      // Keep the last verdict and recovery action visible after every
+      // transient failure, including consecutive failed retries.
+      setSmsRegistrationRefreshFailed(true);
     } finally {
       setRetryingSmsRegistrationRefresh(false);
     }
