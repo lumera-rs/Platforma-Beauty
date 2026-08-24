@@ -5509,6 +5509,16 @@ export const BeautyJobListingPostedByType = {
   user: 'user',
 } as const;
 
+export interface BeautyJobRentalSlot {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  listingId: string;
+  startsAt: string;
+  endsAt: string;
+  available: boolean;
+}
+
 export interface BeautyJobListing {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
   id: string;
@@ -5546,6 +5556,7 @@ export interface BeautyJobListing {
   updatedAt: string;
   isSaved: boolean;
   isOwner: boolean;
+  availableSlots: BeautyJobRentalSlot[];
 }
 
 export type BeautyJobCreateInputType = typeof BeautyJobCreateInputType[keyof typeof BeautyJobCreateInputType];
@@ -5577,6 +5588,13 @@ export const BeautyJobCreateInputPricePeriod = {
   project: 'project',
   fixed: 'fixed',
 } as const;
+
+export interface BeautyJobRentalSlotInput {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id?: string;
+  startsAt: string;
+  endsAt: string;
+}
 
 export interface BeautyJobCreateInput {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
@@ -5632,6 +5650,8 @@ export interface BeautyJobCreateInput {
      * @items.maxLength 80
      */
   dayLabels?: string[];
+  /** @maxItems 100 */
+  availableSlots?: BeautyJobRentalSlotInput[];
 }
 
 export type BeautyJobUpdateInputType = typeof BeautyJobUpdateInputType[keyof typeof BeautyJobUpdateInputType];
@@ -5728,6 +5748,58 @@ export interface BeautyJobUpdateInput {
      * @items.maxLength 80
      */
   dayLabels?: string[];
+  /** @maxItems 100 */
+  availableSlots?: BeautyJobRentalSlotInput[];
+}
+
+export interface BeautyJobRentalRequestCreateInput {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  slotId: string;
+  /** @maxLength 1000 */
+  message?: string;
+}
+
+export type BeautyJobRentalRequestUpdateInputStatus = typeof BeautyJobRentalRequestUpdateInputStatus[keyof typeof BeautyJobRentalRequestUpdateInputStatus];
+
+
+export const BeautyJobRentalRequestUpdateInputStatus = {
+  accepted: 'accepted',
+  declined: 'declined',
+} as const;
+
+export interface BeautyJobRentalRequestUpdateInput {
+  status: BeautyJobRentalRequestUpdateInputStatus;
+}
+
+export type BeautyJobRentalRequestStatus = typeof BeautyJobRentalRequestStatus[keyof typeof BeautyJobRentalRequestStatus];
+
+
+export const BeautyJobRentalRequestStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+} as const;
+
+export interface BeautyJobRentalRequest {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  listingId: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  slotId: string;
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  applicantUserId: string;
+  /** @nullable */
+  message: string | null;
+  status: BeautyJobRentalRequestStatus;
+  /** @nullable */
+  respondedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  listingTitle: string;
+  applicantDisplayName: string;
+  startsAt: string;
+  endsAt: string;
 }
 
 export interface BeautyJobContactCreateInput {
@@ -5909,6 +5981,10 @@ export interface BeautyJobContactsResponse {
 
 export interface BeautyJobNotificationsResponse {
   notifications: BeautyJobNotification[];
+}
+
+export interface BeautyJobRentalRequestsResponse {
+  requests: BeautyJobRentalRequest[];
 }
 
 export interface BeautyJobModerationQueue {

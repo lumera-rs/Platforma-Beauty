@@ -762,6 +762,26 @@ async function run() {
        VALUES ($1, 'Po dogovoru')`,
       [beautyListing.id],
     );
+    const rentalSlot = (await q<{ id: string }>(
+      `INSERT INTO "${s}".beauty_job_rental_slots (listing_id, starts_at, ends_at)
+       VALUES ($1, now() + interval '2 days', now() + interval '2 days 2 hours')
+       RETURNING id`,
+      [beautyListing.id],
+    )).rows[0]!;
+    await q(
+      `INSERT INTO "${s}".beauty_job_rental_requests (listing_id, slot_id, applicant_user_id, status)
+       VALUES ($1, $2, $3, 'accepted')`,
+      [beautyListing.id, rentalSlot.id, fixtures.user.id],
+    );
+    await assert.rejects(
+      q(
+        `INSERT INTO "${s}".beauty_job_rental_requests (listing_id, slot_id, applicant_user_id, status)
+         VALUES ($1, $2, $3, 'accepted')`,
+        [beautyListing.id, rentalSlot.id, fixtures.employee.id],
+      ),
+      /duplicate key|unique/i,
+      "only one accepted rental request is allowed per slot",
+    );
     await assert.rejects(
       q(
         `INSERT INTO "${s}".beauty_job_listings

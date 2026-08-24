@@ -8,6 +8,7 @@
 import type { BeautyJobListingIntent } from './beautyJobListingIntent';
 import type { BeautyJobListingPostedByType } from './beautyJobListingPostedByType';
 import type { BeautyJobListingType } from './beautyJobListingType';
+import type { BeautyJobRentalSlot } from './beautyJobRentalSlot';
 
 export interface BeautyJobListing {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
@@ -46,4 +47,5 @@ export interface BeautyJobListing {
   updatedAt: Date;
   isSaved: boolean;
   isOwner: boolean;
+  availableSlots: BeautyJobRentalSlot[];
 }

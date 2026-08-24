@@ -4976,6 +4976,26 @@ paths:
       parameters: [{ name: notificationId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
       responses:
         "200": { description: Notification, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobNotification" } } } }
+  /beauty-jobs/rental-requests/mine:
+    get:
+      operationId: listMyBeautyJobRentalRequests
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Requests sent by the authenticated user, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequestsResponse" } } } }
+  /beauty-jobs/rental-requests/inbox:
+    get:
+      operationId: listBeautyJobRentalRequestInbox
+      tags: [beauty-jobs]
+      responses:
+        "200": { description: Rental requests received by the authenticated listing author, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequestsResponse" } } } }
+  /beauty-jobs/rental-requests/{requestId}:
+    patch:
+      operationId: respondToBeautyJobRentalRequest
+      tags: [beauty-jobs]
+      parameters: [{ name: requestId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequestUpdateInput" } } } }
+      responses:
+        "200": { description: Updated request, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequest" } } } }
   /beauty-jobs/{listingId}:
     get:
       operationId: getBeautyJob
@@ -5015,6 +5035,14 @@ paths:
       parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContactCreateInput" } } } }
       responses: { "201": { description: Contact, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobContact" } } } } }
+  /beauty-jobs/{listingId}/rental-requests:
+    post:
+      operationId: createBeautyJobRentalRequest
+      tags: [beauty-jobs]
+      parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequestCreateInput" } } } }
+      responses:
+        "201": { description: Created request, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRentalRequest" } } } }
   /beauty-jobs/{listingId}/report:
     post:
       operationId: reportBeautyJob
@@ -9020,7 +9048,8 @@ components:
         updatedAt: { type: string, format: date-time }
         isSaved: { type: boolean }
         isOwner: { type: boolean }
-      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner]
+        availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
     BeautyJobCreateInput:
       type: object
       properties:
@@ -9039,6 +9068,7 @@ components:
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
         availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
+        availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }
       required: [categoryId, type, intent, title, description, city, region]
     BeautyJobUpdateInput:
       type: object
@@ -9058,6 +9088,51 @@ components:
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
         availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
+        availableSlots: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/BeautyJobRentalSlotInput" } }
+    BeautyJobRentalSlotInput:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+      required: [startsAt, endsAt]
+    BeautyJobRentalSlot:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        listingId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        available: { type: boolean }
+      required: [id, listingId, startsAt, endsAt, available]
+    BeautyJobRentalRequestCreateInput:
+      type: object
+      properties:
+        slotId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        message: { type: string, maxLength: 1000 }
+      required: [slotId]
+    BeautyJobRentalRequestUpdateInput:
+      type: object
+      properties:
+        status: { type: string, enum: [accepted, declined] }
+      required: [status]
+    BeautyJobRentalRequest:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        listingId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        slotId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        applicantUserId: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        message: { type: [string, "null"] }
+        status: { type: string, enum: [pending, accepted, declined] }
+        respondedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        listingTitle: { type: string }
+        applicantDisplayName: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+      required: [id, listingId, slotId, applicantUserId, message, status, respondedAt, createdAt, updatedAt, listingTitle, applicantDisplayName, startsAt, endsAt]
     BeautyJobContactCreateInput:
       type: object
       properties: { message: { type: string, minLength: 1, maxLength: 4000 } }
@@ -9180,6 +9255,10 @@ components:
       type: object
       properties: { notifications: { type: array, items: { $ref: "#/components/schemas/BeautyJobNotification" } } }
       required: [notifications]
+    BeautyJobRentalRequestsResponse:
+      type: object
+      properties: { requests: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalRequest" } } }
+      required: [requests]
     BeautyJobModerationQueue:
       type: object
       properties:

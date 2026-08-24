@@ -3,15 +3,19 @@ import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "driz
 import {
   beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable,
   beautyJobListingsTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
-  beautyJobReportsTable, beautyJobSavedListingsTable, db, salonsTable, usersTable,
+  beautyJobRentalRequestsTable, beautyJobRentalSlotsTable, beautyJobReportsTable,
+  beautyJobSavedListingsTable, db, salonsTable, usersTable,
 } from "@workspace/db";
 import {
   CloseBeautyJobParams, CloseBeautyJobResponse,
   ContactBeautyJobAuthorBody, ContactBeautyJobAuthorParams, ContactBeautyJobAuthorResponse,
+  CreateBeautyJobRentalRequestBody, CreateBeautyJobRentalRequestParams,
+  CreateBeautyJobRentalRequestResponse,
   CreateBeautyJobBody, CreateBeautyJobResponse,
   GetBeautyJobModerationQueueResponse, GetBeautyJobParams, GetBeautyJobResponse,
   GetBeautyJobSettingsResponse, ListBeautyJobCategoriesResponse,
   ListBeautyJobInboxResponse, ListBeautyJobNotificationsResponse,
+  ListBeautyJobRentalRequestInboxResponse, ListMyBeautyJobRentalRequestsResponse,
   ListBeautyJobsQueryParams, ListBeautyJobsResponse, ListMyBeautyJobsResponse,
   ListSavedBeautyJobsResponse, MarkBeautyJobNotificationReadParams,
   MarkBeautyJobNotificationReadResponse, ModerateBeautyJobBody,
@@ -19,6 +23,8 @@ import {
   RenewBeautyJobResponse, ReplyToBeautyJobContactBody,
   ReplyToBeautyJobContactParams, ReplyToBeautyJobContactResponse,
   ReportBeautyJobBody, ReportBeautyJobParams, ReportBeautyJobResponse,
+  RespondToBeautyJobRentalRequestBody, RespondToBeautyJobRentalRequestParams,
+  RespondToBeautyJobRentalRequestResponse,
   ResolveBeautyJobReportBody, ResolveBeautyJobReportParams,
   ResolveBeautyJobReportResponse, SweepExpiredBeautyJobsResponse,
   ToggleSavedBeautyJobParams, ToggleSavedBeautyJobResponse,
@@ -68,7 +74,18 @@ const listingSelect = {
   dayLabels: beautyJobListingAvailabilityTable.dayLabels,
   authorDisplayName: sql<string>`coalesce(${salonsTable.name}, ${usersTable.firstName} || ' ' || ${usersTable.lastName})`,
 };
-function view(row: typeof beautyJobListingsTable.$inferSelect & { categorySlug: string; categoryName: string; availabilityPattern: string | null; dayLabels: string[] | null; authorDisplayName: string; isSaved?: boolean; isOwner?: boolean }) {
+type RentalSlotView = {
+  id: string;
+  listingId: string;
+  startsAt: string;
+  endsAt: string;
+  available: boolean;
+};
+
+function view(
+  row: typeof beautyJobListingsTable.$inferSelect & { categorySlug: string; categoryName: string; availabilityPattern: string | null; dayLabels: string[] | null; authorDisplayName: string; isSaved?: boolean; isOwner?: boolean },
+  availableSlots: RentalSlotView[] = [],
+) {
   return {
     ...row, categorySlug: row.categorySlug, categoryName: row.categoryName,
     availabilityPattern: row.availabilityPattern ?? null, dayLabels: row.dayLabels ?? [],
@@ -76,6 +93,63 @@ function view(row: typeof beautyJobListingsTable.$inferSelect & { categorySlug: 
     latitude: RENTAL_TYPES.has(row.type) ? null : row.latitude,
     longitude: RENTAL_TYPES.has(row.type) ? null : row.longitude,
     expiresAt: row.expiresAt.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+    availableSlots,
+  };
+}
+
+async function rentalSlotsByListing(listingIds: string[]) {
+  const result = new Map<string, RentalSlotView[]>();
+  if (!listingIds.length) return result;
+  const rows = await db.select({
+    slot: beautyJobRentalSlotsTable,
+    booked: sql<boolean>`${beautyJobRentalRequestsTable.id} is not null`,
+  }).from(beautyJobRentalSlotsTable)
+    .leftJoin(beautyJobRentalRequestsTable, and(
+      eq(beautyJobRentalRequestsTable.slotId, beautyJobRentalSlotsTable.id),
+      eq(beautyJobRentalRequestsTable.status, "accepted"),
+    ))
+    .where(and(inArray(beautyJobRentalSlotsTable.listingId, listingIds), sql`${beautyJobRentalSlotsTable.endsAt} > now()`))
+    .orderBy(asc(beautyJobRentalSlotsTable.startsAt));
+  for (const row of rows) {
+    const slots = result.get(row.slot.listingId) ?? [];
+    slots.push({
+      id: row.slot.id,
+      listingId: row.slot.listingId,
+      startsAt: row.slot.startsAt.toISOString(),
+      endsAt: row.slot.endsAt.toISOString(),
+      available: !row.booked && row.slot.startsAt.getTime() > Date.now(),
+    });
+    result.set(row.slot.listingId, slots);
+  }
+  return result;
+}
+
+function rentalSlotValidation(slots: Array<{ id?: string; startsAt: Date; endsAt: Date }> | undefined, required: boolean, allowPastIds = new Set<string>()) {
+  if (required && !slots?.length) return "Dodajte bar jedan konkretan termin za iznajmljivanje.";
+  if (!slots) return undefined;
+  const sorted = [...slots].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  for (let i = 0; i < sorted.length; i += 1) {
+    const slot = sorted[i]!;
+    if (slot.startsAt.getTime() <= Date.now() && (!slot.id || !allowPastIds.has(slot.id))) return "Termini moraju počinjati u budućnosti.";
+    if (slot.endsAt.getTime() <= slot.startsAt.getTime()) return "Kraj termina mora biti posle početka.";
+    if (i > 0 && slot.startsAt.getTime() < sorted[i - 1]!.endsAt.getTime()) return "Termini se ne smeju preklapati.";
+  }
+  return undefined;
+}
+
+function rentalRequestView(
+  row: typeof beautyJobRentalRequestsTable.$inferSelect,
+  context: { listingTitle: string; applicantDisplayName: string; startsAt: Date; endsAt: Date },
+) {
+  return {
+    ...row,
+    respondedAt: row.respondedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    listingTitle: context.listingTitle,
+    applicantDisplayName: context.applicantDisplayName,
+    startsAt: context.startsAt.toISOString(),
+    endsAt: context.endsAt.toISOString(),
   };
 }
 function contactView(
@@ -186,6 +260,8 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
   }
   const [category] = await db.select().from(beautyJobCategoriesTable).where(and(eq(beautyJobCategoriesTable.id, body.data.categoryId), eq(beautyJobCategoriesTable.enabled, true))).limit(1);
   if (!category) return bad(res, "Kategorija nije dostupna."); const compatibility = ensureCompatibility(category.slug, body.data.type, body.data.availabilityPattern); if (compatibility) return bad(res, compatibility);
+  const requiresSlots = RENTAL_TYPES.has(body.data.type) && body.data.intent === "offering";
+  const slotError = rentalSlotValidation(body.data.availableSlots, requiresSlots); if (slotError) return bad(res, slotError);
   const cfg = await settings(); const authorSalon = user.role === "SALON_OWNER" ? await ownerSalon(user) : undefined;
   if (user.role === "SALON_OWNER" && !authorSalon) return res.status(403).json({ error: "Aktivan salon nije dostupan.", code: "FORBIDDEN" });
   const since = new Date(Date.now() - 3600000);
@@ -194,54 +270,119 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-post:${user.id}`}))`);
     const [recent] = await tx.select({ total: count() }).from(beautyJobListingsTable).where(and(authorFilter, sql`${beautyJobListingsTable.createdAt} >= ${since}`));
     if ((recent?.total ?? 0) >= cfg.hourlyPostingLimit) return null;
-    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, ...listingData } = body.data;
+    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingData } = body.data;
     const [l] = await tx.insert(beautyJobListingsTable).values({ ...listingData, salonId: authorSalon?.id, userId: authorSalon ? null : user.id, postedByType: authorSalon ? "salon" : "user", photos: body.data.photos ?? [], expiresAt: new Date(Date.now() + cfg.listingExpiryDays * 86400000) }).returning();
     if (RENTAL_TYPES.has(body.data.type)) await tx.insert(beautyJobListingAvailabilityTable).values({ listingId: l!.id, availabilityPattern: body.data.availabilityPattern!, dayLabels: body.data.dayLabels ?? [] });
+    if (requiresSlots && body.data.availableSlots?.length) {
+      await tx.insert(beautyJobRentalSlotsTable).values(body.data.availableSlots.map((slot) => ({ listingId: l!.id, startsAt: slot.startsAt, endsAt: slot.endsAt })));
+    }
     await attachReadyImageAssets(tx, user.id, body.data.photos ?? []); return l!;
   });
   if (!created) return res.status(429).json({ error: "Previše objava. Pokušajte kasnije.", code: "RATE_LIMITED" });
   const [row] = await listingQuery({ id: user.id, salonId: authorSalon?.id }).where(eq(beautyJobListingsTable.id, created.id)).limit(1);
-  res.status(201).json(CreateBeautyJobResponse.parse(view({ ...row!.listing, ...row! })));
+  const slotMap = await rentalSlotsByListing([created.id]);
+  res.status(201).json(CreateBeautyJobResponse.parse(view({ ...row!.listing, ...row! }, slotMap.get(created.id))));
 } catch (e) { next(e); } });
 
 router.get("/beauty-jobs/mine", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
   const where = salon ? eq(beautyJobListingsTable.salonId, salon.id) : eq(beautyJobListingsTable.userId, user.id);
   const items = await listingQuery({ id: user.id, salonId: salon?.id }).where(where).orderBy(desc(beautyJobListingsTable.createdAt));
-  res.json(ListMyBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r })), total: items.length, page: 1, pageSize: items.length }));
+  const slotMap = await rentalSlotsByListing(items.map((item) => item.listing.id));
+  res.json(ListMyBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r }, slotMap.get(r.listing.id))), total: items.length, page: 1, pageSize: items.length }));
 } catch (e) { next(e); } });
 
 router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const p = UpdateBeautyJobParams.safeParse(req.params), b = UpdateBeautyJobBody.safeParse(req.body); if (!p.success || !b.success || !validPhotos(b.data.photos)) return bad(res);
   const [existing] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1); if (!existing) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   if (!(await canManage(user, existing))) return res.status(403).json({ error: "Nije dozvoljeno.", code: "FORBIDDEN" });
-  const categoryId = b.data.categoryId ?? existing.categoryId; const [category] = await db.select().from(beautyJobCategoriesTable).where(and(eq(beautyJobCategoriesTable.id, categoryId), eq(beautyJobCategoriesTable.enabled, true))).limit(1);
-  const [currentAvailability] = await db.select({ pattern: beautyJobListingAvailabilityTable.availabilityPattern, dayLabels: beautyJobListingAvailabilityTable.dayLabels }).from(beautyJobListingAvailabilityTable).where(eq(beautyJobListingAvailabilityTable.listingId, existing.id)).limit(1);
-  const type = b.data.type ?? existing.type; const pattern = b.data.availabilityPattern ?? currentAvailability?.pattern; const compatibility = !category ? "Kategorija nije pronađena." : ensureCompatibility(category.slug, type, pattern); if (compatibility) return bad(res, compatibility);
-  if (RENTAL_TYPES.has(type) && ((b.data.latitude !== undefined && b.data.latitude !== null) || (b.data.longitude !== undefined && b.data.longitude !== null))) {
-    return res.status(400).json({ error: "Precizne koordinate nisu dozvoljene za oglase o iznajmljivanju.", code: "RENTAL_COORDINATES_NOT_ALLOWED" });
-  }
-  await db.transaction(async (tx) => {
-    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, ...listingUpdates } = b.data;
+  const slotConflict = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-rental-listing:${existing.id}`}))`);
+    const [lockedListing] = await tx.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, existing.id)).for("update").limit(1);
+    if (!lockedListing) return "VALIDATION:Oglas nije pronađen.";
+    const [lockedAvailability] = await tx.select({ pattern: beautyJobListingAvailabilityTable.availabilityPattern, dayLabels: beautyJobListingAvailabilityTable.dayLabels }).from(beautyJobListingAvailabilityTable).where(eq(beautyJobListingAvailabilityTable.listingId, existing.id)).limit(1);
+    const categoryId = b.data.categoryId ?? lockedListing.categoryId;
+    const [category] = await tx.select().from(beautyJobCategoriesTable).where(and(eq(beautyJobCategoriesTable.id, categoryId), eq(beautyJobCategoriesTable.enabled, true))).limit(1);
+    const type = b.data.type ?? lockedListing.type;
+    const intent = b.data.intent ?? lockedListing.intent;
+    const pattern = b.data.availabilityPattern ?? lockedAvailability?.pattern;
+    const compatibility = !category ? "Kategorija nije pronađena." : ensureCompatibility(category.slug, type, pattern);
+    if (compatibility) return `VALIDATION:${compatibility}`;
+    const requiresSlots = RENTAL_TYPES.has(type) && intent === "offering";
+    if (RENTAL_TYPES.has(type) && ((b.data.latitude !== undefined && b.data.latitude !== null) || (b.data.longitude !== undefined && b.data.longitude !== null))) {
+      return "COORDINATES:Precizne koordinate nisu dozvoljene za oglase o iznajmljivanju.";
+    }
+    const existingSlots = await tx.select().from(beautyJobRentalSlotsTable).where(eq(beautyJobRentalSlotsTable.listingId, existing.id)).for("update");
+    const requested = existingSlots.length ? await tx.selectDistinct({ slotId: beautyJobRentalRequestsTable.slotId })
+      .from(beautyJobRentalRequestsTable)
+      .where(inArray(beautyJobRentalRequestsTable.slotId, existingSlots.map((slot) => slot.id))) : [];
+    const requestedIds = new Set(requested.map((row) => row.slotId));
+    if (!requiresSlots && requestedIds.size) return "Termini sa zahtevima sprečavaju promenu tipa ovog oglasa.";
+    if (requiresSlots && b.data.availableSlots !== undefined) {
+      const existingById = new Map(existingSlots.map((slot) => [slot.id, slot]));
+      if (b.data.availableSlots.some((slot) => slot.id && !existingById.has(slot.id))) return "Jedan od termina ne pripada ovom oglasu.";
+      const incomingIds = new Set(b.data.availableSlots.flatMap((slot) => slot.id ? [slot.id] : []));
+      for (const slot of b.data.availableSlots) {
+        if (!slot.id || !requestedIds.has(slot.id)) continue;
+        const current = existingById.get(slot.id)!;
+        if (current.startsAt.getTime() !== slot.startsAt.getTime() || current.endsAt.getTime() !== slot.endsAt.getTime()) {
+          return "Termin sa postojećim zahtevom ne može se menjati.";
+        }
+      }
+      const retainedRequested = existingSlots.filter((slot) => requestedIds.has(slot.id) && !incomingIds.has(slot.id));
+      if (retainedRequested.some((slot) => slot.startsAt.getTime() > Date.now())) {
+        return "Termin sa postojećim zahtevom ne može se ukloniti.";
+      }
+      const resultingSlots = [
+        ...b.data.availableSlots,
+        ...retainedRequested.map((slot) => ({ id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt })),
+      ];
+      const validation = rentalSlotValidation(resultingSlots, true, requestedIds);
+      if (validation) return `VALIDATION:${validation}`;
+      const deletable = existingSlots.filter((slot) => !incomingIds.has(slot.id) && !requestedIds.has(slot.id)).map((slot) => slot.id);
+      if (deletable.length) await tx.delete(beautyJobRentalSlotsTable).where(inArray(beautyJobRentalSlotsTable.id, deletable));
+      for (const slot of b.data.availableSlots) {
+        if (slot.id) {
+          if (!requestedIds.has(slot.id)) {
+            await tx.update(beautyJobRentalSlotsTable).set({ startsAt: slot.startsAt, endsAt: slot.endsAt, updatedAt: new Date() }).where(eq(beautyJobRentalSlotsTable.id, slot.id));
+          }
+        } else {
+          await tx.insert(beautyJobRentalSlotsTable).values({ listingId: existing.id, startsAt: slot.startsAt, endsAt: slot.endsAt });
+        }
+      }
+    } else if (requiresSlots && existingSlots.length === 0) {
+      return "VALIDATION:Dodajte bar jedan konkretan termin za iznajmljivanje.";
+    } else if (!requiresSlots && existingSlots.length) {
+      await tx.delete(beautyJobRentalSlotsTable).where(eq(beautyJobRentalSlotsTable.listingId, existing.id));
+    }
+    const { availabilityPattern: _availabilityPattern, dayLabels: _dayLabels, availableSlots: _availableSlots, ...listingUpdates } = b.data;
     await tx.update(beautyJobListingsTable).set({
       ...listingUpdates,
-      photos: b.data.photos ?? existing.photos,
+      photos: b.data.photos ?? lockedListing.photos,
       latitude: RENTAL_TYPES.has(type) ? null : b.data.latitude,
       longitude: RENTAL_TYPES.has(type) ? null : b.data.longitude,
       moderationStatus: "pending",
-      status: existing.status === "rejected" ? "active" : existing.status,
+      status: lockedListing.status === "rejected" ? "active" : lockedListing.status,
       updatedAt: new Date(),
     }).where(eq(beautyJobListingsTable.id, existing.id));
     if (RENTAL_TYPES.has(type)) {
-      await tx.insert(beautyJobListingAvailabilityTable).values({ listingId: existing.id, availabilityPattern: pattern!, dayLabels: b.data.dayLabels ?? currentAvailability?.dayLabels ?? [] }).onConflictDoUpdate({ target: beautyJobListingAvailabilityTable.listingId, set: { availabilityPattern: pattern!, dayLabels: b.data.dayLabels ?? currentAvailability?.dayLabels ?? [], updatedAt: new Date() } });
+      await tx.insert(beautyJobListingAvailabilityTable).values({ listingId: existing.id, availabilityPattern: pattern!, dayLabels: b.data.dayLabels ?? lockedAvailability?.dayLabels ?? [] }).onConflictDoUpdate({ target: beautyJobListingAvailabilityTable.listingId, set: { availabilityPattern: pattern!, dayLabels: b.data.dayLabels ?? lockedAvailability?.dayLabels ?? [], updatedAt: new Date() } });
     } else {
       await tx.delete(beautyJobListingAvailabilityTable).where(eq(beautyJobListingAvailabilityTable.listingId, existing.id));
     }
-    await attachReadyImageAssets(tx, user.id, b.data.photos?.filter((x) => !existing.photos.includes(x)) ?? []);
+    await attachReadyImageAssets(tx, user.id, b.data.photos?.filter((x) => !lockedListing.photos.includes(x)) ?? []);
+    return null;
   });
+  if (slotConflict) {
+    const coordinateError = slotConflict.startsWith("COORDINATES:");
+    const validation = coordinateError || slotConflict.startsWith("VALIDATION:") || slotConflict.includes("ne pripada");
+    const error = slotConflict.replace(/^(VALIDATION|COORDINATES):/, "");
+    return res.status(validation ? 400 : 409).json({ error, code: coordinateError ? "RENTAL_COORDINATES_NOT_ALLOWED" : validation ? "VALIDATION_ERROR" : "RENTAL_SLOT_CONFLICT" });
+  }
   const salon = await ownerSalon(user);
   const [row] = await listingQuery({ id: user.id, salonId: salon?.id }).where(eq(beautyJobListingsTable.id, existing.id)).limit(1);
-  res.json(UpdateBeautyJobResponse.parse(view({ ...row!.listing, ...row! })));
+  const slotMap = await rentalSlotsByListing([existing.id]);
+  res.json(UpdateBeautyJobResponse.parse(view({ ...row!.listing, ...row! }, slotMap.get(existing.id))));
 } catch (e) { next(e); } });
 
 router.post("/beauty-jobs/:listingId/renew", async (req, res, next) => { try {
@@ -267,6 +408,153 @@ router.post("/beauty-jobs/:listingId/save", async (req, res, next) => { try {
 router.get("/beauty-jobs/saved", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user); const items = await listingQuery({ id: user.id, salonId: salon?.id }).where(eq(beautyJobSavedListingsTable.userId, user.id)).orderBy(desc(beautyJobSavedListingsTable.createdAt));
   res.json(ListSavedBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r })), total: items.length, page: 1, pageSize: items.length }));
+} catch (e) { next(e); } });
+
+router.get("/beauty-jobs/rental-requests/mine", async (req, res, next) => { try {
+  const user = await authenticated(req, res); if (!user) return;
+  const requests = await db.select({
+    request: beautyJobRentalRequestsTable,
+    listingTitle: beautyJobListingsTable.title,
+    applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+    startsAt: beautyJobRentalSlotsTable.startsAt,
+    endsAt: beautyJobRentalSlotsTable.endsAt,
+  }).from(beautyJobRentalRequestsTable)
+    .innerJoin(beautyJobListingsTable, eq(beautyJobRentalRequestsTable.listingId, beautyJobListingsTable.id))
+    .innerJoin(beautyJobRentalSlotsTable, eq(beautyJobRentalRequestsTable.slotId, beautyJobRentalSlotsTable.id))
+    .innerJoin(usersTable, eq(beautyJobRentalRequestsTable.applicantUserId, usersTable.id))
+    .where(eq(beautyJobRentalRequestsTable.applicantUserId, user.id))
+    .orderBy(desc(beautyJobRentalRequestsTable.createdAt));
+  res.json(ListMyBeautyJobRentalRequestsResponse.parse({ requests: requests.map((row) => rentalRequestView(row.request, row)) }));
+} catch (e) { next(e); } });
+
+router.get("/beauty-jobs/rental-requests/inbox", async (req, res, next) => { try {
+  const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
+  const scope = salon ? eq(beautyJobListingsTable.salonId, salon.id) : eq(beautyJobListingsTable.userId, user.id);
+  const requests = await db.select({
+    request: beautyJobRentalRequestsTable,
+    listingTitle: beautyJobListingsTable.title,
+    applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+    startsAt: beautyJobRentalSlotsTable.startsAt,
+    endsAt: beautyJobRentalSlotsTable.endsAt,
+  }).from(beautyJobRentalRequestsTable)
+    .innerJoin(beautyJobListingsTable, eq(beautyJobRentalRequestsTable.listingId, beautyJobListingsTable.id))
+    .innerJoin(beautyJobRentalSlotsTable, eq(beautyJobRentalRequestsTable.slotId, beautyJobRentalSlotsTable.id))
+    .innerJoin(usersTable, eq(beautyJobRentalRequestsTable.applicantUserId, usersTable.id))
+    .where(scope)
+    .orderBy(desc(beautyJobRentalRequestsTable.createdAt));
+  res.json(ListBeautyJobRentalRequestInboxResponse.parse({ requests: requests.map((row) => rentalRequestView(row.request, row)) }));
+} catch (e) { next(e); } });
+
+router.post("/beauty-jobs/:listingId/rental-requests", async (req, res, next) => { try {
+  const user = await authenticated(req, res); if (!user) return;
+  const p = CreateBeautyJobRentalRequestParams.safeParse(req.params), b = CreateBeautyJobRentalRequestBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
+  const [row] = await db.select({ listing: beautyJobListingsTable, slot: beautyJobRentalSlotsTable })
+    .from(beautyJobRentalSlotsTable)
+    .innerJoin(beautyJobListingsTable, eq(beautyJobRentalSlotsTable.listingId, beautyJobListingsTable.id))
+    .where(and(
+      eq(beautyJobListingsTable.id, p.data.listingId),
+      eq(beautyJobRentalSlotsTable.id, b.data.slotId),
+      inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]),
+      eq(beautyJobListingsTable.intent, "offering"),
+      eq(beautyJobListingsTable.status, "active"),
+      eq(beautyJobListingsTable.moderationStatus, "approved"),
+      sql`${beautyJobListingsTable.expiresAt} > now()`,
+      sql`${beautyJobRentalSlotsTable.startsAt} > now()`,
+    )).limit(1);
+  if (!row) return res.status(404).json({ error: "Termin nije pronađen ili više nije dostupan.", code: "NOT_FOUND" });
+  const recipient = await listingRecipient(row.listing); if (!recipient || recipient === user.id) return res.status(403).json({ error: "Rezervacija sopstvenog oglasa nije dozvoljena.", code: "FORBIDDEN" });
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-rental-listing:${row.listing.id}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-rental-slot:${row.slot.id}`}))`);
+    const [lockedListing] = await tx.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, row.listing.id)).for("update").limit(1);
+    const [lockedSlot] = await tx.select().from(beautyJobRentalSlotsTable).where(and(eq(beautyJobRentalSlotsTable.id, row.slot.id), eq(beautyJobRentalSlotsTable.listingId, row.listing.id))).for("update").limit(1);
+    const now = new Date();
+    if (!lockedListing || !lockedSlot || !RENTAL_TYPES.has(lockedListing.type) || lockedListing.intent !== "offering" || lockedListing.status !== "active" || lockedListing.moderationStatus !== "approved" || lockedListing.expiresAt <= now || lockedSlot.startsAt <= now) {
+      return { error: "Termin više nije dostupan.", code: "RENTAL_SLOT_UNAVAILABLE" } as const;
+    }
+    const [accepted] = await tx.select({ id: beautyJobRentalRequestsTable.id }).from(beautyJobRentalRequestsTable)
+      .where(and(eq(beautyJobRentalRequestsTable.slotId, row.slot.id), eq(beautyJobRentalRequestsTable.status, "accepted"))).limit(1);
+    if (accepted) return { error: "Termin je već rezervisan.", code: "RENTAL_SLOT_UNAVAILABLE" } as const;
+    const [duplicate] = await tx.select({ id: beautyJobRentalRequestsTable.id }).from(beautyJobRentalRequestsTable)
+      .where(and(eq(beautyJobRentalRequestsTable.slotId, row.slot.id), eq(beautyJobRentalRequestsTable.applicantUserId, user.id), eq(beautyJobRentalRequestsTable.status, "pending"))).limit(1);
+    if (duplicate) return { error: "Već ste poslali zahtev za ovaj termin.", code: "RENTAL_REQUEST_EXISTS" } as const;
+    const [created] = await tx.insert(beautyJobRentalRequestsTable).values({
+      listingId: row.listing.id, slotId: row.slot.id, applicantUserId: user.id, message: b.data.message?.trim() || null,
+    }).returning();
+    await tx.insert(beautyJobNotificationsTable).values({
+      recipientUserId: recipient, listingId: row.listing.id, type: "new_rental_request",
+      title: "Novi zahtev za rezervaciju", body: row.listing.title,
+    });
+    return { request: created! } as const;
+  });
+  if ("error" in result) return res.status(409).json(result);
+  res.status(201).json(CreateBeautyJobRentalRequestResponse.parse(rentalRequestView(result.request, {
+    listingTitle: row.listing.title,
+    applicantDisplayName: `${user.firstName} ${user.lastName}`,
+    startsAt: row.slot.startsAt,
+    endsAt: row.slot.endsAt,
+  })));
+} catch (e) { next(e); } });
+
+router.patch("/beauty-jobs/rental-requests/:requestId", async (req, res, next) => { try {
+  const user = await authenticated(req, res); if (!user) return;
+  const p = RespondToBeautyJobRentalRequestParams.safeParse(req.params), b = RespondToBeautyJobRentalRequestBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
+  const [preview] = await db.select({
+    request: beautyJobRentalRequestsTable,
+    listing: beautyJobListingsTable,
+    applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+    startsAt: beautyJobRentalSlotsTable.startsAt,
+    endsAt: beautyJobRentalSlotsTable.endsAt,
+  }).from(beautyJobRentalRequestsTable)
+    .innerJoin(beautyJobListingsTable, eq(beautyJobRentalRequestsTable.listingId, beautyJobListingsTable.id))
+    .innerJoin(beautyJobRentalSlotsTable, eq(beautyJobRentalRequestsTable.slotId, beautyJobRentalSlotsTable.id))
+    .innerJoin(usersTable, eq(beautyJobRentalRequestsTable.applicantUserId, usersTable.id))
+    .where(eq(beautyJobRentalRequestsTable.id, p.data.requestId)).limit(1);
+  if (!preview || !(await canManage(user, preview.listing))) return res.status(404).json({ error: "Zahtev nije pronađen.", code: "NOT_FOUND" });
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-rental-listing:${preview.listing.id}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`beauty-job-rental-slot:${preview.request.slotId}`}))`);
+    const [lockedListing] = await tx.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, preview.listing.id)).for("update").limit(1);
+    const [lockedSlot] = await tx.select().from(beautyJobRentalSlotsTable).where(and(eq(beautyJobRentalSlotsTable.id, preview.request.slotId), eq(beautyJobRentalSlotsTable.listingId, preview.listing.id))).for("update").limit(1);
+    const [locked] = await tx.select().from(beautyJobRentalRequestsTable).where(eq(beautyJobRentalRequestsTable.id, preview.request.id)).for("update").limit(1);
+    if (!locked || locked.status !== "pending") return { error: "Zahtev je već obrađen.", code: "RENTAL_REQUEST_ALREADY_HANDLED" } as const;
+    if (b.data.status === "accepted") {
+      const now = new Date();
+      if (!lockedListing || !lockedSlot || !RENTAL_TYPES.has(lockedListing.type) || lockedListing.intent !== "offering" || lockedListing.status !== "active" || lockedListing.moderationStatus !== "approved" || lockedListing.expiresAt <= now || lockedSlot.startsAt <= now) {
+        return { error: "Termin ili oglas više nije dostupan za prihvatanje.", code: "RENTAL_SLOT_UNAVAILABLE" } as const;
+      }
+      const [accepted] = await tx.select({ id: beautyJobRentalRequestsTable.id }).from(beautyJobRentalRequestsTable)
+        .where(and(eq(beautyJobRentalRequestsTable.slotId, locked.slotId), eq(beautyJobRentalRequestsTable.status, "accepted"))).limit(1);
+      if (accepted) return { error: "Termin je već rezervisan drugim zahtevom.", code: "RENTAL_SLOT_UNAVAILABLE" } as const;
+    }
+    const now = new Date();
+    const [updated] = await tx.update(beautyJobRentalRequestsTable).set({ status: b.data.status, respondedAt: now, updatedAt: now })
+      .where(eq(beautyJobRentalRequestsTable.id, locked.id)).returning();
+    const notifications = [{
+      recipientUserId: locked.applicantUserId, listingId: locked.listingId,
+      type: b.data.status === "accepted" ? "rental_request_accepted" : "rental_request_declined",
+      title: b.data.status === "accepted" ? "Zahtev za rezervaciju je prihvaćen" : "Zahtev za rezervaciju je odbijen",
+      body: preview.listing.title,
+    }];
+    if (b.data.status === "accepted") {
+      const declined = await tx.update(beautyJobRentalRequestsTable).set({ status: "declined", respondedAt: now, updatedAt: now })
+        .where(and(eq(beautyJobRentalRequestsTable.slotId, locked.slotId), eq(beautyJobRentalRequestsTable.status, "pending")))
+        .returning({ applicantUserId: beautyJobRentalRequestsTable.applicantUserId, listingId: beautyJobRentalRequestsTable.listingId });
+      notifications.push(...declined.map((item) => ({
+        recipientUserId: item.applicantUserId, listingId: item.listingId, type: "rental_request_declined",
+        title: "Termin je rezervisan drugim zahtevom", body: preview.listing.title,
+      })));
+    }
+    await tx.insert(beautyJobNotificationsTable).values(notifications);
+    return { request: updated! } as const;
+  });
+  if ("error" in result) return res.status(409).json(result);
+  res.json(RespondToBeautyJobRentalRequestResponse.parse(rentalRequestView(result.request, {
+    listingTitle: preview.listing.title,
+    applicantDisplayName: preview.applicantDisplayName,
+    startsAt: preview.startsAt,
+    endsAt: preview.endsAt,
+  })));
 } catch (e) { next(e); } });
 
 router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
@@ -356,7 +644,8 @@ router.get("/beauty-jobs/:listingId", async (req, res, next) => { try {
     .where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), sql`${beautyJobListingsTable.expiresAt} > now()`)).returning();
   if (!updated) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   const [row] = await listingQuery(viewer ? { id: viewer.id, salonId: viewerSalon?.id } : undefined).where(eq(beautyJobListingsTable.id, updated.id)).limit(1);
-  res.json(GetBeautyJobResponse.parse(view({ ...row!.listing, ...row! })));
+  const slotMap = await rentalSlotsByListing([updated.id]);
+  res.json(GetBeautyJobResponse.parse(view({ ...row!.listing, ...row! }, slotMap.get(updated.id))));
 } catch (e) { next(e); } });
 
 export default router;

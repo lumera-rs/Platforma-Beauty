@@ -97,3 +97,4 @@
 - [Index-first exact searches](index-first-exact-searches.md) — split canonical exact terms from broad OR searches so the indexed relation drives the normal plan.
 - [tsx inline module execution](tsx-inline-module-execution.md) — use stdin for top-level await; eval is CommonJS and forced input-type can poison imported loaders.
 - [URL numeric filter absence](url-numeric-filter-absence.md) — missing numeric query parameters must stay absent instead of silently becoming zero.
+- [Rental booking serialization](rental-booking-serialization.md) — derive slot invariants from listing state reread under listing→slot locks.

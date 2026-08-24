@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -36,17 +37,23 @@ export const beautyJobContactStatusEnum = pgEnum("beauty_job_contact_status", [
 export const beautyJobReportStatusEnum = pgEnum("beauty_job_report_status", [
   "pending", "resolved", "dismissed",
 ]);
+export const beautyJobRentalRequestStatusEnum = pgEnum("beauty_job_rental_request_status", [
+  "pending", "accepted", "declined",
+]);
 
 export const beautyJobCategoriesTable = pgTable("beauty_job_categories", {
   id: uuid("id").defaultRandom().primaryKey(),
-  slug: text("slug").notNull().unique(),
-  name: text("name").notNull().unique(),
+  slug: text("slug").notNull(),
+  name: text("name").notNull(),
   subtypeLabels: jsonb("subtype_labels").$type<string[]>().notNull().default([]),
   enabled: boolean("enabled").notNull().default(true),
   featureFlag: text("feature_flag"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  unique("beauty_job_categories_slug_key").on(table.slug),
+  unique("beauty_job_categories_name_key").on(table.name),
+]);
 
 export const beautyJobPlatformSettingsTable = pgTable("beauty_job_platform_settings", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -105,6 +112,40 @@ export const beautyJobListingAvailabilityTable = pgTable("beauty_job_listing_ava
   dayLabels: jsonb("day_labels").$type<string[]>().notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const beautyJobRentalSlotsTable = pgTable("beauty_job_rental_slots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").notNull().references(() => beautyJobListingsTable.id, { onDelete: "cascade" }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("beauty_job_rental_slots_listing_starts_idx").on(table.listingId, table.startsAt),
+  check("beauty_job_rental_slots_positive_duration", sql`${table.endsAt} > ${table.startsAt}`),
+]);
+
+export const beautyJobRentalRequestsTable = pgTable("beauty_job_rental_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  listingId: uuid("listing_id").notNull().references(() => beautyJobListingsTable.id, { onDelete: "cascade" }),
+  slotId: uuid("slot_id").notNull().references(() => beautyJobRentalSlotsTable.id, { onDelete: "cascade" }),
+  applicantUserId: uuid("applicant_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  message: text("message"),
+  status: beautyJobRentalRequestStatusEnum("status").notNull().default("pending"),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("beauty_job_rental_requests_listing_created_idx").on(table.listingId, table.createdAt),
+  index("beauty_job_rental_requests_applicant_created_idx").on(table.applicantUserId, table.createdAt),
+  index("beauty_job_rental_requests_slot_status_idx").on(table.slotId, table.status),
+  uniqueIndex("beauty_job_rental_requests_slot_accepted_unique")
+    .on(table.slotId)
+    .where(sql`${table.status} = 'accepted'`),
+  uniqueIndex("beauty_job_rental_requests_slot_applicant_pending_unique")
+    .on(table.slotId, table.applicantUserId)
+    .where(sql`${table.status} = 'pending'`),
+]);
 
 export const beautyJobContactsTable = pgTable("beauty_job_contacts", {
   id: uuid("id").defaultRandom().primaryKey(),

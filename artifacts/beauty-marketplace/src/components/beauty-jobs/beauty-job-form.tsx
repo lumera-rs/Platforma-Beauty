@@ -14,12 +14,13 @@ import {
 import { uploadOptimizedImage } from "@/lib/image-upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, Image as ImageIcon, Loader2 } from "lucide-react";
+import { X, Image as ImageIcon, Loader2, Plus, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { OptimizedImage } from "@/components/optimized-image";
 
@@ -36,6 +37,12 @@ const formSchema = z.object({
   negotiable: z.boolean().default(false),
   availabilityPattern: z.string().optional().nullable(),
   dayLabels: z.array(z.string()).default([]),
+  availableSlots: z.array(z.object({
+    id: z.string().optional(),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    available: z.boolean().optional(),
+  })).max(100).default([]),
   photos: z.array(z.string()).max(8, "Maksimalno 8 slika").default([]),
 }).refine(data => {
   if ((data.type === "equipment_rental" || data.type === "space_rental") && !data.availabilityPattern) {
@@ -45,6 +52,23 @@ const formSchema = z.object({
 }, {
   message: "Raspoloživost je obavezna za oglase o iznajmljivanju",
   path: ["availabilityPattern"]
+}).superRefine((data, context) => {
+  if (!["equipment_rental", "space_rental"].includes(data.type) || data.intent !== "offering") return;
+  if (!data.availableSlots.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["availableSlots"], message: "Dodajte bar jedan konkretan termin" });
+    return;
+  }
+  const sorted = [...data.availableSlots].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  sorted.forEach((slot, index) => {
+    const start = new Date(slot.startsAt);
+    const end = new Date(slot.endsAt);
+    if (!slot.startsAt || !slot.endsAt || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["availableSlots"], message: "Svaki termin mora imati ispravan početak i kraj" });
+    }
+    if (index > 0 && start < new Date(sorted[index - 1]!.endsAt)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["availableSlots"], message: "Termini se ne smeju preklapati" });
+    }
+  });
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -61,6 +85,12 @@ const pricePeriods = ["hour", "day", "week", "month", "project", "fixed"] as con
 
 function isPricePeriod(value: string | null): value is (typeof pricePeriods)[number] {
   return value !== null && (pricePeriods as readonly string[]).includes(value);
+}
+
+function toLocalDateTimeInput(value: string) {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: BeautyJobFormProps) {
@@ -87,6 +117,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       negotiable: false,
       availabilityPattern: "",
       dayLabels: [],
+      availableSlots: [],
       photos: []
     }
   });
@@ -106,6 +137,12 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         negotiable: initialData.negotiable,
         availabilityPattern: initialData.availabilityPattern || "",
         dayLabels: initialData.dayLabels || [],
+        availableSlots: (initialData.availableSlots || []).map((slot) => ({
+          id: slot.id,
+          startsAt: toLocalDateTimeInput(slot.startsAt),
+          endsAt: toLocalDateTimeInput(slot.endsAt),
+          available: slot.available,
+        })),
         photos: initialData.photos || []
       });
     } else if (open) {
@@ -122,6 +159,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         negotiable: false,
         availabilityPattern: "",
         dayLabels: [],
+        availableSlots: [],
         photos: []
       });
     }
@@ -164,11 +202,26 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
   };
 
   const onSubmit = (data: FormValues) => {
+    const availableSlots = data.availableSlots.map((slot) => ({
+      id: slot.id,
+      startsAt: new Date(slot.startsAt).toISOString(),
+      endsAt: new Date(slot.endsAt).toISOString(),
+    }));
     const payload: BeautyJobCreateInput = {
-      ...data,
+      type: data.type,
+      intent: data.intent,
+      title: data.title,
+      description: data.description,
+      city: data.city,
+      region: data.region,
+      categoryId: data.categoryId,
+      negotiable: data.negotiable,
+      dayLabels: data.dayLabels,
+      photos: data.photos,
       priceAmount: data.priceAmount ?? undefined,
       pricePeriod: data.pricePeriod || undefined,
       availabilityPattern: data.availabilityPattern || undefined,
+      availableSlots,
     };
 
     if (initialData) {
@@ -199,6 +252,8 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
   const typeWatch = form.watch("type");
   const intentWatch = form.watch("intent");
   const requiresAvailability = typeWatch === "equipment_rental" || typeWatch === "space_rental";
+  const requiresConcreteSlots = requiresAvailability && intentWatch === "offering";
+  const watchedSlots = form.watch("availableSlots");
 
   // Filter categories based on type
   const availableCategories = categories?.categories?.filter(cat => {
@@ -294,6 +349,50 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
                   </FormItem>
                 )}
               />
+              {requiresConcreteSlots && (
+                <div className="space-y-3 rounded-lg border bg-background p-4 md:col-span-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> Konkretni termini *</p>
+                      <p className="text-xs text-muted-foreground mt-1">Prikazuju se samo datum i vreme. Precizna adresa ostaje privatna.</p>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={() => {
+                      form.setValue("availableSlots", [...watchedSlots, { startsAt: "", endsAt: "", available: true }], { shouldDirty: true, shouldValidate: true });
+                    }}>
+                      <Plus className="h-4 w-4 mr-1" /> Dodaj
+                    </Button>
+                  </div>
+                  {watchedSlots.length === 0 ? (
+                    <p className="text-sm text-muted-foreground border border-dashed rounded-md p-3">Dodajte termine koje korisnici mogu da zatraže.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {watchedSlots.map((slot, index) => (
+                        <div key={slot.id ?? index} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                          <div className="space-y-1">
+                            <Label htmlFor={`slot-start-${index}`}>Početak</Label>
+                            <Input id={`slot-start-${index}`} type="datetime-local" value={slot.startsAt} disabled={slot.available === false} onChange={(event) => {
+                              const next = [...watchedSlots]; next[index] = { ...slot, startsAt: event.target.value };
+                              form.setValue("availableSlots", next, { shouldDirty: true, shouldValidate: true });
+                            }} />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`slot-end-${index}`}>Kraj</Label>
+                            <Input id={`slot-end-${index}`} type="datetime-local" value={slot.endsAt} disabled={slot.available === false} onChange={(event) => {
+                              const next = [...watchedSlots]; next[index] = { ...slot, endsAt: event.target.value };
+                              form.setValue("availableSlots", next, { shouldDirty: true, shouldValidate: true });
+                            }} />
+                          </div>
+                          <Button type="button" size="icon" variant="ghost" disabled={slot.available === false} aria-label="Ukloni termin" onClick={() => {
+                            form.setValue("availableSlots", watchedSlots.filter((_, slotIndex) => slotIndex !== index), { shouldDirty: true, shouldValidate: true });
+                          }}><X className="h-4 w-4" /></Button>
+                          {slot.available === false && <p className="sm:col-span-3 text-xs text-primary">Ovaj termin je rezervisan i ne može se menjati.</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {form.formState.errors.availableSlots?.message && <p className="text-sm font-medium text-destructive">{form.formState.errors.availableSlots.message}</p>}
+                </div>
+              )}
             </div>
 
             <FormField

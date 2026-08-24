@@ -124,15 +124,94 @@ async function run(): Promise<void> {
     assert.equal(edited.status, 200);
     assert.equal(edited.body.moderationStatus, "pending", "editing must re-enter moderation");
     await request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" });
+    assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", {
+      categoryId: rentalCategory.id, type: "equipment_rental", intent: "offering", availabilityPattern: "Po dogovoru",
+    })).status, 400, "converting to an offering rental requires a concrete slot");
+    const raceCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Race ${suffix}`));
+    assert.equal(raceCreate.status, 201);
+    createdListingIds.push(raceCreate.body.id);
+    const raceStartsAt = new Date(Date.now() + 5 * 86400000).toISOString();
+    const raceEndsAt = new Date(Date.now() + 5 * 86400000 + 3600000).toISOString();
+    const lockClient = await pool.connect();
+    try {
+      await lockClient.query("select pg_advisory_lock(hashtext($1))", [`beauty-job-rental-listing:${raceCreate.body.id}`]);
+      const conversion = request(base, `/beauty-jobs/${raceCreate.body.id}`, customer.token, "PATCH", {
+        categoryId: rentalCategory.id, type: "equipment_rental", intent: "offering", availabilityPattern: "Po dogovoru",
+        availableSlots: [{ startsAt: raceStartsAt, endsAt: raceEndsAt }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const staleTitleUpdate = request(base, `/beauty-jobs/${raceCreate.body.id}`, customer.token, "PATCH", { title: `Race edited ${suffix}` });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await lockClient.query("select pg_advisory_unlock(hashtext($1))", [`beauty-job-rental-listing:${raceCreate.body.id}`]);
+      const raceResults = await Promise.all([conversion, staleTitleUpdate]);
+      assert.deepEqual(raceResults.map((result) => result.status), [200, 200]);
+    } finally {
+      await lockClient.query("select pg_advisory_unlock(hashtext($1))", [`beauty-job-rental-listing:${raceCreate.body.id}`]).catch(() => {});
+      lockClient.release();
+    }
+    const raceMine = await request(base, "/beauty-jobs/mine", customer.token);
+    const raceAfter = raceMine.body.items.find((item: any) => item.id === raceCreate.body.id);
+    assert.equal(raceAfter?.type, "equipment_rental");
+    assert.equal(raceAfter?.availableSlots.length, 1, "a stale concurrent PATCH must preserve the converted rental slot");
+    assert.equal(raceAfter?.availabilityPattern, "Po dogovoru");
 
     assert.equal((await request(base, "/beauty-jobs", customer.token, "POST", body(rentalCategory.id, "Wrong rental"))).status, 400);
     assert.equal((await request(base, "/beauty-jobs", customer.token, "POST", body(rentalCategory.id, "No availability", { type: "equipment_rental" }))).status, 400);
     assert.equal((await request(base, "/beauty-jobs", customer.token, "POST", body(rentalCategory.id, "Coordinates", { type: "equipment_rental", availabilityPattern: "Pon-Pet", latitude: 44.8, longitude: 20.4 }))).status, 400);
-    const rentalCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(rentalCategory.id, `Rental ${suffix}`, { type: "equipment_rental", availabilityPattern: "Pon-Pet", dayLabels: ["Ponedeljak"] }));
+    const rentalStartsAt = new Date(Date.now() + 2 * 86400000).toISOString();
+    const rentalEndsAt = new Date(Date.now() + 2 * 86400000 + 2 * 3600000).toISOString();
+    const secondRentalStartsAt = new Date(Date.now() + 3 * 86400000).toISOString();
+    const secondRentalEndsAt = new Date(Date.now() + 3 * 86400000 + 2 * 3600000).toISOString();
+    const rentalCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(rentalCategory.id, `Rental ${suffix}`, {
+      type: "equipment_rental", availabilityPattern: "Pon-Pet", dayLabels: ["Ponedeljak"],
+      availableSlots: [
+        { startsAt: rentalStartsAt, endsAt: rentalEndsAt },
+        { startsAt: secondRentalStartsAt, endsAt: secondRentalEndsAt },
+      ],
+    }));
     assert.equal(rentalCreate.status, 201);
     createdListingIds.push(rentalCreate.body.id);
     assert.equal(rentalCreate.body.latitude, null);
+    assert.equal(rentalCreate.body.availableSlots.length, 2);
     assert.equal((await request(base, `/beauty-jobs/${rentalCreate.body.id}`, customer.token, "PATCH", { latitude: 44.8, longitude: 20.4 })).status, 400, "rental updates must reject exact coordinates");
+    assert.equal((await request(base, `/admin/beauty-jobs/${rentalCreate.body.id}/moderation`, admin.token, "POST", { action: "approve" })).status, 200);
+    const rentalSlotId = rentalCreate.body.availableSlots[0].id;
+    const secondRentalSlotId = rentalCreate.body.availableSlots[1].id;
+    const firstRentalRequest = await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, applicant.token, "POST", { slotId: rentalSlotId, message: "Prvi zahtev" });
+    const secondRentalRequest = await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, salonOwner.token, "POST", { slotId: rentalSlotId, message: "Drugi zahtev" });
+    assert.equal(firstRentalRequest.status, 201);
+    assert.equal(secondRentalRequest.status, 201);
+    const rentalInbox = await request(base, "/beauty-jobs/rental-requests/inbox", customer.token);
+    const applicantRentals = await request(base, "/beauty-jobs/rental-requests/mine", applicant.token);
+    assert.ok(rentalInbox.body.requests.some((item: any) => item.id === firstRentalRequest.body.id));
+    assert.ok(applicantRentals.body.requests.some((item: any) => item.id === firstRentalRequest.body.id));
+    const competingAccepts = await Promise.all([
+      request(base, `/beauty-jobs/rental-requests/${firstRentalRequest.body.id}`, customer.token, "PATCH", { status: "accepted" }),
+      request(base, `/beauty-jobs/rental-requests/${secondRentalRequest.body.id}`, customer.token, "PATCH", { status: "accepted" }),
+    ]);
+    assert.deepEqual(competingAccepts.map((item) => item.status).sort(), [200, 409], "only one competing request may reserve a slot");
+    const bookedRental = await request(base, `/beauty-jobs/${rentalCreate.body.id}`, applicant.token);
+    assert.equal(bookedRental.body.availableSlots[0].available, false);
+    const overlapUpdate = await request(base, `/beauty-jobs/${rentalCreate.body.id}`, customer.token, "PATCH", {
+      availableSlots: [
+        { id: rentalSlotId, startsAt: rentalStartsAt, endsAt: rentalEndsAt },
+        { id: secondRentalSlotId, startsAt: secondRentalStartsAt, endsAt: secondRentalEndsAt },
+        { startsAt: new Date(Date.parse(rentalStartsAt) + 30 * 60000).toISOString(), endsAt: new Date(Date.parse(rentalEndsAt) + 30 * 60000).toISOString() },
+      ],
+    });
+    assert.equal(overlapUpdate.status, 400, "new slots may not overlap a retained accepted slot");
+    const lateRequest = await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, applicant.token, "POST", { slotId: secondRentalSlotId });
+    assert.equal(lateRequest.status, 201);
+    const deleteRequestedSlot = await request(base, `/beauty-jobs/${rentalCreate.body.id}`, customer.token, "PATCH", {
+      availableSlots: [{ id: rentalSlotId, startsAt: rentalStartsAt, endsAt: rentalEndsAt }],
+    });
+    assert.equal(deleteRequestedSlot.status, 409, "a future slot with request history cannot be deleted");
+    assert.equal((await request(base, `/beauty-jobs/${rentalCreate.body.id}/close`, customer.token, "POST")).status, 200);
+    assert.equal((await request(base, `/beauty-jobs/rental-requests/${lateRequest.body.id}`, customer.token, "PATCH", { status: "accepted" })).status, 409, "closed listings cannot accept rental requests");
+    const applicantNotifications = await request(base, "/beauty-jobs/notifications", applicant.token);
+    const ownerApplicantNotifications = await request(base, "/beauty-jobs/notifications", salonOwner.token);
+    assert.ok(applicantNotifications.body.notifications.some((item: any) => item.listingId === rentalCreate.body.id && item.type.startsWith("rental_request_")));
+    assert.ok(ownerApplicantNotifications.body.notifications.some((item: any) => item.listingId === rentalCreate.body.id && item.type.startsWith("rental_request_")));
 
     // Individually identifiable approved fixtures keep every public filter deterministic.
     const filterJob = await insertApproved(hairCategory.id, customer.user.id, `query-token-${suffix}`, { city: `QueryCity${suffix}`, region: `QueryRegion${suffix}`, priceAmount: 111, latitude: 44.8, longitude: 20.4 });

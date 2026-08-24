@@ -5,6 +5,7 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { BeautyJobRentalSlotInput } from './beautyJobRentalSlotInput';
 import type { BeautyJobUpdateInputIntent } from './beautyJobUpdateInputIntent';
 import type { BeautyJobUpdateInputPricePeriod } from './beautyJobUpdateInputPricePeriod';
 import type { BeautyJobUpdateInputType } from './beautyJobUpdateInputType';
@@ -70,4 +71,6 @@ export interface BeautyJobUpdateInput {
      * @items.maxLength 80
      */
   dayLabels?: string[];
+  /** @maxItems 100 */
+  availableSlots?: BeautyJobRentalSlotInput[];
 }

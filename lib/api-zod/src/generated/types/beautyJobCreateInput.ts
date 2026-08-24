@@ -8,6 +8,7 @@
 import type { BeautyJobCreateInputIntent } from './beautyJobCreateInputIntent';
 import type { BeautyJobCreateInputPricePeriod } from './beautyJobCreateInputPricePeriod';
 import type { BeautyJobCreateInputType } from './beautyJobCreateInputType';
+import type { BeautyJobRentalSlotInput } from './beautyJobRentalSlotInput';
 
 export interface BeautyJobCreateInput {
   /** @pattern ^[0-9a-fA-F-]{36}$ */
@@ -63,4 +64,6 @@ export interface BeautyJobCreateInput {
      * @items.maxLength 80
      */
   dayLabels?: string[];
+  /** @maxItems 100 */
+  availableSlots?: BeautyJobRentalSlotInput[];
 }

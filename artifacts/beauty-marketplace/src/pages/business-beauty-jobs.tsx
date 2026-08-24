@@ -11,6 +11,11 @@ import {
   getListBeautyJobInboxQueryKey,
   useListBeautyJobNotifications,
   getListBeautyJobNotificationsQueryKey,
+  useListMyBeautyJobRentalRequests,
+  getListMyBeautyJobRentalRequestsQueryKey,
+  useListBeautyJobRentalRequestInbox,
+  getListBeautyJobRentalRequestInboxQueryKey,
+  useRespondToBeautyJobRentalRequest,
   useCloseBeautyJob,
   useRenewBeautyJob,
   useToggleSavedBeautyJob,
@@ -23,6 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
 import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { BeautyJobForm } from "@/components/beauty-jobs/beauty-job-form";
+import { RentalRequestList } from "@/components/beauty-jobs/rental-request-list";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -31,7 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Briefcase, MessageSquare, Bookmark, Bell, Edit, RotateCcw, XCircle, CornerDownRight } from "lucide-react";
+import { Briefcase, MessageSquare, Bookmark, Bell, Edit, RotateCcw, XCircle, CornerDownRight, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 
 export default function BusinessBeautyJobsPage() {
@@ -44,12 +50,16 @@ export default function BusinessBeautyJobsPage() {
   const { data: savedJobs, isLoading: isLoadingSaved } = useListSavedBeautyJobs({ query: { queryKey: getListSavedBeautyJobsQueryKey() } });
   const { data: inbox, isLoading: isLoadingInbox } = useListBeautyJobInbox({ query: { queryKey: getListBeautyJobInboxQueryKey() } });
   const { data: notifications, isLoading: isLoadingNotifications } = useListBeautyJobNotifications({ query: { queryKey: getListBeautyJobNotificationsQueryKey() } });
+  const { data: sentRentalRequests, isLoading: isLoadingSentRentalRequests } = useListMyBeautyJobRentalRequests({ query: { queryKey: getListMyBeautyJobRentalRequestsQueryKey() } });
+  const { data: receivedRentalRequests, isLoading: isLoadingReceivedRentalRequests } = useListBeautyJobRentalRequestInbox({ query: { queryKey: getListBeautyJobRentalRequestInboxQueryKey() } });
 
   const closeMutation = useCloseBeautyJob();
   const renewMutation = useRenewBeautyJob();
   const toggleSaved = useToggleSavedBeautyJob();
   const replyMutation = useReplyToBeautyJobContact();
   const markReadMutation = useMarkBeautyJobNotificationRead();
+  const respondRentalMutation = useRespondToBeautyJobRentalRequest();
+  const [respondingRequestId, setRespondingRequestId] = useState<string>();
 
   const handleToggleSaved = (jobId: string, currentState: boolean) => {
     toggleSaved.mutate({ listingId: jobId }, {
@@ -85,6 +95,21 @@ export default function BusinessBeautyJobsPage() {
     });
   };
 
+  const handleRentalResponse = (requestId: string, status: "accepted" | "declined") => {
+    setRespondingRequestId(requestId);
+    respondRentalMutation.mutate({ requestId, data: { status } }, {
+      onSuccess: () => {
+        toast.success(status === "accepted" ? "Termin je potvrđen." : "Zahtev je odbijen.");
+        queryClient.invalidateQueries({ queryKey: getListBeautyJobRentalRequestInboxQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListMyBeautyJobRentalRequestsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListBeautyJobNotificationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getListMyBeautyJobsQueryKey() });
+      },
+      onError: () => toast.error("Zahtev je već obrađen ili termin više nije dostupan."),
+      onSettled: () => setRespondingRequestId(undefined),
+    });
+  };
+
   return (
     <BusinessLayout>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
@@ -102,6 +127,14 @@ export default function BusinessBeautyJobsPage() {
               {inbox?.contacts?.filter((i) => !i.authorReply && i.authorStatus === 'pending').length ? (
                 <Badge variant="destructive" className="ml-1 px-1.5 py-0 min-w-[20px] rounded-full h-5 text-xs">
                   {inbox.contacts.filter((i) => !i.authorReply && i.authorStatus === 'pending').length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="rentals" className="gap-2 h-10 rounded-lg">
+              <CalendarClock className="w-4 h-4" /> Rezervacije
+              {receivedRentalRequests?.requests?.filter((request) => request.status === "pending").length ? (
+                <Badge variant="destructive" className="ml-1 px-1.5 py-0 min-w-[20px] rounded-full h-5 text-xs">
+                  {receivedRentalRequests.requests.filter((request) => request.status === "pending").length}
                 </Badge>
               ) : null}
             </TabsTrigger>
@@ -266,6 +299,17 @@ export default function BusinessBeautyJobsPage() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="rentals" className="space-y-8">
+            <section className="space-y-4">
+              <div><h2 className="text-xl font-bold font-serif">Primljeni zahtevi</h2><p className="text-sm text-muted-foreground">Zahtevi korisnika za termine u oglasima salona.</p></div>
+              <RentalRequestList requests={receivedRentalRequests?.requests} isLoading={isLoadingReceivedRentalRequests} incoming pendingRequestId={respondingRequestId} onRespond={handleRentalResponse} />
+            </section>
+            <section className="space-y-4">
+              <div><h2 className="text-xl font-bold font-serif">Poslati zahtevi</h2><p className="text-sm text-muted-foreground">Termini koje ste zatražili iz drugih oglasa.</p></div>
+              <RentalRequestList requests={sentRentalRequests?.requests} isLoading={isLoadingSentRentalRequests} incoming={false} />
+            </section>
           </TabsContent>
 
           <TabsContent value="notifications" className="space-y-6">

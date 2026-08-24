@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 21;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 22;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -97,6 +97,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   beauty_job_posted_by_type: ["salon", "user"],
   beauty_job_price_period: ["hour", "day", "week", "month", "project", "fixed"],
   beauty_job_contact_status: ["pending", "viewed", "accepted", "declined", "replied"],
+  beauty_job_rental_request_status: ["pending", "accepted", "declined"],
   beauty_job_report_status: ["pending", "resolved", "dismissed"],
 };
 
@@ -856,6 +857,32 @@ function tableStatements(s: string): string[] {
       day_labels jsonb NOT NULL DEFAULT '[]'::jsonb,
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_rental_slots (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      starts_at timestamptz NOT NULL,
+      ends_at timestamptz NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT beauty_job_rental_slots_positive_period CHECK (ends_at > starts_at)
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_rental_slots_listing_starts_idx ON ${s}.beauty_job_rental_slots (listing_id, starts_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_rental_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
+      slot_id uuid NOT NULL REFERENCES ${s}.beauty_job_rental_slots(id) ON DELETE CASCADE,
+      applicant_user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      message text,
+      status ${s}.beauty_job_rental_request_status NOT NULL DEFAULT 'pending',
+      responded_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_rental_requests_listing_created_idx ON ${s}.beauty_job_rental_requests (listing_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_rental_requests_applicant_created_idx ON ${s}.beauty_job_rental_requests (applicant_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_rental_requests_slot_status_idx ON ${s}.beauty_job_rental_requests (slot_id, status)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS beauty_job_rental_requests_slot_accepted_unique ON ${s}.beauty_job_rental_requests (slot_id) WHERE status = 'accepted'`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS beauty_job_rental_requests_slot_applicant_pending_unique ON ${s}.beauty_job_rental_requests (slot_id, applicant_user_id) WHERE status = 'pending'`,
     `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_contacts (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,

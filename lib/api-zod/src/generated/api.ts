@@ -11859,6 +11859,8 @@ export const ListBeautyJobsQueryParams = zod.object({
 
 export const listBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const ListBeautyJobsResponse = zod.object({
@@ -11891,7 +11893,14 @@ export const ListBeautyJobsResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(listBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(listBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })),
   "total": zod.number().int(),
   "page": zod.number().int(),
@@ -11927,6 +11936,9 @@ export const createBeautyJobBodyDayLabelsItemMax = 80;
 
 export const createBeautyJobBodyDayLabelsMax = 14;
 
+export const createBeautyJobBodyAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobBodyAvailableSlotsMax = 100;
+
 
 
 export const CreateBeautyJobBody = zod.object({
@@ -11944,11 +11956,18 @@ export const CreateBeautyJobBody = zod.object({
   "negotiable": zod.boolean().optional(),
   "photos": zod.array(zod.string().regex(createBeautyJobBodyPhotosItemRegExp)).max(createBeautyJobBodyPhotosMax).optional(),
   "availabilityPattern": zod.string().min(1).max(createBeautyJobBodyAvailabilityPatternMax).optional(),
-  "dayLabels": zod.array(zod.string().max(createBeautyJobBodyDayLabelsItemMax)).max(createBeautyJobBodyDayLabelsMax).optional()
+  "dayLabels": zod.array(zod.string().max(createBeautyJobBodyDayLabelsItemMax)).max(createBeautyJobBodyDayLabelsMax).optional(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(createBeautyJobBodyAvailableSlotsItemIdRegExp).optional(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
+})).max(createBeautyJobBodyAvailableSlotsMax).optional()
 })
 
 export const createBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const createBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const CreateBeautyJobResponse = zod.object({
@@ -11980,12 +11999,21 @@ export const CreateBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(createBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(createBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 
 export const listMyBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listMyBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listMyBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listMyBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const ListMyBeautyJobsResponse = zod.object({
@@ -12018,7 +12046,14 @@ export const ListMyBeautyJobsResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(listMyBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(listMyBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })),
   "total": zod.number().int(),
   "page": zod.number().int(),
@@ -12028,6 +12063,8 @@ export const ListMyBeautyJobsResponse = zod.object({
 
 export const listSavedBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listSavedBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listSavedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listSavedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const ListSavedBeautyJobsResponse = zod.object({
@@ -12060,7 +12097,14 @@ export const ListSavedBeautyJobsResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(listSavedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(listSavedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })),
   "total": zod.number().int(),
   "page": zod.number().int(),
@@ -12111,6 +12155,90 @@ export const MarkBeautyJobNotificationReadResponse = zod.object({
 })
 
 
+export const listMyBeautyJobRentalRequestsResponseRequestsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listMyBeautyJobRentalRequestsResponseRequestsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listMyBeautyJobRentalRequestsResponseRequestsItemSlotIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listMyBeautyJobRentalRequestsResponseRequestsItemApplicantUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const ListMyBeautyJobRentalRequestsResponse = zod.object({
+  "requests": zod.array(zod.object({
+  "id": zod.string().regex(listMyBeautyJobRentalRequestsResponseRequestsItemIdRegExp),
+  "listingId": zod.string().regex(listMyBeautyJobRentalRequestsResponseRequestsItemListingIdRegExp),
+  "slotId": zod.string().regex(listMyBeautyJobRentalRequestsResponseRequestsItemSlotIdRegExp),
+  "applicantUserId": zod.string().regex(listMyBeautyJobRentalRequestsResponseRequestsItemApplicantUserIdRegExp),
+  "message": zod.string().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "respondedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "listingTitle": zod.string(),
+  "applicantDisplayName": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
+}))
+})
+
+
+export const listBeautyJobRentalRequestInboxResponseRequestsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listBeautyJobRentalRequestInboxResponseRequestsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listBeautyJobRentalRequestInboxResponseRequestsItemSlotIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listBeautyJobRentalRequestInboxResponseRequestsItemApplicantUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const ListBeautyJobRentalRequestInboxResponse = zod.object({
+  "requests": zod.array(zod.object({
+  "id": zod.string().regex(listBeautyJobRentalRequestInboxResponseRequestsItemIdRegExp),
+  "listingId": zod.string().regex(listBeautyJobRentalRequestInboxResponseRequestsItemListingIdRegExp),
+  "slotId": zod.string().regex(listBeautyJobRentalRequestInboxResponseRequestsItemSlotIdRegExp),
+  "applicantUserId": zod.string().regex(listBeautyJobRentalRequestInboxResponseRequestsItemApplicantUserIdRegExp),
+  "message": zod.string().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "respondedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "listingTitle": zod.string(),
+  "applicantDisplayName": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
+}))
+})
+
+
+export const respondToBeautyJobRentalRequestPathRequestIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const RespondToBeautyJobRentalRequestParams = zod.object({
+  "requestId": zod.coerce.string().regex(respondToBeautyJobRentalRequestPathRequestIdRegExp)
+})
+
+export const RespondToBeautyJobRentalRequestBody = zod.object({
+  "status": zod.enum(['accepted', 'declined'])
+})
+
+export const respondToBeautyJobRentalRequestResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const respondToBeautyJobRentalRequestResponseListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const respondToBeautyJobRentalRequestResponseSlotIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const respondToBeautyJobRentalRequestResponseApplicantUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const RespondToBeautyJobRentalRequestResponse = zod.object({
+  "id": zod.string().regex(respondToBeautyJobRentalRequestResponseIdRegExp),
+  "listingId": zod.string().regex(respondToBeautyJobRentalRequestResponseListingIdRegExp),
+  "slotId": zod.string().regex(respondToBeautyJobRentalRequestResponseSlotIdRegExp),
+  "applicantUserId": zod.string().regex(respondToBeautyJobRentalRequestResponseApplicantUserIdRegExp),
+  "message": zod.string().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "respondedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "listingTitle": zod.string(),
+  "applicantDisplayName": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
+})
+
+
 export const getBeautyJobPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
@@ -12120,6 +12248,8 @@ export const GetBeautyJobParams = zod.object({
 
 export const getBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const GetBeautyJobResponse = zod.object({
@@ -12151,7 +12281,14 @@ export const GetBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(getBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(getBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 
@@ -12190,6 +12327,9 @@ export const updateBeautyJobBodyDayLabelsItemMax = 80;
 
 export const updateBeautyJobBodyDayLabelsMax = 14;
 
+export const updateBeautyJobBodyAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const updateBeautyJobBodyAvailableSlotsMax = 100;
+
 
 
 export const UpdateBeautyJobBody = zod.object({
@@ -12207,11 +12347,18 @@ export const UpdateBeautyJobBody = zod.object({
   "negotiable": zod.boolean().optional(),
   "photos": zod.array(zod.string().regex(updateBeautyJobBodyPhotosItemRegExp)).max(updateBeautyJobBodyPhotosMax).optional(),
   "availabilityPattern": zod.string().min(1).max(updateBeautyJobBodyAvailabilityPatternMax).nullish(),
-  "dayLabels": zod.array(zod.string().max(updateBeautyJobBodyDayLabelsItemMax)).max(updateBeautyJobBodyDayLabelsMax).optional()
+  "dayLabels": zod.array(zod.string().max(updateBeautyJobBodyDayLabelsItemMax)).max(updateBeautyJobBodyDayLabelsMax).optional(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(updateBeautyJobBodyAvailableSlotsItemIdRegExp).optional(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
+})).max(updateBeautyJobBodyAvailableSlotsMax).optional()
 })
 
 export const updateBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const updateBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const updateBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const updateBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const UpdateBeautyJobResponse = zod.object({
@@ -12243,7 +12390,14 @@ export const UpdateBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(updateBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(updateBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 
@@ -12256,6 +12410,8 @@ export const RenewBeautyJobParams = zod.object({
 
 export const renewBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const renewBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const renewBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const renewBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const RenewBeautyJobResponse = zod.object({
@@ -12287,7 +12443,14 @@ export const RenewBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(renewBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(renewBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 
@@ -12300,6 +12463,8 @@ export const CloseBeautyJobParams = zod.object({
 
 export const closeBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const closeBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const closeBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const closeBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const CloseBeautyJobResponse = zod.object({
@@ -12331,7 +12496,14 @@ export const CloseBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(closeBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(closeBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 
@@ -12375,6 +12547,46 @@ export const ContactBeautyJobAuthorResponse = zod.object({
   "updatedAt": zod.coerce.date(),
   "listingTitle": zod.string().optional(),
   "applicantDisplayName": zod.string().optional()
+})
+
+
+export const createBeautyJobRentalRequestPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const CreateBeautyJobRentalRequestParams = zod.object({
+  "listingId": zod.coerce.string().regex(createBeautyJobRentalRequestPathListingIdRegExp)
+})
+
+export const createBeautyJobRentalRequestBodySlotIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobRentalRequestBodyMessageMax = 1000;
+
+
+
+export const CreateBeautyJobRentalRequestBody = zod.object({
+  "slotId": zod.string().regex(createBeautyJobRentalRequestBodySlotIdRegExp),
+  "message": zod.string().max(createBeautyJobRentalRequestBodyMessageMax).optional()
+})
+
+export const createBeautyJobRentalRequestResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobRentalRequestResponseListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobRentalRequestResponseSlotIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const createBeautyJobRentalRequestResponseApplicantUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const CreateBeautyJobRentalRequestResponse = zod.object({
+  "id": zod.string().regex(createBeautyJobRentalRequestResponseIdRegExp),
+  "listingId": zod.string().regex(createBeautyJobRentalRequestResponseListingIdRegExp),
+  "slotId": zod.string().regex(createBeautyJobRentalRequestResponseSlotIdRegExp),
+  "applicantUserId": zod.string().regex(createBeautyJobRentalRequestResponseApplicantUserIdRegExp),
+  "message": zod.string().nullable(),
+  "status": zod.enum(['pending', 'accepted', 'declined']),
+  "respondedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "listingTitle": zod.string(),
+  "applicantDisplayName": zod.string(),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date()
 })
 
 
@@ -12502,6 +12714,8 @@ export const SweepExpiredBeautyJobsResponse = zod.object({
 
 export const getBeautyJobModerationQueueResponseListingsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobModerationQueueResponseListingsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const GetBeautyJobModerationQueueResponse = zod.object({
@@ -12534,7 +12748,14 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })),
   "reports": zod.array(zod.object({
   "id": zod.string(),
@@ -12571,6 +12792,8 @@ export const ModerateBeautyJobBody = zod.object({
 
 export const moderateBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const moderateBeautyJobResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const moderateBeautyJobResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const moderateBeautyJobResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const ModerateBeautyJobResponse = zod.object({
@@ -12602,7 +12825,14 @@ export const ModerateBeautyJobResponse = zod.object({
   "postedByType": zod.enum(['salon', 'user']),
   "updatedAt": zod.coerce.date(),
   "isSaved": zod.boolean(),
-  "isOwner": zod.boolean()
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(moderateBeautyJobResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(moderateBeautyJobResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
 })
 
 

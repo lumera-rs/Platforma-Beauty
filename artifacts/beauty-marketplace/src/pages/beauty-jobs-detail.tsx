@@ -8,6 +8,8 @@ import {
   useContactBeautyJobAuthor,
   useReportBeautyJob,
   useToggleSavedBeautyJob,
+  useCreateBeautyJobRentalRequest,
+  getListMyBeautyJobRentalRequestsQueryKey,
   useGetCurrentUser
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,7 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2 } from "lucide-react";
+import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2, CalendarClock } from "lucide-react";
 
 export default function BeautyJobDetailPage() {
   const [, params] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
@@ -48,11 +50,14 @@ export default function BeautyJobDetailPage() {
   const contactMutation = useContactBeautyJobAuthor();
   const reportMutation = useReportBeautyJob();
   const toggleSaved = useToggleSavedBeautyJob();
+  const rentalRequestMutation = useCreateBeautyJobRentalRequest();
 
   const [message, setMessage] = useState("");
   const [reportReason, setReportReason] = useState("");
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
+  const [bookingMessage, setBookingMessage] = useState("");
 
   if (isLoading || isUserLoading) {
     return (
@@ -139,6 +144,25 @@ export default function BeautyJobDetailPage() {
         setReportReason("");
       },
       onError: () => toast.error("Greška prilikom prijave.")
+    });
+  };
+
+  const handleRentalRequest = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return setLocation("/prijava");
+    if (!bookingSlotId) return;
+    rentalRequestMutation.mutate({ listingId: job.id, data: { slotId: bookingSlotId, message: bookingMessage.trim() || undefined } }, {
+      onSuccess: () => {
+        toast.success("Zahtev za termin je poslat autoru.");
+        setBookingSlotId(null);
+        setBookingMessage("");
+        queryClient.invalidateQueries({ queryKey: getGetBeautyJobQueryKey(job.id) });
+        queryClient.invalidateQueries({ queryKey: getListMyBeautyJobRentalRequestsQueryKey() });
+      },
+      onError: () => {
+        toast.error("Termin više nije dostupan ili zahtev nije mogao biti poslat.");
+        queryClient.invalidateQueries({ queryKey: getGetBeautyJobQueryKey(job.id) });
+      }
     });
   };
 
@@ -280,6 +304,50 @@ export default function BeautyJobDetailPage() {
                 {job.description}
               </div>
             </section>
+            {!isJob && isOffer && (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-bold font-serif flex items-center gap-2"><CalendarClock className="h-5 w-5 text-primary" /> Termini za rezervaciju</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Izaberite konkretan termin. Precizna adresa se ne objavljuje uz oglas.</p>
+                </div>
+                {job.availableSlots.length === 0 ? (
+                  <div className="rounded-xl border border-dashed bg-muted/20 p-5 text-sm text-muted-foreground">Trenutno nema budućih termina.</div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {job.availableSlots.map((slot) => (
+                      <div key={slot.id} className={`rounded-xl border p-4 ${slot.available ? "bg-card" : "bg-muted/40 opacity-70"}`}>
+                        <p className="font-medium capitalize">{format(new Date(slot.startsAt), "EEEE, dd.MM.yyyy.", { locale: srLatn })}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{format(new Date(slot.startsAt), "HH:mm", { locale: srLatn })}–{format(new Date(slot.endsAt), "HH:mm", { locale: srLatn })}</p>
+                        <Button className="mt-3 w-full" size="sm" variant={slot.available ? "default" : "secondary"} disabled={!slot.available || job.isOwner} onClick={() => {
+                          if (!user) setLocation("/prijava");
+                          else setBookingSlotId(slot.id);
+                        }}>
+                          {slot.available ? (job.isOwner ? "Vaš termin" : "Zatraži termin") : "Rezervisano"}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Dialog open={bookingSlotId !== null} onOpenChange={(open) => { if (!open) { setBookingSlotId(null); setBookingMessage(""); } }}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Pošaljite zahtev za termin</DialogTitle>
+                      <DialogDescription>Autor će dobiti zahtev i može da ga prihvati ili odbije. Termin postaje rezervisan tek nakon prihvatanja.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleRentalRequest} className="space-y-4 pt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="booking-message">Poruka autoru (opciono)</Label>
+                        <Textarea id="booking-message" value={bookingMessage} onChange={(event) => setBookingMessage(event.target.value)} maxLength={1000} placeholder="Dodajte kratku napomenu..." />
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="ghost" onClick={() => setBookingSlotId(null)}>Odustani</Button>
+                        <Button type="submit" disabled={rentalRequestMutation.isPending}>{rentalRequestMutation.isPending ? "Slanje..." : "Pošalji zahtev"}</Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </section>
+            )}
           </div>
 
           {/* Sidebar */}
