@@ -742,6 +742,9 @@ test("retail cart announces every shopper mutation through completed checkout", 
       await expect(page.getByTestId("status-cart-count")).toHaveText(String(itemCount));
     }
   };
+  const expectCartItemAnnouncement = async (announcement: string) => {
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(announcement);
+  };
 
   await page.goto("/proizvodi");
   const productSearch = page.getByTestId("public-product-search");
@@ -752,17 +755,21 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await expect(productCard).toBeVisible();
   await productCard.getByRole("button", { name: "Dodaj u korpu" }).click();
   await expectCartAnnouncement(1);
+  await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 1.`);
 
   await page.getByTestId("link-cart").click();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
   await page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName}` }).click();
   await expectCartAnnouncement(2);
+  await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 2.`);
 
   await page.getByRole("button", { name: `Smanji količinu proizvoda ${productName}` }).click();
   await expectCartAnnouncement(1);
+  await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 1.`);
 
   await page.getByRole("button", { name: `Ukloni ${productName} iz korpe` }).click();
   await expectCartAnnouncement(0);
+  await expectCartItemAnnouncement(`Proizvod ${productName} je uklonjen iz korpe.`);
 
   await page.goto("/proizvodi");
   await productSearch.fill(productName!);
@@ -772,6 +779,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await expect(secondProductCard).toBeVisible();
   await secondProductCard.getByRole("button", { name: "Dodaj u korpu" }).click();
   await expectCartAnnouncement(1);
+  await expectCartItemAnnouncement(`Proizvod ${productName} sada ima količinu 1.`);
 
   await page.getByTestId("link-cart").click();
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
@@ -787,4 +795,5 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await expect(page.getByRole("button", { name: "Potvrdi porudžbinu" })).toBeEnabled();
   await submitAndAssertOrder(page, preview);
   await expectCartAnnouncement(0);
+  await expectCartItemAnnouncement("");
 });

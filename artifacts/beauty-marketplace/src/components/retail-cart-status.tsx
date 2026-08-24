@@ -13,9 +13,16 @@ function cartQuantityAnnouncement(itemCount: number) {
     : `Korpa sada ima ${itemCount} ${itemCount === 1 ? "stavku" : "stavki"}.`;
 }
 
+function cartItemAnnouncement(changedItem: NonNullable<RetailCartChangedDetail["changedItem"]>) {
+  return changedItem.quantity === null
+    ? `Proizvod ${changedItem.name} je uklonjen iz korpe.`
+    : `Proizvod ${changedItem.name} sada ima količinu ${changedItem.quantity}.`;
+}
+
 export function RetailCartStatus() {
   const queryClient = useQueryClient();
   const [cartAnnouncement, setCartAnnouncement] = useState("");
+  const [cartItemAnnouncementText, setCartItemAnnouncementText] = useState("");
 
   useEffect(() => {
     const refreshCartSummary = () => {
@@ -34,6 +41,7 @@ export function RetailCartStatus() {
             itemCount: detail.itemCount,
           }));
           setCartAnnouncement(cartQuantityAnnouncement(detail.itemCount));
+          setCartItemAnnouncementText(detail.changedItem ? cartItemAnnouncement(detail.changedItem) : "");
         });
         return;
       }
@@ -60,8 +68,13 @@ export function RetailCartStatus() {
   }, [queryClient]);
 
   return (
-    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="status-cart-announcement">
-      {cartAnnouncement}
-    </div>
+    <>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="status-cart-announcement">
+        {cartAnnouncement}
+      </div>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="status-cart-item-announcement">
+        {cartItemAnnouncementText}
+      </div>
+    </>
   );
 }

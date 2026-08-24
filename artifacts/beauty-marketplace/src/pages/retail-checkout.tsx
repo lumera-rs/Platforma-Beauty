@@ -11,6 +11,7 @@ import { notifyRetailCartChanged } from "@/lib/retail-cart-events";
 type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
 type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
+type ChangedCartItem = { name: string; quantity: number | null };
 
 type UnavailableItem = { productId: string; name: string };
 const money = (value: number) => new Intl.NumberFormat("sr-RS", { style: "currency", currency: "RSD", maximumFractionDigits: 0 }).format(value);
@@ -52,12 +53,12 @@ async function retail<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function CartLines({ cart, change, remove }: { cart: Cart; change: (id: string, quantity: number) => void; remove: (id: string) => void }) {
+function CartLines({ cart, change, remove }: { cart: Cart; change: (item: Cart["items"][number], quantity: number) => void; remove: (item: Cart["items"][number]) => void }) {
   return <div className="space-y-3">{cart.items.map((item) => <div key={item.id} className="flex gap-3 rounded-xl border p-3">
     <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
     <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
-      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Smanji količinu proizvoda ${item.name}`} onClick={() => item.quantity > 1 ? change(item.id, item.quantity - 1) : remove(item.id)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Povećaj količinu proizvoda ${item.name}`} onClick={() => change(item.id, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
-      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" aria-label={`Ukloni ${item.name} iz korpe`} onClick={() => remove(item.id)}><Trash2 className="h-4 w-4" /></Button></div>
+      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Smanji količinu proizvoda ${item.name}`} onClick={() => item.quantity > 1 ? change(item, item.quantity - 1) : remove(item)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Povećaj količinu proizvoda ${item.name}`} onClick={() => change(item, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
+      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" aria-label={`Ukloni ${item.name} iz korpe`} onClick={() => remove(item)}><Trash2 className="h-4 w-4" /></Button></div>
     </div><strong>{money(item.lineTotal)}</strong>
   </div>)}</div>;
 }
@@ -71,26 +72,28 @@ export function RetailCartPage() {
   const localOpsRef = useRef(0);
   const generationRef = useRef(0);
   const loadCart = () => retail<Cart>("/retail/cart").then((latest) => { setCart(latest); return latest; }).catch(() => { setCart(null); return null; });
-  const runLocalCartOp = async (op: () => Promise<Cart>, failureMessage: string) => {
+  const runLocalCartOp = async (op: () => Promise<Cart>, failureMessage: string, changedItem: ChangedCartItem) => {
     generationRef.current += 1;
     localOpsRef.current += 1;
     try {
       const latest = await op();
       setCart(latest);
-      notifyRetailCartChanged(latest.itemCount);
+      notifyRetailCartChanged(latest.itemCount, changedItem);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : failureMessage);
     } finally {
       localOpsRef.current -= 1;
     }
   };
-  const change = (id: string, quantity: number) => void runLocalCartOp(
-    () => retail<Cart>(`/retail/cart/items/${id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
+  const change = (item: Cart["items"][number], quantity: number) => void runLocalCartOp(
+    () => retail<Cart>(`/retail/cart/items/${item.id}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
     "Promena nije uspela.",
+    { name: item.name, quantity },
   );
-  const remove = (id: string) => void runLocalCartOp(
-    () => retail<Cart>(`/retail/cart/items/${id}`, { method: "DELETE" }),
+  const remove = (item: Cart["items"][number]) => void runLocalCartOp(
+    () => retail<Cart>(`/retail/cart/items/${item.id}`, { method: "DELETE" }),
     "Brisanje nije uspelo.",
+    { name: item.name, quantity: null },
   );
   useEffect(() => { void loadCart(); }, []);
   useEffect(() => {

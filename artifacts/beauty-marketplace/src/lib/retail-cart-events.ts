@@ -3,11 +3,18 @@ export const RETAIL_CART_SYNC_STORAGE_KEY = "lumera:retail-cart-sync";
 
 export type RetailCartChangedDetail = {
   itemCount: number;
+  changedItem?: {
+    name: string;
+    quantity: number | null;
+  };
 };
 
-export function notifyRetailCartChanged(itemCount: number) {
+export function notifyRetailCartChanged(
+  itemCount: number,
+  changedItem?: RetailCartChangedDetail["changedItem"],
+) {
   window.dispatchEvent(new CustomEvent<RetailCartChangedDetail>(RETAIL_CART_CHANGED_EVENT, {
-    detail: { itemCount },
+    detail: { itemCount, ...(changedItem ? { changedItem } : {}) },
   }));
   try {
     window.localStorage.setItem(RETAIL_CART_SYNC_STORAGE_KEY, `${Date.now()}-${Math.random()}`);

@@ -33,8 +33,12 @@ function PublicProductCard({ product }: { product: PublicProduct }) {
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId: product.id, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
-    const cart = await response.json() as { itemCount: number };
-    notifyRetailCartChanged(cart.itemCount);
+    const cart = await response.json() as { itemCount: number; items?: Array<{ productId: string; name: string; quantity: number }> };
+    const changedItem = cart.items?.find((item) => item.productId === product.id);
+    notifyRetailCartChanged(cart.itemCount, {
+      name: changedItem?.name ?? product.name,
+      quantity: changedItem?.quantity ?? 1,
+    });
     toast.success("Proizvod je dodat u korpu.");
   };
   return (
@@ -135,14 +139,19 @@ export function PublicProductDetailPage() {
   const productId = params?.productId ?? "";
   const { data: product, isLoading, isError } = useGetPublicProduct(productId);
   const { toast } = useToast();
+  const productName = product?.name ?? "Proizvod";
   const [adding, setAdding] = useState(false);
   const add = async () => {
     setAdding(true);
     const response = await fetch("/api/retail/cart/items", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ productId, quantity: 1 }) });
     setAdding(false);
     if (!response.ok) { toast.error((await response.json().catch(() => null))?.error ?? "Proizvod trenutno nije dostupan."); return; }
-    const cart = await response.json() as { itemCount: number };
-    notifyRetailCartChanged(cart.itemCount);
+    const cart = await response.json() as { itemCount: number; items?: Array<{ productId: string; name: string; quantity: number }> };
+    const changedItem = cart.items?.find((item) => item.productId === productId);
+    notifyRetailCartChanged(cart.itemCount, {
+      name: changedItem?.name ?? productName,
+      quantity: changedItem?.quantity ?? 1,
+    });
     toast.success("Proizvod je dodat u korpu.");
   };
 
