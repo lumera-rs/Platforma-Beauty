@@ -2,10 +2,10 @@
  * Campaign cancellation warning browser regression.
  *
  * The warning is intentionally derived from both realized and cancelled
- * attributed appointments. This fixture keeps the three boundary cases next
- * to each other so the overview cannot accidentally flag every row with
- * cancellations, or lose the icon/amber treatment when the analytics shape
- * changes.
+ * attributed appointments. This fixture keeps period-sensitive boundary cases
+ * next to each other so the overview cannot accidentally retain a warning from
+ * another period, flag every row with cancellations, or lose the icon/amber
+ * treatment when the analytics shape changes.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -31,8 +31,8 @@ type Fixture = {
   salonId: string;
   flaggedRuleId: string;
   flaggedRuleName: string;
-  noCancellationRuleId: string;
-  noCancellationRuleName: string;
+  recentFlaggedRuleId: string;
+  recentFlaggedRuleName: string;
   lowVolumeRuleId: string;
   lowVolumeRuleName: string;
 };
@@ -48,7 +48,7 @@ async function createFixture(): Promise<Fixture> {
   const ownerEmail = `browser-cancellation-warning-owner-${suffix}@example.test`;
   const ownerPassword = "browser-cancellation-warning-password";
   const flaggedRuleName = `Browser 2 realna 1 otkazana ${suffix}`;
-  const noCancellationRuleName = `Browser 3 realna 0 otkazanih ${suffix}`;
+  const recentFlaggedRuleName = `Browser 4 realna 1 otkazana ${suffix}`;
   const lowVolumeRuleName = `Browser manje od 3 termina ${suffix}`;
   let ownerId: string | undefined;
   let salonId: string | undefined;
@@ -142,7 +142,7 @@ async function createFixture(): Promise<Fixture> {
         },
         {
           salonId: salon.id,
-          name: noCancellationRuleName,
+          name: recentFlaggedRuleName,
           trigger: "inactive_days",
           triggerConfig: { inactiveDays: 30 },
           action: "send_email",
@@ -168,21 +168,44 @@ async function createFixture(): Promise<Fixture> {
 
     const ruleByName = new Map(rules.map((rule) => [rule.name, rule.id]));
     const flaggedRuleId = ruleByName.get(flaggedRuleName);
-    const noCancellationRuleId = ruleByName.get(noCancellationRuleName);
+    const recentFlaggedRuleId = ruleByName.get(recentFlaggedRuleName);
     const lowVolumeRuleId = ruleByName.get(lowVolumeRuleName);
-    if (!flaggedRuleId || !noCancellationRuleId || !lowVolumeRuleId) {
+    if (!flaggedRuleId || !recentFlaggedRuleId || !lowVolumeRuleId) {
       throw new Error("Cancellation-warning browser fixture returned incomplete campaign rules.");
     }
 
     const cases = [
-      { ruleId: flaggedRuleId, count: 3, cancelledIndexes: new Set([2]) },
-      { ruleId: noCancellationRuleId, count: 3, cancelledIndexes: new Set<number>() },
-      { ruleId: lowVolumeRuleId, count: 2, cancelledIndexes: new Set<number>() },
+      {
+        ruleId: flaggedRuleId,
+        entries: [
+          { recent: true, cancelled: false },
+          { recent: true, cancelled: false },
+          { recent: false, cancelled: true },
+        ],
+      },
+      {
+        ruleId: recentFlaggedRuleId,
+        entries: [
+          { recent: true, cancelled: false },
+          { recent: true, cancelled: false },
+          { recent: true, cancelled: true },
+          { recent: false, cancelled: false },
+          { recent: false, cancelled: false },
+        ],
+      },
+      {
+        ruleId: lowVolumeRuleId,
+        entries: [
+          { recent: true, cancelled: false },
+          { recent: true, cancelled: true },
+        ],
+      },
     ];
-    const appointmentRows = cases.flatMap(({ count, cancelledIndexes }) =>
-      Array.from({ length: count }, (_, index) => ({
+    const appointmentRows = cases.flatMap(({ entries }) =>
+      entries.map((entry) => ({
         id: randomUUID(),
-        cancelled: cancelledIndexes.has(index),
+        recent: entry.recent,
+        cancelled: entry.cancelled,
       })),
     );
     await db.insert(appointmentsTable).values(
@@ -191,7 +214,9 @@ async function createFixture(): Promise<Fixture> {
         salonId: salon.id,
         salonCustomerId: customer.id,
         serviceId: service.id,
-        date: "2026-08-20",
+        date: new Date(
+          Date.now() - (appointment.recent ? 5 : 60) * 24 * 60 * 60 * 1000,
+        ).toISOString().slice(0, 10),
         startTime: `${String(9 + index).padStart(2, "0")}:00`,
         endTime: `${String(10 + index).padStart(2, "0")}:00`,
         durationMinutes: 60,
@@ -203,12 +228,12 @@ async function createFixture(): Promise<Fixture> {
 
     let appointmentOffset = 0;
     await db.insert(automationRunsTable).values(
-      cases.flatMap(({ ruleId, count }) => {
+      cases.flatMap(({ ruleId, entries }) => {
         const ruleAppointments = appointmentRows.slice(
           appointmentOffset,
-          appointmentOffset + count,
+          appointmentOffset + entries.length,
         );
-        appointmentOffset += count;
+        appointmentOffset += entries.length;
         return ruleAppointments.map((appointment, index) => ({
           eventKey: `browser-cancellation-warning-${suffix}-${ruleId}-${index}`,
           ruleId,
@@ -216,8 +241,12 @@ async function createFixture(): Promise<Fixture> {
           salonCustomerId: customer.id,
           status: "sent" as const,
           attributedAppointmentId: appointment.id,
-          executedAt: new Date("2026-08-19T12:00:00.000Z"),
-          sentAt: new Date("2026-08-19T12:00:00.000Z"),
+          executedAt: appointment.recent
+            ? new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+            : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+          sentAt: appointment.recent
+            ? new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+            : new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
         }));
       }),
     );
@@ -229,8 +258,8 @@ async function createFixture(): Promise<Fixture> {
       salonId: salon.id,
       flaggedRuleId,
       flaggedRuleName,
-      noCancellationRuleId,
-      noCancellationRuleName,
+      recentFlaggedRuleId,
+      recentFlaggedRuleName,
       lowVolumeRuleId,
       lowVolumeRuleName,
     };
@@ -254,7 +283,17 @@ async function signInAsFixtureOwner(page: Page, fixture: Fixture): Promise<void>
   expect(response, "The isolated cancellation-warning owner must be able to sign in.").toBeOK();
 }
 
-test("only one-in-three campaign cancellations show the synchronized warning", async ({ page }) => {
+function nextOverviewStatsResponse(page: Page, period: string | null) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname.endsWith("/growth/automation-stats")
+      && (period === null
+        ? url.searchParams.get("period") === "all" || !url.searchParams.has("period")
+        : url.searchParams.get("period") === period);
+  });
+}
+
+test("campaign cancellation warnings follow the selected overview period", async ({ page }) => {
   const fixture = await createFixture();
 
   try {
@@ -262,36 +301,63 @@ test("only one-in-three campaign cancellations show the synchronized warning", a
     await page.goto("/vlasnik/automatizacije");
 
     const flaggedRow = page.getByTestId(`overview-row-${fixture.flaggedRuleId}`);
-    const noCancellationRow = page.getByTestId(`overview-row-${fixture.noCancellationRuleId}`);
+    const recentFlaggedRow = page.getByTestId(`overview-row-${fixture.recentFlaggedRuleId}`);
     const lowVolumeRow = page.getByTestId(`overview-row-${fixture.lowVolumeRuleId}`);
     await expect(flaggedRow).toContainText(fixture.flaggedRuleName);
-    await expect(noCancellationRow).toContainText(fixture.noCancellationRuleName);
+    await expect(recentFlaggedRow).toContainText(fixture.recentFlaggedRuleName);
     await expect(lowVolumeRow).toContainText(fixture.lowVolumeRuleName);
 
-    const flag = page.getByTestId(`overview-cancellation-flag-${fixture.flaggedRuleId}`);
-    await expect(flag).toHaveCount(1);
+    const flaggedWarning = page.getByTestId(`overview-cancellation-flag-${fixture.flaggedRuleId}`);
+    const recentFlaggedWarning = page.getByTestId(`overview-cancellation-flag-${fixture.recentFlaggedRuleId}`);
+    const lowVolumeWarning = page.getByTestId(`overview-cancellation-flag-${fixture.lowVolumeRuleId}`);
+    await expect(flaggedWarning).toHaveCount(1);
+    await expect(recentFlaggedWarning).toHaveCount(0);
+    await expect(lowVolumeWarning).toHaveCount(0);
     await expect(flaggedRow).toHaveClass(/bg-amber-50\/70/);
-    await expect(noCancellationRow.getByTestId(`overview-cancellation-flag-${fixture.noCancellationRuleId}`)).toHaveCount(0);
-    await expect(lowVolumeRow.getByTestId(`overview-cancellation-flag-${fixture.lowVolumeRuleId}`)).toHaveCount(0);
-    await expect(noCancellationRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(recentFlaggedRow).not.toHaveClass(/bg-amber-50\/70/);
     await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
 
-    // Radix exposes the same single tooltip for pointer hover and keyboard
-    // focus. Check both paths because the warning must remain accessible.
-    await flag.hover();
+    // The all-time row has two recent realized appointments and one old
+    // cancellation, so its Serbian warning must describe exactly 1 of 3.
+    await flaggedWarning.hover();
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toHaveCount(1);
     await expect(tooltip).toContainText("33%");
     await expect(tooltip).toContainText("1 od 3");
 
-    // Focus the same trigger as a keyboard user would. The pointer tooltip
-    // may remain open while the pointer is over the trigger, but focus must
-    // not create a second tooltip.
-    await flag.focus();
-    await expect(flag).toBeFocused();
+    // In the 30-day window, the first row loses its old cancellation and must
+    // clear both the icon and amber treatment. The second row has exactly two
+    // realized appointments and one cancellation in this window, so it must
+    // become the only flagged row. The third row remains below the minimum
+    // volume despite having one cancellation.
+    const thirtyDayResponse = nextOverviewStatsResponse(page, "30d");
+    await page.getByTestId("overview-period-selector").getByTestId("period-30d").click();
+    expect((await thirtyDayResponse).status()).toBe(200);
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+    await expect(flaggedWarning).toHaveCount(0);
+    await expect(recentFlaggedWarning).toHaveCount(1);
+    await expect(lowVolumeWarning).toHaveCount(0);
+    await expect(flaggedRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(recentFlaggedRow).toHaveClass(/bg-amber-50\/70/);
+    await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
+
+    await recentFlaggedWarning.hover();
     await expect(tooltip).toHaveCount(1);
     await expect(tooltip).toContainText("33%");
     await expect(tooltip).toContainText("1 od 3");
+
+    // Returning to all time restores the original warning state rather than
+    // leaving the period-scoped second-row warning in the overview.
+    const allTimeResponse = nextOverviewStatsResponse(page, null);
+    await page.getByTestId("overview-period-selector").getByTestId("period-all").click();
+    expect((await allTimeResponse).status()).toBe(200);
+    await expect(page.getByTestId("overview-period-selector").getByTestId("period-all")).toHaveAttribute("aria-pressed", "true");
+    await expect(flaggedWarning).toHaveCount(1);
+    await expect(recentFlaggedWarning).toHaveCount(0);
+    await expect(lowVolumeWarning).toHaveCount(0);
+    await expect(flaggedRow).toHaveClass(/bg-amber-50\/70/);
+    await expect(recentFlaggedRow).not.toHaveClass(/bg-amber-50\/70/);
+    await expect(lowVolumeRow).not.toHaveClass(/bg-amber-50\/70/);
   } finally {
     await cleanUpFixture(fixture);
   }
