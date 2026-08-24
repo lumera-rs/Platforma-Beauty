@@ -291,3 +291,66 @@ test("switching the time period never leaves stale attributed rows in the list",
     await cleanUpFixture(fixture);
   }
 });
+
+test("mobile stats period controls stay visible and keep the dialog open", async ({ page }) => {
+  const fixture = await createFixture();
+
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto("/vlasnik/automatizacije");
+
+    await page.getByTestId(`overview-row-${fixture.ruleId}`)
+      .getByRole("button", { name: fixture.ruleName })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeVisible();
+
+    const selector = dialog.getByTestId("stats-period-selector");
+    await expect(selector).toBeVisible();
+    for (const [period, label] of [
+      ["7d", "7 dana"],
+      ["30d", "30 dana"],
+      ["90d", "90 dana"],
+      ["all", "Sve vreme"],
+    ] as const) {
+      const button = selector.getByTestId(`period-${period}`);
+      await expect(button).toHaveText(label);
+      await expect(button).toBeVisible();
+      const box = await button.boundingBox();
+      expect(box, `${period} period button must have a tappable box on mobile.`).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    }
+
+    const customButton = selector.getByTestId("period-custom");
+    await expect(customButton).toBeVisible();
+    const customBox = await customButton.boundingBox();
+    expect(customBox, "The custom period button must remain tappable on mobile.").not.toBeNull();
+    expect(customBox!.x).toBeGreaterThanOrEqual(0);
+    expect(customBox!.x + customBox!.width).toBeLessThanOrEqual(390);
+
+    await customButton.click();
+    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(rangePresets).toBeHidden();
+    await expect(dialog).toBeVisible();
+
+    const rows = dialog.locator('[data-testid="attributed-appointments-list"] > div');
+    const recentRows = rows.filter({ hasText: "Klijent Skorasnji" });
+    const oldRows = rows.filter({ hasText: "Klijent Stari" });
+    const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+    await selector.getByTestId("period-30d").click();
+    expect((await thirtyResponse).status()).toBe(200);
+
+    await expect(dialog, "Switching period on mobile must not close the stats dialog.").toBeVisible();
+    await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+    await expect(rows).toHaveCount(PAGE_SIZE);
+    await expect(recentRows).toHaveCount(PAGE_SIZE);
+    await expect(oldRows).toHaveCount(0);
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});

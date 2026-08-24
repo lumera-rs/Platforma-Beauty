@@ -308,7 +308,7 @@ function PeriodSelector({
   const rangeLabel = formatRangeLabel(customRange);
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 shrink-0 flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
+    <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border bg-muted/30 p-1 sm:flex sm:w-fit sm:flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
       {periodOptions.map((opt) => (
         <button
           key={opt.value}
@@ -316,7 +316,7 @@ function PeriodSelector({
           onClick={() => onPeriodChange(opt.value)}
           aria-pressed={period === opt.value}
           data-testid={`period-${opt.value}`}
-          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+          className={`min-h-9 justify-center whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
             period === opt.value
               ? "bg-background text-foreground shadow-sm border"
               : "text-muted-foreground hover:text-foreground"
@@ -332,7 +332,7 @@ function PeriodSelector({
             onClick={() => onPeriodChange("custom")}
             aria-pressed={period === "custom"}
             data-testid="period-custom"
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+            className={`col-span-2 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors sm:col-span-1 ${
               period === "custom"
                 ? "bg-background text-foreground shadow-sm border"
                 : "text-muted-foreground hover:text-foreground"
@@ -1138,7 +1138,7 @@ export default function OwnerAutomations() {
       </Dialog>
 
       <Dialog open={!!statsRuleId} onOpenChange={(open) => !open && closeStats()}>
-        <DialogContent>
+        <DialogContent className="w-[calc(100%-1rem)] sm:w-full">
           <DialogHeader className="pr-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <DialogTitle>Statistika automatizacije</DialogTitle>
