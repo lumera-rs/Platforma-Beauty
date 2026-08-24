@@ -90,7 +90,7 @@ export const productsTable = pgTable("products", {
   professionalEnabled: boolean("professional_enabled").notNull().default(true),
   stock: integer("stock").notNull().default(0),
   // Opaque customer-facing reference. Unlike SKU, this is never edited.
-  catalogReference: text("catalog_reference").notNull().unique()
+  catalogReference: text("catalog_reference").notNull()
     .default(sql`'LUM-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))`),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
@@ -104,6 +104,7 @@ export const productsTable = pgTable("products", {
 }, (table) => [
   // Product catalog: active listings by category, sorted by creation date or price.
   index("products_category_active_idx").on(table.categoryId, table.active),
+  uniqueIndex("products_catalog_reference_unique").on(table.catalogReference),
   index("products_active_created_idx").on(table.active, table.createdAt),
   index("products_retail_active_created_idx").on(table.retailEnabled, table.active, table.createdAt),
   index("products_professional_active_created_idx").on(table.professionalEnabled, table.active, table.createdAt),

@@ -82,6 +82,7 @@
 - [PDFKit footer pagination](pdfkit-footer-pagination.md) — writing buffered-page footers below PDFKit’s active margin can create blank pages and false page totals.
 - [Retail cart summary safety](retail-cart-summary-safety.md) — passive cart indicators must never create empty carts or poll them globally.
 - [Drizzle expression indexes](drizzle-expression-indexes.md) — raw expression indexes need their own parentheses, and disposable schema setup must reject reported SQL errors.
+- [Drizzle unique-index parity](drizzle-unique-index-parity.md) — align named unique indexes with ORM declarations to avoid destructive push proposals.
 - [Background scheduler recovery](background-scheduler-recovery.md) — retry stays process-local and bounded; job-level leases and idempotency remain the durable source of truth.
 - [Radix tooltip browser assertions](radix-tooltip-browser-assertions.md) — pointer hover can keep one tooltip open while focus is added; assert one shared tooltip and focused trigger instead of forced close.
 - [Admin summary snapshot consistency](admin-summary-snapshot-consistency.md) — aggregate dashboards need one repeatable-read transaction and a post-snapshot barrier for deterministic race coverage.
