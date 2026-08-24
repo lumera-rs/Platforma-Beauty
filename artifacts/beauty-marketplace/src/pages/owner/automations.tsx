@@ -305,7 +305,16 @@ function PeriodSelector({
   testId: string;
 }) {
   const [rangeOpen, setRangeOpen] = useState(false);
+  const customTriggerRef = useRef<HTMLButtonElement>(null);
+  const wasRangeOpen = useRef(false);
   const rangeLabel = formatRangeLabel(customRange);
+
+  useEffect(() => {
+    if (wasRangeOpen.current && !rangeOpen) {
+      customTriggerRef.current?.focus();
+    }
+    wasRangeOpen.current = rangeOpen;
+  }, [rangeOpen]);
 
   return (
     <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border bg-muted/30 p-1 sm:flex sm:w-fit sm:flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
@@ -328,9 +337,12 @@ function PeriodSelector({
       <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
         <PopoverTrigger asChild>
           <button
+            ref={customTriggerRef}
             type="button"
             onClick={() => onPeriodChange("custom")}
             aria-pressed={period === "custom"}
+            aria-expanded={rangeOpen}
+            aria-haspopup="dialog"
             data-testid="period-custom"
             className={`col-span-2 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors sm:col-span-1 ${
               period === "custom"

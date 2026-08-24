@@ -354,3 +354,73 @@ test("mobile stats period controls stay visible and keep the dialog open", async
     await cleanUpFixture(fixture);
   }
 });
+
+test("stats period controls follow keyboard order and preserve the dialog", async ({ page }) => {
+  const fixture = await createFixture();
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto("/vlasnik/automatizacije");
+
+    await page.getByTestId(`overview-row-${fixture.ruleId}`)
+      .getByRole("button", { name: fixture.ruleName })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeVisible();
+
+    const selector = dialog.getByTestId("stats-period-selector");
+    const periodButtons = ["7d", "30d", "90d", "all"].map((period) =>
+      selector.getByTestId(`period-${period}`),
+    );
+    const customButton = selector.getByTestId("period-custom");
+
+    // The five period controls are one contiguous keyboard sequence in the
+    // same order as their visual labels.
+    await periodButtons[0].focus();
+    for (const button of periodButtons.slice(1)) {
+      await page.keyboard.press("Tab");
+      await expect(button).toBeFocused();
+    }
+    await page.keyboard.press("Tab");
+    await expect(customButton).toBeFocused();
+
+    // Both standard keyboard activation keys update the period without
+    // closing the stats dialog.
+    const sevenDayResponse = nextFirstPageResponse(page, fixture.ruleId, "7d");
+    await periodButtons[0].focus();
+    await page.keyboard.press("Enter");
+    expect((await sevenDayResponse).status()).toBe(200);
+    await expect(periodButtons[0]).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog).toBeVisible();
+
+    const thirtyDayResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+    await periodButtons[1].focus();
+    await page.keyboard.press("Space");
+    expect((await thirtyDayResponse).status()).toBe(200);
+    await expect(periodButtons[1]).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog).toBeVisible();
+
+    // Opening the custom picker with Enter and Space must keep it inside the
+    // dialog's interaction, and Escape must dismiss only the picker. Radix
+    // should return focus to the trigger after either keyboard dismissal.
+    await customButton.focus();
+    await page.keyboard.press("Enter");
+    const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(rangePresets).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(customButton).toBeFocused();
+
+    await page.keyboard.press("Space");
+    await expect(rangePresets).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(rangePresets).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(customButton).toBeFocused();
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
