@@ -308,6 +308,7 @@ async function waitForHttp(
   url: string,
   label: string,
   isInterrupted?: () => boolean,
+  abortSignal?: AbortSignal,
 ): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError: unknown;
@@ -317,7 +318,7 @@ async function waitForHttp(
       throw new Error(`${label} was interrupted.`);
     }
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: abortSignal });
       if (response.ok) return;
       lastError = new Error(`received ${response.status}`);
     } catch (error) {
@@ -742,6 +743,7 @@ export async function runIsolatedApiRegressionSuite(
   let interruptedSignal: NodeJS.Signals | undefined;
   let isCleaningUp = false;
   let interruptedProcessCleanup: Promise<void> | undefined;
+  let readinessAbortController: AbortController | undefined;
   const throwIfInterrupted = () => {
     if (interruptedSignal) {
       throw new Error(`API regression checks interrupted by ${interruptedSignal}.`);
@@ -767,6 +769,7 @@ export async function runIsolatedApiRegressionSuite(
   };
   const onSignal = (signal: NodeJS.Signals) => {
     interruptedSignal ??= signal;
+    readinessAbortController?.abort();
     if (isCleaningUp) return;
     interruptedProcessCleanup ??= Promise.allSettled([
       stopProcess(activeCommand),
@@ -799,10 +802,12 @@ export async function runIsolatedApiRegressionSuite(
       apiEnvironment,
       "Disposable API regression server",
     );
+    readinessAbortController = new AbortController();
     await waitForHttp(
       `${apiBaseUrl}/api/healthz`,
       "Disposable API regression server",
       () => Boolean(interruptedSignal),
+      readinessAbortController.signal,
     );
 
     for (const scriptPath of configuration.scriptPaths) {

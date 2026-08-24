@@ -1,3 +1,5 @@
+import { createServer, type ServerResponse } from "node:http";
+import { access, writeFile } from "node:fs/promises";
 import app from "./app";
 import { ensureDemoData } from "./lib/seed";
 import {
@@ -10,6 +12,8 @@ import {
 
 const rawPort = process.env.PORT ?? "0";
 const port = Number(rawPort);
+const healthzHoldFile = process.env.LUMERA_TEST_HEALTHZ_HOLD_FILE;
+const healthzReachedFile = process.env.LUMERA_TEST_HEALTHZ_REACHED_FILE;
 
 if (!Number.isInteger(port) || port < 0) {
   throw new Error(`Invalid test server PORT value: "${rawPort}".`);
@@ -23,7 +27,48 @@ await startSalonNotificationEventListener();
 if (process.env.LUMERA_TEST_DROP_SALON_NOTIFICATION_LISTENER_ON_STARTUP === "1") {
   await dropSalonNotificationListenerConnectionForTests();
 }
-const server = app.listen(port, "127.0.0.1");
+let isShuttingDown = false;
+const heldHealthzResponses = new Set<ServerResponse>();
+
+async function waitForHealthzRelease(): Promise<void> {
+  if (!healthzHoldFile) return;
+
+  while (!isShuttingDown) {
+    try {
+      await access(healthzHoldFile);
+      return;
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+const server = createServer((request, response) => {
+  if (healthzHoldFile && request.url?.split("?")[0] === "/api/healthz") {
+    heldHealthzResponses.add(response);
+    if (healthzReachedFile) {
+      void writeFile(healthzReachedFile, "healthz\n").catch(() => undefined);
+    }
+    void waitForHealthzRelease()
+      .then(() => {
+        heldHealthzResponses.delete(response);
+        if (isShuttingDown || response.writableEnded) return;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ status: "ok" }));
+      })
+      .catch(() => {
+        heldHealthzResponses.delete(response);
+        response.destroy();
+      });
+    return;
+  }
+
+  app(request, response);
+}).listen(port, "127.0.0.1");
 
 server.once("error", (error) => {
   console.error(error);
@@ -40,6 +85,9 @@ server.once("listening", () => {
 });
 
 function shutDown(signal: NodeJS.Signals) {
+  isShuttingDown = true;
+  for (const response of heldHealthzResponses) response.destroy();
+  heldHealthzResponses.clear();
   void stopSalonNotificationEventListener().finally(() => {
     server.close(() => process.exit(0));
   });

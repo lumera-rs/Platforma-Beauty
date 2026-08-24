@@ -14,7 +14,7 @@ const runnerPath = path.join(workspaceRoot, "scripts", "node_modules", ".bin", "
 const runnerScriptPath = path.join(workspaceRoot, "scripts", "src", "run-api-regressions.ts");
 const databaseUrl = process.env.DATABASE_URL;
 
-type InterruptedPhase = "schema" | "shell";
+type InterruptedPhase = "schema" | "shell" | "readiness";
 type InterruptSignal = "SIGINT" | "SIGTERM";
 
 type HarnessManifest = {
@@ -716,6 +716,8 @@ async function runInterruptedScenario(
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-api-regression-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const markerPath = path.join(temporaryRoot, "phase-reached");
+  const healthzHoldPath = path.join(temporaryRoot, "healthz-hold");
+  const healthzReachedPath = path.join(temporaryRoot, "healthz-reached");
   const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
   const manifestDirectoryName = `api-regression-lifecycle-${process.pid}-${randomUUID()}`;
   const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
@@ -743,6 +745,12 @@ async function runInterruptedScenario(
       LUMERA_API_REGRESSION_MANIFEST_DIRECTORY: manifestDirectoryName,
       LUMERA_LIFECYCLE_PHASE_MARKER: markerPath,
       LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
+      ...(phase === "readiness"
+        ? {
+            LUMERA_TEST_HEALTHZ_HOLD_FILE: healthzHoldPath,
+            LUMERA_TEST_HEALTHZ_REACHED_FILE: healthzReachedPath,
+          }
+        : {}),
       LUMERA_LIFECYCLE_REAL_BASH: realBash,
       LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
     };
@@ -755,7 +763,7 @@ async function runInterruptedScenario(
     child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
 
-    await waitForFile(markerPath);
+    await waitForFile(phase === "readiness" ? healthzReachedPath : markerPath);
     const manifest = await readManifest(manifestDirectory);
     manifestPath = manifest.manifestPath;
     databaseName = manifest.manifest.databaseName;
@@ -766,16 +774,29 @@ async function runInterruptedScenario(
     testDatabaseUrl = isolatedDatabaseUrl.toString();
     assert.equal(await databaseExists(databaseName), true, `Disposable database was not created.\n${output}`);
 
-    const blockerPid = Number(await readFile(blockerPidPath, "utf8"));
-    assert.ok(
-      Number.isSafeInteger(blockerPid) && blockerPid > 0,
-      `The ${phase} blocker PID was not recorded.`,
-    );
-    await waitForProcess(blockerPid, `The disposable API regression ${phase} check`);
-    assert.ok(
-      (await findProcessesWithMarker(processMarker)).includes(blockerPid),
-      `The disposable API regression ${phase} check did not carry the run marker.`,
-    );
+    let blockerPid: number | undefined;
+    let apiPid: number | undefined;
+    if (phase === "readiness") {
+      const apiPids = await findOwnedTestServers(testDatabaseUrl);
+      assert.notDeepEqual(apiPids, [], "The disposable API regression server did not start.");
+      apiPid = apiPids[0];
+      await waitForProcess(apiPid, "The disposable API regression server");
+      assert.ok(
+        (await findProcessesWithMarker(processMarker)).includes(apiPid),
+        "The disposable API regression server did not carry the run marker.",
+      );
+    } else {
+      blockerPid = Number(await readFile(blockerPidPath, "utf8"));
+      assert.ok(
+        Number.isSafeInteger(blockerPid) && blockerPid > 0,
+        `The ${phase} blocker PID was not recorded.`,
+      );
+      await waitForProcess(blockerPid, `The disposable API regression ${phase} check`);
+      assert.ok(
+        (await findProcessesWithMarker(processMarker)).includes(blockerPid),
+        `The disposable API regression ${phase} check did not carry the run marker.`,
+      );
+    }
 
     child.kill(signal);
     const exit = await waitForExit(child);
@@ -788,7 +809,12 @@ async function runInterruptedScenario(
     );
 
     await waitForOwnedTestServersToStop(testDatabaseUrl);
-    await waitForProcessToStop(blockerPid, `The disposable API regression ${phase} check`);
+    if (apiPid) {
+      await waitForProcessToStop(apiPid, "The disposable API regression server");
+    }
+    if (blockerPid) {
+      await waitForProcessToStop(blockerPid, `The disposable API regression ${phase} check`);
+    }
     await waitForMarkerProcessesToStop(processMarker);
     await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
     assert.equal(await databaseExists(databaseName), false, "Disposable database was not removed.");
@@ -802,6 +828,8 @@ async function runInterruptedScenario(
     }
     await rm(manifestDirectory, { recursive: true, force: true });
     await unlink(markerPath).catch(() => undefined);
+    await unlink(healthzHoldPath).catch(() => undefined);
+    await unlink(healthzReachedPath).catch(() => undefined);
     const blockerPidContents = await readFile(blockerPidPath, "utf8").catch(() => "");
     const blockerPid = Number(blockerPidContents);
     if (Number.isSafeInteger(blockerPid) && blockerPid > 0) {
@@ -969,6 +997,10 @@ test("SIGINT during disposable API regression schema setup cleans every resource
 
 test("SIGINT during a disposable API regression shell check cleans every resource", async () => {
   await runInterruptedScenario("shell", "SIGINT");
+});
+
+test("SIGINT during disposable API regression server readiness cleans every resource", async () => {
+  await runInterruptedScenario("readiness", "SIGINT");
 });
 
 test("forced API regression shutdown recovery removes orphaned API and shell-check processes", async () => {
