@@ -8,3 +8,9 @@ Persist one opaque, per-run environment marker with the run’s durable recovery
 **Why:** The owner can be killed while detached API or shell descendants survive. A database or filename alone cannot distinguish those descendants from unrelated local services, and some foreign `/proc` entries are intentionally unreadable.
 
 **How to apply:** Keep the owner-identity guard before any process scan, match an exact null-delimited environment entry, terminate only the discovered groups, and treat `ENOENT`, `EACCES`, and `EPERM` while scanning foreign `/proc` entries as non-matches rather than cleanup failures.
+
+Graceful harness cancellation must capture the first interrupt signal, stop the active command and every owned service group, then wait for those stops before removing the disposable database and its manifest.
+
+**Why:** Installing a signal listener disables Node's default immediate termination; cleanup must therefore preserve process-group ownership while releasing resources before reporting the conventional interrupted exit status.
+
+**How to apply:** Register the listener before creating disposable resources, make it idempotent, make readiness waits interruptible, and remove the listener only after final cleanup.

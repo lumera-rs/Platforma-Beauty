@@ -501,17 +501,55 @@ export async function runIsolatedBrowserSuite(
   let databaseMayExist = false;
   let apiProcess: ChildProcess | undefined;
   let webProcess: ChildProcess | undefined;
+  let activeCommand: ChildProcess | undefined;
+  let interruptedSignal: NodeJS.Signals | undefined;
+  let isCleaningUp = false;
+  let interruptedProcessCleanup: Promise<void> | undefined;
+  const throwIfInterrupted = () => {
+    if (interruptedSignal) {
+      throw new Error(`Browser checks interrupted by ${interruptedSignal}.`);
+    }
+  };
+  const runBrowserCommand = (
+    command: string,
+    args: string[],
+    environment: NodeJS.ProcessEnv,
+    label: string,
+    options?: Omit<RunCommandOptions, "onSpawn">,
+  ) => {
+    throwIfInterrupted();
+    return runCommand(command, args, environment, label, {
+      ...options,
+      onSpawn: (child) => {
+        activeCommand = child;
+        child.once("close", () => {
+          if (activeCommand === child) activeCommand = undefined;
+        });
+      },
+    });
+  };
+  const onSignal = (signal: NodeJS.Signals) => {
+    interruptedSignal ??= signal;
+    if (isCleaningUp) return;
+    interruptedProcessCleanup ??= Promise.allSettled([
+      stopProcess(activeCommand),
+      stopProcess(webProcess),
+      stopProcess(apiProcess),
+    ]).then(() => undefined);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
 
   try {
     databaseMayExist = true;
-    await runCommand(
+    await runBrowserCommand(
       "createdb",
       ["--maintenance-db", developmentDatabaseUrl, databaseName],
       process.env,
       "Creating the disposable browser test database",
     );
 
-    await runCommand(
+    await runBrowserCommand(
       "pnpm",
       ["--filter", "@workspace/db", "run", "push-force"],
       testEnvironment,
@@ -525,8 +563,13 @@ export async function runIsolatedBrowserSuite(
       { ...testEnvironment, PORT: String(apiPort) },
       "Disposable API server",
     );
-    await waitForHttp(`${apiBaseUrl}/api/healthz`, "Disposable API server");
+    await waitForHttp(
+      `${apiBaseUrl}/api/healthz`,
+      "Disposable API server",
+      () => Boolean(interruptedSignal),
+    );
 
+    throwIfInterrupted();
     webProcess = startProcess(
       "pnpm",
       ["--filter", "@workspace/beauty-marketplace", "run", "dev"],
@@ -538,9 +581,13 @@ export async function runIsolatedBrowserSuite(
       },
       "Disposable browser frontend",
     );
-    await waitForHttp(webBaseUrl, "Disposable browser frontend");
+    await waitForHttp(
+      webBaseUrl,
+      "Disposable browser frontend",
+      () => Boolean(interruptedSignal),
+    );
 
-    await runCommand(
+    await runBrowserCommand(
       "pnpm",
       [
         "--filter",
@@ -555,7 +602,11 @@ export async function runIsolatedBrowserSuite(
       { ...testEnvironment, LUMERA_WEB_BASE_URL: webBaseUrl },
       configuration.testLabel,
     );
+  } catch (error) {
+    if (!interruptedSignal) throw error;
   } finally {
+    isCleaningUp = true;
+    await interruptedProcessCleanup;
     try {
       await stopProcess(webProcess);
     } finally {
@@ -573,6 +624,12 @@ export async function runIsolatedBrowserSuite(
         await removeHarnessDatabaseManifest(manifestPath);
       }
     }
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+  }
+
+  if (interruptedSignal) {
+    process.exitCode = 128 + (interruptedSignal === "SIGINT" ? 2 : 15);
   }
 }
 

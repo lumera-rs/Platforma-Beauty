@@ -64,9 +64,14 @@ async function run(): Promise<void> {
 
   // Each pass gets a fresh database and API process, so the cap is applied at
   // server startup and the exact control run cannot inherit estimate mode.
-  await runIsolatedBrowserSuite(estimateConfiguration);
-  await runIsolatedBrowserSuite(exactConfiguration);
-  await runIsolatedBrowserSuite(stratifiedEstimateConfiguration);
+  for (const configuration of [
+    estimateConfiguration,
+    exactConfiguration,
+    stratifiedEstimateConfiguration,
+  ]) {
+    await runIsolatedBrowserSuite(configuration);
+    if (process.exitCode) return;
+  }
 }
 
 void run().catch((error) => {
