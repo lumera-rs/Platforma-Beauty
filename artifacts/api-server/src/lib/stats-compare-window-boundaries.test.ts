@@ -23,6 +23,9 @@
  *   4. compare validation: compare=previous with period=all or with no period
  *      → 400; a complete custom from/to range is accepted; any compare value
  *      other than the literal "previous" → 400 — on both stats endpoints
+ *   5. a separate 30d fixture crossing the 2026 fall daylight-saving
+ *      transition keeps the repeated local hour on the correct side of both
+ *      windows, on both stats endpoints
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
@@ -65,6 +68,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const FROZEN_NOW = Date.parse("2026-04-07T12:00:00.000Z");
 const CUTOFF = FROZEN_NOW - 30 * DAY_MS;
 const PREV_CUTOFF = FROZEN_NOW - 60 * DAY_MS;
+
+// A second explicit UTC instant makes the current 30d window
+// [2026-10-10T12:00Z, 2026-11-09T12:00Z), crossing the US fall-back
+// transition on 2026-11-01. The preceding window is
+// [2026-09-10T12:00Z, 2026-10-10T12:00Z).
+const FALL_FROZEN_NOW = Date.parse("2026-11-09T12:00:00.000Z");
+const FALL_CUTOFF = FALL_FROZEN_NOW - 30 * DAY_MS;
+const FALL_PREV_CUTOFF = FALL_FROZEN_NOW - 60 * DAY_MS;
 
 async function main() {
   const hash = await hashPassword(`pass-wb-${suffix}`);
@@ -172,15 +183,15 @@ async function main() {
     const response = await fetch(`${baseUrl}${path}`, { headers: { cookie: `${sessionCookieName}=${token}` } });
     return { status: response.status, body: await response.json() as any };
   };
-  const overviewRow = async (qs: string) => {
+  const overviewRow = async (qs: string, targetRuleId = rule.id) => {
     const r = await get(`/api/growth/automation-stats${qs}`);
     assert.equal(r.status, 200, `expected 200 for overview ${qs}`);
-    const row = r.body.find((x: any) => x.ruleId === rule.id);
+    const row = r.body.find((x: any) => x.ruleId === targetRuleId);
     assert.ok(row, `overview must include the rule for ${qs}`);
     return row;
   };
-  const perRule = async (qs: string) => {
-    const r = await get(`/api/growth/automations/${rule.id}/stats${qs}`);
+  const perRule = async (qs: string, targetRuleId = rule.id) => {
+    const r = await get(`/api/growth/automations/${targetRuleId}/stats${qs}`);
     assert.equal(r.status, 200, `expected 200 for per-rule stats ${qs}`);
     return r.body;
   };
@@ -320,13 +331,97 @@ async function main() {
     await expect400("?period=30d&compare=next", "unknown compare value");
     await expect400("?period=30d&compare=Previous", "case-mismatched compare value");
     console.log("✓ compare validation: unbounded periods and unknown compare values rejected with 400 on both endpoints");
+
+    // ── 5. Fall-back transition fixture ─────────────────────────────────────
+    // Keep this as a separate rule so the spring fixture above remains
+    // untouched while the overview endpoint is exercised with a second
+    // independently seeded campaign.
+    const [fallRule] = await db.insert(automationRulesTable).values({
+      salonId: salon.id, name: `WB Fall Rule ${suffix}`,
+      trigger: "inactive_days", triggerConfig: { inactiveDays: 30 },
+      action: "send_email", emailSubject: "T", emailBody: "T",
+      status: "active",
+    }).returning();
+    assert.ok(fallRule);
+
+    const fallRunCases: Array<{ tag: string; executedAt: number | null; createdAt: number }> = [
+      { tag: "outside-before", executedAt: FALL_PREV_CUTOFF - 1, createdAt: FALL_PREV_CUTOFF - 1 },
+      { tag: "prev-first-ms", executedAt: FALL_PREV_CUTOFF, createdAt: FALL_PREV_CUTOFF },
+      { tag: "prev-last-ms", executedAt: FALL_CUTOFF - 1, createdAt: FALL_CUTOFF - 1 },
+      { tag: "cur-first-ms", executedAt: FALL_CUTOFF, createdAt: FALL_CUTOFF },
+      { tag: "cur-recent", executedAt: FALL_FROZEN_NOW - 1_000, createdAt: FALL_FROZEN_NOW - 1_000 },
+      { tag: "prev-fallback", executedAt: null, createdAt: FALL_CUTOFF - 1 },
+    ];
+    for (const c of fallRunCases) {
+      const [appt] = await db.insert(appointmentsTable).values({
+        salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+        date: "2026-11-01", startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+        status: "completed", price: 1000, treatmentLocation: "salon",
+      }).returning();
+      assert.ok(appt);
+      const [run] = await db.insert(automationRunsTable).values({
+        eventKey: `wb-fall-run-${c.tag}-${suffix}`, ruleId: fallRule.id, salonId: salon.id, salonCustomerId: cust.id,
+        status: c.executedAt === null ? "failed" : "sent",
+        executedAt: c.executedAt === null ? null : new Date(c.executedAt),
+        sentAt: c.executedAt === null ? null : new Date(c.executedAt),
+        createdAt: new Date(c.createdAt),
+        attributedAppointmentId: appt.id,
+      }).returning();
+      assert.ok(run);
+    }
+
+    const [fallHostRun] = await db.select({ id: automationRunsTable.id }).from(automationRunsTable)
+      .where(eq(automationRunsTable.eventKey, `wb-fall-run-cur-recent-${suffix}`)).limit(1);
+    assert.ok(fallHostRun);
+    const fallDeliveryCases: Array<{ tag: string; sentAt: number | null; createdAt: number }> = [
+      { tag: "outside-before", sentAt: FALL_PREV_CUTOFF - 1, createdAt: FALL_PREV_CUTOFF - 1 },
+      { tag: "prev-first-ms", sentAt: FALL_PREV_CUTOFF, createdAt: FALL_PREV_CUTOFF },
+      { tag: "prev-last-ms", sentAt: FALL_CUTOFF - 1, createdAt: FALL_CUTOFF - 1 },
+      { tag: "cur-first-ms", sentAt: FALL_CUTOFF, createdAt: FALL_CUTOFF },
+      { tag: "cur-recent", sentAt: FALL_FROZEN_NOW - 1_000, createdAt: FALL_FROZEN_NOW - 1_000 },
+      { tag: "prev-fallback", sentAt: null, createdAt: FALL_PREV_CUTOFF },
+    ];
+    for (const c of fallDeliveryCases) {
+      const [delivery] = await db.insert(automationDeliveriesTable).values({
+        runId: fallHostRun.id, salonId: salon.id, eventKey: `wb-fall-delivery-${c.tag}-${suffix}`,
+        channel: "email", recipientEmail: `wb-fall-rcpt-${suffix}@bg.test`, status: "sent",
+        sentAt: c.sentAt === null ? null : new Date(c.sentAt),
+        createdAt: new Date(c.createdAt),
+        deliveredAt: new Date(FALL_FROZEN_NOW), openedAt: new Date(FALL_FROZEN_NOW),
+      }).returning();
+      assert.ok(delivery);
+    }
+
+    Date.now = () => FALL_FROZEN_NOW;
+    const FALL_CURRENT = 2, FALL_PREVIOUS = 3;
+    for (const [label, row] of [
+      ["overview", await overviewRow("?period=30d&compare=previous", fallRule.id)],
+      ["per-rule", await perRule("?period=30d&compare=previous", fallRule.id)],
+    ] as const) {
+      assert.equal(row.totalRuns, FALL_CURRENT,
+        `${label}: fall-back current window contains only the cutoff and recent runs`);
+      assert.equal(row.attributedAppointments, FALL_CURRENT,
+        `${label}: fall-back current attributed appointments match current runs`);
+      assert.ok(row.previous, `${label}: fall-back previous block present`);
+      assert.equal(row.previous.attributedAppointments, FALL_PREVIOUS,
+        `${label}: fall-back previous window contains both edges and the createdAt fallback`);
+      assert.equal(row.emailDeliveredCount, FALL_CURRENT,
+        `${label}: fall-back current delivered count`);
+      assert.equal(row.emailOpenedCount, FALL_CURRENT,
+        `${label}: fall-back current opened count`);
+      assert.equal(row.previous.emailDeliveredCount, FALL_PREVIOUS,
+        `${label}: fall-back previous delivered count`);
+      assert.equal(row.previous.emailOpenedCount, FALL_PREVIOUS,
+        `${label}: fall-back previous opened count`);
+    }
+    console.log("✓ fall-back transition keeps exact previous/current membership on both stats endpoints");
   } finally {
     Date.now = realDateNow;
     server.close();
     await db.delete(automationDeliveriesTable).where(eq(automationDeliveriesTable.salonId, salon.id));
-    await db.delete(automationRunsTable).where(eq(automationRunsTable.ruleId, rule.id));
+    await db.delete(automationRunsTable).where(eq(automationRunsTable.salonId, salon.id));
     await db.delete(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id));
-    await db.delete(automationRulesTable).where(eq(automationRulesTable.id, rule.id));
+    await db.delete(automationRulesTable).where(eq(automationRulesTable.salonId, salon.id));
     await db.delete(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
     await db.delete(servicesTable).where(eq(servicesTable.salonId, salon.id));
     await db.update(usersTable).set({ activeSalonId: null }).where(eq(usersTable.id, owner.id));
