@@ -10,7 +10,8 @@ import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
 import { inArray } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { db, integrationSettingsTable, usersTable } from "@workspace/db";
+import { saveIntegrationSettings } from "../../artifacts/api-server/src/lib/integrations";
 
 const scrypt = promisify(scryptCallback);
 const publishedHost = "lumera-published.example.test";
@@ -23,7 +24,12 @@ const publishedOrigin = (() => {
 const suffix = randomUUID();
 const password = "browser-integrations-host-password";
 const adminEmail = `browser-integrations-host-admin-${suffix}@example.test`;
+const webhookSecrets = {
+  sms: `browser-integrations-sms-secret-${suffix}`,
+  brevo: `browser-integrations-brevo-secret-${suffix}`,
+} as const;
 const createdUserIds: string[] = [];
+const priorIntegrationRows: Array<typeof integrationSettingsTable.$inferSelect> = [];
 
 async function hashPassword(value: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
@@ -42,11 +48,35 @@ test.beforeAll(async () => {
   }).returning();
   if (inserted.length !== 1) throw new Error("The host-matrix fixture could not create the admin.");
   createdUserIds.push(...inserted.map((user) => user.id));
+
+  const adminId = inserted[0]!.id;
+  await Promise.all([
+    saveIntegrationSettings({
+      integration: "sms",
+      enabled: true,
+      values: { webhookSecret: webhookSecrets.sms },
+      updatedByUserId: adminId,
+    }),
+    saveIntegrationSettings({
+      integration: "brevo",
+      enabled: true,
+      values: { webhookSecret: webhookSecrets.brevo },
+      updatedByUserId: adminId,
+    }),
+  ]);
 });
 
 test.afterAll(async () => {
-  if (createdUserIds.length > 0) {
-    await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+  try {
+    await db.delete(integrationSettingsTable)
+      .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]));
+    if (priorIntegrationRows.length > 0) {
+      await db.insert(integrationSettingsTable).values(priorIntegrationRows);
+    }
+  } finally {
+    if (createdUserIds.length > 0) {
+      await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
+    }
   }
 });
 
@@ -121,6 +151,20 @@ async function stubStaleOAuthOriginWarning(page: Page) {
 
 test("preview guidance is host-scoped and published webhook templates stay usable", async ({ page }) => {
   test.setTimeout(120_000);
+  // The published-style host is intentionally mapped over HTTP in this
+  // regression, so Chromium does not expose navigator.clipboard as it would
+  // on the real HTTPS published domain. Keep the app's copy handler intact
+  // while providing the browser primitive needed to inspect its write.
+  await page.addInitScript(() => {
+    let clipboardText = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => { clipboardText = text; },
+        readText: async () => clipboardText,
+      },
+    });
+  });
 
   await openIntegrationsPage(page, developmentOrigin);
 
@@ -128,6 +172,33 @@ test("preview guidance is host-scoped and published webhook templates stay usabl
   await expect(page.getByTestId("oauth-redirect-origin-warning")).toHaveCount(2);
   await expect(page.getByTestId("development-webhook-url-caveat-sms")).toBeVisible();
   await expect(page.getByTestId("development-webhook-url-caveat-brevo")).toBeVisible();
+
+  const copyWebhookUrl = async (
+    heading: string,
+    integration: "sms" | "brevo",
+    origin: string,
+  ) => {
+    const card = page.locator("section").filter({
+      has: page.getByRole("heading", { name: heading, exact: true }),
+    });
+    const responsePromise = page.waitForResponse(
+      (response) => response.url().includes(`/api/admin/integrations/${integration}/webhook-url`),
+    );
+    await card.getByRole("button", { name: "Kopiraj kompletan URL", exact: true }).click();
+    const response = await responsePromise;
+    expect(response.ok()).toBe(true);
+    const body = await response.json() as { url: string; warning?: string };
+    expect(body.url).toBe(
+      `${origin}/api/webhooks/${integration === "sms" ? "infobip" : "brevo"}/${encodeURIComponent(webhookSecrets[integration])}`,
+    );
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(body.url);
+    return body;
+  };
+
+  const previewSms = await copyWebhookUrl("SMS · Infobip", "sms", developmentOrigin);
+  expect(previewSms.warning).toContain("razvojnu adresu");
+  const previewBrevo = await copyWebhookUrl("E-mail · Brevo", "brevo", developmentOrigin);
+  expect(previewBrevo.warning).toContain("razvojnu adresu");
 
   await openIntegrationsPage(page, publishedOrigin);
 
@@ -150,6 +221,11 @@ test("preview guidance is host-scoped and published webhook templates stay usabl
     `${publishedOrigin}/api/webhooks/brevo/<tajna>`,
     { exact: true },
   )).toBeVisible();
+
+  const publishedSms = await copyWebhookUrl("SMS · Infobip", "sms", publishedOrigin);
+  expect(publishedSms.warning).toBeUndefined();
+  const publishedBrevo = await copyWebhookUrl("E-mail · Brevo", "brevo", publishedOrigin);
+  expect(publishedBrevo.warning).toBeUndefined();
 });
 
 test("a stale published OAuth origin warns in both social-login cards", async ({ page }) => {
