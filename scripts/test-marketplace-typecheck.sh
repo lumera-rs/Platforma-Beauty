@@ -3,16 +3,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 CLIENT_DIST_DIR="$ROOT_DIR/lib/api-client-react/dist"
+API_ZOD_DIST_DIR="$ROOT_DIR/lib/api-zod/dist"
 API_DECLARATIONS="$CLIENT_DIST_DIR/generated/api.d.ts"
 SCHEMA_DECLARATIONS="$CLIENT_DIST_DIR/generated/api.schemas.d.ts"
+ZOD_DECLARATIONS="$API_ZOD_DIST_DIR/generated/api.d.ts"
 
 restore_generated_declarations() {
   local exit_code=$?
   trap - EXIT
 
-  if [[ ! -f "$API_DECLARATIONS" || ! -f "$SCHEMA_DECLARATIONS" ]]; then
+  if [[ ! -f "$API_DECLARATIONS" || ! -f "$SCHEMA_DECLARATIONS" || ! -f "$ZOD_DECLARATIONS" ]]; then
     echo "Restoring shared API declarations for subsequent workspace checks..."
-    if ! (cd "$ROOT_DIR" && pnpm -w exec tsc --build --force lib/api-client-react); then
+    if ! (cd "$ROOT_DIR" && pnpm -w exec tsc --build --force lib/api-client-react lib/api-zod); then
       echo "Failed to restore shared API declarations." >&2
       if [[ "$exit_code" -eq 0 ]]; then
         exit_code=1
@@ -24,9 +26,9 @@ restore_generated_declarations() {
 }
 trap restore_generated_declarations EXIT
 
-rm -rf "$CLIENT_DIST_DIR"
-if [[ -e "$CLIENT_DIST_DIR" ]]; then
-  echo "Expected shared API declarations to be absent before validation." >&2
+rm -rf "$CLIENT_DIST_DIR" "$API_ZOD_DIST_DIR"
+if [[ -e "$CLIENT_DIST_DIR" || -e "$API_ZOD_DIST_DIR" ]]; then
+  echo "Expected shared API declarations and schemas to be absent before validation." >&2
   exit 1
 fi
 
@@ -47,6 +49,7 @@ require_declaration() {
 
 [[ -f "$API_DECLARATIONS" ]] || { echo "Marketplace typecheck did not rebuild API declarations." >&2; exit 1; }
 [[ -f "$SCHEMA_DECLARATIONS" ]] || { echo "Marketplace typecheck did not rebuild API schema declarations." >&2; exit 1; }
+[[ -f "$ZOD_DECLARATIONS" ]] || { echo "Marketplace typecheck did not rebuild API Zod declarations." >&2; exit 1; }
 
 require_declaration "$API_DECLARATIONS" "useListPublicProducts"
 require_declaration "$API_DECLARATIONS" "useGetPublicProduct"
@@ -55,5 +58,7 @@ require_declaration "$SCHEMA_DECLARATIONS" "professionalEnabled"
 require_declaration "$SCHEMA_DECLARATIONS" "publicDescription"
 require_declaration "$SCHEMA_DECLARATIONS" "publicPrice"
 require_declaration "$SCHEMA_DECLARATIONS" "publicDiscountPrice"
+require_declaration "$ZOD_DECLARATIONS" "AdminGetIntegrationsResponse"
+require_declaration "$ZOD_DECLARATIONS" "AdminGetWebhookFreshnessResponse"
 
-echo "Marketplace standalone typecheck rebuilt and verified shared API declarations."
+echo "Marketplace standalone typecheck rebuilt and verified shared API declarations and schemas."
