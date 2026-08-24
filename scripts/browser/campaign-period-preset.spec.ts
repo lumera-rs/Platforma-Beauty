@@ -26,14 +26,30 @@ const FROZEN_NOW = new Date("2026-08-23T12:00:00.000Z");
 const LAST_MONTH_FROM = new Date("2026-07-01T12:00:00.000Z");
 const LAST_MONTH_TO = new Date("2026-07-31T12:00:00.000Z");
 const BEFORE_LAST_MONTH = new Date("2026-06-30T12:00:00.000Z");
-// 2026-08-01T22:30Z is 2026-08-02 00:30 in Europe/Belgrade. Keeping the
-// browser just after local midnight makes a UTC-date serialization regression
-// visible in both "this month" and "last 14 days".
-const BELGRADE_FROZEN_NOW = new Date("2026-08-01T22:30:00.000Z");
-const BELGRADE_PRESET_EXPECTATIONS = [
-  { key: "last-month", from: "2026-07-01", to: "2026-07-31" },
-  { key: "this-month", from: "2026-08-01", to: "2026-08-02" },
-  { key: "last-14d", from: "2026-07-20", to: "2026-08-02" },
+// Freeze just after local midnight on each Belgrade transition date. The
+// selected values must remain local calendar dates even when the offset
+// changes later that day (or changed earlier in the autumn case).
+const BELGRADE_DST_CASES = [
+  {
+    name: "spring-forward",
+    frozenNow: new Date("2026-03-28T23:30:00.000Z"),
+    localDate: "2026-3-29",
+    presets: [
+      { key: "last-month", from: "2026-02-01", to: "2026-02-28" },
+      { key: "this-month", from: "2026-03-01", to: "2026-03-29" },
+      { key: "last-14d", from: "2026-03-16", to: "2026-03-29" },
+    ],
+  },
+  {
+    name: "autumn-rollback",
+    frozenNow: new Date("2026-10-24T22:30:00.000Z"),
+    localDate: "2026-10-25",
+    presets: [
+      { key: "last-month", from: "2026-09-01", to: "2026-09-30" },
+      { key: "this-month", from: "2026-10-01", to: "2026-10-25" },
+      { key: "last-14d", from: "2026-10-12", to: "2026-10-25" },
+    ],
+  },
 ] as const;
 
 // The browser clock is intentionally fixed before the app renders. That makes
@@ -293,70 +309,72 @@ test("clicking a date shortcut closes the picker and refetches inclusive stats d
   }
 });
 
-test.describe("campaign date shortcuts in a non-UTC browser timezone", () => {
+test.describe("campaign date shortcuts on Belgrade DST transition days", () => {
   test.use({ timezoneId: "Europe/Belgrade" });
 
-  test("serialize last month, this month, and last 14 days as local calendar dates", async ({
-    page,
-  }) => {
-    const fixture = await createFixture();
+  for (const dstCase of BELGRADE_DST_CASES) {
+    test(`${dstCase.name} shortcuts serialize exact local calendar dates`, async ({
+      page,
+    }) => {
+      const fixture = await createFixture();
 
-    try {
-      await page.clock.install({ time: BELGRADE_FROZEN_NOW });
-      await signInAsFixtureOwner(page, fixture);
-      await page.goto("/vlasnik/automatizacije");
+      try {
+        await page.clock.install({ time: dstCase.frozenNow });
+        await signInAsFixtureOwner(page, fixture);
+        await page.goto("/vlasnik/automatizacije");
 
-      await expect
-        .poll(() =>
-          page.evaluate(() => ({
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            localDate: [
-              new Date().getFullYear(),
-              new Date().getMonth() + 1,
-              new Date().getDate(),
-            ].join("-"),
-          })),
-        )
-        .toEqual({
-          timezone: "Europe/Belgrade",
-          localDate: "2026-8-2",
-        });
+        await expect
+          .poll(() =>
+            page.evaluate(() => ({
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              localDate: [
+                new Date().getFullYear(),
+                new Date().getMonth() + 1,
+                new Date().getDate(),
+              ].join("-"),
+            })),
+          )
+          .toEqual({
+            timezone: "Europe/Belgrade",
+            localDate: dstCase.localDate,
+          });
 
-      const selector = page.getByTestId("overview-period-selector");
-      await expect(selector).toBeVisible();
+        const selector = page.getByTestId("overview-period-selector");
+        await expect(selector).toBeVisible();
 
-      for (const expected of BELGRADE_PRESET_EXPECTATIONS) {
-        await selector.getByTestId("period-custom").click();
-        const presets = page.getByTestId(
-          "overview-period-selector-range-presets",
-        );
-        await expect(presets).toBeVisible();
-
-        const statsResponse = page.waitForResponse((response) => {
-          const url = new URL(response.url());
-          return (
-            response.request().method() === "GET" &&
-            url.pathname.endsWith("/growth/automation-stats") &&
-            url.searchParams.get("from") === expected.from &&
-            url.searchParams.get("to") === expected.to &&
-            !url.searchParams.has("period")
+        for (const expected of dstCase.presets) {
+          await selector.getByTestId("period-custom").click();
+          const presets = page.getByTestId(
+            "overview-period-selector-range-presets",
           );
-        });
+          await expect(presets).toBeVisible();
 
-        await presets.getByTestId(`range-preset-${expected.key}`).click();
+          const statsResponse = page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return (
+              response.request().method() === "GET" &&
+              url.pathname.endsWith("/growth/automation-stats") &&
+              url.searchParams.get("from") === expected.from &&
+              url.searchParams.get("to") === expected.to &&
+              !url.searchParams.has("period")
+            );
+          });
 
-        expect((await statsResponse).status()).toBe(200);
-        await expect(page).toHaveURL(
-          `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`,
-        );
-        await expect(selector.getByTestId("period-custom")).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
-        await expect(presets).toBeHidden();
+          await presets.getByTestId(`range-preset-${expected.key}`).click();
+
+          expect((await statsResponse).status()).toBe(200);
+          await expect(page).toHaveURL(
+            `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`,
+          );
+          await expect(selector.getByTestId("period-custom")).toHaveAttribute(
+            "aria-pressed",
+            "true",
+          );
+          await expect(presets).toBeHidden();
+        }
+      } finally {
+        await cleanUpFixture(fixture);
       }
-    } finally {
-      await cleanUpFixture(fixture);
-    }
-  });
+    });
+  }
 });
