@@ -637,11 +637,15 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
       scriptPath: path.join(workspaceRoot, "scripts", "src", "run-retention-preview.ts"),
       databasePrefix: "lumera_retention_estimate_browser_",
       manifestDirectoryName: "retention-preview-estimate-browser-databases",
+      expectedStdout:
+        "No interrupted retention preview exact control browser checks databases were found.\n"
+        + "No interrupted retention preview stratified estimate browser checks databases were found.\n",
     },
     {
       scriptPath: path.join(workspaceRoot, "scripts", "src", "run-infobip-registration-browser.ts"),
       databasePrefix: "lumera_infobip_registration_browser_",
       manifestDirectoryName: "infobip-registration-browser-databases",
+      expectedStdout: "",
     },
   ] as const;
   const manifestPaths: string[] = [];
@@ -691,7 +695,7 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
           assert.ok(error && typeof error === "object");
           const commandError = error as { stdout?: string; stderr?: string; code?: number };
           assert.equal(commandError.code, 1);
-          assert.equal(commandError.stdout, "");
+          assert.equal(commandError.stdout, runner.expectedStdout);
           assert.match(
             commandError.stderr ?? "",
             new RegExp(
@@ -717,6 +721,124 @@ test("standalone browser cleanup entry points fail and preserve failed cleanup f
     await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
     await Promise.all(
       [...manifestDirectories].map(async (manifestDirectory) => {
+        try {
+          if ((await readdir(manifestDirectory)).length === 0) {
+            await rmdir(manifestDirectory);
+          }
+        } catch {
+          // Preserve state directories created by another test or active runner.
+        }
+      }),
+    );
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("retention cleanup continues after malformed recovery folders", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-retention-recovery-continue-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const originalPath = process.env.PATH;
+  const retentionDirectories = [
+    "retention-preview-estimate-browser-databases",
+    "retention-preview-exact-browser-databases",
+    "retention-preview-stratified-browser-databases",
+  ];
+  const databasePrefixes = [
+    "lumera_retention_estimate_browser_",
+    "lumera_retention_exact_browser_",
+    "lumera_retention_stratified_browser_",
+  ];
+  const testLabels = [
+    "Retention preview estimate browser checks",
+    "Retention preview exact control browser checks",
+    "Retention preview stratified estimate browser checks",
+  ];
+  const manifestDirectories = retentionDirectories.map((directoryName) =>
+    path.join(workspaceRoot, ".lumera-test-state", directoryName));
+  const validManifestPaths: string[] = [];
+  const malformedManifestPaths: string[] = [];
+
+  try {
+    await mkdir(binDirectory, { recursive: true });
+    await writeFile(
+      path.join(binDirectory, "dropdb"),
+      "#!/bin/sh\nexit 0\n",
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binDirectory}:${originalPath ?? ""}`;
+
+    for (const [index, manifestDirectory] of manifestDirectories.entries()) {
+      await mkdir(manifestDirectory, { recursive: true });
+      const malformedManifestName = `damaged-${index}-${randomUUID()}.json`;
+      const malformedManifestPath = path.join(manifestDirectory, malformedManifestName);
+      malformedManifestPaths.push(malformedManifestPath);
+      await writeFile(malformedManifestPath, '{"version":1}\n', "utf8");
+
+      const databaseName =
+        `${databasePrefixes[index]}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+      validManifestPaths.push(await writeManifest(manifestDirectory, {
+        version: 1,
+        databaseName,
+        databaseTarget: getDatabaseTarget(),
+        ownerPid: 2_147_483_647,
+        ownerProcessIdentity: "stale-process",
+      }));
+    }
+
+    await assert.rejects(
+      execFileAsync(
+        runnerPath,
+        [
+          path.join(workspaceRoot, "scripts", "src", "run-retention-preview.ts"),
+          "--recover-interrupted-databases",
+        ],
+        {
+          cwd: workspaceRoot,
+          env: {
+            ...process.env,
+            DATABASE_URL: databaseUrl,
+          },
+        },
+      ),
+      (error: unknown) => {
+        assert.ok(error && typeof error === "object");
+        const commandError = error as { stdout?: string; stderr?: string; code?: number };
+        assert.equal(commandError.code, 1);
+        for (const [index, malformedManifestPath] of malformedManifestPaths.entries()) {
+          assert.match(
+            commandError.stderr ?? "",
+            new RegExp(
+              `${testLabels[index]}: [^;]*Malformed browser recovery manifest ${
+                path.basename(malformedManifestPath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              }`,
+            ),
+          );
+        }
+        for (const databasePrefix of databasePrefixes) {
+          assert.match(
+            commandError.stdout ?? "",
+            new RegExp(`Removed interrupted browser test database ${
+              databasePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            }`),
+          );
+        }
+        return true;
+      },
+    );
+
+    await Promise.all(validManifestPaths.map(async (manifestPath) => {
+      await assert.rejects(readFile(manifestPath), { code: "ENOENT" });
+    }));
+    await Promise.all(malformedManifestPaths.map(async (manifestPath) => {
+      await readFile(manifestPath);
+    }));
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await Promise.all(validManifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
+    await Promise.all(malformedManifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
+    await Promise.all(
+      manifestDirectories.map(async (manifestDirectory) => {
         try {
           if ((await readdir(manifestDirectory)).length === 0) {
             await rmdir(manifestDirectory);

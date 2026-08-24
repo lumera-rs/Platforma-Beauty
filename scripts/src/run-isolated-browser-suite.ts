@@ -493,6 +493,33 @@ export async function recoverInterruptedHarnessDatabases(
   }
 }
 
+export async function recoverInterruptedHarnessDatabaseSuites(
+  suites: ReadonlyArray<{
+    configuration: IsolatedSuiteConfiguration;
+    suiteLabel: "browser" | "API" | "API regression";
+  }>,
+): Promise<void> {
+  const recoveryErrors: Array<{ testLabel: string; error: unknown }> = [];
+
+  for (const { configuration, suiteLabel } of suites) {
+    try {
+      await recoverInterruptedHarnessDatabases(configuration, suiteLabel);
+    } catch (error) {
+      recoveryErrors.push({ testLabel: configuration.testLabel, error });
+    }
+  }
+
+  if (recoveryErrors.length > 0) {
+    throw new AggregateError(
+      recoveryErrors.map(({ error }) => error),
+      `Interrupted test database recovery failed: ${
+        recoveryErrors.map(({ testLabel, error }) =>
+          `${testLabel}: ${error instanceof Error ? error.message : String(error)}`).join("; ")
+      }`,
+    );
+  }
+}
+
 export async function runIsolatedBrowserSuite(
   configuration: IsolatedBrowserSuiteConfiguration,
 ): Promise<void> {
