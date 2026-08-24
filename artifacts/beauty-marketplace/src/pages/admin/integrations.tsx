@@ -35,6 +35,8 @@ export default function AdminIntegrations() {
   const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {} });
   const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
+  const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
+  const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
   const freshnessRefreshController = useRef<AbortController | null>(null);
   const freshnessRefreshSequence = useRef(0);
   const load = async () => {
@@ -253,8 +255,26 @@ export default function AdminIntegrations() {
       // 409 responses. A failed provider-side check can change the panel from
       // "Još nepotvrđena" to "Verovatno nije registrovan" when traffic arrived
       // while the check was running.
-      await load().catch(() => undefined);
+      try {
+        await load();
+        setSmsRegistrationRefreshFailed(false);
+      } catch {
+        // Keep the last visible verdict, but expose a retry instead of making
+        // the administrator leave and reopen the page.
+        setSmsRegistrationRefreshFailed(true);
+      }
       setVerifyingSmsRegistration(false);
+    }
+  };
+  const retrySmsRegistrationRefresh = async () => {
+    setRetryingSmsRegistrationRefresh(true);
+    try {
+      await load();
+      setSmsRegistrationRefreshFailed(false);
+    } catch {
+      // Keep the action visible so another retry remains possible.
+    } finally {
+      setRetryingSmsRegistrationRefresh(false);
     }
   };
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -515,6 +535,14 @@ export default function AdminIntegrations() {
                   </span>
                 </div>
                 <p className={`mt-1.5 text-xs ${textClass}`}>{panel.text}</p>
+                {smsRegistrationRefreshFailed && <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="sms-registration-refresh-error">
+                  <p className="text-xs font-semibold text-amber-800"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Status registracije nije osvežen.</p>
+                  <p className="mt-1 text-xs text-amber-800">Prikazan je poslednji poznati status. Pokušajte ponovo da učitate najnoviji Infobip status.</p>
+                  <Button variant="outline" size="sm" className="mt-2 border-amber-300 text-amber-800 hover:bg-amber-100" data-testid="retry-sms-registration-refresh" disabled={retryingSmsRegistrationRefresh} onClick={retrySmsRegistrationRefresh}>
+                    {retryingSmsRegistrationRefresh ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                    {retryingSmsRegistrationRefresh ? "Osvežavam…" : "Pokušaj ponovo"}
+                  </Button>
+                </div>}
               </div>;
             })()}
             <p className="mt-1.5 text-xs text-muted-foreground">Kopiranje ubacuje sačuvanu tajnu umesto {"<tajna>"} — nalepite kopirani URL direktno kod provajdera, bez ručnog sklapanja.</p>
