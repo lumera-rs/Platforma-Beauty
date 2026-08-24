@@ -17,6 +17,7 @@
  *      clock so the cutoffs are known to the millisecond)
  *   2. Rows with no executedAt/sentAt fall back to createdAt for window
  *      membership (coalesce), on both the run and delivery aggregates
+ *      including email/SMS opened and provider-failed delivery outcomes
  *   3. Rows older than both windows count in neither (but still appear in
  *      the all-time aggregate), and current + previous + outside = all-time,
  *      so no row is ever double-counted or dropped
@@ -176,6 +177,50 @@ async function main() {
     }
   }
 
+  // Keep provider-outcome fallback coverage isolated from the sent/delivered
+  // boundary rows above and from provider-event integration fixtures. Every
+  // row intentionally omits sentAt: createdAt alone must place the opened or
+  // failed outcome on the correct side of the current-window cutoff.
+  const [outcomeRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id, name: `WB Provider Outcome Rule ${suffix}`,
+    trigger: "inactive_days", triggerConfig: { inactiveDays: 30 },
+    action: "send_email_and_sms", emailSubject: "T", emailBody: "T",
+    smsBody: "T", status: "active",
+  }).returning();
+  assert.ok(outcomeRule);
+  const [outcomeRun] = await db.insert(automationRunsTable).values({
+    eventKey: `wb-provider-outcome-run-${suffix}`, ruleId: outcomeRule.id,
+    salonId: salon.id, salonCustomerId: cust.id, status: "sent",
+    executedAt: new Date(FROZEN_NOW - 1_000), sentAt: new Date(FROZEN_NOW - 1_000),
+  }).returning();
+  assert.ok(outcomeRun);
+
+  const providerOutcomeCases = [
+    { tag: "previous-email-open", channel: "email", outcome: "opened", createdAt: CUTOFF - DAY_MS },
+    { tag: "current-email-open", channel: "email", outcome: "opened", createdAt: CUTOFF },
+    { tag: "previous-email-failed", channel: "email", outcome: "failed", createdAt: CUTOFF - DAY_MS },
+    { tag: "current-email-failed", channel: "email", outcome: "failed", createdAt: CUTOFF },
+    { tag: "previous-sms-open", channel: "sms", outcome: "opened", createdAt: CUTOFF - DAY_MS },
+    { tag: "current-sms-open", channel: "sms", outcome: "opened", createdAt: CUTOFF },
+    { tag: "previous-sms-failed", channel: "sms", outcome: "failed", createdAt: CUTOFF - DAY_MS },
+    { tag: "current-sms-failed", channel: "sms", outcome: "failed", createdAt: CUTOFF },
+  ] as const;
+  for (const c of providerOutcomeCases) {
+    const [delivery] = await db.insert(automationDeliveriesTable).values({
+      runId: outcomeRun.id, salonId: salon.id, eventKey: `wb-provider-outcome-${c.tag}-${suffix}`,
+      channel: c.channel,
+      recipientEmail: c.channel === "email" ? `wb-outcome-${suffix}@bg.test` : null,
+      recipientPhone: c.channel === "sms" ? `+381641234${c.tag.endsWith("open") ? "01" : "02"}` : null,
+      status: "sent",
+      // sentAt is deliberately omitted so stats must use createdAt.
+      createdAt: new Date(c.createdAt),
+      openedAt: c.outcome === "opened" ? new Date(FROZEN_NOW) : null,
+      failedAt: c.outcome === "failed" ? new Date(FROZEN_NOW) : null,
+    }).returning();
+    assert.equal(delivery?.sentAt, null, `${c.tag}: sentAt remains omitted`);
+    assert.equal(delivery?.createdAt?.getTime(), c.createdAt, `${c.tag}: createdAt is the boundary fixture timestamp`);
+  }
+
   // Keep a separate campaign with activity only in the current window. Its
   // absent previous run/delivery aggregate rows must still become an explicit
   // zero-valued comparison block on both stats endpoints.
@@ -270,6 +315,50 @@ async function main() {
       assert.equal(row.previous.emailOpenedCount, PREVIOUS, `${label}: previous opened count`);
     }
     console.log("✓ rows 1ms around and exactly at both edges each count in exactly one window (runs + deliveries, both endpoints)");
+
+    // Provider outcomes use the delivery window, not the webhook timestamp:
+    // with sentAt missing, each current row is at the cutoff and each
+    // previous row is on the preceding calendar day. Both endpoints must classify the shared
+    // email outcome totals identically; the per-rule endpoint also exposes the
+    // combined email+SMS opened total.
+    const assertProviderOutcomeCounts = async (
+      label: string,
+      row: any,
+      expectedOpened: number,
+      expectedEmailOpened: number,
+      expectedEmailFailed: number,
+      expectedSmsFailed: number,
+    ) => {
+      assert.equal(row.emailOpenedCount, expectedEmailOpened, `${label}: email opened count`);
+      assert.equal(row.emailFailedCount, expectedEmailFailed, `${label}: email provider-failed count`);
+      assert.equal(row.smsFailedCount, expectedSmsFailed, `${label}: SMS provider-failed count`);
+      if (label === "per-rule") {
+        assert.equal(row.openedCount, expectedOpened, `${label}: combined opened count`);
+      }
+    };
+
+    const currentOutcomeRows = [
+      ["overview", await overviewRow("?period=30d&compare=previous", outcomeRule.id)],
+      ["per-rule", await perRule("?period=30d&compare=previous", outcomeRule.id)],
+    ] as const;
+    for (const [label, row] of currentOutcomeRows) {
+      await assertProviderOutcomeCounts(label, row, 2, 1, 1, 1);
+      assert.ok(row.previous, `${label}: provider outcome previous block present`);
+      assert.equal(row.previous.emailOpenedCount, 1,
+        `${label}: createdAt on the preceding day is in the previous opened total`);
+    }
+
+    // The compact comparison block does not expose provider-failed totals, so
+    // use a bounded custom date window for the preceding calendar day and
+    // exercise every previous-side outcome as the current aggregate too.
+    const previousOutcomeRows = [
+      ["overview", await overviewRow("?from=2026-03-07&to=2026-03-07", outcomeRule.id)],
+      ["per-rule", await perRule("?from=2026-03-07&to=2026-03-07", outcomeRule.id)],
+    ] as const;
+    for (const [label, row] of previousOutcomeRows) {
+      await assertProviderOutcomeCounts(label, row, 2, 1, 1, 1);
+    }
+    console.log("✓ email/SMS opened and provider-failed outcomes fall back to createdAt on both sides of the cutoff");
 
     // ── 3. Conservation: current + previous + outside = all-time ───────────
     const allTime = await overviewRow("?period=all");
