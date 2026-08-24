@@ -5,6 +5,7 @@ import test from "node:test";
 import type { AddressInfo } from "node:net";
 import app from "../app";
 import { observeDatabaseQueries, pool, type DatabaseQueryObservation } from "@workspace/db";
+import { createSession, sessionCookieName } from "../lib/auth";
 import { selectPopularPublicCourses } from "../lib/education-public-course-order";
 
 async function countedRequest(url: string, init?: RequestInit) {
@@ -46,6 +47,7 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
   const { port } = server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}/api`;
   const fixtureMarker = `retail-query-budget-${randomUUID()}`;
+  let customerId: string | undefined;
 
   try {
     const login = await fetch(`${baseUrl}/auth/login`, {
@@ -75,8 +77,8 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       `admin order query count grew with page size (${smallOrders.queries.length} -> ${largeOrders.queries.length})`,
     );
 
-    const productResult = await pool.query<{ id: string }>(
-      "SELECT id FROM products ORDER BY id LIMIT 1",
+    const productResult = await pool.query<{ id: string; catalog_reference: string }>(
+      "SELECT id, catalog_reference FROM products ORDER BY id LIMIT 1",
     );
     assert.ok(productResult.rows[0], "retail query budget fixture requires a product");
     await pool.query(
@@ -128,6 +130,85 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       `retail order search used ${retailOrders.queries.length} SQL queries for 100 orders`,
     );
 
+    const customerResult = await pool.query<{ id: string }>(
+      `INSERT INTO users (first_name, last_name, email, password_hash, role)
+       VALUES ('Query budget', 'Customer', $1, 'query-budget-fixture-password', 'CUSTOMER')
+       RETURNING id`,
+      [`${fixtureMarker}-customer@example.test`],
+    );
+    customerId = customerResult.rows[0]?.id;
+    assert.ok(customerId, "retail query budget fixture customer must be created");
+    const customerCookie = `${sessionCookieName}=${await createSession(customerId)}`;
+
+    await pool.query(
+      `WITH fixture_carts AS (
+         INSERT INTO retail_carts (token_hash)
+         SELECT $1 || '-customer-cart-' || series_number
+         FROM generate_series(1, 100) AS series(series_number)
+         RETURNING id, token_hash
+       ),
+       fixture_orders AS (
+         INSERT INTO retail_orders (
+           order_number, cart_id, user_id, tracking_token_hash, idempotency_key,
+           status, payment_method, payment_status, delivery_method,
+           subtotal, shipping_cost, total,
+           shipping_name, shipping_address, shipping_city, shipping_postal_code,
+           shipping_phone, shipping_email, shipping_note
+         )
+         SELECT $1 || '-customer-order-' || series_number, carts.id, $3::uuid,
+                $1 || '-customer-tracking-' || series_number, $1 || '-customer-idempotency-' || series_number,
+                'pending', 'BANK_TRANSFER', 'unpaid', 'courier',
+                100, 0, 100,
+                'Saved Customer Snapshot', 'Customer ulica 1', 'Novi Sad', '21000',
+                '+381601234567', $1 || '-customer-' || series_number || '@example.test', NULL
+         FROM generate_series(1, 100) AS series(series_number)
+         INNER JOIN fixture_carts AS carts
+           ON carts.token_hash = $1 || '-customer-cart-' || series_number
+         RETURNING id, order_number
+       )
+       INSERT INTO retail_order_items (
+         order_id, product_id, product_name, product_image_url,
+         product_catalog_reference, variant_value, variant_label, unit_price, quantity
+       )
+       SELECT orders.id, $2::uuid, 'Saved Customer Snapshot', '/customer-query-budget.jpg',
+              CASE WHEN series_number % 2 = 0 THEN $1 || '-snapshot-' || series_number ELSE NULL END,
+              NULL, NULL, 100, 1
+       FROM fixture_orders AS orders
+       CROSS JOIN LATERAL (
+         SELECT substring(orders.order_number from '[0-9]+$')::integer AS series_number
+       ) AS series`,
+      [fixtureMarker, productResult.rows[0].id, customerId],
+    );
+
+    const customerOrders = await countedRequest(`${baseUrl}/customer/retail-orders`, {
+      headers: { cookie: customerCookie },
+    });
+    assert.equal(customerOrders.response.status, 200);
+    const customerOrderResults = JSON.parse(customerOrders.body) as Array<{
+      orderNumber: string;
+      items: Array<{ sku: string; name: string; imageUrl: string }>;
+    }>;
+    assert.equal(customerOrderResults.length, 100, "customer fixture must return all 100 saved orders");
+    assert.ok(
+      customerOrderResults.every((order) =>
+        order.items.length === 1
+        && order.items[0]?.name === "Saved Customer Snapshot"
+        && order.items[0]?.imageUrl === "/customer-query-budget.jpg"),
+      "customer order history must preserve item snapshots",
+    );
+    const savedReferenceOrder = customerOrderResults.find(
+      (order) => order.orderNumber === `${fixtureMarker}-customer-order-100`,
+    );
+    const fallbackReferenceOrder = customerOrderResults.find(
+      (order) => order.orderNumber === `${fixtureMarker}-customer-order-99`,
+    );
+    assert.equal(savedReferenceOrder?.items[0]?.sku, `${fixtureMarker}-snapshot-100`);
+    assert.equal(fallbackReferenceOrder?.items[0]?.sku, productResult.rows[0].catalog_reference);
+    assert.ok(
+      customerOrders.queries.length <= 6,
+      `customer order history used ${customerOrders.queries.length} SQL queries for 100 orders`,
+    );
+
     const smallCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=1`);
     const largeCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=24`);
     assert.equal(smallCourses.response.status, 200);
@@ -153,8 +234,15 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       "first-available sorting must retain its canonical availability expression",
     );
   } finally {
-    await pool.query("DELETE FROM retail_orders WHERE order_number LIKE $1", [`${fixtureMarker}-order-%`]);
-    await pool.query("DELETE FROM retail_carts WHERE token_hash LIKE $1", [`${fixtureMarker}-cart-%`]);
+    await pool.query(
+      "DELETE FROM retail_orders WHERE order_number LIKE $1 OR order_number LIKE $2",
+      [`${fixtureMarker}-order-%`, `${fixtureMarker}-customer-order-%`],
+    );
+    await pool.query(
+      "DELETE FROM retail_carts WHERE token_hash LIKE $1 OR token_hash LIKE $2",
+      [`${fixtureMarker}-cart-%`, `${fixtureMarker}-customer-cart-%`],
+    );
+    if (customerId) await pool.query("DELETE FROM users WHERE id = $1", [customerId]);
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     });
