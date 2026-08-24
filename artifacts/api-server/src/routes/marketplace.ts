@@ -6791,8 +6791,23 @@ router.post("/salon/employees/:employeeId/deactivate", async (req, res): Promise
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
   if (!employee.active) { res.status(409).json({ error: "Zaposleni je već deaktiviran." }); return; }
   const preview = await employeeDeactivationPreview(employee);
+  const revokedAvatarIds = [mediaAssetIdFromUrl(employee.avatarUrl)].filter((id): id is string => Boolean(id));
+  if (revokedAvatarIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
+      return;
+    }
+  }
   await db.transaction(async (tx) => {
     await tx.update(employeesTable).set({ active: false }).where(eq(employeesTable.id, employee.id));
+    await releaseMediaReferenceClaims({
+      urls: [employee.avatarUrl],
+      resourceId: employee.id,
+      visibility: "private",
+    }, tx);
     if (employee.userId) {
       await tx.update(usersTable).set({ active: false, updatedAt: new Date() }).where(and(
         eq(usersTable.id, employee.userId),
@@ -6850,6 +6865,7 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   const employee = await employeeInSalon(req.params.employeeId, access.salon.id);
   if (!employee) { res.status(404).json({ error: "Zaposleni nije pronađen." }); return; }
   const nextAvatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : employee.avatarUrl;
+  const nextActive = typeof body.active === "boolean" ? body.active : employee.active;
   if (nextAvatarUrl && !await canClaimMediaReference({
     userId: access.user.id,
     url: nextAvatarUrl,
@@ -6860,6 +6876,19 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
     res.status(400).json({ error: "Fotografija zaposlenog nije otpremljena sa ovog naloga." }); return;
   }
   if (!employee.active) { res.status(409).json({ error: "Deaktivirani zaposleni ne može dobiti pristupni nalog." }); return; }
+  const revokedAvatarIds = [
+    ...(nextAvatarUrl !== employee.avatarUrl ? [mediaAssetIdFromUrl(employee.avatarUrl)] : []),
+    ...(!nextActive ? [mediaAssetIdFromUrl(employee.avatarUrl)] : []),
+  ].filter((id): id is string => Boolean(id));
+  if (revokedAvatarIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije zaposlenog." });
+      return;
+    }
+  }
   const serviceIds = Array.isArray(body.serviceIds) ? body.serviceIds.filter((item): item is string => typeof item === "string") : null;
   if (serviceIds) {
     const services = serviceIds.length ? await db.select().from(servicesTable).where(and(eq(servicesTable.salonId, access.salon.id), inArray(servicesTable.id, serviceIds))) : [];
@@ -6868,7 +6897,11 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
   try {
     await db.transaction(async (tx) => {
       if (nextAvatarUrl && mediaAssetIdFromUrl(nextAvatarUrl) && !await claimMediaReference({
-        userId: access.user.id, url: nextAvatarUrl, scope: "employee-avatar", resourceId: employee.id,
+        userId: access.user.id,
+        url: nextAvatarUrl,
+        scope: "employee-avatar",
+        resourceId: employee.id,
+        visibility: nextActive ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -6883,8 +6916,15 @@ router.patch("/salon/employees/:employeeId", async (req, res): Promise<void> => 
         avatarUrl: nextAvatarUrl,
         email: typeof body.email === "string" && body.email.trim() ? body.email.trim().toLowerCase() : employee.email,
         specialties: Array.isArray(body.specialties) ? body.specialties.filter((item): item is string => typeof item === "string") : employee.specialties,
-        active: typeof body.active === "boolean" ? body.active : employee.active,
+        active: nextActive,
       }).where(eq(employeesTable.id, employee.id));
+      if (nextAvatarUrl !== employee.avatarUrl || !nextActive) {
+        await releaseMediaReferenceClaims({
+          urls: [employee.avatarUrl],
+          resourceId: employee.id,
+          visibility: "private",
+        }, tx);
+      }
     });
   } catch (error) {
     if (!(error instanceof MediaClaimConflictError)) throw error;
@@ -7159,6 +7199,18 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
     const [taken] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1);
     if (taken && taken.id !== access.user.id) { res.status(409).json({ error: "Broj telefona je već povezan sa drugim nalogom." }); return; }
   }
+  const revokedAvatarIds = avatarUrl !== access.employee.avatarUrl
+    ? [mediaAssetIdFromUrl(access.employee.avatarUrl)].filter((id): id is string => Boolean(id))
+    : [];
+  if (revokedAvatarIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedAvatarIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije profila." });
+      return;
+    }
+  }
   try {
     await db.transaction(async (tx) => {
       if (avatarUrl && mediaAssetIdFromUrl(avatarUrl) && !await claimMediaReference({
@@ -7170,6 +7222,13 @@ router.put("/employee/profile", async (req, res): Promise<void> => {
         throw new MediaClaimConflictError();
       }
       await tx.update(employeesTable).set({ bio, avatarUrl }).where(eq(employeesTable.id, access.employee.id));
+      if (avatarUrl !== access.employee.avatarUrl) {
+        await releaseMediaReferenceClaims({
+          urls: [access.employee.avatarUrl],
+          resourceId: access.employee.id,
+          visibility: "private",
+        }, tx);
+      }
       await tx.update(usersTable).set({ phone: phone || null, phoneNormalized, updatedAt: new Date() }).where(eq(usersTable.id, access.user.id));
     });
   } catch (error) {
@@ -13444,18 +13503,42 @@ router.patch("/admin/service-categories/:categoryId", async (req, res): Promise<
   })) {
     res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
   }
+  const revokedCategoryAssetIds = imageUrl !== existingCategory.fallbackImageUrl
+    ? [mediaAssetIdFromUrl(existingCategory.fallbackImageUrl ?? "")].filter((id): id is string => Boolean(id))
+    : [];
+  if (revokedCategoryAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedCategoryAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije kategorije." });
+      return;
+    }
+  }
   let category: typeof serviceCategoriesTable.$inferSelect | undefined;
   try {
     [category] = await db.transaction(async (tx) => {
       if (imageUrl && mediaAssetIdFromUrl(imageUrl) && !await claimMediaReference({
-        userId: user.id, url: imageUrl, scope: "service-category", resourceId: params.data.categoryId,
+        userId: user.id,
+        url: imageUrl,
+        scope: "service-category",
+        resourceId: params.data.categoryId,
+        visibility: existingCategory.active ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
-      return tx.update(serviceCategoriesTable)
+      const rows = await tx.update(serviceCategoriesTable)
         .set({ fallbackImageUrl: imageUrl })
         .where(eq(serviceCategoriesTable.id, params.data.categoryId))
         .returning();
+      if (revokedCategoryAssetIds.length) {
+        await releaseMediaReferenceClaims({
+          urls: [existingCategory.fallbackImageUrl ?? ""],
+          resourceId: existingCategory.id,
+          visibility: "private",
+        }, tx);
+      }
+      return rows;
     });
   } catch (error) {
     if (!(error instanceof MediaClaimConflictError)) throw error;
@@ -13658,7 +13741,11 @@ router.post("/admin/products", async (req, res): Promise<void> => {
       }).returning();
       for (const url of imageReferences) {
         if (!await claimMediaReference({
-          userId: user.id, url, scope: "product", resourceId: rows[0]!.id,
+          userId: user.id,
+          url,
+          scope: "product",
+          resourceId: rows[0]!.id,
+          visibility: rows[0]!.active ? "public" : "private",
         }, tx)) {
           throw new MediaClaimConflictError();
         }
@@ -13682,7 +13769,57 @@ router.post("/admin/products/bulk", async (req, res): Promise<void> => {
   if (!products.length) { res.status(404).json({ error: "Nijedan proizvod nije pronađen." }); return; }
   let updated = 0;
   if (action === "activate" || action === "deactivate") {
-    const result = await db.update(productsTable).set({ active: action === "activate" }).where(inArray(productsTable.id, productIds)).returning({ id: productsTable.id });
+    const revokedProductAssetIds = action === "deactivate"
+      ? products.flatMap((product) => [product.imageUrl, ...product.images])
+        .map(mediaAssetIdFromUrl)
+        .filter((id): id is string => Boolean(id))
+      : [];
+    if (revokedProductAssetIds.length) {
+      try {
+        await requireMediaCachePurgeForVisibilityRevocation();
+        await purgeMediaCacheForVisibilityRevocation(revokedProductAssetIds);
+      } catch (error) {
+        res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografija proizvoda." });
+        return;
+      }
+    }
+    let result: { id: string }[];
+    try {
+      result = await db.transaction(async (tx) => {
+        if (action === "activate") {
+          for (const product of products) {
+            for (const url of [product.imageUrl, ...product.images]) {
+              if (mediaAssetIdFromUrl(url) && !await claimMediaReference({
+                userId: user.id,
+                url,
+                scope: "product",
+                resourceId: product.id,
+                visibility: "public",
+              }, tx)) {
+                throw new MediaClaimConflictError();
+              }
+            }
+          }
+        }
+        const rows = await tx.update(productsTable).set({ active: action === "activate" }).where(inArray(productsTable.id, productIds))
+          .returning({ id: productsTable.id });
+      for (const product of products) {
+        const urls = [product.imageUrl, ...product.images];
+        if (action === "deactivate") {
+          await releaseMediaReferenceClaims({
+            urls,
+            resourceId: product.id,
+            visibility: "private",
+          }, tx);
+        }
+      }
+      return rows;
+      });
+    } catch (error) {
+      if (!(error instanceof MediaClaimConflictError)) throw error;
+      res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
+      return;
+    }
     updated = result.length;
   } else if (action === "set-new" || action === "unset-new") {
     const result = await db.update(productsTable).set({ isNew: action === "set-new" }).where(inArray(productsTable.id, productIds)).returning({ id: productsTable.id });
@@ -13747,6 +13884,7 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   if (variantError) { res.status(400).json({ error: variantError }); return; }
   const nextImageUrl = body.imageUrl ?? existing.imageUrl;
   const nextImages = body.images ?? existing.images;
+  const nextActive = body.active ?? existing.active;
   const imageReferences = [...new Set([nextImageUrl, ...nextImages])];
   const imageOwnership = await Promise.all(imageReferences.map((url) => canClaimMediaReference({
     userId: user.id,
@@ -13757,6 +13895,22 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   })));
   if (imageOwnership.some((owned) => !owned)) {
     res.status(400).json({ error: "Proizvod sadrži fotografiju koja nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
+  const existingImageReferences = [...new Set([existing.imageUrl, ...existing.images])];
+  const revokedProductAssetIds = [
+    ...existingImageReferences
+      .filter((url) => !imageReferences.includes(url))
+      .map(mediaAssetIdFromUrl),
+    ...(!nextActive ? existingImageReferences.map(mediaAssetIdFromUrl) : []),
+  ].filter((id): id is string => Boolean(id));
+  if (revokedProductAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedProductAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografija proizvoda." });
+      return;
+    }
   }
   let assignment: { categoryId: string; categoryName: string; subcategoryName: string | null } | null = null;
   if (body.categoryId !== undefined) {
@@ -13770,12 +13924,16 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     [product] = await db.transaction(async (tx) => {
       for (const url of managedImageReferences) {
         if (!await claimMediaReference({
-          userId: user.id, url, scope: "product", resourceId: existing.id,
+          userId: user.id,
+          url,
+          scope: "product",
+          resourceId: existing.id,
+          visibility: nextActive ? "public" : "private",
         }, tx)) {
           throw new MediaClaimConflictError();
         }
       }
-      return tx.update(productsTable).set({
+      const rows = await tx.update(productsTable).set({
         name: body.name ?? existing.name,
         categoryId: assignment?.categoryId ?? existing.categoryId,
         categoryName: assignment?.categoryName ?? existing.categoryName,
@@ -13800,8 +13958,16 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         isBestseller: body.isBestseller ?? existing.isBestseller,
         variantType: body.variantType !== undefined ? body.variantType?.trim() || null : existing.variantType,
         variants: nextVariants,
-        active: body.active ?? existing.active,
+        active: nextActive,
       }).where(eq(productsTable.id, productId)).returning();
+      if (revokedProductAssetIds.length) {
+        await releaseMediaReferenceClaims({
+          urls: existingImageReferences.filter((url) => revokedProductAssetIds.includes(mediaAssetIdFromUrl(url) ?? "")),
+          resourceId: existing.id,
+          visibility: "private",
+        }, tx);
+      }
+      return rows;
     });
   } catch (error) {
     if (!(error instanceof MediaClaimConflictError)) throw error;
@@ -13818,13 +13984,40 @@ router.delete("/admin/products/:productId", async (req, res): Promise<void> => {
   const { productId } = parsedParams.data;
   const [existing] = await db.select().from(productsTable).where(eq(productsTable.id, productId)).limit(1);
   if (!existing) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
+  const revokedProductAssetIds = [...new Set([existing.imageUrl, ...existing.images])]
+    .map(mediaAssetIdFromUrl)
+    .filter((id): id is string => Boolean(id));
+  if (revokedProductAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedProductAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografija proizvoda." });
+      return;
+    }
+  }
   const [inOrders] = await db.select({ count: count() }).from(orderItemsTable).where(eq(orderItemsTable.productId, productId));
   if ((inOrders?.count ?? 0) > 0) {
-    const [deactivated] = await db.update(productsTable).set({ active: false }).where(eq(productsTable.id, productId)).returning();
+    const [deactivated] = await db.transaction(async (tx) => {
+      const rows = await tx.update(productsTable).set({ active: false }).where(eq(productsTable.id, productId)).returning();
+      await releaseMediaReferenceClaims({
+        urls: [existing.imageUrl, ...existing.images],
+        resourceId: existing.id,
+        visibility: "private",
+      }, tx);
+      return rows;
+    });
     res.json(adminProductDto(deactivated!));
     return;
   }
-  await db.delete(productsTable).where(eq(productsTable.id, productId));
+  await db.transaction(async (tx) => {
+    await releaseMediaReferenceClaims({
+      urls: [existing.imageUrl, ...existing.images],
+      resourceId: existing.id,
+      visibility: "private",
+    }, tx);
+    await tx.delete(productsTable).where(eq(productsTable.id, productId));
+  });
   res.json(adminProductDto({ ...existing, active: false }));
 });
 
@@ -13894,7 +14087,11 @@ router.post("/admin/product-categories", async (req, res): Promise<void> => {
         active: body.active ?? true,
       }).returning();
       if (body.imageUrl && !await claimMediaReference({
-        userId: user.id, url: body.imageUrl, scope: "product-category", resourceId: rows[0]!.id,
+        userId: user.id,
+        url: body.imageUrl,
+        scope: "product-category",
+        resourceId: rows[0]!.id,
+        visibility: rows[0]!.active ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -13921,6 +14118,7 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   const body = parsed.data;
   if (!Object.keys(body).length) { res.status(400).json({ error: "Pošaljite najmanje jedno polje za izmenu." }); return; }
   const nextCategoryImageUrl = body.imageUrl !== undefined ? body.imageUrl : existing.imageUrl;
+  const nextActive = body.active ?? existing.active;
   if (nextCategoryImageUrl && !await canClaimMediaReference({
     userId: user.id,
     url: nextCategoryImageUrl,
@@ -13929,6 +14127,19 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
     existingUrls: [existing.imageUrl],
   })) {
     res.status(400).json({ error: "Fotografija kategorije nije otpremljena sa ovog administratorskog naloga." }); return;
+  }
+  const revokedCategoryAssetIds = [
+    ...(nextCategoryImageUrl !== existing.imageUrl ? [mediaAssetIdFromUrl(existing.imageUrl ?? "")] : []),
+    ...(!nextActive ? [mediaAssetIdFromUrl(existing.imageUrl ?? "")] : []),
+  ].filter((id): id is string => Boolean(id));
+  if (revokedCategoryAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedCategoryAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije kategorije." });
+      return;
+    }
   }
   if (body.parentId !== undefined && body.parentId !== existing.parentId) {
     const [children] = await db.select({ count: count() }).from(productCategoriesTable).where(eq(productCategoriesTable.parentId, categoryId));
@@ -13949,7 +14160,11 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
   try {
     [cat] = await db.transaction(async (tx) => {
       if (nextCategoryImageUrl && mediaAssetIdFromUrl(nextCategoryImageUrl) && !await claimMediaReference({
-        userId: user.id, url: nextCategoryImageUrl, scope: "product-category", resourceId: existing.id,
+        userId: user.id,
+        url: nextCategoryImageUrl,
+        scope: "product-category",
+        resourceId: existing.id,
+        visibility: nextActive ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -13960,8 +14175,15 @@ router.patch("/admin/product-categories/:categoryId", async (req, res): Promise<
         sortOrder: body.sortOrder ?? existing.sortOrder,
         icon: body.icon !== undefined ? body.icon : existing.icon,
         imageUrl: nextCategoryImageUrl,
-        active: body.active ?? existing.active,
+        active: nextActive,
       }).where(eq(productCategoriesTable.id, categoryId)).returning();
+      if (revokedCategoryAssetIds.length) {
+        await releaseMediaReferenceClaims({
+          urls: [existing.imageUrl ?? ""],
+          resourceId: existing.id,
+          visibility: "private",
+        }, tx);
+      }
 
       if (existing.parentId || newParentId) {
         const parent = newParentId
@@ -14004,7 +14226,24 @@ router.delete("/admin/product-categories/:categoryId", async (req, res): Promise
     eq(productsTable.subcategoryName, existing.name),
   ));
   if ((products?.count ?? 0) > 0) { res.status(409).json({ error: "Kategorija sadrži proizvode. Prvo premestite proizvode u drugu kategoriju." }); return; }
-  await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+  const revokedCategoryAssetIds = [mediaAssetIdFromUrl(existing.imageUrl ?? "")].filter((id): id is string => Boolean(id));
+  if (revokedCategoryAssetIds.length) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+      await purgeMediaCacheForVisibilityRevocation(revokedCategoryAssetIds);
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : "Nije moguće bezbedno opozvati keš fotografije kategorije." });
+      return;
+    }
+  }
+  await db.transaction(async (tx) => {
+    await releaseMediaReferenceClaims({
+      urls: [existing.imageUrl ?? ""],
+      resourceId: existing.id,
+      visibility: "private",
+    }, tx);
+    await tx.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
+  });
   void publishCatalogInvalidation(["product-categories"]);
   res.sendStatus(204);
 });

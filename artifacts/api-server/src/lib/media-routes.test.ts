@@ -1062,6 +1062,213 @@ async function run() {
       "The same asset should become cleanup-eligible after its resource reference is removed.",
     );
 
+    const employeeAvatar = await uploadAsset("employee-avatar", session, "employee-avatar-revocation.jpg");
+    const cacheEmployeeName = `Media cache employee ${randomUUID()}`;
+    const employeeCreate = await jsonRequest<{ id: string }>(
+      activeServer.baseUrl,
+      "/salon/employees",
+      session,
+      "POST",
+      { name: cacheEmployeeName, role: "Stilista", avatarUrl: employeeAvatar.imageUrl },
+    );
+    assert.equal(employeeCreate.status, 201, "The cache regression employee should be created with a managed avatar.");
+    const employeeAvatarUrl = `${activeServer.baseUrl}${employeeAvatar.imageUrl}&size=thumbnail`;
+    const publicEmployeeAvatar = await fetch(employeeAvatarUrl);
+    assert.equal(publicEmployeeAvatar.status, 200);
+    assert.equal(
+      publicEmployeeAvatar.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Employee avatars must revalidate because deactivation can revoke their public access.",
+    );
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(employeeAvatarUrl),
+      { status: 200, fromCache: false },
+      "The legacy employee-avatar cache entry must be populated before deactivation.",
+    );
+    const employeeDeactivation = await jsonRequest<{ deactivated: boolean }>(
+      activeServer.baseUrl,
+      `/salon/employees/${employeeCreate.body.id}/deactivate`,
+      session,
+      "POST",
+    );
+    assert.equal(employeeDeactivation.status, 200);
+    assert.equal(employeeDeactivation.body.deactivated, true);
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(employeeAvatarUrl),
+      { status: 403, fromCache: false },
+      "Employee deactivation must purge the cached avatar before it can bypass the revoked access.",
+    );
+    const [revokedEmployeeAvatar] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, employeeAvatar.id)).limit(1);
+    assert.deepEqual(
+      revokedEmployeeAvatar,
+      { resourceId: null, visibility: "private" },
+      "Employee deactivation must unbind and privatize the managed avatar.",
+    );
+    const deniedEmployeeAvatar = await fetch(employeeAvatarUrl);
+    assert.equal(deniedEmployeeAvatar.status, 403);
+    assert.equal(deniedEmployeeAvatar.headers.get("cache-control"), "private, no-store");
+
+    const oldProductAsset = await uploadAsset("product", adminSession, "product-image-revocation.jpg");
+    const cacheProductSku = `MEDIA-CACHE-${randomUUID()}`;
+    const productCreate = await jsonRequest<{ id: string; imageUrl: string }>(
+      activeServer.baseUrl,
+      "/admin/products",
+      adminSession,
+      "POST",
+      {
+        name: "Media cache product",
+        categoryId: productCategory.id,
+        categoryName: "ignored",
+        description: "Managed product image cache regression.",
+        imageUrl: oldProductAsset.imageUrl,
+        images: [],
+        price: 1000,
+        stock: 1,
+        sku: cacheProductSku,
+        unit: "kom",
+        weightGrams: 100,
+      },
+    );
+    assert.equal(productCreate.status, 201, "The cache regression product should be created with a managed image.");
+    const oldProductImageUrl = `${activeServer.baseUrl}${oldProductAsset.imageUrl}&size=thumbnail`;
+    const publicProductImage = await fetch(oldProductImageUrl);
+    assert.equal(publicProductImage.status, 200);
+    assert.equal(
+      publicProductImage.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Product images must revalidate because an administrator can remove them from a product.",
+    );
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(oldProductImageUrl),
+      { status: 200, fromCache: false },
+      "The legacy product-image cache entry must be populated before replacement.",
+    );
+    const replacementProductAsset = await uploadAsset("product", adminSession, "product-image-replacement.jpg");
+    const productReplacement = await jsonRequest<{ imageUrl: string }>(
+      activeServer.baseUrl,
+      `/admin/products/${productCreate.body.id}`,
+      adminSession,
+      "PATCH",
+      { imageUrl: replacementProductAsset.imageUrl, images: [] },
+    );
+    assert.equal(productReplacement.status, 200);
+    assert.equal(productReplacement.body.imageUrl, replacementProductAsset.imageUrl);
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(oldProductImageUrl),
+      { status: 403, fromCache: false },
+      "Replacing a product image must purge the cached original before it can bypass revoked access.",
+    );
+    const [revokedProductImage] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, oldProductAsset.id)).limit(1);
+    assert.deepEqual(
+      revokedProductImage,
+      { resourceId: null, visibility: "private" },
+      "Replacing a product image must unbind and privatize the old managed asset.",
+    );
+    const deniedProductImage = await fetch(oldProductImageUrl);
+    assert.equal(deniedProductImage.status, 403);
+    assert.equal(deniedProductImage.headers.get("cache-control"), "private, no-store");
+    const replacementProductImage = await fetch(`${activeServer.baseUrl}${replacementProductAsset.imageUrl}&size=thumbnail`);
+    assert.equal(replacementProductImage.status, 200);
+    assert.equal(
+      replacementProductImage.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "The replacement product image must keep a revocable cache policy.",
+    );
+    const bulkProductDeactivation = await jsonRequest<{ updated: number }>(
+      activeServer.baseUrl,
+      "/admin/products/bulk",
+      adminSession,
+      "POST",
+      { productIds: [productCreate.body.id], action: "deactivate" },
+    );
+    assert.equal(bulkProductDeactivation.status, 200);
+    assert.equal(bulkProductDeactivation.body.updated, 1);
+    assert.equal(
+      (await fetch(`${activeServer.baseUrl}${replacementProductAsset.imageUrl}&size=thumbnail`)).status,
+      403,
+      "Bulk deactivation must revoke the managed product image.",
+    );
+    const bulkProductReactivation = await jsonRequest<{ updated: number }>(
+      activeServer.baseUrl,
+      "/admin/products/bulk",
+      adminSession,
+      "POST",
+      { productIds: [productCreate.body.id], action: "activate" },
+    );
+    assert.equal(bulkProductReactivation.status, 200);
+    assert.equal(bulkProductReactivation.body.updated, 1);
+    const reactivatedProductImage = await fetch(`${activeServer.baseUrl}${replacementProductAsset.imageUrl}&size=thumbnail`);
+    assert.equal(reactivatedProductImage.status, 200);
+    assert.equal(
+      reactivatedProductImage.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Bulk reactivation must safely reclaim the image with the revocable public cache policy.",
+    );
+    const [reactivatedProductAsset] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, replacementProductAsset.id)).limit(1);
+    assert.deepEqual(
+      reactivatedProductAsset,
+      { resourceId: productCreate.body.id, visibility: "public" },
+      "Bulk reactivation must rebind the managed image to its active product.",
+    );
+
+    const oldProductCategoryAsset = await uploadAsset("product-category", adminSession, "product-category-image-revocation.jpg");
+    const cacheCategoryName = `Media cache category ${randomUUID()}`;
+    const productCategoryCreate = await jsonRequest<{ id: string; imageUrl: string | null }>(
+      activeServer.baseUrl,
+      "/admin/product-categories",
+      adminSession,
+      "POST",
+      { name: cacheCategoryName, imageUrl: oldProductCategoryAsset.imageUrl },
+    );
+    assert.equal(productCategoryCreate.status, 201);
+    assert.equal(productCategoryCreate.body.imageUrl, oldProductCategoryAsset.imageUrl);
+    const oldProductCategoryImageUrl = `${activeServer.baseUrl}${oldProductCategoryAsset.imageUrl}&size=thumbnail`;
+    const publicProductCategoryImage = await fetch(oldProductCategoryImageUrl);
+    assert.equal(publicProductCategoryImage.status, 200);
+    assert.equal(
+      publicProductCategoryImage.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Product-category images must revalidate because an administrator can replace them.",
+    );
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(oldProductCategoryImageUrl),
+      { status: 200, fromCache: false },
+      "The legacy product-category cache entry must be populated before replacement.",
+    );
+    const replacementProductCategoryAsset = await uploadAsset("product-category", adminSession, "product-category-image-replacement.jpg");
+    const productCategoryReplacement = await jsonRequest<{ imageUrl: string | null }>(
+      activeServer.baseUrl,
+      `/admin/product-categories/${productCategoryCreate.body.id}`,
+      adminSession,
+      "PATCH",
+      { imageUrl: replacementProductCategoryAsset.imageUrl },
+    );
+    assert.equal(productCategoryReplacement.status, 200);
+    assert.equal(productCategoryReplacement.body.imageUrl, replacementProductCategoryAsset.imageUrl);
+    assert.deepEqual(
+      await legacyImmutableMediaCache.fetch(oldProductCategoryImageUrl),
+      { status: 403, fromCache: false },
+      "Replacing a product-category image must purge the cached original before it can bypass revoked access.",
+    );
+    const [revokedProductCategoryImage] = await db.select({
+      resourceId: mediaAssetsTable.resourceId,
+      visibility: mediaAssetsTable.visibility,
+    }).from(mediaAssetsTable).where(eq(mediaAssetsTable.id, oldProductCategoryAsset.id)).limit(1);
+    assert.deepEqual(
+      revokedProductCategoryImage,
+      { resourceId: null, visibility: "private" },
+      "Replacing a product-category image must unbind and privatize the old managed asset.",
+    );
+
     const educationFixtureKey = randomUUID();
     const [educationOwner] = await db.insert(usersTable).values({
       firstName: "Media",
@@ -1219,9 +1426,12 @@ async function run() {
       await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.id, privacyProbeAssetId));
     }
     await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-ROLLBACK-%"));
+    await db.delete(productsTable).where(like(productsTable.sku, "MEDIA-CACHE-%"));
     await db.delete(productCategoriesTable).where(like(productCategoriesTable.name, "Media category rollback %"));
+    await db.delete(productCategoriesTable).where(like(productCategoriesTable.name, "Media cache category %"));
     await db.delete(coursesTable).where(like(coursesTable.title, "Media course rollback %"));
     await db.delete(employeesTable).where(like(employeesTable.name, "Media employee rollback %"));
+    await db.delete(employeesTable).where(like(employeesTable.name, "Media cache employee %"));
     if (educationFixtureCourseId) {
       await db.delete(coursesTable).where(eq(coursesTable.id, educationFixtureCourseId));
     }

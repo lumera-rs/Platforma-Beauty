@@ -37,7 +37,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOAD_TTL_SECONDS = 15 * 60;
-const REVALIDATED_SALON_MEDIA_CACHE_CONTROL = "public, max-age=0, s-maxage=0, must-revalidate";
+const REVALIDATED_REVOCABLE_MEDIA_CACHE_CONTROL = "public, max-age=0, s-maxage=0, must-revalidate";
 const CLOUDFLARE_API_TOKEN_ENV = "CLOUDFLARE_API_TOKEN";
 const CLOUDFLARE_ZONE_ID_ENV = "CLOUDFLARE_ZONE_ID";
 export const MEDIA_ROUTE_REGRESSION_CLEANUP_KEY = "media-route-regression";
@@ -206,6 +206,18 @@ type MediaScope =
   | "service-category"
   | "product-category"
   | "treatment-photo";
+
+// These references can be removed from public resources after an image URL has
+// been issued. They must revalidate at the origin instead of letting a stable,
+// content-versioned URL remain in a shared cache for a year.
+const REVOCABLE_PUBLIC_MEDIA_SCOPES = new Set<string>([
+  "salon-profile",
+  "salon-gallery",
+  "employee-avatar",
+  "product",
+  "service-category",
+  "product-category",
+]);
 
 type MediaVariantInsert = typeof mediaVariantsTable.$inferInsert;
 
@@ -475,18 +487,19 @@ export async function releaseMediaReferenceClaims(input: {
   urls: readonly string[];
   resourceId: string;
   visibility?: "public" | "private" | "education";
-}, executor: Pick<typeof db, "update"> = db): Promise<void> {
+}, executor: Pick<typeof db, "update"> = db): Promise<string[]> {
   const assetIds = input.urls
     .map(mediaAssetIdFromUrl)
     .filter((assetId): assetId is string => Boolean(assetId));
-  if (!assetIds.length) return;
-  await executor.update(mediaAssetsTable).set({
+  if (!assetIds.length) return [];
+  const released = await executor.update(mediaAssetsTable).set({
     resourceId: null,
     ...(input.visibility ? { visibility: input.visibility } : {}),
   }).where(and(
     inArray(mediaAssetsTable.id, assetIds),
     eq(mediaAssetsTable.resourceId, input.resourceId),
-  ));
+  )).returning({ id: mediaAssetsTable.id });
+  return released.map((asset) => asset.id);
 }
 
 function extensionFor(contentType: string): string {
@@ -925,7 +938,7 @@ router.get("/media/:assetId", async (req, res): Promise<void> => {
 
   const isPublic = asset.visibility === "public";
   const versionMatches = typeof req.query.v === "string" && req.query.v === asset.contentHash.slice(0, 16);
-  const isRevocableSalonMedia = asset.scope === "salon-profile" || asset.scope === "salon-gallery";
+  const isRevocablePublicMedia = REVOCABLE_PUBLIC_MEDIA_SCOPES.has(asset.scope);
   res.setHeader("Content-Type", variant.contentType);
   res.setHeader("Content-Length", String(variant.byteSize));
   res.setHeader("ETag", variant.etag);
@@ -940,8 +953,8 @@ router.get("/media/:assetId", async (req, res): Promise<void> => {
   res.setHeader(
     "Cache-Control",
     isPublic
-      ? isRevocableSalonMedia
-        ? REVALIDATED_SALON_MEDIA_CACHE_CONTROL
+      ? isRevocablePublicMedia
+        ? REVALIDATED_REVOCABLE_MEDIA_CACHE_CONTROL
         : versionMatches ? "public, max-age=31536000, immutable" : "public, max-age=300, s-maxage=3600"
       : "private, no-store",
   );
