@@ -169,7 +169,7 @@ async function assertVisibleHelpLinksReachSections(
   page: Page,
   startPath: string,
   expectedIds: readonly string[],
-  options: { mobileMenu?: boolean } = {},
+  options: { mobileMenu?: boolean; keyboard?: boolean } = {},
 ): Promise<void> {
   await page.goto(startPath);
   await expect(page.locator("body")).not.toContainText("404");
@@ -196,10 +196,14 @@ async function assertVisibleHelpLinksReachSections(
     const shortcut = shortcuts.nth(index);
     await expect(shortcut).toHaveAttribute("href", `/biznis/vodic#${sectionId}`);
 
-    await Promise.all([
-      page.waitForURL((url) => url.pathname === "/biznis/vodic" && url.hash === `#${sectionId}`),
-      shortcut.click(),
-    ]);
+    const navigation = page.waitForURL((url) => url.pathname === "/biznis/vodic" && url.hash === `#${sectionId}`);
+    if (options.keyboard) {
+      await shortcut.focus();
+      await expect(shortcut).toBeFocused();
+      await Promise.all([navigation, shortcut.press("Enter")]);
+    } else {
+      await Promise.all([navigation, shortcut.click()]);
+    }
 
     const section = page.locator(`article#${sectionId}`);
     await expect(section, `The guide must contain the ${sectionId} destination.`).toHaveCount(1);
@@ -272,7 +276,10 @@ test("owner mobile business-menu help shortcuts open their matching guide sectio
   try {
     await signIn(page, fixture.owner);
     await page.setViewportSize({ width: 390, height: 844 });
-    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_MOBILE_NAV_HELP_IDS, { mobileMenu: true });
+    await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_MOBILE_NAV_HELP_IDS, {
+      mobileMenu: true,
+      keyboard: true,
+    });
     expect(browserErrors, "The owner mobile guide journey must not produce browser errors.").toEqual([]);
   } finally {
     await cleanUpGuideHelpFixture(fixture);
@@ -287,7 +294,10 @@ test("employee mobile business-menu help shortcuts open their matching guide sec
   try {
     await signIn(page, fixture.employee);
     await page.setViewportSize({ width: 390, height: 844 });
-    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_MOBILE_NAV_HELP_IDS, { mobileMenu: true });
+    await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_MOBILE_NAV_HELP_IDS, {
+      mobileMenu: true,
+      keyboard: true,
+    });
     expect(browserErrors, "The employee mobile guide journey must not produce browser errors.").toEqual([]);
   } finally {
     await cleanUpGuideHelpFixture(fixture);
