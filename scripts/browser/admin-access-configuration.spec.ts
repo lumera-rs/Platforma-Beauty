@@ -418,6 +418,25 @@ async function openAdminPage(page: Page, path: string, role: "ADMIN" | "SUPER_AD
   await expect(page.locator("aside").getByRole("heading", { name: "Admin Panel" })).toBeVisible();
 }
 
+function collectBrowserErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText;
+    if (request.resourceType() === "eventsource" && failure === "net::ERR_ABORTED") return;
+    errors.push(`request: ${request.method()} ${request.url()} — ${failure ?? "failed"}`);
+  });
+  page.on("response", (response) => {
+    if (response.request().resourceType() === "document" && response.status() >= 400) {
+      errors.push(`navigation: ${response.status()} ${response.url()}`);
+    }
+  });
+  return errors;
+}
+
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
   await mockAdminApi(page, "ADMIN", false);
   await page.goto("/poslovna-prijava");
@@ -464,6 +483,39 @@ test("an admin can reach every admin section from the mobile menu", async ({ pag
     await page.getByTestId(link.testId).first().click();
     await expect(page).toHaveURL(new RegExp(`${link.href.replaceAll("/", "\\/")}$`));
   }
+});
+
+test("admin mobile navigation traps keyboard focus and restores the toggle on escape", async ({ page }) => {
+  const browserErrors = collectBrowserErrors(page);
+  await openAdminPage(page, "/admin");
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const mobileMenuButton = page.getByTestId("admin-mobile-menu-trigger");
+  await mobileMenuButton.focus();
+  await expect(mobileMenuButton).toBeFocused();
+  await mobileMenuButton.press("Enter");
+
+  const mobileMenu = page.getByTestId("admin-mobile-menu");
+  await expect(mobileMenu).toBeVisible();
+  const focusableMenuControls = mobileMenu.locator(
+    'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  );
+  const focusableMenuControlCount = await focusableMenuControls.count();
+  expect(focusableMenuControlCount, "The open admin mobile menu must contain focusable controls.").toBeGreaterThan(1);
+
+  const firstMenuControl = focusableMenuControls.first();
+  const lastMenuControl = focusableMenuControls.last();
+  await firstMenuControl.focus();
+  await expect(firstMenuControl).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(lastMenuControl, "Shift+Tab from the first admin-menu control must wrap to the last.").toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstMenuControl, "Tab from the last admin-menu control must wrap to the first.").toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(mobileMenu).toHaveCount(0);
+  await expect(mobileMenuButton, "Escape must restore focus to the admin-menu toggle.").toBeFocused();
+  expect(browserErrors, "The admin mobile keyboard journey must not produce browser errors.").toEqual([]);
 });
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {

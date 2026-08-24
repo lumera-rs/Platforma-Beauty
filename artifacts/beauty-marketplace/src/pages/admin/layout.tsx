@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
@@ -29,6 +29,13 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading } = useGetCurrentUser();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+
+  const closeMobileMenu = useCallback(() => {
+    setIsMobileOpen(false);
+    requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     if (!isLoading) {
@@ -41,6 +48,40 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       }
     }
   }, [userResp, isLoading, setLocation]);
+
+  useEffect(() => {
+    if (!isMobileOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMobileMenu();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusableElements = Array.from(
+        mobileMenuRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const focusIsOutsideMenu = !mobileMenuRef.current?.contains(document.activeElement);
+
+      if ((event.shiftKey && (document.activeElement === firstElement || focusIsOutsideMenu))
+        || (!event.shiftKey && document.activeElement === lastElement)) {
+        event.preventDefault();
+        (event.shiftKey ? lastElement : firstElement).focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [closeMobileMenu, isMobileOpen]);
 
   if (isLoading || !userResp?.user) {
     return (
@@ -81,14 +122,22 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         {/* Mobile Header */}
         <div className="md:hidden w-full flex items-center justify-between bg-card p-4 rounded-xl border shadow-sm mb-4">
           <span className="font-serif font-bold text-lg">Admin Panel</span>
-          <Button variant="ghost" size="icon" onClick={() => setIsMobileOpen(!isMobileOpen)} data-testid="admin-mobile-menu-trigger">
+          <Button
+            ref={mobileMenuButtonRef}
+            variant="ghost"
+            size="icon"
+            onClick={() => isMobileOpen ? closeMobileMenu() : setIsMobileOpen(true)}
+            aria-label={isMobileOpen ? "Zatvori meni" : "Otvori meni"}
+            aria-expanded={isMobileOpen}
+            data-testid="admin-mobile-menu-trigger"
+          >
             {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </Button>
         </div>
 
         {/* Mobile Nav */}
         {isMobileOpen && (
-          <div className="md:hidden w-full bg-card p-4 rounded-xl border shadow-sm mb-4">
+          <div ref={mobileMenuRef} className="md:hidden w-full bg-card p-4 rounded-xl border shadow-sm mb-4" data-testid="admin-mobile-menu">
             <SidebarContent />
           </div>
         )}
