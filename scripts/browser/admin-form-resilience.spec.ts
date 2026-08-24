@@ -440,7 +440,7 @@ test("category form rejects empty, whitespace, text, and negative sort order", a
   await expectNoServerErrors();
 });
 
-test("webhook freshness refresh reports failure, preserves unsaved edits, and recovers", async ({ page }) => {
+test("webhook freshness refresh reports failure, recovers after reconnect, and preserves unsaved edits", async ({ page }) => {
   await openAdmin(page, "/admin/integracije");
   await expect(page.getByRole("heading", { name: "E-mail · Brevo" })).toBeVisible();
 
@@ -452,7 +452,7 @@ test("webhook freshness refresh reports failure, preserves unsaved edits, and re
   await brevoSecret.fill(draftSecret);
   await brevoToggle.setChecked(!initiallyEnabled);
 
-  let freshnessRefreshFailuresRemaining = 2;
+  let freshnessRefreshFailuresRemaining = 1;
   await page.route("**/api/admin/integrations/webhook-freshness", async (route) => {
     if (freshnessRefreshFailuresRemaining > 0) {
       freshnessRefreshFailuresRemaining -= 1;
@@ -472,28 +472,21 @@ test("webhook freshness refresh reports failure, preserves unsaved edits, and re
   await expect(brevoSecret).toHaveValue(draftSecret);
   expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
 
-  const retryFreshness = page.getByTestId("retry-webhook-freshness");
-  await expect(retryFreshness).toBeEnabled();
-  const failedRetryRequest = page.waitForRequest((request) => {
-    return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
-      && request.method() === "GET";
-  });
-  await retryFreshness.click();
-  await failedRetryRequest;
-  await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeVisible();
-  await expect(retryFreshness).toBeEnabled();
-  await expect(brevoSecret).toHaveValue(draftSecret);
-  expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
-
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
   const freshnessResponse = page.waitForResponse((response) => {
     const request = response.request();
     return new URL(response.url()).pathname === "/api/admin/integrations/webhook-freshness"
       && request.method() === "GET";
   });
-  await retryFreshness.click();
+  const recoveredFreshnessRequest = page.waitForRequest((request) => {
+    return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await recoveredFreshnessRequest;
 
   const response = await freshnessResponse;
-  expect(response.ok(), "the manual freshness retry must succeed").toBe(true);
+  expect(response.ok(), "the reconnect freshness refresh must succeed").toBe(true);
   await expect(brevoSecret).toHaveValue(draftSecret);
   expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
   await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeHidden();

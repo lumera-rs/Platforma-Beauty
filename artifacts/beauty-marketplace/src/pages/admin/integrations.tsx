@@ -343,9 +343,11 @@ export default function AdminIntegrations() {
     };
     const interval = window.setInterval(refreshWhenVisible, WEBHOOK_FRESHNESS_POLL_INTERVAL_MS);
     document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
       freshnessRefreshSequence.current += 1;
       freshnessRefreshController.current?.abort();
     };
