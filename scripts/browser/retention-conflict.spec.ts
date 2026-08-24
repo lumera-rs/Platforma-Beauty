@@ -15,6 +15,8 @@
  *     version and records admin A's values as a new version.
  *  4. Cancelling (cancel-retention-conflict) keeps admin B's newer version
  *     active and replaces admin A's abandoned form values.
+ *  5. If the cancellation refresh fails, the conflict stays open with a
+ *     retry path and the abandoned values remain uncommitted.
  *
  * Cleanup follows the existing suite's version-watermark pattern: the max
  * version is captured before the test and every row above it is deleted
@@ -472,6 +474,102 @@ test("immediately cancelling a conflict waits for newer settings before closing"
       ...BASELINE_THRESHOLDS,
       newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
     });
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("failed conflict dismissal refresh keeps the dialog actionable until retry succeeds", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  let failNextSettingsRead = false;
+  await page.route(`**${settingsPath}`, async (route) => {
+    if (failNextSettingsRead && route.request().method() === "GET") {
+      failNextSettingsRead = false;
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Privremeno nedostupno" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: { ...BASELINE_THRESHOLDS, expectedVersion: before.version },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(BASELINE_THRESHOLDS.newCustomerWindowDays));
+    await windowInput.fill(String(ADMIN_A_WINDOW_DAYS));
+
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...BASELINE_THRESHOLDS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "the concurrent save must succeed").toBe(true);
+
+    const conflictSave = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("save-retention-settings").click();
+    expect((await conflictSave).status(), "the stale save must be rejected with 409").toBe(409);
+
+    const conflictDialog = page.getByTestId("retention-conflict-dialog");
+    await expect(conflictDialog).toBeVisible();
+    await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+
+    // Fail the authoritative read made by dismissal. The conflict and the
+    // pending values must remain visible instead of looking safely discarded.
+    failNextSettingsRead = true;
+    const failedDismissalRead = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("cancel-retention-conflict").click();
+    expect((await failedDismissalRead).status()).toBe(503);
+    await expect(conflictDialog).toBeVisible();
+    await expect(page.getByTestId("retention-conflict-refresh-error")).toContainText("nisu sačuvane");
+    await expect(page.getByTestId("retention-conflict-diff")).toContainText(String(ADMIN_A_WINDOW_DAYS));
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+
+    const activeAfterFailedDismissal = await (await apiB.get(settingsPath)).json();
+    expect(activeAfterFailedDismissal.version).toBe(baselineVersion + 1);
+    expect(activeAfterFailedDismissal.thresholds.newCustomerWindowDays).toBe(ADMIN_B_WINDOW_DAYS);
+
+    // Retrying reads the active settings, then closes and rebases the form.
+    const retriedDismissalRead = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("retry-retention-conflict-dismissal").click();
+    expect((await retriedDismissalRead).status()).toBe(200);
+    await expect(conflictDialog).not.toBeVisible();
     await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
     await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
   } finally {

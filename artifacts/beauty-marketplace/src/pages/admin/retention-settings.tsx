@@ -136,6 +136,7 @@ export default function AdminRetentionSettings() {
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
   const [conflict, setConflict] = useState<VersionConflict | null>(null);
   const [isDiscardingConflict, setIsDiscardingConflict] = useState(false);
+  const [conflictRefreshError, setConflictRefreshError] = useState<string | null>(null);
   const conflictDismissalInFlight = useRef(false);
   const conflictRefreshController = useRef<AbortController | null>(null);
 
@@ -314,6 +315,7 @@ export default function AdminRetentionSettings() {
             changedByName: conflictDetails.changedByName,
             changedAt: conflictDetails.changedAt,
           });
+          setConflictRefreshError(null);
           void refreshAfterConflict().catch((refreshError) => {
             toast.error(extractApiError(refreshError, "Nove vrednosti nisu mogle da se učitaju."));
           });
@@ -400,6 +402,7 @@ export default function AdminRetentionSettings() {
     if (conflictDismissalInFlight.current) return;
     conflictDismissalInFlight.current = true;
     setIsDiscardingConflict(true);
+    setConflictRefreshError(null);
     try {
       conflictRefreshController.current?.abort();
       await queryClient.cancelQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
@@ -411,7 +414,9 @@ export default function AdminRetentionSettings() {
         queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
       });
     } catch (err) {
-      toast.error(extractApiError(err, "Nove vrednosti nisu mogle da se učitaju. Pokušajte ponovo."));
+      const message = extractApiError(err, "Nove vrednosti nisu mogle da se učitaju. Pokušajte ponovo.");
+      setConflictRefreshError(message);
+      toast.error(message);
     } finally {
       conflictDismissalInFlight.current = false;
       setIsDiscardingConflict(false);
@@ -999,6 +1004,30 @@ export default function AdminRetentionSettings() {
                 </div>
               );
             })()}
+            {conflictRefreshError && (
+              <Alert variant="destructive" data-testid="retention-conflict-refresh-error">
+                <TriangleAlert className="h-4 w-4" />
+                <AlertTitle>Nove vrednosti nisu učitane</AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>
+                    {conflictRefreshError} Vaše vrednosti nisu sačuvane i ostaju samo u ovom
+                    poređenju dok ne učitate najnovije aktivne vrednosti.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleCancelConflict()}
+                    disabled={isDiscardingConflict}
+                    data-testid="retry-retention-conflict-dismissal"
+                  >
+                    {isDiscardingConflict && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                    Pokušaj ponovo
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
             <AlertDialogFooter>
               <AlertDialogCancel
                 disabled={isUpdatePending || isDiscardingConflict}
