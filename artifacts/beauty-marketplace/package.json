@@ -7,7 +7,7 @@
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "node seo-server.mjs",
-    "pretypecheck": "pnpm -w exec tsc --build --force lib/api-client-react",
+    "pretypecheck": "pnpm -w exec tsc --build --force lib/api-client-react lib/api-zod",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bundle:report": "node scripts/bundle-report.mjs",
     "bundle:check": "vite build --config vite.config.ts && node scripts/bundle-report.mjs",
