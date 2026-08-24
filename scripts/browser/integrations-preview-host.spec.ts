@@ -38,6 +38,11 @@ async function hashPassword(value: string): Promise<string> {
 }
 
 test.beforeAll(async () => {
+  priorIntegrationRows.push(
+    ...(await db.select().from(integrationSettingsTable)
+      .where(inArray(integrationSettingsTable.integration, ["sms", "brevo"]))),
+  );
+
   const inserted = await db.insert(usersTable).values({
     firstName: "Browser",
     lastName: "Integrations Host",

@@ -155,6 +155,20 @@ async function main() {
   }).returning();
   assert.ok(exclusiveEndRule);
 
+  // Keep overview boundary coverage separate from the per-rule drill-down
+  // fixtures above and from the rolling-period parity fixture below.
+  const [overviewBoundaryRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id,
+    name: `Overview Boundary Rule ${suffix}`,
+    trigger: "inactive_days",
+    triggerConfig: { inactiveDays: 30 },
+    action: "send_email",
+    emailSubject: "Test",
+    emailBody: "Test",
+    status: "active",
+  }).returning();
+  assert.ok(overviewBoundaryRule);
+
   const boundaryQuery = `from=${dateDaysAgo(6)}&to=${dateDaysAgo(1)}`;
   const boundaryCases = [
     {
@@ -196,6 +210,47 @@ async function main() {
     await db.insert(automationRunsTable).values({
       eventKey: `window-boundary-run-${item.tag}-${suffix}`,
       ruleId: item.ruleId,
+      salonId: salon.id,
+      salonCustomerId: customer.id,
+      status: "sent",
+      executedAt: item.runAt,
+      sentAt: item.runAt,
+      attributedAppointmentId: appointment.id,
+    });
+  }
+
+  const overviewBoundaryCases = [
+    {
+      tag: "overview-inclusive-start",
+      runAt: startOfDateDaysAgo(6),
+      appointmentDate: dateDaysAgo(6),
+      startTime: "12:00",
+    },
+    {
+      tag: "overview-exclusive-end",
+      runAt: new Date(startOfDateDaysAgo(1).getTime() + DAY_MS),
+      appointmentDate: dateDaysAgo(0),
+      startTime: "13:00",
+    },
+  ] as const;
+  for (const item of overviewBoundaryCases) {
+    const [appointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id,
+      salonCustomerId: customer.id,
+      serviceId: service.id,
+      date: item.appointmentDate,
+      startTime: item.startTime,
+      endTime: item.startTime === "12:00" ? "13:00" : "14:00",
+      durationMinutes: 60,
+      status: "completed",
+      price: 1000,
+      treatmentLocation: "salon",
+    }).returning();
+    assert.ok(appointment);
+
+    await db.insert(automationRunsTable).values({
+      eventKey: `${item.tag}-${suffix}`,
+      ruleId: overviewBoundaryRule.id,
       salonId: salon.id,
       salonCustomerId: customer.id,
       status: "sent",
@@ -319,6 +374,24 @@ async function main() {
     );
     console.log("✓ custom date boundaries are counted once with half-open window semantics");
 
+    const overviewResponse = await get(`/api/growth/automation-stats?${boundaryQuery}`);
+    assert.equal(overviewResponse.status, 200, "overview custom date range succeeds");
+    const overviewBoundaryRow = overviewResponse.body.find(
+      (row: any) => row.ruleId === overviewBoundaryRule.id,
+    );
+    assert.ok(overviewBoundaryRow, "overview includes the isolated boundary rule");
+    assert.equal(
+      overviewBoundaryRow.attributedAppointments,
+      1,
+      "overview includes the run at the inclusive start and excludes the day-after end",
+    );
+    assert.equal(
+      overviewBoundaryRow.totalRuns,
+      1,
+      "overview applies the half-open custom range to total runs",
+    );
+    console.log("✓ campaign overview honors inclusive start and exclusive end boundaries");
+
     for (const [query, expected] of [
       ["period=7d", 2],
       ["period=30d", 3],
@@ -343,6 +416,7 @@ async function main() {
       inclusiveStartRule.id,
       inclusiveToRule.id,
       exclusiveEndRule.id,
+      overviewBoundaryRule.id,
     ]));
     await db.delete(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id));
     await db.delete(automationRulesTable).where(inArray(automationRulesTable.id, [
@@ -350,6 +424,7 @@ async function main() {
       inclusiveStartRule.id,
       inclusiveToRule.id,
       exclusiveEndRule.id,
+      overviewBoundaryRule.id,
     ]));
     await db.delete(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
     await db.delete(servicesTable).where(eq(servicesTable.salonId, salon.id));
