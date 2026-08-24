@@ -29,6 +29,7 @@ import { eq } from "drizzle-orm";
 import {
   appointmentsTable,
   automationRulesTable,
+  automationDeliveriesTable,
   automationRunsTable,
   db,
   salonCustomersTable,
@@ -150,6 +151,7 @@ async function createFixture(): Promise<Fixture> {
       isOld: index % 2 === 1,
       customerId: randomUUID(),
       appointmentId: randomUUID(),
+      runId: randomUUID(),
     }));
 
     await db.insert(salonCustomersTable).values(entries.map((entry) => ({
@@ -180,6 +182,7 @@ async function createFixture(): Promise<Fixture> {
     await db.insert(automationRunsTable).values(entries.map((entry) => {
       const executedAt = entry.isOld ? OLD_EXECUTED_AT : RECENT_EXECUTED_AT;
       return {
+        id: entry.runId,
         eventKey: `browser-period-filter-${suffix}-${entry.index}`,
         ruleId: rule.id,
         salonId: salon.id,
@@ -190,6 +193,21 @@ async function createFixture(): Promise<Fixture> {
         attributedAppointmentId: entry.appointmentId,
       };
     }));
+
+    // Keep one current-window delivery alongside the attributed appointments.
+    // There are deliberately no deliveries in the preceding comparison window,
+    // so the UI must render a zero-to-positive delivery trend rather than
+    // treating the comparison as unavailable.
+    await db.insert(automationDeliveriesTable).values({
+      runId: entries[0]!.runId,
+      salonId: salon.id,
+      eventKey: `browser-period-filter-delivery-${suffix}`,
+      channel: "email",
+      recipientEmail: `browser-period-filter-cust-0-${suffix}@example.test`,
+      status: "sent",
+      sentAt: RECENT_EXECUTED_AT,
+      deliveredAt: RECENT_EXECUTED_AT,
+    });
 
     return { ownerEmail, ownerPassword, ownerId: owner.id, salonId: salon.id, ruleId: rule.id, ruleName };
   } catch (error) {
@@ -226,6 +244,18 @@ function nextFirstPageResponse(page: Page, ruleId: string, period: string) {
   });
 }
 
+function nextStatsResponse(page: Page, ruleId: string, period: string) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET"
+      && url.pathname.endsWith(`/growth/automations/${ruleId}/stats`)
+      && url.searchParams.get("period") === period
+      && url.searchParams.get("compare") === "previous"
+    );
+  });
+}
+
 test("switching the time period never leaves stale attributed rows in the list", async ({ page }) => {
   const fixture = await createFixture();
 
@@ -244,9 +274,17 @@ test("switching the time period never leaves stale attributed rows in the list",
     const recentRows = rows.filter({ hasText: "Klijent Skorasnji" });
     const oldRows = rows.filter({ hasText: "Klijent Stari" });
     const loadMore = dialog.getByTestId("button-load-more-attributed");
+    const overviewRow = page.getByTestId(`overview-row-${fixture.ruleId}`);
 
     // Page 1 of "Sve vreme": full page, unfiltered counter, both run windows present.
     await expect(rows).toHaveCount(PAGE_SIZE);
+    await expect(dialog.getByTestId("stats-attributed-revenue")).toBeVisible();
+    // "Sve vreme" does not request a comparison window, so no trend marker
+    // should be rendered even though the campaign has current activity.
+    await expect(overviewRow.getByTestId(`trend-email-delivered-${fixture.ruleId}`)).toHaveCount(0);
+    await expect(overviewRow.getByTestId(`trend-appointments-${fixture.ruleId}`)).toHaveCount(0);
+    await expect(dialog.getByTestId("stats-trend-email-delivered")).toHaveCount(0);
+    await expect(dialog.getByTestId("stats-trend-appointments")).toHaveCount(0);
     await expect(loadMore).toContainText(`Učitaj još (${PAGE_SIZE} od ${TOTAL})`);
     expect(await recentRows.count(), "Unfiltered page 1 must contain recent-run rows.").toBeGreaterThan(0);
     expect(await oldRows.count(), "Unfiltered page 1 must contain old-run rows.").toBeGreaterThan(0);
@@ -265,8 +303,38 @@ test("switching the time period never leaves stale attributed rows in the list",
     // changing the period, so the period dependency cannot be masked by a
     // close/reopen reset.
     const thirtyResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+    const thirtyStatsResponse = nextStatsResponse(page, fixture.ruleId, "30d");
+    const thirtyOverviewResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "GET"
+        && url.pathname.endsWith("/growth/automation-stats")
+        && url.searchParams.get("period") === "30d"
+        && url.searchParams.get("compare") === "previous"
+      );
+    });
     await dialog.getByTestId("stats-period-selector").getByTestId("period-30d").click();
     expect((await thirtyResponse).status()).toBe(200);
+    const [thirtyStats, thirtyOverview] = await Promise.all([
+      thirtyStatsResponse.then((response) => response.json()),
+      thirtyOverviewResponse.then((response) => response.json()),
+    ]) as [
+      Record<string, unknown>,
+      Array<Record<string, unknown>>,
+    ];
+    expect(thirtyStats.previous).toMatchObject({
+      attributedAppointments: 0,
+      emailDeliveredCount: 0,
+      emailOpenedCount: 0,
+      smsDeliveredCount: 0,
+    });
+    const thirtyOverviewItem = thirtyOverview.find((item) => item.ruleId === fixture.ruleId);
+    expect(thirtyOverviewItem?.previous).toMatchObject({
+      attributedAppointments: 0,
+      emailDeliveredCount: 0,
+      emailOpenedCount: 0,
+      smsDeliveredCount: 0,
+    });
     await expect(dialog, "The stats dialog must stay open across a period switch.").toBeVisible();
     await expect(page.getByTestId("overview-period-selector").getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => new URL(page.url()).searchParams.get("period")).toBe("30d");
@@ -274,6 +342,13 @@ test("switching the time period never leaves stale attributed rows in the list",
     await expect(recentRows).toHaveCount(PAGE_SIZE);
     await expect(oldRows).toHaveCount(0);
     await expect(loadMore).toContainText(`Učitaj još (${PAGE_SIZE} od ${GROUP_SIZE})`);
+    await expect(overviewRow).toContainText("Poslato: 1");
+    await expect(overviewRow.getByTestId(`trend-email-delivered-${fixture.ruleId}`))
+      .toContainText("novo");
+    await expect(overviewRow.getByTestId(`trend-appointments-${fixture.ruleId}`))
+      .toContainText("novo");
+    await expect(dialog.getByTestId("stats-trend-email-delivered")).toContainText("novo");
+    await expect(dialog.getByTestId("stats-trend-appointments")).toContainText("novo");
 
     // Back to "Sve vreme": the counter restores the unfiltered total and old
     // rows reappear.
