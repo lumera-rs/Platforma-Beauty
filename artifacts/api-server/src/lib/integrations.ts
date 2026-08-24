@@ -97,37 +97,43 @@ export async function saveIntegrationSettings(input: {
   values: Record<string, string>;
   updatedByUserId: string;
 }) {
-  const existingRows = await db.select({
-    settingKey: integrationSettingsTable.settingKey,
-    encryptedValue: integrationSettingsTable.encryptedValue,
-  }).from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
-  const existingValues = new Map(existingRows.map((row) => [row.settingKey, row.encryptedValue]));
+  await db.transaction(async (tx) => {
+    const existingRows = await tx.select({
+      settingKey: integrationSettingsTable.settingKey,
+      encryptedValue: integrationSettingsTable.encryptedValue,
+    }).from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
+    const existingValues = new Map(existingRows.map((row) => [row.settingKey, row.encryptedValue]));
 
-  for (const [settingKey, value] of [...Object.entries(input.values), ["__enabled", "1"]]) {
-    if (!value.trim()) continue;
-    const existingEncryptedValue = existingValues.get(settingKey);
-    if (existingEncryptedValue) {
-      try {
-        if (decrypt(existingEncryptedValue) === value.trim()) continue;
-      } catch {
-        // A corrupt stored value must be replaced rather than treated as a no-op.
+    for (const [settingKey, value] of [...Object.entries(input.values), ["__enabled", "1"]]) {
+      if (!value.trim()) continue;
+      const existingEncryptedValue = existingValues.get(settingKey);
+      if (existingEncryptedValue) {
+        try {
+          if (decrypt(existingEncryptedValue) === value.trim()) continue;
+        } catch {
+          // A corrupt stored value must be replaced rather than treated as a no-op.
+        }
       }
+      const encryptedValue = encrypt(value.trim());
+      await tx.insert(integrationSettingsTable).values({
+        integration: input.integration, settingKey, encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId,
+      }).onConflictDoUpdate({
+        target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
+        set: { encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
+      });
     }
-    const encryptedValue = encrypt(value.trim());
-    await db.insert(integrationSettingsTable).values({
-      integration: input.integration, settingKey, encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId,
-    }).onConflictDoUpdate({
-      target: [integrationSettingsTable.integration, integrationSettingsTable.settingKey],
-      set: { encryptedValue, enabled: input.enabled, updatedByUserId: input.updatedByUserId, updatedAt: new Date() },
-    });
-  }
-  // Apply the integration-level enabled flag to every row WITHOUT touching
-  // updatedAt: per-row updatedAt must reflect when THAT setting's value was
-  // last (re)written — the SMS registration check compares delivery-report
-  // receipts against the webhookSecret save time, so saving an unrelated
-  // field (or toggling enabled) must not make the secret look freshly changed.
-  const rows = await db.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
-  if (rows.length) await db.update(integrationSettingsTable).set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId }).where(eq(integrationSettingsTable.integration, input.integration));
+    // Apply the integration-level enabled flag to every row WITHOUT touching
+    // updatedAt: per-row updatedAt must reflect when THAT setting's value was
+    // last (re)written — the SMS registration check compares delivery-report
+    // receipts against the webhookSecret save time, so saving an unrelated
+    // field (or toggling enabled) must not make the secret look freshly changed.
+    const rows = await tx.select().from(integrationSettingsTable).where(eq(integrationSettingsTable.integration, input.integration));
+    if (rows.length) {
+      await tx.update(integrationSettingsTable)
+        .set({ enabled: input.enabled, updatedByUserId: input.updatedByUserId })
+        .where(eq(integrationSettingsTable.integration, input.integration));
+    }
+  });
 }
 
 async function integrationMarker(integration: IntegrationName, settingKey: WebhookTimestampMarkerKey): Promise<Date | null> {

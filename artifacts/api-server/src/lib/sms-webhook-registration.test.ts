@@ -392,7 +392,32 @@ async function run() {
       console.log("✓ webhookSecret updatedAt moves only when the secret itself changes");
     }
 
-    // ── 9. No response ever leaks a secret ──────────────────────────────────
+    // ── 9. Integration saves roll back every SMS row on failure ─────────────
+    {
+      const beforeRows = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"));
+      await assert.rejects(
+        () => saveIntegrationSettings({
+          integration: "sms",
+          enabled: !Boolean(beforeRows[0]?.enabled),
+          // The first field is written before the second field fails. The
+          // transaction must roll back the value, timestamp, and enabled flag.
+          values: {
+            senderName: `SWR-rollback-${suffix}`,
+            apiKey: undefined as unknown as string,
+          },
+          updatedByUserId: admin.id,
+        }),
+        TypeError,
+      );
+      const afterRows = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "sms"));
+      assert.deepEqual(afterRows, beforeRows,
+        "a failed SMS save must leave every value, timestamp, and enabled state unchanged");
+      console.log("✓ failed SMS integration save rolls back all prior writes");
+    }
+
+    // ── 10. No response ever leaks a secret ─────────────────────────────────
     {
       for (const secret of secretsToScan) {
         for (const body of responseBodies) {

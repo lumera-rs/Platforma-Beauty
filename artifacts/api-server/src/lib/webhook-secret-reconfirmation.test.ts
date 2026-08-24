@@ -40,7 +40,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, integrationSettingsTable, pool, usersTable } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { integrationSettings, markWebhookReconfirmed, webhookVerificationIsStale, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS } from "./integrations";
+import { integrationSettings, markWebhookReconfirmed, saveIntegrationSettings, webhookVerificationIsStale, WEBHOOK_CONFIRMATION_MAX_AGE_DAYS } from "./integrations";
 import { BREVO_WEBHOOK_EVENTS } from "./brevo";
 
 const suffix = randomUUID().slice(0, 8);
@@ -358,6 +358,31 @@ async function run() {
       assert.ok(!("webhookSecretChangedAt" in (cards["sms"] ?? {})), "secret-change marker never leaks through admin cards");
       assert.ok(!("webhookSecretChangedAt" in (cards["brevo"] ?? {})), "secret-change marker never leaks through admin cards");
       console.log("✓ marker rows never leak into integration values");
+    }
+
+    // ── 9. Integration saves roll back every Brevo row on failure ───────────
+    {
+      const beforeRows = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      await assert.rejects(
+        () => saveIntegrationSettings({
+          integration: "brevo",
+          enabled: !Boolean(beforeRows[0]?.enabled),
+          // The first field is written before the second field fails. The
+          // transaction must roll back the value, timestamp, and enabled flag.
+          values: {
+            senderName: `WSR-rollback-${suffix}`,
+            apiKey: undefined as unknown as string,
+          },
+          updatedByUserId: admin.id,
+        }),
+        TypeError,
+      );
+      const afterRows = await db.select().from(integrationSettingsTable)
+        .where(eq(integrationSettingsTable.integration, "brevo"));
+      assert.deepEqual(afterRows, beforeRows,
+        "a failed Brevo save must leave every value, timestamp, and enabled state unchanged");
+      console.log("✓ failed Brevo integration save rolls back all prior writes");
     }
 
     console.log("\n✅ All webhook secret re-confirmation tests passed");
