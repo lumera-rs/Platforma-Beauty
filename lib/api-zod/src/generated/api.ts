@@ -11667,6 +11667,15 @@ export const GetCustomerRetailOrderResponse = zod.object({
 /**
  * @summary List retail orders for administration
  */
+export const adminListRetailOrdersQuerySearchMax = 200;
+
+
+
+export const AdminListRetailOrdersQueryParams = zod.object({
+  "status": zod.enum(['pending', 'confirmed', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
+  "search": zod.coerce.string().min(1).max(adminListRetailOrdersQuerySearchMax).optional().describe('Search order details or the immutable catalog reference saved on an order item.')
+})
+
 export const AdminListRetailOrdersResponseItem = zod.object({
   "id": zod.string(),
   "orderNumber": zod.string(),

@@ -34,17 +34,25 @@ type PrintOrder = {
 type RetailOrder = {
   id: string; orderNumber: string; status: string; paymentMethod: string; paymentStatus: string; total: number; createdAt: string;
   contact: { name: string; email: string; phone: string }; delivery: { address: string; city: string; postalCode: string; note: string | null };
-  items: Array<{ id: string; name: string; quantity: number; unitPrice: number }>;
+  items: Array<{ id: string; name: string; sku: string; quantity: number; unitPrice: number }>;
 };
 
 function AdminRetailOrders() {
   const [orders, setOrders] = useState<RetailOrder[] | null>(null);
+  const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const debouncedSearch = useDebouncedSearch(search);
   const { toast } = useToast();
   const actionGuard = useImmediateActionGuard();
-  const load = () => void fetch(`/api/admin/retail-orders${status === "all" ? "" : `?status=${encodeURIComponent(status)}`}`, { credentials: "include" })
+  const load = () => {
+    const params = new URLSearchParams();
+    if (status !== "all") params.set("status", status);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    const query = params.toString();
+    return void fetch(`/api/admin/retail-orders${query ? `?${query}` : ""}`, { credentials: "include" })
     .then((response) => response.ok ? response.json() : Promise.reject()).then(setOrders).catch(() => setOrders([]));
-  useEffect(load, [status]);
+  };
+  useEffect(load, [status, debouncedSearch]);
   const updateStatus = async (orderId: string, nextStatus: string) => {
     const key = `retail-status:${orderId}`;
     if (!actionGuard.begin(key)) return;
@@ -64,8 +72,8 @@ function AdminRetailOrders() {
     } finally { actionGuard.end(key); }
   };
   return <div className="space-y-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-3xl font-serif font-bold">Retail porudžbine</h1><p className="text-muted-foreground">Kupci, gosti, dostava i javne cene.</p></div><div className="flex gap-2"><Button variant="outline" asChild><Link href="/admin/porudzbine">B2B</Link></Button><Button onClick={() => window.print()} variant="outline"><Printer className="mr-2 h-4 w-4" />Štampaj</Button></div></div>
-    <Card><CardContent className="p-4"><Select value={status} onValueChange={setStatus}><SelectTrigger className="max-w-52"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Svi statusi</SelectItem>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></CardContent></Card>
-    {!orders ? <Loader2 className="animate-spin" /> : orders.length === 0 ? <Card><CardContent className="p-8 text-center text-muted-foreground">Nema retail porudžbina za izabrani filter.</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{order.orderNumber} <Badge className="ml-2">Retail</Badge></p><p className="text-sm text-muted-foreground">{order.contact.name} · {order.contact.email} · {order.contact.phone}</p><p className="mt-1 text-sm">{order.delivery.address}, {order.delivery.postalCode} {order.delivery.city}</p><p className="mt-2 text-sm text-muted-foreground">{order.items.map((item) => `${item.quantity}× ${item.name}`).join(", ")}</p></div><div className="flex min-w-48 flex-col items-end gap-2"><strong>{money(order.total)}</strong><Select value={order.paymentStatus} onValueChange={(next) => void updatePaymentStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-payment:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{paymentStatuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select><Select value={order.status} onValueChange={(next) => void updateStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-status:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></div></div></CardContent></Card>)}</div>}
+     <Card><CardContent className="flex flex-wrap gap-3 p-4"><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Broj, kupac ili referenca proizvoda" className="min-w-64 flex-1" /><Select value={status} onValueChange={setStatus}><SelectTrigger className="max-w-52"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">Svi statusi</SelectItem>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></CardContent></Card>
+     {!orders ? <Loader2 className="animate-spin" /> : orders.length === 0 ? <Card><CardContent className="p-8 text-center text-muted-foreground">Nema retail porudžbina za izabrani filter.</CardContent></Card> : <div className="space-y-3">{orders.map((order) => <Card key={order.id}><CardContent className="p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2 font-semibold">{order.orderNumber}<Badge>Retail</Badge></div><p className="text-sm text-muted-foreground">{order.contact.name} · {order.contact.email} · {order.contact.phone}</p><p className="mt-1 text-sm">{order.delivery.address}, {order.delivery.postalCode} {order.delivery.city}</p><div className="mt-2 space-y-1 text-sm text-muted-foreground">{order.items.map((item) => <p key={item.id}>{item.quantity}× {item.name} · Referenca: <span className="font-medium text-foreground">{item.sku}</span></p>)}</div></div><div className="flex min-w-48 flex-col items-end gap-2"><strong>{money(order.total)}</strong><Select value={order.paymentStatus} onValueChange={(next) => void updatePaymentStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-payment:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{paymentStatuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select><Select value={order.status} onValueChange={(next) => void updateStatus(order.id, next)}><SelectTrigger className="w-40" disabled={actionGuard.isActive(`retail-status:${order.id}`)}><SelectValue /></SelectTrigger><SelectContent>{statuses.map((item) => <SelectItem key={item} value={item}>{statusLabel[item]}</SelectItem>)}</SelectContent></Select></div></div></CardContent></Card>)}</div>}
   </div>;
 }
 

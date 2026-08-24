@@ -170,6 +170,7 @@ import
   AdminGetSalonResponse,
   AdminListOrdersQueryParams,
   AdminListOrdersResponse,
+  AdminListRetailOrdersQueryParams,
   AdminListEmailCampaignsResponse,
   AdminListCourierServicesResponse,
   AdminUpdateOrderStatusBody,
@@ -8431,10 +8432,28 @@ router.get("/customer/retail-orders/:orderId", async (req, res): Promise<void> =
 
 router.get("/admin/retail-orders", async (req, res): Promise<void> => {
   const user = await requireAdmin(req, res); if (!user) return;
-  const status = typeof req.query.status === "string" ? req.query.status : null;
-  const filters = status && ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"].includes(status)
-    ? and(eq(retailOrdersTable.status, status as typeof retailOrdersTable.$inferSelect.status)) : undefined;
-  const orders = await db.select().from(retailOrdersTable).where(filters)
+  const parsed = AdminListRetailOrdersQueryParams.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const filters: Parameters<typeof and>[0][] = [];
+  if (parsed.data.status) filters.push(eq(retailOrdersTable.status, parsed.data.status));
+  if (parsed.data.search) {
+    const term = `%${parsed.data.search.trim()}%`;
+    // Search the immutable order-item snapshot. Never use products.sku here:
+    // that value is editable after an order is created.
+    const matchingItems = await db.select({ orderId: retailOrderItemsTable.orderId })
+      .from(retailOrderItemsTable)
+      .where(ilike(retailOrderItemsTable.productCatalogReference, term));
+    const matchingOrderIds = [...new Set(matchingItems.map((item) => item.orderId))];
+    const searchClauses = [
+      ilike(retailOrdersTable.orderNumber, term),
+      ilike(retailOrdersTable.shippingName, term),
+      ilike(retailOrdersTable.shippingEmail, term),
+      ilike(retailOrdersTable.shippingPhone, term),
+    ];
+    if (matchingOrderIds.length) searchClauses.push(inArray(retailOrdersTable.id, matchingOrderIds));
+    filters.push(or(...searchClauses)!);
+  }
+  const orders = await db.select().from(retailOrdersTable).where(filters.length ? and(...filters) : undefined)
     .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
   res.json(await Promise.all(orders.map(retailOrderWithItems)));
 });

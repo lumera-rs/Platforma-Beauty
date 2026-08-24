@@ -34,6 +34,8 @@ export * from './adminListProductsParams';
 export * from './adminListProductsSortBy';
 export * from './adminListProductsSortDir';
 export * from './adminListProductsStatus';
+export * from './adminListRetailOrdersParams';
+export * from './adminListRetailOrdersStatus';
 export * from './adminListReviewsParams';
 export * from './adminListSalonsParams';
 export * from './adminListServiceTemplatesParams';

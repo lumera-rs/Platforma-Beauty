@@ -31,6 +31,7 @@ import type {
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
   AdminListProductsParams,
+  AdminListRetailOrdersParams,
   AdminListReviewsParams,
   AdminListSalonsParams,
   AdminListServiceTemplatesParams,
@@ -20075,20 +20076,27 @@ export function useGetCustomerRetailOrder<TData = Awaited<ReturnType<typeof getC
 
 
 
-export const getAdminListRetailOrdersUrl = () => {
+export const getAdminListRetailOrdersUrl = (params?: AdminListRetailOrdersParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/retail-orders`
+  return stringifiedParams.length > 0 ? `/api/admin/retail-orders?${stringifiedParams}` : `/api/admin/retail-orders`
 }
 
 /**
  * @summary List retail orders for administration
  */
-export const adminListRetailOrders = async ( options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder[]> => {
+export const adminListRetailOrders = async (params?: AdminListRetailOrdersParams, options?: Parameters<typeof customFetch>[1]): Promise<RetailOrder[]> => {
 
-  return customFetch<RetailOrder[]>(getAdminListRetailOrdersUrl(),
+  return customFetch<RetailOrder[]>(getAdminListRetailOrdersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -20101,23 +20109,23 @@ export const adminListRetailOrders = async ( options?: Parameters<typeof customF
 
 
 
-export const getAdminListRetailOrdersQueryKey = () => {
+export const getAdminListRetailOrdersQueryKey = (params?: AdminListRetailOrdersParams,) => {
     return [
-    `/api/admin/retail-orders`
+    `/api/admin/retail-orders`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getAdminListRetailOrdersQueryOptions = <TData = Awaited<ReturnType<typeof adminListRetailOrders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getAdminListRetailOrdersQueryOptions = <TData = Awaited<ReturnType<typeof adminListRetailOrders>>, TError = ErrorType<unknown>>(params?: AdminListRetailOrdersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getAdminListRetailOrdersQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getAdminListRetailOrdersQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListRetailOrders>>> = ({ signal }) => adminListRetailOrders({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListRetailOrders>>> = ({ signal }) => adminListRetailOrders(params, { signal, ...requestOptions });
 
 
 
@@ -20135,11 +20143,11 @@ export type AdminListRetailOrdersQueryError = ErrorType<unknown>
  */
 
 export function useAdminListRetailOrders<TData = Awaited<ReturnType<typeof adminListRetailOrders>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: AdminListRetailOrdersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListRetailOrders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getAdminListRetailOrdersQueryOptions(options)
+  const queryOptions = getAdminListRetailOrdersQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

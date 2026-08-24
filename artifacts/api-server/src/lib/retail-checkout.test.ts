@@ -293,6 +293,38 @@ test("cart and checkout retain the saved catalog reference after an SKU edit", a
     const [savedOrderItem] = await db.select().from(retailOrderItemsTable)
       .where(eq(retailOrderItemsTable.orderId, order.id)).limit(1);
     assert.equal(savedOrderItem?.productCatalogReference, product.catalogReference);
+
+    const skuAfterOrder = `retail-checkout-after-order-${randomUUID()}`;
+    await db.update(productsTable).set({ sku: skuAfterOrder }).where(eq(productsTable.id, createdProductId));
+    const [admin] = await db.insert(usersTable).values({
+      firstName: "Retail",
+      lastName: "Search Admin",
+      email: `retail-reference-admin-${randomUUID()}@example.test`,
+      passwordHash: await hashPassword(`retail-reference-admin-${randomUUID()}`),
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    }).returning();
+    assert.ok(admin);
+    try {
+      const adminCookie = `${sessionCookieName}=${await createSession(admin.id)}`;
+      const byCatalogReference = await fetch(
+        `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(product.catalogReference)}`,
+        { headers: { cookie: adminCookie } },
+      );
+      assert.equal(byCatalogReference.status, 200);
+      const referenceResults = await byCatalogReference.json() as Array<{ id: string }>;
+      assert.ok(referenceResults.some((candidate) => candidate.id === order.id), "an order must remain searchable by its saved catalog reference");
+
+      const byEditedSku = await fetch(
+        `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(skuAfterOrder)}`,
+        { headers: { cookie: adminCookie } },
+      );
+      assert.equal(byEditedSku.status, 200);
+      const skuResults = await byEditedSku.json() as Array<{ id: string }>;
+      assert.ok(!skuResults.some((candidate) => candidate.id === order.id), "admin search must not use the product's current editable SKU");
+    } finally {
+      await db.delete(usersTable).where(eq(usersTable.id, admin.id));
+    }
   } finally {
     await db.update(productsTable).set({ sku: product.sku, stock: product.stock })
       .where(eq(productsTable.id, createdProductId));

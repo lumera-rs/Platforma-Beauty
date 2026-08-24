@@ -6293,3 +6293,26 @@ export type TrackRetailOrderParams = {
  */
 token: string;
 };
+
+export type AdminListRetailOrdersParams = {
+status?: AdminListRetailOrdersStatus;
+/**
+ * Search order details or the immutable catalog reference saved on an order item.
+ * @minLength 1
+ * @maxLength 200
+ */
+search?: string;
+};
+
+export type AdminListRetailOrdersStatus = typeof AdminListRetailOrdersStatus[keyof typeof AdminListRetailOrdersStatus];
+
+
+export const AdminListRetailOrdersStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  paid: 'paid',
+  processing: 'processing',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+} as const;

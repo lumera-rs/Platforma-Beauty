@@ -4859,6 +4859,21 @@ paths:
       operationId: adminListRetailOrders
       tags: [admin]
       summary: List retail orders for administration
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, confirmed, paid, processing, shipped, delivered, cancelled]
+        - name: search
+          in: query
+          required: false
+          description: Search order details or the immutable catalog reference saved on an order item.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
       responses:
         "200": { description: Retail orders, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/RetailOrder" } } } } }
   /admin/retail-orders/{orderId}:
