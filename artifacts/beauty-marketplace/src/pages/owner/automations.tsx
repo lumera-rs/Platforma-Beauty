@@ -297,12 +297,14 @@ function PeriodSelector({
   customRange,
   onCustomRangeChange,
   testId,
+  statusTestId,
 }: {
   period: StatsPeriod;
   onPeriodChange: (period: StatsPeriod) => void;
   customRange: DateRange | undefined;
   onCustomRangeChange: (range: DateRange | undefined) => void;
   testId: string;
+  statusTestId?: string;
 }) {
   const [rangeOpen, setRangeOpen] = useState(false);
   const customTriggerRef = useRef<HTMLButtonElement>(null);
@@ -317,92 +319,105 @@ function PeriodSelector({
   }, [rangeOpen]);
 
   return (
-    <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border bg-muted/30 p-1 sm:flex sm:w-fit sm:flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
-      {periodOptions.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onPeriodChange(opt.value)}
-          aria-pressed={period === opt.value}
-          data-testid={`period-${opt.value}`}
-          className={`min-h-9 justify-center whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-            period === opt.value
-              ? "bg-background text-foreground shadow-sm border"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-      <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
-        <PopoverTrigger asChild>
+    <>
+      <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border bg-muted/30 p-1 sm:flex sm:w-fit sm:flex-wrap" role="group" aria-label="Period prikaza" data-testid={testId}>
+        {periodOptions.map((opt) => (
           <button
-            ref={customTriggerRef}
+            key={opt.value}
             type="button"
-            onClick={() => onPeriodChange("custom")}
-            aria-pressed={period === "custom"}
-            aria-expanded={rangeOpen}
-            aria-haspopup="dialog"
-            data-testid="period-custom"
-            className={`col-span-2 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors sm:col-span-1 ${
-              period === "custom"
+            onClick={() => onPeriodChange(opt.value)}
+            aria-pressed={period === opt.value}
+            data-testid={`period-${opt.value}`}
+            className={`min-h-9 justify-center whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              period === opt.value
                 ? "bg-background text-foreground shadow-sm border"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <CalendarRange className="w-3.5 h-3.5" />
-            {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
+            {opt.label}
           </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
-          <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid={`${testId}-range-presets`}>
-            {rangePresets.map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                data-testid={`range-preset-${preset.key}`}
-                className="px-2 py-1 rounded-md border bg-muted/30 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                onClick={() => {
-                  onPeriodChange("custom");
-                  onCustomRangeChange(preset.getRange());
-                  setRangeOpen(false);
-                }}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <Calendar
-            mode="range"
-            numberOfMonths={1}
-            defaultMonth={customRange?.from}
-            selected={customRange}
-            disabled={{ after: new Date() }}
-            onSelect={(range) => {
-              // DayPicker represents an initial range click as a complete
-              // one-day range. Keep that first click open as the range start;
-              // a second click on the same day still completes a one-day
-              // window, while a different day creates the intended span.
-              const nextRange = !customRange
-                && range?.from
-                && range.to
-                && range.from.getTime() === range.to.getTime()
-                ? { from: range.from, to: undefined }
-                : range;
-              onPeriodChange("custom");
-              onCustomRangeChange(nextRange);
-              if (nextRange?.from && nextRange?.to) setRangeOpen(false);
-            }}
-            data-testid={`${testId}-range-calendar`}
-          />
-          <p className="px-3 pb-3 text-xs text-muted-foreground">
-            {customRange?.from && !customRange?.to
-              ? "Izaberite i krajnji datum perioda."
-              : "Izaberite početni i krajnji datum perioda."}
-          </p>
-        </PopoverContent>
-      </Popover>
-    </div>
+        ))}
+        <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+          <PopoverTrigger asChild>
+            <button
+              ref={customTriggerRef}
+              type="button"
+              onClick={() => onPeriodChange("custom")}
+              aria-pressed={period === "custom"}
+              aria-expanded={rangeOpen}
+              aria-haspopup="dialog"
+              data-testid="period-custom"
+              className={`col-span-2 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors sm:col-span-1 ${
+                period === "custom"
+                  ? "bg-background text-foreground shadow-sm border"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" />
+              {period === "custom" && rangeLabel ? rangeLabel : "Izaberi datume"}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <div className="flex flex-wrap gap-1.5 px-3 pt-3" data-testid={`${testId}-range-presets`}>
+              {rangePresets.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  data-testid={`range-preset-${preset.key}`}
+                  className="px-2 py-1 rounded-md border bg-muted/30 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  onClick={() => {
+                    onPeriodChange("custom");
+                    onCustomRangeChange(preset.getRange());
+                    setRangeOpen(false);
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <Calendar
+              mode="range"
+              numberOfMonths={1}
+              defaultMonth={customRange?.from}
+              selected={customRange}
+              disabled={{ after: new Date() }}
+              onSelect={(range) => {
+                // DayPicker represents an initial range click as a complete
+                // one-day range. Keep that first click open as the range start;
+                // a second click on the same day still completes a one-day
+                // window, while a different day creates the intended span.
+                const nextRange = !customRange
+                  && range?.from
+                  && range.to
+                  && range.from.getTime() === range.to.getTime()
+                  ? { from: range.from, to: undefined }
+                  : range;
+                onPeriodChange("custom");
+                onCustomRangeChange(nextRange);
+                if (nextRange?.from && nextRange?.to) setRangeOpen(false);
+              }}
+              data-testid={`${testId}-range-calendar`}
+            />
+            <p className="px-3 pb-3 text-xs text-muted-foreground">
+              {customRange?.from && !customRange?.to
+                ? "Izaberite i krajnji datum perioda."
+                : "Izaberite početni i krajnji datum perioda."}
+            </p>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {statusTestId && (
+        <p
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid={statusTestId}
+        >
+          Izabran period: {periodDescription(period, customRange)}
+        </p>
+      )}
+    </>
   );
 }
 /**
@@ -438,6 +453,7 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
               customRange={customRange}
               onCustomRangeChange={onCustomRangeChange}
               testId="overview-period-selector"
+              statusTestId="overview-period-status"
             />
         </div>
       </CardHeader>
@@ -734,7 +750,10 @@ export default function OwnerAutomations() {
   const { data: overviewStats } = useOwnerListAutomationStats(overviewParams, {
     query: {
       enabled: !!userResp?.user,
-      queryKey: getOwnerListAutomationStatsQueryKey(overviewParams)
+      queryKey: getOwnerListAutomationStatsQueryKey(overviewParams),
+      // Keep the selector and campaign table mounted while the next window
+      // loads, so choosing a period does not steal focus from its control.
+      placeholderData: (previousData) => previousData,
     }
   });
 

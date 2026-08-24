@@ -260,8 +260,10 @@ function nextStatsResponse(page: Page, ruleId: string, period: string) {
   });
 }
 
-test("switching the time period never leaves stale attributed rows in the list", async ({ page }) => {
+test("overview period selection announces the active window without disturbing the table", async ({ page }) => {
   const fixture = await createFixture();
+
+    const overview = page.getByTestId("campaign-overview");
 
   try {
     await signInAsFixtureOwner(page, fixture);
@@ -376,8 +378,9 @@ test("switching the time period never leaves stale attributed rows in the list",
 test("mobile stats period controls stay visible and keep the dialog open", async ({ page }) => {
   const fixture = await createFixture();
 
+    const overview = page.getByTestId("campaign-overview");
+
   try {
-    await page.setViewportSize({ width: 390, height: 844 });
     await signInAsFixtureOwner(page, fixture);
     await page.goto("/vlasnik/automatizacije");
 
@@ -415,6 +418,8 @@ test("mobile stats period controls stay visible and keep the dialog open", async
 
     await customButton.click();
     const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+
+    const last14Days = rangePresets.getByTestId("range-preset-last-14d");
     await expect(rangePresets).toBeVisible();
     await expect(dialog).toBeVisible();
     await page.keyboard.press("Escape");
@@ -442,6 +447,8 @@ test("mobile stats period controls stay visible and keep the dialog open", async
 
 test("stats period controls follow keyboard order and preserve the dialog", async ({ page }) => {
   const fixture = await createFixture();
+
+    const overview = page.getByTestId("campaign-overview");
 
   try {
     await signInAsFixtureOwner(page, fixture);
@@ -482,6 +489,8 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await expect(dialog).toBeVisible();
 
     const thirtyDayResponse = nextFirstPageResponse(page, fixture.ruleId, "30d");
+
+    const thirtyDayButton = selector.getByTestId("period-30d");
     await periodButtons[1].focus();
     await page.keyboard.press("Space");
     expect((await thirtyDayResponse).status()).toBe(200);
@@ -500,6 +509,8 @@ test("stats period controls follow keyboard order and preserve the dialog", asyn
     await customButton.focus();
     await page.keyboard.press("Enter");
     const rangePresets = page.getByTestId("stats-period-selector-range-presets");
+
+    const last14Days = rangePresets.getByTestId("range-preset-last-14d");
     await expect(rangePresets).toBeVisible();
     await expect(dialog).toBeVisible();
     const customResponse = page.waitForResponse((response) => {
