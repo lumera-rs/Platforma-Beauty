@@ -185,6 +185,9 @@ async function assertVisibleHelpLinksReachSections(
   if (options.mobileMenu) {
     await expect(page.getByTestId("button-mobile-menu")).toBeVisible();
     await page.getByTestId("button-mobile-menu").click();
+    // Opening the menu is a pointer action; establish keyboard modality before
+    // focusing shortcuts so :focus-visible reflects the keyboard journey.
+    await page.keyboard.press("Tab");
   }
 
   const shortcuts = options.mobileMenu
@@ -245,6 +248,7 @@ async function assertVisibleHelpLinksReachSections(
     }
     if (options.mobileMenu) {
       await page.getByTestId("button-mobile-menu").click();
+      await page.keyboard.press("Tab");
     }
     await expect(shortcuts).toHaveCount(expectedIds.length);
   }
@@ -350,6 +354,8 @@ test("owner mobile business-menu help shortcuts open their matching guide sectio
     await assertVisibleHelpLinksReachSections(page, "/vlasnik", OWNER_MOBILE_NAV_HELP_IDS, {
       mobileMenu: true,
       keyboard: true,
+      assertFocusIndicator: true,
+      darkTheme: true,
     });
     expect(browserErrors, "The owner mobile guide journey must not produce browser errors.").toEqual([]);
   } finally {
@@ -368,6 +374,8 @@ test("employee mobile business-menu help shortcuts open their matching guide sec
     await assertVisibleHelpLinksReachSections(page, "/zaposleni", EMPLOYEE_MOBILE_NAV_HELP_IDS, {
       mobileMenu: true,
       keyboard: true,
+      assertFocusIndicator: true,
+      darkTheme: true,
     });
     expect(browserErrors, "The employee mobile guide journey must not produce browser errors.").toEqual([]);
   } finally {

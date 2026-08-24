@@ -7,6 +7,7 @@
 - [Integration configuration security](integration-configuration-security.md) — credentials in database settings require deployment-held encryption and approved provider origins.
 - [Employee booking integrity](employee-booking-integrity.md) — service assignments are owner-managed; booking allocation serializes each salon-day to prevent overlapping load-balanced bookings.
 - [Browser test runtime](browser-test-runtime.md) — Playwright Chromium needs the project’s Nix runtime libraries, not only a downloaded browser binary.
+- [Keyboard focus-visible modality](keyboard-focus-visible-modality.md) — establish keyboard modality after pointer-opened disclosures before asserting programmatic focus rings.
 - [Generated client declarations](generated-client-declarations.md) — rebuild composite API client declarations before diagnosing missing generated hooks in leaf type checks.
 - [Production API binding](production-api-binding.md) — artifact API servers must bind 0.0.0.0 so deployment health checks can detect their configured port.
 - [Review photo privacy](review-photo-privacy.md) — review avatars stay private by default and reviewers must retain a way to revoke public-photo consent.
