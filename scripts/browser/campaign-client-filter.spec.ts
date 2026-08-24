@@ -383,6 +383,33 @@ test("shared campaign links preserve tracking tags while filtering and closing",
   }
 });
 
+test("stale campaign links fall back to the overview without losing tracking tags", async ({ page }) => {
+  const fixture = await createFixture();
+  const staleRuleId = randomUUID();
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(`/vlasnik/automatizacije?utm_source=instagram&rule=${staleRuleId}&clients=returning`);
+
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: null,
+      clients: null,
+    });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
 test("shared campaign links restore the selected segment and tracking tags after reload", async ({ page }) => {
   const fixture = await createFixture();
 
