@@ -407,6 +407,121 @@ test("recovery dispatch sends each wrapper's originating suite label", async () 
   }
 });
 
+test("recovery reports malformed manifests while recovering valid records", async () => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-malformed-recovery-"));
+  const originalPath = process.env.PATH;
+  const originalArgv = process.argv;
+  const originalConsoleLog = console.log;
+  const originalConsoleError = console.error;
+  const originalExitCode = process.exitCode;
+
+  await writeFile(path.join(temporaryRoot, "dropdb"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  process.env.PATH = `${temporaryRoot}:${originalPath ?? ""}`;
+
+  const recoveryCases = [
+    {
+      suiteLabel: "browser",
+      databasePrefix: "lumera_mrec_br_",
+      manifestDirectoryName: `malformed-recovery-browser-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedBrowserSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          specPath: "unused-browser.spec.ts",
+          testLabel: "Browser malformed recovery checks",
+          environment: {},
+        }),
+    },
+    {
+      suiteLabel: "API",
+      databasePrefix: "lumera_mrec_api_",
+      manifestDirectoryName: `malformed-recovery-api-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedApiSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          testFilePath: "unused-api.test.ts",
+          testLabel: "API malformed recovery checks",
+          environment: {},
+        }),
+    },
+    {
+      suiteLabel: "API regression",
+      databasePrefix: "lumera_mrec_reg_",
+      manifestDirectoryName: `malformed-recovery-regression-${process.pid}-${randomUUID()}`,
+      run: (databasePrefix: string, manifestDirectoryName: string) =>
+        runIsolatedApiRegressionSuiteCommand({
+          databasePrefix,
+          manifestDirectoryName,
+          scriptPaths: [],
+          testLabel: "API regression malformed recovery checks",
+          environment: {},
+        }),
+    },
+  ] as const;
+
+  const manifestDirectories: string[] = [];
+  const manifestPaths: string[] = [];
+  const output: string[] = [];
+  console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+  console.error = (...args: unknown[]) => output.push(args.map(String).join(" "));
+
+  try {
+    for (const recoveryCase of recoveryCases) {
+      const databaseName =
+        `${recoveryCase.databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+      const manifestDirectory = path.join(
+        workspaceRoot,
+        ".lumera-test-state",
+        recoveryCase.manifestDirectoryName,
+      );
+      const malformedManifestName = `malformed-${randomUUID()}.json`;
+      const malformedManifestPath = path.join(manifestDirectory, malformedManifestName);
+      manifestDirectories.push(manifestDirectory);
+      await mkdir(manifestDirectory, { recursive: true });
+      const validManifestPath = await writeManifest(manifestDirectory, {
+        version: 1,
+        databaseName,
+        databaseTarget: getDatabaseTarget(),
+        ownerPid: 2_147_483_647,
+        ownerProcessIdentity: "stale-process",
+      });
+      manifestPaths.push(validManifestPath, malformedManifestPath);
+      await writeFile(malformedManifestPath, '{"version":1}\n', "utf8");
+
+      output.length = 0;
+      process.exitCode = undefined;
+      process.argv = [
+        originalArgv[0] ?? process.execPath,
+        originalArgv[1] ?? "malformed-recovery-test",
+        "--recover-interrupted-databases",
+      ];
+      await recoveryCase.run(recoveryCase.databasePrefix, recoveryCase.manifestDirectoryName);
+
+      assert.equal(process.exitCode, 1);
+      assert.deepEqual(output, [
+        `Removed interrupted ${recoveryCase.suiteLabel} test database ${databaseName}.`,
+        `Interrupted ${recoveryCase.suiteLabel} database recovery failed: Malformed ${recoveryCase.suiteLabel} recovery manifest ${malformedManifestName}.`,
+      ]);
+      await assert.rejects(readFile(validManifestPath), { code: "ENOENT" });
+      await readFile(malformedManifestPath);
+    }
+  } finally {
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+    process.argv = originalArgv;
+    process.exitCode = originalExitCode;
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await Promise.all(manifestPaths.map((manifestPath) => unlink(manifestPath).catch(() => undefined)));
+    await Promise.all(
+      manifestDirectories.map((manifestDirectory) =>
+        rm(manifestDirectory, { recursive: true, force: true })),
+    );
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test("standalone browser cleanup entry points report browser suite wording", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-standalone-recovery-"));
   const binDirectory = path.join(temporaryRoot, "bin");

@@ -415,6 +415,7 @@ export async function recoverInterruptedHarnessDatabases(
   }
 
   const manifests: Array<{ manifest: HarnessDatabaseManifest; manifestPath: string }> = [];
+  const malformedManifestNames: string[] = [];
   for (const entry of manifestEntries) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const manifestPath = path.join(getManifestDirectory(configuration), entry.name);
@@ -423,10 +424,14 @@ export async function recoverInterruptedHarnessDatabases(
       await readFile(manifestPath, "utf8"),
       entry.name,
     );
-    if (manifest) manifests.push({ manifest, manifestPath });
+    if (manifest) {
+      manifests.push({ manifest, manifestPath });
+    } else {
+      malformedManifestNames.push(entry.name);
+    }
   }
 
-  if (manifests.length === 0) {
+  if (manifests.length === 0 && malformedManifestNames.length === 0) {
     console.log(`No interrupted ${configuration.testLabel.toLowerCase()} databases were found.`);
     return;
   }
@@ -457,16 +462,30 @@ export async function recoverInterruptedHarnessDatabases(
     }
   }
 
+  const cleanupDetails = cleanupErrors.map(({ databaseName, error }) =>
+    `${suiteLabel} test database ${databaseName}: ${
+      error instanceof Error ? error.message : String(error)
+    }`);
+  if (malformedManifestNames.length > 0) {
+    const malformedDetails = malformedManifestNames.map(
+      (filename) => `Malformed ${suiteLabel} recovery manifest ${filename}.`,
+    );
+    throw new AggregateError(
+      [
+        ...malformedDetails.map((detail) => new Error(detail)),
+        ...cleanupErrors.map(({ error }) => error),
+      ],
+      `Interrupted ${suiteLabel} database recovery failed: ${
+        [...malformedDetails, ...cleanupDetails].join("; ")
+      }`,
+    );
+  }
   if (cleanupErrors.length > 0) {
-    const cleanupDetails = cleanupErrors
-      .map(({ databaseName, error }) =>
-        `${suiteLabel} test database ${databaseName}: ${
-          error instanceof Error ? error.message : String(error)
-        }`)
-      .join("; ");
     throw new AggregateError(
       cleanupErrors.map(({ error }) => error),
-      `One or more interrupted ${suiteLabel} test databases could not be removed: ${cleanupDetails}`,
+      `One or more interrupted ${suiteLabel} test databases could not be removed: ${
+        cleanupDetails.join("; ")
+      }`,
     );
   }
   if (removedDatabaseCount === 0) {
