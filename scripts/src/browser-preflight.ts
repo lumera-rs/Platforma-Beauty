@@ -12,6 +12,8 @@
  * and API server, so the check is skipped for them.
  */
 
+import { checkGeneratedApiContracts } from "./generated-api-check";
+
 const ISOLATED_SUITE_ENV_VARS = [
   "LUMERA_ISOLATED_ADMIN_BROWSER_TEST",
   "LUMERA_ISOLATED_ADMIN_FORM_RESILIENCE_BROWSER_TEST",
@@ -52,6 +54,8 @@ async function probe(target: PreflightTarget): Promise<string | null> {
 }
 
 export default async function browserPreflight(): Promise<void> {
+  await checkGeneratedApiContracts();
+
   if (ISOLATED_SUITE_ENV_VARS.some((name) => process.env[name] === "1")) {
     // Isolated suites run against their own harness servers; the harness is
     // responsible for their liveness.

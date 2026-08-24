@@ -9,6 +9,7 @@
 - [Browser test runtime](browser-test-runtime.md) — Playwright Chromium needs the project’s Nix runtime libraries, not only a downloaded browser binary.
 - [Keyboard focus-visible modality](keyboard-focus-visible-modality.md) — establish keyboard modality after pointer-opened disclosures before asserting programmatic focus rings.
 - [Generated client declarations](generated-client-declarations.md) — rebuild composite API client declarations before diagnosing missing generated hooks in leaf type checks.
+- [Read-only API contract validation](read-only-api-contract-validation.md) — generate contracts in a temporary output root so browser preflight never rewrites the checkout.
 - [Production API binding](production-api-binding.md) — artifact API servers must bind 0.0.0.0 so deployment health checks can detect their configured port.
 - [Review photo privacy](review-photo-privacy.md) — review avatars stay private by default and reviewers must retain a way to revoke public-photo consent.
 - [Review history freshness](review-history-freshness.md) — browser history and BFCache restoration must revalidate public reviews and customer review eligibility.

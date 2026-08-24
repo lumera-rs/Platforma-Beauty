@@ -13,6 +13,7 @@
     "test:admin-authz": "bash scripts/test-admin-authorization.sh",
     "test:admin-input-validation": "bash scripts/test-admin-input-validation.sh",
     "test:api-preflight": "bash scripts/src/api-preflight.test.sh",
+    "test:generated-api": "pnpm --filter @workspace/scripts run test:generated-api",
     "test:b2b-catalog": "bash scripts/test-b2b-catalog.sh",
     "test:attributed-appointments-returning": "NODE_ENV=test pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/src/lib/attributed-appointments-returning.test.ts",
     "test:api-regressions": "pnpm --filter @workspace/scripts run test:api-regressions",

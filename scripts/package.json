@@ -8,6 +8,7 @@
     "sms-reminders": "tsx ./src/send-sms-reminders.ts",
     "rescheduled-confirmation-retries": "tsx ./src/retry-rescheduled-confirmations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:generated-api": "tsx ./src/generated-api-check.ts",
     "test:backend-standards": "tsx ./src/test-backend-standards.ts",
     "test:bundle-budget": "tsx ./src/bundle-budget.ts",
     "test:frontend-standards": "tsx ./src/frontend-performance-standards.test.ts",
