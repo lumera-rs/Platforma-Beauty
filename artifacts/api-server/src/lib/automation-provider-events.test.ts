@@ -523,6 +523,53 @@ async function run() {
       assert.equal(afterMixed.deliveredAt?.getTime(), batchTs * 1000, "first event's provider timestamp wins");
       assert.equal(afterMixed.status, "sent", "batched path must never change lifecycle status");
 
+      // A malformed optional field must reject the whole Brevo batch before
+      // the valid neighboring event can update its delivery.
+      const malformed = await makeOwnerAndSalon("malformed");
+      const [customerMalformed] = await db.insert(salonCustomersTable).values({
+        salonId: malformed.salon.id, firstName: "Kupac", lastName: "Malformed",
+        email: `pe-cust-malformed-${suffix}@bg.test`,
+      }).returning();
+      assert.ok(customerMalformed);
+      const [ruleMalformed] = await db.insert(automationRulesTable).values({
+        salonId: malformed.salon.id, name: `PE pravilo Malformed ${suffix}`, trigger: "inactive_days",
+        triggerConfig: { inactiveDays: 30 }, action: "send_email_and_sms", status: "active",
+      }).returning();
+      assert.ok(ruleMalformed);
+      const malformedRun = await makeSentRun(
+        malformed.salon.id, ruleMalformed.id, customerMalformed.id, "malformed",
+      );
+      const emailBeforeMalformedBatch = await automationDelivery(malformedRun.emailKey);
+      const invalidBrevoBatch = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
+        { event: "delivered", "message-id": malformedRun.brevoMessageId },
+        { event: "delivered", "message-id": malformedRun.brevoMessageId, reason: 42 },
+      ]);
+      assert.equal(invalidBrevoBatch.status, 400);
+      assert.equal(invalidBrevoBatch.body?.["code"], "INVALID_PAYLOAD");
+      assert.deepEqual(
+        await automationDelivery(malformedRun.emailKey),
+        emailBeforeMalformedBatch,
+        "a malformed Brevo batch must not partially update a delivery",
+      );
+
+      // The same all-or-nothing guarantee applies to malformed nested
+      // Infobip report fields.
+      const smsBeforeMalformedBatch = await automationDelivery(malformedRun.smsKey);
+      const invalidInfobipBatch = await postJson(`/webhooks/infobip/${encodeURIComponent(smsSecret)}`, {
+        results: [
+          { messageId: malformedRun.smsMessageId, status: { groupName: "DELIVERED" } },
+          { messageId: malformedRun.smsMessageId, status: "DELIVERED" },
+        ],
+      });
+      assert.equal(invalidInfobipBatch.status, 400);
+      assert.equal(invalidInfobipBatch.body?.["code"], "INVALID_PAYLOAD");
+      assert.deepEqual(
+        await automationDelivery(malformedRun.smsKey),
+        smsBeforeMalformedBatch,
+        "a malformed Infobip batch must not partially update a delivery",
+      );
+      console.log("✓ malformed mixed Brevo and Infobip batches reject atomically and leave delivery state unchanged");
+
       // Same mixed shape for Infobip: matched + unknown UUID + synthetic
       // self-check (non-UUID) + PENDING in one payload.
       const smsDoneAt = new Date(Date.now() - 60_000);

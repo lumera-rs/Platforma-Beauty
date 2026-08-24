@@ -689,6 +689,13 @@ export function parseBrevoWebhookBody(body: unknown): BrevoWebhookEvent[] | null
     if (!item || typeof item !== "object") return null;
     const record = item as Record<string, unknown>;
     if (typeof record["event"] !== "string" || typeof record["message-id"] !== "string") return null;
+    if (
+      (record["ts_event"] !== undefined
+        && (typeof record["ts_event"] !== "number" || !Number.isFinite(record["ts_event"])))
+      || (record["date"] !== undefined
+        && (typeof record["date"] !== "string" || Number.isNaN(new Date(record["date"]).getTime())))
+      || (record["reason"] !== undefined && typeof record["reason"] !== "string")
+    ) return null;
     events.push(record as unknown as BrevoWebhookEvent);
   }
   return events;
@@ -794,6 +801,26 @@ export function parseInfobipWebhookBody(body: unknown): InfobipDeliveryReport[] 
   if (!Array.isArray(results)) return null;
   for (const item of results) {
     if (!item || typeof item !== "object") return null;
+    const record = item as Record<string, unknown>;
+    const messageId = record["messageId"];
+    const callbackData = record["callbackData"];
+    if (
+      (messageId === undefined && callbackData === undefined)
+      || (messageId !== undefined && typeof messageId !== "string")
+      || (callbackData !== undefined && typeof callbackData !== "string")
+      || (record["doneAt"] !== undefined
+        && (typeof record["doneAt"] !== "string" || Number.isNaN(new Date(record["doneAt"]).getTime())))
+    ) return null;
+    const status = record["status"];
+    if (status !== undefined && (!status || typeof status !== "object" || Array.isArray(status))) return null;
+    if (status && typeof status === "object") {
+      const statusRecord = status as Record<string, unknown>;
+      if (
+        (statusRecord["groupName"] !== undefined && typeof statusRecord["groupName"] !== "string")
+        || (statusRecord["name"] !== undefined && typeof statusRecord["name"] !== "string")
+        || (statusRecord["description"] !== undefined && typeof statusRecord["description"] !== "string")
+      ) return null;
+    }
   }
   return results as InfobipDeliveryReport[];
 }
