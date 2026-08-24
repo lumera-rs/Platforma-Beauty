@@ -155,6 +155,8 @@ function shippingConfig() {
 const serverErrors: string[] = [];
 
 async function mockAdminApi(page: Page): Promise<void> {
+  let integrationsPageLoads = 0;
+
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -284,6 +286,7 @@ async function mockAdminApi(page: Page): Promise<void> {
         return;
       }
       if (path === "/api/admin/integrations" && method === "GET") {
+        integrationsPageLoads += 1;
         const card = { enabled: false, configuredInDatabase: false, complete: false, values: {}, version: null };
         const webhookCard = {
           ...card,
@@ -292,9 +295,15 @@ async function mockAdminApi(page: Page): Promise<void> {
           webhookVerificationStale: false,
           webhookConfirmationMaxAgeDays: 7,
         };
+        const smsWebhookCard = integrationsPageLoads > 1
+          ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T10:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 }
+          : webhookCard;
+        const brevoWebhookCard = integrationsPageLoads > 1
+          ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T11:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 }
+          : webhookCard;
         await route.fulfill({
           json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
-            integrations: { sms: webhookCard, brevo: webhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
+            integrations: { sms: smsWebhookCard, brevo: brevoWebhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
             deliveryReports: {
               providers: {
                 brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
@@ -492,6 +501,27 @@ test("webhook freshness refresh reports failure, preserves unsaved edits, and re
   await expect(page.getByTestId("webhook-confirmation-status-brevo")).toBeVisible();
   await expect(page.getByTestId("webhook-confirmation-status-sms")).toContainText("potvrda je zastarela");
   await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("potvrda je zastarela");
+  await expectNoServerErrors();
+
+  // Leave after recovery, then return. The confirmation state must come from
+  // the full server payload on the new page, not from the unmounted
+  // component's in-memory state.
+  await page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("admin-nav-proizvodi").click();
+  await expect(page).toHaveURL(/\/admin\/proizvodi$/);
+  const returningIntegrationsResponse = page.waitForResponse((response) => {
+    return new URL(response.url()).pathname === "/api/admin/integrations"
+      && response.request().method() === "GET";
+  });
+  await page.getByTestId("admin-nav-integracije").click();
+  const returnedResponse = await returningIntegrationsResponse;
+  expect(returnedResponse.ok(), "the returning integrations load must succeed").toBe(true);
+  await expect(page.getByRole("heading", { name: "Integracije i konektori" })).toBeVisible();
+  await expect(page.getByTestId("webhook-confirmation-status-sms")).toContainText("10:00:00");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("11:00:00");
+  await expect(page.getByTestId("webhook-confirmation-status-sms")).toContainText("potvrda je zastarela");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("potvrda je zastarela");
+  await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeHidden();
   await expectNoServerErrors();
 });
 
