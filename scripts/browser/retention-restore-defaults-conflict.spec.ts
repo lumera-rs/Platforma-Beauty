@@ -533,3 +533,116 @@ test("background polling preserves unsaved edits until newer values are loaded e
     await apiB.dispose();
   }
 });
+
+test("failed background refresh shows a retry warning and preserves unsaved edits", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  let failSettingsRefresh = false;
+  let allowSettingsRefresh = false;
+  await page.route(`**${settingsPath}`, async (route) => {
+    if (
+      failSettingsRefresh
+      && !allowSettingsRefresh
+      && route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nedostupno" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  // Install the clock before navigation so the query's interval is controlled
+  // from the moment the settings page mounts.
+  await page.clock.install();
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+    await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
+
+    // Move the active version forward, then make every background refresh
+    // attempt fail so React Query surfaces its refetch error state.
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "the concurrent save must succeed").toBe(true);
+    const adminBVersion = (await concurrentResponse.json()).version as number;
+    failSettingsRefresh = true;
+
+    // TanStack Query retries three times after the first failed poll. Advance
+    // through the initial interval and each backoff so the page reaches its
+    // visible recovery state instead of stopping at a transient retry.
+    for (const delay of [30_000, 1_000, 2_000, 4_000]) {
+      const failedRefresh = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname === settingsPath
+        && response.status() === 503,
+      );
+      await page.clock.fastForward(delay);
+      await failedRefresh;
+    }
+
+    const refreshError = page.getByTestId("retention-refresh-error");
+    await expect(refreshError).toBeVisible();
+    await expect(refreshError).toContainText("Osvežavanje pragova retencije nije uspelo");
+    await expect(refreshError).toContainText("nesačuvane izmene ostaju nepromenjene");
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+
+    // Let the explicit retry through. The newer response must clear the
+    // recovery warning and enter the normal stale-version state without
+    // replacing the in-progress draft.
+    allowSettingsRefresh = true;
+    const retriedRefresh = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    await page.getByTestId("retry-retention-refresh").click();
+    await retriedRefresh;
+
+    await expect(refreshError).not.toBeVisible();
+    await expect(page.getByTestId("retention-stale-banner")).toBeVisible();
+    await expect(page.getByTestId("retention-stale-banner"))
+      .toContainText(`Verzija ${adminBVersion} je u međuvremenu aktivirana`);
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+  } finally {
+    await apiB.dispose();
+  }
+});

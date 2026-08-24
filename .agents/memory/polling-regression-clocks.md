@@ -7,4 +7,4 @@ For timer-polling browser regressions, install Playwright clock control before n
 
 **Why:** An already-mounted page can retain a timer created before clock control was installed, making a test appear to pass only after a fresh browser context or real-time waiting.
 
-**How to apply:** Call `page.clock.install()` before `page.goto()` for the polling scenario, avoid visibility/focus events, and fast-forward the configured interval while awaiting the expected network response.
+**How to apply:** Call `page.clock.install()` before `page.goto()` for the polling scenario, avoid visibility/focus events, and fast-forward the configured interval while awaiting the expected network response. When asserting a final React Query error, also advance through each configured retry backoff; the first failed response alone is still a transient retry.

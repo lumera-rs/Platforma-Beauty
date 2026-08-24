@@ -104,7 +104,14 @@ export default function AdminRetentionSettings() {
   // Poll for a newer active version while the page is open (and re-check on
   // window focus), so an admin learns the page went stale before investing
   // time in edits — the save-time 409 stays the hard guarantee.
-  const { data: settings, isLoading } = useAdminGetRetentionSettings({
+  const {
+    data: settings,
+    isLoading,
+    isRefetchError: hasRetentionRefreshError,
+    error: retentionRefreshError,
+    refetch: retryRetentionRefresh,
+    isFetching: isRetentionRefreshing,
+  } = useAdminGetRetentionSettings({
     query: {
       queryKey: getAdminGetRetentionSettingsQueryKey(),
       refetchInterval: 30_000,
@@ -521,6 +528,36 @@ export default function AdminRetentionSettings() {
               >
                 <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                 Učitaj nove vrednosti
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {hasRetentionRefreshError && settings && (
+          <Alert
+            className="border-destructive/50 bg-destructive/5 [&>svg]:text-destructive"
+            data-testid="retention-refresh-error"
+          >
+            <TriangleAlert className="h-4 w-4" />
+            <AlertTitle>Osvežavanje pragova retencije nije uspelo</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {extractApiError(
+                  retentionRefreshError,
+                  "Nije moguće proveriti da li postoje novije vrednosti. Prikazane vrednosti mogu biti zastarele.",
+                )}
+                {" "}Vaše nesačuvane izmene ostaju nepromenjene.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void retryRetentionRefresh()}
+                disabled={isRetentionRefreshing || isUpdatePending}
+                data-testid="retry-retention-refresh"
+              >
+                {isRetentionRefreshing && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+                <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                Pokušaj ponovo
               </Button>
             </AlertDescription>
           </Alert>
