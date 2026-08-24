@@ -565,15 +565,17 @@ test("retail checkout recovers when an item is added after the cart was emptied 
   }
 });
 
-async function createCartAndOpenCartPage(page: Page) {
+async function createCartAndOpenCartPage(page: Page, productIds: string[] = [productId!]) {
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as { id: string };
   createdCartIds.push(cart.id);
-  const addResponse = await page.request.post("/api/retail/cart/items", {
-    data: { productId, quantity: 1 },
-  });
-  expect(addResponse.status()).toBe(201);
+  for (const productIdToAdd of productIds) {
+    const addResponse = await page.request.post("/api/retail/cart/items", {
+      data: { productId: productIdToAdd, quantity: 1 },
+    });
+    expect(addResponse.status()).toBe(201);
+  }
   await page.goto("/korpa");
   await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
 }
@@ -620,6 +622,57 @@ test("retail cart page announces a cross-tab line change without reloading", asy
       `Proizvod ${productName} sada ima količinu 2.`,
     );
     await expect(page.getByText(money(4_000), { exact: true }).first()).toBeVisible();
+    expect(mainFrameNavigations).toBe(1);
+  } finally {
+    await otherTab.close();
+  }
+});
+
+test("retail cart page clears a stale item announcement for a multi-line cross-tab update", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page, [productId!, secondProductId!]);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/korpa");
+    await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    const cartResponse = await otherTab.request.get("/api/retail/cart");
+    expect(cartResponse.ok()).toBe(true);
+    const cart = await cartResponse.json() as { items: Array<{ id: string; productId: string; quantity: number }> };
+    expect(cart.items).toHaveLength(2);
+
+    const firstItem = cart.items.find((item) => item.productId === productId);
+    const secondItem = cart.items.find((item) => item.productId === secondProductId);
+    expect(firstItem).toBeTruthy();
+    expect(secondItem).toBeTruthy();
+
+    const firstUpdate = await otherTab.request.patch(`/api/retail/cart/items/${firstItem!.id}`, {
+      data: { quantity: 2 },
+    });
+    expect(firstUpdate.ok()).toBe(true);
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(
+      `Proizvod ${productName} sada ima količinu 2.`,
+      { timeout: 15_000 },
+    );
+
+    const [updatedFirstItem, updatedSecondItem] = await Promise.all([
+      otherTab.request.patch(`/api/retail/cart/items/${firstItem!.id}`, { data: { quantity: 3 } }),
+      otherTab.request.patch(`/api/retail/cart/items/${secondItem!.id}`, { data: { quantity: 2 } }),
+    ]);
+    expect(updatedFirstItem.ok()).toBe(true);
+    expect(updatedSecondItem.ok()).toBe(true);
+
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 5 stavki.", {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText("");
+    await expect(page.getByText(money(10_800), { exact: true }).first()).toBeVisible();
+    expect(page.url()).toContain("/korpa");
     expect(mainFrameNavigations).toBe(1);
   } finally {
     await otherTab.close();
