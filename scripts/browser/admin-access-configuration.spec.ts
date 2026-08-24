@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -437,6 +437,13 @@ function collectBrowserErrors(page: Page): string[] {
   return errors;
 }
 
+async function expectVisibleFocusIndicator(control: Locator) {
+  await expect.poll(async () => control.evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return styles.outlineStyle !== "none" || styles.boxShadow !== "none";
+  })).toBe(true);
+}
+
 test("an admin can sign in and reach every admin section on desktop", async ({ page }) => {
   await mockAdminApi(page, "ADMIN", false);
   await page.goto("/poslovna-prijava");
@@ -493,6 +500,7 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
   const mobileMenuButton = page.getByTestId("admin-mobile-menu-trigger");
   await mobileMenuButton.focus();
   await expect(mobileMenuButton).toBeFocused();
+  await expectVisibleFocusIndicator(mobileMenuButton);
   await mobileMenuButton.press("Enter");
 
   const mobileMenu = page.getByTestId("admin-mobile-menu");
@@ -505,6 +513,12 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
 
   const firstMenuControl = focusableMenuControls.first();
   const lastMenuControl = focusableMenuControls.last();
+  await firstMenuControl.focus();
+  await expect(firstMenuControl).toBeFocused();
+  await expectVisibleFocusIndicator(firstMenuControl);
+  await lastMenuControl.focus();
+  await expect(lastMenuControl).toBeFocused();
+  await expectVisibleFocusIndicator(lastMenuControl);
   await firstMenuControl.focus();
   await expect(firstMenuControl).toBeFocused();
   await page.keyboard.press("Shift+Tab");

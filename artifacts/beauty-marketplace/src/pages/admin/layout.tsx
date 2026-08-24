@@ -104,7 +104,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               isActive 
                 ? 'bg-primary text-primary-foreground shadow-sm' 
                 : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-            }`}
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
             data-testid={`admin-nav-${link.href.replace('/admin', '').replace('/', '') || 'dashboard'}`}
             onClick={() => setIsMobileOpen(false)}
           >
@@ -130,6 +130,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             aria-label={isMobileOpen ? "Zatvori meni" : "Otvori meni"}
             aria-expanded={isMobileOpen}
             data-testid="admin-mobile-menu-trigger"
+            className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </Button>
