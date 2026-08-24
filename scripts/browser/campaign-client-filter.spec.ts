@@ -19,6 +19,9 @@
  *  3. Switch to "Vraćeni" → exactly 25 rows, every badge "Vraćen klijent",
  *     zero "Nov klijent" badges, counter "25 od 30".
  *  4. Switch back to "Svi" → counter restores the unfiltered "25 od 60".
+ *  5. A shared URL with both a custom window and clients=returning → the
+ *     exact window and segment survive the initial load and a full reload;
+ *     every relevant request keeps its applicable filters.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -224,6 +227,21 @@ function nextFirstPageResponse(page: Page, ruleId: string, clientType: "new" | "
     return url.pathname.endsWith(`/growth/automations/${ruleId}/attributed-appointments`)
       && url.searchParams.get("clientType") === clientType
       && url.searchParams.get("offset") === "0";
+  });
+}
+
+function nextCampaignWindowResponse(
+  page: Page,
+  path: string | RegExp,
+  expected: { from: string; to: string; clientType?: string | null },
+) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    const pathMatches = typeof path === "string" ? url.pathname.endsWith(path) : path.test(url.pathname);
+    return pathMatches
+      && url.searchParams.get("from") === expected.from
+      && url.searchParams.get("to") === expected.to
+      && (expected.clientType === undefined || url.searchParams.get("clientType") === expected.clientType);
   });
 }
 
@@ -497,6 +515,95 @@ test("shared campaign links restore the selected segment and tracking tags after
       tracking: "instagram",
       rule: fixture.ruleId,
       clients: "returning",
+    });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
+test("shared campaign links keep a custom period and client segment together after reload", async ({ page }) => {
+  const fixture = await createFixture();
+  const expectedWindow = {
+    from: "2026-03-01",
+    to: "2026-04-30",
+  };
+  const expectedClientType = "returning";
+  const sharedUrl = `/vlasnik/automatizacije?from=${expectedWindow.from}&to=${expectedWindow.to}&rule=${fixture.ruleId}&clients=${expectedClientType}`;
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+
+    const overviewResponse = nextCampaignWindowResponse(page, "/growth/automation-stats", expectedWindow);
+    const detailResponse = nextCampaignWindowResponse(page, `/growth/automations/${fixture.ruleId}/stats`, expectedWindow);
+    const appointmentsResponse = nextCampaignWindowResponse(
+      page,
+      `/growth/automations/${fixture.ruleId}/attributed-appointments`,
+      { ...expectedWindow, clientType: expectedClientType },
+    );
+    await page.goto(sharedUrl);
+
+    expect((await overviewResponse).status()).toBe(200);
+    expect((await detailResponse).status()).toBe(200);
+    expect((await appointmentsResponse).status()).toBe(200);
+
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(dialog).toBeVisible();
+    const periodSelector = dialog.getByTestId("stats-period-selector");
+    const customButton = periodSelector.getByTestId("period-custom");
+    const expectedRangeLabel = ` ${new Date(2026, 2, 1).toLocaleDateString("sr-RS")} – ${new Date(2026, 3, 30).toLocaleDateString("sr-RS")}`;
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(expectedRangeLabel);
+    await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+    await expect(dialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "false");
+    await expect(dialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        from: params.get("from"),
+        to: params.get("to"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      ...expectedWindow,
+      rule: fixture.ruleId,
+      clients: expectedClientType,
+    });
+
+    const reloadedOverviewResponse = nextCampaignWindowResponse(page, "/growth/automation-stats", expectedWindow);
+    const reloadedDetailResponse = nextCampaignWindowResponse(page, `/growth/automations/${fixture.ruleId}/stats`, expectedWindow);
+    const reloadedAppointmentsResponse = nextCampaignWindowResponse(
+      page,
+      `/growth/automations/${fixture.ruleId}/attributed-appointments`,
+      { ...expectedWindow, clientType: expectedClientType },
+    );
+    await page.reload();
+
+    expect((await reloadedOverviewResponse).status()).toBe(200);
+    expect((await reloadedDetailResponse).status()).toBe(200);
+    expect((await reloadedAppointmentsResponse).status()).toBe(200);
+
+    const reloadedDialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await expect(reloadedDialog).toBeVisible();
+    await expect(reloadedDialog.getByTestId("stats-period-selector").getByTestId("period-custom"))
+      .toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedDialog.getByTestId("stats-period-selector").getByTestId("period-custom"))
+      .toHaveText(expectedRangeLabel);
+    await expect(reloadedDialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedDialog.getByTestId("client-type-all")).toHaveAttribute("aria-pressed", "false");
+    await expect(reloadedDialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        from: params.get("from"),
+        to: params.get("to"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      ...expectedWindow,
+      rule: fixture.ruleId,
+      clients: expectedClientType,
     });
   } finally {
     await cleanUpFixture(fixture);
