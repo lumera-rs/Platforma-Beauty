@@ -9,18 +9,23 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
+import type {
+  AdminBrevoWebhookIntegrationCard,
+  AdminDeliveryReportStatus,
+  AdminGetIntegrationsResponse,
+  AdminIntegrationCard,
+  AdminSmsWebhookRegistration,
+  AdminWebhookIntegrationCard,
+} from "@workspace/api-client-react";
+import { AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema } from "@workspace/api-zod";
 
-type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth" | "cloudflare";
-type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; version: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
-type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
-type DeliveryReportProvider = "brevo" | "infobip";
-type DeliveryReportStatus = { lastEventAt: string | null; rejectedPayloadCount: number; lastRejectedAt: string | null; malformedWebhookState: "normal" | "observing" | "alerted" | "recovered"; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
-type DeliveryReports = { providers: Record<DeliveryReportProvider, DeliveryReportStatus>; windowHours: number; graceMinutes: number; rejectionAlertThreshold: number };
-
-type SmsWebhookRegistrationState = "no_secret" | "confirmed" | "misconfigured" | "stale_secret" | "unconfirmed";
-
-type SmsFallbackReachableAdmin = { firstName: string; lastName: string };
-type Data = { integrations: Record<Integration, Card>; deliveryReports?: DeliveryReports; smsFallback?: { reachableAdminCount: number; reachableAdmins: SmsFallbackReachableAdmin[] }; smsWebhookRegistration?: SmsWebhookRegistration; redirectUris: { google: string; facebook: string }; redirectUriWarning?: string; smsReminder: { command: string; active: boolean; instructions: string[] } };
+type Integration = keyof AdminGetIntegrationsResponse["integrations"];
+type Card = AdminIntegrationCard & Partial<AdminWebhookIntegrationCard & AdminBrevoWebhookIntegrationCard>;
+type WebhookFreshness = Pick<AdminWebhookIntegrationCard, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
+type DeliveryReportStatus = AdminDeliveryReportStatus;
+type DeliveryReports = AdminGetIntegrationsResponse["deliveryReports"];
+type SmsWebhookRegistrationState = AdminSmsWebhookRegistration["state"];
+type Data = AdminGetIntegrationsResponse;
 
 const fields: Record<Integration, Array<{ key: string; label: string; placeholder: string; secret?: boolean }>> = {
   sms: [{ key: "apiKey", label: "Infobip API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderName", label: "Naziv pošiljaoca", placeholder: "LUMERA" }, { key: "baseUrl", label: "Base URL (opciono)", placeholder: "https://api.infobip.com" }, { key: "webhookSecret", label: "Webhook tajna (izveštaji o isporuci)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
@@ -31,6 +36,13 @@ const fields: Record<Integration, Array<{ key: string; label: string; placeholde
 };
 const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava", cloudflare: "CDN keš · Cloudflare" };
 const WEBHOOK_FRESHNESS_POLL_INTERVAL_MS = 60_000;
+
+const integrationResponseError = (issues: Array<{ path: PropertyKey[]; message: string }>) => {
+  const issue = issues[0];
+  if (!issue) return "Odgovor servera za integracije nije validan. Osvežite stranicu i pokušajte ponovo.";
+  const path = issue.path.length ? issue.path.map(String).join(".") : "odgovor";
+  return `Odgovor servera za integracije nije validan (${path}: ${issue.message}). Osvežite stranicu i pokušajte ponovo.`;
+};
 
 export default function AdminIntegrations() {
   const [data, setData] = useState<Data | null>(null);
@@ -51,7 +63,18 @@ export default function AdminIntegrations() {
   const load = async () => {
     const response = await fetch("/api/admin/integrations", { credentials: "include" });
     if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
-    const payload: Data = await response.json();
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new Error("Odgovor servera za integracije nije validan JSON. Osvežite stranicu i pokušajte ponovo.");
+    }
+    const parsed = AdminGetIntegrationsResponseSchema.safeParse(body);
+    if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+    // Zod intentionally coerces date-like fields to Date for server-side
+    // consumers. Keep the generated client response type here because this
+    // page consumes the JSON wire format and its date strings directly.
+    const payload = body as Data;
     setData(payload);
     setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled, cloudflare: payload.integrations.cloudflare.enabled });
   };
@@ -481,7 +504,7 @@ export default function AdminIntegrations() {
         </ul> : <p className="mt-3 rounded-lg border border-dashed p-3 text-sm text-muted-foreground" data-testid="sms-fallback-audience-empty">Trenutno nema aktivnog administratora koji može da primi rezervni SMS.</p>}
       </section>}
       <div className="grid gap-6 xl:grid-cols-2">{(Object.keys(fields) as Integration[]).map((integration) => {
-        const card = data.integrations[integration]; const [label, color] = status(card);
+        const card = data.integrations[integration] as Card; const [label, color] = status(card);
         return <section key={integration} className="rounded-xl border bg-card p-6 shadow-sm space-y-4">
           <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{titles[integration]}</h2><p className="text-sm text-muted-foreground">{card.configuredInDatabase ? "Baza je izvor konfiguracije." : "Koristi environment fallback dok ne sačuvate vrednosti."}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${color}`}>{label}</span></div>
           <label className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm font-medium">Omogući integraciju <input type="checkbox" data-testid={`toggle-enabled-${integration}`} checked={card.enabled} onChange={(event) => setData({ ...data, integrations: { ...data.integrations, [integration]: { ...card, enabled: event.target.checked } } })} /></label>
