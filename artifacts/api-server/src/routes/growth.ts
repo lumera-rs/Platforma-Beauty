@@ -575,10 +575,19 @@ function parseStatsWindow(query: Record<string, unknown>): { window: StatsWindow
   if (typeof period !== "string" || STATS_PERIOD_DAYS[period] === undefined) {
     return { error: "Invalid period. Expected one of: 7d, 30d, 90d, all." };
   }
-  // Presets are exact elapsed-day windows. Do this arithmetic on the UTC
-  // epoch rather than local calendar fields so daylight-saving transitions
-  // cannot move a boundary by an hour on machines using a DST timezone.
-  return { window: { start: new Date(Date.now() - STATS_PERIOD_DAYS[period]! * 24 * 60 * 60 * 1000), end: null } };
+  // Presets are exact elapsed-day windows ending at the request-time instant.
+  // Do this arithmetic on the UTC epoch rather than local calendar fields so
+  // daylight-saving transitions cannot move a boundary by an hour on machines
+  // using a DST timezone. The end is exclusive, so future-dated provider rows
+  // do not appear in the current rolling-period stats.
+  const now = Date.now();
+  const durationMs = STATS_PERIOD_DAYS[period]! * 24 * 60 * 60 * 1000;
+  return {
+    window: {
+      start: new Date(now - durationMs),
+      end: new Date(now),
+    },
+  };
 }
 
 /**

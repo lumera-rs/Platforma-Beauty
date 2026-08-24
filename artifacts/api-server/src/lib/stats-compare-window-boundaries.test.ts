@@ -5,7 +5,7 @@
  * /growth/automations/:id/stats splits history into two adjacent half-open
  * windows over coalesce(executedAt|sentAt, createdAt):
  *
- *   previous: [prevCutoff, cutoff)      current: [cutoff, now]
+ *   previous: [prevCutoff, cutoff)      current: [cutoff, now)
  *
  * A regression in either boundary (>= flipping to >, < flipping to <=, or a
  * miscomputed prevCutoff) would let a run or delivery count in both windows
@@ -18,9 +18,9 @@
  *   2. Rows with no executedAt/sentAt fall back to createdAt for window
  *      membership (coalesce), on both the run and delivery aggregates
  *      including email/SMS opened and provider-failed delivery outcomes
- *   3. Rows older than both windows count in neither (but still appear in
- *      the all-time aggregate), and current + previous + outside = all-time,
- *      so no row is ever double-counted or dropped
+ *   3. Rows older than both windows and future-dated rows count in neither
+ *      (but still appear in the all-time aggregate), and current + previous +
+ *      outside = all-time, so no row is ever double-counted or dropped
  *   4. compare validation: compare=previous with period=all or with no period
  *      → 400; a complete custom from/to range is accepted; any compare value
  *      other than the literal "previous" → 400 — on both stats endpoints
@@ -124,6 +124,7 @@ async function main() {
     { tag: "prev-last-ms", executedAt: CUTOFF - 1 },                 // 1ms before cutoff → previous
     { tag: "cur-first-ms", executedAt: CUTOFF },                     // exactly at cutoff → current
     { tag: "cur-recent", executedAt: FROZEN_NOW - 1000 },            // well inside current
+    { tag: "future-run", executedAt: FROZEN_NOW + 1000 },            // after request-time now → neither rolling window
     { tag: "prev-fallback", executedAt: null, createdAt: CUTOFF - 1 }, // no executedAt → createdAt decides → previous
   ];
   for (const c of runCases) {
@@ -160,6 +161,7 @@ async function main() {
     { tag: "prev-last-ms", sentAt: CUTOFF - 1 },
     { tag: "cur-first-ms", sentAt: CUTOFF },
     { tag: "cur-recent", sentAt: FROZEN_NOW - 1000 },
+    { tag: "future-delivery", sentAt: FROZEN_NOW + 1000 },            // after request-time now → neither rolling window
     { tag: "prev-fallback", sentAt: null, createdAt: PREV_CUTOFF }, // no sentAt → createdAt decides → previous
   ];
   for (const c of deliveryCases) {
@@ -204,6 +206,8 @@ async function main() {
     { tag: "current-sms-open", channel: "sms", outcome: "opened", createdAt: CUTOFF },
     { tag: "previous-sms-failed", channel: "sms", outcome: "failed", createdAt: CUTOFF - DAY_MS },
     { tag: "current-sms-failed", channel: "sms", outcome: "failed", createdAt: CUTOFF },
+    { tag: "future-email-open", channel: "email", outcome: "opened", createdAt: FROZEN_NOW + DAY_MS },
+    { tag: "future-sms-failed", channel: "sms", outcome: "failed", createdAt: FROZEN_NOW + DAY_MS },
   ] as const;
   for (const c of providerOutcomeCases) {
     const [delivery] = await db.insert(automationDeliveriesTable).values({
@@ -277,11 +281,11 @@ async function main() {
     // rows were seeded against, making 1ms-edge assertions deterministic.
     Date.now = () => FROZEN_NOW;
 
-    // Expected membership out of the 6 seeded rows per kind:
+    // Expected membership out of the 7 seeded rows per kind:
     //   current  = { cur-first-ms, cur-recent }                      → 2
     //   previous = { prev-first-ms, prev-last-ms, prev-fallback }    → 3
-    //   neither  = { outside-before }                                → 1
-    const CURRENT = 2, PREVIOUS = 3, TOTAL = 6;
+    //   neither  = { outside-before, future-run/delivery }           → 2
+    const CURRENT = 2, PREVIOUS = 3, TOTAL = 7;
 
     // ── 1+2. Each edge row lands in exactly one window (both endpoints) ────
     for (const [label, row] of [
@@ -347,6 +351,7 @@ async function main() {
       assert.equal(row.previous.emailOpenedCount, 1,
         `${label}: createdAt on the preceding day is in the previous opened total`);
     }
+    console.log("✓ future-dated email-open and SMS-failed outcomes are excluded from the current rolling window");
 
     // The compact comparison block does not expose provider-failed totals, so
     // use a bounded custom date window for the preceding calendar day and
@@ -362,14 +367,14 @@ async function main() {
 
     // ── 3. Conservation: current + previous + outside = all-time ───────────
     const allTime = await overviewRow("?period=all");
-    assert.equal(allTime.totalRuns, TOTAL, "all-time sees every seeded run, including the one outside both windows");
+    assert.equal(allTime.totalRuns, TOTAL, "all-time sees every seeded run, including old and future-dated rows");
     assert.equal(allTime.attributedAppointments, TOTAL, "all-time attributed count");
     assert.equal(allTime.emailDeliveredCount, TOTAL, "all-time sees every seeded delivery");
-    assert.equal(CURRENT + PREVIOUS, TOTAL - 1,
-      "exactly one row (the pre-previous one) is outside both comparison windows; none is double-counted");
+    assert.equal(CURRENT + PREVIOUS, TOTAL - 2,
+      "exactly two rows (the pre-previous and future-dated ones) are outside both comparison windows; none is double-counted");
 
     // A shorter preset shifts both windows forward: every boundary row from
-    // the 30d seeding is now older than [now-14d, now-7d) ∪ [now-7d, now] and
+    // the 30d seeding is now older than [now-14d, now-7d) ∪ [now-7d, now) and
     // must vanish from both windows, not leak into either.
     const short = await overviewRow("?period=7d&compare=previous");
     assert.equal(short.totalRuns, 1, "7d current window keeps only the recent run");
