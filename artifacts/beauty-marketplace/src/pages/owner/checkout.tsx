@@ -729,6 +729,7 @@ export function OwnerCheckoutReviewPage() {
       }
     });
   };
+  const submitOrder = form.handleSubmit(onSubmit);
 
   if (!mounted || !draft) return null;
 
@@ -916,7 +917,15 @@ export function OwnerCheckoutReviewPage() {
                    <p className="text-[10px] text-muted-foreground text-right leading-tight">Uključen PDV (ako je primenjivo).</p>
                 </CardContent>
                 <div className="p-4 bg-muted/10 border-t border-border/30">
-                  <Button type="submit" form="checkout-form" size="lg" className="w-full text-base font-bold h-14 shadow-md" disabled={checkoutMutation.isPending}>
+                   <Button
+                     type="button"
+                     onClick={() => void submitOrder()}
+                     size="lg"
+                     className="w-full text-base font-bold h-14 shadow-md"
+                     disabled={checkoutMutation.isPending}
+                     aria-busy={checkoutMutation.isPending}
+                     aria-controls="checkout-form"
+                   >
                     {checkoutMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Check className="w-5 h-5 mr-2" />} 
                     Potvrdi porudžbinu
                   </Button>

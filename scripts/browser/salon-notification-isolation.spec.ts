@@ -494,12 +494,22 @@ test("salon owners only see and update their own notifications", async ({ page }
     await page.getByRole("button", { name: /Nastavi na pregled i plaćanje/ }).click();
     await expect(page).toHaveURL(/\/vlasnik\/prodavnica\/pregled$/);
     await page.getByRole("checkbox").last().check();
+    let checkoutRequestCount = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shop/checkout") {
+        checkoutRequestCount += 1;
+      }
+    });
     const checkoutResponse = page.waitForResponse((response) =>
       response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/shop/checkout",
     );
-    await page.getByRole("button", { name: "Potvrdi porudžbinu" }).click();
+    const confirmButton = page.getByRole("button", { name: "Potvrdi porudžbinu" });
+    await expect(confirmButton).toHaveAttribute("type", "button");
+    await expect(confirmButton).toHaveAttribute("aria-controls", "checkout-form");
+    await confirmButton.click();
     expect((await checkoutResponse).status(), "The checkout must create a new order and notification.").toBe(201);
+    expect(checkoutRequestCount, "One confirmation click must create exactly one checkout request.").toBe(1);
 
     await expect(page).toHaveURL(/\/vlasnik\/prodavnica\/porudzbina\/.+\/potvrda$/);
     const orderId = (await page.url()).match(/porudzbina\/([^/]+)\/potvrda$/)?.[1];

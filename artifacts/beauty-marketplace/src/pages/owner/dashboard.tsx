@@ -76,7 +76,10 @@ export function OwnerSidebar({ current }: { current: string }) {
       </div>
 
       {/* Desktop Sidebar */}
-      <aside className="hidden md:block w-64 shrink-0">
+      <aside
+        className="hidden md:block w-64 shrink-0 max-h-[calc(100vh-7rem)] overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
+        data-testid="owner-sidebar"
+      >
         {sidebarContent}
       </aside>
     </>
