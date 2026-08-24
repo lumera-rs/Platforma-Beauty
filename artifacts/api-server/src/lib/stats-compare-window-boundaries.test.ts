@@ -33,6 +33,9 @@
  *   7. a one-day custom range keeps activity at the previous, current, and next
  *      midnight in exactly one or neither window, with matching attribution and
  *      delivery totals on both stats endpoints
+ *   8. a custom range spanning the 2026 Europe/Belgrade spring-forward
+ *      transition preserves inclusive from/to dates and keeps current and
+ *      previous totals separate on both stats endpoints
  *
  * The frozen clock only affects Date.now() (used by parseStatsWindow for the
  * rolling presets); every SQL comparison binds JS-provided parameters against
@@ -625,6 +628,65 @@ async function main() {
     assert.equal(oneDayOverview.previous.emailDeliveredCount, oneDayPerRule.previous.emailDeliveredCount,
       "one-day overview and per-rule previous delivery totals match");
     console.log("✓ one-day custom comparisons keep adjacent midnight activity separate and match across stats endpoints");
+
+    // A multi-day custom range spanning the Europe/Belgrade spring-forward
+    // transition must still compare the exact inclusive calendar dates. The
+    // API binds date-only boundaries at UTC midnight, so the missing local
+    // hour must not shorten the selected range or shift its comparison.
+    const [springRule] = await db.insert(automationRulesTable).values({
+      salonId: salon.id, name: `WB Spring Rule ${suffix}`,
+      trigger: "inactive_days", triggerConfig: { inactiveDays: 30 },
+      action: "send_email", emailSubject: "T", emailBody: "T",
+      status: "active",
+    }).returning();
+    assert.ok(springRule);
+    const springEvents = [
+      { tag: "previous-first", at: Date.parse("2026-03-25T12:00:00.000Z"), date: "2026-03-25" },
+      { tag: "previous-last", at: Date.parse("2026-03-27T12:00:00.000Z"), date: "2026-03-27" },
+      { tag: "current-before-transition", at: Date.parse("2026-03-28T12:00:00.000Z"), date: "2026-03-28" },
+      { tag: "current-transition-day", at: Date.parse("2026-03-29T01:30:00.000Z"), date: "2026-03-29" },
+      { tag: "current-after-transition", at: Date.parse("2026-03-30T12:00:00.000Z"), date: "2026-03-30" },
+    ] as const;
+    for (const event of springEvents) {
+      const [appointment] = await db.insert(appointmentsTable).values({
+        salonId: salon.id, salonCustomerId: cust.id, serviceId: svc.id,
+        date: event.date, startTime: "10:00", endTime: "11:00", durationMinutes: 60,
+        status: "completed", price: 1200, treatmentLocation: "salon",
+      }).returning();
+      assert.ok(appointment);
+      const [run] = await db.insert(automationRunsTable).values({
+        eventKey: `wb-spring-run-${event.tag}-${suffix}`, ruleId: springRule.id,
+        salonId: salon.id, salonCustomerId: cust.id, status: "sent",
+        executedAt: new Date(event.at), sentAt: new Date(event.at),
+        attributedAppointmentId: appointment.id,
+      }).returning();
+      assert.ok(run);
+      await db.insert(automationDeliveriesTable).values({
+        runId: run.id, salonId: salon.id,
+        eventKey: `wb-spring-delivery-${event.tag}-${suffix}`, channel: "email",
+        recipientEmail: `wb-spring-${event.tag}-${suffix}@bg.test`, status: "sent",
+        sentAt: new Date(event.at), deliveredAt: new Date(event.at),
+      });
+    }
+
+    const springQuery = "?from=2026-03-28&to=2026-03-30&compare=previous";
+    for (const [label, row] of [
+      ["overview", await overviewRow(springQuery, springRule.id)],
+      ["per-rule", await perRule(springQuery, springRule.id)],
+    ] as const) {
+      assert.equal(row.totalRuns, 3,
+        `${label}: spring-forward current window includes all three selected calendar dates`);
+      assert.equal(row.attributedAppointments, 3,
+        `${label}: spring-forward current attribution includes all three selected dates`);
+      assert.equal(row.emailDeliveredCount, 3,
+        `${label}: spring-forward current delivery includes all three selected dates`);
+      assert.ok(row.previous, `${label}: spring-forward comparison block is present`);
+      assert.equal(row.previous.attributedAppointments, 2,
+        `${label}: spring-forward previous window includes the two preceding dates`);
+      assert.equal(row.previous.emailDeliveredCount, 2,
+        `${label}: spring-forward previous delivery includes the two preceding dates`);
+    }
+    console.log("✓ spring-forward custom range keeps inclusive dates and distinct current/previous totals on both stats endpoints");
 
     // ── 5. compare validation on both endpoints ─────────────────────────────
     const expect400 = async (qs: string, label: string) => {

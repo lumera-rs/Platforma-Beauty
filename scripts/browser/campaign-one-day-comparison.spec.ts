@@ -45,12 +45,22 @@ const ONE_DAY_EVENTS: readonly CampaignEvent[] = [
 // Europe/Belgrade leaves daylight time on 2026-10-25. Keep the custom range
 // on both sides of that clock change, with intentionally different totals so
 // a merged current/previous response cannot satisfy the browser assertions.
-const DST_EVENTS: readonly CampaignEvent[] = [
+const FALL_DST_EVENTS: readonly CampaignEvent[] = [
   { tag: "dst-previous-first", at: new Date("2026-10-21T12:00:00.000Z"), appointmentDate: "2026-10-21" },
   { tag: "dst-previous-last", at: new Date("2026-10-23T12:00:00.000Z"), appointmentDate: "2026-10-23" },
   { tag: "dst-current-before-transition", at: new Date("2026-10-24T12:00:00.000Z"), appointmentDate: "2026-10-24" },
   { tag: "dst-current-transition-day", at: new Date("2026-10-25T01:30:00.000Z"), appointmentDate: "2026-10-25" },
   { tag: "dst-current-after-transition", at: new Date("2026-10-26T12:00:00.000Z"), appointmentDate: "2026-10-26" },
+];
+
+// Europe/Belgrade enters daylight time on 2026-03-29. This range crosses the
+// missing local hour and deliberately has different current/previous totals.
+const SPRING_DST_EVENTS: readonly CampaignEvent[] = [
+  { tag: "spring-previous-first", at: new Date("2026-03-25T12:00:00.000Z"), appointmentDate: "2026-03-25" },
+  { tag: "spring-previous-last", at: new Date("2026-03-27T12:00:00.000Z"), appointmentDate: "2026-03-27" },
+  { tag: "spring-current-before-transition", at: new Date("2026-03-28T12:00:00.000Z"), appointmentDate: "2026-03-28" },
+  { tag: "spring-current-transition-day", at: new Date("2026-03-29T01:30:00.000Z"), appointmentDate: "2026-03-29" },
+  { tag: "spring-current-after-transition", at: new Date("2026-03-30T12:00:00.000Z"), appointmentDate: "2026-03-30" },
 ];
 
 type Fixture = {
@@ -319,7 +329,7 @@ test.describe("campaign comparisons across daylight-saving changes", () => {
 
   test("custom range spanning the fall-back transition keeps overview and detail totals separate", async ({ page }) => {
     await page.clock.install({ time: new Date("2026-10-27T12:00:00.000Z") });
-    const fixture = await createFixture(DST_EVENTS);
+    const fixture = await createFixture(FALL_DST_EVENTS);
     const expectedRange = { from: "2026-10-24", to: "2026-10-26" };
 
     try {
@@ -367,6 +377,94 @@ test.describe("campaign comparisons across daylight-saving changes", () => {
       );
       await expect(selector.getByTestId("period-custom")).toHaveText(
         /24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./,
+      );
+      const overviewRow = page.getByTestId(`overview-row-${fixture.ruleId}`);
+      await expect(overviewRow.locator("td").nth(1)).toContainText("Poslato: 3");
+      await expect(overviewRow.locator("td").nth(1)).toContainText("Isporučeno: 3");
+      await expect(overviewRow.getByTestId(`trend-email-delivered-${fixture.ruleId}`)).toContainText("+50%");
+      await expect(overviewRow.getByTestId(`trend-appointments-${fixture.ruleId}`)).toContainText("+50%");
+
+      const detailResponse = nextStatsResponse(
+        page,
+        `/growth/automations/${fixture.ruleId}/stats`,
+        fixture,
+        expectedRange,
+      );
+      await overviewRow.getByRole("button", { name: fixture.ruleName }).click();
+      const detailPayload = await detailResponse;
+      expect(detailPayload.status()).toBe(200);
+      expect(await detailPayload.json()).toMatchObject({
+        totalRuns: 3,
+        attributedAppointments: 3,
+        emailSentCount: 3,
+        emailDeliveredCount: 3,
+        previous: {
+          attributedAppointments: 2,
+          emailDeliveredCount: 2,
+        },
+      });
+
+      const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("Prihodovani termini").locator("..")).toContainText("3");
+      await expect(dialog.getByTestId("funnel-email")).toContainText("Isporučeno: 3");
+      await expect(dialog.getByTestId("stats-trend-appointments")).toContainText("+50%");
+      await expect(dialog.getByTestId("stats-trend-email-delivered")).toContainText("+50%");
+    } finally {
+      await cleanUpFixture(fixture);
+    }
+  });
+
+  test("custom range spanning the spring-forward transition keeps overview and detail totals separate", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-03-31T12:00:00.000Z") });
+    const fixture = await createFixture(SPRING_DST_EVENTS);
+    const expectedRange = { from: "2026-03-28", to: "2026-03-30" };
+
+    try {
+      await signInAsFixtureOwner(page, fixture);
+      await page.goto("/vlasnik/automatizacije?period=30d");
+
+      const selector = page.getByTestId("overview-period-selector");
+      await selector.getByTestId("period-custom").click();
+      const calendar = page.getByTestId("overview-period-selector-range-calendar");
+      await expect(calendar).toBeVisible();
+
+      const fromDay = calendar.locator('button[data-day="3/28/2026"]');
+      const toDay = calendar.locator('button[data-day="3/30/2026"]');
+      await expect(fromDay).toHaveCount(1);
+      await expect(toDay).toHaveCount(1);
+      await fromDay.click();
+      await expect(page.getByTestId("overview-period-selector-range-status"))
+        .toContainText("Početak perioda");
+
+      const overviewResponse = nextStatsResponse(
+        page,
+        "/growth/automation-stats",
+        fixture,
+        expectedRange,
+      );
+      await toDay.click();
+
+      const overviewPayload = await overviewResponse;
+      expect(overviewPayload.status()).toBe(200);
+      const overviewItems = await overviewPayload.json() as Array<Record<string, any>>;
+      const overviewItem = overviewItems.find((item) => item.ruleId === fixture.ruleId);
+      expect(overviewItem).toMatchObject({
+        totalRuns: 3,
+        attributedAppointments: 3,
+        emailSentCount: 3,
+        emailDeliveredCount: 3,
+        previous: {
+          attributedAppointments: 2,
+          emailDeliveredCount: 2,
+        },
+      });
+
+      await expect(page).toHaveURL(
+        `/vlasnik/automatizacije?from=${expectedRange.from}&to=${expectedRange.to}`,
+      );
+      await expect(selector.getByTestId("period-custom")).toHaveText(
+        /28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./,
       );
       const overviewRow = page.getByTestId(`overview-row-${fixture.ruleId}`);
       await expect(overviewRow.locator("td").nth(1)).toContainText("Poslato: 3");

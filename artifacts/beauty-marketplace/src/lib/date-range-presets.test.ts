@@ -23,6 +23,19 @@ test("toDateParam keeps the local calendar day and zero-pads month/day", () => {
   assert.equal(toDateParam(new Date(2026, 8, 9, 23, 59, 59)), "2026-09-09");
 });
 
+test("toDateParam keeps the Belgrade spring-forward calendar day near local midnight", () => {
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = "Europe/Belgrade";
+  try {
+    // On 2026-03-29, 00:30 local is still 2026-03-28T23:30Z. UTC-based
+    // serialization would incorrectly send the previous calendar date.
+    assert.equal(toDateParam(new Date(2026, 2, 29, 0, 30)), "2026-03-29");
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+});
+
 test("last month from January 1 crosses the year boundary into December", () => {
   const range = preset("last-month").getRange(new Date(2026, 0, 1));
   assert.deepEqual(serialized(range), { from: "2025-12-01", to: "2025-12-31" });

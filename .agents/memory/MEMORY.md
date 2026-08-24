@@ -52,6 +52,7 @@
 - [Retention settings write preconditions](retention-settings-write-preconditions.md) — restore truthfulness → 409 version conflict → no-op guard; stale pages must see the conflict first.
 - [Webhook registration verification](webhook-registration-verification.md) — provider-side listing proves registration; compare secrets timing-safe server-side and echo only masked URLs.
 - [Calendar date validation](calendar-date-validation.md) — V8 rolls over impossible ISO dates (2026-02-30 → March 2); YYYY-MM-DD inputs need a round-trip check to reject them explicitly.
+- [DST date-only serialization](dst-date-only-serialization.md) — test positive-offset local dates near spring-forward midnight; UTC serialization can shift the selected day backward.
 - [Mainline merge damage](mainline-merge-damage.md) — main can arrive broken from concurrent auto-merges; typecheck after resolving and repair ours-side damage, applying aggregate semantics to every sibling surface.
 - [Campaign attribution buckets](campaign-attribution-buckets.md) — status splits need explicit buckets per status; complement buckets silently misclassify no-shows as upcoming money.
 - [Alert fallback channels](alert-fallback-channels.md) — fallbacks fire only when every attempted primary send failed/skipped, and dedup by embedding the primary alert sequence in the outbox key.
