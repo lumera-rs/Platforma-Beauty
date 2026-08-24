@@ -26,7 +26,7 @@
 - [Immutable gallery media](immutable-gallery-media.md) — browser uploads must land in staging and be promoted before attachment; private media must disable shared caching.
 - [Managed image attachment](managed-image-attachment.md) — claim leased image assets in the same transaction as the business reference, using only newly supplied fields.
 - [Active salon media publishing](active-salon-media-publishing.md) — only matching owner-uploaded salon media becomes public, and activation must reconcile it transactionally.
-- [Shared end-to-end spec validation](shared-e2e-spec-validation.md) — after concurrent merges, run direct test discovery and the full affected suite; typechecks can miss scope drift.
+- [Shared end-to-end spec validation](shared-end-to-end-spec-validation.md) — after concurrent merges, run direct test discovery and the full affected suite; typechecks can miss scope drift.
 - [EventSource reconnect recovery](eventsource-reconnect-recovery.md) — explicitly reconnect browser streams and rehydrate state after network restoration.
 - [Cache invalidation generations](cache-invalidation-generations.md) — detach pending loads on invalidation so stale in-flight results cannot refill catalog caches.
 - [Cross-process salon alerts](cross-process-salon-alerts.md) — PostgreSQL broadcasts are non-durable wakeups; authenticated refetch and polling remain the source of truth.
@@ -81,6 +81,9 @@
 - [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
+- [Campaign period portal tests](campaign-period-portal-tests.md) — Radix picker presets render outside the selector subtree, so browser locators must use the page-level portal test id.
+- [Browser fixture schema boundaries](browser-fixture-schema-boundaries.md) — scripts helpers receive generated schemas from specs so shared payloads validate without crossing TypeScript rootDir.
 - [Browser test boundaries](browser-boundaries.md) — account for UI portals and package compilation boundaries when structuring locators and shared fixture validation.
 - [Isolated process recovery](isolated-process-recovery.md) — stale-run cleanup targets unique child markers, while protected foreign /proc entries remain non-fatal.
 - [API test schema readiness](api-test-schema-readiness.md) — direct Express-app harnesses bypass startup rollouts and must ensure newly queried database columns first.
+- [Disposable database name limits](disposable-database-name-limits.md) — keep generated PostgreSQL test database names under the identifier length limit to avoid silent collisions.

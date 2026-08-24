@@ -177,6 +177,18 @@ async function stopProcessGroup(processId: number): Promise<void> {
   }
 }
 
+async function stopMarkedProcessGroups(processMarker: string): Promise<void> {
+  const processGroupIds = new Set<number>();
+  for (const processId of await findProcessesWithMarker(processMarker)) {
+    try {
+      processGroupIds.add(await getProcessGroupId(processId));
+    } catch {
+      // Processes can exit while the test is cleaning up.
+    }
+  }
+  await Promise.all([...processGroupIds].map((processGroupId) => stopProcessGroup(processGroupId)));
+}
+
 async function findProcessesWithMarker(processMarker: string): Promise<number[]> {
   const processEntries = await readdir("/proc", { withFileTypes: true });
   const processIds = processEntries
@@ -196,6 +208,19 @@ async function findProcessesWithMarker(processMarker: string): Promise<number[]>
   }));
 
   return ownedPids.sort((left, right) => left - right);
+}
+
+async function waitForProcess(processId: number, label: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(processId, 0);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  assert.fail(`${label} process ${processId} did not remain running.`);
 }
 
 async function waitForOwnedTestServers(testDatabaseUrl: string): Promise<void> {
@@ -259,6 +284,233 @@ async function waitForOwnedTestServersToStop(testDatabaseUrl: string): Promise<v
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.deepEqual(remaining, [], `Owned disposable test-server processes remain: ${remaining.join(", ")}`);
+}
+
+async function writeBrowserCommandShims(
+  binDirectory: string,
+  realBash: string,
+  realPnpm: string,
+  realNode: string,
+  frontendPidPath: string,
+  phaseMarkerPath: string,
+  blockerPidPath: string,
+): Promise<void> {
+  await writeFile(
+    path.join(binDirectory, "pnpm"),
+    `#!${realBash}
+set -euo pipefail
+if [[ "$*" == *"@workspace/db run push-force"* ]]; then
+  exec "$LUMERA_LIFECYCLE_REAL_PNPM" "$@"
+fi
+if [[ "$*" == *"--filter @workspace/beauty-marketplace run dev"* ]]; then
+  printf '%s' "$$" > "$LUMERA_LIFECYCLE_FRONTEND_PID"
+  exec "$LUMERA_LIFECYCLE_REAL_NODE" -e '
+    const http = require("node:http");
+    http.createServer((_request, response) => {
+      response.writeHead(200);
+      response.end("browser lifecycle frontend");
+    }).listen(Number(process.env.PORT), "127.0.0.1");
+  '
+fi
+if [[ "$*" == *"--filter @workspace/scripts exec playwright test"* ]]; then
+  printf 'playwright' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+  printf '%s' "$$" > "$LUMERA_LIFECYCLE_BLOCKER_PID"
+  while :; do sleep 1; done
+fi
+exec "$LUMERA_LIFECYCLE_REAL_PNPM" "$@"
+`,
+    { mode: 0o755 },
+  );
+  await chmod(path.join(binDirectory, "pnpm"), 0o755);
+}
+
+async function runForcedBrowserStopScenario(): Promise<void> {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-browser-suite-forced-stop-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const phaseMarkerPath = path.join(temporaryRoot, "phase-reached");
+  const frontendPidPath = path.join(temporaryRoot, "frontend-pid");
+  const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
+  const browserRunnerScriptPath = path.join(temporaryRoot, "run-browser-suite.ts");
+  const manifestDirectoryName = `browser-suite-forced-stop-${process.pid}-${randomUUID()}`;
+  const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
+  const databasePrefix = `lumera_bforced_${process.pid}_`;
+  let child: ChildProcess | undefined;
+  let staleManifest: { manifestPath: string; manifest: HarnessManifest } | undefined;
+  let staleProcessMarker: string | undefined;
+  let blockerPid: number | undefined;
+  let activeProcess: ChildProcess | undefined;
+  let unrelatedProcess: ChildProcess | undefined;
+  const databaseNames: string[] = [];
+
+  try {
+    const realBash = await commandPath("bash");
+    const realPnpm = await commandPath("pnpm");
+    await mkdir(binDirectory, { recursive: true });
+    await writeBrowserCommandShims(
+      binDirectory,
+      realBash,
+      realPnpm,
+      process.execPath,
+      frontendPidPath,
+      phaseMarkerPath,
+      blockerPidPath,
+    );
+    await writeFile(
+      browserRunnerScriptPath,
+      `import { runIsolatedBrowserSuiteCommand } from ${JSON.stringify(
+        path.join(workspaceRoot, "scripts", "src", "run-isolated-browser-suite.ts"),
+      )};
+
+void runIsolatedBrowserSuiteCommand({
+  databasePrefix: ${JSON.stringify(databasePrefix)},
+  manifestDirectoryName: ${JSON.stringify(manifestDirectoryName)},
+  specPath: "browser/retail-checkout.spec.ts",
+  testLabel: "Browser lifecycle checks",
+  environment: {},
+});
+`,
+      "utf8",
+    );
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      DATABASE_URL: databaseUrl,
+      LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
+      LUMERA_LIFECYCLE_FRONTEND_PID: frontendPidPath,
+      LUMERA_LIFECYCLE_PHASE_MARKER: phaseMarkerPath,
+      LUMERA_LIFECYCLE_REAL_NODE: process.execPath,
+      LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
+    };
+    child = spawn(runnerPath, [browserRunnerScriptPath], {
+      cwd: workspaceRoot,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+
+    await waitForFile(phaseMarkerPath);
+    staleManifest = await readManifest(manifestDirectory);
+    staleProcessMarker = staleManifest.manifest.processMarker;
+    assert.ok(staleProcessMarker, "The browser process marker was not recorded.");
+    const staleDatabaseName = staleManifest.manifest.databaseName;
+    databaseNames.push(staleDatabaseName);
+    const isolatedDatabaseUrl = new URL(databaseUrl!);
+    isolatedDatabaseUrl.pathname = `/${staleDatabaseName}`;
+    const testDatabaseUrl = isolatedDatabaseUrl.toString();
+    assert.equal(await databaseExists(staleDatabaseName), true, `Disposable database was not created.\n${output}`);
+    await waitForOwnedTestServers(testDatabaseUrl);
+
+    const frontendPid = Number(await readFile(frontendPidPath, "utf8"));
+    assert.ok(Number.isSafeInteger(frontendPid) && frontendPid > 0, "The frontend PID was not recorded.");
+    blockerPid = Number(await readFile(blockerPidPath, "utf8"));
+    assert.ok(
+      Number.isSafeInteger(blockerPid) && blockerPid > 0,
+      "The Playwright blocker PID was not recorded.",
+    );
+    await waitForProcess(frontendPid, "The disposable browser frontend");
+    await waitForProcess(blockerPid, "The disposable Playwright check");
+    const orphanedProcesses = await findProcessesWithMarker(staleProcessMarker);
+    assert.ok(
+      orphanedProcesses.includes(frontendPid),
+      "The disposable browser frontend did not carry the run marker.",
+    );
+    assert.ok(
+      orphanedProcesses.includes(blockerPid),
+      "The disposable Playwright process did not carry the run marker.",
+    );
+
+    process.kill(staleManifest.manifest.ownerPid, "SIGKILL");
+    const exit = await waitForExit(child);
+    assert.notEqual(exit.code, 0, `Browser runner was not force-stopped.\n${output}`);
+    await waitForProcess(frontendPid, "The orphaned disposable browser frontend");
+    await waitForProcess(blockerPid, "The orphaned disposable Playwright check");
+
+    const activeDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    const unrelatedDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    databaseNames.push(activeDatabaseName, unrelatedDatabaseName);
+    await createDatabase(activeDatabaseName);
+    await createDatabase(unrelatedDatabaseName);
+    const activeManifestPath = await writeManifest(manifestDirectory, {
+      version: 1,
+      databaseName: activeDatabaseName,
+      databaseTarget: getDatabaseTarget(),
+      ownerPid: process.pid,
+      ownerProcessIdentity: await getProcessIdentity(process.pid),
+      processMarker: `active-${randomUUID()}`,
+    });
+    const unrelatedManifestPath = await writeManifest(manifestDirectory, {
+      version: 1,
+      databaseName: unrelatedDatabaseName,
+      databaseTarget: getDatabaseTarget("unrelated-maintenance-database"),
+      ownerPid: 1,
+      ownerProcessIdentity: "unrelated-process",
+    });
+    const activeManifest = JSON.parse(await readFile(activeManifestPath, "utf8")) as HarnessManifest;
+    activeProcess = spawn(realBash, ["-c", "while :; do sleep 1; done"], {
+      env: {
+        ...process.env,
+        [processMarkerEnvironmentName]: activeManifest.processMarker,
+      },
+      detached: true,
+      stdio: "ignore",
+    });
+    unrelatedProcess = spawn(realBash, ["-c", "while :; do sleep 1; done"], {
+      env: process.env,
+      detached: true,
+      stdio: "ignore",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const recovery = await execFileAsync(
+      runnerPath,
+      [browserRunnerScriptPath, "--recover-interrupted-databases"],
+      { cwd: workspaceRoot, env: environment },
+    );
+    const escapedStaleDatabaseName = staleDatabaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      recovery.stdout,
+      new RegExp(`Removed interrupted browser test database ${escapedStaleDatabaseName}`),
+    );
+    assert.equal(await databaseExists(staleDatabaseName), false, "Recovery did not remove the stale database.");
+    await assert.rejects(readFile(staleManifest.manifestPath), { code: "ENOENT" });
+    assert.equal(await databaseExists(activeDatabaseName), true, "Recovery removed an active database.");
+    assert.equal(await databaseExists(unrelatedDatabaseName), true, "Recovery removed an unrelated database.");
+    await readFile(activeManifestPath);
+    await readFile(unrelatedManifestPath);
+    assert.ok(activeProcess.pid);
+    assert.ok(
+      (await findProcessesWithMarker(activeManifest.processMarker!)).includes(activeProcess.pid),
+      "Recovery terminated an active browser-run process.",
+    );
+    assert.ok(unrelatedProcess.pid);
+    process.kill(unrelatedProcess.pid, 0);
+    await waitForMarkerProcessesToStop(staleProcessMarker);
+  } finally {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child, 5_000).catch(() => undefined);
+    }
+    if (staleProcessMarker) {
+      await stopMarkedProcessGroups(staleProcessMarker).catch(() => undefined);
+    }
+    if (blockerPid) {
+      await stopProcessGroup(blockerPid).catch(() => undefined);
+    }
+    if (activeProcess?.pid) {
+      await stopProcessGroup(await getProcessGroupId(activeProcess.pid)).catch(() => undefined);
+    }
+    if (unrelatedProcess?.pid) {
+      await stopProcessGroup(await getProcessGroupId(unrelatedProcess.pid)).catch(() => undefined);
+    }
+    await Promise.all(databaseNames.map((databaseName) => dropDatabase(databaseName).catch(() => undefined)));
+    await rm(manifestDirectory, { recursive: true, force: true });
+    await unlink(phaseMarkerPath).catch(() => undefined);
+    await unlink(frontendPidPath).catch(() => undefined);
+    await unlink(blockerPidPath).catch(() => undefined);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 }
 
 async function writeCommandShims(
@@ -530,4 +782,8 @@ test("SIGTERM during a disposable API regression shell check cleans every resour
 
 test("forced API regression shutdown recovery removes orphaned API and shell-check processes", async () => {
   await runForcedStopScenario();
+});
+
+test("forced browser-suite shutdown recovery removes only stale API, frontend, and Playwright processes", async () => {
+  await runForcedBrowserStopScenario();
 });
