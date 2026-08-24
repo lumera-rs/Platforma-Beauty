@@ -32,6 +32,8 @@
  *     stats dialog without dropping an unrelated tracking parameter.
  *  9. Browser Back/Forward → valid custom windows are restored in the overview
  *     and stats dialog with their exact from/to values.
+ *  10. A shared stats URL → the custom July window is restored in the stats
+ *      dialog and both stats requests keep the restored from/to after reload.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -395,6 +397,47 @@ test.describe("shared campaign period links restore the picked window", () => {
       .getByTestId("period-custom");
     await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
     await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
+  });
+
+  test("a shared stats link restores the July custom period in the dialog after reload", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-08-23T12:00:00.000Z") });
+    await signInAsFixtureOwner(page, fixture);
+
+    const expected = { period: null, from: "2026-07-01", to: "2026-07-31" };
+    const sharedStatsUrl = `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}&rule=${fixture.ruleId}`;
+    const overviewResponse = nextOverviewStatsResponse(page, expected);
+    const detailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+    await page.goto(sharedStatsUrl);
+
+    expect((await overviewResponse).status()).toBe(200);
+    expect((await detailResponse).status()).toBe(200);
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const selector = dialog.getByTestId("stats-period-selector");
+    const customButton = selector.getByTestId("period-custom");
+    const expectedRangeLabel = ` ${new Date(2026, 6, 1).toLocaleDateString("sr-RS")} – ${new Date(2026, 6, 31).toLocaleDateString("sr-RS")}`;
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(expectedRangeLabel);
+    await expect(dialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
+    expect(await page.evaluate(() => {
+      const params = new URLSearchParams(window.location.search);
+      return { from: params.get("from"), to: params.get("to"), rule: params.get("rule"), period: params.get("period") };
+    })).toEqual({ from: expected.from, to: expected.to, rule: fixture.ruleId, period: null });
+
+    const reloadedOverviewResponse = nextOverviewStatsResponse(page, expected);
+    const reloadedDetailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+    await page.reload();
+
+    expect((await reloadedOverviewResponse).status()).toBe(200);
+    expect((await reloadedDetailResponse).status()).toBe(200);
+    const reloadedDialog = page.getByRole("dialog");
+    await expect(reloadedDialog).toBeVisible();
+    const reloadedCustomButton = reloadedDialog.getByTestId("stats-period-selector")
+      .getByTestId("period-custom");
+    await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
+    await expect(reloadedDialog.getByTestId("stats-period-status")).toContainText(expectedRangeLabel.trim());
   });
 
   test("manually picking two dates writes exact dates and restores them after reload", async ({ page }) => {
