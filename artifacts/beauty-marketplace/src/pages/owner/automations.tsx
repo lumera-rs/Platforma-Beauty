@@ -367,9 +367,19 @@ function PeriodSelector({
             selected={customRange}
             disabled={{ after: new Date() }}
             onSelect={(range) => {
+              // DayPicker represents an initial range click as a complete
+              // one-day range. Keep that first click open as the range start;
+              // a second click on the same day still completes a one-day
+              // window, while a different day creates the intended span.
+              const nextRange = !customRange
+                && range?.from
+                && range.to
+                && range.from.getTime() === range.to.getTime()
+                ? { from: range.from, to: undefined }
+                : range;
               onPeriodChange("custom");
-              onCustomRangeChange(range);
-              if (range?.from && range?.to) setRangeOpen(false);
+              onCustomRangeChange(nextRange);
+              if (nextRange?.from && nextRange?.to) setRangeOpen(false);
             }}
             data-testid={`${testId}-range-calendar`}
           />

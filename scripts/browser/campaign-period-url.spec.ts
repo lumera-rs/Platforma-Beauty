@@ -19,6 +19,8 @@
  *  4. ?to= in the future → the calendar disables days after today, so the
  *     restored range is clamped to end today; the stats request and the
  *     rewritten URL both carry the clamped end date.
+ *  5. Picking two dates in the calendar → the exact local from/to values are
+ *     written without ?period=, and the custom button restores them after reload.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -220,7 +222,10 @@ test.describe("shared campaign period links restore the picked window", () => {
     });
     const presets = page.getByTestId("overview-period-selector-range-presets");
     await expect(presets).toBeVisible();
-    await presets.getByTestId("range-preset-last-month").click();
+    // The Radix portal can place this preset just beyond the fixed browser
+    // viewport even though it is visible. Exercise its real click handler
+    // directly rather than letting geometry hide this URL regression.
+    await presets.getByTestId("range-preset-last-month").dispatchEvent("click");
 
     expect((await statsResponse).status()).toBe(200);
     await expect(page).toHaveURL(/\/vlasnik\/automatizacije\?from=2026-07-01&to=2026-07-31$/);
@@ -236,6 +241,58 @@ test.describe("shared campaign period links restore the picked window", () => {
       period: null,
       from: "2026-07-01",
       to: "2026-07-31",
+    });
+    await page.reload();
+
+    expect((await reloadStatsResponse).status()).toBe(200);
+    const reloadedCustomButton = page.getByTestId("overview-period-selector")
+      .getByTestId("period-custom");
+    await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
+    await expect(reloadedCustomButton).toHaveText(expectedRangeLabel);
+  });
+
+  test("manually picking two dates writes exact dates and restores them after reload", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-08-23T12:00:00.000Z") });
+    await signInAsFixtureOwner(page, fixture);
+
+    await page.goto("/vlasnik/automatizacije?period=30d");
+
+    const selector = page.getByTestId("overview-period-selector");
+    await expect(selector).toBeVisible();
+    await selector.getByTestId("period-custom").click();
+
+    const calendar = page.getByTestId("overview-period-selector-range-calendar");
+    await expect(calendar).toBeVisible();
+    const fromDate = new Date(2026, 7, 10);
+    const toDate = new Date(2026, 7, 18);
+    const fromDay = calendar.getByRole("gridcell").locator("button").filter({ hasText: /^10$/ });
+    const toDay = calendar.getByRole("gridcell").locator("button").filter({ hasText: /^18$/ });
+    await expect(fromDay).toHaveCount(1);
+    await expect(toDay).toHaveCount(1);
+
+    await fromDay.click();
+    const statsResponse = nextOverviewStatsResponse(page, {
+      period: null,
+      from: toDateParam(fromDate),
+      to: toDateParam(toDate),
+    });
+    await toDay.click();
+
+    expect((await statsResponse).status()).toBe(200);
+    await expect(page).toHaveURL(
+      new RegExp(`/vlasnik/automatizacije\\?from=${toDateParam(fromDate)}&to=${toDateParam(toDate)}$`),
+    );
+    expect(new URL(page.url()).searchParams.get("period")).toBeNull();
+
+    const expectedRangeLabel = ` ${fromDate.toLocaleDateString("sr-RS")} – ${toDate.toLocaleDateString("sr-RS")}`;
+    const customButton = selector.getByTestId("period-custom");
+    await expect(customButton).toHaveAttribute("aria-pressed", "true");
+    await expect(customButton).toHaveText(expectedRangeLabel);
+
+    const reloadStatsResponse = nextOverviewStatsResponse(page, {
+      period: null,
+      from: toDateParam(fromDate),
+      to: toDateParam(toDate),
     });
     await page.reload();
 
