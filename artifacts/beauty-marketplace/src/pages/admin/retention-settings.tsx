@@ -136,7 +136,9 @@ export default function AdminRetentionSettings() {
   const [restoreTarget, setRestoreTarget] = useState<RestoreTarget | null>(null);
   const [conflict, setConflict] = useState<VersionConflict | null>(null);
   const [isDiscardingConflict, setIsDiscardingConflict] = useState(false);
-  const [conflictRefreshError, setConflictRefreshError] = useState<string | null>(null);
+  const [conflictActiveSettings, setConflictActiveSettings] = useState<RetentionSettings | null>(null);
+  const [isConflictRefreshing, setIsConflictRefreshing] = useState(false);
+  const [conflictRefreshError, setConflictRefreshError] = useState<ConflictRefreshError | null>(null);
   const conflictDismissalInFlight = useRef(false);
   const conflictRefreshController = useRef<AbortController | null>(null);
 
@@ -246,14 +248,17 @@ export default function AdminRetentionSettings() {
     conflictRefreshController.current?.abort();
     const controller = new AbortController();
     conflictRefreshController.current = controller;
+    setIsConflictRefreshing(true);
     await queryClient.cancelQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
     try {
       const activeSettings = await adminGetRetentionSettings({ signal: controller.signal });
       if (controller.signal.aborted) return;
       queryClient.setQueryData(getAdminGetRetentionSettingsQueryKey(), activeSettings);
+      setConflictActiveSettings(activeSettings);
       await queryClient.invalidateQueries({
         queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
       });
+      return activeSettings;
     } catch (error) {
       if (controller.signal.aborted) return;
       throw error;
@@ -261,6 +266,7 @@ export default function AdminRetentionSettings() {
       if (conflictRefreshController.current === controller) {
         conflictRefreshController.current = null;
       }
+      setIsConflictRefreshing(false);
     }
   };
 
@@ -297,6 +303,8 @@ export default function AdminRetentionSettings() {
         );
         setRestoreTarget(null);
         setConflict(null);
+        setConflictActiveSettings(null);
+        setConflictRefreshError(null);
         setIdenticalSavePending(null);
         // Rebase the form on the version we just created, so the refetch
         // below neither re-triggers the staleness banner nor loses the state.
@@ -315,10 +323,15 @@ export default function AdminRetentionSettings() {
             changedByName: conflictDetails.changedByName,
             changedAt: conflictDetails.changedAt,
           });
+          setConflictActiveSettings(null);
           setConflictRefreshError(null);
-          void refreshAfterConflict().catch((refreshError) => {
-            toast.error(extractApiError(refreshError, "Nove vrednosti nisu mogle da se učitaju."));
-          });
+          void refreshAfterConflict()
+            .then(() => setConflictRefreshError(null))
+            .catch((refreshError) => {
+              const message = extractApiError(refreshError, "Nove vrednosti nisu mogle da se učitaju.");
+              setConflictRefreshError({ phase: "initial", message });
+              toast.error(message);
+            });
           toast.error("Drugi administrator je u međuvremenu sačuvao izmene. Proverite nove vrednosti i potvrdite ponovo.");
           return;
         }
@@ -385,7 +398,7 @@ export default function AdminRetentionSettings() {
   };
 
   const handleConfirmConflict = () => {
-    if (!conflict) return;
+    if (!conflict || conflictRefreshError?.phase === "initial" || isConflictRefreshing) return;
     // Re-confirm against the refreshed version. A restore label is only kept
     // when it is still truthful (restoring version N is unaffected by the
     // concurrent change; restoring defaults still matches the defaults).
@@ -399,7 +412,7 @@ export default function AdminRetentionSettings() {
    * values from surviving that timing window.
    */
   const handleCancelConflict = async () => {
-    if (conflictDismissalInFlight.current) return;
+    if (conflictDismissalInFlight.current || conflictRefreshError?.phase === "initial") return;
     conflictDismissalInFlight.current = true;
     setIsDiscardingConflict(true);
     setConflictRefreshError(null);
@@ -408,19 +421,36 @@ export default function AdminRetentionSettings() {
       await queryClient.cancelQueries({ queryKey: getAdminGetRetentionSettingsQueryKey() });
       const activeSettings = await adminGetRetentionSettings();
       queryClient.setQueryData(getAdminGetRetentionSettingsQueryKey(), activeSettings);
+      setConflictActiveSettings(activeSettings);
       loadFormFromSettings(activeSettings);
       setConflict(null);
+      setConflictRefreshError(null);
       await queryClient.invalidateQueries({
         queryKey: getAdminGetRetentionSettingsHistoryQueryKey(),
       });
     } catch (err) {
       const message = extractApiError(err, "Nove vrednosti nisu mogle da se učitaju. Pokušajte ponovo.");
-      setConflictRefreshError(message);
+      setConflictRefreshError({ phase: "dismissal", message });
       toast.error(message);
     } finally {
       conflictDismissalInFlight.current = false;
       setIsDiscardingConflict(false);
     }
+  };
+
+  const retryConflictRefresh = () => {
+    if (!conflict || isConflictRefreshing || isDiscardingConflict) return;
+    if (conflictRefreshError?.phase === "dismissal") {
+      void handleCancelConflict();
+      return;
+    }
+    void refreshAfterConflict()
+      .then(() => setConflictRefreshError(null))
+      .catch((refreshError) => {
+        const message = extractApiError(refreshError, "Nove vrednosti nisu mogle da se učitaju.");
+        setConflictRefreshError({ phase: "initial", message });
+        toast.error(message);
+      });
   };
 
   // A restore whose values equal the active thresholds would only clutter the
@@ -990,9 +1020,14 @@ export default function AdminRetentionSettings() {
               <AlertDialogTitle>Drugi administrator je sačuvao novije izmene</AlertDialogTitle>
               <AlertDialogDescription>
                 Dok ste uređivali pragove, sačuvana je novija verzija
-                {settings && !settings.isDefault ? ` (verzija ${settings.version})` : ""}.
-                Ispod je poređenje trenutno aktivnih vrednosti i vrednosti koje ste pokušali da sačuvate —
-                potvrdite ponovo ako i dalje želite svoje vrednosti.
+                {conflictActiveSettings && !conflictActiveSettings.isDefault
+                  ? ` (verzija ${conflictActiveSettings.version})`
+                  : conflictActiveSettings?.isDefault
+                    ? " (podrazumevane vrednosti)"
+                    : ""}.
+                {conflictActiveSettings
+                  ? " Ispod je poređenje trenutno aktivnih vrednosti i vrednosti koje ste pokušali da sačuvate — potvrdite ponovo ako i dalje želite svoje vrednosti."
+                  : " Najnovije aktivne vrednosti još nisu učitane, pa odluka nije dostupna dok ne pokušate ponovo."}
               </AlertDialogDescription>
             {conflict && (conflict.changedByName || conflict.changedAt) && (
               <p className="text-sm text-muted-foreground" data-testid="retention-conflict-changed-by">
@@ -1001,9 +1036,9 @@ export default function AdminRetentionSettings() {
               </p>
             )}
             </AlertDialogHeader>
-            {conflict && settings && (() => {
+            {conflict && conflictActiveSettings && (() => {
               const diffKeys = (Object.keys(conflict.pending) as FieldKey[]).filter(
-                (k) => conflict.pending[k] !== settings.thresholds[k],
+                (k) => conflict.pending[k] !== conflictActiveSettings.thresholds[k],
               );
               return (
                 <div className="text-sm" data-testid="retention-conflict-diff">
@@ -1016,7 +1051,7 @@ export default function AdminRetentionSettings() {
                       {diffKeys.map((key) => (
                         <li key={key} className="text-muted-foreground">
                           <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
-                          <span className="line-through">{settings.thresholds[key]}</span>
+                            <span className="line-through">{conflictActiveSettings.thresholds[key]}</span>
                           {" → "}
                           <span className="font-semibold text-foreground">{conflict.pending[key]}</span>
                         </li>
@@ -1026,21 +1061,39 @@ export default function AdminRetentionSettings() {
                 </div>
               );
             })()}
+            {conflict && !conflictActiveSettings && (
+              <div className="text-sm space-y-2" data-testid="retention-conflict-pending-values">
+                <p className="font-medium text-foreground">Vrednosti koje čekaju potvrdu (nisu sačuvane):</p>
+                <ul className="space-y-1">
+                  {(Object.keys(conflict.pending) as FieldKey[]).map((key) => (
+                    <li key={key} className="text-muted-foreground">
+                      <span className="text-foreground">{FIELD_LABELS[key]}:</span>{" "}
+                      <span className="font-semibold text-foreground">{conflict.pending[key]}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {conflictRefreshError && (
               <Alert variant="destructive" data-testid="retention-conflict-refresh-error">
                 <TriangleAlert className="h-4 w-4" />
-                <AlertTitle>Nove vrednosti nisu učitane</AlertTitle>
+                <AlertTitle>
+                  {conflictRefreshError.phase === "initial"
+                    ? "Autoritativne vrednosti nisu učitane"
+                    : "Nove vrednosti nisu učitane"}
+                </AlertTitle>
                 <AlertDescription className="space-y-3">
                   <p>
-                    {conflictRefreshError} Vaše vrednosti nisu sačuvane i ostaju samo u ovom
-                    poređenju dok ne učitate najnovije aktivne vrednosti.
+                    {conflictRefreshError.message} Vaše vrednosti nisu sačuvane i ostaju samo u ovom
+                    {conflictRefreshError.phase === "initial" ? " dijalogu" : " poređenju"} dok ne učitate
+                    najnovije aktivne vrednosti.
                   </p>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => void handleCancelConflict()}
-                    disabled={isDiscardingConflict}
+                    onClick={retryConflictRefresh}
+                    disabled={isDiscardingConflict || isConflictRefreshing}
                     data-testid="retry-retention-conflict-dismissal"
                   >
                     {isDiscardingConflict && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -1052,7 +1105,11 @@ export default function AdminRetentionSettings() {
             )}
             <AlertDialogFooter>
               <AlertDialogCancel
-                disabled={isUpdatePending || isDiscardingConflict}
+                disabled={
+                  isUpdatePending
+                  || isDiscardingConflict
+                  || conflictRefreshError?.phase === "initial"
+                }
                 data-testid="cancel-retention-conflict"
               >
                 {isDiscardingConflict && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
@@ -1063,7 +1120,12 @@ export default function AdminRetentionSettings() {
                   e.preventDefault();
                   handleConfirmConflict();
                 }}
-                disabled={isUpdatePending || isDiscardingConflict}
+                disabled={
+                  isUpdatePending
+                  || isDiscardingConflict
+                  || isConflictRefreshing
+                  || conflictRefreshError?.phase === "initial"
+                }
                 data-testid="confirm-retention-conflict"
               >
                 {isUpdatePending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
@@ -1089,6 +1151,11 @@ interface VersionConflict {
   origin: UpdateOrigin;
   changedByName: string | null;
   changedAt: string | null;
+}
+
+interface ConflictRefreshError {
+  phase: "initial" | "dismissal";
+  message: string;
 }
 
 function getVersionConflictDetails(err: unknown): Pick<VersionConflict, "changedByName" | "changedAt"> {

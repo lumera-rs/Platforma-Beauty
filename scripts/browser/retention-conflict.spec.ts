@@ -481,7 +481,7 @@ test("immediately cancelling a conflict waits for newer settings before closing"
   }
 });
 
-test("failed conflict dismissal refresh keeps the dialog actionable until retry succeeds", async ({ page }) => {
+test("failed initial conflict refresh preserves pending values until the active settings retry succeeds", async ({ page }) => {
   test.setTimeout(120_000);
 
   let failNextSettingsRead = false;
@@ -532,20 +532,50 @@ test("failed conflict dismissal refresh keeps the dialog actionable until retry 
     });
     expect(concurrentResponse.ok(), "the concurrent save must succeed").toBe(true);
 
+    // The very first authoritative read, started immediately after the 409,
+    // fails. The page must not compare the pending values with its stale
+    // baseline or allow an uninformed confirm/discard decision.
+    failNextSettingsRead = true;
     const conflictSave = page.waitForResponse((response) =>
       response.request().method() === "PUT"
       && new URL(response.url()).pathname === settingsPath,
     );
+    const failedInitialRefresh = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath,
+    );
     await page.getByTestId("save-retention-settings").click();
     expect((await conflictSave).status(), "the stale save must be rejected with 409").toBe(409);
+    expect((await failedInitialRefresh).status(), "the first authoritative conflict read must fail").toBe(503);
 
     const conflictDialog = page.getByTestId("retention-conflict-dialog");
     await expect(conflictDialog).toBeVisible();
+    await expect(page.getByTestId("retention-conflict-refresh-error")).toContainText("nisu sačuvane");
+    await expect(page.getByTestId("retention-conflict-pending-values")).toContainText(String(ADMIN_A_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-conflict-diff")).not.toBeVisible();
+    await expect(windowInput).toHaveValue(String(ADMIN_A_WINDOW_DAYS));
+    await expect(page.getByTestId("confirm-retention-conflict")).toBeDisabled();
+    await expect(page.getByTestId("cancel-retention-conflict")).toBeDisabled();
+
+    // Retrying only reloads the authoritative active version. The dialog
+    // remains open and becomes actionable once it can show a real comparison.
+    const retriedInitialRefresh = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath,
+    );
+    await page.getByTestId("retry-retention-conflict-dismissal").click();
+    expect((await retriedInitialRefresh).status()).toBe(200);
+    await expect(conflictDialog).toBeVisible();
     await expect(page.getByTestId("retention-settings-version")).toHaveText(`Verzija ${baselineVersion + 1}`);
     await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+    const conflictDiff = page.getByTestId("retention-conflict-diff");
+    await expect(conflictDiff.locator(".line-through")).toHaveText(String(ADMIN_B_WINDOW_DAYS));
+    await expect(conflictDiff).toContainText(String(ADMIN_A_WINDOW_DAYS));
+    await expect(page.getByTestId("confirm-retention-conflict")).toBeEnabled();
+    await expect(page.getByTestId("cancel-retention-conflict")).toBeEnabled();
 
-    // Fail the authoritative read made by dismissal. The conflict and the
-    // pending values must remain visible instead of looking safely discarded.
+    // A later failed dismissal read stays independently recoverable: it keeps
+    // the known comparison visible and retries the safe rebase before closing.
     failNextSettingsRead = true;
     const failedDismissalRead = page.waitForResponse((response) =>
       response.request().method() === "GET"
@@ -555,7 +585,7 @@ test("failed conflict dismissal refresh keeps the dialog actionable until retry 
     expect((await failedDismissalRead).status()).toBe(503);
     await expect(conflictDialog).toBeVisible();
     await expect(page.getByTestId("retention-conflict-refresh-error")).toContainText("nisu sačuvane");
-    await expect(page.getByTestId("retention-conflict-diff")).toContainText(String(ADMIN_A_WINDOW_DAYS));
+    await expect(conflictDiff).toContainText(String(ADMIN_A_WINDOW_DAYS));
     await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
 
     const activeAfterFailedDismissal = await (await apiB.get(settingsPath)).json();
