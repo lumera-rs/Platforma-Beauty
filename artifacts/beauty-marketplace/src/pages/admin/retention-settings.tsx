@@ -119,7 +119,14 @@ export default function AdminRetentionSettings() {
       refetchOnWindowFocus: true,
     },
   });
-  const { data: history = [], isLoading: isHistoryLoading } = useAdminGetRetentionSettingsHistory();
+  const {
+    data: history = [],
+    isLoading: isHistoryLoading,
+    isError: hasHistoryLoadError,
+    error: historyError,
+    refetch: retryHistory,
+    isFetching: isHistoryRefreshing,
+  } = useAdminGetRetentionSettingsHistory();
   const updateMutation = useAdminUpdateRetentionSettings();
   const updateRequestInFlight = useRef(false);
   const [isUpdateSubmitting, setIsUpdateSubmitting] = useState(false);
@@ -935,6 +942,33 @@ export default function AdminRetentionSettings() {
           <CardContent className="p-0">
             {isHistoryLoading ? (
               <div className="flex justify-center p-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+            ) : hasHistoryLoadError ? (
+              <Alert
+                className="m-4 border-destructive/50 bg-destructive/5 [&>svg]:text-destructive"
+                data-testid="retention-history-error"
+              >
+                <TriangleAlert className="h-4 w-4" />
+                <AlertTitle>Istorija izmena nije mogla da se učita</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  <span>
+                    {extractApiError(
+                      historyError,
+                      "Nije moguće učitati istoriju izmena. Pokušajte ponovo.",
+                    )}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void retryHistory()}
+                    disabled={isHistoryRefreshing}
+                    data-testid="retry-retention-history"
+                  >
+                    {isHistoryRefreshing && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />}
+                    <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                    Pokušaj ponovo
+                  </Button>
+                </AlertDescription>
+              </Alert>
             ) : history.length === 0 ? (
               <div className="p-10 text-center text-muted-foreground" data-testid="retention-history-empty">
                 Još nema izmena — važe podrazumevana podešavanja platforme.

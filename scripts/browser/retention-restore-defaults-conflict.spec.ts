@@ -647,6 +647,102 @@ test("failed background refresh shows a retry warning and preserves unsaved edit
   }
 });
 
+test("failed history load shows a retry warning and preserves settings edits", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  const historyPath = `${settingsPath}/history`;
+  let allowHistoryLoad = false;
+  await page.route(`**${historyPath}`, async (route) => {
+    if (
+      !allowHistoryLoad
+      && route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Privremeno nedostupno" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  // Install the clock before navigation so the history query's retry backoff
+  // can be advanced without waiting in real time.
+  await page.clock.install();
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+
+    const initialHistoryFailure = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 503,
+    );
+    await page.goto("/admin/retencija");
+    await initialHistoryFailure;
+
+    // TanStack Query retries three times after the first failed request.
+    for (const delay of [1_000, 2_000, 4_000]) {
+      const failedRetry = page.waitForResponse((response) =>
+        response.request().method() === "GET"
+        && new URL(response.url()).pathname === historyPath
+        && response.status() === 503,
+      );
+      await page.clock.fastForward(delay);
+      await failedRetry;
+    }
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(windowInput).toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+    await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
+
+    const historyError = page.getByTestId("retention-history-error");
+    await expect(historyError).toBeVisible();
+    await expect(historyError).toContainText("Istorija izmena nije mogla da se učita");
+    await expect(historyError).toContainText("Privremeno nedostupno");
+    await expect(page.getByTestId(`retention-history-v${baselineVersion}`)).toHaveCount(0);
+
+    allowHistoryLoad = true;
+    const retriedHistoryLoad = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === historyPath
+      && response.status() === 200,
+    );
+    await page.getByTestId("retry-retention-history").click();
+    await retriedHistoryLoad;
+
+    await expect(historyError).not.toBeVisible();
+    await expect(page.getByTestId(`retention-history-v${baselineVersion}`)).toBeVisible();
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+  } finally {
+    await apiB.dispose();
+  }
+});
+
 test("failed initial settings load offers recovery and enables editing after retry", async ({ page }) => {
   test.setTimeout(120_000);
 
