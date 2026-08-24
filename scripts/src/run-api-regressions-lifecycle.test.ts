@@ -91,6 +91,37 @@ async function readManifest(manifestDirectory: string): Promise<{
   throw new Error(`Timed out waiting for a regression database manifest in ${manifestDirectory}.`);
 }
 
+async function getProcessIdentity(processId: number): Promise<string> {
+  const [bootId, stat] = await Promise.all([
+    readFile("/proc/sys/kernel/random/boot_id", "utf8"),
+    readFile(`/proc/${processId}/stat`, "utf8"),
+  ]);
+  const commandEnd = stat.lastIndexOf(")");
+  const statFields = commandEnd >= 0 ? stat.slice(commandEnd + 2).trim().split(/\s+/) : [];
+  const startTime = statFields[19];
+  assert.ok(bootId.trim() && startTime, `Could not identify process ${processId}.`);
+  return `${bootId.trim()}:${startTime}`;
+}
+
+function getDatabaseTarget(databaseName = new URL(databaseUrl!).pathname.slice(1)): string {
+  const parsed = new URL(databaseUrl!);
+  return JSON.stringify({
+    protocol: parsed.protocol,
+    hostname: parsed.hostname,
+    port: parsed.port,
+    databaseName,
+  });
+}
+
+async function writeManifest(
+  manifestDirectory: string,
+  manifest: HarnessManifest,
+): Promise<string> {
+  const manifestPath = path.join(manifestDirectory, `${manifest.databaseName}.json`);
+  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, "utf8");
+  return manifestPath;
+}
+
 async function databaseExists(databaseName: string): Promise<boolean> {
   const { stdout } = await execFileAsync("psql", [
     databaseUrl!,
@@ -101,6 +132,14 @@ async function databaseExists(databaseName: string): Promise<boolean> {
   return stdout.trim() === "1";
 }
 
+async function createDatabase(databaseName: string): Promise<void> {
+  await execFileAsync("createdb", [
+    "--maintenance-db",
+    databaseUrl!,
+    databaseName,
+  ]);
+}
+
 async function dropDatabase(databaseName: string): Promise<void> {
   await execFileAsync("dropdb", [
     "--force",
@@ -109,6 +148,16 @@ async function dropDatabase(databaseName: string): Promise<void> {
     databaseUrl!,
     databaseName,
   ]);
+}
+
+async function stopProcessGroup(processId: number): Promise<void> {
+  try {
+    process.kill(-processId, "SIGKILL");
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ESRCH") {
+      throw error;
+    }
+  }
 }
 
 async function findOwnedTestServers(testDatabaseUrl: string): Promise<number[]> {
@@ -164,6 +213,7 @@ async function writeCommandShims(
 set -euo pipefail
 if [[ "$*" == *"@workspace/db run push-force"* && "${phase}" == "schema" ]]; then
   printf 'schema' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+  printf '%s' "$$" > "$LUMERA_LIFECYCLE_BLOCKER_PID"
   while :; do sleep 1; done
 fi
 exec "$LUMERA_LIFECYCLE_REAL_PNPM" "$@"
@@ -176,6 +226,7 @@ exec "$LUMERA_LIFECYCLE_REAL_PNPM" "$@"
 set -euo pipefail
 if [[ "${phase}" == "shell" && "\${1:-}" == *"test-admin-authorization.sh" ]]; then
   printf 'shell' > "$LUMERA_LIFECYCLE_PHASE_MARKER"
+  printf '%s' "$$" > "$LUMERA_LIFECYCLE_BLOCKER_PID"
   while :; do sleep 1; done
 fi
 exec "$LUMERA_LIFECYCLE_REAL_BASH" "$@"
@@ -190,6 +241,7 @@ async function runInterruptedScenario(phase: InterruptedPhase): Promise<void> {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-api-regression-lifecycle-"));
   const binDirectory = path.join(temporaryRoot, "bin");
   const markerPath = path.join(temporaryRoot, "phase-reached");
+  const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
   const manifestDirectoryName = `api-regression-lifecycle-${process.pid}-${randomUUID()}`;
   const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
   const databasePrefix = `lumera_api_regression_lifecycle_${process.pid}_${randomUUID()}_`;
@@ -215,6 +267,7 @@ async function runInterruptedScenario(phase: InterruptedPhase): Promise<void> {
       LUMERA_API_REGRESSION_DATABASE_PREFIX: databasePrefix,
       LUMERA_API_REGRESSION_MANIFEST_DIRECTORY: manifestDirectoryName,
       LUMERA_LIFECYCLE_PHASE_MARKER: markerPath,
+      LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
       LUMERA_LIFECYCLE_REAL_BASH: realBash,
       LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
     };
@@ -254,6 +307,116 @@ async function runInterruptedScenario(phase: InterruptedPhase): Promise<void> {
     }
     await rm(manifestDirectory, { recursive: true, force: true });
     await unlink(markerPath).catch(() => undefined);
+    const blockerPidContents = await readFile(blockerPidPath, "utf8").catch(() => "");
+    const blockerPid = Number(blockerPidContents);
+    if (Number.isSafeInteger(blockerPid) && blockerPid > 0) {
+      await stopProcessGroup(blockerPid).catch(() => undefined);
+    }
+    await unlink(blockerPidPath).catch(() => undefined);
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+async function runForcedStopScenario(): Promise<void> {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-api-regression-forced-stop-"));
+  const binDirectory = path.join(temporaryRoot, "bin");
+  const markerPath = path.join(temporaryRoot, "phase-reached");
+  const blockerPidPath = path.join(temporaryRoot, "blocker-pid");
+  const manifestDirectoryName = `api-regression-forced-stop-${process.pid}-${randomUUID()}`;
+  const manifestDirectory = path.join(workspaceRoot, ".lumera-test-state", manifestDirectoryName);
+  const databasePrefix = `lumera_forced_${process.pid}_`;
+  let child: ChildProcess | undefined;
+  let blockerPid: number | undefined;
+  const databaseNames: string[] = [];
+
+  try {
+    const realBash = await commandPath("bash");
+    const realPnpm = await commandPath("pnpm");
+    await mkdir(binDirectory, { recursive: true });
+    await writeCommandShims(binDirectory, "schema", realBash, realPnpm);
+    const environment = {
+      ...process.env,
+      PATH: `${binDirectory}:${process.env.PATH ?? ""}`,
+      DATABASE_URL: databaseUrl,
+      LUMERA_API_REGRESSION_DATABASE_PREFIX: databasePrefix,
+      LUMERA_API_REGRESSION_MANIFEST_DIRECTORY: manifestDirectoryName,
+      LUMERA_LIFECYCLE_PHASE_MARKER: markerPath,
+      LUMERA_LIFECYCLE_BLOCKER_PID: blockerPidPath,
+      LUMERA_LIFECYCLE_REAL_BASH: realBash,
+      LUMERA_LIFECYCLE_REAL_PNPM: realPnpm,
+    };
+    child = spawn(runnerPath, [runnerScriptPath], {
+      cwd: workspaceRoot,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+
+    await waitForFile(markerPath);
+    const staleManifest = await readManifest(manifestDirectory);
+    const staleDatabaseName = staleManifest.manifest.databaseName;
+    databaseNames.push(staleDatabaseName);
+    assert.equal(await databaseExists(staleDatabaseName), true, `Disposable database was not created.\n${output}`);
+    blockerPid = Number(await readFile(blockerPidPath, "utf8"));
+    assert.ok(
+      Number.isSafeInteger(blockerPid) && blockerPid > 0,
+      "The forced-stop blocker PID was not recorded.",
+    );
+
+    process.kill(staleManifest.manifest.ownerPid, "SIGKILL");
+    const exit = await waitForExit(child);
+    assert.notEqual(exit.code, 0, `Runner was not force-stopped.\n${output}`);
+
+    const activeDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    const unrelatedDatabaseName = `${databasePrefix}${process.pid}_${randomUUID().replaceAll("-", "")}`;
+    databaseNames.push(activeDatabaseName, unrelatedDatabaseName);
+    await createDatabase(activeDatabaseName);
+    await createDatabase(unrelatedDatabaseName);
+    const activeManifestPath = await writeManifest(manifestDirectory, {
+      version: 1,
+      databaseName: activeDatabaseName,
+      databaseTarget: getDatabaseTarget(),
+      ownerPid: process.pid,
+      ownerProcessIdentity: await getProcessIdentity(process.pid),
+    });
+    const unrelatedManifestPath = await writeManifest(manifestDirectory, {
+      version: 1,
+      databaseName: unrelatedDatabaseName,
+      databaseTarget: getDatabaseTarget("unrelated-maintenance-database"),
+      ownerPid: 1,
+      ownerProcessIdentity: "unrelated-process",
+    });
+
+    const recovery = await execFileAsync(
+      runnerPath,
+      [runnerScriptPath, "--recover-interrupted-databases"],
+      { cwd: workspaceRoot, env: environment },
+    );
+    const escapedStaleDatabaseName = staleDatabaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      recovery.stdout,
+      new RegExp(`Removed interrupted browser test database ${escapedStaleDatabaseName}`),
+    );
+    assert.equal(await databaseExists(staleDatabaseName), false, "Recovery did not remove the stale database.");
+    await assert.rejects(readFile(staleManifest.manifestPath), { code: "ENOENT" });
+    assert.equal(await databaseExists(activeDatabaseName), true, "Recovery removed an active database.");
+    assert.equal(await databaseExists(unrelatedDatabaseName), true, "Recovery removed an unrelated database.");
+    await readFile(activeManifestPath);
+    await readFile(unrelatedManifestPath);
+  } finally {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child, 5_000).catch(() => undefined);
+    }
+    if (blockerPid) {
+      await stopProcessGroup(blockerPid).catch(() => undefined);
+    }
+    await Promise.all(databaseNames.map((databaseName) => dropDatabase(databaseName).catch(() => undefined)));
+    await rm(manifestDirectory, { recursive: true, force: true });
+    await unlink(markerPath).catch(() => undefined);
+    await unlink(blockerPidPath).catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
@@ -264,4 +427,8 @@ test("SIGTERM during disposable API regression schema setup cleans every resourc
 
 test("SIGTERM during a disposable API regression shell check cleans every resource", async () => {
   await runInterruptedScenario("shell");
+});
+
+test("forced API regression shutdown recovery removes only stale disposable resources", async () => {
+  await runForcedStopScenario();
 });
