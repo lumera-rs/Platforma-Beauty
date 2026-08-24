@@ -41,6 +41,7 @@ export default function AdminIntegrations() {
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
   const [retryingSmsRegistrationRefresh, setRetryingSmsRegistrationRefresh] = useState(false);
   const [webhookFreshnessRefreshFailed, setWebhookFreshnessRefreshFailed] = useState(false);
+  const [retryingWebhookFreshness, setRetryingWebhookFreshness] = useState(false);
   const freshnessRefreshController = useRef<AbortController | null>(null);
   const freshnessRefreshSequence = useRef(0);
   const load = async () => {
@@ -85,6 +86,14 @@ export default function AdminIntegrations() {
       setWebhookFreshnessRefreshFailed(true);
     } finally {
       if (freshnessRefreshController.current === controller) freshnessRefreshController.current = null;
+    }
+  };
+  const retryWebhookFreshness = async () => {
+    setRetryingWebhookFreshness(true);
+    try {
+      await refreshWebhookFreshness();
+    } finally {
+      setRetryingWebhookFreshness(false);
     }
   };
   const status = (card: Card) => !card.enabled ? ["Neaktivno", "bg-slate-100 text-slate-600"] : card.complete ? ["Aktivno", "bg-emerald-100 text-emerald-700"] : ["Nepotpuno", "bg-amber-100 text-amber-700"];
@@ -414,7 +423,13 @@ export default function AdminIntegrations() {
     </div>}
      {webhookFreshnessRefreshFailed && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4" role="status" aria-live="polite" data-testid="webhook-freshness-refresh-error">
        <p className="font-semibold text-amber-800"><AlertTriangle className="mr-1.5 inline h-4 w-4" />Potvrda webhook-a nije osvežena.</p>
-       <p className="mt-1 text-sm text-amber-800">Prikazana je poslednja poznata potvrda; vaši uneti podaci i prekidači nisu promenjeni. Pokušaćemo ponovo pri sledećem osvežavanju.</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-amber-800">Prikazana je poslednja poznata potvrda; vaši uneti podaci i prekidači nisu promenjeni. Pokušaćemo ponovo pri sledećem osvežavanju.</p>
+          <Button variant="outline" size="sm" data-testid="retry-webhook-freshness" disabled={retryingWebhookFreshness} onClick={retryWebhookFreshness}>
+            {retryingWebhookFreshness ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {retryingWebhookFreshness ? "Osvežavam…" : "Pokušaj ponovo"}
+          </Button>
+        </div>
      </div>}
     {!data ? <p className="text-muted-foreground">Učitavanje integracija…</p> : <>
       {data.smsFallback?.reachableAdminCount === 0 && <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4" role="alert" data-testid="sms-fallback-no-admin-phone">
