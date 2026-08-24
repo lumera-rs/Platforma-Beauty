@@ -9,6 +9,7 @@ import {
   startSalonNotificationEventListener,
   stopSalonNotificationEventListener,
 } from "./lib/salon-notification-events";
+import { enableMediaCachePurgeForTesting } from "./routes/media";
 
 const rawPort = process.env.PORT ?? "0";
 const port = Number(rawPort);
@@ -18,6 +19,13 @@ const healthzReachedFile = process.env.LUMERA_TEST_HEALTHZ_REACHED_FILE;
 if (!Number.isInteger(port) || port < 0) {
   throw new Error(`Invalid test server PORT value: "${rawPort}".`);
 }
+
+const mediaCachePurgeControl = (
+  process.env.NODE_ENV === "test"
+  && process.env.LUMERA_ISOLATED_API_REGRESSION_TEST === "1"
+)
+  ? enableMediaCachePurgeForTesting(async () => undefined)
+  : null;
 
 if (process.env.LUMERA_TEST_SEED === "1") {
   await ensureDemoData();
@@ -86,6 +94,7 @@ server.once("listening", () => {
 
 function shutDown(signal: NodeJS.Signals) {
   isShuttingDown = true;
+  mediaCachePurgeControl?.disable();
   for (const response of heldHealthzResponses) response.destroy();
   heldHealthzResponses.clear();
   void stopSalonNotificationEventListener().finally(() => {
