@@ -80,6 +80,16 @@ export type AdminIntegrationsFixtureOverrides = {
   redirectUriWarning?: string;
 };
 
+type AdminWebhookFreshnessFixture = Pick<
+  AdminWebhookIntegrationCardFixture,
+  "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays"
+>;
+
+export type AdminWebhookFreshnessFixtureOverrides = {
+  sms?: Partial<AdminWebhookFreshnessFixture>;
+  brevo?: Partial<AdminWebhookFreshnessFixture>;
+};
+
 /**
  * Build the platform summary used by admin browser mocks.
  *
@@ -172,6 +182,57 @@ export function adminIntegrationsFixture(
         ? { redirectUriWarning: overrides.redirectUriWarning }
         : {}),
       smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
+    },
+  );
+}
+
+export function adminWebhookFreshnessFixture(
+  schema: FixtureSchema,
+  overrides: AdminWebhookFreshnessFixtureOverrides = {},
+) {
+  return checkedApiFixture(
+    "/api/admin/integrations/webhook-freshness",
+    schema,
+    {
+      integrations: {
+        sms: {
+          webhookVerifiedAt: null,
+          webhookVerificationStale: false,
+          webhookConfirmationMaxAgeDays: 7,
+          ...overrides.sms,
+        },
+        brevo: {
+          webhookVerifiedAt: null,
+          webhookVerificationStale: false,
+          webhookConfirmationMaxAgeDays: 7,
+          ...overrides.brevo,
+        },
+      },
+      deliveryReports: {
+        providers: {
+          brevo: {
+            lastEventAt: null,
+            rejectedPayloadCount: 0,
+            lastRejectedAt: null,
+            malformedWebhookState: "normal",
+            lastAutomationSentAt: null,
+            recentSendCount: 0,
+            warning: false,
+          },
+          infobip: {
+            lastEventAt: null,
+            rejectedPayloadCount: 0,
+            lastRejectedAt: null,
+            malformedWebhookState: "normal",
+            lastAutomationSentAt: null,
+            recentSendCount: 0,
+            warning: false,
+          },
+        },
+        windowHours: 24,
+        graceMinutes: 30,
+        rejectionAlertThreshold: 3,
+      },
     },
   );
 }

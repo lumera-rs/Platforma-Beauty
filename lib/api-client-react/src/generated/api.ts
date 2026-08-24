@@ -26,6 +26,7 @@ import type {
   AdminBulkResult,
   AdminCreateEmailCampaignInput,
   AdminGetIntegrationsResponse,
+  AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
   AdminListEmailCampaignsResponse,
   AdminListOrdersParams,
@@ -1191,6 +1192,83 @@ export function useAdminGetIntegrations<TData = Awaited<ReturnType<typeof adminG
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetIntegrationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAdminGetWebhookFreshnessUrl = () => {
+
+
+
+
+  return `/api/admin/integrations/webhook-freshness`
+}
+
+/**
+ * @summary Get the latest webhook confirmation metadata and delivery health
+ */
+export const adminGetWebhookFreshness = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminGetWebhookFreshnessResponse> => {
+
+  return customFetch<AdminGetWebhookFreshnessResponse>(getAdminGetWebhookFreshnessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getAdminGetWebhookFreshnessQueryKey = () => {
+    return [
+    `/api/admin/integrations/webhook-freshness`
+    ] as const;
+    }
+
+
+export const getAdminGetWebhookFreshnessQueryOptions = <TData = Awaited<ReturnType<typeof adminGetWebhookFreshness>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetWebhookFreshness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetWebhookFreshnessQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetWebhookFreshness>>> = ({ signal }) => adminGetWebhookFreshness({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetWebhookFreshness>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetWebhookFreshnessQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetWebhookFreshness>>>
+export type AdminGetWebhookFreshnessQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the latest webhook confirmation metadata and delivery health
+ */
+
+export function useAdminGetWebhookFreshness<TData = Awaited<ReturnType<typeof adminGetWebhookFreshness>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetWebhookFreshness>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetWebhookFreshnessQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

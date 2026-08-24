@@ -196,6 +196,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminGetIntegrationsResponse"
+  /admin/integrations/webhook-freshness:
+    get:
+      operationId: adminGetWebhookFreshness
+      tags: [admin]
+      summary: Get the latest webhook confirmation metadata and delivery health
+      responses:
+        "200":
+          description: Time-derived webhook confirmation metadata and delivery health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminGetWebhookFreshnessResponse"
   /admin/integrations/{integration}:
     put:
       operationId: adminSaveIntegration
@@ -5226,6 +5238,24 @@ components:
         redirectUriWarning: { type: string }
         smsReminder: { $ref: "#/components/schemas/AdminSmsReminder" }
       required: [integrations, deliveryReports, smsFallback, smsWebhookRegistration, redirectUris, smsReminder]
+    AdminWebhookFreshness:
+      type: object
+      properties:
+        webhookVerifiedAt: { type: ["string", "null"], format: date-time }
+        webhookVerificationStale: { type: boolean }
+        webhookConfirmationMaxAgeDays: { type: number, minimum: 0, multipleOf: 1 }
+      required: [webhookVerifiedAt, webhookVerificationStale, webhookConfirmationMaxAgeDays]
+    AdminGetWebhookFreshnessResponse:
+      type: object
+      properties:
+        integrations:
+          type: object
+          properties:
+            sms: { $ref: "#/components/schemas/AdminWebhookFreshness" }
+            brevo: { $ref: "#/components/schemas/AdminWebhookFreshness" }
+          required: [sms, brevo]
+        deliveryReports: { $ref: "#/components/schemas/AdminDeliveryReports" }
+      required: [integrations, deliveryReports]
     AdminCreateEmailCampaignInput:
       type: object
       properties:

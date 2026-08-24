@@ -429,6 +429,75 @@ export const AdminGetIntegrationsResponse = zod.object({
 
 
 /**
+ * @summary Get the latest webhook confirmation metadata and delivery health
+ */
+export const adminGetWebhookFreshnessResponseIntegrationsSmsWebhookConfirmationMaxAgeDaysMin = 0;
+export const adminGetWebhookFreshnessResponseIntegrationsSmsWebhookConfirmationMaxAgeDaysMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseIntegrationsBrevoWebhookConfirmationMaxAgeDaysMin = 0;
+export const adminGetWebhookFreshnessResponseIntegrationsBrevoWebhookConfirmationMaxAgeDaysMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRejectedPayloadCountMin = 0;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRecentSendCountMin = 0;
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRejectedPayloadCountMin = 0;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRecentSendCountMin = 0;
+export const adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsWindowHoursMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsGraceMinutesMin = 0;
+export const adminGetWebhookFreshnessResponseDeliveryReportsGraceMinutesMultipleOf = 1;
+
+export const adminGetWebhookFreshnessResponseDeliveryReportsRejectionAlertThresholdMultipleOf = 1;
+
+
+
+export const AdminGetWebhookFreshnessResponse = zod.object({
+  "integrations": zod.object({
+  "sms": zod.object({
+  "webhookVerifiedAt": zod.coerce.date().nullable(),
+  "webhookVerificationStale": zod.boolean(),
+  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetWebhookFreshnessResponseIntegrationsSmsWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetWebhookFreshnessResponseIntegrationsSmsWebhookConfirmationMaxAgeDaysMultipleOf)
+}),
+  "brevo": zod.object({
+  "webhookVerifiedAt": zod.coerce.date().nullable(),
+  "webhookVerificationStale": zod.boolean(),
+  "webhookConfirmationMaxAgeDays": zod.number().min(adminGetWebhookFreshnessResponseIntegrationsBrevoWebhookConfirmationMaxAgeDaysMin).multipleOf(adminGetWebhookFreshnessResponseIntegrationsBrevoWebhookConfirmationMaxAgeDaysMultipleOf)
+})
+}),
+  "deliveryReports": zod.object({
+  "providers": zod.object({
+  "brevo": zod.object({
+  "lastEventAt": zod.coerce.date().nullable(),
+  "rejectedPayloadCount": zod.number().min(adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRejectedPayloadCountMin),
+  "lastRejectedAt": zod.coerce.date().nullable(),
+  "malformedWebhookState": zod.enum(['normal', 'observing', 'alerted', 'recovered']),
+  "lastAutomationSentAt": zod.coerce.date().nullable(),
+  "recentSendCount": zod.number().min(adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRecentSendCountMin).multipleOf(adminGetWebhookFreshnessResponseDeliveryReportsProvidersBrevoRecentSendCountMultipleOf),
+  "warning": zod.boolean()
+}),
+  "infobip": zod.object({
+  "lastEventAt": zod.coerce.date().nullable(),
+  "rejectedPayloadCount": zod.number().min(adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRejectedPayloadCountMin),
+  "lastRejectedAt": zod.coerce.date().nullable(),
+  "malformedWebhookState": zod.enum(['normal', 'observing', 'alerted', 'recovered']),
+  "lastAutomationSentAt": zod.coerce.date().nullable(),
+  "recentSendCount": zod.number().min(adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRecentSendCountMin).multipleOf(adminGetWebhookFreshnessResponseDeliveryReportsProvidersInfobipRecentSendCountMultipleOf),
+  "warning": zod.boolean()
+})
+}),
+  "windowHours": zod.number().min(1).multipleOf(adminGetWebhookFreshnessResponseDeliveryReportsWindowHoursMultipleOf),
+  "graceMinutes": zod.number().min(adminGetWebhookFreshnessResponseDeliveryReportsGraceMinutesMin).multipleOf(adminGetWebhookFreshnessResponseDeliveryReportsGraceMinutesMultipleOf),
+  "rejectionAlertThreshold": zod.number().min(1).multipleOf(adminGetWebhookFreshnessResponseDeliveryReportsRejectionAlertThresholdMultipleOf)
+})
+})
+
+
+/**
  * @summary Save administrator integration settings
  */
 export const AdminSaveIntegrationParams = zod.object({

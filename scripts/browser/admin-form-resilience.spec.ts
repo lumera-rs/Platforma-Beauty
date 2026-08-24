@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
-import { adminSummaryFixture, checkedApiFixture } from "../src/browser-api-fixtures";
+import { adminSummaryFixture, adminWebhookFreshnessFixture, checkedApiFixture } from "../src/browser-api-fixtures";
 
 /**
  * Task 131 — admin form resilience regression gate.
@@ -299,8 +299,8 @@ async function mockAdminApi(page: Page): Promise<void> {
           ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T10:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 }
           : webhookCard;
         const brevoWebhookCard = integrationsPageLoads > 1
-          ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T11:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 }
-          : webhookCard;
+          ? { ...webhookCard, webhookVerifiedAt: "2026-08-24T11:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3, brevoRegistrationMissingEvents: [] }
+          : { ...webhookCard, brevoRegistrationMissingEvents: [] };
         await route.fulfill({
           json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
             integrations: { sms: smsWebhookCard, brevo: brevoWebhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
@@ -323,20 +323,10 @@ async function mockAdminApi(page: Page): Promise<void> {
       }
       if (path === "/api/admin/integrations/webhook-freshness" && method === "GET") {
         await route.fulfill({
-          json: {
-            integrations: {
-              sms: {
-                webhookVerifiedAt: "2026-08-24T10:00:00.000Z",
-                webhookVerificationStale: true,
-                webhookConfirmationMaxAgeDays: 3,
-              },
-              brevo: {
-                webhookVerifiedAt: "2026-08-24T11:00:00.000Z",
-                webhookVerificationStale: true,
-                webhookConfirmationMaxAgeDays: 3,
-              },
-            },
-          },
+          json: adminWebhookFreshnessFixture(apiSchemas.AdminGetWebhookFreshnessResponse, {
+            sms: { webhookVerifiedAt: "2026-08-24T10:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 },
+            brevo: { webhookVerifiedAt: "2026-08-24T11:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 },
+          }),
         });
         return;
       }
@@ -551,20 +541,10 @@ test("webhook freshness ignores an older response after repeated reconnects", as
       await olderResponseReleased;
       try {
         await route.fulfill({
-          json: {
-            integrations: {
-              sms: {
-                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
-                webhookVerificationStale: true,
-                webhookConfirmationMaxAgeDays: 3,
-              },
-              brevo: {
-                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
-                webhookVerificationStale: true,
-                webhookConfirmationMaxAgeDays: 3,
-              },
-            },
-          },
+          json: adminWebhookFreshnessFixture(apiSchemas.AdminGetWebhookFreshnessResponse, {
+            sms: { webhookVerifiedAt: "2026-08-24T09:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 },
+            brevo: { webhookVerifiedAt: "2026-08-24T09:00:00.000Z", webhookVerificationStale: true, webhookConfirmationMaxAgeDays: 3 },
+          }),
         });
       } finally {
         olderResponseFulfilledResolve?.();
@@ -573,20 +553,10 @@ test("webhook freshness ignores an older response after repeated reconnects", as
     }
     if (freshnessRequests === 2) {
       await route.fulfill({
-        json: {
-          integrations: {
-            sms: {
-              webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
-              webhookVerificationStale: false,
-              webhookConfirmationMaxAgeDays: 3,
-            },
-            brevo: {
-              webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
-              webhookVerificationStale: false,
-              webhookConfirmationMaxAgeDays: 3,
-            },
-          },
-        },
+        json: adminWebhookFreshnessFixture(apiSchemas.AdminGetWebhookFreshnessResponse, {
+          sms: { webhookVerifiedAt: "2026-08-24T12:00:00.000Z", webhookVerificationStale: false, webhookConfirmationMaxAgeDays: 3 },
+          brevo: { webhookVerifiedAt: "2026-08-24T12:00:00.000Z", webhookVerificationStale: false, webhookConfirmationMaxAgeDays: 3 },
+        }),
       });
       latestResponseFulfilledResolve?.();
       return;

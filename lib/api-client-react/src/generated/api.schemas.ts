@@ -366,6 +366,24 @@ export interface AdminGetIntegrationsResponse {
   smsReminder: AdminSmsReminder;
 }
 
+export interface AdminWebhookFreshness {
+  /** @nullable */
+  webhookVerifiedAt: string | null;
+  webhookVerificationStale: boolean;
+  /** @minimum 0 */
+  webhookConfirmationMaxAgeDays: number;
+}
+
+export type AdminGetWebhookFreshnessResponseIntegrations = {
+  sms: AdminWebhookFreshness;
+  brevo: AdminWebhookFreshness;
+};
+
+export interface AdminGetWebhookFreshnessResponse {
+  integrations: AdminGetWebhookFreshnessResponseIntegrations;
+  deliveryReports: AdminDeliveryReports;
+}
+
 export type AdminCreateEmailCampaignInputAudience = typeof AdminCreateEmailCampaignInputAudience[keyof typeof AdminCreateEmailCampaignInputAudience];
 
 

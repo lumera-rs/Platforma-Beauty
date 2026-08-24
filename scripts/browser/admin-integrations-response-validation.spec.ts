@@ -88,3 +88,66 @@ test("rejects a malformed successful integrations response without rendering par
     await expect(page.getByRole("heading", { name: title, exact: true })).toHaveCount(0);
   }
 });
+
+test("keeps integration cards intact when a successful webhook freshness response is malformed", async ({ page }) => {
+  const validPayload = adminIntegrationsFixture(apiSchemas.AdminGetIntegrationsResponse, {
+    sms: { webhookVerifiedAt: "2026-08-24T08:30:00.000Z", webhookVerificationStale: false },
+    brevo: { webhookVerifiedAt: "2026-08-24T08:45:00.000Z", webhookVerificationStale: false },
+  });
+
+  await page.route("**/api/admin/integrations", async (route) => {
+    await route.fulfill({ status: 200, json: validPayload });
+  });
+
+  const login = await page.request.post("/api/auth/login", {
+    data: { email: adminEmail, password },
+  });
+  expect(login).toBeOK();
+
+  await page.goto("/admin/integracije");
+  await expect(page.getByRole("heading", { name: "Integracije i konektori" })).toBeVisible();
+  const smsConfirmation = page.getByTestId("webhook-confirmation-status-sms");
+  const brevoConfirmation = page.getByTestId("webhook-confirmation-status-brevo");
+  await expect(smsConfirmation).toContainText("sveža potvrda");
+  await expect(brevoConfirmation).toContainText("sveža potvrda");
+
+  await page.route("**/api/admin/integrations/webhook-freshness", async (route) => {
+    await route.fulfill({
+      status: 200,
+      json: {
+        integrations: {
+          sms: {
+            webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
+            webhookVerificationStale: "nije-bool",
+            webhookConfirmationMaxAgeDays: 1,
+          },
+          brevo: {
+            webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
+            webhookVerificationStale: false,
+            webhookConfirmationMaxAgeDays: 1,
+          },
+        },
+        deliveryReports: validPayload.deliveryReports,
+      },
+    });
+  });
+
+  const freshnessResponse = page.waitForResponse((response) => {
+    const request = response.request();
+    return new URL(response.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  const response = await freshnessResponse;
+  expect(response.status()).toBe(200);
+
+  const warning = page.getByTestId("webhook-freshness-refresh-error");
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("Potvrda webhook-a nije osvežena.");
+  await expect(warning).toContainText("Prikazana je poslednja poznata potvrda");
+  await expect(smsConfirmation).toContainText("08:30:00");
+  await expect(smsConfirmation).toContainText("sveža potvrda");
+  await expect(smsConfirmation).not.toContainText("potvrda je zastarela");
+  await expect(brevoConfirmation).toContainText("08:45:00");
+  await expect(brevoConfirmation).toContainText("sveža potvrda");
+});

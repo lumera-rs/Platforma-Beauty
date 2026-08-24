@@ -13,17 +13,19 @@ import type {
   AdminBrevoWebhookIntegrationCard,
   AdminDeliveryReportStatus,
   AdminGetIntegrationsResponse,
+  AdminGetWebhookFreshnessResponse,
   AdminIntegrationCard,
   AdminSmsWebhookRegistration,
   AdminWebhookIntegrationCard,
 } from "@workspace/api-client-react";
-import { AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema } from "@workspace/api-zod";
+import {
+  AdminGetIntegrationsResponse as AdminGetIntegrationsResponseSchema,
+  AdminGetWebhookFreshnessResponse as AdminGetWebhookFreshnessResponseSchema,
+} from "@workspace/api-zod";
 
 type Integration = keyof AdminGetIntegrationsResponse["integrations"];
 type Card = AdminIntegrationCard & Partial<AdminWebhookIntegrationCard & AdminBrevoWebhookIntegrationCard>;
-type WebhookFreshness = Pick<AdminWebhookIntegrationCard, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportStatus = AdminDeliveryReportStatus;
-type DeliveryReports = AdminGetIntegrationsResponse["deliveryReports"];
 type SmsWebhookRegistrationState = AdminSmsWebhookRegistration["state"];
 type Data = AdminGetIntegrationsResponse;
 
@@ -86,7 +88,15 @@ export default function AdminIntegrations() {
     try {
       const response = await fetch("/api/admin/integrations/webhook-freshness", { credentials: "include", signal: controller.signal });
       if (!response.ok) throw new Error("Svežina webhook potvrde nije osvežena.");
-      const payload = await response.json() as { integrations?: Record<"sms" | "brevo", WebhookFreshness>; deliveryReports?: DeliveryReports };
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        throw new Error("Odgovor servera za svežinu webhook potvrde nije validan JSON.");
+      }
+      const parsed = AdminGetWebhookFreshnessResponseSchema.safeParse(body);
+      if (!parsed.success) throw new Error(integrationResponseError(parsed.error.issues));
+      const payload = body as AdminGetWebhookFreshnessResponse;
       if (sequence !== freshnessRefreshSequence.current || controller.signal.aborted) return;
       const sms = payload.integrations?.sms;
       const brevo = payload.integrations?.brevo;
