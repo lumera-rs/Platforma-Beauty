@@ -74,6 +74,17 @@ function adminSummary() {
     topCategories: [{ name: "Kosa", count: 4 }],
     deliveryReportStaleProviders: [],
     smsFallbackReachableAdminCount: 2,
+    schedulerJobs: [{
+      job: "rescheduled-confirmation-retries",
+      state: "idle",
+      lastStartedAt: null,
+      lastSucceededAt: null,
+      lastFailedAt: null,
+      lastFailureClass: null,
+      consecutiveFailures: 0,
+      deferredCycles: 0,
+      nextRetryAt: null,
+    }],
   };
 }
 
