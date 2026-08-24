@@ -826,18 +826,15 @@ export async function runIsolatedApiRegressionSuite(
     try {
       await stopProcess(apiProcess);
     } finally {
-      try {
-        if (databaseMayExist) {
-          await runCommand(
-            "dropdb",
-            ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
-            process.env,
-            "Removing the disposable API regression database",
-          );
-        }
-      } finally {
-        await removeHarnessDatabaseManifest(manifestPath);
+      if (databaseMayExist) {
+        await runCommand(
+          "dropdb",
+          ["--force", "--if-exists", "--maintenance-db", developmentDatabaseUrl, databaseName],
+          process.env,
+          "Removing the disposable API regression database",
+        );
       }
+      await removeHarnessDatabaseManifest(manifestPath);
     }
     process.removeListener("SIGINT", onSignal);
     process.removeListener("SIGTERM", onSignal);
