@@ -8052,6 +8052,27 @@ async function retailOrderWithItems(order: typeof retailOrdersTable.$inferSelect
   return retailOrderDto(order, items, new Map(products.map((product) => [product.id, product.catalogReference])));
 }
 
+async function retailOrdersWithItems(orders: Array<typeof retailOrdersTable.$inferSelect>) {
+  if (!orders.length) return [];
+  const orderIds = orders.map((order) => order.id);
+  const items = await db.select().from(retailOrderItemsTable).where(inArray(retailOrderItemsTable.orderId, orderIds));
+  const fallbackProductIds = [...new Set(items
+    .filter((item) => item.productCatalogReference == null)
+    .map((item) => item.productId))];
+  const products = fallbackProductIds.length
+    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
+      .where(inArray(productsTable.id, fallbackProductIds))
+    : [];
+  const itemsByOrderId = new Map<string, Array<typeof retailOrderItemsTable.$inferSelect>>();
+  for (const item of items) {
+    const orderItems = itemsByOrderId.get(item.orderId);
+    if (orderItems) orderItems.push(item);
+    else itemsByOrderId.set(item.orderId, [item]);
+  }
+  const productCatalogReferences = new Map(products.map((product) => [product.id, product.catalogReference]));
+  return orders.map((order) => retailOrderDto(order, itemsByOrderId.get(order.id) ?? [], productCatalogReferences));
+}
+
 async function productReviewViews(productId: string, currentSalonId?: string) {
   const rows = await db
     .select({ review: productReviewsTable, salonName: salonsTable.name })
@@ -8417,7 +8438,7 @@ router.get("/customer/retail-orders", async (req, res): Promise<void> => {
   if (!user || user.role !== "CUSTOMER") { res.status(403).json({ error: "Prijava kupca je obavezna." }); return; }
   const orders = await db.select().from(retailOrdersTable).where(eq(retailOrdersTable.userId, user.id))
     .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id)).limit(100);
-  res.json(await Promise.all(orders.map(retailOrderWithItems)));
+  res.json(await retailOrdersWithItems(orders));
 });
 
 router.get("/customer/retail-orders/:orderId", async (req, res): Promise<void> => {
@@ -8479,7 +8500,7 @@ router.get("/admin/retail-orders", async (req, res): Promise<void> => {
       .orderBy(desc(retailOrdersTable.createdAt), desc(retailOrdersTable.id))
       .limit(100);
   }
-  res.json(await Promise.all(orders.map(retailOrderWithItems)));
+  res.json(await retailOrdersWithItems(orders));
 });
 
 router.get("/admin/retail-orders/:orderId", async (req, res): Promise<void> => {

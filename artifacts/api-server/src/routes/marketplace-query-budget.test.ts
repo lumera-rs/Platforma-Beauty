@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import test from "node:test";
 import type { AddressInfo } from "node:net";
@@ -11,8 +12,8 @@ async function countedRequest(url: string, init?: RequestInit) {
   const stopObserving = observeDatabaseQueries((query) => queries.push(query));
   try {
     const response = await fetch(url, init);
-    await response.arrayBuffer();
-    return { response, queries };
+    const body = await response.text();
+    return { response, body, queries };
   } finally {
     stopObserving();
   }
@@ -44,6 +45,7 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}/api`;
+  const fixtureMarker = `retail-query-budget-${randomUUID()}`;
 
   try {
     const login = await fetch(`${baseUrl}/auth/login`, {
@@ -73,6 +75,59 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       `admin order query count grew with page size (${smallOrders.queries.length} -> ${largeOrders.queries.length})`,
     );
 
+    const productResult = await pool.query<{ id: string }>(
+      "SELECT id FROM products ORDER BY id LIMIT 1",
+    );
+    assert.ok(productResult.rows[0], "retail query budget fixture requires a product");
+    await pool.query(
+      `WITH fixture_carts AS (
+         INSERT INTO retail_carts (token_hash)
+         SELECT $1 || '-cart-' || series_number
+         FROM generate_series(1, 100) AS series(series_number)
+         RETURNING id, token_hash
+       ),
+       fixture_orders AS (
+         INSERT INTO retail_orders (
+           order_number, cart_id, tracking_token_hash, idempotency_key,
+           status, payment_method, payment_status, delivery_method,
+           subtotal, shipping_cost, total,
+           shipping_name, shipping_address, shipping_city, shipping_postal_code,
+           shipping_phone, shipping_email, shipping_note
+         )
+         SELECT $1 || '-order-' || series_number, carts.id,
+                $1 || '-tracking-' || series_number, $1 || '-idempotency-' || series_number,
+                'pending', 'BANK_TRANSFER', 'unpaid', 'courier',
+                100, 0, 100,
+                'Query budget fixture', 'Test ulica 1', 'Novi Sad', '21000',
+                '+381601234567', $1 || '-' || series_number || '@example.test', NULL
+         FROM generate_series(1, 100) AS series(series_number)
+         INNER JOIN fixture_carts AS carts
+           ON carts.token_hash = $1 || '-cart-' || series_number
+         RETURNING id, order_number
+       )
+       INSERT INTO retail_order_items (
+         order_id, product_id, product_name, product_image_url,
+         product_catalog_reference, variant_value, variant_label, unit_price, quantity
+       )
+       SELECT orders.id, $2::uuid, 'Query budget product', '/query-budget.jpg',
+              NULL, NULL, NULL, 100, 1
+       FROM fixture_orders AS orders`,
+      [fixtureMarker, productResult.rows[0].id],
+    );
+
+    const retailOrders = await countedRequest(
+      `${baseUrl}/admin/retail-orders?search=${encodeURIComponent(fixtureMarker)}`,
+      { headers: { cookie } },
+    );
+    assert.equal(retailOrders.response.status, 200);
+    const retailOrderResults = JSON.parse(retailOrders.body) as Array<{ items: Array<{ sku: string }> }>;
+    assert.equal(retailOrderResults.length, 100, "retail fixture search must return all 100 orders");
+    assert.ok(retailOrderResults.every((order) => order.items[0]?.sku), "retail items must retain fallback catalog references");
+    assert.ok(
+      retailOrders.queries.length <= 6,
+      `retail order search used ${retailOrders.queries.length} SQL queries for 100 orders`,
+    );
+
     const smallCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=1`);
     const largeCourses = await countedRequest(`${baseUrl}/education/public/courses?page=1&pageSize=24`);
     assert.equal(smallCourses.response.status, 200);
@@ -98,6 +153,8 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       "first-available sorting must retain its canonical availability expression",
     );
   } finally {
+    await pool.query("DELETE FROM retail_orders WHERE order_number LIKE $1", [`${fixtureMarker}-order-%`]);
+    await pool.query("DELETE FROM retail_carts WHERE token_hash LIKE $1", [`${fixtureMarker}-cart-%`]);
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     });
