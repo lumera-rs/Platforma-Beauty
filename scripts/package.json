@@ -35,6 +35,7 @@
     "cleanup:admin-form-resilience": "tsx ./src/run-admin-form-resilience.ts --recover-interrupted-databases",
     "test:salon-notifications": "playwright test browser/salon-notification-isolation.spec.ts",
     "test:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts",
+    "cleanup:infobip-registration-browser": "tsx ./src/run-infobip-registration-browser.ts --recover-interrupted-databases",
     "test:salon-notifications:release": "tsx ./src/run-salon-notification-release.ts",
     "cleanup:salon-notifications": "tsx ./src/run-salon-notification-release.ts --recover-interrupted-databases",
     "test:service-library": "playwright test browser/service-library.spec.ts",

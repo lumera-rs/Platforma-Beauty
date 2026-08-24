@@ -1,5 +1,6 @@
 import {
-  runIsolatedBrowserSuiteCommand,
+  recoverInterruptedHarnessDatabases,
+  runIsolatedBrowserSuite,
   type IsolatedBrowserSuiteConfiguration,
 } from "./run-isolated-browser-suite";
 
@@ -14,4 +15,26 @@ const configuration: IsolatedBrowserSuiteConfiguration = {
   },
 };
 
-void runIsolatedBrowserSuiteCommand(configuration);
+async function run(): Promise<void> {
+  const commandArguments = process.argv.slice(2);
+  if (commandArguments.length === 1 && commandArguments[0] === "--recover-interrupted-databases") {
+    await recoverInterruptedHarnessDatabases(configuration);
+    return;
+  }
+  if (commandArguments.length > 0) {
+    throw new Error(
+      "Usage: run-infobip-registration-browser.ts [--recover-interrupted-databases]",
+    );
+  }
+
+  // A forced stop bypasses Playwright's afterAll cleanup. Recover any stale
+  // disposable run before creating the next database so its synthetic
+  // provider receipt cannot influence a later check.
+  await recoverInterruptedHarnessDatabases(configuration);
+  await runIsolatedBrowserSuite(configuration);
+}
+
+void run().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});
