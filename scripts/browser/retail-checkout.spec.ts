@@ -31,6 +31,7 @@ let productId: string | undefined;
 let productName: string | undefined;
 
 let secondProductId: string | undefined;
+let sameNameProductId: string | undefined;
 let shippingRuleId: string | undefined;
 
 let previousShippingRule: typeof shippingRulesTable.$inferSelect | undefined;
@@ -185,6 +186,26 @@ test.beforeAll(async () => {
     active: true,
   }).returning();
   secondProductId = secondProduct!.id;
+
+  const [sameNameProduct] = await db.insert(productsTable).values({
+    categoryId: category!.id,
+    categoryName: category!.name,
+    name: productName!,
+    description: "Drugi proizvod sa istim nazivom za test obaveštenja.",
+    publicDescription: "Javni opis drugog proizvoda sa istim nazivom.",
+    imageUrl: "/retail-browser-same-name-test.jpg",
+    price: 3_000,
+    publicPrice: 3_000,
+    publicDiscountPrice: 2_400,
+    retailEnabled: true,
+    professionalEnabled: false,
+    stock: 8,
+    sku: `retail-browser-same-name-${suffix}`,
+    unit: "kom",
+    weightGrams: 500,
+    active: true,
+  }).returning();
+  sameNameProductId = sameNameProduct!.id;
 });
 
 test.afterAll(async () => {
@@ -197,6 +218,7 @@ test.afterAll(async () => {
     await db.delete(retailCartsTable).where(inArray(retailCartsTable.id, createdCartIds));
   }
   if (secondProductId) await db.delete(productsTable).where(eq(productsTable.id, secondProductId));
+  if (sameNameProductId) await db.delete(productsTable).where(eq(productsTable.id, sameNameProductId));
   if (productId) await db.delete(productsTable).where(eq(productsTable.id, productId));
   if (categoryId) await db.delete(productCategoriesTable).where(eq(productCategoriesTable.id, categoryId));
   if (previousShippingRule) {
@@ -741,6 +763,77 @@ test("retail cart page clears a stale item announcement for a multi-line cross-t
   }
 });
 
+test("retail cart suppresses an ambiguous item announcement for same-name products", async ({ page }) => {
+  expect(productId).toBeTruthy();
+  expect(productName).toBeTruthy();
+  expect(sameNameProductId).toBeTruthy();
+
+  await createCartAndOpenCartPage(page, [productId!, sameNameProductId!]);
+  await expect(page.getByText(money(4_400), { exact: true }).first()).toBeVisible();
+
+  await page.evaluate(() => {
+    const values: string[] = [];
+    const count = document.querySelector('[data-testid="status-cart-announcement"]');
+    const observer = new MutationObserver(() => {
+      const value = count?.textContent ?? "";
+      if (value && !values.includes(value)) values.push(value);
+    });
+    if (count) observer.observe(count, { childList: true, characterData: true, subtree: true });
+    (window as Window & { __cartAnnouncementValues?: string[] }).__cartAnnouncementValues = values;
+  });
+
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/korpa");
+    await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    const cartResponse = await otherTab.request.get("/api/retail/cart");
+    expect(cartResponse.ok()).toBe(true);
+    const cart = await cartResponse.json() as {
+      items: Array<{ id: string; productId: string; quantity: number }>;
+    };
+    expect(cart.items).toHaveLength(2);
+
+    const firstItem = cart.items.find((item) => item.productId === productId);
+    const sameNameItem = cart.items.find((item) => item.productId === sameNameProductId);
+    expect(firstItem).toBeTruthy();
+    expect(sameNameItem).toBeTruthy();
+
+    const [firstUpdate, sameNameUpdate] = await Promise.all([
+      otherTab.request.patch(`/api/retail/cart/items/${firstItem!.id}`, { data: { quantity: 2 } }),
+      otherTab.request.patch(`/api/retail/cart/items/${sameNameItem!.id}`, { data: { quantity: 2 } }),
+    ]);
+    expect(firstUpdate.ok()).toBe(true);
+    expect(sameNameUpdate.ok()).toBe(true);
+
+    await otherTab.evaluate(async ({ firstProductId, sameNameProductId, name }) => {
+      const key = "lumera:retail-cart-sync";
+      for (const [itemCount, productId, quantity] of [
+        [3, firstProductId, 2],
+        [4, sameNameProductId, 2],
+      ] as const) {
+        localStorage.setItem(key, JSON.stringify({
+          itemCount,
+          changedItem: { name, productId, quantity },
+          nonce: `${productId}-${quantity}`,
+        }));
+        await new Promise((resolve) => window.setTimeout(resolve, 40));
+      }
+    }, { firstProductId: productId!, sameNameProductId: sameNameProductId!, name: productName! });
+
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa sada ima 4 stavki.", {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText("");
+    await expect.poll(() => page.evaluate(() =>
+      (window as Window & { __cartAnnouncementValues?: string[] }).__cartAnnouncementValues ?? [],
+    )).toEqual(["Korpa sada ima 4 stavki."]);
+    await expect(page.getByText(money(8_800), { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    expect(page.url()).toContain("/korpa");
+  } finally {
+    await otherTab.close();
+  }
+});
+
 test("retail cart page announces a cross-tab line removal without reloading", async ({ page }) => {
   let mainFrameNavigations = 0;
   page.on("framenavigated", (frame) => {
@@ -920,7 +1013,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await productSearch.fill(productName!);
   const productCard = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: productName!, exact: true }),
-  });
+  }).first();
   await expect(productCard).toBeVisible();
   await productCard.getByRole("button", { name: "Dodaj u korpu" }).click();
   await expectCartAnnouncement(1);
@@ -944,7 +1037,7 @@ test("retail cart announces every shopper mutation through completed checkout", 
   await productSearch.fill(productName!);
   const secondProductCard = page.getByRole("article").filter({
     has: page.getByRole("heading", { name: productName!, exact: true }),
-  });
+  }).first();
   await expect(secondProductCard).toBeVisible();
   await secondProductCard.getByRole("button", { name: "Dodaj u korpu" }).click();
   await expectCartAnnouncement(1);
