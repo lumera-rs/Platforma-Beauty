@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { User, LogOut, Menu, X, Calendar, LayoutDashboard, Award, ChevronDown, Heart, Settings, BriefcaseBusiness, ShoppingBag } from "lucide-react";
 import { Button } from "./ui/button";
 import { getGetRetailCartSummaryQueryKey, useGetCurrentUser, useGetRetailCartSummary, useLogout } from "@workspace/api-client-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -19,10 +19,29 @@ export function Navbar() {
   const logout = useLogout();
   const user = userResp?.user;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const { data: cartSummary } = useGetRetailCartSummary({
     query: { queryKey: getGetRetailCartSummaryQueryKey(), staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
   });
   const cartItemCount = cartSummary?.itemCount ?? 0;
+
+  const closeMobileMenu = useCallback(() => {
+    setIsMobileMenuOpen(false);
+    requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeMobileMenu();
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [closeMobileMenu, isMobileMenuOpen]);
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -151,10 +170,13 @@ export function Navbar() {
           </div>
 
           <Button 
+            ref={mobileMenuButtonRef}
             variant="ghost" 
             size="icon" 
             className="md:hidden"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
+            aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
+            data-testid="button-mobile-menu"
           >
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
@@ -173,16 +195,16 @@ export function Navbar() {
                   "block text-sm font-medium py-2",
                   location === link.href ? "text-primary" : "text-foreground"
                 )}
-                onClick={() => setIsMobileMenuOpen(false)}
+                onClick={closeMobileMenu}
               >
                 {link.label}
               </Link>
             ))}
-            <Link href="/za-biznise" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={() => setIsMobileMenuOpen(false)}>
+            <Link href="/za-biznise" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={closeMobileMenu}>
               <BriefcaseBusiness className="h-4 w-4" />
               Za salone i biznise
             </Link>
-            <Link href="/korpa" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={() => setIsMobileMenuOpen(false)} data-testid="link-mobile-cart">
+            <Link href="/korpa" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={closeMobileMenu} data-testid="link-mobile-cart">
               <ShoppingBag className="h-4 w-4" />
               Korpa
               {cartItemCount > 0 && (
@@ -199,23 +221,23 @@ export function Navbar() {
                 <p className="text-sm text-muted-foreground px-2 py-1">Ulogovani ste kao {user.firstName}</p>
                 {user.role === 'CUSTOMER' && (
                   <>
-                    <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Moji termini</Link>
-                    <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Omiljeni saloni</Link>
-                    <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>Profil</Link>
+                    <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji termini</Link>
+                    <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Omiljeni saloni</Link>
+                    <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Profil</Link>
                   </>
                 )}
                 {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
-                  <Link href={homeForRole(user.role)} className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Link href={homeForRole(user.role)} className="py-2 px-2 text-sm" onClick={closeMobileMenu}>
                     Poslovni portal
                   </Link>
                 )}
                 {(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
-                  <Link href="/admin" className="py-2 px-2 text-sm" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Link href="/admin" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>
                     Admin Panel
                   </Link>
                 )}
                 <button 
-                  onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+                  onClick={() => { handleLogout(); closeMobileMenu(); }}
                   className="text-left text-destructive py-2 px-2 text-sm font-medium"
                 >
                   Odjavi se
@@ -226,14 +248,14 @@ export function Navbar() {
                 <Link 
                   href="/prijava" 
                   className="block text-sm font-medium py-2 px-2"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   Prijavi se
                 </Link>
                 <Link 
                   href="/prijava?tab=register" 
                   className="block text-sm font-medium py-2 px-2 text-primary"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   Registracija
                 </Link>
