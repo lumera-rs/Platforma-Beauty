@@ -43,7 +43,7 @@
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type Page, type Response, type Route } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
 import {
   appointmentsTable,
@@ -1149,6 +1149,127 @@ test.describe("shared campaign period links restore the picked window", () => {
       await expect(reloadedCustomButton).toContainText("31. 3. 2026.");
       await expect(page).toHaveURL(expectedUrl);
     } finally {
+      await cleanUpFixture(deletionFixture);
+    }
+  });
+
+  test("deleted campaign links fall back to the overview while preserving the selected period", async ({ page }) => {
+    const deletionFixture = await createFixture();
+    try {
+      await resetFixtureActiveSalon(deletionFixture, deletionFixture.salonId);
+      await signInAsFixtureOwner(page, deletionFixture);
+
+      // Load the campaign first so the client retains a cached copy after the
+      // campaign is deleted elsewhere. The stale cache is the important part
+      // of this initial deep-link regression.
+      await page.goto("/vlasnik/automatizacije?period=30d");
+      await expect(page.getByTestId(`overview-row-${deletionFixture.ruleId}`)).toBeVisible();
+
+      await db.delete(automationRulesTable).where(eq(automationRulesTable.id, deletionFixture.ruleId));
+
+      // Leave and re-enter the page without a full reload. This preserves the
+      // stale React Query list while making the deleted campaign URL an
+      // initial deep link for the page component.
+      await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+      await expect(page).toHaveURL("/vlasnik");
+
+      const staleUrl = `/vlasnik/automatizacije?period=30d&utm_source=deleted-campaign&ref=overview&rule=${deletionFixture.ruleId}&clients=returning`;
+      await page.evaluate((url) => {
+        window.history.pushState({}, "", url);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, staleUrl);
+
+      const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+      await expect(dialog).toBeHidden();
+      const selector = page.getByTestId("overview-period-selector");
+      await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+      await expect.poll(() => {
+        const params = new URL(page.url()).searchParams;
+        return {
+          period: params.get("period"),
+          tracking: params.get("utm_source"),
+          ref: params.get("ref"),
+          rule: params.get("rule"),
+          clients: params.get("clients"),
+        };
+      }).toEqual({
+        period: "30d",
+        tracking: "deleted-campaign",
+        ref: "overview",
+        rule: null,
+        clients: null,
+      });
+    } finally {
+      await cleanUpFixture(deletionFixture);
+    }
+  });
+
+  test("rapid stale campaign URL changes do not leave validation stuck", async ({ page }) => {
+    const deletionFixture = await createFixture();
+    let releaseFirstListRequest: (() => void) | undefined;
+    const firstListRequestRelease = new Promise<void>((resolve) => {
+      releaseFirstListRequest = resolve;
+    });
+    let interceptedListRequests = 0;
+    const holdFirstListRequest = async (route: Route) => {
+      interceptedListRequests += 1;
+      if (interceptedListRequests === 1) await firstListRequestRelease;
+      try {
+        await route.continue();
+      } catch (error) {
+        // The deliberately held request can be aborted after the owner has
+        // navigated away. It no longer has a route to continue, which is the
+        // expected teardown outcome for this regression.
+        if (!(error instanceof Error) || !error.message.includes("Route is already handled")) {
+          throw error;
+        }
+      }
+    };
+
+    try {
+      await resetFixtureActiveSalon(deletionFixture, deletionFixture.salonId);
+      await signInAsFixtureOwner(page, deletionFixture);
+      await page.goto("/vlasnik/automatizacije?period=30d");
+      await expect(page.getByTestId(`overview-row-${deletionFixture.ruleId}`)).toBeVisible();
+
+      await db.delete(automationRulesTable).where(eq(automationRulesTable.id, deletionFixture.ruleId));
+      await page.route("**/api/growth/automations", holdFirstListRequest);
+
+      const staleUrl = `/vlasnik/automatizacije?period=30d&utm_source=rapid-stale-rule&rule=${deletionFixture.ruleId}`;
+      const overviewUrl = "/vlasnik/automatizacije?period=30d&utm_source=rapid-stale-rule";
+      const navigate = (url: string) => page.evaluate((nextUrl) => {
+        window.history.pushState({}, "", nextUrl);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, url);
+
+      await navigate(staleUrl);
+      await expect.poll(() => interceptedListRequests).toBe(1);
+
+      // Simulate a quick Back/Forward sequence while the first fresh list
+      // request has not settled. The final stale rule must still start its own
+      // validation instead of being blocked by the obsolete request.
+      await navigate(overviewUrl);
+      await page.waitForTimeout(50);
+      await navigate(staleUrl);
+      await expect.poll(() => interceptedListRequests).toBe(2);
+
+      const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+      await expect(dialog).toBeHidden();
+      await expect.poll(() => {
+        const params = new URL(page.url()).searchParams;
+        return {
+          period: params.get("period"),
+          tracking: params.get("utm_source"),
+          rule: params.get("rule"),
+        };
+      }).toEqual({
+        period: "30d",
+        tracking: "rapid-stale-rule",
+        rule: null,
+      });
+    } finally {
+      releaseFirstListRequest?.();
+      await page.unroute("**/api/growth/automations", holdFirstListRequest);
       await cleanUpFixture(deletionFixture);
     }
   });

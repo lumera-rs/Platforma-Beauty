@@ -811,8 +811,8 @@ export default function OwnerAutomations() {
   // rule back into the restored URL.
   const lastHandledSearchRef = useRef(searchString);
   const skipUrlMirrorRef = useRef(false);
-  const ruleValidationRequestRef = useRef(0);
-  const historyRuleRefreshRef = useRef(false);
+  const ruleSelectionVersionRef = useRef(0);
+  const validatedRuleSelectionVersionRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (lastHandledSearchRef.current === searchString) return;
@@ -827,24 +827,31 @@ export default function OwnerAutomations() {
     setAttributedClientType(parseAttributedClientType(searchString));
     setStatsRuleId(null);
     setPendingRuleId(urlRuleId);
-    ruleValidationRequestRef.current += 1;
-    if (!urlRuleId || !rules?.some((rule: any) => rule.id === urlRuleId)) {
-      historyRuleRefreshRef.current = false;
+    ruleSelectionVersionRef.current += 1;
+  }, [searchString]);
+
+  useEffect(() => {
+    if (pendingRuleId === null || !rules) return;
+    if (!rules.some((rule: any) => rule.id === pendingRuleId)) {
+      ruleSelectionVersionRef.current += 1;
+      setPendingRuleId(null);
       return;
     }
 
     // A campaign visible in the cached list might have been deleted in
-    // another tab before this history entry is revisited. Wait for a fresh
-    // list before reopening it; IDs already absent from the cache keep the
-    // immediate overview fallback below.
-    historyRuleRefreshRef.current = true;
-    const validationRequest = ++ruleValidationRequestRef.current;
+    // another tab before this shared URL is opened. Always validate a
+    // pending deep-link against a fresh list before reopening its dialog. Each
+    // URL selection has its own version, so a request made for an older URL
+    // cannot block validation after the owner rapidly navigates away and back.
+    const urlRuleId = pendingRuleId;
+    const selectionVersion = ruleSelectionVersionRef.current;
+    if (validatedRuleSelectionVersionRef.current === selectionVersion) return;
+    validatedRuleSelectionVersionRef.current = selectionVersion;
     void ownerListAutomations({ cache: "no-store" }).then((refreshedRules) => {
       if (
-        validationRequest !== ruleValidationRequestRef.current
+        selectionVersion !== ruleSelectionVersionRef.current
         || new URLSearchParams(window.location.search).get("rule") !== urlRuleId
       ) return;
-      historyRuleRefreshRef.current = false;
       queryClient.setQueryData(getOwnerListAutomationsQueryKey(), refreshedRules);
       if (refreshedRules.some((rule: any) => rule.id === urlRuleId)) {
         setStatsRuleId(urlRuleId);
@@ -852,22 +859,14 @@ export default function OwnerAutomations() {
       setPendingRuleId(null);
     }).catch(() => {
       if (
-        validationRequest === ruleValidationRequestRef.current
+        selectionVersion === ruleSelectionVersionRef.current
         && new URLSearchParams(window.location.search).get("rule") === urlRuleId
       ) {
-        historyRuleRefreshRef.current = false;
+        ruleSelectionVersionRef.current += 1;
         setPendingRuleId(null);
       }
     });
-  }, [searchString, rules, queryClient]);
-
-  useEffect(() => {
-    if (pendingRuleId === null || !rules || historyRuleRefreshRef.current) return;
-    if (rules.some((rule: any) => rule.id === pendingRuleId)) {
-      setStatsRuleId(pendingRuleId);
-    }
-    setPendingRuleId(null);
-  }, [pendingRuleId, rules]);
+  }, [pendingRuleId, rules, queryClient]);
 
   // Mirror the complete selection into the query string so the view is
   // bookmarkable and shareable. Incomplete custom ranges are not written
