@@ -13,7 +13,7 @@ import { inArray } from "drizzle-orm";
 import { db, integrationSettingsTable, usersTable } from "@workspace/db";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
 import { saveIntegrationSettings } from "../../artifacts/api-server/src/lib/integrations";
-import { checkedApiFixture } from "../src/browser-api-fixtures";
+import { adminIntegrationsFixture } from "../src/browser-api-fixtures";
 import { acquireIntegrationSettingsLock } from "./integration-settings-lock";
 
 const scrypt = promisify(scryptCallback);
@@ -148,39 +148,13 @@ async function stubStaleOAuthOriginWarning(page: Page) {
       return;
     }
     if (path === "/api/admin/integrations" && request.method() === "GET") {
-      const card = { enabled: false, configuredInDatabase: false, complete: false, version: null, values: {} };
-      const webhookCard = {
-        ...card,
-        webhookSecretPendingReconfirmation: false,
-        webhookVerifiedAt: null,
-        webhookVerificationStale: false,
-        webhookConfirmationMaxAgeDays: 7,
-      };
       await route.fulfill({
-        json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
-          integrations: {
-            sms: webhookCard,
-            brevo: webhookCard,
-            google_oauth: card,
-            facebook_oauth: card,
-            cloudflare: card,
-          },
-          deliveryReports: {
-            providers: {
-              brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-              infobip: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-            },
-            windowHours: 24,
-            graceMinutes: 30,
-          },
-          smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
-          smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
+        json: adminIntegrationsFixture(apiSchemas.AdminGetIntegrationsResponse, {
           redirectUris: {
             google: "https://new-published.example.test/api/auth/oauth/google/callback",
             facebook: "https://new-published.example.test/api/auth/oauth/facebook/callback",
           },
           redirectUriWarning: staleWarning,
-          smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
         }),
       });
       return;

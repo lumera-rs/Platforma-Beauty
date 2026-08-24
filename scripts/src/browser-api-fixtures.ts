@@ -48,6 +48,38 @@ const DEFAULT_ADMIN_SUMMARY = {
 
 export type AdminSummaryFixtureOverrides = Partial<typeof DEFAULT_ADMIN_SUMMARY>;
 
+type AdminIntegrationCardFixture = {
+  enabled: boolean;
+  configuredInDatabase: boolean;
+  complete: boolean;
+  version: string | null;
+  values: Record<string, string | null>;
+};
+
+type AdminWebhookIntegrationCardFixture = AdminIntegrationCardFixture & {
+  webhookSecretPendingReconfirmation: boolean;
+  webhookVerifiedAt: string | null;
+  webhookVerificationStale: boolean;
+  webhookConfirmationMaxAgeDays: number;
+};
+
+type AdminBrevoWebhookIntegrationCardFixture = AdminWebhookIntegrationCardFixture & {
+  brevoRegistrationMissingEvents: string[];
+};
+
+export type AdminIntegrationsFixtureOverrides = {
+  sms?: Partial<AdminWebhookIntegrationCardFixture>;
+  brevo?: Partial<AdminBrevoWebhookIntegrationCardFixture>;
+  google_oauth?: Partial<AdminIntegrationCardFixture>;
+  facebook_oauth?: Partial<AdminIntegrationCardFixture>;
+  cloudflare?: Partial<AdminIntegrationCardFixture>;
+  redirectUris?: {
+    google: string;
+    facebook: string;
+  };
+  redirectUriWarning?: string;
+};
+
 /**
  * Build the platform summary used by admin browser mocks.
  *
@@ -63,6 +95,84 @@ export function adminSummaryFixture(
     "/api/admin/summary",
     schema,
     { ...DEFAULT_ADMIN_SUMMARY, ...overrides },
+  );
+}
+
+/**
+ * Build the complete integration settings response used by admin browser
+ * mocks. Keep the delivery-health fields here so standalone integration
+ * suites share one contract-checked fixture instead of drifting independently.
+ */
+export function adminIntegrationsFixture(
+  schema: FixtureSchema,
+  overrides: AdminIntegrationsFixtureOverrides = {},
+) {
+  const card: AdminIntegrationCardFixture = {
+    enabled: false,
+    configuredInDatabase: false,
+    complete: false,
+    version: null,
+    values: {},
+  };
+  const webhookCard: AdminWebhookIntegrationCardFixture = {
+    ...card,
+    webhookSecretPendingReconfirmation: false,
+    webhookVerifiedAt: null,
+    webhookVerificationStale: false,
+    webhookConfirmationMaxAgeDays: 7,
+  };
+  const brevoWebhookCard: AdminBrevoWebhookIntegrationCardFixture = {
+    ...webhookCard,
+    brevoRegistrationMissingEvents: [],
+  };
+
+  return checkedApiFixture(
+    "/api/admin/integrations",
+    schema,
+    {
+      integrations: {
+        sms: { ...webhookCard, ...overrides.sms },
+        brevo: { ...brevoWebhookCard, ...overrides.brevo },
+        google_oauth: { ...card, ...overrides.google_oauth },
+        facebook_oauth: { ...card, ...overrides.facebook_oauth },
+        cloudflare: { ...card, ...overrides.cloudflare },
+      },
+      deliveryReports: {
+        providers: {
+          brevo: {
+            lastEventAt: null,
+            rejectedPayloadCount: 0,
+            lastRejectedAt: null,
+            malformedWebhookState: "normal",
+            lastAutomationSentAt: null,
+            recentSendCount: 0,
+            warning: false,
+          },
+          infobip: {
+            lastEventAt: null,
+            rejectedPayloadCount: 0,
+            lastRejectedAt: null,
+            malformedWebhookState: "normal",
+            lastAutomationSentAt: null,
+            recentSendCount: 0,
+            warning: false,
+          },
+        },
+        windowHours: 24,
+        graceMinutes: 30,
+        rejectionAlertThreshold: 3,
+      },
+      smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
+      smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
+      redirectUris: overrides.redirectUris ?? {
+        google: "https://example.test/google",
+        facebook: "https://example.test/facebook",
+      },
+      ...(overrides.redirectUriWarning !== undefined
+        ? { redirectUriWarning: overrides.redirectUriWarning }
+        : {}),
+      smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
+    },
   );
 }
 
