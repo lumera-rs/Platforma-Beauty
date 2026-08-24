@@ -17,4 +17,10 @@ Above the exact-preview customer cap, the retention threshold preview must answe
 
 **How to apply:** Pair every status margin/range and the aggregate reclassified margin with the estimate marker and plain-language explanation. Do not derive per-salon margins from this uniform sample; those need a dedicated sampling design.
 
+**Rule:** When a per-salon ranking is enabled, sample each salon from a random UUID cursor in circular UUID order using the `(salon_id, id)` index; never rank strata with a platform-wide random/window sort. Preserve the 30-observation floor for non-census salons and fall back to the uniform aggregate-only estimate if any stratum is incomplete or the ranking work times out.
+
+**Why:** UUID seeks bound the database work by the configured strata and sample sizes, while `row_number() over (partition by salon_id order by random())` still visits and sorts the whole customer table. A partial or underpowered stratum makes the ranked comparison misleading.
+
+**How to apply:** Generate a fresh cursor per salon, read the indexed `id >= cursor` range and then the `id < cursor` wraparound range, and cap their combined rows at the requested sample. Keep the production schema bootstrap aligned with the composite index, not only the source schema.
+
 **Sampling must be bounded work:** ORDER BY random() LIMIT n visits and heap-sorts every row — at the very scale that triggers estimate mode it can itself exhaust the time budget. Use PostgreSQL TABLESAMPLE SYSTEM (page-level, I/O proportional to the requested percentage) with the percentage derived from a hard source-row budget (a few × the target sample plus a small constant floor for tiny tables) and a LIMIT of that budget on the query. NEVER escalate the percentage when the page sample under-delivers — 100% degenerates to a full platform scan; keep the smaller sample and report its true size, and refuse honestly on an empty sample. Likewise, no estimate-mode helper query may scan the whole platform — e.g. salon medians are computed only for the salons present in the sample, in bounded chunks.

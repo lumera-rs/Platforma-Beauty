@@ -402,6 +402,7 @@ async function run() {
       "email_deliveries_report_alert_history_idx",
       "email_deliveries_provider_message_idx",
       "appointments_salon_customer_completed_date_idx",
+      "salon_customers_salon_id_idx",
     ]) {
       assert.ok(await indexExists(idx), `index ${idx} exists`);
     }

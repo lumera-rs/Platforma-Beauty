@@ -38,7 +38,8 @@
  *     histories) the keyset-batched preview still answers correctly within
  *     the response-time bound; forcing estimate mode over the same volume
  *     answers a flagged estimate just as fast whose extrapolated counts land
- *     within a sampling-error corridor of the exact run
+ *     within a sampling-error corridor of the exact run; the bounded,
+ *     index-backed stratified ranking path also returns before that deadline
  * 12. Owner CRM list flips a 3-visit customer ACTIVE → VIP when the admin
  *     lowers vipMinCompletedVisits, and reports the active version
  * 13. Owner CRM detail turns AT_RISK → LOST under tuned lost thresholds and
@@ -1262,11 +1263,17 @@ async function integrationTests() {
       process.env.RETENTION_PREVIEW_SALON_SAMPLE_SIZE = "30";
       process.env.RETENTION_PREVIEW_SALON_MIN_SAMPLE_SIZE = "30";
       process.env.RETENTION_PREVIEW_SALON_MAX_STRATA = "1000";
-      const stratifiedRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+       const stratifiedStartedAt = Date.now();
+       const stratifiedRes = await postPreview({ ...DEFAULT_RETENTION_THRESHOLDS, vipMinCompletedVisits: 2 });
+       const stratifiedElapsedMs = Date.now() - stratifiedStartedAt;
       assert.equal(stratifiedRes.status, 200, "stratified estimate succeeds");
       const stratified = (await stratifiedRes.json()) as any;
       assert.equal(stratified.isEstimate, true);
       assert.equal(stratified.salonRankingAvailable, true, "validated strata unlock salon rankings");
+       assert.ok(
+         stratifiedElapsedMs <= PERF_RESPONSE_BOUND_MS,
+         `index-backed stratified ranking over ${stratified.totalCustomers} customers answered in ${stratifiedElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+       );
       assert.ok(stratified.topAffectedSalons.length > 0, "stratified estimate returns a count ranking");
       for (const affectedSalon of stratified.topAffectedSalons as any[]) {
         assert.ok(
@@ -1295,6 +1302,9 @@ async function integrationTests() {
         null,
         "a full-salon census has no sampling uncertainty",
       );
+       console.log(
+         `✓ Stratified ranking: ${stratified.totalCustomers} customers sampled by salon in ${stratifiedElapsedMs} ms (bound ${PERF_RESPONSE_BOUND_MS} ms)`,
+       );
 
       // The optional random-order query receives only a fraction of the
       // deadline. If it cannot finish, the preview must preserve enough time

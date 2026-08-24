@@ -142,6 +142,11 @@ function tableStatements(s: string): string[] {
   return [
     // ── Existing-table additive changes (Phase 2 evolution) ────────────────
     `ALTER TABLE ${s}.salon_customers ADD COLUMN IF NOT EXISTS birth_date date`,
+    // Retention's stratified preview seeks from a random UUID within each salon
+    // and reads a bounded circular range. Keep the production bootstrap aligned
+    // with core.ts so legacy customer tables never fall back to a full sort.
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS salon_customers_salon_id_idx
+       ON ${s}.salon_customers (salon_id, id)`,
 
     // v12: Customer-safe retail storefront fields. These deliberately remain
     // separate from the owner-only B2B description and prices in `products`.

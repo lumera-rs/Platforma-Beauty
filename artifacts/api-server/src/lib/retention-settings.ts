@@ -14,6 +14,7 @@
  * same version (the unique index on version is the final backstop).
  */
 
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
   db,
@@ -506,8 +507,9 @@ export const RETENTION_PREVIEW_DEFAULT_SAMPLE_SIZE = 25_000;
 export const RETENTION_PREVIEW_DEFAULT_SALON_MIN_SAMPLE_SIZE = 30;
 export const RETENTION_PREVIEW_DEFAULT_SALON_MAX_STRATA = 500;
 /**
- * Stratified sampling can require an expensive whole-table random-order query.
- * Reserve most of the preview deadline for the established uniform fallback.
+ * Stratified sampling is optional, and gets only part of the preview deadline
+ * so the established uniform fallback still has time to return a useful
+ * aggregate estimate if a ranking cannot be obtained.
  */
 const RETENTION_PREVIEW_STRATIFIED_ATTEMPT_BUDGET_FRACTION = 0.4;
 
@@ -822,15 +824,16 @@ export async function previewRetentionThresholds(
 
     // Operators can opt into a true stratified sample for salon comparisons.
     // Its sample is drawn independently within every salon, unlike the
-    // bounded platform-wide TABLESAMPLE fallback below. A row-number window is
-    // intentionally protected by the same statement/deadline guards; if the
-    // platform has too many strata or the requested sample is underpowered we
-    // discard it and keep the established empty-ranking fallback.
+    // bounded platform-wide TABLESAMPLE fallback below. A random UUID cursor
+    // lets the (salon_id, id) index read a short circular range per salon,
+    // avoiding a platform-wide ORDER BY random() sort. The work is intentionally
+    // protected by the same statement/deadline guards; if the platform has too
+    // many strata or the requested sample is underpowered we discard it and
+    // keep the established empty-ranking fallback.
     if (salonSampleSize !== null) {
-      // This optional query needs a random ordering across each salon and can
-      // therefore be more expensive than TABLESAMPLE. Give it only a bounded
-      // slice of the deadline; a timeout is not an error for the preview — it
-      // means rankings remain unavailable and the proven uniform path runs.
+      // This optional query gets only a bounded slice of the deadline. A
+      // timeout is not an error for the preview — it means rankings remain
+      // unavailable and the proven uniform path runs.
       const stratifiedDeadlineAt =
         Date.now() + Math.max(1, Math.floor(remainingMs() * RETENTION_PREVIEW_STRATIFIED_ATTEMPT_BUDGET_FRACTION));
       const stratifiedRemainingMs = () =>
@@ -866,15 +869,46 @@ export async function previewRetentionThresholds(
           hasEnoughPerSalonPrecision &&
           requiredStratifiedSampleSize <= stratifiedSampleBudget
         ) {
+          // salon_customers.id uses random UUIDs. Start every salon at a fresh
+          // random UUID and take the next ids in circular UUID order. The two
+          // indexed ranges ensure every eligible salon supplies exactly its
+          // requested sample (or its complete population), even when its start
+          // cursor lands near the end of the UUID space. This is bounded by
+          // strata × salonSampleSize rather than by every customer row.
+          const sampleSeeds = sql.join(
+            populations.map((row) => sql`(${row.salonId}::uuid, ${randomUUID()}::uuid)`),
+            sql`, `,
+          );
           const sampleRes = await withPreviewStatementTimeout(stratifiedRemainingMs(), (tx) =>
             tx.execute(sql`
-              select id, salon_id
-              from (
-                select id, salon_id,
-                  row_number() over (partition by salon_id order by random()) as sample_rank
-                from ${salonCustomersTable}
-              ) as stratified_customers
-              where sample_rank <= ${salonSampleSize}
+              with sample_seeds(salon_id, start_id) as (
+                values ${sampleSeeds}
+              )
+              select sampled.id, sampled.salon_id
+              from sample_seeds
+              cross join lateral (
+                select id, salon_id
+                from (
+                  (
+                    select customer.id, customer.salon_id
+                    from ${salonCustomersTable} as customer
+                    where customer.salon_id = sample_seeds.salon_id
+                      and customer.id >= sample_seeds.start_id
+                    order by customer.id
+                    limit ${salonSampleSize}
+                  )
+                  union all
+                  (
+                    select customer.id, customer.salon_id
+                    from ${salonCustomersTable} as customer
+                    where customer.salon_id = sample_seeds.salon_id
+                      and customer.id < sample_seeds.start_id
+                    order by customer.id
+                    limit ${salonSampleSize}
+                  )
+                ) as circular_sample
+                limit ${salonSampleSize}
+              ) as sampled
             `),
             "salon-stratified-sample",
           );

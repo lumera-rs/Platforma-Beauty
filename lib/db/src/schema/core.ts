@@ -503,6 +503,10 @@ export const salonCustomersTable = pgTable("salon_customers", {
 }, (table) => [
   uniqueIndex("salon_customers_salon_user_unique").on(table.salonId, table.userId),
   uniqueIndex("salon_customers_salon_phone_normalized_unique").on(table.salonId, table.phoneNormalized),
+  // Per-salon retention samples seek from a random UUID cursor and take a
+  // bounded circular range. This avoids sorting the platform-wide customer
+  // table while still drawing a distinct sample inside every salon.
+  index("salon_customers_salon_id_idx").on(table.salonId, table.id),
   // Leading FK coverage for userId alone (find all salon records for a given user).
   index("salon_customers_user_idx").on(table.userId),
 ]);
