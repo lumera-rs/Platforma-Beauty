@@ -626,6 +626,34 @@ test("retail cart page announces a cross-tab line change without reloading", asy
   }
 });
 
+test("retail cart page announces a cross-tab line removal without reloading", async ({ page }) => {
+  let mainFrameNavigations = 0;
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) mainFrameNavigations += 1;
+  });
+
+  await createCartAndOpenCartPage(page);
+  await expect(page.getByText(money(2_000), { exact: true }).first()).toBeVisible();
+
+  const otherTab = await page.context().newPage();
+  try {
+    await otherTab.goto("/korpa");
+    await expect(otherTab.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
+    await otherTab.getByRole("button", { name: `Ukloni ${productName} iz korpe` }).click();
+
+    await expect(page.getByTestId("status-cart-announcement")).toHaveText("Korpa je prazna.");
+    await expect(page.getByTestId("status-cart-item-announcement")).toHaveText(
+      `Proizvod ${productName} je uklonjen iz korpe.`,
+    );
+    await expect(page.getByRole("paragraph").filter({ hasText: "Korpa je prazna." })).toBeVisible();
+    await expect(page.getByTestId("status-cart-count")).toHaveCount(0);
+    expect(page.url()).toContain("/korpa");
+    expect(mainFrameNavigations).toBe(1);
+  } finally {
+    await otherTab.close();
+  }
+});
+
 test("retail cart page empties without a reload when the cart is cleared in another tab", async ({ page }) => {
   let mainFrameNavigations = 0;
   page.on("framenavigated", (frame) => {
