@@ -41,6 +41,12 @@ export interface AutomationStats {
   lastRunAt?: Date | null;
   /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsPrevious;
+  /** Attributed appointments from new clients in the requested period. */
+  newClientCount: number;
+  /** Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
+  /** Attributed appointments in the requested period without a linked salon customer; these are excluded from the known-client denominator. */
+  unknownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
      * @minimum 0

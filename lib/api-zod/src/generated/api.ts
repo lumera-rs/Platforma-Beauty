@@ -9492,11 +9492,16 @@ export const OwnerGetAutomationStatsResponse = zod.object({
   "attributedRevenue": zod.number().describe('Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.'),
   "newClientCount": zod.number().describe('Attributed appointments in the preceding window whose salon client had no completed appointment before the campaign message was sent.'),
   "returningClientCount": zod.number().describe('Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent.'),
+  "knownClientCount": zod.number().describe('Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded.'),
+  "unknownClientCount": zod.number().describe('Attributed appointments in the preceding window without a linked salon customer; these are excluded from the known-client denominator.'),
   "newClientShare": zod.number().min(ownerGetAutomationStatsResponsePreviousNewClientShareMin).max(ownerGetAutomationStatsResponsePreviousNewClientShareMax).nullable().describe('Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.'),
   "emailDeliveredCount": zod.number(),
   "emailOpenedCount": zod.number(),
   "smsDeliveredCount": zod.number()
 }).optional().describe('Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from\/to range.'),
+  "newClientCount": zod.number().describe('Attributed appointments from new clients in the requested period.'),
+  "knownClientCount": zod.number().describe('Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded.'),
+  "unknownClientCount": zod.number().describe('Attributed appointments in the requested period without a linked salon customer; these are excluded from the known-client denominator.'),
   "newClientShare": zod.number().min(ownerGetAutomationStatsResponseNewClientShareMin).max(ownerGetAutomationStatsResponseNewClientShareMax).nullable().describe('Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.')
 })
 
@@ -9579,6 +9584,7 @@ export const OwnerListAutomationStatsResponseItem = zod.object({
   "cancelledAttributedAppointments": zod.number().describe('Attributed appointments that were cancelled (excluded from realized numbers).'),
   "cancelledAttributedRevenue": zod.number().describe('Total price (RSD) of cancelled attributed appointments — revenue lost to cancellations.'),
   "newClientCount": zod.number().describe('Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response.'),
+  "knownClientCount": zod.number().describe('Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded.'),
   "returningClientCount": zod.number().describe('Attributed appointments from returning clients in the requested period; a prior completed appointment must be strictly before coalesce(sentAt, executedAt, createdAt).'),
   "unknownClientCount": zod.number().describe('Attributed appointments in the requested period without a linked salon customer, so the new\/returning split is unknown.'),
   "emailSentCount": zod.number(),
@@ -9592,6 +9598,8 @@ export const OwnerListAutomationStatsResponseItem = zod.object({
   "previous": zod.object({
   "attributedAppointments": zod.number(),
   "attributedRevenue": zod.number().describe('Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend.'),
+  "newClientCount": zod.number().describe('Attributed appointments from new clients in the preceding window.'),
+  "knownClientCount": zod.number().describe('Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded.'),
   "newClientShare": zod.number().min(ownerListAutomationStatsResponsePreviousNewClientShareMin).max(ownerListAutomationStatsResponsePreviousNewClientShareMax).nullable().describe('Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.'),
   "emailDeliveredCount": zod.number(),
   "emailOpenedCount": zod.number(),

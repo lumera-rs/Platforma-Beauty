@@ -13,6 +13,10 @@ export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /** Attributed appointments from new clients in the preceding window. */
+  newClientCount: number;
+  /** Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
      * @minimum 0

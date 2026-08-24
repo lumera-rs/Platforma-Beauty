@@ -17,6 +17,10 @@ export type AutomationStatsPrevious = {
   newClientCount: number;
   /** Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent. */
   returningClientCount: number;
+  /** Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
+  /** Attributed appointments in the preceding window without a linked salon customer; these are excluded from the known-client denominator. */
+  unknownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
      * @minimum 0

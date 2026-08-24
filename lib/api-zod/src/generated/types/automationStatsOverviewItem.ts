@@ -33,6 +33,8 @@ export interface AutomationStatsOverviewItem {
   cancelledAttributedRevenue: number;
   /** Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response. */
   newClientCount: number;
+  /** Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
   /** Attributed appointments from returning clients in the requested period; a prior completed appointment must be strictly before coalesce(sentAt, executedAt, createdAt). */
   returningClientCount: number;
   /** Attributed appointments in the requested period without a linked salon customer, so the new/returning split is unknown. */

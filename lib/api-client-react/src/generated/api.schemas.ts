@@ -4281,6 +4281,10 @@ export type AutomationStatsPrevious = {
   newClientCount: number;
   /** Attributed appointments in the preceding window whose salon client had at least one completed appointment before the campaign message was sent. */
   returningClientCount: number;
+  /** Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
+  /** Attributed appointments in the preceding window without a linked salon customer; these are excluded from the known-client denominator. */
+  unknownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
      * @minimum 0
@@ -4327,6 +4331,12 @@ export interface AutomationStats {
   lastRunAt?: string | null;
   /** Counts for the preceding window of the same length. Present only when compare=previous is combined with a bounded preset or complete custom from/to range. */
   previous?: AutomationStatsPrevious;
+  /** Attributed appointments from new clients in the requested period. */
+  newClientCount: number;
+  /** Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
+  /** Attributed appointments in the requested period without a linked salon customer; these are excluded from the known-client denominator. */
+  unknownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history; unknown clients are excluded from the denominator, and null means no client history is known.
      * @minimum 0
@@ -4388,6 +4398,10 @@ export type AutomationStatsOverviewItemPrevious = {
   attributedAppointments: number;
   /** Total price (RSD) of appointments attributed in the preceding window (cancelled and no-show excluded), for the revenue trend. */
   attributedRevenue: number;
+  /** Attributed appointments from new clients in the preceding window. */
+  newClientCount: number;
+  /** Total attributed appointments from known clients in the preceding window (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
   /**
      * Percentage of attributed appointments from new clients among appointments with known client history in the preceding window; null when no client history is known.
      * @minimum 0
@@ -4426,6 +4440,8 @@ export interface AutomationStatsOverviewItem {
   cancelledAttributedRevenue: number;
   /** Attributed appointments from new clients in the requested period, using the same derivation as the attributed-appointments response. */
   newClientCount: number;
+  /** Total attributed appointments from known clients in the requested period (newClientCount + returningClientCount); clients without a linked salon customer are excluded. */
+  knownClientCount: number;
   /** Attributed appointments from returning clients in the requested period; a prior completed appointment must be strictly before coalesce(sentAt, executedAt, createdAt). */
   returningClientCount: number;
   /** Attributed appointments in the requested period without a linked salon customer, so the new/returning split is unknown. */

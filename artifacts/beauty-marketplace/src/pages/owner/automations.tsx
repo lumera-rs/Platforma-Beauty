@@ -46,6 +46,20 @@ function formatClientShare(share: number): string {
   return `${share.toLocaleString("sr-RS", { maximumFractionDigits: 1 })}%`;
 }
 
+function formatNewClientShare(
+  newClientCount: number,
+  knownClientCount: number,
+  share: number | null,
+): React.ReactNode {
+  if (share === null) return "Udeo novih: nema poznatih podataka";
+  return (
+    <>
+      Udeo novih: <strong className="text-foreground">{newClientCount} od {knownClientCount} poznatih</strong>{" "}
+      (<strong className="text-foreground">{formatClientShare(share)}</strong>)
+    </>
+  );
+}
+
 function formatPercentagePoints(points: number): string {
   return points.toLocaleString("sr-RS", { maximumFractionDigits: 1 });
 }
@@ -517,9 +531,7 @@ function CampaignOverview({ items, period, onPeriodChange, customRange, onCustom
                       </div>
                     )}
                     <div className="text-[11px] text-muted-foreground whitespace-nowrap" data-testid={`overview-new-client-share-${item.ruleId}`}>
-                      {item.newClientShare === null
-                        ? "Udeo novih: nema poznatih podataka"
-                        : <>Udeo novih: <strong className="text-foreground">{formatClientShare(item.newClientShare)}</strong></>}
+                      {formatNewClientShare(item.newClientCount, item.knownClientCount, item.newClientShare)}
                       {item.previous && (
                         <span className="ml-1.5">
                           <ClientShareTrend
@@ -1217,7 +1229,7 @@ export default function OwnerAutomations() {
                   <p className="mt-1 text-sm">
                     {statsData.newClientShare === null
                       ? "Nije dostupan — nema poznatih podataka o klijentima."
-                      : <><strong className="text-lg text-primary">{formatClientShare(statsData.newClientShare)}</strong> pripisanih termina je od novih klijenata.</>}
+                      : <><strong className="text-lg text-primary">{formatClientShare(statsData.newClientShare)}</strong> pripisanih termina je od novih klijenata ({statsData.newClientCount} od {statsData.knownClientCount} poznatih).</>}
                     {statsData.previous && (
                       <span className="ml-1.5">
                         <ClientShareTrend
@@ -1230,6 +1242,11 @@ export default function OwnerAutomations() {
                   </p>
                   {statsData.previous && (statsData.newClientShare === null || statsData.previous.newClientShare === null) && (
                     <p className="mt-1 text-xs text-muted-foreground">Poređenje sa prethodnim periodom nije dostupno bez poznatih podataka u oba perioda.</p>
+                  )}
+                  {statsData.unknownClientCount > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground" data-testid="stats-unknown-client-count">
+                      Nepoznati klijenti: {statsData.unknownClientCount} (nisu u osnovi)
+                    </p>
                   )}
                 </div>
               </div>

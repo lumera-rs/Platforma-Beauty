@@ -730,11 +730,16 @@ function calculateNewClientShare(
   newClientCount: number | null | undefined,
   returningClientCount: number | null | undefined,
 ): number | null {
-  const newCount = newClientCount ?? 0;
-  const returningCount = returningClientCount ?? 0;
-  const knownClientCount = newCount + returningCount;
+  const knownClientCount = calculateKnownClientCount(newClientCount, returningClientCount);
   if (knownClientCount <= 0) return null;
-  return Math.round((newCount / knownClientCount) * 10000) / 100;
+  return Math.round(((newClientCount ?? 0) / knownClientCount) * 10000) / 100;
+}
+
+function calculateKnownClientCount(
+  newClientCount: number | null | undefined,
+  returningClientCount: number | null | undefined,
+): number {
+  return (newClientCount ?? 0) + (returningClientCount ?? 0);
 }
 
 /**
@@ -767,6 +772,7 @@ function aggregateRunStats(scope: StatsScope, window: StatsWindow) {
       attributedRevenue: sql<number>`coalesce(sum(case when ${appointmentCountsAsRealized} then ${appointmentsTable.price} end), 0)::int`,
       newClientCount: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} and (${campaignIsReturningExpr}) is false then 1 else 0 end)::int`,
       returningClientCount: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} and (${campaignIsReturningExpr}) is true then 1 else 0 end)::int`,
+      unknownClientCount: sql<number>`sum(case when ${appointmentsTable.id} is not null and ${appointmentCountsAsRealized} and ${appointmentsTable.salonCustomerId} is null then 1 else 0 end)::int`,
       // Completed vs upcoming split of the realized rows. Both status lists
       // are explicit, so the two buckets sum exactly to the attributed totals
       // without absorbing an unclassified future status.
@@ -899,6 +905,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
       attributedRevenue: number;
       newClientCount: number;
       returningClientCount: number;
+      knownClientCount: number;
     }> | null = null;
     let prevDeliveriesByRule: Map<string, { emailDeliveredCount: number; emailOpenedCount: number; smsDeliveredCount: number }> | null = null;
     if (previousWindow) {
@@ -910,6 +917,7 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         attributedRevenue: r.attributedRevenue,
         newClientCount: r.newClientCount,
         returningClientCount: r.returningClientCount,
+        knownClientCount: calculateKnownClientCount(r.newClientCount, r.returningClientCount),
       }]));
       prevDeliveriesByRule = new Map(prevDeliveryAgg.map((d) => [d.ruleId, {
         emailDeliveredCount: d.emailDeliveredCount,
@@ -930,6 +938,8 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         ? {
             attributedAppointments: prevRunsByRule.get(rule.id)?.attributedAppointments ?? 0,
             attributedRevenue: prevRunsByRule.get(rule.id)?.attributedRevenue ?? 0,
+            newClientCount: prevRunsByRule.get(rule.id)?.newClientCount ?? 0,
+            knownClientCount: prevRunsByRule.get(rule.id)?.knownClientCount ?? 0,
             newClientShare: calculateNewClientShare(
               prevRunsByRule.get(rule.id)?.newClientCount,
               prevRunsByRule.get(rule.id)?.returningClientCount,
@@ -956,9 +966,10 @@ router.get("/growth/automation-stats", async (req, res, next) => {
         upcomingRevenue: runs?.upcomingRevenue ?? 0,
         cancelledAttributedAppointments: runs?.cancelledAttributedAppointments ?? 0,
         cancelledAttributedRevenue: runs?.cancelledAttributedRevenue ?? 0,
-         newClientCount: clientMix?.newClientCount ?? 0,
-         returningClientCount: clientMix?.returningClientCount ?? 0,
-         unknownClientCount: clientMix?.unknownClientCount ?? 0,
+        newClientCount: clientMix?.newClientCount ?? 0,
+        returningClientCount: clientMix?.returningClientCount ?? 0,
+        unknownClientCount: clientMix?.unknownClientCount ?? 0,
+        knownClientCount: calculateKnownClientCount(clientMix?.newClientCount, clientMix?.returningClientCount),
         newClientShare: calculateNewClientShare(clientMix?.newClientCount, clientMix?.returningClientCount),
         emailSentCount: deliveries?.emailSentCount ?? 0,
         emailDeliveredCount: deliveries?.emailDeliveredCount ?? 0,
@@ -1026,7 +1037,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
           attributedRevenue: number;
           newClientCount: number;
           returningClientCount: number;
-           newClientShare: number | null;
+          knownClientCount: number;
+          unknownClientCount: number;
+          newClientShare: number | null;
           emailDeliveredCount: number;
           emailOpenedCount: number;
           smsDeliveredCount: number;
@@ -1041,6 +1054,8 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
         attributedRevenue: prevRuns?.attributedRevenue ?? 0,
         newClientCount: prevRuns?.newClientCount ?? 0,
         returningClientCount: prevRuns?.returningClientCount ?? 0,
+        knownClientCount: calculateKnownClientCount(prevRuns?.newClientCount, prevRuns?.returningClientCount),
+        unknownClientCount: prevRuns?.unknownClientCount ?? 0,
         newClientShare: calculateNewClientShare(prevRuns?.newClientCount, prevRuns?.returningClientCount),
         emailDeliveredCount: prevDeliveries?.emailDeliveredCount ?? 0,
         emailOpenedCount: prevDeliveries?.emailOpenedCount ?? 0,
@@ -1062,6 +1077,9 @@ router.get("/growth/automations/:automationId/stats", async (req, res, next) => 
       upcomingRevenue: stats?.upcomingRevenue ?? 0,
       cancelledAttributedAppointments: stats?.cancelledAttributedAppointments ?? 0,
       cancelledAttributedRevenue: stats?.cancelledAttributedRevenue ?? 0,
+      newClientCount: stats?.newClientCount ?? 0,
+      knownClientCount: calculateKnownClientCount(stats?.newClientCount, stats?.returningClientCount),
+      unknownClientCount: stats?.unknownClientCount ?? 0,
       newClientShare: calculateNewClientShare(stats?.newClientCount, stats?.returningClientCount),
       deliveredCount: deliveryStats?.deliveredCount ?? 0,
       openedCount: deliveryStats?.openedCount ?? 0,

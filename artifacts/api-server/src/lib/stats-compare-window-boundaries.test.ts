@@ -209,8 +209,14 @@ async function main() {
         `${label}: previous window counts exactly the two edge runs plus the createdAt-fallback run`);
       assert.equal(row.newClientShare, 0,
         `${label}: current new-client share is calculated only from clients with known history`);
+      assert.equal(row.knownClientCount, CURRENT,
+        `${label}: current share reports the exact known-client denominator`);
+      assert.equal(row.unknownClientCount, 0,
+        `${label}: current unknown-client count remains separate from the denominator`);
       assert.equal(row.previous.newClientShare, 0,
         `${label}: previous new-client share follows the exact same previous run window`);
+      assert.equal(row.previous.knownClientCount, PREVIOUS,
+        `${label}: previous share uses the same known-client denominator`);
       if (label === "per-rule") {
         assert.equal(row.previous.newClientCount, 0,
           "per-rule: previous new-client count uses the same returning derivation as the attributed-appointments summary");
@@ -243,7 +249,53 @@ async function main() {
     assert.equal(short.previous.emailDeliveredCount, 0, "7d previous window contains no old deliveries");
     console.log("✓ conservation holds: no double-count, no dropped row; shifted windows exclude all old edge rows");
 
-    // ── 4. compare validation on both endpoints ─────────────────────────────
+    // ── 4. Known-client denominator excludes unknown clients ────────────────
+    const [newCustomer] = await db.insert(salonCustomersTable).values({
+      salonId: salon.id, firstName: "New", lastName: "Client",
+      email: `wb-new-${suffix}@bg.test`, phone: null, smsOptOut: false,
+    }).returning();
+    assert.ok(newCustomer);
+    const [newClientAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id, salonCustomerId: newCustomer.id, serviceId: svc.id,
+      date: "2026-04-07", startTime: "12:00", endTime: "13:00", durationMinutes: 60,
+      status: "completed", price: 1000, treatmentLocation: "salon",
+    }).returning();
+    const [unknownClientAppointment] = await db.insert(appointmentsTable).values({
+      salonId: salon.id, serviceId: svc.id,
+      date: "2026-04-07", startTime: "13:00", endTime: "14:00", durationMinutes: 60,
+      status: "completed", price: 1000, treatmentLocation: "salon",
+    }).returning();
+    assert.ok(newClientAppointment && unknownClientAppointment);
+    await db.insert(automationRunsTable).values([
+      {
+        eventKey: `wb-new-client-${suffix}`, ruleId: rule.id, salonId: salon.id,
+        salonCustomerId: newCustomer.id, status: "sent", executedAt: new Date(FROZEN_NOW - 2_000),
+        sentAt: new Date(FROZEN_NOW - 2_000), attributedAppointmentId: newClientAppointment.id,
+      },
+      {
+        eventKey: `wb-unknown-client-${suffix}`, ruleId: rule.id, salonId: salon.id,
+        salonCustomerId: newCustomer.id, status: "sent", executedAt: new Date(FROZEN_NOW - 1_000),
+        sentAt: new Date(FROZEN_NOW - 1_000), attributedAppointmentId: unknownClientAppointment.id,
+      },
+    ]);
+
+    for (const [label, row] of [
+      ["overview", await overviewRow("?period=30d&compare=previous")],
+      ["per-rule", await perRule("?period=30d&compare=previous")],
+    ] as const) {
+      assert.equal(row.newClientCount, 1, `${label}: first-time client is counted as new`);
+      assert.equal(row.knownClientCount, CURRENT + 1,
+        `${label}: denominator contains returning and new clients only`);
+      assert.equal(row.unknownClientCount, 1,
+        `${label}: appointment without a linked customer remains a separate bucket`);
+      assert.equal(row.newClientShare, 33.33,
+        `${label}: unknown appointment cannot dilute the new-client share`);
+      assert.equal(row.previous.knownClientCount, PREVIOUS,
+        `${label}: previous window keeps its own known-client basis`);
+    }
+    console.log("✓ new-client share exposes its known-client denominator and excludes unknown clients");
+
+    // ── 5. compare validation on both endpoints ─────────────────────────────
     const expect400 = async (qs: string, label: string) => {
       for (const path of [
         `/api/growth/automation-stats${qs}`,
