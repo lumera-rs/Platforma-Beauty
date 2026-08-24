@@ -80,3 +80,4 @@
 - [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
+- [Browser fixture schema boundaries](browser-fixture-schema-boundaries.md) — scripts helpers receive generated schemas from specs so shared payloads validate without crossing TypeScript rootDir.

@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
 import { hashPassword } from "../../artifacts/api-server/src/lib/auth";
-import { checkedApiFixture } from "../src/browser-api-fixtures";
+import { adminSummaryFixture, checkedApiFixture } from "../src/browser-api-fixtures";
 
 const ADMIN_NAV = [
   { href: "/admin", testId: "admin-nav-dashboard" },
@@ -53,40 +53,6 @@ const userId = "00000000-0000-4000-8000-000000000073";
 const tierId = "00000000-0000-4000-8000-000000000074";
 const planId = "00000000-0000-4000-8000-000000000075";
 const reviewId = "00000000-0000-4000-8000-000000000076";
-
-function adminSummary() {
-  return {
-    totalUsers: 4,
-    totalSalons: 2,
-    activeSalons: 2,
-    bookingsThisMonth: 8,
-    bookingsLastMonth: 6,
-    bookingsTrend: 33.3,
-    grossMerchandiseValue: 125000,
-    newSalonsThisMonth: 1,
-    totalReviews: 3,
-    hiddenReviews: 1,
-    activeSubscriptions: 2,
-    galleryCleanupFailedTickets: 0,
-    galleryCleanupFailureAttempts: 0,
-    galleryCleanupOldestEligibleTicketAgeMinutes: null,
-    galleryCleanupHasRepeatedFailures: false,
-    topCategories: [{ name: "Kosa", count: 4 }],
-    deliveryReportStaleProviders: [],
-    smsFallbackReachableAdminCount: 2,
-    schedulerJobs: [{
-      job: "rescheduled-confirmation-retries",
-      state: "idle",
-      lastStartedAt: null,
-      lastSucceededAt: null,
-      lastFailedAt: null,
-      lastFailureClass: null,
-      consecutiveFailures: 0,
-      deferredCycles: 0,
-      nextRetryAt: null,
-    }],
-  };
-}
 
 function adminSalon() {
   return {
@@ -205,7 +171,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
     if (path.startsWith("/api/admin/")) {
       if (path === "/api/admin/summary") {
         await route.fulfill({
-          json: checkedApiFixture("/api/admin/summary", apiSchemas.GetAdminSummaryResponse, adminSummary()),
+          json: adminSummaryFixture(apiSchemas.GetAdminSummaryResponse),
         });
         return;
       }

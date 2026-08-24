@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as apiSchemas from "../../lib/api-zod/src/generated/api";
-import { checkedApiFixture } from "../src/browser-api-fixtures";
+import { adminSummaryFixture, checkedApiFixture } from "../src/browser-api-fixtures";
 
 /**
  * Task 131 — admin form resilience regression gate.
@@ -176,7 +176,7 @@ async function mockAdminApi(page: Page): Promise<void> {
       // Read endpoints — provide representative seed rows.
       if (path === "/api/admin/summary") {
         await route.fulfill({
-          json: checkedApiFixture("/api/admin/summary", apiSchemas.GetAdminSummaryResponse, {
+          json: adminSummaryFixture(apiSchemas.GetAdminSummaryResponse, {
             totalUsers: 1,
             totalSalons: 0,
             activeSalons: 0,
@@ -194,17 +194,6 @@ async function mockAdminApi(page: Page): Promise<void> {
             galleryCleanupHasRepeatedFailures: false,
             deliveryReportStaleProviders: [],
             smsFallbackReachableAdminCount: 0,
-            schedulerJobs: [{
-              job: "rescheduled-confirmation-retries",
-              state: "idle",
-              lastStartedAt: null,
-              lastSucceededAt: null,
-              lastFailedAt: null,
-              lastFailureClass: null,
-              consecutiveFailures: 0,
-              deferredCycles: 0,
-              nextRetryAt: null,
-            }],
             topCategories: [],
           }),
         });
