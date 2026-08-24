@@ -6136,7 +6136,7 @@ components:
               productId: { type: string }
               name: { type: string }
               imageUrl: { type: string }
-              sku: { type: string }
+              sku: { type: string, description: "Immutable customer-facing catalog reference; retained under the legacy sku response key." }
               quantity: { type: integer, minimum: 1 }
               unitPrice: { type: integer, minimum: 0 }
               lineTotal: { type: integer, minimum: 0 }
@@ -6198,9 +6198,10 @@ components:
               productId: { type: string }
               name: { type: string }
               imageUrl: { type: string }
+              sku: { type: string, description: "Immutable customer-facing catalog reference." }
               quantity: { type: integer }
               unitPrice: { type: integer }
-            required: [id, productId, name, imageUrl, quantity, unitPrice]
+            required: [id, productId, name, imageUrl, sku, quantity, unitPrice]
       required: [id, orderNumber, status, paymentMethod, paymentStatus, deliveryMethod, subtotal, shippingCost, total, createdAt, items]
     ProductCategory:
       type: object
@@ -7495,6 +7496,7 @@ components:
         publicDiscountPrice: { type: ["number", "null"], minimum: 1, multipleOf: 1 }
         discountPercent: { type: ["number", "null"] }
         stock: { type: number, minimum: 0, multipleOf: 1 }
+        catalogReference: { type: string, description: "Opaque immutable customer-facing catalog reference." }
         sku: { type: string }
         unit: { type: string }
         weightGrams: { type: ["number", "null"], multipleOf: 1 }
@@ -7506,7 +7508,7 @@ components:
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, sku, unit, isNew, isBestseller, active, createdAt]
+      required: [id, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, active, createdAt]
     AdminProductList:
       type: object
       properties:

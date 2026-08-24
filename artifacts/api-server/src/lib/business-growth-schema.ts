@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 17;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 18;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -163,6 +163,18 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
+    // v18: preserve an opaque customer-facing catalog reference independently
+    // from the editable owner SKU. Backfill legacy products before enforcing
+    // the invariant so existing carts and orders can snapshot it.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS catalog_reference text`,
+    `ALTER TABLE ${s}.products ALTER COLUMN catalog_reference SET DEFAULT
+       ('LUM-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12)))`,
+    `UPDATE ${s}.products
+       SET catalog_reference = 'LUM-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))
+       WHERE catalog_reference IS NULL OR btrim(catalog_reference) = ''`,
+    `ALTER TABLE ${s}.products ALTER COLUMN catalog_reference SET NOT NULL`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS products_catalog_reference_unique
+       ON ${s}.products (catalog_reference)`,
     `DROP INDEX IF EXISTS ${s}.products_public_active_created_idx`,
     `CREATE INDEX IF NOT EXISTS products_retail_active_created_idx
        ON ${s}.products (retail_enabled, active, created_at)`,
@@ -184,12 +196,18 @@ function tableStatements(s: string): string[] {
       variant_value text,
       product_name text NOT NULL,
       product_image_url text NOT NULL,
+      product_catalog_reference text,
       unit_price integer NOT NULL,
       quantity integer NOT NULL,
       weight_grams integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE ${s}.retail_cart_items ADD COLUMN IF NOT EXISTS product_catalog_reference text`,
+    `UPDATE ${s}.retail_cart_items AS item
+       SET product_catalog_reference = product.catalog_reference
+       FROM ${s}.products AS product
+       WHERE product.id = item.product_id AND item.product_catalog_reference IS NULL`,
     // v14: PostgreSQL's legacy unique index treated NULL variant values as
     // distinct. Merge those duplicate no-variant cart lines before replacing
     // it, so the stricter invariant preserves each cart's aggregate quantity.
@@ -306,11 +324,17 @@ function tableStatements(s: string): string[] {
       product_id uuid NOT NULL REFERENCES ${s}.products(id),
       product_name text NOT NULL,
       product_image_url text NOT NULL,
+      product_catalog_reference text,
       variant_value text,
       variant_label text,
       unit_price integer NOT NULL,
       quantity integer NOT NULL
     )`,
+    `ALTER TABLE ${s}.retail_order_items ADD COLUMN IF NOT EXISTS product_catalog_reference text`,
+    `UPDATE ${s}.retail_order_items AS item
+       SET product_catalog_reference = product.catalog_reference
+       FROM ${s}.products AS product
+       WHERE product.id = item.product_id AND item.product_catalog_reference IS NULL`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_order_idx ON ${s}.retail_order_items (order_id)`,
     `CREATE INDEX IF NOT EXISTS retail_order_items_product_idx ON ${s}.retail_order_items (product_id)`,
     `CREATE TABLE IF NOT EXISTS ${s}.retail_product_reviews (

@@ -21,11 +21,11 @@ import { ensureShippingConfigSchema } from "./shipping-config";
 
 type RetailCart = {
   id: string;
-  items: Array<{ id: string; quantity: number }>;
+  items: Array<{ id: string; sku: string; quantity: number }>;
 };
 type RetailCartSummary = { itemCount: number };
 type RetailCheckoutPreview = {
-  cart: { subtotal: number };
+  cart: { subtotal: number; items: Array<{ sku: string }> };
   shipping: { shippingCost: number };
   total: number;
 };
@@ -34,6 +34,7 @@ type RetailOrder = {
   subtotal: number;
   shippingCost: number;
   total: number;
+  items: Array<{ sku: string }>;
 };
 type ApiError = { error: string; code?: string };
 
@@ -234,6 +235,68 @@ test("cart summary does not create a cart and returns the count for an existing 
   assert.equal(existingSummary.status, 200);
   assert.equal(existingSummary.headers.get("set-cookie"), null);
   assert.deepEqual(await existingSummary.json() as RetailCartSummary, { itemCount: 1 });
+});
+
+test("cart and checkout retain the saved catalog reference after an SKU edit", async () => {
+  assert.ok(createdProductId);
+  const [product] = await db.select({
+    catalogReference: productsTable.catalogReference,
+    sku: productsTable.sku,
+    stock: productsTable.stock,
+  }).from(productsTable).where(eq(productsTable.id, createdProductId)).limit(1);
+  assert.ok(product);
+
+  const request = retailClient();
+  const addResponse = await addRetailItem(request, createdProductId, 1);
+  assert.equal(addResponse.status, 201);
+  const addedCart = await addResponse.json() as RetailCart;
+  assert.equal(addedCart.items[0]?.sku, product.catalogReference);
+  const [savedCartItem] = await db.select().from(retailCartItemsTable)
+    .where(eq(retailCartItemsTable.cartId, addedCart.id)).limit(1);
+  assert.equal(savedCartItem?.productCatalogReference, product.catalogReference);
+
+  await db.update(productsTable).set({ sku: `retail-checkout-updated-${randomUUID()}` })
+    .where(eq(productsTable.id, createdProductId));
+  try {
+    const cartResponse = await request("/retail/cart");
+    assert.equal(cartResponse.status, 200);
+    const cart = await cartResponse.json() as RetailCart;
+    assert.equal(cart.items[0]?.sku, product.catalogReference);
+
+    const previewResponse = await request("/retail/checkout-preview?deliveryMethod=courier&city=Novi%20Sad");
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json() as RetailCheckoutPreview;
+    assert.equal(preview.cart.items[0]?.sku, product.catalogReference);
+
+    const checkoutResponse = await request("/retail/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        idempotencyKey: `retail-reference-test-${randomUUID()}`,
+        firstName: "Retail",
+        lastName: "Kupac",
+        email: `reference-${randomUUID()}@example.test`,
+        phone: "+381601234567",
+        street: "Test ulica 1",
+        city: "Novi Sad",
+        postalCode: "21000",
+        paymentMethod: "BANK_TRANSFER",
+        deliveryMethod: "courier",
+        expectedSubtotal: preview.cart.subtotal,
+        expectedShippingCost: preview.shipping.shippingCost,
+        expectedTotal: preview.total,
+      }),
+    });
+    assert.equal(checkoutResponse.status, 201);
+    const order = await checkoutResponse.json() as RetailOrder;
+    createdOrderIds.push(order.id);
+    assert.equal(order.items[0]?.sku, product.catalogReference);
+    const [savedOrderItem] = await db.select().from(retailOrderItemsTable)
+      .where(eq(retailOrderItemsTable.orderId, order.id)).limit(1);
+    assert.equal(savedOrderItem?.productCatalogReference, product.catalogReference);
+  } finally {
+    await db.update(productsTable).set({ sku: product.sku, stock: product.stock })
+      .where(eq(productsTable.id, createdProductId));
+  }
 });
 
 test("retail checkout saves the exact courier and personal-delivery previews", async () => {

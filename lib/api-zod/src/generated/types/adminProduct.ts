@@ -43,6 +43,8 @@ export interface AdminProduct {
   discountPercent?: number | null;
   /** @minimum 0 */
   stock: number;
+  /** Opaque immutable customer-facing catalog reference. */
+  catalogReference: string;
   sku: string;
   unit: string;
   /** @nullable */

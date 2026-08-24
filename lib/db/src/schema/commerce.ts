@@ -89,6 +89,9 @@ export const productsTable = pgTable("products", {
   publicDiscountPrice: integer("public_discount_price"),
   professionalEnabled: boolean("professional_enabled").notNull().default(true),
   stock: integer("stock").notNull().default(0),
+  // Opaque customer-facing reference. Unlike SKU, this is never edited.
+  catalogReference: text("catalog_reference").notNull().unique()
+    .default(sql`'LUM-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 12))`),
   sku: text("sku").notNull().unique(),
   unit: text("unit").notNull(),
   weightGrams: integer("weight_grams"),
@@ -318,6 +321,7 @@ export const retailCartItemsTable = pgTable("retail_cart_items", {
   variantValue: text("variant_value"),
   productName: text("product_name").notNull(),
   productImageUrl: text("product_image_url").notNull(),
+  productCatalogReference: text("product_catalog_reference"),
   unitPrice: integer("unit_price").notNull(),
   quantity: integer("quantity").notNull(),
   weightGrams: integer("weight_grams").notNull().default(0),
@@ -368,6 +372,7 @@ export const retailOrderItemsTable = pgTable("retail_order_items", {
   productId: uuid("product_id").notNull().references(() => productsTable.id),
   productName: text("product_name").notNull(),
   productImageUrl: text("product_image_url").notNull(),
+  productCatalogReference: text("product_catalog_reference"),
   variantValue: text("variant_value"),
   variantLabel: text("variant_label"),
   unitPrice: integer("unit_price").notNull(),

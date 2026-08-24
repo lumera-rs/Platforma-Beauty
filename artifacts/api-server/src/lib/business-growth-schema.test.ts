@@ -238,18 +238,20 @@ async function run() {
     assert.equal(custCount, "1", "legacy salon_customers row preserved");
     const emailCount = (await q<{ n: string }>(`SELECT count(*)::text AS n FROM "${s}".email_deliveries`)).rows[0]!.n;
     assert.equal(emailCount, "1", "legacy email_deliveries row preserved");
-    const consolidatedRetailItems = (await q<{ quantity: number }>(
-      `SELECT quantity
+    const consolidatedRetailItems = (await q<{ quantity: number; product_catalog_reference: string }>(
+      `SELECT quantity, product_catalog_reference
        FROM "${s}".retail_cart_items
        WHERE cart_id = $1
          AND product_id = $2
          AND variant_value IS NULL`,
       [fixtures.retailCart.id, fixtures.retailProduct.id],
     )).rows;
-    assert.deepEqual(
-      consolidatedRetailItems,
-      [{ quantity: 5 }],
-      "legacy duplicate null-variant cart lines consolidate without losing quantity",
+    assert.equal(consolidatedRetailItems.length, 1, "legacy duplicate null-variant cart lines consolidate to one row");
+    assert.equal(consolidatedRetailItems[0]?.quantity, 5, "legacy duplicate cart quantity is preserved");
+    assert.match(
+      consolidatedRetailItems[0]?.product_catalog_reference ?? "",
+      /^LUM-[A-F0-9]{12}$/,
+      "legacy cart line receives the product's customer-facing catalog reference",
     );
 
     // ── Enum now accepts `processing` ──────────────────────────────────────
@@ -347,9 +349,11 @@ async function run() {
       );
     }
     assert.ok(await columnExists("salon_customers", "birth_date"), "salon_customers.birth_date added");
-    for (const column of ["retail_enabled", "professional_enabled", "public_description", "public_price", "public_discount_price"]) {
+    for (const column of ["retail_enabled", "professional_enabled", "public_description", "public_price", "public_discount_price", "catalog_reference"]) {
       assert.ok(await columnExists("products", column), `products.${column} added for retail storefront`);
     }
+    assert.ok(await columnExists("retail_cart_items", "product_catalog_reference"), "retail cart reference snapshot column added");
+    assert.ok(await columnExists("retail_order_items", "product_catalog_reference"), "retail order reference snapshot column added");
     assert.ok(await columnExists("reviews", "employee_id"), "reviews.employee_id added");
     assert.ok(await columnExists("sms_deliveries", "processing_started_at"), "sms_deliveries.processing_started_at added");
     assert.ok(await columnExists("sms_deliveries", "submission_started_at"), "sms_deliveries.submission_started_at added");
@@ -392,6 +396,7 @@ async function run() {
       "reviews_employee_visible_idx",
       "products_retail_active_created_idx",
       "products_professional_active_created_idx",
+      "products_catalog_reference_unique",
       "retail_cart_items_cart_product_variant_unique",
       "sms_deliveries_claim_expiry_idx",
       "automation_runs_cooldown_idx",

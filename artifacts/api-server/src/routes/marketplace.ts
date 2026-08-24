@@ -7806,6 +7806,7 @@ function productDtoWithAggregate(
     discountPrice: item.discountPrice ?? null,
     discountPercent,
     stock: item.stock,
+    catalogReference: item.catalogReference,
     sku: item.sku,
     unit: item.unit,
     weightGrams: item.weightGrams ?? null,
@@ -7930,10 +7931,10 @@ async function retailCartSummaryForRequest(req: Request) {
   return { itemCount: Number(summary?.itemCount ?? 0) };
 }
 
-function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, sku: string) {
+function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, catalogReference: string) {
   return {
     id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
-    sku,
+    sku: catalogReference,
     quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.unitPrice * item.quantity,
   };
 }
@@ -7943,14 +7944,14 @@ async function retailCartDto(cartId: string) {
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
   const productIds = [...new Set(items.map((item) => item.productId))];
   const products = productIds.length
-    ? await db.select({ id: productsTable.id, sku: productsTable.sku }).from(productsTable)
+    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
       .where(inArray(productsTable.id, productIds))
     : [];
-  const productSkus = new Map(products.map((product) => [product.id, product.sku]));
+  const productCatalogReferences = new Map(products.map((product) => [product.id, product.catalogReference]));
   const lines = items.map((item) => {
-    const sku = productSkus.get(item.productId);
-    if (!sku) throw new Error("Retail cart item refers to an unavailable product.");
-    return retailLineDto(item, sku);
+    const catalogReference = item.productCatalogReference ?? productCatalogReferences.get(item.productId);
+    if (!catalogReference) throw new Error("Retail cart item refers to an unavailable product.");
+    return retailLineDto(item, catalogReference);
   });
   return {
     id: cartId,
@@ -7980,7 +7981,7 @@ async function retailCheckoutCartQuote(cartId: string) {
     }
     const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
     return {
-      ...retailLineDto(item, product.sku),
+      ...retailLineDto(item, item.productCatalogReference ?? product.catalogReference),
       name: product.name,
       imageUrl: product.imageUrl,
       unitPrice,
@@ -8012,6 +8013,7 @@ async function retailCheckoutCartQuote(cartId: string) {
 function retailOrderDto(
   order: typeof retailOrdersTable.$inferSelect,
   items: Array<typeof retailOrderItemsTable.$inferSelect>,
+  productCatalogReferences: Map<string, string>,
 ) {
   return {
     id: order.id,
@@ -8027,16 +8029,26 @@ function retailOrderDto(
     createdAt: order.createdAt.toISOString(),
     contact: { name: order.shippingName, email: order.shippingEmail, phone: order.shippingPhone },
     delivery: { address: order.shippingAddress, city: order.shippingCity, postalCode: order.shippingPostalCode, note: order.shippingNote ?? null },
-    items: items.map((item) => ({
-      id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
-      variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
-    })),
+    items: items.map((item) => {
+      const catalogReference = item.productCatalogReference ?? productCatalogReferences.get(item.productId);
+      if (!catalogReference) throw new Error("Retail order item refers to an unavailable product.");
+      return {
+        id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+        sku: catalogReference,
+        variantLabel: item.variantLabel ?? null, quantity: item.quantity, unitPrice: item.unitPrice,
+      };
+    }),
   };
 }
 
 async function retailOrderWithItems(order: typeof retailOrdersTable.$inferSelect) {
   const items = await db.select().from(retailOrderItemsTable).where(eq(retailOrderItemsTable.orderId, order.id));
-  return retailOrderDto(order, items);
+  const productIds = [...new Set(items.map((item) => item.productId))];
+  const products = productIds.length
+    ? await db.select({ id: productsTable.id, catalogReference: productsTable.catalogReference }).from(productsTable)
+      .where(inArray(productsTable.id, productIds))
+    : [];
+  return retailOrderDto(order, items, new Map(products.map((product) => [product.id, product.catalogReference])));
 }
 
 async function productReviewViews(productId: string, currentSalonId?: string) {
@@ -8164,6 +8176,7 @@ router.post("/retail/cart/items", async (req, res): Promise<void> => {
     } else {
       await tx.insert(retailCartItemsTable).values({
         cartId: cart.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+        productCatalogReference: product.catalogReference,
         unitPrice, quantity, weightGrams: product.weightGrams ?? 0,
       });
     }
@@ -8333,6 +8346,7 @@ router.post("/retail/checkout", async (req, res): Promise<void> => {
     }).returning();
     const orderItems = lines.filter((line): line is NonNullable<typeof line> => line !== null).map(({ product, item, unitPrice }) => ({
       orderId: order!.id, productId: product.id, productName: product.name, productImageUrl: product.imageUrl,
+      productCatalogReference: item.productCatalogReference ?? product.catalogReference,
       variantValue: null, variantLabel: null, unitPrice, quantity: item.quantity,
     }));
     await tx.insert(retailOrderItemsTable).values(orderItems);

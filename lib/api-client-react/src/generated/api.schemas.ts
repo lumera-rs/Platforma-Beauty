@@ -1634,6 +1634,7 @@ export type RetailCartItemsItem = {
   productId: string;
   name: string;
   imageUrl: string;
+  /** Immutable customer-facing catalog reference; retained under the legacy sku response key. */
   sku: string;
   /** @minimum 1 */
   quantity: number;
@@ -1786,6 +1787,8 @@ export type RetailOrderItemsItem = {
   productId: string;
   name: string;
   imageUrl: string;
+  /** Immutable customer-facing catalog reference. */
+  sku: string;
   quantity: number;
   unitPrice: number;
 };
@@ -3711,6 +3714,8 @@ export interface AdminProduct {
   discountPercent?: number | null;
   /** @minimum 0 */
   stock: number;
+  /** Opaque immutable customer-facing catalog reference. */
+  catalogReference: string;
   sku: string;
   unit: string;
   /** @nullable */

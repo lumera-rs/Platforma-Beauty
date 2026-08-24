@@ -425,6 +425,13 @@ function ProductFormDialog({
                 <Label>SKU (šifra) *</Label>
                 <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="npr. WKP-001" data-testid="input-product-sku" />
               </div>
+              {editing && (
+                <div className="space-y-2">
+                  <Label>Trajna kataloška referenca</Label>
+                  <Input value={editing.catalogReference} readOnly disabled data-testid="input-product-catalog-reference" />
+                  <p className="text-[11px] text-muted-foreground">Ova referenca se prikazuje kupcima i ne menja se sa SKU šifrom.</p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Kategorija *</Label>
                 <Select
@@ -1000,7 +1007,10 @@ export default function AdminProducts() {
                         <p className="text-xs">{p.categoryName}</p>
                         {p.subcategoryName && <p className="text-xs text-muted-foreground">{p.subcategoryName}</p>}
                       </td>
-                      <td className="p-3 hidden lg:table-cell text-xs font-mono">{p.sku}</td>
+                      <td className="p-3 hidden lg:table-cell text-xs font-mono">
+                        <div>{p.sku}</div>
+                        <div className="mt-1 text-muted-foreground">Ref: {p.catalogReference}</div>
+                      </td>
                       <td className="p-3 whitespace-nowrap">
                         {p.discountPrice != null ? (
                           <>

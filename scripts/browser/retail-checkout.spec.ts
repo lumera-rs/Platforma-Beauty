@@ -858,6 +858,16 @@ test("retail cart distinguishes controls for same-name products", async ({ page 
 
   const firstLabel = `(šifra proizvoda ${firstItem!.sku})`;
   const sameNameLabel = `(šifra proizvoda ${sameNameItem!.sku})`;
+  const firstCatalogReference = firstItem!.sku;
+  await db.update(productsTable).set({ sku: `retail-browser-updated-${randomUUID()}` }).where(eq(productsTable.id, productId!));
+  const refreshedCartResponse = await page.request.get("/api/retail/cart");
+  expect(refreshedCartResponse.ok()).toBe(true);
+  const refreshedCart = await refreshedCartResponse.json() as {
+    items: Array<{ productId: string; sku: string }>;
+  };
+  expect(refreshedCart.items.find((item) => item.productId === productId)?.sku).toBe(firstCatalogReference);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Vaša korpa" })).toBeVisible();
   await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();

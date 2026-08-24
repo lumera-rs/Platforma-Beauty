@@ -11,6 +11,8 @@ export type RetailOrderItemsItem = {
   productId: string;
   name: string;
   imageUrl: string;
+  /** Immutable customer-facing catalog reference. */
+  sku: string;
   quantity: number;
   unitPrice: number;
 };

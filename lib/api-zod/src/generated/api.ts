@@ -8277,6 +8277,7 @@ export const AdminListProductsResponse = zod.object({
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminListProductsResponseItemsItemPublicDiscountPriceMultipleOf).nullish(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminListProductsResponseItemsItemStockMin).multipleOf(adminListProductsResponseItemsItemStockMultipleOf),
+  "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
   "sku": zod.string(),
   "unit": zod.string(),
   "weightGrams": zod.number().multipleOf(adminListProductsResponseItemsItemWeightGramsMultipleOf).nullish(),
@@ -8426,6 +8427,7 @@ export const AdminCreateProductResponse = zod.object({
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminCreateProductResponsePublicDiscountPriceMultipleOf).nullish(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminCreateProductResponseStockMin).multipleOf(adminCreateProductResponseStockMultipleOf),
+  "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
   "sku": zod.string(),
   "unit": zod.string(),
   "weightGrams": zod.number().multipleOf(adminCreateProductResponseWeightGramsMultipleOf).nullish(),
@@ -8598,6 +8600,7 @@ export const AdminUpdateProductResponse = zod.object({
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminUpdateProductResponsePublicDiscountPriceMultipleOf).nullish(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminUpdateProductResponseStockMin).multipleOf(adminUpdateProductResponseStockMultipleOf),
+  "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
   "sku": zod.string(),
   "unit": zod.string(),
   "weightGrams": zod.number().multipleOf(adminUpdateProductResponseWeightGramsMultipleOf).nullish(),
@@ -8671,6 +8674,7 @@ export const AdminDeleteProductResponse = zod.object({
   "publicDiscountPrice": zod.number().min(1).multipleOf(adminDeleteProductResponsePublicDiscountPriceMultipleOf).nullish(),
   "discountPercent": zod.number().nullish(),
   "stock": zod.number().min(adminDeleteProductResponseStockMin).multipleOf(adminDeleteProductResponseStockMultipleOf),
+  "catalogReference": zod.string().describe('Opaque immutable customer-facing catalog reference.'),
   "sku": zod.string(),
   "unit": zod.string(),
   "weightGrams": zod.number().multipleOf(adminDeleteProductResponseWeightGramsMultipleOf).nullish(),
@@ -11301,7 +11305,7 @@ export const GetRetailCartResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
-  "sku": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference; retained under the legacy sku response key.'),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(getRetailCartResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(getRetailCartResponseItemsItemLineTotalMin)
@@ -11354,7 +11358,7 @@ export const AddRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
-  "sku": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference; retained under the legacy sku response key.'),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(addRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(addRetailCartItemResponseItemsItemLineTotalMin)
@@ -11389,7 +11393,7 @@ export const UpdateRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
-  "sku": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference; retained under the legacy sku response key.'),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(updateRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(updateRetailCartItemResponseItemsItemLineTotalMin)
@@ -11424,7 +11428,7 @@ export const RemoveRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
-  "sku": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference; retained under the legacy sku response key.'),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(removeRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(removeRetailCartItemResponseItemsItemLineTotalMin)
@@ -11466,7 +11470,7 @@ export const PreviewRetailCheckoutResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
-  "sku": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference; retained under the legacy sku response key.'),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemLineTotalMin)
@@ -11562,6 +11566,7 @@ export const CheckoutRetailCartResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11595,6 +11600,7 @@ export const TrackRetailOrderResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11620,6 +11626,7 @@ export const ListCustomerRetailOrdersResponseItem = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11650,6 +11657,7 @@ export const GetCustomerRetailOrderResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11675,6 +11683,7 @@ export const AdminListRetailOrdersResponseItem = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11705,6 +11714,7 @@ export const AdminGetRetailOrderResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11734,6 +11744,7 @@ export const AdminUpdateRetailOrderStatusResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
@@ -11763,6 +11774,7 @@ export const AdminUpdateRetailPaymentStatusResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string().describe('Immutable customer-facing catalog reference.'),
   "quantity": zod.number().int(),
   "unitPrice": zod.number().int()
 }))
