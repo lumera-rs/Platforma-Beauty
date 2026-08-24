@@ -379,6 +379,8 @@ import {
   claimMediaReference,
   mediaAssetIdFromUrl,
   publishActiveSalonMediaReferences,
+  purgeMediaCacheForVisibilityRevocation,
+  requireMediaCachePurgeForVisibilityRevocation,
   releaseMediaReferenceClaims,
   stableMediaUrl,
 } from "./media";
@@ -3227,6 +3229,7 @@ const integrationDefinitions: Record<IntegrationName, { keys: string[]; required
   brevo: { keys: ["apiKey", "senderEmail", "senderName", "webhookSecret"], required: ["apiKey", "senderEmail"] },
   google_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
   facebook_oauth: { keys: ["clientId", "clientSecret"], required: ["clientId", "clientSecret"] },
+  cloudflare: { keys: ["apiKey", "zoneId", "domain"], required: ["apiKey", "zoneId", "domain"] },
 };
 
 function integrationName(value: string): value is IntegrationName {
@@ -3404,6 +3407,21 @@ router.post("/admin/integrations/:integration/test", async (req, res): Promise<v
       });
       if ("failed" in result || "skipped" in result) throw new Error("Brevo nije poslao test e-mail. Proverite podešavanja.");
       res.json({ message: "Test e-mail je poslat." }); return;
+    }
+    if (req.params.integration === "cloudflare") {
+      const [apiKey, zoneId, domain] = await Promise.all([
+        integrationValue("cloudflare", "apiKey"),
+        integrationValue("cloudflare", "zoneId"),
+        integrationValue("cloudflare", "domain"),
+      ]);
+      if (!apiKey || !zoneId || !domain) throw new Error("Sačuvajte i aktivirajte Cloudflare API ključ, Zone ID i javni domen pre provere.");
+      if (!/^[a-f0-9]{32}$/i.test(zoneId)) throw new Error("Cloudflare Zone ID mora sadržati 32 heksadecimalna znaka.");
+      let parsedDomain: URL;
+      try { parsedDomain = new URL(domain); } catch { throw new Error("Javni domen mora biti ispravan HTTPS URL."); }
+      if (parsedDomain.protocol !== "https:" || parsedDomain.username || parsedDomain.password || parsedDomain.pathname !== "/" || parsedDomain.search || parsedDomain.hash) {
+        throw new Error("Javni domen mora biti bezbedan HTTPS URL bez putanje.");
+      }
+      res.json({ message: "Cloudflare konfiguracija je sačuvana. Brisanje CDN keša će se izvršiti pri deaktivaciji salona." }); return;
     }
     const config = await integrationSettings(req.params.integration);
     const definition = integrationDefinitions[req.params.integration];
@@ -5655,12 +5673,20 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
   let updated: typeof salonsTable.$inferSelect | undefined;
   try {
     [updated] = await db.transaction(async (tx) => {
+      // Serialize profile media claims with admin activation/deactivation. The
+      // session's salon snapshot may be stale by the time this edit obtains
+      // the lock, so only the locked row may decide public versus private.
+      const [lockedSalon] = await tx.select().from(salonsTable).where(and(
+        eq(salonsTable.id, access.salon.id),
+        eq(salonsTable.ownerId, access.user.id),
+      )).for("update").limit(1);
+      if (!lockedSalon) throw new MediaClaimConflictError();
       if (parsed.data.imageUrl !== undefined && mediaAssetIdFromUrl(parsed.data.imageUrl) && !await claimMediaReference({
         userId: access.user.id,
         url: parsed.data.imageUrl,
         scope: "salon-profile",
         resourceId: access.salon.id,
-        visibility: access.salon.active ? "public" : "private",
+        visibility: lockedSalon.active ? "public" : "private",
       }, tx)) {
         throw new MediaClaimConflictError();
       }
@@ -5671,7 +5697,7 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
             url,
             scope: "salon-gallery",
             resourceId: access.salon.id,
-            visibility: access.salon.active ? "public" : "private",
+            visibility: lockedSalon.active ? "public" : "private",
           }, tx)) {
             throw new MediaClaimConflictError();
           }
@@ -5679,12 +5705,12 @@ router.patch("/salon/profile", async (req, res): Promise<void> => {
       }
       const rows = await tx.update(salonsTable)
         .set(updates)
-        .where(eq(salonsTable.id, access.salon.id))
+        .where(eq(salonsTable.id, lockedSalon.id))
         .returning();
       const removedUrls = [
-        ...(parsed.data.imageUrl !== undefined && parsed.data.imageUrl !== access.salon.imageUrl ? [access.salon.imageUrl] : []),
+        ...(parsed.data.imageUrl !== undefined && parsed.data.imageUrl !== lockedSalon.imageUrl ? [lockedSalon.imageUrl] : []),
         ...(parsed.data.gallery !== undefined
-          ? access.salon.gallery.filter((url) => !parsed.data.gallery!.includes(url))
+          ? lockedSalon.gallery.filter((url) => !parsed.data.gallery!.includes(url))
           : []),
       ];
       await releaseMediaReferenceClaims({
@@ -12682,6 +12708,18 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   const [salon] = await db.select().from(salonsTable).where(eq(salonsTable.id, salonId)).limit(1);
   if (!salon) { res.status(404).json({ error: "Salon nije pronađen." }); return; }
 
+  const isDeactivating = active === false && salon.active;
+  if (isDeactivating) {
+    try {
+      await requireMediaCachePurgeForVisibilityRevocation();
+    } catch (error) {
+      res.status(503).json({
+        error: error instanceof Error ? error.message : "Nije moguće bezbedno deaktivirati salon dok se ne podesi brisanje keša fotografija.",
+      });
+      return;
+    }
+  }
+
   const updates: Partial<typeof salonsTable.$inferInsert> = {};
   if (active !== undefined) updates.active = active;
   if (featured !== undefined) updates.featured = featured;
@@ -12689,18 +12727,52 @@ router.patch("/admin/salons/:salonId", async (req, res): Promise<void> => {
   if (topSalon !== undefined) updates.topSalon = topSalon;
   if (videoUrl !== undefined) updates.videoUrl = videoUrl;
 
-  const [updated] = await db.transaction(async (tx) => {
+  const [updated, changedMediaAssetIds] = await db.transaction(async (tx) => {
     const rows = await tx.update(salonsTable).set(updates).where(eq(salonsTable.id, salonId)).returning();
     const changed = rows[0]!;
-    await publishActiveSalonMediaReferences({
+    const changedAssetIds = await publishActiveSalonMediaReferences({
       salonId: changed.id,
       ownerUserId: changed.ownerId,
       active: changed.active,
       imageUrl: changed.imageUrl,
       gallery: changed.gallery,
     }, tx);
-    return rows;
+    return [changed, changedAssetIds] as const;
   });
+
+  if (isDeactivating && changedMediaAssetIds.length) {
+    try {
+      await purgeMediaCacheForVisibilityRevocation(changedMediaAssetIds);
+    } catch (error) {
+      req.log.error({ err: error, salonId, assetIds: changedMediaAssetIds }, "Could not purge cached salon media during deactivation");
+      const [restored] = await db.transaction(async (tx) => {
+        const rows = await tx.update(salonsTable)
+          .set({ active: salon.active })
+          .where(and(eq(salonsTable.id, salonId), eq(salonsTable.active, updated.active)))
+          .returning();
+        const restoredSalon = rows[0];
+        if (restoredSalon) {
+          await publishActiveSalonMediaReferences({
+            salonId: restoredSalon.id,
+            ownerUserId: restoredSalon.ownerId,
+            active: restoredSalon.active,
+            imageUrl: restoredSalon.imageUrl,
+            gallery: restoredSalon.gallery,
+          }, tx);
+        }
+        return rows;
+      });
+      if (!restored) {
+        req.log.error({ salonId }, "Could not restore salon visibility after a failed media cache purge");
+      }
+      res.status(502).json({
+        error: restored
+          ? "Deaktivacija nije uspela jer keš fotografija nije mogao da se obriše. Salon je vraćen u prethodno stanje."
+          : "Keš fotografija nije mogao da se obriše, a vraćanje statusa salona nije potvrđeno. Potrebna je hitna administratorska provera.",
+      });
+      return;
+    }
+  }
 
   // Only after a successful mutation that can affect salon discovery visibility
   // (active/featured/isVerified/topSalon) do we invalidate the shared catalog

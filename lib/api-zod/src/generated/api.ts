@@ -355,6 +355,12 @@ export const AdminGetIntegrationsResponse = zod.object({
   "complete": zod.boolean(),
   "version": zod.string().nullable(),
   "values": zod.record(zod.string(), zod.string().nullable())
+}),
+  "cloudflare": zod.object({
+  "enabled": zod.boolean(),
+  "configuredInDatabase": zod.boolean(),
+  "complete": zod.boolean(),
+  "values": zod.record(zod.string(), zod.string().nullable())
 })
 }),
   "deliveryReports": zod.object({

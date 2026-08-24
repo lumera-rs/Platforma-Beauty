@@ -294,7 +294,7 @@ async function mockAdminApi(page: Page): Promise<void> {
         };
         await route.fulfill({
           json: checkedApiFixture("/api/admin/integrations", apiSchemas.AdminGetIntegrationsResponse, {
-            integrations: { sms: webhookCard, brevo: webhookCard, google_oauth: card, facebook_oauth: card },
+            integrations: { sms: webhookCard, brevo: webhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
             deliveryReports: {
               providers: {
                 brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },

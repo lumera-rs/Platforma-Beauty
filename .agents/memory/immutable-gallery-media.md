@@ -7,7 +7,7 @@ Browser-writable upload objects must remain staging-only. Verify the uploaded by
 
 **Why:** A still-valid signed PUT URL can otherwise overwrite a gallery image after attachment, and a stable media URL can leak owner-only content through a shared cache.
 
-**How to apply:** Keep serving routes opaque and authorization-aware; enforce final-key prefixes for attached course media, and use private no-store responses whenever a stable gallery URL can later become owner-only. Public caching requires a versioned URL plus reliable visibility-change invalidation.
+**How to apply:** Keep serving routes opaque and authorization-aware; enforce final-key prefixes for attached course media, and use private no-store responses whenever a stable gallery URL can later become owner-only. Public caching requires a versioned URL plus reliable visibility-change invalidation. Revocable salon cover and gallery media need both revalidation for new responses and an edge-cache purge for previously immutable variants when visibility is revoked.
 
 For attach operations, acquire the attachment lock and check for an existing record before reading or promoting staging bytes.
 

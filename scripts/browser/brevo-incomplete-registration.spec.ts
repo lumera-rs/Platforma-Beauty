@@ -49,6 +49,7 @@ function integrationsPayload(includeMissingEvents: boolean) {
       },
       google_oauth: emptyCard,
       facebook_oauth: emptyCard,
+      cloudflare: emptyCard,
     },
     redirectUris: { google: "https://example.test/google", facebook: "https://example.test/facebook" },
     smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },

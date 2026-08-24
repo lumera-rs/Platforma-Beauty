@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 15;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 16;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -40,6 +40,7 @@ const ADVISORY_LOCK_KEY = 0x42470000 + BUSINESS_GROWTH_SCHEMA_VERSION;
  * applied older one. Order matters only for readability; ADD VALUE appends.
  */
 const ENUM_LABELS: Record<string, string[]> = {
+  integration_key: ["sms", "brevo", "google_oauth", "facebook_oauth", "cloudflare"],
   order_status: ["pending", "confirmed", "paid", "processing", "shipped", "delivered", "cancelled"],
   payment_method: ["CARD", "BANK_TRANSFER", "CASH_AT_SALON", "CASH_ON_DELIVERY", "FREE"],
   payment_status: ["unpaid", "pending", "paid", "refunded", "failed"],

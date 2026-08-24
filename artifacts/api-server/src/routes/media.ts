@@ -29,6 +29,7 @@ import {
   RequestMediaUploadResponse,
 } from "@workspace/api-zod";
 import { getCurrentUser, isAdmin } from "../lib/auth";
+import { integrationValue } from "../lib/integrations";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -36,6 +37,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOAD_TTL_SECONDS = 15 * 60;
+const REVALIDATED_SALON_MEDIA_CACHE_CONTROL = "public, max-age=0, s-maxage=0, must-revalidate";
+const CLOUDFLARE_API_TOKEN_ENV = "CLOUDFLARE_API_TOKEN";
+const CLOUDFLARE_ZONE_ID_ENV = "CLOUDFLARE_ZONE_ID";
 export const MEDIA_ROUTE_REGRESSION_CLEANUP_KEY = "media-route-regression";
 export const MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY = "media-route-regression-control";
 const MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS = [
@@ -48,6 +52,13 @@ let mediaRouteRegressionMarker: {
   token: string;
   cleanupKey: MediaRouteRegressionCleanupKey;
 } | null = null;
+export type MediaCachePurgeRequest = {
+  assetIds: string[];
+  pathPrefixes: string[];
+  surrogateKeys: string[];
+};
+type MediaCachePurgeHandler = (request: MediaCachePurgeRequest) => Promise<void>;
+let mediaCachePurgeHandlerForTesting: MediaCachePurgeHandler | null = null;
 
 function isMediaRouteRegressionCleanupKey(value: string | null): value is MediaRouteRegressionCleanupKey {
   return MEDIA_ROUTE_REGRESSION_CLEANUP_KEYS.some((cleanupKey) => cleanupKey === value);
@@ -77,6 +88,101 @@ export function enableMediaRouteRegressionUploadMarking(
       if (mediaRouteRegressionMarker?.token === token) mediaRouteRegressionMarker = null;
     },
   };
+}
+
+/**
+ * Lets the regression model a reverse proxy that stored older immutable media
+ * responses. Production must use the configured purge endpoint instead.
+ */
+export function enableMediaCachePurgeForTesting(handler: MediaCachePurgeHandler): {
+  disable: () => void;
+} {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Media cache purge test controls cannot run in production.");
+  }
+  if (mediaCachePurgeHandlerForTesting) {
+    throw new Error("Media cache purge test control is already enabled.");
+  }
+  mediaCachePurgeHandlerForTesting = handler;
+  return {
+    disable: () => {
+      if (mediaCachePurgeHandlerForTesting === handler) mediaCachePurgeHandlerForTesting = null;
+    },
+  };
+}
+
+async function configuredCloudflareCachePurge(): Promise<{ apiKey: string; zoneId: string; origin: string }> {
+  const [apiKey, zoneId, domain] = await Promise.all([
+    integrationValue("cloudflare", "apiKey", process.env[CLOUDFLARE_API_TOKEN_ENV]),
+    integrationValue("cloudflare", "zoneId", process.env[CLOUDFLARE_ZONE_ID_ENV]),
+    integrationValue("cloudflare", "domain", process.env["APP_BASE_URL"]),
+  ]);
+  if (!apiKey || !zoneId || !domain) {
+    throw new Error("Cloudflare API ključ, Zone ID i javni domen moraju biti podešeni pre deaktivacije salona.");
+  }
+  if (!/^[a-f0-9]{32}$/i.test(zoneId)) {
+    throw new Error("Cloudflare Zone ID mora sadržati 32 heksadecimalna znaka.");
+  }
+  const rawOrigin = domain.trim().replace(/\/$/, "");
+  if (!rawOrigin) throw new Error("Javni domen mora biti podešen za Cloudflare purge.");
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(rawOrigin);
+  } catch {
+    throw new Error("Javni domen mora biti ispravan HTTPS URL za Cloudflare purge.");
+  }
+  if (parsedOrigin.protocol !== "https:" || parsedOrigin.username || parsedOrigin.password) {
+    throw new Error("Javni domen mora biti bezbedan HTTPS URL za Cloudflare purge.");
+  }
+  return { apiKey, zoneId, origin: parsedOrigin.origin };
+}
+
+export function mediaCachePurgeRequest(assetIds: readonly string[]): MediaCachePurgeRequest {
+  const uniqueAssetIds = [...new Set(assetIds)];
+  return {
+    assetIds: uniqueAssetIds,
+    // A path prefix includes every query-string size/format combination and
+    // every Accept-negotiated representation that an older cache may retain.
+    pathPrefixes: uniqueAssetIds.map((assetId) => `/api/media/${assetId}`),
+    surrogateKeys: uniqueAssetIds.map((assetId) => `media-asset-${assetId}`),
+  };
+}
+
+/**
+ * Production deactivation is fail-closed until a cache owner is configured.
+ * A long-lived immutable response cannot be revoked by changing origin headers
+ * after it has already been stored by a browser or reverse proxy.
+ */
+export async function requireMediaCachePurgeForVisibilityRevocation(): Promise<void> {
+  if (mediaCachePurgeHandlerForTesting || process.env.NODE_ENV !== "production") return;
+  await configuredCloudflareCachePurge();
+}
+
+export async function purgeMediaCacheForVisibilityRevocation(assetIds: readonly string[]): Promise<void> {
+  const request = mediaCachePurgeRequest(assetIds);
+  if (!request.assetIds.length) return;
+  if (mediaCachePurgeHandlerForTesting) {
+    await mediaCachePurgeHandlerForTesting(request);
+    return;
+  }
+  const configured = await configuredCloudflareCachePurge();
+  const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${configured.zoneId}/purge_cache`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${configured.apiKey}`,
+      "cache-control": "no-store",
+    },
+    body: JSON.stringify({
+      prefixes: request.pathPrefixes.map((pathPrefix) => `${configured.origin}${pathPrefix}`),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const result = await response.json().catch(() => null) as { success?: boolean; errors?: Array<{ message?: string }> } | null;
+  if (!response.ok || result?.success !== true) {
+    const providerMessage = result?.errors?.find((error) => typeof error.message === "string")?.message;
+    throw new Error(providerMessage ? `Cloudflare purge nije uspeo: ${providerMessage}` : `Cloudflare purge nije uspeo (${response.status}).`);
+  }
 }
 const SUPPORTED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const CONTENT_TYPE_BY_SHARP_FORMAT: Record<string, string> = {
@@ -338,12 +444,12 @@ export async function publishActiveSalonMediaReferences(input: {
   active: boolean;
   imageUrl: string;
   gallery: readonly string[];
-}, executor: Pick<typeof db, "update"> = db): Promise<number> {
+}, executor: Pick<typeof db, "update"> = db): Promise<string[]> {
   const references = [
     { url: input.imageUrl, scope: "salon-profile" as const },
     ...input.gallery.map((url) => ({ url, scope: "salon-gallery" as const })),
   ];
-  let published = 0;
+  const changedAssetIds: string[] = [];
   for (const { url, scope } of references) {
     const assetId = mediaAssetIdFromUrl(url);
     if (!assetId) continue;
@@ -360,9 +466,9 @@ export async function publishActiveSalonMediaReferences(input: {
           ? or(isNull(mediaAssetsTable.resourceId), eq(mediaAssetsTable.resourceId, input.salonId))
           : and(eq(mediaAssetsTable.resourceId, input.salonId), eq(mediaAssetsTable.visibility, "public")),
       )).returning({ id: mediaAssetsTable.id });
-    if (asset) published += 1;
+    if (asset) changedAssetIds.push(asset.id);
   }
-  return published;
+  return changedAssetIds;
 }
 
 export async function releaseMediaReferenceClaims(input: {
@@ -792,25 +898,51 @@ export function selectMediaVariant(
 
 router.get("/media/:assetId", async (req, res): Promise<void> => {
   const [params, query] = [GetMediaAssetParams.safeParse(req.params), GetMediaAssetQueryParams.safeParse(req.query)];
-  if (!params.success || !query.success) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
+  if (!params.success || !query.success) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(404).json({ error: "Fotografija nije pronađena." });
+    return;
+  }
   const [asset] = await db.select().from(mediaAssetsTable).where(eq(mediaAssetsTable.id, params.data.assetId)).limit(1);
-  if (!asset) { res.status(404).json({ error: "Fotografija nije pronađena." }); return; }
+  if (!asset) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(404).json({ error: "Fotografija nije pronađena." });
+    return;
+  }
   const canRead = await mayReadAsset(req, asset);
-  if (!canRead) { res.status(403).json({ error: "Nemate pristup ovoj fotografiji." }); return; }
+  if (!canRead) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(403).json({ error: "Nemate pristup ovoj fotografiji." });
+    return;
+  }
   const variants = await db.select().from(mediaVariantsTable).where(eq(mediaVariantsTable.assetId, asset.id));
   const variant = selectMediaVariant(variants, query.data.size, query.data.format, String(req.headers.accept ?? ""));
-  if (!variant) { res.status(404).json({ error: "Tražena veličina fotografije nije dostupna." }); return; }
+  if (!variant) {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.status(404).json({ error: "Tražena veličina fotografije nije dostupna." });
+    return;
+  }
 
   const isPublic = asset.visibility === "public";
   const versionMatches = typeof req.query.v === "string" && req.query.v === asset.contentHash.slice(0, 16);
+  const isRevocableSalonMedia = asset.scope === "salon-profile" || asset.scope === "salon-gallery";
   res.setHeader("Content-Type", variant.contentType);
   res.setHeader("Content-Length", String(variant.byteSize));
   res.setHeader("ETag", variant.etag);
   res.setHeader("Vary", isPublic ? "Accept" : "Accept, Cookie");
+  if (isPublic) {
+    const cacheTag = `media-asset-${asset.id}`;
+    // Cache-Tag is understood by Cloudflare; Surrogate-Key is retained for
+    // compatible intermediary caches already configured around the API.
+    res.setHeader("Cache-Tag", cacheTag);
+    res.setHeader("Surrogate-Key", cacheTag);
+  }
   res.setHeader(
     "Cache-Control",
     isPublic
-      ? versionMatches ? "public, max-age=31536000, immutable" : "public, max-age=300, s-maxage=3600"
+      ? isRevocableSalonMedia
+        ? REVALIDATED_SALON_MEDIA_CACHE_CONTROL
+        : versionMatches ? "public, max-age=31536000, immutable" : "public, max-age=300, s-maxage=3600"
       : "private, no-store",
   );
   if (req.headers["if-none-match"] === variant.etag) { res.status(304).end(); return; }

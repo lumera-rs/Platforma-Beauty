@@ -29,6 +29,7 @@ import {
   claimMediaReference,
   cleanupMediaRouteRegressionUploads,
   deletePrivateStorageObject,
+  enableMediaCachePurgeForTesting,
   enableMediaRouteRegressionUploadMarking,
   MEDIA_ROUTE_REGRESSION_CONTROL_CLEANUP_KEY,
   MEDIA_ROUTE_REGRESSION_CLEANUP_KEY,
@@ -74,6 +75,32 @@ async function startServer() {
 
 async function stopServer(server: ReturnType<typeof app.listen>) {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+}
+
+/**
+ * Models a browser/CDN entry written before revocable salon media stopped using
+ * immutable caching. It intentionally serves the seeded 200 without contacting
+ * the API until the application invokes the purge handler.
+ */
+function createLegacyImmutableMediaCache() {
+  const entries = new Map<string, { status: number }>();
+  return {
+    async fetch(url: string): Promise<{ status: number; fromCache: boolean }> {
+      const cached = entries.get(url);
+      if (cached) return { ...cached, fromCache: true };
+      const response = await fetch(url);
+      const entry = { status: response.status };
+      if (entry.status === 200) entries.set(url, entry);
+      return { ...entry, fromCache: false };
+    },
+    purgePathPrefixes(pathPrefixes: readonly string[]): void {
+      for (const url of entries.keys()) {
+        if (pathPrefixes.some((pathPrefix) => new URL(url).pathname === pathPrefix)) {
+          entries.delete(url);
+        }
+      }
+    },
+  };
 }
 
 async function forceEndpointClaimConflict<T>(
@@ -148,6 +175,7 @@ async function run() {
   let privacyProbeAssetId: string | null = null;
   let activeServer: Awaited<ReturnType<typeof startServer>> | null = null;
   let disableRegressionUploadMarking: (() => void) | null = null;
+  let disableMediaCachePurge: (() => void) | null = null;
   const regressionLock = await pool.connect();
   let regressionLockHeld = false;
 
@@ -166,6 +194,17 @@ async function run() {
     const marking = enableMediaRouteRegressionUploadMarking();
     disableRegressionUploadMarking = marking.disable;
     mediaRegressionRequestHeaders = marking.requestHeaders;
+    const legacyImmutableMediaCache = createLegacyImmutableMediaCache();
+    const cachePurgeRequests: Array<{ assetIds: string[]; pathPrefixes: string[]; surrogateKeys: string[] }> = [];
+    const purgeControl = enableMediaCachePurgeForTesting(async (request) => {
+      cachePurgeRequests.push({
+        assetIds: request.assetIds,
+        pathPrefixes: request.pathPrefixes,
+        surrogateKeys: request.surrogateKeys,
+      });
+      legacyImmutableMediaCache.purgePathPrefixes(request.pathPrefixes);
+    });
+    disableMediaCachePurge = purgeControl.disable;
     activeServer = await startServer();
     assert.equal(await canClaimMediaReference({
       userId: ownerAndSalon.user.id,
@@ -705,10 +744,30 @@ async function run() {
     });
     assert.equal(webpResponse.status, 200);
     assert.equal(webpResponse.headers.get("content-type"), "image/webp");
-    assert.equal(webpResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+    assert.equal(
+      webpResponse.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Active salon media must revalidate so a cached response cannot survive deactivation.",
+    );
     assert.equal(webpResponse.headers.get("vary"), "Accept");
+    assert.equal(
+      webpResponse.headers.get("cache-tag"),
+      `media-asset-${firstFinalize.body.id}`,
+      "Public salon media must expose a Cloudflare cache tag for targeted invalidation.",
+    );
     const etag = webpResponse.headers.get("etag");
     assert.ok(etag);
+    const galleryWebpResponse = await fetch(`${activeServer.baseUrl}${galleryFinalize.body.imageUrl}&size=thumbnail`, {
+      headers: { accept: "image/webp,image/*" },
+    });
+    assert.equal(galleryWebpResponse.status, 200);
+    assert.equal(
+      galleryWebpResponse.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Active salon gallery media must revalidate so a cached response cannot survive deactivation.",
+    );
+    const galleryEtag = galleryWebpResponse.headers.get("etag");
+    assert.ok(galleryEtag);
 
     const conditional = await fetch(`${activeServer.baseUrl}${firstFinalize.body.imageUrl}&size=thumbnail`, {
       headers: { accept: "image/webp,image/*", "if-none-match": etag! },
@@ -723,7 +782,11 @@ async function run() {
       `${activeServer.baseUrl}/api/media/${firstFinalize.body.id}?size=large&format=fallback`,
     );
     assert.equal(stableWithoutVersion.status, 200);
-    assert.equal(stableWithoutVersion.headers.get("cache-control"), "public, max-age=300, s-maxage=3600");
+    assert.equal(
+      stableWithoutVersion.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "Omitting the content version must not restore a stale-cache path for salon media.",
+    );
     assert.ok(["image/jpeg", "image/png"].includes(stableWithoutVersion.headers.get("content-type") ?? ""));
 
     const invalidBytes = Buffer.from("not an image");
@@ -771,6 +834,19 @@ async function run() {
 
     const inactiveCoverAsset = await uploadAsset("salon-profile", session, "inactive-salon-cover.jpg");
     const inactiveGalleryAsset = await uploadAsset("salon-gallery", session, "inactive-salon-gallery.jpg");
+    const cachedLegacyCoverUrl = `${activeServer.baseUrl}${firstFinalize.body.imageUrl}&size=thumbnail`;
+    const cachedLegacyGalleryUrl = `${activeServer.baseUrl}${galleryFinalize.body.imageUrl}&size=thumbnail`;
+    for (const [url, label] of [
+      [cachedLegacyCoverUrl, "cover"],
+      [cachedLegacyGalleryUrl, "gallery"],
+    ] as const) {
+      const seeded = await legacyImmutableMediaCache.fetch(url);
+      assert.deepEqual(
+        seeded,
+        { status: 200, fromCache: false },
+        `The legacy immutable ${label} cache entry must be populated before deactivation.`,
+      );
+    }
     const deactivated = await jsonRequest<{ active: boolean }>(
       activeServer.baseUrl,
       `/admin/salons/${ownerAndSalon.salon.id}`,
@@ -780,6 +856,26 @@ async function run() {
     );
     assert.equal(deactivated.status, 200);
     assert.equal(deactivated.body.active, false);
+    assert.deepEqual(
+      cachePurgeRequests,
+      [{
+        assetIds: [firstFinalize.body.id, galleryFinalize.body.id],
+        pathPrefixes: [`/api/media/${firstFinalize.body.id}`, `/api/media/${galleryFinalize.body.id}`],
+        surrogateKeys: [`media-asset-${firstFinalize.body.id}`, `media-asset-${galleryFinalize.body.id}`],
+      }],
+      "Deactivation must purge every cover/gallery path before an old immutable response can be reused.",
+    );
+    for (const [url, label] of [
+      [cachedLegacyCoverUrl, "cover"],
+      [cachedLegacyGalleryUrl, "gallery"],
+    ] as const) {
+      const afterPurge = await legacyImmutableMediaCache.fetch(url);
+      assert.deepEqual(
+        afterPurge,
+        { status: 403, fromCache: false },
+        `Purging the cached ${label} must force the next request to reach the deactivated API instead of serving the legacy immutable bytes.`,
+      );
+    }
     for (const [assetId, label] of [
       [firstFinalize.body.id, "cover"],
       [galleryFinalize.body.id, "gallery"],
@@ -804,6 +900,26 @@ async function run() {
       403,
       "Private treatment/customer media must remain protected during salon deactivation.",
     );
+    const revalidatedDeactivatedCover = await fetch(
+      `${activeServer.baseUrl}${firstFinalize.body.imageUrl}&size=thumbnail`,
+      { headers: { accept: "image/webp,image/*", "if-none-match": etag! } },
+    );
+    assert.equal(
+      revalidatedDeactivatedCover.status,
+      403,
+      "A cached salon cover must revalidate against the deactivated visibility before it can be reused.",
+    );
+    assert.equal(revalidatedDeactivatedCover.headers.get("cache-control"), "private, no-store");
+    const revalidatedDeactivatedGallery = await fetch(
+      `${activeServer.baseUrl}${galleryFinalize.body.imageUrl}&size=thumbnail`,
+      { headers: { accept: "image/webp,image/*", "if-none-match": galleryEtag! } },
+    );
+    assert.equal(
+      revalidatedDeactivatedGallery.status,
+      403,
+      "A cached salon gallery image must revalidate against the deactivated visibility before it can be reused.",
+    );
+    assert.equal(revalidatedDeactivatedGallery.headers.get("cache-control"), "private, no-store");
     const inactiveProfile = await jsonRequest<{ imageUrl: string; gallery: string[] }>(
       activeServer.baseUrl,
       "/salon/profile",
@@ -829,10 +945,12 @@ async function run() {
     assert.equal(activated.status, 200);
     assert.equal(activated.body.active, true);
     for (const imageUrl of [inactiveCoverAsset.imageUrl, inactiveGalleryAsset.imageUrl]) {
+      const activatedImage = await fetch(`${activeServer.baseUrl}${imageUrl}&size=thumbnail`);
+      assert.equal(activatedImage.status, 200, "Activating a salon must publish its matching profile and gallery images immediately.");
       assert.equal(
-        (await fetch(`${activeServer.baseUrl}${imageUrl}&size=thumbnail`)).status,
-        200,
-        "Activating a salon must publish its matching profile and gallery images immediately.",
+        activatedImage.headers.get("cache-control"),
+        "public, max-age=0, s-maxage=0, must-revalidate",
+        "Re-activated salon media must retain revalidation after becoming public again.",
       );
     }
 
@@ -851,6 +969,13 @@ async function run() {
     );
     assert.equal(detachedProfile.body.imageUrl, replacementProfileAsset.imageUrl);
     assert.deepEqual(detachedProfile.body.gallery, []);
+    const replacementResponse = await fetch(`${activeServer.baseUrl}${replacementProfileAsset.imageUrl}&size=thumbnail`);
+    assert.equal(replacementResponse.status, 200);
+    assert.equal(
+      replacementResponse.headers.get("cache-control"),
+      "public, max-age=0, s-maxage=0, must-revalidate",
+      "A subsequent salon media change must keep the replacement response revocable.",
+    );
     for (const assetId of [firstFinalize.body.id, galleryFinalize.body.id]) {
       const [detachedAsset] = await db.select({
         resourceId: mediaAssetsTable.resourceId,
@@ -1086,6 +1211,7 @@ async function run() {
   } finally {
     const storageCleanupErrors: unknown[] = [];
     if (activeServer) await stopServer(activeServer.server).catch(() => undefined);
+    disableMediaCachePurge?.();
     disableRegressionUploadMarking?.();
     mediaRegressionRequestHeaders = {};
     await db.update(salonsTable).set(originalSalonMedia).where(eq(salonsTable.id, ownerAndSalon.salon.id));

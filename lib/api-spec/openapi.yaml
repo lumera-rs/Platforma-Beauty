@@ -5199,7 +5199,8 @@ components:
             brevo: { $ref: "#/components/schemas/AdminWebhookIntegrationCard" }
             google_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
             facebook_oauth: { $ref: "#/components/schemas/AdminIntegrationCard" }
-          required: [sms, brevo, google_oauth, facebook_oauth]
+            cloudflare: { $ref: "#/components/schemas/AdminIntegrationCard" }
+          required: [sms, brevo, google_oauth, facebook_oauth, cloudflare]
         deliveryReports: { $ref: "#/components/schemas/AdminDeliveryReports" }
         smsFallback: { $ref: "#/components/schemas/AdminSmsFallback" }
         smsWebhookRegistration: { $ref: "#/components/schemas/AdminSmsWebhookRegistration" }

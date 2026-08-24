@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID }
 import { db, integrationSettingsTable } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 
-export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
+export type IntegrationName = "sms" | "brevo" | "google_oauth" | "facebook_oauth" | "cloudflare";
 
 /**
  * Metadata marker rows stored alongside integration settings (same encrypted
@@ -84,7 +84,8 @@ function fallbackValues(integration: IntegrationName): Record<string, string | u
   if (integration === "sms") return { apiKey: process.env["SMS_PROVIDER_API_KEY"], senderName: process.env["SMS_SENDER_NAME"], baseUrl: process.env["SMS_PROVIDER_BASE_URL"] };
   if (integration === "brevo") return { apiKey: process.env["BREVO_API_KEY"], senderEmail: process.env["BREVO_SENDER_EMAIL"], senderName: process.env["BREVO_SENDER_NAME"] };
   if (integration === "google_oauth") return { clientId: process.env["GOOGLE_CLIENT_ID"], clientSecret: process.env["GOOGLE_CLIENT_SECRET"] };
-  return { clientId: process.env["FACEBOOK_APP_ID"], clientSecret: process.env["FACEBOOK_APP_SECRET"] };
+  if (integration === "facebook_oauth") return { clientId: process.env["FACEBOOK_APP_ID"], clientSecret: process.env["FACEBOOK_APP_SECRET"] };
+  return { apiKey: process.env["CLOUDFLARE_API_TOKEN"], zoneId: process.env["CLOUDFLARE_ZONE_ID"], domain: process.env["APP_BASE_URL"] };
 }
 
 export async function integrationSettings(integration: IntegrationName) {

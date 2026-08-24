@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Copy, KeyRound, Loader2, PlugZap, RefreshCw, Send, ShieldCheck, UsersRound, Webhook } from "lucide-react";
 import { useImmediateActionGuard } from "@/hooks/use-immediate-action-guard";
 
-type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth";
+type Integration = "sms" | "brevo" | "google_oauth" | "facebook_oauth" | "cloudflare";
 type Card = { enabled: boolean; configuredInDatabase: boolean; complete: boolean; values: Record<string, string | null>; version: string | null; webhookSecretPendingReconfirmation?: boolean; webhookVerifiedAt?: string | null; webhookVerificationStale?: boolean; webhookConfirmationMaxAgeDays?: number; brevoRegistrationMissingEvents?: string[] };
 type WebhookFreshness = Pick<Card, "webhookVerifiedAt" | "webhookVerificationStale" | "webhookConfirmationMaxAgeDays">;
 type DeliveryReportProvider = "brevo" | "infobip";
@@ -27,14 +27,15 @@ const fields: Record<Integration, Array<{ key: string; label: string; placeholde
   brevo: [{ key: "apiKey", label: "Brevo API ključ", placeholder: "Unesite novi API ključ", secret: true }, { key: "senderEmail", label: "E-mail pošiljaoca", placeholder: "noreply@vasdomen.rs" }, { key: "senderName", label: "Ime pošiljaoca", placeholder: "LUMERA" }, { key: "webhookSecret", label: "Webhook tajna (isporuka/otvaranja)", placeholder: "Unesite tajnu za webhook URL", secret: true }],
   google_oauth: [{ key: "clientId", label: "Client ID", placeholder: "Google Client ID" }, { key: "clientSecret", label: "Client Secret", placeholder: "Unesite novi Client Secret", secret: true }],
   facebook_oauth: [{ key: "clientId", label: "App ID", placeholder: "Facebook App ID" }, { key: "clientSecret", label: "App Secret", placeholder: "Unesite novi App Secret", secret: true }],
+  cloudflare: [{ key: "apiKey", label: "Cloudflare API ključ / API Token", placeholder: "Unesite Cloudflare API Token", secret: true }, { key: "zoneId", label: "Cloudflare Zone ID", placeholder: "32-karakterni Zone ID" }, { key: "domain", label: "Javni domen sajta", placeholder: "https://vas-domen.rs" }],
 };
-const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava" };
+const titles: Record<Integration, string> = { sms: "SMS · Infobip", brevo: "E-mail · Brevo", google_oauth: "Google prijava", facebook_oauth: "Facebook prijava", cloudflare: "CDN keš · Cloudflare" };
 const WEBHOOK_FRESHNESS_POLL_INTERVAL_MS = 60_000;
 
 export default function AdminIntegrations() {
   const [data, setData] = useState<Data | null>(null);
-  const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {} });
-  const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "" });
+  const [form, setForm] = useState<Record<Integration, Record<string, string>>>({ sms: {}, brevo: {}, google_oauth: {}, facebook_oauth: {}, cloudflare: {} });
+  const [testRecipient, setTestRecipient] = useState<Record<Integration, string>>({ sms: "", brevo: "", google_oauth: "", facebook_oauth: "", cloudflare: "" });
   const [savedEnabled, setSavedEnabled] = useState<Record<Integration, boolean> | null>(null);
   const actionGuard = useImmediateActionGuard();
   const [smsRegistrationRefreshFailed, setSmsRegistrationRefreshFailed] = useState(false);
@@ -46,7 +47,7 @@ export default function AdminIntegrations() {
     if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
     const payload: Data = await response.json();
     setData(payload);
-    setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled });
+    setSavedEnabled({ sms: payload.integrations.sms.enabled, brevo: payload.integrations.brevo.enabled, google_oauth: payload.integrations.google_oauth.enabled, facebook_oauth: payload.integrations.facebook_oauth.enabled, cloudflare: payload.integrations.cloudflare.enabled });
   };
   const refreshWebhookFreshness = async () => {
     const sequence = ++freshnessRefreshSequence.current;
@@ -181,13 +182,13 @@ export default function AdminIntegrations() {
   };
   const test = async (integration: Integration) => {
     const recipient = testRecipient[integration].trim();
-    if (!recipient) { toast.error("Unesite primaoca za test poruku."); return; }
+    if ((integration === "sms" || integration === "brevo") && !recipient) { toast.error("Unesite primaoca za test poruku."); return; }
     const response = await fetch(`/api/admin/integrations/${integration}/test`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ recipient }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? "Test nije uspeo.");
     toast.success(result.message);
   };
-  const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false });
+  const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
   const verifyWebhook = async (integration: Integration) => {
     setVerifyingWebhook((previous) => ({ ...previous, [integration]: true }));
     try {
@@ -203,7 +204,7 @@ export default function AdminIntegrations() {
       setVerifyingWebhook((previous) => ({ ...previous, [integration]: false }));
     }
   };
-  const [copyingWebhookUrl, setCopyingWebhookUrl] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false });
+  const [copyingWebhookUrl, setCopyingWebhookUrl] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
   const copyWebhookUrl = async (integration: Integration) => {
     setCopyingWebhookUrl((previous) => ({ ...previous, [integration]: true }));
     try {
@@ -435,6 +436,7 @@ export default function AdminIntegrations() {
             <p className="text-xs text-muted-foreground">Generisana tajna počinje da važi tek kada kliknete „Sačuvaj“.</p>
           </> : field.secret ? <PasswordInput value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} /> : <Input type="text" value={form[integration][field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setForm({ ...form, [integration]: { ...form[integration], [field.key]: event.target.value } })} />}</div>)}
           {(integration === "google_oauth" || integration === "facebook_oauth") && <div className="rounded-lg border bg-muted/30 p-3"><Label>Redirect URI</Label>{data.redirectUriWarning && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800" role="alert" data-testid="oauth-redirect-origin-warning"><p className="font-semibold"><AlertTriangle className="mr-1 inline h-3.5 w-3.5" />Upozorenje za domen</p><p className="mt-1 font-medium">{data.redirectUriWarning}</p></div>}<div className="mt-2 flex gap-2"><Input readOnly value={redirectUri(integration)} /><Button variant="outline" size="icon" onClick={() => navigator.clipboard.writeText(redirectUri(integration) ?? "").then(() => toast.success("Redirect URI je kopiran."))}><Copy className="h-4 w-4" /></Button></div></div>}
+          {integration === "cloudflare" && <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Za brisanje keša fotografija</p><p className="mt-1">Kreirajte Cloudflare API Token sa dozvolom <span className="font-mono">Zone → Cache Purge → Purge</span> za zonu javnog domena. Unesite domen u formatu <span className="font-mono">https://vas-domen.rs</span>, bez putanje.</p><p className="mt-1">Pri deaktivaciji salona sistem briše CDN keš za njegove naslovne i galerijske fotografije.</p><p className="mt-1">Token je šifrovan na serveru i nakon čuvanja se prikazuje samo maskirano.</p></div>}
           {(integration === "sms" || integration === "brevo") && <div className="rounded-lg border bg-muted/30 p-3">
             <Label>Webhook URL za statuse isporuke</Label>
             {card.webhookSecretPendingReconfirmation && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3">

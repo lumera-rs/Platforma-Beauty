@@ -301,13 +301,13 @@ export async function migrateLegacyMediaReferences() {
   }
 
   for (const salon of await db.select().from(salonsTable)) {
-    report.repaired += await publishActiveSalonMediaReferences({
+    report.repaired += (await publishActiveSalonMediaReferences({
       salonId: salon.id,
       ownerUserId: salon.ownerId,
       active: salon.active,
       imageUrl: salon.imageUrl,
       gallery: salon.gallery,
-    });
+    })).length;
     const [imageUrl] = await migrateList({
       references: [salon.imageUrl],
       scope: "salon-profile",

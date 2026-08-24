@@ -375,6 +375,7 @@ async function mockAdminApi(page: Page, role: "ADMIN" | "SUPER_ADMIN", loggedIn 
               brevo: webhookCard,
               google_oauth: card,
               facebook_oauth: card,
+              cloudflare: card,
             },
             deliveryReports: {
               providers: {

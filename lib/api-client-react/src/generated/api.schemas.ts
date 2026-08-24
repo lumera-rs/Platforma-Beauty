@@ -300,6 +300,7 @@ export type AdminGetIntegrationsResponseIntegrations = {
   brevo: AdminWebhookIntegrationCard;
   google_oauth: AdminIntegrationCard;
   facebook_oauth: AdminIntegrationCard;
+  cloudflare: AdminIntegrationCard;
 };
 
 export type AdminGetIntegrationsResponseRedirectUris = {

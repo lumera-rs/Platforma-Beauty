@@ -154,6 +154,7 @@ async function stubStaleOAuthOriginWarning(page: Page) {
             brevo: emptyCard,
             google_oauth: emptyCard,
             facebook_oauth: emptyCard,
+            cloudflare: emptyCard,
           },
           redirectUris: {
             google: "https://new-published.example.test/api/auth/oauth/google/callback",
