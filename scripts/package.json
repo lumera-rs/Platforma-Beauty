@@ -47,6 +47,7 @@
     "test:campaign-period-filter": "playwright test browser/campaign-period-filter.spec.ts",
     "test:campaign-period-preset": "playwright test browser/campaign-period-preset.spec.ts",
     "test:campaign-period-url": "playwright test browser/campaign-period-url.spec.ts",
+    "test:campaign-one-day-comparison": "playwright test browser/campaign-one-day-comparison.spec.ts",
     "test:business-guide-help": "playwright test browser/business-guide-help-links.spec.ts",
     "test:multi-location": "playwright test browser/multi-location-owner.spec.ts",
     "test:education-gallery": "playwright test browser/education-gallery.spec.ts",
