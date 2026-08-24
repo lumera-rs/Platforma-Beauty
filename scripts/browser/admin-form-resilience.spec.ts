@@ -628,6 +628,97 @@ test("webhook freshness ignores an older response after repeated reconnects", as
   await expectNoServerErrors();
 });
 
+for (const integration of ["sms", "brevo"] as const) {
+  test(`manual ${integration} webhook verification remains visible over an older freshness response`, async ({ page }) => {
+    await openAdmin(page, "/admin/integracije");
+    const title = integration === "sms" ? "SMS · Infobip" : "E-mail · Brevo";
+    const integrationCard = page.locator("section").filter({ has: page.getByRole("heading", { name: title }) }).first();
+    await expect(integrationCard).toBeVisible();
+
+    const secret = page.getByTestId(`input-webhook-secret-${integration}`);
+    const toggle = page.getByTestId(`toggle-enabled-${integration}`);
+    const initiallyEnabled = await toggle.isChecked();
+    const draftSecret = `unsaved-${integration}-webhook-secret`;
+    await secret.fill(draftSecret);
+    await toggle.setChecked(!initiallyEnabled);
+
+    let releaseOlderResponse: (() => void) | undefined;
+    const olderResponseReleased = new Promise<void>((resolve) => {
+      releaseOlderResponse = resolve;
+    });
+    let olderResponseSettledResolve: (() => void) | undefined;
+    const olderResponseSettled = new Promise<void>((resolve) => {
+      olderResponseSettledResolve = resolve;
+    });
+
+    await page.route("**/api/admin/integrations/webhook-freshness", async (route) => {
+      try {
+        await olderResponseReleased;
+        await route.fulfill({
+          json: {
+            integrations: {
+              sms: {
+                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+              brevo: {
+                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+            },
+          },
+        });
+      } finally {
+        olderResponseSettledResolve?.();
+      }
+    });
+    await page.route(`**/api/admin/integrations/${integration}/verify-webhook`, async (route) => {
+      await route.fulfill({
+        json: {
+          webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
+          webhookVerificationStale: false,
+          message: `${integration} webhook je potvrđen.`,
+        },
+      });
+    });
+
+    const freshnessRequest = page.waitForRequest((request) => {
+      return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
+        && request.method() === "GET";
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await freshnessRequest;
+
+    const verificationResponse = page.waitForResponse((response) => {
+      return new URL(response.url()).pathname === `/api/admin/integrations/${integration}/verify-webhook`
+        && response.request().method() === "POST";
+    });
+    await integrationCard.getByRole("button", { name: "Proveri webhook", exact: true }).click();
+    const response = await verificationResponse;
+    expect(response.ok(), "the manual webhook verification must succeed").toBe(true);
+
+    const status = page.getByTestId(`webhook-confirmation-status-${integration}`);
+    await expect(status).toContainText("12:00:00");
+    await expect(status).toContainText("sveža potvrda");
+    await expect(secret).toHaveValue(draftSecret);
+    expect(await toggle.isChecked()).toBe(!initiallyEnabled);
+
+    // Complete the response that was already in flight after the manual
+    // result. It must not restore the older timestamp or stale warning.
+    releaseOlderResponse?.();
+    await olderResponseSettled;
+    await expect(status).toContainText("12:00:00");
+    await expect(status).toContainText("sveža potvrda");
+    await expect(status).not.toContainText("09:00:00");
+    await expect(page.getByTestId(`stale-webhook-confirmation-${integration}`)).toBeHidden();
+    await expect(secret).toHaveValue(draftSecret);
+    expect(await toggle.isChecked()).toBe(!initiallyEnabled);
+    await expectNoServerErrors();
+  });
+}
+
 // ─── Products ────────────────────────────────────────────────────────────────
 
 test("product form rejects text and negative price / stock", async ({ page }) => {

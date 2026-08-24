@@ -44,6 +44,10 @@ export default function AdminIntegrations() {
   const [retryingWebhookFreshness, setRetryingWebhookFreshness] = useState(false);
   const freshnessRefreshController = useRef<AbortController | null>(null);
   const freshnessRefreshSequence = useRef(0);
+  const invalidateWebhookFreshness = () => {
+    freshnessRefreshSequence.current += 1;
+    freshnessRefreshController.current?.abort();
+  };
   const load = async () => {
     const response = await fetch("/api/admin/integrations", { credentials: "include" });
     if (!response.ok) throw new Error("Podešavanja integracija nisu učitana.");
@@ -212,11 +216,16 @@ export default function AdminIntegrations() {
   };
   const [verifyingWebhook, setVerifyingWebhook] = useState<Record<Integration, boolean>>({ sms: false, brevo: false, google_oauth: false, facebook_oauth: false, cloudflare: false });
   const verifyWebhook = async (integration: Integration) => {
+    // A manual verification is authoritative for the confirmation metadata it
+    // returns. Invalidate both an already-running poll and any poll started
+    // while this request is in flight so an older response cannot replace it.
+    invalidateWebhookFreshness();
     setVerifyingWebhook((previous) => ({ ...previous, [integration]: true }));
     try {
       const response = await fetch(`/api/admin/integrations/${integration}/verify-webhook`, { method: "POST", credentials: "include" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Provera webhook-a nije uspela.");
+      invalidateWebhookFreshness();
       clearPendingReconfirmation(integration);
       updateWebhookVerifiedAt(integration, result.webhookVerifiedAt, result.webhookVerificationStale);
       toast.success(result.message);
