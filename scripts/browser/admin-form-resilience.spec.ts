@@ -306,11 +306,12 @@ async function mockAdminApi(page: Page): Promise<void> {
             integrations: { sms: smsWebhookCard, brevo: brevoWebhookCard, google_oauth: card, facebook_oauth: card, cloudflare: card },
             deliveryReports: {
               providers: {
-                brevo: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
-                infobip: { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+                brevo: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
+                infobip: { lastEventAt: null, rejectedPayloadCount: 0, lastRejectedAt: null, malformedWebhookState: "normal", lastAutomationSentAt: null, recentSendCount: 0, warning: false },
               },
               windowHours: 24,
               graceMinutes: 30,
+              rejectionAlertThreshold: 3,
             },
             smsFallback: { reachableAdminCount: 0, reachableAdmins: [] },
             smsWebhookRegistration: { state: "unconfirmed", secretSavedAt: null, lastReportAt: null },
@@ -515,6 +516,115 @@ test("webhook freshness refresh reports failure, recovers after reconnect, and p
   await expect(page.getByTestId("webhook-confirmation-status-sms")).toContainText("potvrda je zastarela");
   await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("potvrda je zastarela");
   await expect(page.getByTestId("webhook-freshness-refresh-error")).toBeHidden();
+  await expectNoServerErrors();
+});
+
+test("webhook freshness ignores an older response after repeated reconnects", async ({ page }) => {
+  await openAdmin(page, "/admin/integracije");
+  await expect(page.getByRole("heading", { name: "E-mail · Brevo" })).toBeVisible();
+
+  const brevoSecret = page.getByTestId("input-webhook-secret-brevo");
+  const brevoToggle = page.getByTestId("toggle-enabled-brevo");
+  const initiallyEnabled = await brevoToggle.isChecked();
+  const draftSecret = "overlapping-brevo-webhook-secret";
+
+  await brevoSecret.fill(draftSecret);
+  await brevoToggle.setChecked(!initiallyEnabled);
+
+  let freshnessRequests = 0;
+  let releaseOlderResponse: (() => void) | undefined;
+  const olderResponseReleased = new Promise<void>((resolve) => {
+    releaseOlderResponse = resolve;
+  });
+  let olderResponseFulfilledResolve: (() => void) | undefined;
+  const olderResponseFulfilled = new Promise<void>((resolve) => {
+    olderResponseFulfilledResolve = resolve;
+  });
+  let latestResponseFulfilledResolve: (() => void) | undefined;
+  const latestResponseFulfilled = new Promise<void>((resolve) => {
+    latestResponseFulfilledResolve = resolve;
+  });
+
+  await page.route("**/api/admin/integrations/webhook-freshness", async (route) => {
+    freshnessRequests += 1;
+    if (freshnessRequests === 1) {
+      await olderResponseReleased;
+      try {
+        await route.fulfill({
+          json: {
+            integrations: {
+              sms: {
+                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+              brevo: {
+                webhookVerifiedAt: "2026-08-24T09:00:00.000Z",
+                webhookVerificationStale: true,
+                webhookConfirmationMaxAgeDays: 3,
+              },
+            },
+          },
+        });
+      } finally {
+        olderResponseFulfilledResolve?.();
+      }
+      return;
+    }
+    if (freshnessRequests === 2) {
+      await route.fulfill({
+        json: {
+          integrations: {
+            sms: {
+              webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
+              webhookVerificationStale: false,
+              webhookConfirmationMaxAgeDays: 3,
+            },
+            brevo: {
+              webhookVerifiedAt: "2026-08-24T12:00:00.000Z",
+              webhookVerificationStale: false,
+              webhookConfirmationMaxAgeDays: 3,
+            },
+          },
+        },
+      });
+      latestResponseFulfilledResolve?.();
+      return;
+    }
+    await route.fallback();
+  });
+
+  const freshnessRequest = page.waitForRequest((request) => {
+    return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await freshnessRequest;
+  const repeatedFreshnessRequest = page.waitForRequest((request) => {
+    return new URL(request.url()).pathname === "/api/admin/integrations/webhook-freshness"
+      && request.method() === "GET";
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await repeatedFreshnessRequest;
+  await latestResponseFulfilled;
+
+  // The latest reconnect result is authoritative even while the earlier
+  // response is still in flight.
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("12:00:00");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("sveža potvrda");
+  await expect(brevoSecret).toHaveValue(draftSecret);
+  expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
+
+  // Deliver the slower response after the latest result. It must not bring
+  // back the old timestamp or stale-warning state.
+  releaseOlderResponse?.();
+  await olderResponseFulfilled;
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("12:00:00");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).toContainText("sveža potvrda");
+  await expect(page.getByTestId("webhook-confirmation-status-brevo")).not.toContainText("09:00:00");
+  await expect(page.getByTestId("stale-webhook-confirmation-brevo")).toBeHidden();
+  await expect(brevoSecret).toHaveValue(draftSecret);
+  expect(await brevoToggle.isChecked()).toBe(!initiallyEnabled);
   await expectNoServerErrors();
 });
 
