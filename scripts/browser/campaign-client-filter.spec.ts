@@ -410,6 +410,53 @@ test("stale campaign links fall back to the overview without losing tracking tag
   }
 });
 
+test("stale campaign links stay safe when restored through browser history", async ({ page }) => {
+  const fixture = await createFixture();
+  const staleRuleId = randomUUID();
+  const overviewUrl = "/vlasnik/automatizacije?utm_source=instagram";
+  const validUrl = `/vlasnik/automatizacije?utm_source=instagram&rule=${fixture.ruleId}&clients=returning`;
+  const staleUrl = `/vlasnik/automatizacije?utm_source=instagram&rule=${staleRuleId}&clients=returning`;
+
+  try {
+    await signInAsFixtureOwner(page, fixture);
+    await page.goto(overviewUrl);
+
+    const dialog = page.getByRole("dialog", { name: "Statistika automatizacije" });
+    await page.goto(validUrl);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("client-type-returning")).toHaveAttribute("aria-pressed", "true");
+
+    // Model an in-app stale-link navigation without remounting the page. The
+    // following Back/Forward traversal must not let the previously open
+    // dialog write its valid rule back into the restored stale entry.
+    await page.evaluate((url) => {
+      window.history.pushState({}, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, staleUrl);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/vlasnik/automatizacije\\?utm_source=instagram&rule=${fixture.ruleId}&clients=returning$`));
+    await expect(dialog).toBeVisible();
+
+    await page.goForward();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => {
+      const params = new URL(page.url()).searchParams;
+      return {
+        tracking: params.get("utm_source"),
+        rule: params.get("rule"),
+        clients: params.get("clients"),
+      };
+    }).toEqual({
+      tracking: "instagram",
+      rule: null,
+      clients: null,
+    });
+  } finally {
+    await cleanUpFixture(fixture);
+  }
+});
+
 test("shared campaign links restore the selected segment and tracking tags after reload", async ({ page }) => {
   const fixture = await createFixture();
 

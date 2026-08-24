@@ -638,6 +638,24 @@ export default function OwnerAutomations() {
     () => parseAttributedClientType(window.location.search),
   );
 
+  // Browser Back/Forward changes the URL without remounting this page. Treat
+  // those query-string changes as incoming state before the mirror effect
+  // runs; otherwise a previously open dialog can immediately write its stale
+  // rule back into the restored URL.
+  const lastHandledSearchRef = useRef(searchString);
+  const skipUrlMirrorRef = useRef(false);
+  useEffect(() => {
+    if (lastHandledSearchRef.current === searchString) return;
+
+    lastHandledSearchRef.current = searchString;
+    skipUrlMirrorRef.current = true;
+    const params = new URLSearchParams(searchString);
+    const urlRuleId = params.get("rule");
+    setAttributedClientType(parseAttributedClientType(searchString));
+    setStatsRuleId(null);
+    setPendingRuleId(urlRuleId);
+  }, [searchString]);
+
   useEffect(() => {
     if (pendingRuleId === null || !rules) return;
     if (rules.some((rule: any) => rule.id === pendingRuleId)) {
@@ -655,6 +673,11 @@ export default function OwnerAutomations() {
   // view is shareable. The client segment follows the rule and is omitted for
   // the default "all" view.
   useEffect(() => {
+    if (skipUrlMirrorRef.current) {
+      skipUrlMirrorRef.current = false;
+      return;
+    }
+
     const serialized = serializePeriodSelection(searchString, statsPeriod, customRange);
     if (serialized === null) return;
     const params = new URLSearchParams(serialized);
@@ -667,6 +690,7 @@ export default function OwnerAutomations() {
     }
     const next = params.toString();
     if (next !== searchString) {
+      lastHandledSearchRef.current = next;
       setLocation(`${pathname}${next ? `?${next}` : ""}`, { replace: true });
     }
   }, [statsPeriod, customRange, statsRuleId, pendingRuleId, attributedClientType, searchString, pathname, setLocation]);
