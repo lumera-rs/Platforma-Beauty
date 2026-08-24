@@ -88,7 +88,6 @@
 - [Admin aggregate scan budgets](admin-aggregate-scan-budgets.md) — query-count reductions must not rescan one growing table per metric; budget relation scans too.
 - [DayPicker initial range semantics](daypicker-initial-range-semantics.md) — range mode emits a same-day complete range on first click unless the application preserves it as an in-progress start.
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
-- [Campaign period portal tests](campaign-period-portal-tests.md) — Radix picker presets render outside the selector subtree, so browser locators must use the page-level portal test id.
 - [Browser test boundaries](browser-boundaries.md) — account for UI portals and package compilation boundaries when structuring locators and shared fixture validation.
 - [Cart browser API assertions](cart-browser-api-cache.md) — verify mutation responses and exact line IDs instead of trusting follow-up GET polling.
 - [Isolated process recovery](isolated-process-recovery.md) — target marker-owned child groups and report malformed manifests after valid sibling cleanup.

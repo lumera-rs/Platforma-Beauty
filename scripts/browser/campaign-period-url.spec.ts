@@ -30,8 +30,9 @@
  *     close and reload.
  *  8. Browser Back/Forward → preset windows are restored in the overview and
  *     stats dialog without dropping an unrelated tracking parameter.
- *  9. Browser Back/Forward → valid custom windows are restored in the overview
- *     and stats dialog with their exact from/to values.
+ *  9. Europe/Belgrade Browser Back/Forward → DST custom windows are restored
+ *     in the overview and stats dialog, with exact request dates and unrelated
+ *     query parameters preserved.
  *  10. A shared stats URL → the custom July window is restored in the stats
  *      dialog and both stats requests keep the restored from/to after reload.
  *  11. Accessibility labels → month navigation, focused dates, pending starts,
@@ -447,40 +448,100 @@ test.describe("shared campaign period links restore the picked window", () => {
   test.describe("Europe/Belgrade custom-range history", () => {
     test.use({ timezoneId: "Europe/Belgrade" });
 
-    test("Back and Forward preserve spring-forward and autumn-rollback dates with tracking params", async ({ page }) => {
+    test("Back and Forward preserve DST detail links, dialog dates, and request windows", async ({ page }) => {
       await page.clock.install({ time: new Date("2026-10-27T12:00:00.000Z") });
       await signInAsFixtureOwner(page, fixture);
 
-      const springUrl = "/vlasnik/automatizacije?from=2026-03-28&to=2026-03-30&utm_source=history-dst";
-      const autumnUrl = "/vlasnik/automatizacije?from=2026-10-24&to=2026-10-26&utm_source=history-dst";
+      const spring = { period: null, from: "2026-03-28", to: "2026-03-30" };
+      const autumn = { period: null, from: "2026-10-24", to: "2026-10-26" };
+      const springUrl = `/vlasnik/automatizacije?from=${spring.from}&to=${spring.to}&rule=${fixture.ruleId}&utm_source=history-dst`;
+      const autumnUrl = `/vlasnik/automatizacije?from=${autumn.from}&to=${autumn.to}&rule=${fixture.ruleId}&utm_source=history-dst`;
       const overview = page.getByTestId("overview-period-selector");
       const customButton = overview.getByTestId("period-custom");
+      const dialog = page.getByRole("dialog");
       const expectSearchParams = async (from: string, to: string) => {
         expect(await page.evaluate(() => {
           const params = new URLSearchParams(window.location.search);
-          return { from: params.get("from"), to: params.get("to"), tracking: params.get("utm_source") };
-        })).toEqual({ from, to, tracking: "history-dst" });
+          return {
+            from: params.get("from"),
+            to: params.get("to"),
+            period: params.get("period"),
+            rule: params.get("rule"),
+            tracking: params.get("utm_source"),
+          };
+        })).toEqual({
+          from,
+          to,
+          period: null,
+          rule: fixture.ruleId,
+          tracking: "history-dst",
+        });
+      };
+      const expectRequestWindow = async (
+        expected: typeof spring,
+        navigate: () => Promise<unknown>,
+      ) => {
+        const overviewResponse = nextOverviewStatsResponse(page, expected);
+        const detailResponse = nextAutomationStatsResponse(page, fixture.ruleId, expected);
+        await navigate();
+        const [overviewResponseValue, detailResponseValue] = await Promise.all([
+          overviewResponse,
+          detailResponse,
+        ]);
+        expect(overviewResponseValue.status()).toBe(200);
+        expect(detailResponseValue.status()).toBe(200);
+      };
+      const expectRestoredDetail = async (
+        expected: typeof spring,
+        rangeLabel: RegExp,
+        fromLabel: string,
+        toLabel: string,
+      ) => {
+        await expect(dialog).toBeVisible();
+        await expect(customButton).toHaveAttribute("aria-pressed", "true");
+        await expect(customButton).toHaveText(rangeLabel);
+        const statsSelector = dialog.getByTestId("stats-period-selector");
+        await expect(statsSelector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
+        await expect(statsSelector.getByTestId("period-custom")).toHaveText(rangeLabel);
+        await expect(dialog.getByTestId("stats-period-status")).toContainText(fromLabel);
+        await expect(dialog.getByTestId("stats-period-status")).toContainText(toLabel);
+        await expectSearchParams(expected.from, expected.to);
       };
 
-      await page.goto(springUrl);
-      await expect(customButton).toHaveAttribute("aria-pressed", "true");
-      await expect(customButton).toHaveText(/28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./);
-      await expectSearchParams("2026-03-28", "2026-03-30");
+      await expectRequestWindow(spring, () => page.goto(springUrl));
+      await expectRestoredDetail(
+        spring,
+        /28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./,
+        "28. 3. 2026.",
+        "30. 3. 2026.",
+      );
 
-      await page.goto(autumnUrl);
-      await expect(customButton).toHaveAttribute("aria-pressed", "true");
-      await expect(customButton).toHaveText(/24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./);
-      await expectSearchParams("2026-10-24", "2026-10-26");
+      await expectRequestWindow(autumn, () => page.evaluate((url) => {
+        window.history.pushState({}, "", url);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }, autumnUrl));
+      await expectRestoredDetail(
+        autumn,
+        /24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./,
+        "24. 10. 2026.",
+        "26. 10. 2026.",
+      );
 
-      await page.goBack();
-      await expect(customButton).toHaveAttribute("aria-pressed", "true");
-      await expect(customButton).toHaveText(/28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./);
-      await expectSearchParams("2026-03-28", "2026-03-30");
+      await expectRequestWindow(spring, () => page.goBack());
+      await expectRestoredDetail(
+        spring,
+        /28\.\s*3\.\s*2026\.\s*–\s*30\.\s*3\.\s*2026\./,
+        "28. 3. 2026.",
+        "30. 3. 2026.",
+      );
 
-      await page.goForward();
-      await expect(customButton).toHaveAttribute("aria-pressed", "true");
-      await expect(customButton).toHaveText(/24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./);
-      await expectSearchParams("2026-10-24", "2026-10-26");
+      await expectRequestWindow(autumn, () => page.goForward());
+      await expectRestoredDetail(
+        autumn,
+        /24\.\s*10\.\s*2026\.\s*–\s*26\.\s*10\.\s*2026\./,
+        "24. 10. 2026.",
+        "26. 10. 2026.",
+      );
     });
   });
 
