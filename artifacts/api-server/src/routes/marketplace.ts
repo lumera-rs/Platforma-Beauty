@@ -7930,9 +7930,10 @@ async function retailCartSummaryForRequest(req: Request) {
   return { itemCount: Number(summary?.itemCount ?? 0) };
 }
 
-function retailLineDto(item: typeof retailCartItemsTable.$inferSelect) {
+function retailLineDto(item: typeof retailCartItemsTable.$inferSelect, sku: string) {
   return {
     id: item.id, productId: item.productId, name: item.productName, imageUrl: item.productImageUrl,
+    sku,
     quantity: item.quantity, unitPrice: item.unitPrice, lineTotal: item.unitPrice * item.quantity,
   };
 }
@@ -7940,7 +7941,17 @@ function retailLineDto(item: typeof retailCartItemsTable.$inferSelect) {
 async function retailCartDto(cartId: string) {
   const items = await db.select().from(retailCartItemsTable)
     .where(eq(retailCartItemsTable.cartId, cartId)).orderBy(asc(retailCartItemsTable.createdAt));
-  const lines = items.map(retailLineDto);
+  const productIds = [...new Set(items.map((item) => item.productId))];
+  const products = productIds.length
+    ? await db.select({ id: productsTable.id, sku: productsTable.sku }).from(productsTable)
+      .where(inArray(productsTable.id, productIds))
+    : [];
+  const productSkus = new Map(products.map((product) => [product.id, product.sku]));
+  const lines = items.map((item) => {
+    const sku = productSkus.get(item.productId);
+    if (!sku) throw new Error("Retail cart item refers to an unavailable product.");
+    return retailLineDto(item, sku);
+  });
   return {
     id: cartId,
     items: lines,
@@ -7969,7 +7980,7 @@ async function retailCheckoutCartQuote(cartId: string) {
     }
     const unitPrice = product.publicDiscountPrice ?? product.publicPrice;
     return {
-      ...retailLineDto(item),
+      ...retailLineDto(item, product.sku),
       name: product.name,
       imageUrl: product.imageUrl,
       unitPrice,

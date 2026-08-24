@@ -584,23 +584,28 @@ test("admin desktop navigation keeps focus indicators visible with forced colors
 });
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
-  const customer = { ...admin, role: "CUSTOMER" as const };
-  const adminRequests: string[] = [];
-  await page.route("**/api/**", async (route) => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.startsWith("/api/admin/")) adminRequests.push(path);
-    if (path === "/api/auth/me") {
-      await route.fulfill({ json: { user: customer } });
-      return;
-    }
-    await route.fulfill({ json: [] });
-  });
+  const customerFixture = await createUser("CUSTOMER", "api-customer");
+  const customer = { ...admin, id: customerFixture.id, email: customerFixture.email, role: "CUSTOMER" as const };
+  try {
+    const adminRequests: string[] = [];
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.startsWith("/api/admin/")) adminRequests.push(path);
+      if (path === "/api/auth/me") {
+        await route.fulfill({ json: { user: customer } });
+        return;
+      }
+      await route.fulfill({ json: [] });
+    });
 
-  for (const path of PROTECTED_ADMIN_ROUTES) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/moj-nalog$/);
+    for (const path of PROTECTED_ADMIN_ROUTES) {
+      await page.goto(path);
+      await expect(page).toHaveURL(/\/moj-nalog$/);
+    }
+    expect(adminRequests).toEqual([]);
+  } finally {
+    await db.delete(usersTable).where(eq(usersTable.id, customerFixture.id));
   }
-  expect(adminRequests).toEqual([]);
 });
 
 test("admin salon, user, loyalty, subscription, and review actions show success", async ({ page }) => {

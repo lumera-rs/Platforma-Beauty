@@ -6106,10 +6106,11 @@ components:
               productId: { type: string }
               name: { type: string }
               imageUrl: { type: string }
+              sku: { type: string }
               quantity: { type: integer, minimum: 1 }
               unitPrice: { type: integer, minimum: 0 }
               lineTotal: { type: integer, minimum: 0 }
-            required: [id, productId, name, imageUrl, quantity, unitPrice, lineTotal]
+            required: [id, productId, name, imageUrl, sku, quantity, unitPrice, lineTotal]
       required: [id, itemCount, subtotal, items]
     RetailCartSummary:
       type: object

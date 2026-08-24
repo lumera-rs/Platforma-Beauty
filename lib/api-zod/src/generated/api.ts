@@ -11232,6 +11232,7 @@ export const GetRetailCartResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string(),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(getRetailCartResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(getRetailCartResponseItemsItemLineTotalMin)
@@ -11284,6 +11285,7 @@ export const AddRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string(),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(addRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(addRetailCartItemResponseItemsItemLineTotalMin)
@@ -11318,6 +11320,7 @@ export const UpdateRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string(),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(updateRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(updateRetailCartItemResponseItemsItemLineTotalMin)
@@ -11352,6 +11355,7 @@ export const RemoveRetailCartItemResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string(),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(removeRetailCartItemResponseItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(removeRetailCartItemResponseItemsItemLineTotalMin)
@@ -11393,6 +11397,7 @@ export const PreviewRetailCheckoutResponse = zod.object({
   "productId": zod.string(),
   "name": zod.string(),
   "imageUrl": zod.string(),
+  "sku": zod.string(),
   "quantity": zod.number().int().min(1),
   "unitPrice": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemUnitPriceMin),
   "lineTotal": zod.number().int().min(previewRetailCheckoutResponseCartItemsItemLineTotalMin)

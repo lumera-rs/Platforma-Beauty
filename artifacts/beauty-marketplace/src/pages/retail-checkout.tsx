@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { changedRetailCartItem, notifyRetailCartChanged } from "@/lib/retail-cart-events";
 
-type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
+type Cart = { id: string; items: Array<{ id: string; productId: string; name: string; imageUrl: string; sku: string; quantity: number; unitPrice: number; lineTotal: number }>; itemCount: number; subtotal: number };
 type CheckoutPreview = { cart: Cart; shipping: { shippingCost: number }; total: number };
 type Order = { orderNumber: string; status: string; total: number; trackingNumber?: string | null; items: Array<{ id: string; name: string; quantity: number; unitPrice: number }> };
 type ChangedCartItem = { productId?: string; name: string; quantity: number | null };
@@ -58,7 +58,7 @@ function CartLines({ cart, change, remove }: { cart: Cart; change: (item: Cart["
   for (const item of cart.items) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
 
   return <div className="space-y-3">{cart.items.map((item) => {
-    const itemLabel = nameCounts.get(item.name)! > 1 ? `${item.name} (šifra proizvoda ${item.productId})` : item.name;
+    const itemLabel = nameCounts.get(item.name)! > 1 ? `${item.name} (šifra proizvoda ${item.sku})` : item.name;
     return <div key={item.id} className="flex gap-3 rounded-xl border p-3">
       <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
       <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>

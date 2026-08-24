@@ -1616,6 +1616,7 @@ export type RetailCartItemsItem = {
   productId: string;
   name: string;
   imageUrl: string;
+  sku: string;
   /** @minimum 1 */
   quantity: number;
   /** @minimum 0 */

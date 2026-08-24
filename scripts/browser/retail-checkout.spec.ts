@@ -845,7 +845,7 @@ test("retail cart distinguishes controls for same-name products", async ({ page 
   const cartResponse = await page.request.get("/api/retail/cart");
   expect(cartResponse.ok()).toBe(true);
   const cart = await cartResponse.json() as {
-    items: Array<{ id: string; productId: string; quantity: number }>;
+    items: Array<{ id: string; productId: string; sku: string; quantity: number }>;
   };
   expect(cart.items).toHaveLength(2);
 
@@ -853,9 +853,11 @@ test("retail cart distinguishes controls for same-name products", async ({ page 
   const sameNameItem = cart.items.find((item) => item.productId === sameNameProductId);
   expect(firstItem).toBeTruthy();
   expect(sameNameItem).toBeTruthy();
+  expect(firstItem!.sku).not.toBe(productId);
+  expect(sameNameItem!.sku).not.toBe(sameNameProductId);
 
-  const firstLabel = `(šifra proizvoda ${productId})`;
-  const sameNameLabel = `(šifra proizvoda ${sameNameProductId})`;
+  const firstLabel = `(šifra proizvoda ${firstItem!.sku})`;
+  const sameNameLabel = `(šifra proizvoda ${sameNameItem!.sku})`;
   await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
