@@ -186,6 +186,23 @@ async function main() {
   }).returning();
   assert.ok(deliveryBoundaryRule);
 
+  // Keep opened/failed boundary coverage separate from the sent/delivered
+  // fixture above, the rolling-period parity fixture, and provider-event
+  // integration fixtures. Each boundary run has an email and SMS row for
+  // both provider outcomes so the stats endpoints must window every outcome.
+  const [openedFailedBoundaryRule] = await db.insert(automationRulesTable).values({
+    salonId: salon.id,
+    name: `Opened Failed Boundary Rule ${suffix}`,
+    trigger: "inactive_days",
+    triggerConfig: { inactiveDays: 30 },
+    action: "send_email_and_sms",
+    emailSubject: "Test",
+    emailBody: "Test",
+    smsBody: "Test",
+    status: "active",
+  }).returning();
+  assert.ok(openedFailedBoundaryRule);
+
   const boundaryQuery = `from=${dateDaysAgo(6)}&to=${dateDaysAgo(1)}`;
   const boundaryCases = [
     {
@@ -320,6 +337,73 @@ async function main() {
         sentAt: item.sentAt,
         deliveredAt: item.sentAt,
         createdAt: item.sentAt,
+      },
+    ]);
+  }
+
+  const openedFailedBoundaryCases = [
+    {
+      tag: "inclusive-start",
+      occurredAt: startOfDateDaysAgo(6),
+    },
+    {
+      tag: "exclusive-end",
+      occurredAt: new Date(startOfDateDaysAgo(1).getTime() + DAY_MS),
+    },
+  ] as const;
+  for (const item of openedFailedBoundaryCases) {
+    const [run] = await db.insert(automationRunsTable).values({
+      eventKey: `window-opened-failed-boundary-run-${item.tag}-${suffix}`,
+      ruleId: openedFailedBoundaryRule.id,
+      salonId: salon.id,
+      salonCustomerId: customer.id,
+      status: "sent",
+      executedAt: item.occurredAt,
+      sentAt: item.occurredAt,
+      createdAt: item.occurredAt,
+    }).returning();
+    assert.ok(run);
+
+    await db.insert(automationDeliveriesTable).values([
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-opened-failed-boundary-email-opened-${item.tag}-${suffix}`,
+        channel: "email",
+        status: "sent",
+        sentAt: item.occurredAt,
+        openedAt: item.occurredAt,
+        createdAt: item.occurredAt,
+      },
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-opened-failed-boundary-email-failed-${item.tag}-${suffix}`,
+        channel: "email",
+        status: "sent",
+        sentAt: item.occurredAt,
+        failedAt: item.occurredAt,
+        createdAt: item.occurredAt,
+      },
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-opened-failed-boundary-sms-opened-${item.tag}-${suffix}`,
+        channel: "sms",
+        status: "sent",
+        sentAt: item.occurredAt,
+        openedAt: item.occurredAt,
+        createdAt: item.occurredAt,
+      },
+      {
+        runId: run.id,
+        salonId: salon.id,
+        eventKey: `window-opened-failed-boundary-sms-failed-${item.tag}-${suffix}`,
+        channel: "sms",
+        status: "sent",
+        sentAt: item.occurredAt,
+        failedAt: item.occurredAt,
+        createdAt: item.occurredAt,
       },
     ]);
   }
@@ -505,6 +589,52 @@ async function main() {
     );
     console.log("✓ per-rule delivery totals honor inclusive start and exclusive end boundaries");
 
+    const openedFailedBoundaryRow = overviewResponse.body.find(
+      (row: any) => row.ruleId === openedFailedBoundaryRule.id,
+    );
+    assert.ok(openedFailedBoundaryRow, "overview includes the isolated opened/failed boundary rule");
+    assert.equal(
+      openedFailedBoundaryRow.emailOpenedCount,
+      1,
+      "overview includes only the email opened at the inclusive start",
+    );
+    assert.equal(
+      openedFailedBoundaryRow.emailFailedCount,
+      1,
+      "overview includes only the email failure at the inclusive start",
+    );
+    assert.equal(
+      openedFailedBoundaryRow.smsFailedCount,
+      1,
+      "overview includes only the SMS failure at the inclusive start",
+    );
+
+    const openedFailedStatsResponse = await get(
+      `/api/growth/automations/${openedFailedBoundaryRule.id}/stats?${boundaryQuery}`,
+    );
+    assert.equal(openedFailedStatsResponse.status, 200, "per-rule opened/failed stats custom date range succeeds");
+    assert.equal(
+      openedFailedStatsResponse.body.openedCount,
+      2,
+      "per-rule stats includes the in-range email and SMS opens only",
+    );
+    assert.equal(
+      openedFailedStatsResponse.body.emailOpenedCount,
+      1,
+      "per-rule stats includes only the in-range email open",
+    );
+    assert.equal(
+      openedFailedStatsResponse.body.emailFailedCount,
+      1,
+      "per-rule stats includes only the in-range email failure",
+    );
+    assert.equal(
+      openedFailedStatsResponse.body.smsFailedCount,
+      1,
+      "per-rule stats includes only the in-range SMS failure",
+    );
+    console.log("✓ opened and provider-failed totals honor inclusive start and exclusive end boundaries");
+
     for (const [query, expected] of [
       ["period=7d", 2],
       ["period=30d", 3],
@@ -531,6 +661,7 @@ async function main() {
       exclusiveEndRule.id,
       overviewBoundaryRule.id,
       deliveryBoundaryRule.id,
+      openedFailedBoundaryRule.id,
     ]));
     await db.delete(appointmentsTable).where(eq(appointmentsTable.salonId, salon.id));
     await db.delete(automationRulesTable).where(inArray(automationRulesTable.id, [
@@ -540,6 +671,7 @@ async function main() {
       exclusiveEndRule.id,
       overviewBoundaryRule.id,
       deliveryBoundaryRule.id,
+      openedFailedBoundaryRule.id,
     ]));
     await db.delete(salonCustomersTable).where(eq(salonCustomersTable.salonId, salon.id));
     await db.delete(servicesTable).where(eq(servicesTable.salonId, salon.id));
