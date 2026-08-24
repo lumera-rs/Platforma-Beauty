@@ -36,6 +36,10 @@
  *      dialog and both stats requests keep the restored from/to after reload.
  *  11. Accessibility labels → month navigation, focused dates, pending starts,
  *      and completed cross-month range days expose understandable names.
+ *  12. Deleting the final campaign → a selected preset remains visibly selected
+ *      after the owner page reloads.
+ *  13. Deleting the final campaign → a complete custom range remains visible
+ *      after reload without changing its URL.
  */
 import { randomBytes, randomUUID, scrypt as scryptCallback } from "node:crypto";
 import { promisify } from "node:util";
@@ -1057,37 +1061,95 @@ test.describe("shared campaign period links restore the picked window", () => {
       .toContainText("2026");
   });
 
-  test("keeps the selected period visible after the last campaign is deleted", async ({ page }) => {
-    await resetFixtureActiveSalon(fixture, fixture.salonId);
-    await signInAsFixtureOwner(page, fixture);
+  test("keeps a selected preset visible after the last campaign is deleted and the page reloads", async ({ page }) => {
+    // This regression gets its own fixture because deletion is intentionally
+    // destructive and must not affect the shared period-link scenarios.
+    const deletionFixture = await createFixture();
+    try {
+      await resetFixtureActiveSalon(deletionFixture, deletionFixture.salonId);
+      await signInAsFixtureOwner(page, deletionFixture);
 
-    const expected = { period: null, from: "2026-03-01", to: "2026-03-31" };
-    const overviewResponse = nextOverviewStatsResponse(page, expected);
-    await page.goto(`/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`);
-    expect((await overviewResponse).status()).toBe(200);
+      const expected = { period: "30d", from: null, to: null };
+      const overviewResponse = nextOverviewStatsResponse(page, expected);
+      await page.goto("/vlasnik/automatizacije?period=30d");
+      expect((await overviewResponse).status()).toBe(200);
 
-    const selector = page.getByTestId("overview-period-selector");
-    await expect(selector.getByTestId("period-custom")).toHaveAttribute("aria-pressed", "true");
-    await expect(selector.getByTestId("period-custom")).toContainText("2026");
+      const selector = page.getByTestId("overview-period-selector");
+      await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
 
-    page.once("dialog", (dialog) => dialog.accept());
-    const deleteResponse = page.waitForResponse((response) =>
-      response.request().method() === "DELETE"
-      && new URL(response.url()).pathname.endsWith(`/automations/${fixture.ruleId}`),
-    );
-    const campaignCard = page.getByText(`Browser period URL kampanja`).last()
-      .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-    await campaignCard.getByRole("button").last().click();
-    expect((await deleteResponse).status()).toBe(204);
+      page.once("dialog", (dialog) => dialog.accept());
+      const deleteResponse = page.waitForResponse((response) =>
+        response.request().method() === "DELETE"
+        && new URL(response.url()).pathname.endsWith(`/automations/${deletionFixture.ruleId}`),
+      );
+      const campaignCard = page.getByText("Browser period URL kampanja").last()
+        .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+      await campaignCard.getByRole("button").last().click();
+      expect((await deleteResponse).status()).toBe(204);
 
-    await expect(page.getByTestId(`overview-row-${fixture.ruleId}`)).toHaveCount(0);
-    await expect(page.getByTestId("campaign-overview")).toBeVisible();
-    await expect(page.getByTestId("campaign-overview-empty")).toBeVisible();
-    await expect(page.getByTestId("overview-period-selector").getByTestId("period-custom"))
-      .toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("campaign-overview").getByText("Izabrani period možete promeniti iznad."))
-      .toBeVisible();
-    await expect(page.getByRole("button", { name: "Kreirajte prvu automatizaciju" })).toBeVisible();
-    await expect(page).toHaveURL(`/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`);
+      await expect(page.getByTestId(`overview-row-${deletionFixture.ruleId}`)).toHaveCount(0);
+      await expect(selector.getByTestId("period-30d")).toHaveAttribute("aria-pressed", "true");
+      await expect(page).toHaveURL("/vlasnik/automatizacije?period=30d");
+
+      const reloadResponse = nextOverviewStatsResponse(page, expected);
+      await page.reload();
+      expect((await reloadResponse).status()).toBe(200);
+      await expect(page.getByTestId("campaign-overview-empty")).toBeVisible();
+      await expect(page.getByTestId("overview-period-selector").getByTestId("period-30d"))
+        .toHaveAttribute("aria-pressed", "true");
+      await expect(page).toHaveURL("/vlasnik/automatizacije?period=30d");
+    } finally {
+      await cleanUpFixture(deletionFixture);
+    }
+  });
+
+  test("keeps a complete custom range visible after the last campaign is deleted and the page reloads", async ({ page }) => {
+    // Keep this fixture separate from the preset deletion test as both remove
+    // their final campaign.
+    const deletionFixture = await createFixture();
+    try {
+      await resetFixtureActiveSalon(deletionFixture, deletionFixture.salonId);
+      await signInAsFixtureOwner(page, deletionFixture);
+
+      const expected = { period: null, from: "2026-03-01", to: "2026-03-31" };
+      const expectedUrl = `/vlasnik/automatizacije?from=${expected.from}&to=${expected.to}`;
+      const overviewResponse = nextOverviewStatsResponse(page, expected);
+      await page.goto(expectedUrl);
+      expect((await overviewResponse).status()).toBe(200);
+
+      const selector = page.getByTestId("overview-period-selector");
+      const customButton = selector.getByTestId("period-custom");
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toContainText("2026");
+
+      page.once("dialog", (dialog) => dialog.accept());
+      const deleteResponse = page.waitForResponse((response) =>
+        response.request().method() === "DELETE"
+        && new URL(response.url()).pathname.endsWith(`/automations/${deletionFixture.ruleId}`),
+      );
+      const campaignCard = page.getByText("Browser period URL kampanja").last()
+        .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+      await campaignCard.getByRole("button").last().click();
+      expect((await deleteResponse).status()).toBe(204);
+
+      await expect(page.getByTestId(`overview-row-${deletionFixture.ruleId}`)).toHaveCount(0);
+      await expect(customButton).toHaveAttribute("aria-pressed", "true");
+      await expect(customButton).toContainText("1. 3. 2026.");
+      await expect(customButton).toContainText("31. 3. 2026.");
+      await expect(page).toHaveURL(expectedUrl);
+
+      const reloadResponse = nextOverviewStatsResponse(page, expected);
+      await page.reload();
+      expect((await reloadResponse).status()).toBe(200);
+      const reloadedCustomButton = page.getByTestId("overview-period-selector")
+        .getByTestId("period-custom");
+      await expect(page.getByTestId("campaign-overview-empty")).toBeVisible();
+      await expect(reloadedCustomButton).toHaveAttribute("aria-pressed", "true");
+      await expect(reloadedCustomButton).toContainText("1. 3. 2026.");
+      await expect(reloadedCustomButton).toContainText("31. 3. 2026.");
+      await expect(page).toHaveURL(expectedUrl);
+    } finally {
+      await cleanUpFixture(deletionFixture);
+    }
   });
 });
