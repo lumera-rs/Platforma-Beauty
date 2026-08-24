@@ -66,6 +66,8 @@ const NON_DEFAULT_WINDOW_DAYS = 30;
  * unambiguous about which value it crosses out.
  */
 const ADMIN_B_WINDOW_DAYS = 21;
+/** The value admin A types but must retain while the background poll runs. */
+const UNSAVED_WINDOW_DAYS = 60;
 
 const suffix = randomUUID();
 const password = "browser-retention-defaults-conflict-password";
@@ -447,6 +449,86 @@ test("the polling refetch disables restore defaults after another admin saves th
     const activeAfterClose = await (await apiB.get(settingsPath)).json();
     expect(activeAfterClose.version).toBe(adminBVersion);
     expect(activeAfterClose.thresholds).toEqual(PLATFORM_DEFAULTS);
+  } finally {
+    await apiB.dispose();
+  }
+});
+
+test("background polling preserves unsaved edits until newer values are loaded explicitly", async ({ page }) => {
+  test.setTimeout(120_000);
+
+  // Install the clock before navigation so the query's interval is controlled
+  // from the moment the settings page mounts. No visibility or focus event is
+  // used: this specifically covers the background polling path.
+  await page.clock.install();
+
+  const apiB = await request.newContext({ baseURL });
+  try {
+    const loginB = await apiB.post("/api/auth/login", {
+      data: { email: adminB.email, password },
+    });
+    expect(loginB.ok(), "admin B must be able to sign in").toBe(true);
+
+    // Start from a deterministic active version before admin A opens the page.
+    const before = await (await apiB.get(settingsPath)).json();
+    const baselineResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: NON_DEFAULT_WINDOW_DAYS,
+        expectedVersion: before.version,
+      },
+    });
+    expect(baselineResponse.ok(), "the baseline save must succeed").toBe(true);
+    const baselineVersion = (await baselineResponse.json()).version as number;
+    expect(baselineVersion).toBeGreaterThan(versionWatermark);
+
+    const loginA = await page.request.post("/api/auth/login", {
+      data: { email: adminA.email, password },
+    });
+    expect(loginA.ok(), "admin A must be able to sign in").toBe(true);
+    await page.goto("/admin/retencija");
+
+    const windowInput = page.getByTestId("input-newCustomerWindowDays");
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${baselineVersion}`);
+    await expect(windowInput).toHaveValue(String(NON_DEFAULT_WINDOW_DAYS));
+
+    // Admin A edits a threshold but leaves the value unsaved.
+    await windowInput.fill(String(UNSAVED_WINDOW_DAYS));
+
+    // Admin B saves a different active version while A's draft is still open.
+    const concurrentResponse = await apiB.put(settingsPath, {
+      data: {
+        ...PLATFORM_DEFAULTS,
+        newCustomerWindowDays: ADMIN_B_WINDOW_DAYS,
+        expectedVersion: baselineVersion,
+      },
+    });
+    expect(concurrentResponse.ok(), "admin B's concurrent save must succeed").toBe(true);
+    const adminBVersion = (await concurrentResponse.json()).version as number;
+
+    const settingsRefetch = page.waitForResponse((response) =>
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === settingsPath
+      && response.status() === 200,
+    );
+    await page.clock.fastForward(30_000);
+    await settingsRefetch;
+
+    // Polling exposes the newer active version without overwriting A's draft.
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
+    await expect(windowInput).toHaveValue(String(UNSAVED_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-stale-banner")).toBeVisible();
+    await expect(page.getByTestId("retention-stale-banner"))
+      .toContainText(`Verzija ${adminBVersion} je u međuvremenu aktivirana`);
+
+    // Only the explicit action may replace the in-progress values.
+    await page.getByTestId("load-stale-retention-settings").click();
+    await expect(windowInput).toHaveValue(String(ADMIN_B_WINDOW_DAYS));
+    await expect(page.getByTestId("retention-stale-banner")).not.toBeVisible();
+    await expect(page.getByTestId("retention-settings-version"))
+      .toHaveText(`Verzija ${adminBVersion}`);
   } finally {
     await apiB.dispose();
   }
