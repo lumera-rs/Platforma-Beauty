@@ -357,8 +357,9 @@ async function run() {
     assert.ok(await columnExists("automation_runs", "sent_at"), "automation_runs.sent_at present");
     assert.ok(await columnExists("automation_deliveries", "claim_expires_at"), "automation_deliveries.claim_expires_at present");
     assert.ok(await columnExists("automation_deliveries", "failed_at"), "automation_deliveries.failed_at present (provider webhook failure state)");
-    // v5: delivery-report freshness tracking (mirrors providerWebhookReceiptsTable).
-    for (const column of ["provider", "last_event_at", "updated_at"]) {
+    // v5+: delivery-report freshness plus bounded malformed-payload tracking
+    // (mirrors providerWebhookReceiptsTable).
+    for (const column of ["provider", "last_event_at", "rejected_payload_count", "last_rejected_at", "updated_at"]) {
       assert.ok(await columnExists("provider_webhook_receipts", column), `provider_webhook_receipts.${column} present`);
     }
     // The monotonic receipt upsert used at runtime must work on the rolled-out table.

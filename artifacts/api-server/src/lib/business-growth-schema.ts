@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 16;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 17;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -505,9 +505,14 @@ function tableStatements(s: string): string[] {
     // lib/db/src/schema/business-growth.ts providerWebhookReceiptsTable.
     `CREATE TABLE IF NOT EXISTS ${s}.provider_webhook_receipts (
       provider text PRIMARY KEY,
-      last_event_at timestamptz NOT NULL,
+      last_event_at timestamptz,
+      rejected_payload_count integer NOT NULL DEFAULT 0,
+      last_rejected_at timestamptz,
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE ${s}.provider_webhook_receipts ALTER COLUMN last_event_at DROP NOT NULL`,
+    `ALTER TABLE ${s}.provider_webhook_receipts ADD COLUMN IF NOT EXISTS rejected_payload_count integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.provider_webhook_receipts ADD COLUMN IF NOT EXISTS last_rejected_at timestamptz`,
 
     // ── treatment_packages ───────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS ${s}.treatment_packages (

@@ -373,7 +373,6 @@ test("switching the time period never leaves stale attributed rows in the list",
     await cleanUpFixture(fixture);
   }
 });
-
 test("mobile stats period controls stay visible and keep the dialog open", async ({ page }) => {
   const fixture = await createFixture();
 

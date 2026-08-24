@@ -25,6 +25,7 @@ import {
   isInfobipVerificationBatch,
   parseBrevoWebhookBody,
   parseInfobipWebhookBody,
+  recordWebhookRejection,
   recordWebhookReceipt,
   resolveWebhookSecret,
   webhookTokenMatches,
@@ -47,6 +48,15 @@ async function trackWebhookReceipt(provider: DeliveryReportProvider, summary: We
     await recordWebhookReceipt(provider);
   } catch (err) {
     logger.warn({ provider, err }, "failed to record webhook receipt timestamp");
+  }
+}
+
+/** Count malformed authenticated payloads without making the webhook fail differently. */
+async function trackWebhookRejection(provider: DeliveryReportProvider): Promise<void> {
+  try {
+    await recordWebhookRejection(provider);
+  } catch (err) {
+    logger.warn({ provider, err }, "failed to record rejected webhook payload");
   }
 }
 
@@ -74,6 +84,7 @@ router.post("/webhooks/brevo/:token", async (req, res, next) => {
     if (!(await verifyWebhookToken("brevo", req, res))) return;
     const events = parseBrevoWebhookBody(req.body);
     if (!events) {
+      await trackWebhookRejection("brevo");
       res.status(400).json({ error: "Nevažeći format Brevo događaja.", code: "INVALID_PAYLOAD" });
       return;
     }
@@ -92,6 +103,7 @@ router.post("/webhooks/infobip/:token", async (req, res, next) => {
     if (!(await verifyWebhookToken("sms", req, res))) return;
     const reports = parseInfobipWebhookBody(req.body);
     if (!reports) {
+      await trackWebhookRejection("infobip");
       res.status(400).json({ error: "Nevažeći format Infobip izveštaja.", code: "INVALID_PAYLOAD" });
       return;
     }

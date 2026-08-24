@@ -164,6 +164,15 @@ async function webhookReceipt(provider: DeliveryReportProvider): Promise<Date | 
   return row?.lastEventAt ?? null;
 }
 
+async function webhookRejection(provider: DeliveryReportProvider): Promise<{ count: number; lastRejectedAt: Date | null }> {
+  const [row] = await db.select({
+    count: providerWebhookReceiptsTable.rejectedPayloadCount,
+    lastRejectedAt: providerWebhookReceiptsTable.lastRejectedAt,
+  })
+    .from(providerWebhookReceiptsTable)
+    .where(eq(providerWebhookReceiptsTable.provider, provider)).limit(1);
+  return { count: row?.count ?? 0, lastRejectedAt: row?.lastRejectedAt ?? null };
+}
 async function countDatabaseQueries<T>(operation: () => Promise<T>): Promise<{ result: T; queries: number }> {
   let queries = 0;
   const stopObserving = observeDatabaseQueries(() => { queries += 1; });
@@ -548,6 +557,10 @@ async function run() {
         brevo: await webhookReceipt("brevo"),
         infobip: await webhookReceipt("infobip"),
       };
+      const rejectionsBeforeMalformedBatches = {
+        brevo: await webhookRejection("brevo"),
+        infobip: await webhookRejection("infobip"),
+      };
       const emailBeforeMalformedBatch = await automationDelivery(malformedRun.emailKey);
       const invalidBrevoBatch = await postJson(`/webhooks/brevo/${encodeURIComponent(brevoSecret)}`, [
         { event: "delivered", "message-id": malformedRun.brevoMessageId },
@@ -597,7 +610,16 @@ async function run() {
         receiptsBeforeMalformedBatches.infobip?.getTime() ?? null,
         "a rejected Infobip batch must not advance the freshness timestamp",
       );
-      console.log("✓ malformed mixed Brevo and Infobip batches reject atomically without changing delivery state or freshness");
+      for (const provider of ["brevo", "infobip"] as const) {
+        const rejection = await webhookRejection(provider);
+        assert.equal(
+          rejection.count,
+          rejectionsBeforeMalformedBatches[provider].count + 1,
+          `one malformed ${provider} batch must increment its aggregate rejection signal exactly once`,
+        );
+        assert.ok(rejection.lastRejectedAt, `malformed ${provider} batch must retain only its server receipt time`);
+      }
+      console.log("✓ malformed mixed Brevo and Infobip batches reject atomically, preserve freshness, and create privacy-safe aggregate signals");
 
       // Same mixed shape for Infobip: matched + unknown UUID + synthetic
       // self-check (non-UUID) + PENDING in one payload.
@@ -857,7 +879,14 @@ async function run() {
         headers: { cookie: `${sessionCookieName}=${adminToken}` },
       });
       assert.equal(response.status, 200);
-      type ReportedStatus = { lastEventAt: string | null; lastAutomationSentAt: string | null; recentSendCount: number; warning: boolean };
+      type ReportedStatus = {
+        lastEventAt: string | null;
+        rejectedPayloadCount: number;
+        lastRejectedAt: string | null;
+        lastAutomationSentAt: string | null;
+        recentSendCount: number;
+        warning: boolean;
+      };
       const body = await response.json() as {
         deliveryReports?: {
           providers?: Record<string, ReportedStatus>;
@@ -873,6 +902,8 @@ async function run() {
         assert.ok(providerStatus, `deliveryReports.providers.${provider} present`);
         assert.equal(typeof providerStatus.recentSendCount, "number");
         assert.equal(typeof providerStatus.warning, "boolean");
+        assert.ok(providerStatus.rejectedPayloadCount > 0, `admin response must expose the recent malformed ${provider} payload count`);
+        assert.ok(providerStatus.lastRejectedAt, `admin response must expose when ${provider} last sent malformed payload data`);
         // This suite just accepted verified events for both providers, so the
         // receipt is newer than any grace-aged send — never a warning here.
         assert.ok(providerStatus.lastEventAt, `last accepted event surfaced for ${provider}`);
@@ -982,7 +1013,14 @@ async function run() {
     {
       // Pure selector shared by the dashboard summary endpoint and the email
       // alert — both surfaces must agree with the integrations page warning.
-      const healthy: DeliveryReportStatus = { lastEventAt: null, lastAutomationSentAt: null, recentSendCount: 0, warning: false };
+      const healthy: DeliveryReportStatus = {
+        lastEventAt: null,
+        rejectedPayloadCount: 0,
+        lastRejectedAt: null,
+        lastAutomationSentAt: null,
+        recentSendCount: 0,
+        warning: false,
+      };
       assert.deepEqual(staleDeliveryReportProviders({ brevo: healthy, infobip: healthy }), []);
       assert.deepEqual(staleDeliveryReportProviders({ brevo: { ...healthy, warning: true }, infobip: healthy }), ["brevo"]);
       assert.deepEqual(

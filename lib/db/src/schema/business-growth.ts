@@ -220,10 +220,13 @@ export const automationDeliveriesTable = pgTable("automation_deliveries", {
 ]);
 
 /**
- * Last accepted verified webhook event per delivery-report provider.
+ * Last accepted verified webhook event and recent malformed-payload signal per
+ * delivery-report provider.
  *
  * One row per provider ("brevo" | "infobip"), updated whenever a webhook
- * request passes token verification and carries at least one parseable event.
+ * request passes token verification. Accepted events and rejected payloads
+ * have separate fields so malformed requests never move the accepted-event
+ * freshness watermark.
  * Powers the admin integrations page warning when automation messages were
  * sent recently but no delivery reports have arrived — a misconfigured or
  * disabled provider webhook otherwise fails silently (counts just stop
@@ -234,7 +237,11 @@ export const providerWebhookReceiptsTable = pgTable("provider_webhook_receipts",
   /** Delivery-report provider key: "brevo" (email) or "infobip" (SMS). */
   provider: text("provider").primaryKey(),
   /** Server receipt time of the most recent accepted verified event batch. */
-  lastEventAt: timestamp("last_event_at", { withTimezone: true }).notNull(),
+  lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+  /** Number of malformed authenticated payloads in the current bounded window. */
+  rejectedPayloadCount: integer("rejected_payload_count").notNull().default(0),
+  /** Server receipt time of the most recent malformed authenticated payload. */
+  lastRejectedAt: timestamp("last_rejected_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 export const treatmentPackagesTable = pgTable("treatment_packages", {
