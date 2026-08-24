@@ -90,6 +90,7 @@
 - [Integration settings concurrency](integration-settings-concurrency.md) — return each provider’s values and version from one snapshot, then serialize first and later saves by provider.
 - [Campaign period portal tests](campaign-period-portal-tests.md) — Radix picker presets render outside the selector subtree, so browser locators must use the page-level portal test id.
 - [Browser test boundaries](browser-boundaries.md) — account for UI portals and package compilation boundaries when structuring locators and shared fixture validation.
+- [Cart browser API assertions](cart-browser-api-cache.md) — verify mutation responses and exact line IDs instead of trusting follow-up GET polling.
 - [Isolated process recovery](isolated-process-recovery.md) — stale-run cleanup targets unique child markers, while protected foreign /proc entries remain non-fatal.
 - [API test schema readiness](api-test-schema-readiness.md) — direct Express-app harnesses bypass startup rollouts and must ensure newly queried database columns first.
 - [Disposable database name limits](disposable-database-name-limits.md) — keep generated PostgreSQL test database names under the identifier length limit to avoid silent collisions.

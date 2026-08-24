@@ -834,6 +834,56 @@ test("retail cart suppresses an ambiguous item announcement for same-name produc
   }
 });
 
+test("retail cart distinguishes controls for same-name products", async ({ page }) => {
+  expect(productId).toBeTruthy();
+  expect(productName).toBeTruthy();
+  expect(sameNameProductId).toBeTruthy();
+
+  await createCartAndOpenCartPage(page, [productId!, sameNameProductId!]);
+  await expect(page.getByText(money(4_400), { exact: true }).first()).toBeVisible();
+
+  const cartResponse = await page.request.get("/api/retail/cart");
+  expect(cartResponse.ok()).toBe(true);
+  const cart = await cartResponse.json() as {
+    items: Array<{ id: string; productId: string; quantity: number }>;
+  };
+  expect(cart.items).toHaveLength(2);
+
+  const firstItem = cart.items.find((item) => item.productId === productId);
+  const sameNameItem = cart.items.find((item) => item.productId === sameNameProductId);
+  expect(firstItem).toBeTruthy();
+  expect(sameNameItem).toBeTruthy();
+
+  const firstLabel = `(šifra proizvoda ${productId})`;
+  const sameNameLabel = `(šifra proizvoda ${sameNameProductId})`;
+  await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Smanji količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${firstLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${sameNameLabel}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Ukloni ${productName} ${firstLabel} iz korpe`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Ukloni ${productName} ${sameNameLabel} iz korpe`, exact: true })).toBeVisible();
+
+  const increaseResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/api/retail/cart/items/${sameNameItem!.id}`
+    && response.request().method() === "PATCH",
+  );
+  await page.getByRole("button", { name: `Povećaj količinu proizvoda ${productName} ${sameNameLabel}`, exact: true }).click();
+  const increasedCart = await (await increaseResponse).json() as { items: Array<{ productId: string; quantity: number }> };
+  expect(increasedCart.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ productId: productId, quantity: 1 }),
+    expect.objectContaining({ productId: sameNameProductId, quantity: 2 }),
+  ]));
+
+  const removeResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/api/retail/cart/items/${firstItem!.id}`
+    && response.request().method() === "DELETE",
+  );
+  await page.getByRole("button", { name: `Ukloni ${productName} ${firstLabel} iz korpe`, exact: true }).click();
+  const remainingCart = await (await removeResponse).json() as { items: Array<{ productId: string; quantity: number }> };
+  expect(remainingCart.items.map(({ productId: itemProductId, quantity }) => ({ productId: itemProductId, quantity })))
+    .toEqual([{ productId: sameNameProductId, quantity: 2 }]);
+});
+
 test("retail cart page announces a cross-tab line removal without reloading", async ({ page }) => {
   let mainFrameNavigations = 0;
   page.on("framenavigated", (frame) => {

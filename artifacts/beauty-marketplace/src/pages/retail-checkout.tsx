@@ -54,13 +54,19 @@ async function retail<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function CartLines({ cart, change, remove }: { cart: Cart; change: (item: Cart["items"][number], quantity: number) => void; remove: (item: Cart["items"][number]) => void }) {
-  return <div className="space-y-3">{cart.items.map((item) => <div key={item.id} className="flex gap-3 rounded-xl border p-3">
-    <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
-    <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
-      <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Smanji količinu proizvoda ${item.name}`} onClick={() => item.quantity > 1 ? change(item, item.quantity - 1) : remove(item)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Povećaj količinu proizvoda ${item.name}`} onClick={() => change(item, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
-      <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" aria-label={`Ukloni ${item.name} iz korpe`} onClick={() => remove(item)}><Trash2 className="h-4 w-4" /></Button></div>
-    </div><strong>{money(item.lineTotal)}</strong>
-  </div>)}</div>;
+  const nameCounts = new Map<string, number>();
+  for (const item of cart.items) nameCounts.set(item.name, (nameCounts.get(item.name) ?? 0) + 1);
+
+  return <div className="space-y-3">{cart.items.map((item) => {
+    const itemLabel = nameCounts.get(item.name)! > 1 ? `${item.name} (šifra proizvoda ${item.productId})` : item.name;
+    return <div key={item.id} className="flex gap-3 rounded-xl border p-3">
+      <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-lg object-cover bg-muted" />
+      <div className="min-w-0 flex-1"><p className="font-medium">{item.name}</p><p className="mt-1 text-sm text-muted-foreground">{money(item.unitPrice)}</p>
+        <div className="mt-3 flex items-center gap-2"><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Smanji količinu proizvoda ${itemLabel}`} onClick={() => item.quantity > 1 ? change(item, item.quantity - 1) : remove(item)}><Minus className="h-3.5 w-3.5" /></Button><span className="w-6 text-center text-sm">{item.quantity}</span><Button size="icon" variant="outline" className="h-8 w-8" aria-label={`Povećaj količinu proizvoda ${itemLabel}`} onClick={() => change(item, item.quantity + 1)}><Plus className="h-3.5 w-3.5" /></Button>
+        <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 text-destructive" aria-label={`Ukloni ${itemLabel} iz korpe`} onClick={() => remove(item)}><Trash2 className="h-4 w-4" /></Button></div>
+      </div><strong>{money(item.lineTotal)}</strong>
+    </div>;
+  })}</div>;
 }
 
 export function RetailCartPage() {
