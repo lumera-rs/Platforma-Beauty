@@ -165,6 +165,24 @@ async function run(): Promise<void> {
     // Simulate the published-domain change before the next OAuth flow. The
     // provider credentials stay untouched; only the deployment-owned origin
     // changes.
+    const staleIntegrations = await requestWithHost(port, "/api/admin/integrations", {
+      host: new URL(publishedOrigin).host,
+      cookie: adminCookie,
+    });
+    assert.equal(staleIntegrations.status, 200, "admin integration settings must remain available while APP_BASE_URL is stale");
+    const staleIntegrationsData = JSON.parse(staleIntegrations.body) as {
+      redirectUriWarning?: string;
+    };
+    assert.match(
+      staleIntegrationsData.redirectUriWarning ?? "",
+      /APP_BASE_URL.*Google\/Facebook callback registracije/i,
+      "admin must warn before a new published origin is used with a stale APP_BASE_URL",
+    );
+    assert.match(staleIntegrationsData.redirectUriWarning ?? "", /novog domena/i,
+      "the warning must tell the admin to update settings before using the new domain");
+    assert.doesNotMatch(staleIntegrations.body, /google-test-secret|facebook-test-secret/,
+      "the domain warning must not expose provider credentials");
+
     process.env["APP_BASE_URL"] = publishedOrigin;
 
     const integrations = await requestWithHost(port, "/api/admin/integrations", {
@@ -174,11 +192,14 @@ async function run(): Promise<void> {
     assert.equal(integrations.status, 200, "admin integration settings must remain available after the domain change");
     const integrationsData = JSON.parse(integrations.body) as {
       redirectUris: { google: string; facebook: string };
+      redirectUriWarning?: string;
     };
     assert.deepEqual(integrationsData.redirectUris, {
       google: callbackFor(publishedOrigin, "google"),
       facebook: callbackFor(publishedOrigin, "facebook"),
     }, "admin must show callback URLs for the new published origin");
+    assert.equal(integrationsData.redirectUriWarning, undefined,
+      "admin must clear the warning after APP_BASE_URL is updated to the published origin");
 
     for (const provider of providers) {
       const expectedRedirectUri = callbackFor(publishedOrigin, provider);

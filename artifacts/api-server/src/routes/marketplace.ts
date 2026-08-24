@@ -3253,9 +3253,7 @@ router.get("/admin/integrations", async (req, res): Promise<void> => {
   // vs. report silence). See smsWebhookRegistrationState.
   const smsWebhookRegistration = await smsWebhookRegistrationStatus(deliveryReportsByProvider.infobip);
   const origin = normalizedRequestOrigin(req);
-  const redirectUriWarning = isDevelopmentBrowsingOrigin(origin)
-    ? `Ove OAuth redirect adrese sadrže razvojnu adresu sa koje trenutno pristupate (${origin}). Ne unosite ih u Google ili Facebook podešavanja za objavljenu aplikaciju — time biste pokvarili prijavu u produkciji. Za produkcioni URL otvorite ovu stranicu iz objavljene aplikacije.`
-    : null;
+  const redirectUriWarning = oauthRedirectUriWarning(origin);
   res.json({
     integrations: Object.fromEntries(entries),
     deliveryReports: {
@@ -3667,6 +3665,33 @@ function staleBrevoRegistrations(
  * (trust proxy is enabled, so this is the public domain in production). */
 function normalizedRequestOrigin(req: Request) {
   try { return new URL(requestOrigin(req)).origin; } catch { return requestOrigin(req); }
+}
+
+/** The deployment-owned origin used by production OAuth callbacks. */
+function configuredAppOrigin(): string | null {
+  const configured = process.env["APP_BASE_URL"]?.trim();
+  if (!configured) return null;
+  try { return new URL(configured).origin; } catch { return null; }
+}
+
+/**
+ * Explain which OAuth origin the administrator is looking at without returning
+ * any provider credentials. Preview requests keep their existing guidance;
+ * production requests additionally detect a stale APP_BASE_URL after a
+ * published-domain change.
+ */
+function oauthRedirectUriWarning(origin: string): string | null {
+  if (isDevelopmentBrowsingOrigin(origin)) {
+    return `Ove OAuth redirect adrese sadrže razvojnu adresu sa koje trenutno pristupate (${origin}). Ne unosite ih u Google ili Facebook podešavanja za objavljenu aplikaciju — time biste pokvarili prijavu u produkciji. Za produkcioni URL otvorite ovu stranicu iz objavljene aplikacije.`;
+  }
+  if (process.env.NODE_ENV !== "production") return null;
+
+  const configuredOrigin = configuredAppOrigin();
+  if (!configuredOrigin) {
+    return "APP_BASE_URL nije validno podešen za produkciju. Pre korišćenja ovog domena podesite APP_BASE_URL i registrujte prikazane Google i Facebook callback adrese kod odgovarajućih provajdera.";
+  }
+  if (configuredOrigin === origin) return null;
+  return `APP_BASE_URL je podešen na ${configuredOrigin}, ali ovu stranicu otvarate sa ${origin}. Pre korišćenja novog domena ažurirajte APP_BASE_URL i Google/Facebook callback registracije na prikazane adrese — u suprotnom prijava društvenim nalozima može prestati da radi.`;
 }
 
 /** Shared Serbian error responses for Brevo webhook-listing failures. */

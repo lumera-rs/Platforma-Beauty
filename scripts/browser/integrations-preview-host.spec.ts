@@ -72,20 +72,67 @@ async function openIntegrationsPage(page: Page, origin: string) {
   await expect(page.getByRole("heading", { name: "E-mail · Brevo" })).toBeVisible();
 }
 
+async function stubStaleOAuthOriginWarning(page: Page) {
+  const emptyCard = { enabled: false, configuredInDatabase: false, complete: false, values: {} };
+  const admin = {
+    id: "browser-oauth-domain-warning-admin",
+    firstName: "Browser",
+    lastName: "OAuth Domain",
+    email: "browser-oauth-domain-warning@example.test",
+    role: "ADMIN",
+    active: true,
+    mustChangePassword: false,
+  };
+  const staleWarning = "APP_BASE_URL je podešen na https://old-published.example.test, ali ovu stranicu otvarate sa https://new-published.example.test. Pre korišćenja novog domena ažurirajte APP_BASE_URL i Google/Facebook callback registracije na prikazane adrese — u suprotnom prijava društvenim nalozima može prestati da radi.";
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/auth/me") {
+      await route.fulfill({ json: { user: admin } });
+      return;
+    }
+    if (path === "/api/admin/integrations" && request.method() === "GET") {
+      await route.fulfill({
+        json: {
+          integrations: {
+            sms: emptyCard,
+            brevo: emptyCard,
+            google_oauth: emptyCard,
+            facebook_oauth: emptyCard,
+          },
+          redirectUris: {
+            google: "https://new-published.example.test/api/auth/oauth/google/callback",
+            facebook: "https://new-published.example.test/api/auth/oauth/facebook/callback",
+          },
+          redirectUriWarning: staleWarning,
+          smsReminder: { command: "pnpm run sms-reminders", active: false, instructions: [] },
+        },
+      });
+      return;
+    }
+    if (path === "/api/admin/integrations/brevo/stale-webhooks") {
+      await route.fulfill({ json: { staleWebhooks: [] } });
+      return;
+    }
+    await route.fulfill({ json: [] });
+  });
+}
+
 test("preview guidance is host-scoped and published webhook templates stay usable", async ({ page }) => {
   test.setTimeout(120_000);
 
   await openIntegrationsPage(page, developmentOrigin);
 
   await expect(page.getByTestId("development-preview-notice")).toBeVisible();
-  await expect(page.getByTestId("oauth-redirect-development-warning")).toHaveCount(2);
+  await expect(page.getByTestId("oauth-redirect-origin-warning")).toHaveCount(2);
   await expect(page.getByTestId("development-webhook-url-caveat-sms")).toBeVisible();
   await expect(page.getByTestId("development-webhook-url-caveat-brevo")).toBeVisible();
 
   await openIntegrationsPage(page, publishedOrigin);
 
   await expect(page.getByTestId("development-preview-notice")).toHaveCount(0);
-  await expect(page.getByTestId("oauth-redirect-development-warning")).toHaveCount(0);
+  await expect(page.getByTestId("oauth-redirect-origin-warning")).toHaveCount(0);
   await expect(page.getByTestId("development-webhook-url-caveat-sms")).toHaveCount(0);
   await expect(page.getByTestId("development-webhook-url-caveat-brevo")).toHaveCount(0);
   await expect(page.locator("input[readonly]").first()).toHaveValue(
@@ -103,4 +150,17 @@ test("preview guidance is host-scoped and published webhook templates stay usabl
     `${publishedOrigin}/api/webhooks/brevo/<tajna>`,
     { exact: true },
   )).toBeVisible();
+});
+
+test("a stale published OAuth origin warns in both social-login cards", async ({ page }) => {
+  await stubStaleOAuthOriginWarning(page);
+  await page.goto(`${publishedOrigin}/admin/integracije`);
+  await expect(page.getByRole("heading", { name: "Integracije i konektori" })).toBeVisible();
+
+  for (const provider of ["Google prijava", "Facebook prijava"]) {
+    const card = page.getByRole("heading", { name: provider }).locator("xpath=ancestor::section");
+    await expect(card.getByTestId("oauth-redirect-origin-warning")).toHaveText(/APP_BASE_URL/);
+    await expect(card.getByTestId("oauth-redirect-origin-warning")).toContainText("Pre korišćenja novog domena");
+    await expect(card.getByTestId("oauth-redirect-origin-warning")).toContainText("Google/Facebook callback registracije");
+  }
 });
