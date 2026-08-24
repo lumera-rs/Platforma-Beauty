@@ -25,6 +25,9 @@ const navLinks = [
   { href: "/admin/integracije", label: "Integracije", icon: PlugZap },
 ];
 
+const adminFocusClass =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 forced-colors:focus-visible:outline-[Highlight] forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-offset-2";
+
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading } = useGetCurrentUser();
@@ -104,7 +107,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               isActive 
                 ? 'bg-primary text-primary-foreground shadow-sm' 
                 : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
+            } ${adminFocusClass}`}
             data-testid={`admin-nav-${link.href.replace('/admin', '').replace('/', '') || 'dashboard'}`}
             onClick={() => setIsMobileOpen(false)}
           >
@@ -130,7 +133,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             aria-label={isMobileOpen ? "Zatvori meni" : "Otvori meni"}
             aria-expanded={isMobileOpen}
             data-testid="admin-mobile-menu-trigger"
-            className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className={adminFocusClass}
           >
             {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </Button>

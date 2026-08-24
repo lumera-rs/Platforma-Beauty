@@ -440,7 +440,8 @@ function collectBrowserErrors(page: Page): string[] {
 async function expectVisibleFocusIndicator(control: Locator) {
   await expect.poll(async () => control.evaluate((element) => {
     const styles = window.getComputedStyle(element);
-    return styles.outlineStyle !== "none" || styles.boxShadow !== "none";
+    return (styles.outlineStyle !== "none" && Number.parseFloat(styles.outlineWidth) > 0)
+      || styles.boxShadow !== "none";
   })).toBe(true);
 }
 
@@ -530,6 +531,36 @@ test("admin mobile navigation traps keyboard focus and restores the toggle on es
   await expect(mobileMenu).toHaveCount(0);
   await expect(mobileMenuButton, "Escape must restore focus to the admin-menu toggle.").toBeFocused();
   expect(browserErrors, "The admin mobile keyboard journey must not produce browser errors.").toEqual([]);
+});
+
+test("admin mobile navigation keeps focus indicators visible with forced colors", async ({ page }) => {
+  const browserErrors = collectBrowserErrors(page);
+  await page.emulateMedia({ forcedColors: "active" });
+  await openAdminPage(page, "/admin");
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const mobileMenuButton = page.getByTestId("admin-mobile-menu-trigger");
+  await mobileMenuButton.focus();
+  await expect(mobileMenuButton).toBeFocused();
+  await expectVisibleFocusIndicator(mobileMenuButton);
+  await mobileMenuButton.press("Enter");
+
+  const mobileMenu = page.getByTestId("admin-mobile-menu");
+  await expect(mobileMenu).toBeVisible();
+  const focusableMenuControls = mobileMenu.locator(
+    'a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  );
+  const firstMenuControl = focusableMenuControls.first();
+  const lastMenuControl = focusableMenuControls.last();
+
+  await firstMenuControl.focus();
+  await expect(firstMenuControl).toBeFocused();
+  await expectVisibleFocusIndicator(firstMenuControl);
+  await lastMenuControl.focus();
+  await expect(lastMenuControl).toBeFocused();
+  await expectVisibleFocusIndicator(lastMenuControl);
+
+  expect(browserErrors, "The forced-colors admin mobile journey must not produce browser errors.").toEqual([]);
 });
 
 test("a customer is redirected from every admin route without admin requests", async ({ page }) => {
