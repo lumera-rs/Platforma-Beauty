@@ -7,7 +7,7 @@ import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable,
-  employeesTable, pool, salonsTable, usersTable,
+  employeesTable, pool, salonsTable, smsDeliveriesTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -20,7 +20,11 @@ import {
   retryFailedRetryableEmails,
   type TransactionalEmailTransport,
 } from "./brevo";
-import { runBeautyJobDeliveryFailureAlerts } from "./beauty-jobs-delivery-monitor";
+import {
+  BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS,
+  runBeautyJobDeliveryFailureAlerts,
+} from "./beauty-jobs-delivery-monitor";
+import type { SmsProvider } from "./sms";
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
@@ -84,6 +88,7 @@ async function run(): Promise<void> {
   const originalAppBaseUrl = process.env["APP_BASE_URL"];
   process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
   const monitorAlertEventKeys: string[] = [];
+  const monitorSmsEventKeys: string[] = [];
   const sentEmails: Array<{ email: string; subject: string; idempotencyKey: string; htmlContent: string }> = [];
   const routeTransport: TransactionalEmailTransport = {
     async send(input) {
@@ -1024,6 +1029,68 @@ async function run(): Promise<void> {
       "cooldown suppresses a repeated alert for the same administrator",
     );
 
+    // A total Brevo outage must still page administrators through the
+    // independent SMS channel. The SMS event key includes the primary alert
+    // sequence, so a repeated scheduler tick cannot create a duplicate.
+    const adminPhone = "+381601112223";
+    await db.update(usersTable).set({ phone: adminPhone }).where(eq(usersTable.id, admin.user.id));
+    const outageEmailTransport: TransactionalEmailTransport = {
+      async send() {
+        throw new Error("Brevo 503: send API unavailable");
+      },
+    };
+    const outageSmsCalls: Array<{ to: string; text: string }> = [];
+    const outageSmsProvider: SmsProvider = {
+      async send(input) {
+        outageSmsCalls.push({ to: input.to, text: input.text });
+        return { messageId: `beauty-job-alert-sms-${outageSmsCalls.length}` };
+      },
+    };
+    const outageAt = new Date(alertAt.getTime() + BEAUTY_JOB_DELIVERY_ALERT_COOLDOWN_MS + 1);
+    const outageAlert = await runBeautyJobDeliveryFailureAlerts(
+      outageAt,
+      outageEmailTransport,
+      outageSmsProvider,
+    );
+    monitorAlertEventKeys.push(...outageAlert.attemptedEventKeys);
+    monitorSmsEventKeys.push(...outageAlert.smsFallback.attemptedEventKeys);
+    assert.equal(
+      outageAlert.failedDeliveryCount,
+      outageAlert.attemptedEventKeys.length,
+      "Brevo outage must fail every attempted monitoring email",
+    );
+    assert.equal(outageAlert.smsFallback.triggered, true, "total Brevo outage triggers the SMS fallback");
+    assert.ok(outageAlert.smsFallback.attemptedEventKeys.length >= 1, "fallback creates SMS outbox work");
+    assert.ok(outageSmsCalls.some((call) => call.to === adminPhone), "active admin receives the fallback SMS");
+    assert.ok(
+      outageSmsCalls.find((call) => call.to === adminPhone)?.text.includes("Beauty Poslovi"),
+      "fallback SMS identifies the affected monitoring alert",
+    );
+    const fallbackRows = await db.select().from(smsDeliveriesTable)
+      .where(inArray(smsDeliveriesTable.eventKey, outageAlert.smsFallback.attemptedEventKeys));
+    assert.equal(
+      fallbackRows.length,
+      outageAlert.smsFallback.attemptedEventKeys.length,
+      "fallback SMS is persisted in the durable outbox",
+    );
+    assert.ok(fallbackRows.every((row) => row.messageType === "admin_alert" && row.status === "sent"));
+
+    const duplicateSmsCalls: Array<{ to: string }> = [];
+    const duplicateSmsProvider: SmsProvider = {
+      async send(input) {
+        duplicateSmsCalls.push({ to: input.to });
+        return { messageId: "should-not-be-sent" };
+      },
+    };
+    const duplicateOutageAlert = await runBeautyJobDeliveryFailureAlerts(
+      outageAt,
+      outageEmailTransport,
+      duplicateSmsProvider,
+    );
+    assert.equal(duplicateOutageAlert.attemptedEventKeys.length, 0, "cooldown suppresses duplicate monitoring email attempts");
+    assert.equal(duplicateOutageAlert.smsFallback.triggered, false, "suppressed email attempts never trigger the fallback");
+    assert.equal(duplicateSmsCalls.length, 0, "repeated outage tick sends no duplicate fallback SMS");
+
     const report = await request(base, `/beauty-jobs/${customerListing.id}/report`, undefined, "POST", { reason: "Anonimna prijava" });
     assert.equal(report.status, 201); assert.equal(report.body.reporterUserId, null);
     const queue = await request(base, "/admin/beauty-jobs/queue", admin.token);
@@ -1100,6 +1167,9 @@ async function run(): Promise<void> {
     }
     if (monitorAlertEventKeys.length) {
       await db.delete(emailDeliveriesTable).where(inArray(emailDeliveriesTable.eventKey, monitorAlertEventKeys));
+    }
+    if (monitorSmsEventKeys.length) {
+      await db.delete(smsDeliveriesTable).where(inArray(smsDeliveriesTable.eventKey, monitorSmsEventKeys));
     }
     await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.recipientEmail, `%${suffix}%`));
     await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUsers));
