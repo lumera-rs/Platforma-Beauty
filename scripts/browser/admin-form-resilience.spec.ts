@@ -72,6 +72,7 @@ function adminProduct() {
     publicPrice: null,
     publicDiscountPrice: null,
     stock: 5,
+    catalogReference: "CAT-REG-001",
     sku: "REG-001",
     unit: "kom",
     weightGrams: 500,

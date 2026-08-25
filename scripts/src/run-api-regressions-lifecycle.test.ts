@@ -33,6 +33,54 @@ type HarnessManifest = {
 
 const processMarkerEnvironmentName = "LUMERA_TEST_RUN_MARKER";
 
+const releasePhaseNames = [
+  "validate:release:1-publish",
+  "validate:release:2-backend",
+  "validate:release:3-api",
+  "validate:release:4-isolated",
+  "validate:release:5-final",
+] as const;
+
+const releaseGateCommands = [
+  "validate:publish",
+  "test:backend-standards:database",
+  "test:business-growth-schema",
+  "test:attributed-appointments-returning",
+  "test:business-guide-pdf",
+  "test:business-guide-links",
+  "test:automation-provider-events",
+  "test:scheduler-resilience",
+  "test:scheduler-affected-jobs",
+  "test:sms-webhook-registration",
+  "test:webhook-secret-reconfirmation",
+  "test:attributed-appointments-pagination",
+  "test:campaign-attributed-appointments-window",
+  "test:stats-compare-window-boundaries",
+  "test:social-oauth-domain-change",
+  "test:social-oauth-return-to",
+  "test:tenant-isolation",
+  "test:query-counts",
+  "test:query-budgets",
+  "test:catalog-cache",
+  "test:communication-archive",
+  "test:admin-validation",
+  "test:admin-order-search",
+  "test:admin-list-pagination",
+  "test:admin-summary",
+  "test:loyalty-status",
+  "test:api-preflight",
+  "test:api-regressions",
+  "test:api-regressions-lifecycle",
+  "test:education-extras",
+  "test:admin-form-resilience",
+  "test:salon-notifications:release",
+  "test:beauty-jobs-browser",
+  "test:retention-settings",
+  "test:webhook-repair-selection",
+  "test:sms-fallback-phone-notice",
+  "test:seo",
+] as const;
+
 type ChildExit = {
   code: number | null;
   signal: NodeJS.Signals | null;
@@ -305,6 +353,45 @@ async function waitForOwnedTestServersToStop(testDatabaseUrl: string): Promise<v
   }
   assert.deepEqual(remaining, [], `Owned disposable test-server processes remain: ${remaining.join(", ")}`);
 }
+
+test("release validation phases preserve the full gate and print safe continuation commands", async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const scripts = packageJson.scripts ?? {};
+
+  assert.equal(
+    scripts["validate:release"],
+    `export CI=true && ${releasePhaseNames.map((name) => `pnpm run ${name}`).join(" && ")}`,
+  );
+
+  const phasedGateCommands = releasePhaseNames.flatMap((phaseName, phaseIndex) => {
+    const phaseCommand = scripts[phaseName];
+    assert.ok(phaseCommand, `${phaseName} must be defined.`);
+    assert.match(phaseCommand, /^export CI=true && echo 'Release phase \d\/5:/);
+    if (phaseIndex < releasePhaseNames.length - 1) {
+      assert.match(
+        phaseCommand,
+        new RegExp(
+          `Release phase ${phaseIndex + 1}\\/5 complete\\. Continue with: pnpm run ${
+            releasePhaseNames[phaseIndex + 1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          }`,
+        ),
+      );
+    } else {
+      assert.match(phaseCommand, /Release phase 5\/5 complete\. All release checks passed\./);
+    }
+
+    return phaseCommand
+      .split(" && ")
+      .flatMap((command) => {
+        const match = /^pnpm run ([\w:-]+)$/.exec(command);
+        return match ? [match[1]] : [];
+      });
+  });
+
+  assert.deepEqual(phasedGateCommands, releaseGateCommands);
+});
 
 test("recovery dispatch sends each wrapper's originating suite label", async () => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "lumera-recovery-dispatch-"));
