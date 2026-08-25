@@ -40,7 +40,7 @@ async function seedLegacySchema(schema: string) {
   // Minimal legacy base tables — only the columns the growth FKs/inserts need.
   // v29 upgrades the pre-existing core role enum rather than recreating users.
   // Keep this deliberately old: it has CUSTOMER but not JOBSEEKER.
-  await q(`CREATE TYPE "${schema}".user_role AS ENUM ('CUSTOMER', 'SALON_OWNER')`);
+  await q(`CREATE TYPE "${schema}".user_role AS ENUM ('CUSTOMER', 'SALON_OWNER', 'EDUCATION_CENTER_OWNER')`);
   await q(`CREATE TABLE "${schema}".users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     email text NOT NULL,
@@ -186,6 +186,9 @@ async function seedLegacySchema(schema: string) {
   const enrollmentPurchaser = (await q<{ id: string }>(
     `INSERT INTO "${schema}".users (email, role) VALUES ('legacy-purchaser@bg.test', 'SALON_OWNER') RETURNING id`,
   )).rows[0]!;
+  const legacyEducationOwner = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".users (email, role) VALUES ('legacy-education@bg.test', 'EDUCATION_CENTER_OWNER') RETURNING id`,
+  )).rows[0]!;
   const enrollment = (await q<{ id: string }>(
     `INSERT INTO "${schema}".course_enrollments (user_id, purchaser_id) VALUES ($1, $2) RETURNING id`,
     [enrollmentLearner.id, enrollmentPurchaser.id],
@@ -228,7 +231,7 @@ async function seedLegacySchema(schema: string) {
   );
 
   return {
-    salon, user, enrollmentLearner, enrollmentPurchaser, enrollment,
+    salon, user, enrollmentLearner, enrollmentPurchaser, enrollment, legacyEducationOwner,
     employee, service, customer, appointment, retailCart, retailProduct,
   };
 }
@@ -272,6 +275,12 @@ async function run() {
       [s],
     )).rows.map((row) => row.enumlabel);
     assert.ok(roleLabels.includes("JOBSEEKER"), "legacy user_role enum gains JOBSEEKER");
+    assert.ok(roleLabels.includes("EDUKATIVNI_CENTAR"), "legacy education role is renamed");
+    assert.ok(!roleLabels.includes("EDUCATION_CENTER_OWNER"), "obsolete education role label is removed");
+    const migratedEducationOwner = (await q<{ role: string }>(
+      `SELECT role FROM "${s}".users WHERE id = $1`, [fixtures.legacyEducationOwner.id],
+    )).rows[0]!;
+    assert.equal(migratedEducationOwner.role, "EDUKATIVNI_CENTAR", "legacy education owner row is preserved and migrated");
     assert.ok(await columnExists("users", "date_of_birth"), "users.date_of_birth added");
     const convertedUser = (await q<{ role: string }>(
       `SELECT role FROM "${s}".users WHERE id = $1`, [fixtures.user.id],

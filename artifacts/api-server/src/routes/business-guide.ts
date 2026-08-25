@@ -13,7 +13,7 @@ import { getBusinessGuidePdf } from "../lib/business-guide-pdf";
 
 const router: IRouter = Router();
 
-const GUIDE_ROLES = new Set(["SALON_OWNER", "SALON_EMPLOYEE"]);
+const GUIDE_ROLES = new Set(["SALON_OWNER", "EDUKATIVNI_CENTAR", "SALON_EMPLOYEE"]);
 const PDF_FILENAME = "LUMERA-vodic-za-partnere.pdf";
 
 async function requireGuideAccess(req: Request, res: Response) {

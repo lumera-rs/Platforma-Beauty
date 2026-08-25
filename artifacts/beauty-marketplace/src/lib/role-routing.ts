@@ -4,7 +4,7 @@ export const ADMIN_ROLES: UserRole[] = ["ADMIN", "SUPER_ADMIN"];
 export const BUSINESS_ROLES: UserRole[] = [
   "SALON_OWNER",
   "SALON_EMPLOYEE",
-  "EDUCATION_CENTER_OWNER",
+  "EDUKATIVNI_CENTAR",
   "INSTRUCTOR",
   ...ADMIN_ROLES,
 ];
@@ -19,7 +19,7 @@ export function homeForRole(role: UserRole): string {
       return "/poslovi/nalog";
     case "SALON_OWNER":
       return "/vlasnik";
-    case "EDUCATION_CENTER_OWNER":
+    case "EDUKATIVNI_CENTAR":
       return "/biznis";
     case "ADMIN":
     case "SUPER_ADMIN":

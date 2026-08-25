@@ -69,14 +69,14 @@ async function session(req: import("express").Request, res: import("express").Re
 async function authenticated(req: import("express").Request, res: import("express").Response) {
   const user = await session(req, res);
   if (!user) { if (!res.headersSent) res.status(401).json({ error: "Potrebna je prijava.", code: "UNAUTHORIZED" }); return undefined; }
-  if (!isAdmin(user) && !["JOBSEEKER", "SALON_OWNER"].includes(user.role)) {
+  if (!isAdmin(user) && !["JOBSEEKER", "SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) {
     res.status(403).json({ error: "Beauty Poslovi je dostupan samo JOBSEEKER nalozima i vlasnicima salona.", code: "FORBIDDEN" });
     return undefined;
   }
   return user;
 }
 async function ownerSalon(user: typeof usersTable.$inferSelect) {
-  if (user.role !== "SALON_OWNER" || !user.activeSalonId) return undefined;
+  if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) || !user.activeSalonId) return undefined;
   const [salon] = await db.select().from(salonsTable).where(and(eq(salonsTable.id, user.activeSalonId), eq(salonsTable.ownerId, user.id))).limit(1);
   return salon;
 }
@@ -84,7 +84,7 @@ async function ownerSalon(user: typeof usersTable.$inferSelect) {
  * decide applications for a salon to which the account has an active staff row.
  * Never use activeSalonId for this tenant boundary. */
 async function applicantSalon(user: typeof usersTable.$inferSelect) {
-  if (user.role === "SALON_OWNER") return ownerSalon(user);
+  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return ownerSalon(user);
   if (user.role !== "SALON_EMPLOYEE") return undefined;
   const [membership] = await db.select({ salon: salonsTable }).from(employeesTable)
     .innerJoin(salonsTable, eq(employeesTable.salonId, salonsTable.id))
@@ -96,7 +96,7 @@ async function applicantAuthenticated(req: import("express").Request, res: impor
   const user = await getCurrentUser(req);
   if (!user) { res.status(401).json({ error: "Potrebna je prijava.", code: "UNAUTHORIZED" }); return undefined; }
   if (isAdmin(user)) { res.status(403).json({ error: "Nije dozvoljeno.", code: "FORBIDDEN" }); return undefined; }
-  if (!["JOBSEEKER", "SALON_OWNER", "SALON_EMPLOYEE"].includes(user.role)) {
+  if (!["JOBSEEKER", "SALON_OWNER", "EDUKATIVNI_CENTAR", "SALON_EMPLOYEE"].includes(user.role)) {
     res.status(403).json({ error: "Beauty Poslovi je dostupan samo JOBSEEKER nalozima i salonima.", code: "FORBIDDEN" }); return undefined;
   }
   return user;
@@ -311,7 +311,7 @@ router.get("/beauty-jobs/categories", async (req, res, next) => { try {
 
 router.get("/beauty-jobs", async (req, res, next) => { try {
   const viewer = await session(req, res); if (viewer === undefined && res.headersSent) return;
-  const viewerSalon = viewer?.role === "SALON_OWNER" ? await ownerSalon(viewer) : undefined;
+  const viewerSalon = viewer && ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(viewer.role) ? await ownerSalon(viewer) : undefined;
   const parsed = ListBeautyJobsQueryParams.safeParse(req.query); if (!parsed.success) return bad(res);
   const q = parsed.data; const page = q.page ?? 1; const pageSize = q.pageSize ?? 24;
   const conditions = [...publicListingConditions(viewerSalon?.id), eq(beautyJobCategoriesTable.enabled, true)];
@@ -347,7 +347,7 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
 
 router.post("/beauty-jobs", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return;
-  if (isAdmin(user) || !["JOBSEEKER", "SALON_OWNER"].includes(user.role)) return res.status(403).json({ error: "Objavljivanje nije dozvoljeno.", code: "FORBIDDEN" });
+  if (isAdmin(user) || !["JOBSEEKER", "SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return res.status(403).json({ error: "Objavljivanje nije dozvoljeno.", code: "FORBIDDEN" });
   const body = CreateBeautyJobBody.safeParse(req.body); if (!body.success || !validPhotos(body.data?.photos)) return bad(res);
   if (RENTAL_TYPES.has(body.data.type) && (body.data.latitude !== undefined || body.data.longitude !== undefined)) {
     return res.status(400).json({ error: "Precizne koordinate nisu dozvoljene za oglase o iznajmljivanju.", code: "RENTAL_COORDINATES_NOT_ALLOWED" });
@@ -357,8 +357,8 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
   if (!category) return bad(res, "Kategorija nije dostupna."); const compatibility = ensureCompatibility(category.slug, body.data.type, body.data.availabilityPattern); if (compatibility) return bad(res, compatibility);
   const requiresSlots = RENTAL_TYPES.has(body.data.type) && body.data.intent === "offering";
   const slotError = rentalSlotValidation(body.data.availableSlots, requiresSlots); if (slotError) return bad(res, slotError);
-  const cfg = await settings(); const authorSalon = user.role === "SALON_OWNER" ? await ownerSalon(user) : undefined;
-  if (user.role === "SALON_OWNER" && !authorSalon) return res.status(403).json({ error: "Aktivan salon nije dostupan.", code: "FORBIDDEN" });
+  const cfg = await settings(); const authorSalon = ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) ? await ownerSalon(user) : undefined;
+  if (["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role) && !authorSalon) return res.status(403).json({ error: "Aktivan salon nije dostupan.", code: "FORBIDDEN" });
   const since = new Date(Date.now() - 3600000);
   const authorFilter = authorSalon ? eq(beautyJobListingsTable.salonId, authorSalon.id) : eq(beautyJobListingsTable.userId, user.id);
   const created = await db.transaction(async (tx) => {
@@ -1298,7 +1298,7 @@ router.post("/admin/beauty-jobs/reports/:reportId/resolve", async (req, res, nex
 // notifications) so public static resources are never interpreted as an id.
 router.get("/beauty-jobs/:listingId", async (req, res, next) => { try {
   const viewer = await session(req, res); if (viewer === undefined && res.headersSent) return;
-  const viewerSalon = viewer?.role === "SALON_OWNER" ? await ownerSalon(viewer) : undefined;
+  const viewerSalon = viewer && ["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(viewer.role) ? await ownerSalon(viewer) : undefined;
   const p = GetBeautyJobParams.safeParse(req.params); if (!p.success) return bad(res);
   const visible = [
     eq(beautyJobListingsTable.id, p.data.listingId),

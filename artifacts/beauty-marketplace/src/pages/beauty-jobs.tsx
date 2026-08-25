@@ -342,7 +342,7 @@ export default function BeautyJobsPage() {
                     <Briefcase className="w-4 h-4" /> Objavi oglas
                   </Link>
                 </Button>
-              ) : (user.role === "SALON_OWNER") ? (
+              ) : (user.role === "SALON_OWNER" || user.role === "EDUKATIVNI_CENTAR") ? (
                 <Button asChild className="gap-2">
                   <Link href="/biznis/poslovi?tab=my-jobs&new=1">
                     <Briefcase className="w-4 h-4" /> Objavi oglas
@@ -417,7 +417,7 @@ export default function BeautyJobsPage() {
                 <BeautyJobCard 
                   key={job.id} 
                   job={job} 
-                  showSaveButton={user?.role === 'JOBSEEKER' || user?.role === 'SALON_OWNER'}
+                  showSaveButton={user?.role === 'JOBSEEKER' || user?.role === 'SALON_OWNER' || user?.role === 'EDUKATIVNI_CENTAR'}
                   onClickToggleSaved={() => handleToggleSaved(job.id, !!job.isSaved)}
                 />
               ))}

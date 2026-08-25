@@ -35,7 +35,12 @@ function staticMetadata(pathname: string): SeoPayload | null {
 
   const pages: Record<string, SeoPayload> = {
     '/': { title: 'LUMERA | Saloni, tretmani i edukacije', description: defaultDescription, indexable: true },
-    '/za-biznise': { title: 'LUMERA za biznise | Rast vašeg salona', description: 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', indexable: true },
+    '/za-biznise': { title: 'LUMERA Biznis Hub | Poslovna platforma', description: 'Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.', indexable: true },
+    '/za-biznise/saloni': { title: 'LUMERA za salone | Operativni sistem', description: 'Sve što vam je potrebno za vođenje i rast vašeg beauty salona.', indexable: true },
+    '/za-biznise/edukativni-centri': { title: 'LUMERA za edukativne centre | Infrastruktura', description: 'Infrastruktura za organizaciju i prodaju beauty edukacija.', indexable: true },
+    '/za-biznise/poslovi': { title: 'LUMERA Poslovi za biznise | Zapošljavanje', description: 'Pronađite najbolje talente za vaš salon ili edukativni centar.', indexable: true },
+    '/za-biznise/edukacije': { title: 'LUMERA Edukacije za biznise | Usavršavanje tima', description: 'Unapredite veštine svog tima kroz B2B beauty edukacije.', indexable: true },
+    '/pridruzi-se-edukativni-centar': { title: 'Registracija Edukativnog Centra | LUMERA', description: 'Registrujte svoj edukativni centar na LUMERA platformi.', indexable: false },
     '/saloni': { title: 'Saloni i beauty tretmani | LUMERA', description: 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', indexable: true },
     '/proizvodi': { title: 'Beauty proizvodi za kupce | LUMERA', description: 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', indexable: true },
     '/poslovi': { title: 'Beauty poslovi i oglasi | LUMERA', description: 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', indexable: true },

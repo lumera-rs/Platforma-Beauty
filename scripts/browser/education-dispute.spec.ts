@@ -54,7 +54,7 @@ async function createEducationDisputeFixture(): Promise<EducationDisputeFixture>
       email: `browser-education-dispute-owner-${suffix}@example.test`,
       passwordHash: await hashPassword("browser-education-dispute-owner-password"),
       passwordSetAt: new Date(),
-      role: "EDUCATION_CENTER_OWNER",
+      role: "EDUKATIVNI_CENTAR",
     }).returning();
     if (!owner) throw new Error("Education dispute browser fixture could not create its center owner.");
     ownerId = owner.id;

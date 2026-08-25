@@ -71,7 +71,7 @@ export const UserRole = {
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
   SALON_EMPLOYEE: 'SALON_EMPLOYEE',
-  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
   JOBSEEKER: 'JOBSEEKER',
@@ -216,6 +216,18 @@ export interface BusinessRegistrationInput {
   address: string;
   /** @minLength 4 */
   postalCode: string;
+  contactEmail?: string;
+  /** @minLength 6 */
+  contactPhone?: string;
+  /** @minLength 3 */
+  contactAddress?: string;
+  websiteUrl?: string;
+  instagramUrl?: string;
+  /**
+     * @minLength 20
+     * @maxLength 2000
+     */
+  description?: string;
 }
 
 export interface LoginInput {
@@ -3526,7 +3538,7 @@ export const AdminUserRole = {
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
   SALON_EMPLOYEE: 'SALON_EMPLOYEE',
-  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
   STUDENT: 'STUDENT',
@@ -3552,7 +3564,7 @@ export const AdminUserUpdateRole = {
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
   SALON_EMPLOYEE: 'SALON_EMPLOYEE',
-  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
   STUDENT: 'STUDENT',
@@ -6861,7 +6873,7 @@ export const AdminListUsersRole = {
   ADMIN: 'ADMIN',
   SALON_OWNER: 'SALON_OWNER',
   SALON_EMPLOYEE: 'SALON_EMPLOYEE',
-  EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
+  EDUKATIVNI_CENTAR: 'EDUKATIVNI_CENTAR',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
   STUDENT: 'STUDENT',

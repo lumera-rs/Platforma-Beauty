@@ -100,7 +100,7 @@ async function run(): Promise<void> {
         email: `sessions-center-owner-${suffix}@example.test`,
         passwordHash,
         passwordSetAt: new Date(),
-        role: "EDUCATION_CENTER_OWNER" as const,
+        role: "EDUKATIVNI_CENTAR" as const,
       },
       {
         firstName: "Sessions",

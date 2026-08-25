@@ -163,15 +163,15 @@ async function run(): Promise<void> {
       },
       {
         firstName: "CenterA", lastName: `TI-${suffix}`, email: `ti-centerA-${suffix}@x.test`,
-        passwordHash, passwordSetAt: new Date(), role: "EDUCATION_CENTER_OWNER" as const,
+        passwordHash, passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" as const,
       },
       {
         firstName: "CenterB", lastName: `TI-${suffix}`, email: `ti-centerB-${suffix}@x.test`,
-        passwordHash, passwordSetAt: new Date(), role: "EDUCATION_CENTER_OWNER" as const,
+        passwordHash, passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR" as const,
       },
       {
         firstName: "EnrolleeA", lastName: `TI-${suffix}`, email: `ti-enrolleeA-${suffix}@x.test`,
-        passwordHash, passwordSetAt: new Date(), role: "CUSTOMER" as const,
+        passwordHash, passwordSetAt: new Date(), role: "JOBSEEKER" as const,
       },
     ]).returning();
     createdUserIds.push(

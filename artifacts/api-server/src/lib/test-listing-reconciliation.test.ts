@@ -48,11 +48,11 @@ test("creates an exact public demo set and never trusts a user description marke
       },
       {
         firstName: "LUMERA", lastName: "Demo edukacije", email: demoEducationOwnerEmail,
-        passwordHash: collisionPasswordHash, role: "EDUCATION_CENTER_OWNER", active: false,
+        passwordHash: collisionPasswordHash, role: "EDUKATIVNI_CENTAR", active: false,
       },
       {
         firstName: "Foreign", lastName: "Center", email: `foreign-center-${randomUUID()}@example.test`,
-        passwordHash: collisionPasswordHash, role: "EDUCATION_CENTER_OWNER",
+        passwordHash: collisionPasswordHash, role: "EDUKATIVNI_CENTAR",
       },
     ]).returning({ id: usersTable.id });
     const [foreignCenter] = await db.insert(educationCentersTable).values({

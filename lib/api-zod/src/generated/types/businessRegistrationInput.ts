@@ -28,4 +28,16 @@ export interface BusinessRegistrationInput {
   address: string;
   /** @minLength 4 */
   postalCode: string;
+  contactEmail?: string;
+  /** @minLength 6 */
+  contactPhone?: string;
+  /** @minLength 3 */
+  contactAddress?: string;
+  websiteUrl?: string;
+  instagramUrl?: string;
+  /**
+     * @minLength 20
+     * @maxLength 2000
+     */
+  description?: string;
 }

@@ -27,11 +27,11 @@ export default function BusinessHub() {
     }
   }, [user, isLoading, setLocation]);
   useEffect(() => {
-    if (user?.role !== "EDUCATION_CENTER_OWNER") return;
+    if (user?.role !== "EDUKATIVNI_CENTAR") return;
     fetch("/api/education/center/status").then((response) => response.ok ? response.json() : []).then((centers) => setCenterStatus(centers[0] ?? null)).catch(() => setCenterStatus(null));
   }, [user?.role]);
 
-  if (isLoading || !user || user.role !== "EDUCATION_CENTER_OWNER") {
+  if (isLoading || !user || user.role !== "EDUKATIVNI_CENTAR") {
     return (
       <BusinessLayout>
         <div className="flex-1 flex items-center justify-center min-h-[50vh]">
@@ -88,11 +88,23 @@ export default function BusinessHub() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-serif font-bold text-foreground">Brze Akcije</h2>
               </div>
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
+                  <Link href="/vlasnik">
+                    <Building2 className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <span className="font-medium">Salon workspace</span>
+                  </Link>
+                </Button>
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
                   <Link href="/biznis/edukacije">
                     <BookOpen className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
                     <span className="font-medium">Katalog edukacija</span>
+                  </Link>
+                </Button>
+                <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-primary/5 hover:text-primary hover:border-primary/30 border-border shadow-sm group transition-all" asChild>
+                  <Link href="/biznis/poslovi">
+                    <GraduationCap className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <span className="font-medium">Beauty Poslovi</span>
                   </Link>
                 </Button>
                 <Button variant="outline" className="h-28 flex flex-col items-center justify-center gap-3 bg-card hover:bg-accent/10 hover:text-accent hover:border-accent/30 border-border shadow-sm group transition-all" asChild>

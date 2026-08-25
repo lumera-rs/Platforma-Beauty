@@ -228,11 +228,11 @@ async function ensureProductionDemoMarketplace(): Promise<{
         email: DEMO_EDUCATION_OWNER_EMAIL,
         passwordHash: await hashPassword("disabled-demo-education-account"),
         passwordSetAt: new Date(),
-        role: "EDUCATION_CENTER_OWNER",
+        role: "EDUKATIVNI_CENTAR",
         active: false,
         marketingEmailsEnabled: false,
       }).returning({ id: usersTable.id, active: usersTable.active, role: usersTable.role });
-    } else if (educationOwner.active || educationOwner.role !== "EDUCATION_CENTER_OWNER") {
+    } else if (educationOwner.active || educationOwner.role !== "EDUKATIVNI_CENTAR") {
       throw new Error("Demo education owner identity is already in use; refusing to mutate production data.");
     }
     const centersWithDescription = await tx.select({

@@ -12,7 +12,12 @@ const categoryPages = new Map(categoryDefinitions.map((page) => [page.path, page
 const legalPageByPath = new Map(legalPages.map((page) => [page.path, page]));
 const staticPages = new Map([
   ['/', ['LUMERA | Saloni, tretmani i edukacije', fallbackDescription, 'Pronađite salon, tretman ili beauty edukaciju koja vam odgovara.']],
-  ['/za-biznise', ['LUMERA za biznise | Rast vašeg salona', 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', 'Digitalni alati za salone i beauty biznise.']],
+  ['/za-biznise', ['LUMERA Biznis Hub | Poslovna platforma', 'Otkrijte sve mogućnosti LUMERA platforme za vaš beauty biznis.', 'LUMERA Biznis Hub']],
+  ['/za-biznise/saloni', ['LUMERA za salone | Operativni sistem', 'Sve što vam je potrebno za vođenje i rast vašeg beauty salona.', 'LUMERA za salone']],
+  ['/za-biznise/edukativni-centri', ['LUMERA za edukativne centre | Infrastruktura', 'Infrastruktura za organizaciju i prodaju beauty edukacija.', 'LUMERA za edukativne centre']],
+  ['/za-biznise/poslovi', ['LUMERA Poslovi za biznise | Zapošljavanje', 'Pronađite najbolje talente za vaš salon ili edukativni centar.', 'LUMERA Poslovi za biznise']],
+  ['/za-biznise/edukacije', ['LUMERA Edukacije za biznise | Usavršavanje tima', 'Unapredite veštine svog tima kroz B2B beauty edukacije.', 'LUMERA Edukacije za biznise']],
+  ['/pridruzi-se-edukativni-centar', ['Registracija Edukativnog Centra | LUMERA', 'Registrujte svoj edukativni centar na LUMERA platformi.', 'Registracija Edukativnog Centra']],
   ['/saloni', ['Saloni i beauty tretmani | LUMERA', 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', 'Pronađite salon i tretman koji vam odgovaraju.']],
   ['/proizvodi', ['Beauty proizvodi za kupce | LUMERA', 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', 'Beauty proizvodi za kupce']],
   ['/poslovi', ['Beauty poslovi i oglasi | LUMERA', 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', 'Beauty poslovi, angažmani i iznajmljivanje']],
@@ -247,7 +252,7 @@ async function renderPublicPage(req, pathname) {
       return { meta, html: pageShell(meta, `<section><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(description)}</p></section><section><h2>Sadržaj vodiča</h2><div class="seo-grid">${cards || '<p>Vodič je trenutno prazan.</p>'}</div></section>`, origin) };
     }
     const legalPage = legalPageByPath.get(pathname);
-    const meta = makeMeta(pathname, title, description);
+    const meta = makeMeta(pathname, title, description, { indexable: pathname !== '/pridruzi-se-edukativni-centar' });
     if (legalPage) {
       const sections = legalPage.sections.map((section) => `<section><h2>${escapeHtml(section.title)}</h2>${section.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')}</section>`).join('');
       return { meta, html: pageShell(meta, `<article><h1>${escapeHtml(legalPage.title)}</h1><p>${escapeHtml(legalPage.lead)}</p><p><strong>Poslednje ažuriranje:</strong> ${escapeHtml(legalPage.lastUpdated)}</p><p><strong>Radna pravna verzija:</strong> tekst mora biti potvrđen od strane odgovornog pravnog lica i pravnog savetnika pre komercijalnog lansiranja.</p>${sections}</article>`, origin) };
@@ -405,7 +410,9 @@ function sitemapXml(origin, entries) {
 
 async function buildSitemap(req) {
   const origin = requestOrigin(req);
-  const entries = [...staticPages.keys(), ...categoryPages.keys()].map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
+  const entries = [...staticPages.keys(), ...categoryPages.keys()]
+    .filter((pathname) => pathname !== '/pridruzi-se-edukativni-centar')
+    .map((pathname) => ({ pathname, priority: pathname === '/' ? '1.0' : categoryPages.has(pathname) ? '0.8' : '0.7' }));
   const [salons, courses, products, beautyJobs] = await Promise.all([
     listAll(req, '/api/salons', 24),
     listAll(req, '/api/education/public/courses', 24),
@@ -463,11 +470,16 @@ export async function createSeoResponse(req, template) {
     }
   }
   if (pathname === '/robots.txt') {
-    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nDisallow: /beauty-poslovi/\nSitemap: ${origin}/sitemap.xml\n` };
+    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nDisallow: /beauty-poslovi/\nDisallow: /pridruzi-se-\nSitemap: ${origin}/sitemap.xml\n` };
   }
   if (pathname === '/sitemap.xml') {
     try { return { status: 200, type: 'application/xml; charset=utf-8', body: await buildSitemap(req) }; }
-    catch { return { status: 503, type: 'application/xml; charset=utf-8', body: sitemapXml(origin, [...staticPages.keys()].map((item) => ({ pathname: item }))) }; }
+    catch {
+      const staticEntries = [...staticPages.keys()]
+        .filter((item) => item !== '/pridruzi-se-edukativni-centar')
+        .map((item) => ({ pathname: item }));
+      return { status: 503, type: 'application/xml; charset=utf-8', body: sitemapXml(origin, staticEntries) };
+    }
   }
   const hasQuery = url.search.length > 0;
   try {

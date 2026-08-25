@@ -84,7 +84,7 @@ export const RegisterResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "dateOfBirth": zod.string().regex(registerResponseUserDateOfBirthRegExp).nullable(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -112,6 +112,13 @@ export const registerBusinessBodyAddressMin = 3;
 
 export const registerBusinessBodyPostalCodeMin = 4;
 
+export const registerBusinessBodyContactPhoneMin = 6;
+
+export const registerBusinessBodyContactAddressMin = 3;
+
+export const registerBusinessBodyDescriptionMin = 20;
+export const registerBusinessBodyDescriptionMax = 2000;
+
 
 
 export const RegisterBusinessBody = zod.object({
@@ -125,7 +132,13 @@ export const RegisterBusinessBody = zod.object({
   "city": zod.string().min(registerBusinessBodyCityMin),
   "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
   "address": zod.string().min(registerBusinessBodyAddressMin),
-  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin)
+  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin),
+  "contactEmail": zod.string().optional(),
+  "contactPhone": zod.string().min(registerBusinessBodyContactPhoneMin).optional(),
+  "contactAddress": zod.string().min(registerBusinessBodyContactAddressMin).optional(),
+  "websiteUrl": zod.string().url().optional(),
+  "instagramUrl": zod.string().url().optional(),
+  "description": zod.string().min(registerBusinessBodyDescriptionMin).max(registerBusinessBodyDescriptionMax).optional()
 })
 
 export const registerBusinessResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -139,7 +152,7 @@ export const RegisterBusinessResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "dateOfBirth": zod.string().regex(registerBusinessResponseUserDateOfBirthRegExp).nullable(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -182,7 +195,7 @@ export const RegisterJobseekerResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "dateOfBirth": zod.string().regex(registerJobseekerResponseUserDateOfBirthRegExp).nullable(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -213,7 +226,7 @@ export const LoginResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "dateOfBirth": zod.string().regex(loginResponseUserDateOfBirthRegExp).nullable(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -242,7 +255,7 @@ export const GetCurrentUserResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "dateOfBirth": zod.string().regex(getCurrentUserResponseUserOneDateOfBirthRegExp).nullable(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -7999,7 +8012,7 @@ export const adminListUsersQueryPageSizeMax = 100;
 
 export const AdminListUsersQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
   "active": zod.coerce.boolean().optional(),
   "page": zod.coerce.number().int().min(1).default(adminListUsersQueryPageDefault).describe('1-based page number for stable pagination (createdAt desc, id desc).'),
   "pageSize": zod.coerce.number().int().min(1).max(adminListUsersQueryPageSizeMax).default(adminListUsersQueryPageSizeDefault).describe('Number of rows per page (1..100).')
@@ -8011,7 +8024,7 @@ export const AdminListUsersResponseItem = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -8029,7 +8042,7 @@ export const AdminUpdateUserParams = zod.object({
 })
 
 export const AdminUpdateUserBody = zod.object({
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']).optional(),
   "active": zod.boolean().optional()
 }).strict()
 
@@ -8039,7 +8052,7 @@ export const AdminUpdateUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUKATIVNI_CENTAR', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })

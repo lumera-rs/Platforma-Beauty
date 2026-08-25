@@ -117,7 +117,7 @@ export default function AdminUsers() {
                 <SelectItem value="CUSTOMER">Klijent</SelectItem>
                 <SelectItem value="SALON_OWNER">Vlasnik Salona</SelectItem>
                 <SelectItem value="SALON_EMPLOYEE">Zaposleni (Salon)</SelectItem>
-                <SelectItem value="EDUCATION_CENTER_OWNER">Vlasnik Edu. Centra</SelectItem>
+                <SelectItem value="EDUKATIVNI_CENTAR">Edukativni centar</SelectItem>
                 <SelectItem value="INSTRUCTOR">Instruktor</SelectItem>
                 <SelectItem value="ADMIN">Admin</SelectItem>
                 <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
@@ -194,7 +194,7 @@ export default function AdminUsers() {
                           <option value="CUSTOMER">Klijent</option>
                           <option value="SALON_OWNER">Vlasnik Salona</option>
                           <option value="SALON_EMPLOYEE">Zaposleni (Salon)</option>
-                          <option value="EDUCATION_CENTER_OWNER">Vlasnik Edu. Centra</option>
+                          <option value="EDUKATIVNI_CENTAR">Edukativni centar</option>
                           <option value="INSTRUCTOR">Instruktor</option>
                           <option value="ADMIN">Admin</option>
                           <option value="SUPER_ADMIN">Super Admin</option>

@@ -341,7 +341,7 @@ async function authorizeUploadScope(
     return { resourceId: employee.id, visibility: "public" };
   }
   if (scope === "salon-profile" || scope === "salon-gallery" || scope === "employee-avatar") {
-    if (user.role !== "SALON_OWNER") return null;
+    if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return null;
     const salon = await ownedSalon(user.id);
     if (!salon) return null;
     if (scope === "employee-avatar" && requestedResourceId) {
@@ -363,7 +363,7 @@ async function authorizeUploadScope(
   }
 
   if (scope === "education-cover" || scope === "education-gallery") {
-    if (!["SALON_OWNER", "EDUCATION_CENTER_OWNER"].includes(user.role)) return null;
+    if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return null;
     if (!requestedResourceId) {
       if (scope === "education-gallery") return null;
       const mayCreate = user.role === "SALON_OWNER"
@@ -381,14 +381,14 @@ async function authorizeUploadScope(
   }
 
   if (scope === "education-center") {
-    if (user.role !== "EDUCATION_CENTER_OWNER" || !requestedResourceId) return null;
+    if (user.role !== "EDUKATIVNI_CENTAR" || !requestedResourceId) return null;
     const [center] = await db.select({ id: educationCentersTable.id }).from(educationCentersTable)
       .where(and(eq(educationCentersTable.id, requestedResourceId), eq(educationCentersTable.ownerId, user.id))).limit(1);
     return center ? { resourceId: center.id, visibility: "public" } : null;
   }
 
   if (scope === "instructor-avatar") {
-    if (user.role !== "EDUCATION_CENTER_OWNER" || !requestedResourceId) return null;
+    if (user.role !== "EDUKATIVNI_CENTAR" || !requestedResourceId) return null;
     const [instructor] = await db.select({ id: educationInstructorsTable.id }).from(educationInstructorsTable)
       .innerJoin(educationCentersTable, eq(educationInstructorsTable.centerId, educationCentersTable.id))
       .where(and(eq(educationInstructorsTable.id, requestedResourceId), eq(educationCentersTable.ownerId, user.id))).limit(1);

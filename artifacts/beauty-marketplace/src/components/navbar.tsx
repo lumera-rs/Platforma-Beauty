@@ -189,7 +189,7 @@ export function Navbar() {
                       <DropdownMenuSeparator />
                     </>
                   )}
-                  {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
+                  {(user.role === 'SALON_OWNER' || user.role === 'EDUKATIVNI_CENTAR' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
                     <>
                       <DropdownMenuItem onClick={() => setLocation(homeForRole(user.role))}>
                         <LayoutDashboard className="mr-2 h-4 w-4" />
@@ -293,7 +293,7 @@ export function Navbar() {
                     <Link href="/poslovi/nalog/podesavanja" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Podešavanja</Link>
                   </>
                 )}
-                {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
+                {(user.role === 'SALON_OWNER' || user.role === 'EDUKATIVNI_CENTAR' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (
                   <Link href={homeForRole(user.role)} className="py-2 px-2 text-sm" onClick={closeMobileMenu}>
                     Poslovni portal
                   </Link>

@@ -130,7 +130,7 @@ async function run(): Promise<void> {
         email: `education-center-owner-${suffix}@example.test`,
         passwordHash: fixturePasswordHash,
         passwordSetAt: new Date(),
-        role: "EDUCATION_CENTER_OWNER",
+        role: "EDUKATIVNI_CENTAR",
       },
       {
         firstName: "Kupac",

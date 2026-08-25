@@ -28,11 +28,12 @@ export function BusinessNavbar() {
   const { data: userResp } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
-  const { data: cart } = useGetShopCart({ query: { enabled: user?.role === "SALON_OWNER", queryKey: getGetShopCartQueryKey() } });
+  const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
+  const { data: cart } = useGetShopCart({ query: { enabled: isSalonOperator, queryKey: getGetShopCartQueryKey() } });
   const notificationsQueryKey = useMemo(() => salonNotificationsQueryKey(user?.id), [user?.id]);
   const { data: notifications = [] } = useListSalonNotifications({ page: 1, pageSize: 100 }, {
     query: {
-      enabled: user?.role === "SALON_OWNER",
+      enabled: isSalonOperator,
       queryKey: notificationsQueryKey,
       refetchInterval: 5000,
       refetchOnWindowFocus: true,
@@ -95,17 +96,17 @@ export function BusinessNavbar() {
   };
 
   useEffect(() => {
-    if (user?.role !== "SALON_OWNER") return;
+    if (!isSalonOperator) return;
     fetch("/api/salon/managed-salons").then(async (response) => {
       if (!response.ok) return;
       const payload = await response.json() as { activeSalonId: string | null; salons: Array<{ id: string; name: string; slug: string }> };
       setManagedSalons(payload.salons);
       setActiveSalonId(payload.activeSalonId ?? "");
     }).catch(() => undefined);
-  }, [user?.role]);
+  }, [isSalonOperator]);
 
   useEffect(() => {
-    if (user?.role !== "SALON_OWNER") return;
+    if (!isSalonOperator) return;
 
     const refreshNotifications = () => {
       void queryClient.invalidateQueries({ queryKey: notificationsQueryKey });
@@ -140,7 +141,7 @@ export function BusinessNavbar() {
       if (reconnectTimeout !== undefined) window.clearTimeout(reconnectTimeout);
       eventSource?.close();
     };
-  }, [notificationsQueryKey, queryClient, user?.role]);
+  }, [isSalonOperator, notificationsQueryKey, queryClient]);
 
   const switchSalon = async (salonId: string) => {
     if (!salonId || salonId === activeSalonId || isSwitchingSalon) return;
@@ -166,8 +167,10 @@ export function BusinessNavbar() {
   const getNavLinks = (): BusinessNavLink[] => {
     if (!user) {
       return [
-        { href: "/za-biznise", label: "Prednosti" },
-        { href: "/za-biznise#platforma", label: "Platforma" },
+        { href: "/za-biznise/saloni", label: "Saloni" },
+        { href: "/za-biznise/edukativni-centri", label: "Edukativni Centri" },
+        { href: "/za-biznise/poslovi", label: "Zapošljavanje" },
+        { href: "/za-biznise/edukacije", label: "B2B Edukacije" },
       ];
     }
     
@@ -180,10 +183,10 @@ export function BusinessNavbar() {
           { href: "/biznis/edukacije", label: "Edukacije", guideId: "za-ostalo" },
           { href: "/biznis/vodic", label: "Pomoć" },
         ];
-      case 'EDUCATION_CENTER_OWNER':
+      case 'EDUKATIVNI_CENTAR':
         return [
-          { href: "/biznis", label: "Dashboard" },
-          { href: "/biznis/edukacije", label: "Edukacije" },
+          { href: "/biznis", label: "Centar" },
+          ...salonOwnerNavLinks,
         ];
       case 'ADMIN':
       case 'SUPER_ADMIN':
@@ -210,7 +213,7 @@ export function BusinessNavbar() {
             </span>
           </Link>
 
-          <div className={cn("hidden items-center gap-6", user?.role !== "SALON_OWNER" && "2xl:flex")}>
+          <div className={cn("hidden items-center gap-6", !isSalonOperator && "2xl:flex")}>
             {navLinks.map((link) => (
               <Link 
                 key={link.href} 
@@ -233,12 +236,12 @@ export function BusinessNavbar() {
               Nazad na Market
             </Link>
 
-            {user?.role === "SALON_OWNER" && managedSalons.length > 1 && (
+            {isSalonOperator && managedSalons.length > 1 && (
               <select aria-label="Aktivni salon" disabled={isSwitchingSalon} className="hidden lg:block max-w-48 rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white disabled:cursor-wait disabled:opacity-70" value={activeSalonId} onChange={(event) => { void switchSalon(event.target.value); }}>
                 {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
               </select>
             )}
-            {user?.role === "SALON_OWNER" && (
+            {isSalonOperator && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/obavestenja" aria-label={`Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}`} data-testid="link-notifications">
                   <Bell className="w-5 h-5" />
@@ -247,7 +250,7 @@ export function BusinessNavbar() {
               </Button>
             )}
 
-            {user?.role === "SALON_OWNER" && (
+            {isSalonOperator && (
               <Button variant="ghost" size="icon" className="relative text-white hover:bg-white/10 hover:text-white" asChild>
                 <Link href="/vlasnik/prodavnica/korpa" aria-label="Otvori korpu">
                   <ShoppingCart className="h-5 w-5" />
@@ -278,13 +281,13 @@ export function BusinessNavbar() {
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </div>
                   
-                  {user.role === 'SALON_OWNER' && (
+                  {isSalonOperator && (
                     <DropdownMenuItem onClick={() => setLocation('/vlasnik')}>
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Dashboard
                     </DropdownMenuItem>
                   )}
-                  {user.role === 'EDUCATION_CENTER_OWNER' && (
+                  {user.role === 'EDUKATIVNI_CENTAR' && (
                     <DropdownMenuItem onClick={() => setLocation('/biznis')}>
                       <BookOpen className="mr-2 h-4 w-4" />
                       Centar za edukaciju
@@ -313,7 +316,7 @@ export function BusinessNavbar() {
             ref={mobileMenuButtonRef}
             variant="ghost" 
             size="icon" 
-            className={cn("text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground", user?.role !== "SALON_OWNER" && "2xl:hidden")}
+            className={cn("text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground", !isSalonOperator && "2xl:hidden")}
             onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             data-testid="button-mobile-menu"
@@ -328,13 +331,13 @@ export function BusinessNavbar() {
           ref={mobileMenuRef}
           className={cn(
             "border-t border-white/10 bg-foreground",
-            user?.role === "SALON_OWNER"
+            isSalonOperator
               ? "fixed inset-x-0 bottom-0 top-16 ml-auto w-full max-w-sm shadow-2xl"
               : "2xl:hidden",
           )}
           data-testid="business-mobile-menu"
         >
-          {user?.role === "SALON_OWNER" ? (
+          {isSalonOperator ? (
             <SalonOwnerNavigation
               variant="dark"
               onNavigate={closeMobileMenu}

@@ -97,7 +97,7 @@ async function run(): Promise<void> {
         email: `extras-center-${suffix}@example.test`,
         passwordHash: fixturePasswordHash,
         passwordSetAt: new Date(),
-        role: "EDUCATION_CENTER_OWNER",
+        role: "EDUKATIVNI_CENTAR",
       },
       {
         firstName: "Kupac",
@@ -105,7 +105,7 @@ async function run(): Promise<void> {
         email: `extras-buyer-${suffix}@example.test`,
         passwordHash: fixturePasswordHash,
         passwordSetAt: new Date(),
-        role: "CUSTOMER",
+        role: "JOBSEEKER",
       },
       {
         firstName: "Salon",
@@ -795,7 +795,7 @@ async function run(): Promise<void> {
       const [otherOwner] = await db.insert(usersTable).values({
         firstName: "Drugi", lastName: "Centar",
         email: `extras-other-center-${suffix}@example.test`,
-        passwordHash: fixturePasswordHash, passwordSetAt: new Date(), role: "EDUCATION_CENTER_OWNER",
+        passwordHash: fixturePasswordHash, passwordSetAt: new Date(), role: "EDUKATIVNI_CENTAR",
       }).returning();
       createdUserIds.push(otherOwner!.id);
 

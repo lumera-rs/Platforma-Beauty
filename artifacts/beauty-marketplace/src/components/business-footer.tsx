@@ -18,9 +18,11 @@ export function BusinessFooter() {
           <div>
             <h4 className="font-serif text-lg mb-4 text-accent">Platforma</h4>
             <ul className="space-y-3 text-sm text-background/80">
-              <li><Link href="/za-biznise" className="hover:text-white transition-colors">Prednosti</Link></li>
-              <li><a href="/za-biznise#platforma" className="hover:text-white transition-colors">Poslovna platforma</a></li>
-              <li><Link href="/" className="hover:text-white transition-colors">Klijentski Market</Link></li>
+              <li><Link href="/za-biznise/saloni" className="hover:text-white transition-colors">Za Salone</Link></li>
+              <li><Link href="/za-biznise/edukativni-centri" className="hover:text-white transition-colors">Za Edukativne Centre</Link></li>
+              <li><Link href="/za-biznise/poslovi" className="hover:text-white transition-colors">Zapošljavanje</Link></li>
+              <li><Link href="/za-biznise/edukacije" className="hover:text-white transition-colors">B2B Edukacije</Link></li>
+              <li><Link href="/" className="hover:text-white transition-colors mt-2 block pt-2 border-t border-white/10">Klijentski Market</Link></li>
             </ul>
           </div>
           

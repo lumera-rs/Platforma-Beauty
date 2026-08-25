@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 30;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 31;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -449,6 +449,31 @@ function tableStatements(s: string): string[] {
     // accounts remain opted in so this additive rollout never changes consent
     // without an explicit user action.
     `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS marketing_emails_enabled boolean NOT NULL DEFAULT true`,
+    // v31 — Serbian business role terminology. PostgreSQL enum values are
+    // stored by internal OID, so RENAME VALUE preserves all rows and every FK.
+    // A previous interrupted/manual deployment can contain both labels; in that
+    // case migrate remaining old rows before future boots continue normally.
+    `DO $$
+     DECLARE has_old boolean; has_new boolean;
+     BEGIN
+       SELECT EXISTS (
+         SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+         JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE t.typname = 'user_role' AND n.nspname = current_schema()
+           AND e.enumlabel = 'EDUCATION_CENTER_OWNER'
+       ), EXISTS (
+         SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+         JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE t.typname = 'user_role' AND n.nspname = current_schema()
+           AND e.enumlabel = 'EDUKATIVNI_CENTAR'
+       ) INTO has_old, has_new;
+       IF has_old AND has_new THEN
+         UPDATE ${s}.users SET role = 'EDUKATIVNI_CENTAR'
+         WHERE role = 'EDUCATION_CENTER_OWNER';
+       ELSIF has_old THEN
+         ALTER TYPE ${s}.user_role RENAME VALUE 'EDUCATION_CENTER_OWNER' TO 'EDUKATIVNI_CENTAR';
+       END IF;
+     END $$`,
     // v29 — JOBSEEKER is intentionally a distinct account boundary.  This is
     // additive and the conversion is idempotent, preserving every FK record.
     `ALTER TYPE ${s}.user_role ADD VALUE IF NOT EXISTS 'JOBSEEKER'`,

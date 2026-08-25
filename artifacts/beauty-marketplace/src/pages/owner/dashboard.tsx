@@ -23,11 +23,12 @@ export default function OwnerDashboard() {
   const [location, setLocation] = useLocation();
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const [scope, setScope] = useState<"location" | "all">("location");
+  const isSalonOperator = userResp?.user?.role === "SALON_OWNER" || userResp?.user?.role === "EDUKATIVNI_CENTAR";
   
   useEffect(() => {
     if (!isUserLoading) {
       if (!userResp?.user) setLocation("/prijava");
-      else if (userResp.user.role !== 'SALON_OWNER') setLocation("/");
+      else if (!["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(userResp.user.role)) setLocation("/");
     }
   }, [userResp, isUserLoading, setLocation]);
 
@@ -35,7 +36,7 @@ export default function OwnerDashboard() {
   const { data: dash, isLoading } = useGetSalonDashboard(
     dashboardParams,
     { query: {
-      enabled: !!userResp?.user && userResp.user.role === "SALON_OWNER",
+      enabled: isSalonOperator,
       queryKey: getGetSalonDashboardQueryKey(dashboardParams),
     } },
   );

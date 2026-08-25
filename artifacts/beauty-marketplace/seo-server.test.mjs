@@ -138,6 +138,52 @@ test('category pages are included in the canonical sitemap', async () => {
   }
 });
 
+test('Lumera Biznis audience pages render unique SSR metadata and enter the sitemap', async () => {
+  const pages = [
+    ['/za-biznise', 'LUMERA Biznis Hub', 'LUMERA Biznis Hub'],
+    ['/za-biznise/saloni', 'LUMERA za salone', 'LUMERA za salone'],
+    ['/za-biznise/edukativni-centri', 'LUMERA za edukativne centre', 'LUMERA za edukativne centre'],
+    ['/za-biznise/poslovi', 'LUMERA Poslovi za biznise', 'LUMERA Poslovi za biznise'],
+    ['/za-biznise/edukacije', 'LUMERA Edukacije za biznise', 'LUMERA Edukacije za biznise'],
+  ];
+  for (const [pathname, title, heading] of pages) {
+    const response = await createSeoResponse(request(pathname), template);
+    assert.equal(response.status, 200);
+    assert.match(response.body, new RegExp(`<title>${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(response.body, new RegExp(`<h1>${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/h1>`));
+    assert.match(response.body, new RegExp(`rel="canonical" href="https:\\/\\/lumera\\.example${pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`));
+  }
+
+  const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+  for (const [pathname] of pages) {
+    assert.match(sitemap.body, new RegExp(`https:\\/\\/lumera\\.example${pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  }
+});
+
+test('education-center registration is SSR-rendered but excluded from indexing and sitemap', async () => {
+  const registration = await createSeoResponse(request('/pridruzi-se-edukativni-centar'), template);
+  const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+  const robots = await createSeoResponse(request('/robots.txt'), template);
+  assert.equal(registration.status, 200);
+  assert.match(registration.body, /<meta name="robots" content="noindex, follow"/);
+  assert.match(registration.body, /rel="canonical" href="https:\/\/lumera\.example\/pridruzi-se-edukativni-centar"/);
+  assert.doesNotMatch(sitemap.body, /pridruzi-se-edukativni-centar/);
+  assert.match(robots.body, /Disallow: \/pridruzi-se-/);
+});
+
+test('education-center registration stays excluded from the sitemap during upstream outages', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('upstream unavailable'); };
+  try {
+    const sitemap = await createSeoResponse(request('/sitemap.xml'), template);
+    assert.equal(sitemap.status, 503);
+    assert.doesNotMatch(sitemap.body, /pridruzi-se-edukativni-centar/);
+    assert.match(sitemap.body, /https:\/\/lumera\.example\/za-biznise\/edukativni-centri/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('public product pages render only approved customer data and enter the sitemap', async () => {
   const originalFetch = global.fetch;
   const product = {

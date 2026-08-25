@@ -71,7 +71,7 @@ const router = Router();
 
 async function requireSalonOwner(req: import("express").Request) {
   const user = await getCurrentUser(req);
-  if (!user || user.role !== "SALON_OWNER") return null;
+  if (!user || !["SALON_OWNER", "EDUKATIVNI_CENTAR"].includes(user.role)) return null;
 
   const [ownerRow] = await db
     .select({ activeSalonId: usersTable.activeSalonId })

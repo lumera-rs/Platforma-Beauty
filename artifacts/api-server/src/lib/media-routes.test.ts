@@ -1276,7 +1276,7 @@ async function run() {
       email: `media-regression-${educationFixtureKey}@example.invalid`,
       passwordHash: await hashPassword(randomUUID()),
       passwordSetAt: new Date(),
-      role: "EDUCATION_CENTER_OWNER",
+      role: "EDUKATIVNI_CENTAR",
     }).returning();
     assert.ok(educationOwner);
     educationFixtureOwnerId = educationOwner.id;

@@ -362,8 +362,8 @@ const EDUCATION_PAGE_SIZE = 24;
 function CatalogView() {
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
-  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUCATION_CENTER_OWNER';
-  const isEducationCenter = user?.role === 'EDUCATION_CENTER_OWNER';
+  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUKATIVNI_CENTAR';
+  const isEducationCenter = user?.role === 'EDUKATIVNI_CENTAR';
 
   const [filters, setFilters] = useState<any>({});
   const [page, setPage] = useState(1);
@@ -606,7 +606,8 @@ function CourseDetailView({ courseId }: { courseId: string }) {
   const [, setLocation] = useLocation();
   const { data: userResponse } = useGetCurrentUser();
   const user = userResponse?.user;
-  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUCATION_CENTER_OWNER';
+  const canCreate = user?.role === 'SALON_OWNER' || user?.role === 'EDUKATIVNI_CENTAR';
+  const isSalonOperator = user?.role === "SALON_OWNER" || user?.role === "EDUKATIVNI_CENTAR";
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -617,12 +618,12 @@ function CourseDetailView({ courseId }: { courseId: string }) {
     return myCourses?.some((c: any) => c.id === courseId) ?? false;
   }, [myCourses, courseId]);
 
-  const isEducationCenter = user?.role === "EDUCATION_CENTER_OWNER";
+  const isEducationCenter = user?.role === "EDUKATIVNI_CENTAR";
 
   const { data: enrollments } = useListEnrollments(undefined, { query: { enabled: !!course?.enrollmentStatus, queryKey: getListEnrollmentsQueryKey() } });
   const { data: employees } = useListSalonEmployees({
     query: {
-      enabled: user?.role === "SALON_OWNER",
+      enabled: isSalonOperator,
       queryKey: getListSalonEmployeesQueryKey(),
     },
   });
@@ -1058,8 +1059,8 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                   )
                 ) : (
                   <div className="space-y-3">
-                    {/* Group enrollment toggle for SALON_OWNER with employees */}
-                    {user?.role === "SALON_OWNER" && employees && employees.length >= 2 && (course.groupDiscountMinimum ?? 0) > 0 && !groupMode && (
+                    {/* Group enrollment is available to every salon operator with employees. */}
+                    {isSalonOperator && employees && employees.length >= 2 && (course.groupDiscountMinimum ?? 0) > 0 && !groupMode && (
                       <Button variant="outline" className="w-full gap-2" onClick={() => setGroupMode(true)}>
                         <Users className="w-4 h-4" /> Grupna prijava ({employees.length} zaposlenih)
                       </Button>
@@ -1118,7 +1119,7 @@ function CourseDetailView({ courseId }: { courseId: string }) {
                       </div>
                     ) : (
                       <>
-                        {user?.role === "SALON_OWNER" && employees?.length ? (
+                        {isSalonOperator && employees?.length ? (
                           <div className="space-y-1.5">
                             <Label htmlFor="education-learner">Polaznik</Label>
                             <Select value={learnerId || "self"} onValueChange={(value) => setLearnerId(value === "self" ? "" : value)}>
@@ -2005,7 +2006,7 @@ function CreateSessionDialog({ courseId, open, onOpenChange }: { courseId: strin
   );
 }
 
-// ── Instructor management dialog (EDUCATION_CENTER_OWNER) ───────────────────
+// ── Instructor management dialog (EDUKATIVNI_CENTAR) ────────────────────────
 
 const instructorSchema = z.object({
   fullName: z.string().min(1, "Ime je obavezno").max(120),

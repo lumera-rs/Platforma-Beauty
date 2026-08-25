@@ -7,7 +7,7 @@ import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
-  employeeServicesTable, employeesTable, pool, salonsTable, servicesTable, smsDeliveriesTable, usersTable,
+  educationCentersTable, employeeServicesTable, employeesTable, pool, salonsTable, servicesTable, smsDeliveriesTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -41,7 +41,7 @@ async function request(base: string, path: string, token?: string, method = "GET
   return { status: response.status, body: await response.json() };
 }
 
-async function user(role: "ADMIN" | "CUSTOMER" | "INSTRUCTOR" | "JOBSEEKER" | "SALON_EMPLOYEE" | "SALON_OWNER" | "STUDENT", label: string) {
+async function user(role: "ADMIN" | "CUSTOMER" | "EDUKATIVNI_CENTAR" | "INSTRUCTOR" | "JOBSEEKER" | "SALON_EMPLOYEE" | "SALON_OWNER" | "STUDENT", label: string) {
   const passwordHash = await hashPassword(`beauty-${suffix}`);
   const [created] = await db.insert(usersTable).values({
     firstName: label, lastName: "Beauty HTTP", email: `${label}-${suffix}@example.test`,
@@ -131,6 +131,73 @@ async function run(): Promise<void> {
     server = app.listen(0);
     await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const invalidEducationEmail = `invalid-center-${suffix}@example.test`;
+    const invalidEducationRegistration = await request(base, "/auth/business-register", undefined, "POST", {
+      firstName: "Milica",
+      lastName: "Edukator",
+      email: invalidEducationEmail,
+      password: `Education-${suffix}`,
+      phone: "+381641234567",
+      businessType: "EDUCATION_CENTER",
+      businessName: `Nevažeći centar ${suffix.slice(0, 8)}`,
+      city: "Beograd",
+      address: "Njegoševa 10",
+      description: "Prekratko",
+    });
+    assert.equal(invalidEducationRegistration.status, 400, "education-center description is required and validated");
+    assert.equal(
+      (await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, invalidEducationEmail))).length,
+      0,
+      "a rejected registration leaves no user row behind",
+    );
+
+    const educationPassword = `Education-${suffix}`;
+    const educationRegistration = await request(base, "/auth/business-register", undefined, "POST", {
+      firstName: "Milica",
+      lastName: "Edukator",
+      email: `registered-center-${suffix}@example.test`,
+      password: educationPassword,
+      phone: "+381641234567",
+      businessType: "EDUCATION_CENTER",
+      businessName: `Akademija ${suffix.slice(0, 8)}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Njegoševa 10",
+      postalCode: "11000",
+      contactEmail: `education-contact-${suffix}@example.test`,
+      contactPhone: "+381641234568",
+      contactAddress: "Njegoševa 10, Beograd",
+      websiteUrl: "https://education.example.test",
+      instagramUrl: "https://instagram.com/lumera_education_test",
+      description: "Stručne beauty edukacije, praktični programi i sertifikacije za profesionalce.",
+    });
+    assert.equal(educationRegistration.status, 201, "education-center business registration succeeds");
+    assert.equal(educationRegistration.body.user.role, "EDUKATIVNI_CENTAR", "education registration assigns the canonical role");
+    createdUsers.push(educationRegistration.body.user.id);
+    const [registeredEducationUser] = await db.select().from(usersTable)
+      .where(eq(usersTable.id, educationRegistration.body.user.id)).limit(1);
+    const [registeredEducationSalon] = await db.select().from(salonsTable)
+      .where(eq(salonsTable.ownerId, educationRegistration.body.user.id)).limit(1);
+    const [registeredEducationCenter] = await db.select().from(educationCentersTable)
+      .where(eq(educationCentersTable.ownerId, educationRegistration.body.user.id)).limit(1);
+    assert.ok(registeredEducationUser?.activeSalonId, "education registration sets an active salon workspace");
+    assert.equal(registeredEducationUser.activeSalonId, registeredEducationSalon?.id, "active salon points to the created workspace");
+    assert.equal(registeredEducationSalon?.active, false, "new operational workspace is private until onboarding completes");
+    assert.equal(registeredEducationCenter?.description, "Stručne beauty edukacije, praktični programi i sertifikacije za profesionalce.");
+    assert.equal(registeredEducationCenter?.contactEmail, `education-contact-${suffix}@example.test`);
+    assert.equal(registeredEducationCenter?.websiteUrl, "https://education.example.test");
+    const educationToken = await createSession(educationRegistration.body.user.id);
+    assert.equal((await request(base, "/salon/profile", educationToken)).status, 200, "education center can access salon-owner workspace APIs");
+    const educationListing = await request(
+      base,
+      "/beauty-jobs",
+      educationToken,
+      "POST",
+      body(hairCategory.id, `Instruktor edukacija ${suffix}`),
+    );
+    assert.equal(educationListing.status, 201, "education center can post a Beauty Poslovi listing");
+    createdListingIds.push(educationListing.body.id);
 
     const registrationDigits = suffix.replace(/\D/g, "").slice(0, 6).padEnd(6, "7");
     const registrationPhone = `+38164${registrationDigits}`;
@@ -1283,6 +1350,7 @@ async function run(): Promise<void> {
       await db.delete(smsDeliveriesTable).where(inArray(smsDeliveriesTable.eventKey, monitorSmsEventKeys));
     }
     await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.recipientEmail, `%${suffix}%`));
+    await db.delete(educationCentersTable).where(inArray(educationCentersTable.ownerId, createdUsers));
     await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUsers));
     if (createdUsers.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUsers));
   }

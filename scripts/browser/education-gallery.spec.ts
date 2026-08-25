@@ -69,7 +69,7 @@ async function createGalleryFixture(): Promise<GalleryFixture> {
       email: `browser-gallery-owner-${suffix}@example.test`,
       passwordHash: await hashPassword(ownerPassword),
       passwordSetAt: new Date(),
-      role: "EDUCATION_CENTER_OWNER",
+      role: "EDUKATIVNI_CENTAR",
     }).returning();
     if (!owner) throw new Error("Could not create gallery owner fixture.");
     ownerId = owner.id;

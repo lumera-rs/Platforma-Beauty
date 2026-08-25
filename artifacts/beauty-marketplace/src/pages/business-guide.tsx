@@ -144,7 +144,7 @@ export default function BusinessGuidePage() {
             {guide.chapters.map((chapter, chapterIndex) => {
               const badge = audienceBadge(chapter.audience);
               const highlighted =
-                (chapter.audience === "VLASNIK" && role === "SALON_OWNER") ||
+                (chapter.audience === "VLASNIK" && (role === "SALON_OWNER" || role === "EDUKATIVNI_CENTAR")) ||
                 (chapter.audience === "ZAPOSLENI" && role === "SALON_EMPLOYEE");
               return (
                 <section key={chapter.id} id={chapter.id} className="mb-14 scroll-mt-24" data-testid={`section-chapter-${chapter.id}`}>

@@ -260,7 +260,7 @@ async function seed(): Promise<void> {
   const demoUsers = await db.insert(usersTable).values([
     { firstName: "Milica", lastName: "Jovanović", email: "admin@lumera.local", passwordHash, passwordSetAt, role: "SUPER_ADMIN" },
     { firstName: "Ana", lastName: "Petrović", email: "salon@lumera.local", passwordHash, passwordSetAt, role: "SALON_OWNER" },
-    { firstName: "Jelena", lastName: "Marković", email: "edukacija@lumera.local", passwordHash, passwordSetAt, role: "EDUCATION_CENTER_OWNER" },
+    { firstName: "Jelena", lastName: "Marković", email: "edukacija@lumera.local", passwordHash, passwordSetAt, role: "EDUKATIVNI_CENTAR" },
     { firstName: "Teodora", lastName: "Nikolić", email: "kupac@lumera.local", passwordHash, passwordSetAt, role: "CUSTOMER" },
     { firstName: "Maja", lastName: "Milošević", email: "zaposleni@lumera.local", passwordHash, passwordSetAt, role: "SALON_EMPLOYEE" },
     ...Array.from({ length: 30 }, (_, i) => ({
