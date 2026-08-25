@@ -27,6 +27,7 @@ import { ensureMarketplacePerformanceIndexes } from "./lib/marketplace-performan
 import { createResilientScheduledJob } from "./lib/scheduler-resilience";
 import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
+import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
 
 const rawPort = process.env["PORT"];
 
@@ -118,6 +119,10 @@ const beautyJobsExpirySweep = createResilientScheduledJob({
   job: "beauty-jobs-expiry-sweep",
   run: expireBeautyJobListings,
 });
+const beautyJobEmailDeliveryAlerts = createResilientScheduledJob({
+  job: "beauty-job-email-delivery-alerts",
+  run: runBeautyJobDeliveryFailureAlerts,
+});
 const scheduledJobs = [
   rescheduledConfirmationRetries,
   educationSessionMaintenance,
@@ -131,6 +136,7 @@ const scheduledJobs = [
   brevoWebhookCoverageMonitor,
   malformedWebhookAlerts,
   beautyJobsExpirySweep,
+  beautyJobEmailDeliveryAlerts,
 ];
 
 const retryInterval = setInterval(() => {
@@ -190,12 +196,14 @@ const deliveryReportAlertInterval = setInterval(() => {
   void deliveryReportRecoveryAlerts.run();
   void brevoWebhookCoverageMonitor.run();
   void malformedWebhookAlerts.run();
+  void beautyJobEmailDeliveryAlerts.run();
 }, 15 * 60_000);
 deliveryReportAlertInterval.unref();
 void deliveryReportSilenceAlerts.run();
 void deliveryReportRecoveryAlerts.run();
 void brevoWebhookCoverageMonitor.run();
 void malformedWebhookAlerts.run();
+void beautyJobEmailDeliveryAlerts.run();
 compatibilityImageCleanupInterval.unref();
 void compatibilityImageCleanup.run();
 void communicationArchive.run();

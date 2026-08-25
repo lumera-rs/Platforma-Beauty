@@ -358,7 +358,7 @@ async function run() {
     assert.ok(await columnExists("users", "marketing_emails_enabled"), "users.marketing_emails_enabled added");
     for (const column of [
       "appointment_id", "recipient_name", "html_content", "status", "scheduled_at",
-      "retry_count", "next_retry_at", "processing_token",
+      "retry_count", "retryable_failure", "next_retry_at", "processing_token",
     ]) {
       assert.ok(await columnExists("email_deliveries", column), `email_deliveries.${column} added`);
     }
@@ -416,6 +416,8 @@ async function run() {
       "email_deliveries_report_alert_history_idx",
       "email_deliveries_provider_message_idx",
       "email_deliveries_retry_index",
+      "email_deliveries_beauty_job_issue_idx",
+      "email_deliveries_beauty_job_alert_history_idx",
       "beauty_job_notifications_expiry_warning_unique",
       "appointments_salon_customer_completed_date_idx",
       "salon_customers_salon_id_idx",

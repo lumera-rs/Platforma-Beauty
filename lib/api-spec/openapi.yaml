@@ -5097,6 +5097,39 @@ paths:
       operationId: sweepExpiredBeautyJobs
       tags: [admin]
       responses: { "200": { description: Sweep result, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobSweepResult" } } } } }
+  /admin/beauty-jobs/email-deliveries:
+    get:
+      operationId: getBeautyJobDeliveryIssues
+      tags: [admin]
+      summary: List delayed or terminal Beauty Poslovi email deliveries without recipient data
+      responses:
+        "200":
+          description: Privacy-safe Beauty Poslovi delivery issues
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BeautyJobDeliveryIssues" }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+  /admin/beauty-jobs/email-deliveries/{deliveryId}/retry:
+    post:
+      operationId: retryBeautyJobDelivery
+      tags: [admin]
+      summary: Retry one terminal Beauty Poslovi email with a retryable failure
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+      responses:
+        "200":
+          description: Retry attempted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BeautyJobDeliveryRetryResult" }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "404": { description: Delivery not found }
+        "409": { description: Delivery is not retryable }
   /admin/beauty-jobs/queue:
     get:
       operationId: getBeautyJobModerationQueue
@@ -9258,6 +9291,46 @@ components:
         updatedByUserId: { type: [string, "null"] }
         updatedAt: { type: string, format: date-time }
       required: [id, listingExpiryDays, hourlyPostingLimit, updatedByUserId, updatedAt]
+    BeautyJobDeliveryIssue:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        emailType:
+          type: string
+          enum: [beauty_job_new_contact, beauty_job_author_reply, beauty_job_moderation, beauty_job_expiry_warning]
+        status: { type: string, enum: [queued, failed, skipped] }
+        issueKind: { type: string, enum: [delayed, temporary, permanent, configuration] }
+        retryCount: { type: integer, minimum: 0 }
+        retryAvailable: { type: boolean }
+        nextRetryAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+      required: [id, emailType, status, issueKind, retryCount, retryAvailable, nextRetryAt, createdAt]
+    BeautyJobDeliveryIssueSummary:
+      type: object
+      properties:
+        delayedQueuedCount: { type: integer, minimum: 0 }
+        failedCount: { type: integer, minimum: 0 }
+        skippedCount: { type: integer, minimum: 0 }
+        totalIssueCount: { type: integer, minimum: 0 }
+        terminalIssueCount: { type: integer, minimum: 0 }
+        staleAfterMinutes: { type: integer, minimum: 1 }
+        alertThreshold: { type: integer, minimum: 1 }
+      required: [delayedQueuedCount, failedCount, skippedCount, totalIssueCount, terminalIssueCount, staleAfterMinutes, alertThreshold]
+    BeautyJobDeliveryIssues:
+      type: object
+      properties:
+        summary: { $ref: "#/components/schemas/BeautyJobDeliveryIssueSummary" }
+        deliveries:
+          type: array
+          items: { $ref: "#/components/schemas/BeautyJobDeliveryIssue" }
+      required: [summary, deliveries]
+    BeautyJobDeliveryRetryResult:
+      type: object
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        status: { type: string, enum: [queued, processing, sent, failed, skipped] }
+        retried: { type: boolean }
+      required: [id, status, retried]
     BeautyJobSaveResult:
       type: object
       properties: { saved: { type: boolean } }

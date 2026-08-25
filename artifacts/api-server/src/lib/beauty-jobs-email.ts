@@ -5,6 +5,7 @@ import {
   deliverQueuedTransactionalEmail,
   enqueueTransactionalEmail,
   lumeraEmailHtml,
+  retryBeautyJobEmailDelivery as retryTransactionalBeautyJobEmailDelivery,
   type TransactionalEmailTransport,
 } from "./brevo";
 
@@ -155,4 +156,12 @@ export async function sendBeautyJobEmail(
   const result = await db.transaction((tx) => enqueueBeautyJobEmail(tx, input));
   if ("skipped" in result) return result;
   return deliverBeautyJobEmail(input.eventKey, transport);
+}
+
+export async function retryBeautyJobEmailDelivery(deliveryId: string) {
+  return retryTransactionalBeautyJobEmailDelivery(
+    deliveryId,
+    new Date(),
+    transportOverrideForTests,
+  );
 }

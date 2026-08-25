@@ -5965,6 +5965,89 @@ export interface BeautyJobSettings {
   updatedAt: string;
 }
 
+export type BeautyJobDeliveryIssueEmailType = typeof BeautyJobDeliveryIssueEmailType[keyof typeof BeautyJobDeliveryIssueEmailType];
+
+
+export const BeautyJobDeliveryIssueEmailType = {
+  beauty_job_new_contact: 'beauty_job_new_contact',
+  beauty_job_author_reply: 'beauty_job_author_reply',
+  beauty_job_moderation: 'beauty_job_moderation',
+  beauty_job_expiry_warning: 'beauty_job_expiry_warning',
+} as const;
+
+export type BeautyJobDeliveryIssueStatus = typeof BeautyJobDeliveryIssueStatus[keyof typeof BeautyJobDeliveryIssueStatus];
+
+
+export const BeautyJobDeliveryIssueStatus = {
+  queued: 'queued',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+export type BeautyJobDeliveryIssueIssueKind = typeof BeautyJobDeliveryIssueIssueKind[keyof typeof BeautyJobDeliveryIssueIssueKind];
+
+
+export const BeautyJobDeliveryIssueIssueKind = {
+  delayed: 'delayed',
+  temporary: 'temporary',
+  permanent: 'permanent',
+  configuration: 'configuration',
+} as const;
+
+export interface BeautyJobDeliveryIssue {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  emailType: BeautyJobDeliveryIssueEmailType;
+  status: BeautyJobDeliveryIssueStatus;
+  issueKind: BeautyJobDeliveryIssueIssueKind;
+  /** @minimum 0 */
+  retryCount: number;
+  retryAvailable: boolean;
+  /** @nullable */
+  nextRetryAt: string | null;
+  createdAt: string;
+}
+
+export interface BeautyJobDeliveryIssueSummary {
+  /** @minimum 0 */
+  delayedQueuedCount: number;
+  /** @minimum 0 */
+  failedCount: number;
+  /** @minimum 0 */
+  skippedCount: number;
+  /** @minimum 0 */
+  totalIssueCount: number;
+  /** @minimum 0 */
+  terminalIssueCount: number;
+  /** @minimum 1 */
+  staleAfterMinutes: number;
+  /** @minimum 1 */
+  alertThreshold: number;
+}
+
+export interface BeautyJobDeliveryIssues {
+  summary: BeautyJobDeliveryIssueSummary;
+  deliveries: BeautyJobDeliveryIssue[];
+}
+
+export type BeautyJobDeliveryRetryResultStatus = typeof BeautyJobDeliveryRetryResultStatus[keyof typeof BeautyJobDeliveryRetryResultStatus];
+
+
+export const BeautyJobDeliveryRetryResultStatus = {
+  queued: 'queued',
+  processing: 'processing',
+  sent: 'sent',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+export interface BeautyJobDeliveryRetryResult {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  status: BeautyJobDeliveryRetryResultStatus;
+  retried: boolean;
+}
+
 export interface BeautyJobSaveResult {
   saved: boolean;
 }

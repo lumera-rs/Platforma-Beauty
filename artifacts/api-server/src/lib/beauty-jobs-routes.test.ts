@@ -19,6 +19,7 @@ import {
   retryFailedRetryableEmails,
   type TransactionalEmailTransport,
 } from "./brevo";
+import { runBeautyJobDeliveryFailureAlerts } from "./beauty-jobs-delivery-monitor";
 
 const suffix = randomUUID();
 const createdUsers: string[] = [];
@@ -81,6 +82,7 @@ async function run(): Promise<void> {
   let originalSettings: typeof beautyJobPlatformSettingsTable.$inferSelect | undefined;
   const originalAppBaseUrl = process.env["APP_BASE_URL"];
   process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
+  const monitorAlertEventKeys: string[] = [];
   const sentEmails: Array<{ email: string; subject: string; idempotencyKey: string; htmlContent: string }> = [];
   const routeTransport: TransactionalEmailTransport = {
     async send(input) {
@@ -432,6 +434,171 @@ async function run(): Promise<void> {
     assert.deepEqual(retriedRecipients, [customer.user.email.toLowerCase()], "retry preserves the isolated recipient");
     assert.equal(sentRetry?.retryCount, 1);
 
+    // Admin delivery visibility is intentionally privacy-safe and limited to
+    // delayed/terminal Beauty Poslovi messages. Manual retry is exposed only
+    // for a terminal provider failure that was classified as temporary.
+    const exhaustedEventKey = `beauty-job:delivery-retryable:${suffix}`;
+    const exhaustedFailureTransport: TransactionalEmailTransport = {
+      async send() {
+        throw new Error("Brevo 503: temporary delivery fixture");
+      },
+    };
+    await sendBeautyJobEmail({
+      eventKey: exhaustedEventKey,
+      emailType: "beauty_job_author_reply",
+      recipientUserId: customer.user.id,
+      subject: `PRIVATE SUBJECT ${suffix}`,
+      title: "Retry classification",
+      content: `PRIVATE BODY ${suffix}`,
+      listingId: customerListing.id,
+      contactId: contact.body.id,
+    }, exhaustedFailureTransport);
+    let [retryableIssue] = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.eventKey, exhaustedEventKey)).limit(1);
+    for (let attempt = 0; retryableIssue?.status === "queued" && attempt < 6; attempt += 1) {
+      assert.ok(retryableIssue.nextRetryAt);
+      await retryFailedRetryableEmails(
+        new Date(retryableIssue.nextRetryAt.getTime() + 1),
+        exhaustedFailureTransport,
+      );
+      [retryableIssue] = await db.select().from(emailDeliveriesTable)
+        .where(eq(emailDeliveriesTable.eventKey, exhaustedEventKey)).limit(1);
+    }
+    assert.equal(retryableIssue?.status, "failed", "temporary provider errors become terminal after retries are exhausted");
+    assert.equal(retryableIssue?.retryableFailure, true, "exhausted temporary failure becomes eligible for manual retry");
+
+    const issueRecipient = `private-delivery-${suffix}@example.test`;
+    const issueRows = await db.insert(emailDeliveriesTable).values([
+      {
+        eventKey: `beauty-job:delivery-delayed:${suffix}`,
+        emailType: "beauty_job_new_contact",
+        recipientEmail: issueRecipient,
+        subject: `PRIVATE SUBJECT ${suffix}`,
+        htmlContent: `<p>PRIVATE BODY ${suffix}</p>`,
+        errorMessage: `PRIVATE ERROR ${suffix}`,
+        status: "queued",
+        nextRetryAt: new Date(Date.now() - 60_000),
+        createdAt: new Date(Date.now() - 31 * 60_000),
+      },
+      {
+        eventKey: `beauty-job:delivery-permanent:${suffix}`,
+        emailType: "beauty_job_moderation",
+        recipientEmail: issueRecipient,
+        subject: `PRIVATE SUBJECT ${suffix}`,
+        htmlContent: `<p>PRIVATE BODY ${suffix}</p>`,
+        errorMessage: `PRIVATE ERROR ${suffix}`,
+        status: "failed",
+        retryCount: 1,
+        retryableFailure: false,
+      },
+      {
+        eventKey: `beauty-job:delivery-skipped:${suffix}`,
+        emailType: "beauty_job_expiry_warning",
+        recipientEmail: issueRecipient,
+        subject: `PRIVATE SUBJECT ${suffix}`,
+        htmlContent: `<p>PRIVATE BODY ${suffix}</p>`,
+        errorMessage: `PRIVATE ERROR ${suffix}`,
+        status: "skipped",
+      },
+    ]).returning();
+    const skippedIssue = issueRows.find((row) => row.eventKey.includes("skipped"))!;
+
+    assert.equal(
+      (await request(base, "/admin/beauty-jobs/email-deliveries")).status,
+      401,
+      "delivery issues require authentication",
+    );
+    assert.equal(
+      (await request(base, "/admin/beauty-jobs/email-deliveries", customer.token)).status,
+      403,
+      "delivery issues require an administrator",
+    );
+    const issues = await request(base, "/admin/beauty-jobs/email-deliveries", admin.token);
+    assert.equal(issues.status, 200);
+    for (const issue of [...issueRows, retryableIssue!]) {
+      assert.ok(
+        issues.body.deliveries.some((delivery: any) => delivery.id === issue.id),
+        `admin response includes isolated issue ${issue.eventKey}`,
+      );
+    }
+    const serializedIssues = JSON.stringify(issues.body);
+    for (const privateValue of [
+      issueRecipient,
+      customer.user.email,
+      `PRIVATE SUBJECT ${suffix}`,
+      `PRIVATE BODY ${suffix}`,
+      `PRIVATE ERROR ${suffix}`,
+    ]) {
+      assert.equal(
+        serializedIssues.includes(privateValue),
+        false,
+        `admin delivery response must not reveal ${privateValue.split(" ")[0]}`,
+      );
+    }
+    assert.equal(
+      issues.body.deliveries.find((delivery: any) => delivery.id === retryableIssue.id)?.retryAvailable,
+      true,
+    );
+    assert.equal(
+      issues.body.deliveries.find((delivery: any) => delivery.id === skippedIssue.id)?.retryAvailable,
+      false,
+    );
+    assert.equal(
+      (await request(base, `/admin/beauty-jobs/email-deliveries/${skippedIssue.id}/retry`, admin.token, "POST")).status,
+      409,
+      "skipped delivery cannot be retried manually",
+    );
+    const concurrentManualRetries = await Promise.all([
+      request(base, `/admin/beauty-jobs/email-deliveries/${retryableIssue.id}/retry`, admin.token, "POST"),
+      request(base, `/admin/beauty-jobs/email-deliveries/${retryableIssue.id}/retry`, admin.token, "POST"),
+    ]);
+    assert.deepEqual(
+      concurrentManualRetries.map((result) => result.status).sort(),
+      [200, 409],
+      "concurrent administrator retries result in one provider attempt",
+    );
+    const [manuallyRetried] = await db.select().from(emailDeliveriesTable)
+      .where(eq(emailDeliveriesTable.id, retryableIssue.id)).limit(1);
+    assert.equal(manuallyRetried?.status, "sent");
+
+    // Five terminal rows trigger the administrator monitor. A second run
+    // inside the six-hour cooldown must not send another alert.
+    await db.insert(emailDeliveriesTable).values([0, 1, 2].map((index) => ({
+      eventKey: `beauty-job:delivery-monitor:${suffix}:${index}`,
+      emailType: "beauty_job_moderation",
+      recipientEmail: issueRecipient,
+      subject: "Monitoring fixture",
+      htmlContent: "<p>Monitoring fixture</p>",
+      status: "failed" as const,
+      errorMessage: "Brevo 400 fixture",
+      retryableFailure: false,
+    })));
+    const alertRecipients: string[] = [];
+    const alertTransport: TransactionalEmailTransport = {
+      async send(input) {
+        alertRecipients.push(input.to.email.toLowerCase());
+        return { messageId: `beauty-job-alert-${alertRecipients.length}` };
+      },
+    };
+    const alertAt = new Date();
+    const firstAlert = await runBeautyJobDeliveryFailureAlerts(alertAt, alertTransport);
+    monitorAlertEventKeys.push(...firstAlert.attemptedEventKeys);
+    assert.ok(firstAlert.summary.terminalIssueCount >= 5, "monitor observes the configured terminal threshold");
+    assert.ok(alertRecipients.includes(admin.user.email.toLowerCase()), "monitor emails active administrators");
+    const currentAdminAlertCount = alertRecipients.filter(
+      (email) => email === admin.user.email.toLowerCase(),
+    ).length;
+    const secondAlert = await runBeautyJobDeliveryFailureAlerts(
+      new Date(alertAt.getTime() + 60_000),
+      alertTransport,
+    );
+    monitorAlertEventKeys.push(...secondAlert.attemptedEventKeys);
+    assert.equal(
+      alertRecipients.filter((email) => email === admin.user.email.toLowerCase()).length,
+      currentAdminAlertCount,
+      "cooldown suppresses a repeated alert for the same administrator",
+    );
+
     const report = await request(base, `/beauty-jobs/${customerListing.id}/report`, undefined, "POST", { reason: "Anonimna prijava" });
     assert.equal(report.status, 201); assert.equal(report.body.reporterUserId, null);
     const queue = await request(base, "/admin/beauty-jobs/queue", admin.token);
@@ -500,6 +667,9 @@ async function run(): Promise<void> {
     }).where(eq(beautyJobPlatformSettingsTable.id, originalSettings.id));
     else await db.delete(beautyJobPlatformSettingsTable);
     if (createdListingIds.length) await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
+    if (monitorAlertEventKeys.length) {
+      await db.delete(emailDeliveriesTable).where(inArray(emailDeliveriesTable.eventKey, monitorAlertEventKeys));
+    }
     await db.delete(emailDeliveriesTable).where(like(emailDeliveriesTable.recipientEmail, `%${suffix}%`));
     await db.delete(salonsTable).where(inArray(salonsTable.ownerId, createdUsers));
     if (createdUsers.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUsers));

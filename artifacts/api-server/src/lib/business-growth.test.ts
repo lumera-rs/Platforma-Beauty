@@ -2862,6 +2862,7 @@ async function runIntegrationTests(): Promise<void> {
       const [row] = await db.select().from(emailDeliveriesTable).where(eq(emailDeliveriesTable.eventKey, ek));
       assert.equal(row?.status, "failed", "permanent failure is terminal, not queued");
       assert.equal(row?.nextRetryAt, null, "permanent failure has no retry schedule");
+      assert.equal(row?.retryableFailure, false, "permanent failure is never eligible for manual retry");
 
       // A subsequent send with the same eventKey must NOT report sent just because
       // the row exists — it reflects the real (failed) state.

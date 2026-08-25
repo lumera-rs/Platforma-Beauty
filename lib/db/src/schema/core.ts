@@ -208,6 +208,7 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   retryCount: integer("retry_count").notNull().default(0),
+  retryableFailure: boolean("retryable_failure").notNull().default(false),
   nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
   processingToken: text("processing_token"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
@@ -231,6 +232,12 @@ export const emailDeliveriesTable = pgTable("email_deliveries", {
   index("email_deliveries_provider_message_idx")
     .on(table.providerMessageId)
     .where(sql`${table.emailType} = 'automation'`),
+  index("email_deliveries_beauty_job_issue_idx")
+    .on(table.status, table.createdAt)
+    .where(sql`${table.emailType} IN ('beauty_job_new_contact', 'beauty_job_author_reply', 'beauty_job_moderation', 'beauty_job_expiry_warning')`),
+  index("email_deliveries_beauty_job_alert_history_idx")
+    .on(table.recipientEmail, table.createdAt)
+    .where(sql`${table.emailType} = 'beauty_job_delivery_alert'`),
 ]);
 
 export const emailCampaignsTable = pgTable("email_campaigns", {

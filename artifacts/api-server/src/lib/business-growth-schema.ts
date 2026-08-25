@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 22;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 23;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -413,6 +413,7 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS scheduled_at timestamptz`,
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS sent_at timestamptz`,
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS retryable_failure boolean NOT NULL DEFAULT false`,
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS next_retry_at timestamptz`,
     `ALTER TABLE ${s}.email_deliveries ADD COLUMN IF NOT EXISTS processing_token text`,
     `CREATE INDEX IF NOT EXISTS email_deliveries_retry_index ON ${s}.email_deliveries (status, next_retry_at)`,
@@ -434,6 +435,15 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_provider_message_idx
        ON ${s}.email_deliveries (provider_message_id)
        WHERE email_type = 'automation'`,
+    // v23: bounded Beauty Poslovi delivery-issue dashboard scans and alert
+    // cooldown history. These partial indexes mirror core.ts and exclude every
+    // unrelated transactional email from the operational hot path.
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_beauty_job_issue_idx
+       ON ${s}.email_deliveries (status, created_at)
+       WHERE email_type IN ('beauty_job_new_contact', 'beauty_job_author_reply', 'beauty_job_moderation', 'beauty_job_expiry_warning')`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS email_deliveries_beauty_job_alert_history_idx
+       ON ${s}.email_deliveries (recipient_email, created_at)
+       WHERE email_type = 'beauty_job_delivery_alert'`,
 
     // v22: marketing consent is separate from transactional delivery. Existing
     // accounts remain opted in so this additive rollout never changes consent

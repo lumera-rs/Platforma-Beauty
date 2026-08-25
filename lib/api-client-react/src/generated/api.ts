@@ -85,6 +85,8 @@ import type {
   BeautyJobContactUpdateInput,
   BeautyJobContactsResponse,
   BeautyJobCreateInput,
+  BeautyJobDeliveryIssues,
+  BeautyJobDeliveryRetryResult,
   BeautyJobListResponse,
   BeautyJobListing,
   BeautyJobModerationInput,
@@ -22191,6 +22193,154 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getSweepExpiredBeautyJobsMutationOptions(options));
+    }
+
+export const getGetBeautyJobDeliveryIssuesUrl = () => {
+
+
+
+
+  return `/api/admin/beauty-jobs/email-deliveries`
+}
+
+/**
+ * @summary List delayed or terminal Beauty Poslovi email deliveries without recipient data
+ */
+export const getBeautyJobDeliveryIssues = async ( options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobDeliveryIssues> => {
+
+  return customFetch<BeautyJobDeliveryIssues>(getGetBeautyJobDeliveryIssuesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBeautyJobDeliveryIssuesQueryKey = () => {
+    return [
+    `/api/admin/beauty-jobs/email-deliveries`
+    ] as const;
+    }
+
+
+export const getGetBeautyJobDeliveryIssuesQueryOptions = <TData = Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBeautyJobDeliveryIssuesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>> = ({ signal }) => getBeautyJobDeliveryIssues({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBeautyJobDeliveryIssuesQueryResult = NonNullable<Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>>
+export type GetBeautyJobDeliveryIssuesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List delayed or terminal Beauty Poslovi email deliveries without recipient data
+ */
+
+export function useGetBeautyJobDeliveryIssues<TData = Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobDeliveryIssues>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBeautyJobDeliveryIssuesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRetryBeautyJobDeliveryUrl = (deliveryId: string,) => {
+
+
+
+
+  return `/api/admin/beauty-jobs/email-deliveries/${deliveryId}/retry`
+}
+
+/**
+ * @summary Retry one terminal Beauty Poslovi email with a retryable failure
+ */
+export const retryBeautyJobDelivery = async (deliveryId: string, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobDeliveryRetryResult> => {
+
+  return customFetch<BeautyJobDeliveryRetryResult>(getRetryBeautyJobDeliveryUrl(deliveryId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRetryBeautyJobDeliveryMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryBeautyJobDelivery>>, TError,{deliveryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryBeautyJobDelivery>>, TError,{deliveryId: string}, TContext> => {
+
+const mutationKey = ['retryBeautyJobDelivery'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryBeautyJobDelivery>>, {deliveryId: string}> = (props) => {
+          const {deliveryId} = props ?? {};
+
+          return  retryBeautyJobDelivery(deliveryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryBeautyJobDeliveryMutationResult = NonNullable<Awaited<ReturnType<typeof retryBeautyJobDelivery>>>
+
+    export type RetryBeautyJobDeliveryMutationError = ErrorType<void>
+
+    /**
+ * @summary Retry one terminal Beauty Poslovi email with a retryable failure
+ */
+export const useRetryBeautyJobDelivery = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryBeautyJobDelivery>>, TError,{deliveryId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryBeautyJobDelivery>>,
+        TError,
+        {deliveryId: string},
+        TContext
+      > => {
+      return useMutation(getRetryBeautyJobDeliveryMutationOptions(options));
     }
 
 export const getGetBeautyJobModerationQueueUrl = () => {

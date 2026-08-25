@@ -13,6 +13,7 @@ import {
   CreateBeautyJobRentalRequestResponse,
   CreateBeautyJobBody, CreateBeautyJobResponse,
   GetBeautyJobModerationQueueResponse, GetBeautyJobParams, GetBeautyJobResponse,
+  GetBeautyJobDeliveryIssuesResponse,
   GetBeautyJobSettingsResponse, ListBeautyJobCategoriesResponse,
   ListBeautyJobInboxResponse, ListBeautyJobNotificationsResponse,
   ListBeautyJobRentalRequestInboxResponse, ListMyBeautyJobRentalRequestsResponse,
@@ -23,6 +24,7 @@ import {
   RenewBeautyJobResponse, ReplyToBeautyJobContactBody,
   ReplyToBeautyJobContactParams, ReplyToBeautyJobContactResponse,
   ReportBeautyJobBody, ReportBeautyJobParams, ReportBeautyJobResponse,
+  RetryBeautyJobDeliveryParams, RetryBeautyJobDeliveryResponse,
   RespondToBeautyJobRentalRequestBody, RespondToBeautyJobRentalRequestParams,
   RespondToBeautyJobRentalRequestResponse,
   ResolveBeautyJobReportBody, ResolveBeautyJobReportParams,
@@ -37,7 +39,9 @@ import { expireBeautyJobListings } from "../lib/beauty-jobs-maintenance";
 import {
   deliverBeautyJobEmail,
   enqueueBeautyJobEmail,
+  retryBeautyJobEmailDelivery,
 } from "../lib/beauty-jobs-email";
+import { listBeautyJobDeliveryIssues } from "../lib/beauty-jobs-delivery-monitor";
 
 const router = Router();
 type BeautyJobTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -688,6 +692,31 @@ async function admin(req: import("express").Request, res: import("express").Resp
 router.get("/admin/beauty-jobs/settings", async (req, res, next) => { try { if (!(await admin(req, res))) return; res.json(GetBeautyJobSettingsResponse.parse(settingsView(await settings()))); } catch (e) { next(e); } });
 router.patch("/admin/beauty-jobs/settings", async (req, res, next) => { try { const user = await admin(req, res); if (!user) return; const b = UpdateBeautyJobSettingsBody.safeParse(req.body); if (!b.success) return bad(res); const current = await settings(); const [updated] = await db.update(beautyJobPlatformSettingsTable).set({ ...b.data, updatedByUserId: user.id, updatedAt: new Date() }).where(eq(beautyJobPlatformSettingsTable.id, current.id)).returning(); res.json(UpdateBeautyJobSettingsResponse.parse(settingsView(updated!))); } catch (e) { next(e); } });
 router.post("/admin/beauty-jobs/expiry-sweep", async (req, res, next) => { try { if (!(await admin(req, res))) return; const expired = await expireBeautyJobListings(); res.json(SweepExpiredBeautyJobsResponse.parse({ expired })); } catch (e) { next(e); } });
+router.get("/admin/beauty-jobs/email-deliveries", async (req, res, next) => { try {
+  if (!(await admin(req, res))) return;
+  res.json(GetBeautyJobDeliveryIssuesResponse.parse(await listBeautyJobDeliveryIssues()));
+} catch (e) { next(e); } });
+router.post("/admin/beauty-jobs/email-deliveries/:deliveryId/retry", async (req, res, next) => { try {
+  if (!(await admin(req, res))) return;
+  const parsed = RetryBeautyJobDeliveryParams.safeParse(req.params);
+  if (!parsed.success) return bad(res);
+  const result = await retryBeautyJobEmailDelivery(parsed.data.deliveryId);
+  if (!result.ok) {
+    const status = result.reason === "not_found" ? 404 : 409;
+    res.status(status).json({
+      error: result.reason === "not_found"
+        ? "Beauty Poslovi delivery zapis nije pronađen."
+        : "Ručni retry je dozvoljen samo za terminalnu prolaznu grešku.",
+      code: result.reason === "not_found" ? "NOT_FOUND" : "DELIVERY_NOT_RETRYABLE",
+    });
+    return;
+  }
+  res.json(RetryBeautyJobDeliveryResponse.parse({
+    id: parsed.data.deliveryId,
+    status: result.status,
+    retried: true,
+  }));
+} catch (e) { next(e); } });
 router.get("/admin/beauty-jobs/queue", async (req, res, next) => { try {
   if (!(await admin(req, res))) return; const [listings, reports] = await Promise.all([
     listingQuery().where(or(eq(beautyJobListingsTable.moderationStatus, "pending"), eq(beautyJobListingsTable.moderationStatus, "rejected"))).orderBy(desc(beautyJobListingsTable.createdAt)),

@@ -30,6 +30,7 @@ function schedulerJobLabel(job: string): string {
     "automation-worker": "automatizacije",
     "delivery-report-silence-alerts": "provera izveštaja o isporuci",
     "delivery-report-recovery-alerts": "oporavak izveštaja o isporuci",
+    "beauty-job-email-delivery-alerts": "upozorenja za Beauty Poslovi mejlove",
   };
   return labels[job] ?? job;
 }

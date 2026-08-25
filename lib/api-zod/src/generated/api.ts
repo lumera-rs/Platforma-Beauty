@@ -12728,6 +12728,69 @@ export const SweepExpiredBeautyJobsResponse = zod.object({
 })
 
 
+/**
+ * @summary List delayed or terminal Beauty Poslovi email deliveries without recipient data
+ */
+export const getBeautyJobDeliveryIssuesResponseSummaryDelayedQueuedCountMin = 0;
+
+export const getBeautyJobDeliveryIssuesResponseSummaryFailedCountMin = 0;
+
+export const getBeautyJobDeliveryIssuesResponseSummarySkippedCountMin = 0;
+
+export const getBeautyJobDeliveryIssuesResponseSummaryTotalIssueCountMin = 0;
+
+export const getBeautyJobDeliveryIssuesResponseSummaryTerminalIssueCountMin = 0;
+
+
+
+export const getBeautyJobDeliveryIssuesResponseDeliveriesItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobDeliveryIssuesResponseDeliveriesItemRetryCountMin = 0;
+
+
+
+export const GetBeautyJobDeliveryIssuesResponse = zod.object({
+  "summary": zod.object({
+  "delayedQueuedCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseSummaryDelayedQueuedCountMin),
+  "failedCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseSummaryFailedCountMin),
+  "skippedCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseSummarySkippedCountMin),
+  "totalIssueCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseSummaryTotalIssueCountMin),
+  "terminalIssueCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseSummaryTerminalIssueCountMin),
+  "staleAfterMinutes": zod.number().int().min(1),
+  "alertThreshold": zod.number().int().min(1)
+}),
+  "deliveries": zod.array(zod.object({
+  "id": zod.string().regex(getBeautyJobDeliveryIssuesResponseDeliveriesItemIdRegExp),
+  "emailType": zod.enum(['beauty_job_new_contact', 'beauty_job_author_reply', 'beauty_job_moderation', 'beauty_job_expiry_warning']),
+  "status": zod.enum(['queued', 'failed', 'skipped']),
+  "issueKind": zod.enum(['delayed', 'temporary', 'permanent', 'configuration']),
+  "retryCount": zod.number().int().min(getBeautyJobDeliveryIssuesResponseDeliveriesItemRetryCountMin),
+  "retryAvailable": zod.boolean(),
+  "nextRetryAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Retry one terminal Beauty Poslovi email with a retryable failure
+ */
+export const retryBeautyJobDeliveryPathDeliveryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const RetryBeautyJobDeliveryParams = zod.object({
+  "deliveryId": zod.coerce.string().regex(retryBeautyJobDeliveryPathDeliveryIdRegExp)
+})
+
+export const retryBeautyJobDeliveryResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const RetryBeautyJobDeliveryResponse = zod.object({
+  "id": zod.string().regex(retryBeautyJobDeliveryResponseIdRegExp),
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "retried": zod.boolean()
+})
+
+
 export const getBeautyJobModerationQueueResponseListingsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobModerationQueueResponseListingsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');

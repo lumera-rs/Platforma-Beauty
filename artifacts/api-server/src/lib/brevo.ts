@@ -49,9 +49,11 @@ export const BEAUTY_JOB_EMAIL_TYPES = [
 // single-shot send with no retry.
 const RETRYABLE_EMAIL_TYPES = [RESCHEDULED_EMAIL_TYPE, AUTOMATION_EMAIL_TYPE, ...BEAUTY_JOB_EMAIL_TYPES] as const;
 const BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE = "brevo_webhook_coverage_alert";
+export const BEAUTY_JOB_DELIVERY_ALERT_EMAIL_TYPE = "beauty_job_delivery_alert";
 const RETRYABLE_EMAIL_TYPES_WITH_MONITORING = [
   ...RETRYABLE_EMAIL_TYPES,
   BREVO_WEBHOOK_COVERAGE_ALERT_EMAIL_TYPE,
+  BEAUTY_JOB_DELIVERY_ALERT_EMAIL_TYPE,
 ] as const;
 const EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE = "education_gallery_cleanup_alert";
 const EDUCATION_GALLERY_CLEANUP_ALERT_COOLDOWN_MS = 60 * 60_000;
@@ -413,6 +415,7 @@ async function deliverEmail(
           : result.errorMessage,
         nextRetryAt: null,
         processingToken: null,
+        retryableFailure: false,
       }).where(claimedDeliveryWhere(delivery.id, processingToken));
       return { skipped: true };
     }
@@ -422,6 +425,7 @@ async function deliverEmail(
       errorMessage: null,
       nextRetryAt: null,
       processingToken: null,
+      retryableFailure: false,
       sentAt: delivery.scheduledAt ? null : new Date(),
     }).where(claimedDeliveryWhere(delivery.id, processingToken));
     return { messageId: result.messageId };
@@ -440,11 +444,13 @@ async function deliverEmail(
         errorMessage: null,
         nextRetryAt: null,
         processingToken: null,
+        retryableFailure: false,
         sentAt: new Date(),
       }).where(claimedDeliveryWhere(delivery.id, processingToken));
       return { deduplicated: true };
     }
-    const retryAt = retryable(delivery) && temporaryFailure(error) ? nextRetryAt(delivery.retryCount) : null;
+    const isTemporaryFailure = retryable(delivery) && temporaryFailure(error);
+    const retryAt = isTemporaryFailure ? nextRetryAt(delivery.retryCount) : null;
     await db.update(emailDeliveriesTable).set({
       status: retryAt ? "queued" : "failed",
       errorMessage: delivery.emailType === EDUCATION_GALLERY_CLEANUP_ALERT_EMAIL_TYPE
@@ -452,9 +458,54 @@ async function deliverEmail(
         : error instanceof Error ? error.message.slice(0, 1000) : "Nepoznata Brevo greška",
       nextRetryAt: retryAt,
       processingToken: null,
+      retryableFailure: isTemporaryFailure && retryAt === null,
     }).where(claimedDeliveryWhere(delivery.id, processingToken));
     return { failed: true };
   }
+}
+
+export type BeautyJobEmailManualRetryResult =
+  | { ok: true; status: EmailDelivery["status"] }
+  | { ok: false; reason: "not_found" | "not_retryable" };
+
+/**
+ * Re-opens one terminal Beauty Poslovi delivery only when its last provider
+ * error was classified as temporary. The failed→queued CAS makes concurrent
+ * administrator clicks collapse into one provider attempt.
+ */
+export async function retryBeautyJobEmailDelivery(
+  deliveryId: string,
+  now = new Date(),
+  transport: TransactionalEmailTransport = brevoTransactionalEmailTransport,
+): Promise<BeautyJobEmailManualRetryResult> {
+  const [delivery] = await db.select().from(emailDeliveriesTable)
+    .where(eq(emailDeliveriesTable.id, deliveryId)).limit(1);
+  if (!delivery || !(BEAUTY_JOB_EMAIL_TYPES as readonly string[]).includes(delivery.emailType)) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (delivery.status !== "failed" || !delivery.retryableFailure || !delivery.htmlContent) {
+    return { ok: false, reason: "not_retryable" };
+  }
+
+  const [requeued] = await db.update(emailDeliveriesTable).set({
+    status: "queued",
+    retryCount: 0,
+    retryableFailure: false,
+    nextRetryAt: now,
+    processingToken: null,
+  }).where(and(
+    eq(emailDeliveriesTable.id, delivery.id),
+    eq(emailDeliveriesTable.status, "failed"),
+    eq(emailDeliveriesTable.retryableFailure, true),
+  )).returning();
+  if (!requeued) return { ok: false, reason: "not_retryable" };
+
+  await claimAndDeliver(requeued, requeued.htmlContent!, transport, now);
+  const [current] = await db.select({ status: emailDeliveriesTable.status })
+    .from(emailDeliveriesTable)
+    .where(eq(emailDeliveriesTable.id, delivery.id))
+    .limit(1);
+  return { ok: true, status: current?.status ?? "queued" };
 }
 
 /**
