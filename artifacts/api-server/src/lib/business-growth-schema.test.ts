@@ -761,6 +761,12 @@ async function run() {
     const beautyCategory = (await q<{ id: string }>(
       `SELECT id FROM "${s}".beauty_job_categories WHERE slug = 'iznajmljivanje-opreme'`,
     )).rows[0]!;
+    const supportCategory = (await q<{ name: string; enabled: boolean; subtype_labels: string[] }>(
+      `SELECT name, enabled, subtype_labels FROM "${s}".beauty_job_categories WHERE slug = 'pomocno-osoblje'`,
+    )).rows[0]!;
+    assert.equal(supportCategory.name, "Pomoćno osoblje", "support staff category is seeded");
+    assert.equal(supportCategory.enabled, true, "support staff category is enabled");
+    assert.deepEqual(supportCategory.subtype_labels, ["Recepcija", "Asistent u salonu", "Šampon"], "support staff subtypes are seeded");
     const beautyListing = (await q<{ id: string }>(
       `INSERT INTO "${s}".beauty_job_listings
         (category_id, salon_id, posted_by_type, type, title, description, city, region, expires_at)

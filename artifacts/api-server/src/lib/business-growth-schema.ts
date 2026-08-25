@@ -968,6 +968,7 @@ function tableStatements(s: string): string[] {
        WHERE type = 'expiry_warning' AND listing_id IS NOT NULL`,
     `INSERT INTO ${s}.beauty_job_categories (slug, name, subtype_labels, enabled, feature_flag) VALUES
       ('frizeri', 'Frizeri', '["Ženski frizer", "Muški frizer", "Kolorista"]'::jsonb, true, NULL),
+      ('pomocno-osoblje', 'Pomoćno osoblje', '["Recepcija", "Asistent u salonu", "Šampon"]'::jsonb, true, NULL),
       ('nokti', 'Nokti (Manikir/Pedikir)', '["Manikir", "Pedikir", "Nail artist"]'::jsonb, true, NULL),
       ('make-up', 'Make-up', '["Dnevna šminka", "Svečana šminka", "PMU"]'::jsonb, true, NULL),
       ('kozmetika', 'Kozmetika', '[]'::jsonb, true, NULL),
