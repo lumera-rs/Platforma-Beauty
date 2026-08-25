@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2, CalendarClock } from "lucide-react";
+import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2, CalendarClock, History, Lock } from "lucide-react";
 
 export default function BeautyJobDetailPage() {
   const [, canonicalParams] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
@@ -58,7 +58,8 @@ export default function BeautyJobDetailPage() {
       queryKey: getGetBeautyJobAdminPreviewQueryKey(listingId ?? "")
     }
   });
-  const job = isAdminPreview ? adminPreviewQuery.data : publicQuery.data;
+  const job = isAdminPreview ? adminPreviewQuery.data?.listing : publicQuery.data;
+  const moderationHistory = adminPreviewQuery.data?.moderationHistory ?? [];
   const isLoading = isAdminPreview ? adminPreviewQuery.isLoading : publicQuery.isLoading;
   const error = isAdminPreview ? adminPreviewQuery.error : publicQuery.error;
 
@@ -378,6 +379,52 @@ export default function BeautyJobDetailPage() {
                 </Dialog>
               </section>
             )}
+            {isAdminPreview && (
+              <section className="space-y-4" data-testid="moderation-history">
+                <div>
+                  <h2 className="text-xl font-bold font-serif flex items-center gap-2">
+                    <History className="h-5 w-5 text-primary" /> Istorija odluka
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Sve administratorske akcije nad oglasom, od najstarije ka najnovijoj.</p>
+                </div>
+                {moderationHistory.length === 0 ? (
+                  <div className="rounded-xl border border-dashed bg-muted/20 p-5 text-sm text-muted-foreground" data-testid="moderation-history-empty">
+                    Još nema zabeleženih administratorskih odluka.
+                  </div>
+                ) : (
+                  <ol className="space-y-3">
+                    {moderationHistory.map((event, index) => (
+                      <li key={event.id} className="rounded-xl border bg-card p-4 shadow-sm" data-testid={`moderation-history-event-${event.id}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold" data-testid={`moderation-history-action-${event.id}`}>
+                              {index + 1}. {moderationActionLabels[event.action] ?? event.action}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground" data-testid={`moderation-history-admin-${event.id}`}>
+                              Administrator: {event.administratorDisplayName}
+                            </p>
+                          </div>
+                          <time className="text-xs text-muted-foreground" dateTime={new Date(event.createdAt).toISOString()} data-testid={`moderation-history-time-${event.id}`}>
+                            {format(new Date(event.createdAt), "dd.MM.yyyy. HH:mm:ss", { locale: srLatn })}
+                          </time>
+                        </div>
+                        {event.publicReason && (
+                          <div className="mt-3 rounded-lg bg-muted/40 p-3 text-sm" data-testid={`moderation-history-public-reason-${event.id}`}>
+                            <span className="font-medium">Javna beleška:</span> {event.publicReason}
+                          </div>
+                        )}
+                        {event.internalNote && (
+                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950" data-testid={`moderation-history-internal-note-${event.id}`}>
+                            <span className="inline-flex items-center gap-1 font-medium"><Lock className="h-3.5 w-3.5" /> Interna beleška:</span>{" "}
+                            {event.internalNote}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -473,3 +520,14 @@ export default function BeautyJobDetailPage() {
     </Layout>
   );
 }
+
+const moderationActionLabels: Record<string, string> = {
+  approve: "Odobravanje",
+  reject: "Odbijanje",
+  reactivate: "Ponovno aktiviranje",
+  close: "Zatvaranje",
+  edit: "Izmena oglasa",
+  bulk_approve: "Grupno odobravanje",
+  bulk_reject: "Grupno odbijanje",
+  report_reject: "Odbijanje nakon prijave",
+};

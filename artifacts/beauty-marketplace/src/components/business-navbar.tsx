@@ -335,55 +335,16 @@ export function BusinessNavbar() {
           data-testid="business-mobile-menu"
         >
           {user?.role === "SALON_OWNER" ? (
-            <div className="flex h-full min-h-0 flex-col">
-              <div className="shrink-0 space-y-3 border-b border-white/10 px-5 py-4">
-                {managedSalons.length > 1 && (
-                  <select
-                    aria-label="Aktivni salon (mobilni)"
-                    disabled={isSwitchingSalon}
-                    className="w-full rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm text-white disabled:cursor-wait disabled:opacity-70"
-                    value={activeSalonId}
-                    onChange={(event) => { void switchSalon(event.target.value); }}
-                  >
-                    {managedSalons.map((salon) => (
-                      <option className="text-foreground" key={salon.id} value={salon.id}>
-                        {salon.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <div className="flex items-center justify-between gap-3">
-                  <Link
-                    href="/"
-                    className="flex items-center gap-2 text-sm font-medium text-background/70 hover:text-white"
-                    onClick={closeMobileMenu}
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Nazad na Market
-                  </Link>
-                  <Link
-                    href="/vlasnik/prodavnica/korpa"
-                    aria-label="Otvori korpu"
-                    className="relative rounded-md p-2 text-white hover:bg-white/10"
-                    onClick={closeMobileMenu}
-                  >
-                    <ShoppingCart className="h-5 w-5" />
-                    {cart && cart.itemCount > 0 && (
-                      <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
-                        {cart.itemCount > 99 ? "99+" : cart.itemCount}
-                      </span>
-                    )}
-                  </Link>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1">
-                <SalonOwnerNavigation
-                  variant="dark"
-                  onNavigate={closeMobileMenu}
-                  unreadNotificationCount={unreadNotificationCount}
-                />
-              </div>
-            </div>
+            <SalonOwnerNavigation
+              variant="dark"
+              onNavigate={closeMobileMenu}
+              unreadNotificationCount={unreadNotificationCount}
+              managedSalons={managedSalons}
+              activeSalonId={activeSalonId}
+              isSwitchingSalon={isSwitchingSalon}
+              onSwitchSalon={(salonId) => { void switchSalon(salonId); }}
+              cartItemCount={cart?.itemCount ?? 0}
+            />
           ) : (
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             <Link 

@@ -146,8 +146,8 @@ async function run(): Promise<void> {
     assert.equal((await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`, customer.token)).status, 403, "admin preview rejects non-admin users");
     const pendingAdminPreview = await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`, admin.token);
     assert.equal(pendingAdminPreview.status, 200, "admin can privately preview a pending listing");
-    assert.equal(pendingAdminPreview.body.id, customerListing.id);
-    assert.equal(pendingAdminPreview.body.moderationStatus, "pending");
+    assert.equal(pendingAdminPreview.body.listing.id, customerListing.id);
+    assert.equal(pendingAdminPreview.body.listing.moderationStatus, "pending");
     await db.update(beautyJobListingsTable)
       .set({ expiresAt: sql`now() + interval '3 days'` })
       .where(eq(beautyJobListingsTable.id, customerListing.id));
@@ -217,6 +217,21 @@ async function run(): Promise<void> {
     assert.equal(typeof rejectedRecord?.moderatedAt, "string", "rejected listing review exposes its decision time");
     const ownerAudit = await db.select().from(beautyJobModerationAuditTable).where(eq(beautyJobModerationAuditTable.listingId, ownerListing.id));
     assert.ok(ownerAudit.some((entry) => entry.action === "reject" && entry.publicReason === rejectedReason && entry.internalNote === `Privatna napomena ${suffix}`), "individual rejection has an immutable audit row");
+    const adminPreview = await request(base, `/admin/beauty-jobs/${ownerListing.id}/preview`, admin.token);
+    assert.equal(adminPreview.status, 200);
+    assert.equal(adminPreview.body.listing.id, ownerListing.id);
+    assert.deepEqual(
+      adminPreview.body.moderationHistory.map((entry: any) => entry.action),
+      ["approve", "reject"],
+      "admin preview returns the complete append-only history in decision order",
+    );
+    assert.ok(
+      adminPreview.body.moderationHistory.every((entry: any) => entry.administratorDisplayName === `${admin.user.firstName} ${admin.user.lastName}`),
+      "every moderation event identifies its administrator",
+    );
+    assert.equal(adminPreview.body.moderationHistory[1].publicReason, rejectedReason);
+    assert.equal(adminPreview.body.moderationHistory[1].internalNote, `Privatna napomena ${suffix}`);
+    assert.equal(typeof adminPreview.body.moderationHistory[1].createdAt, "string");
     assert.equal((await request(base, "/admin/beauty-jobs/rejected?period=custom&from=not-a-date&to=2026-01-01", admin.token)).status, 400);
     const initialModerationNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.listingId, customerListing.id));

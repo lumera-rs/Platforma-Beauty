@@ -5572,6 +5572,31 @@ export interface BeautyJobListing {
   availableSlots: BeautyJobRentalSlot[];
 }
 
+/**
+ * Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.
+ */
+export interface BeautyJobModerationAuditEvent {
+  /** @pattern ^[0-9a-fA-F-]{36}$ */
+  id: string;
+  action: string;
+  /**
+     * @nullable
+     * @pattern ^[0-9a-fA-F-]{36}$
+     */
+  actingAdminUserId: string | null;
+  administratorDisplayName: string;
+  /** @nullable */
+  publicReason: string | null;
+  /** @nullable */
+  internalNote: string | null;
+  createdAt: string;
+}
+
+export interface BeautyJobAdminPreview {
+  listing: BeautyJobListing;
+  moderationHistory: BeautyJobModerationAuditEvent[];
+}
+
 export type BeautyJobCreateInputType = typeof BeautyJobCreateInputType[keyof typeof BeautyJobCreateInputType];
 
 

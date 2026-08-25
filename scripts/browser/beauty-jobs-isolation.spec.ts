@@ -5,6 +5,7 @@ import {
   beautyJobCategoriesTable,
   beautyJobContactsTable,
   beautyJobListingsTable,
+  beautyJobModerationAuditTable,
   beautyJobNotificationsTable,
   db,
   salonsTable,
@@ -20,6 +21,8 @@ const fixtureEmails = {
   ownerA: `browser-beauty-jobs-owner-a-${suffix}@example.test`,
   ownerB: `browser-beauty-jobs-owner-b-${suffix}@example.test`,
   customer: `browser-beauty-jobs-customer-${suffix}@example.test`,
+  admin: `browser-beauty-jobs-admin-${suffix}@example.test`,
+  historyAuthor: `browser-beauty-jobs-history-author-${suffix}@example.test`,
 };
 const titles = {
   ownEmployment: `${marker} sopstveni posao`,
@@ -34,6 +37,7 @@ const fixtureListingIds: string[] = [];
 
 async function cleanUpFixtures(): Promise<void> {
   if (fixtureListingIds.length > 0) {
+    await db.delete(beautyJobModerationAuditTable).where(inArray(beautyJobModerationAuditTable.listingId, fixtureListingIds));
     await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, fixtureListingIds));
   }
   if (fixtureSalonIds.length > 0) {
@@ -85,6 +89,7 @@ test.afterAll(cleanUpFixtures);
 test("keeps competing employment out of an owner's catalog without hiding public listing types", async ({ browser }) => {
   await ensureBusinessGrowthSchema();
   const passwordHash = await hashPassword(password);
+
   const createdUsers = await db.insert(usersTable).values([
     {
       firstName: "Owner A",
@@ -301,5 +306,97 @@ test("keeps competing employment out of an owner's catalog without hiding public
       customerContext.close(),
       guestContext.close(),
     ]);
+  }
+});
+
+test("shows administrators the complete moderation history in decision order", async ({ browser }) => {
+  await ensureBusinessGrowthSchema();
+  const passwordHash = await hashPassword(password);
+  const [adminUser, listingAuthor] = await db.insert(usersTable).values([
+    {
+      firstName: "Ana",
+      lastName: "Administrator",
+      email: fixtureEmails.admin,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "ADMIN",
+    },
+    {
+      firstName: "Autor",
+      lastName: "Oglasa",
+      email: fixtureEmails.historyAuthor,
+      passwordHash,
+      passwordSetAt: new Date(),
+      role: "CUSTOMER",
+    },
+  ]).returning({ id: usersTable.id, email: usersTable.email });
+  fixtureUserIds.push(adminUser!.id, listingAuthor!.id);
+
+  const [category] = await db.select({ id: beautyJobCategoriesTable.id })
+    .from(beautyJobCategoriesTable)
+    .where(eq(beautyJobCategoriesTable.slug, "frizeri"))
+    .limit(1);
+  expect(category).toBeTruthy();
+
+  const [listing] = await db.insert(beautyJobListingsTable).values({
+    categoryId: category!.id,
+    userId: listingAuthor!.id,
+    postedByType: "user",
+    type: "job",
+    intent: "offering",
+    title: `${marker} istorija odluka`,
+    description: `Oglas za browser proveru istorije ${suffix}`,
+    city: "Beograd",
+    region: "Vračar",
+    status: "rejected",
+    moderationStatus: "rejected",
+    moderationReason: `Javni razlog ${suffix}`,
+    moderationInternalNote: `Interna beleška ${suffix}`,
+    moderatedAt: new Date(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  }).returning({ id: beautyJobListingsTable.id });
+  expect(listing).toBeTruthy();
+  fixtureListingIds.push(listing!.id);
+
+  const firstDecisionAt = new Date(Date.now() - 2_000);
+  const secondDecisionAt = new Date(Date.now() - 1_000);
+  const audits = await db.insert(beautyJobModerationAuditTable).values([
+    {
+      listingId: listing!.id,
+      actingAdminUserId: adminUser!.id,
+      action: "approve",
+      internalNote: `Prvo odobrenje ${suffix}`,
+      createdAt: firstDecisionAt,
+    },
+    {
+      listingId: listing!.id,
+      actingAdminUserId: adminUser!.id,
+      action: "reject",
+      publicReason: `Javni razlog ${suffix}`,
+      internalNote: `Interna beleška ${suffix}`,
+      createdAt: secondDecisionAt,
+    },
+  ]).returning({ id: beautyJobModerationAuditTable.id });
+
+  const context = await browser.newContext();
+  try {
+    await signIn(context, fixtureEmails.admin, adminUser!.id);
+    const page = await context.newPage();
+    await page.goto(`/admin/poslovi/pregled/${listing!.id}`);
+
+    const history = page.getByTestId("moderation-history");
+    await expect(history).toBeVisible();
+    const events = history.locator("li");
+    await expect(events).toHaveCount(2);
+    await expect(events.nth(0)).toContainText("1. Odobravanje");
+    await expect(events.nth(0)).toContainText("Administrator: Ana Administrator");
+    await expect(events.nth(0)).toContainText(`Interna beleška: Prvo odobrenje ${suffix}`);
+    await expect(events.nth(1)).toContainText("2. Odbijanje");
+    await expect(events.nth(1)).toContainText(`Javna beleška: Javni razlog ${suffix}`);
+    await expect(events.nth(1)).toContainText(`Interna beleška: Interna beleška ${suffix}`);
+    await expect(page.getByTestId(`moderation-history-time-${audits[0]!.id}`)).toBeVisible();
+    await expect(page.getByTestId(`moderation-history-time-${audits[1]!.id}`)).toBeVisible();
+  } finally {
+    await context.close();
   }
 });

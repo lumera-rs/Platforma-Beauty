@@ -79,6 +79,7 @@ import type {
   AutomationStats,
   AutomationStatsOverviewItem,
   AutomationTestRunResult,
+  BeautyJobAdminPreview,
   BeautyJobBulkModerationInput,
   BeautyJobBulkModerationResult,
   BeautyJobCategoriesResponse,
@@ -22598,9 +22599,9 @@ export const getGetBeautyJobAdminPreviewUrl = (listingId: string,) => {
 /**
  * @summary Preview a Beauty Poslovi listing regardless of public moderation status
  */
-export const getBeautyJobAdminPreview = async (listingId: string, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListing> => {
+export const getBeautyJobAdminPreview = async (listingId: string, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobAdminPreview> => {
 
-  return customFetch<BeautyJobListing>(getGetBeautyJobAdminPreviewUrl(listingId),
+  return customFetch<BeautyJobAdminPreview>(getGetBeautyJobAdminPreviewUrl(listingId),
   {
     ...options,
     method: 'GET'

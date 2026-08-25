@@ -909,8 +909,28 @@ router.get("/admin/beauty-jobs/:listingId/preview", async (req, res, next) => { 
   const p = GetBeautyJobAdminPreviewParams.safeParse(req.params); if (!p.success) return bad(res);
   const [row] = await listingQuery({ id: user.id }).where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1);
   if (!row) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
-  const slotMap = await rentalSlotsByListing([p.data.listingId]);
-  res.json(GetBeautyJobAdminPreviewResponse.parse(view({ ...row.listing, ...row }, slotMap.get(p.data.listingId))));
+  const [slotMap, moderationHistory] = await Promise.all([
+    rentalSlotsByListing([p.data.listingId]),
+    db.select({
+      id: beautyJobModerationAuditTable.id,
+      action: beautyJobModerationAuditTable.action,
+      actingAdminUserId: beautyJobModerationAuditTable.actingAdminUserId,
+      administratorDisplayName: sql<string>`coalesce(nullif(trim(${usersTable.firstName} || ' ' || ${usersTable.lastName}), ''), 'Obrisan administrator')`,
+      publicReason: beautyJobModerationAuditTable.publicReason,
+      internalNote: beautyJobModerationAuditTable.internalNote,
+      createdAt: beautyJobModerationAuditTable.createdAt,
+    }).from(beautyJobModerationAuditTable)
+      .leftJoin(usersTable, eq(beautyJobModerationAuditTable.actingAdminUserId, usersTable.id))
+      .where(eq(beautyJobModerationAuditTable.listingId, p.data.listingId))
+      .orderBy(asc(beautyJobModerationAuditTable.createdAt), asc(beautyJobModerationAuditTable.id)),
+  ]);
+  res.json(GetBeautyJobAdminPreviewResponse.parse({
+    listing: view({ ...row.listing, ...row }, slotMap.get(p.data.listingId)),
+    moderationHistory: moderationHistory.map((event) => ({
+      ...event,
+      createdAt: event.createdAt.toISOString(),
+    })),
+  }));
 } catch (e) { next(e); } });
 router.post("/admin/beauty-jobs/bulk-moderation", async (req, res, next) => { try {
   const user = await admin(req, res); if (!user) return;

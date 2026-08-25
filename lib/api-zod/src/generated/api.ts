@@ -13019,15 +13019,18 @@ export const GetBeautyJobAdminPreviewParams = zod.object({
   "listingId": zod.coerce.string().regex(getBeautyJobAdminPreviewPathListingIdRegExp)
 })
 
-export const getBeautyJobAdminPreviewResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobAdminPreviewResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobAdminPreviewResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobAdminPreviewResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseListingCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseListingAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseListingAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseModerationHistoryItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseModerationHistoryItemActingAdminUserIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const GetBeautyJobAdminPreviewResponse = zod.object({
-  "id": zod.string().regex(getBeautyJobAdminPreviewResponseIdRegExp),
-  "categoryId": zod.string().regex(getBeautyJobAdminPreviewResponseCategoryIdRegExp),
+  "listing": zod.object({
+  "id": zod.string().regex(getBeautyJobAdminPreviewResponseListingIdRegExp),
+  "categoryId": zod.string().regex(getBeautyJobAdminPreviewResponseListingCategoryIdRegExp),
   "categorySlug": zod.string(),
   "categoryName": zod.string(),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']),
@@ -13058,12 +13061,22 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
-  "id": zod.string().regex(getBeautyJobAdminPreviewResponseAvailableSlotsItemIdRegExp),
-  "listingId": zod.string().regex(getBeautyJobAdminPreviewResponseAvailableSlotsItemListingIdRegExp),
+  "id": zod.string().regex(getBeautyJobAdminPreviewResponseListingAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(getBeautyJobAdminPreviewResponseListingAvailableSlotsItemListingIdRegExp),
   "startsAt": zod.coerce.date(),
   "endsAt": zod.coerce.date(),
   "available": zod.boolean()
 }))
+}),
+  "moderationHistory": zod.array(zod.object({
+  "id": zod.string().regex(getBeautyJobAdminPreviewResponseModerationHistoryItemIdRegExp),
+  "action": zod.string(),
+  "actingAdminUserId": zod.string().regex(getBeautyJobAdminPreviewResponseModerationHistoryItemActingAdminUserIdRegExp).nullable(),
+  "administratorDisplayName": zod.string(),
+  "publicReason": zod.string().nullable(),
+  "internalNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.'))
 })
 
 

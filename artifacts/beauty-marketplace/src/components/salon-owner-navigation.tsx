@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useLogout } from "@workspace/api-client-react";
-import { LogOut } from "lucide-react";
+import { LogOut, ShoppingCart } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { GuideHelpLink } from "@/components/guide-help-link";
@@ -11,6 +11,11 @@ type SalonOwnerNavigationProps = {
   variant?: "light" | "dark";
   onNavigate?: () => void;
   unreadNotificationCount?: number;
+  managedSalons?: Array<{ id: string; name: string }>;
+  activeSalonId?: string;
+  isSwitchingSalon?: boolean;
+  onSwitchSalon?: (salonId: string) => void;
+  cartItemCount?: number;
 };
 
 function isLinkActive(location: string, link: SalonOwnerNavLink) {
@@ -22,6 +27,11 @@ export function SalonOwnerNavigation({
   variant = "light",
   onNavigate,
   unreadNotificationCount = 0,
+  managedSalons = [],
+  activeSalonId = "",
+  isSwitchingSalon = false,
+  onSwitchSalon,
+  cartItemCount = 0,
 }: SalonOwnerNavigationProps) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -40,6 +50,54 @@ export function SalonOwnerNavigation({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="salon-owner-navigation">
+      {(managedSalons.length > 1 || onSwitchSalon) && (
+        <div className={cn("shrink-0 space-y-3 border-b p-3", dark ? "border-white/10" : "border-border")}>
+          {managedSalons.length > 1 && onSwitchSalon ? (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="owner-mobile-active-salon"
+                className={cn("text-xs font-semibold", dark ? "text-background/70" : "text-muted-foreground")}
+              >
+                Aktivni salon
+              </label>
+              <select
+                id="owner-mobile-active-salon"
+                aria-label="Aktivni salon (mobilni)"
+                disabled={isSwitchingSalon}
+                className={cn(
+                  "w-full rounded-md border px-3 py-2 text-sm disabled:cursor-wait disabled:opacity-70",
+                  dark ? "border-white/20 bg-white/10 text-white" : "bg-background text-foreground",
+                )}
+                value={activeSalonId}
+                onChange={(event) => onSwitchSalon(event.target.value)}
+                data-testid="owner-mobile-salon-select"
+              >
+                {managedSalons.map((salon) => (
+                  <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          <Link
+            href="/vlasnik/prodavnica/korpa"
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              dark ? "text-background/85 hover:bg-white/8 hover:text-background" : "text-foreground/80 hover:bg-muted",
+            )}
+            aria-label={`Otvori korpu${cartItemCount ? `, ${cartItemCount} stavki` : ""}`}
+            data-testid="owner-mobile-cart-link"
+          >
+            <ShoppingCart className="mr-2.5 h-4 w-4" />
+            <span>Korpa</span>
+            {cartItemCount > 0 ? (
+              <span className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground" data-testid="owner-mobile-cart-count">
+                {cartItemCount > 99 ? "99+" : cartItemCount}
+              </span>
+            ) : null}
+          </Link>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 custom-scrollbar">
         {salonOwnerNavSections.map((section) => {
           const sectionActive = section.items.some((link) => isLinkActive(location, link));
@@ -65,6 +123,8 @@ export function SalonOwnerNavigation({
                         href={link.href}
                         onClick={onNavigate}
                         aria-current={active ? "page" : undefined}
+                        aria-label={notifications ? `Obaveštenja${unreadNotificationCount ? `, ${unreadNotificationCount} nepročitano` : ""}` : undefined}
+                        data-testid={notifications && dark ? "link-notifications-mobile" : undefined}
                         className={cn(
                           "flex min-w-0 flex-1 items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                           dark
@@ -75,7 +135,10 @@ export function SalonOwnerNavigation({
                         <link.icon className="mr-2.5 h-4 w-4 shrink-0" />
                         <span className="truncate">{link.label}</span>
                         {notifications && unreadNotificationCount > 0 ? (
-                          <span className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground">
+                          <span
+                            className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-foreground"
+                            data-testid={dark ? "status-unread-notification-count-mobile" : undefined}
+                          >
                             {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
                           </span>
                         ) : null}

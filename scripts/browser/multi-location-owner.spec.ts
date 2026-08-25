@@ -91,6 +91,8 @@ test("owner can use the all-locations dashboard and switch location from mobile 
     await expect(page.getByRole("main").getByText(fixture.secondSalonName, { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Otvori meni" }).click();
+    await expect(page.getByTestId("owner-mobile-cart-link")).toBeVisible();
+    await expect(page.getByTestId("owner-mobile-cart-link")).toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
     const mobileSalonSelect = page.getByLabel("Aktivni salon (mobilni)");
     await expect(mobileSalonSelect).toBeVisible();
     await expect(page.getByRole("link", { name: "Otvori korpu" }))

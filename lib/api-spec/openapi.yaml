@@ -5181,7 +5181,7 @@ paths:
       summary: Preview a Beauty Poslovi listing regardless of public moderation status
       parameters: [{ name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }]
       responses:
-        "200": { description: Private administrator preview, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListing" } } } }
+        "200": { description: Private administrator preview with append-only moderation history, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobAdminPreview" } } } }
         "401": { description: Authentication required }
         "403": { description: Administrator access required }
         "404": { description: Listing not found }
@@ -9166,6 +9166,26 @@ components:
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
       required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
+    BeautyJobModerationAuditEvent:
+      type: object
+      description: Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.
+      properties:
+        id: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        action: { type: string }
+        actingAdminUserId: { type: [string, "null"], pattern: '^[0-9a-fA-F-]{36}$' }
+        administratorDisplayName: { type: string }
+        publicReason: { type: [string, "null"] }
+        internalNote: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, action, actingAdminUserId, administratorDisplayName, publicReason, internalNote, createdAt]
+    BeautyJobAdminPreview:
+      type: object
+      properties:
+        listing: { $ref: "#/components/schemas/BeautyJobListing" }
+        moderationHistory:
+          type: array
+          items: { $ref: "#/components/schemas/BeautyJobModerationAuditEvent" }
+      required: [listing, moderationHistory]
     BeautyJobCreateInput:
       type: object
       properties:
