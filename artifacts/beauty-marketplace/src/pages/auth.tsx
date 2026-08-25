@@ -74,8 +74,12 @@ export default function Login() {
   };
 
   const onRegisterSubmit = (values: z.infer<typeof registerSchema>) => {
+    const registrationValues = {
+      ...values,
+      phoneVerificationCode: registerForm.getValues("phoneVerificationCode"),
+    };
     if (studentPortal) {
-      void fetch("/api/auth/student-register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) })
+      void fetch("/api/auth/student-register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(registrationValues) })
         .then(async (response) => ({ response, data: await response.json() }))
         .then(({ response, data }) => {
           if (!response.ok) throw new Error(data.error ?? "Registracija nije uspela.");
@@ -85,7 +89,7 @@ export default function Login() {
         .catch((error: Error) => toast.error("Greška", { description: error.message }));
       return;
     }
-    registerMutation.mutate({ data: values }, {
+    registerMutation.mutate({ data: registrationValues }, {
       onSuccess: (res) => {
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
         setLocation(homeForRole(res.user.role));
@@ -101,7 +105,13 @@ export default function Login() {
     const response = await fetch("/api/auth/phone-verification/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone }) });
     const result = await response.json();
     if (!response.ok) { toast.error("Kod nije poslat", { description: result.error }); return; }
-    if (result.developmentCode) registerForm.setValue("phoneVerificationCode", result.developmentCode);
+    if (result.developmentCode) {
+      registerForm.setValue("phoneVerificationCode", result.developmentCode, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    }
     toast.success("Kod za potvrdu je poslat", { description: result.developmentCode ? "Lokalni test kod je upisan u formu." : "Proverite SMS poruku." });
   };
 
