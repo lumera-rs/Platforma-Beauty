@@ -16,7 +16,6 @@ import {
   Settings,
   Star,
   Store,
-  ShoppingBag,
   Users,
   Zap,
   type LucideIcon,
@@ -57,7 +56,6 @@ export const salonOwnerNavSections: SalonOwnerNavSection[] = [
   {
     label: "Prodaja",
     items: [
-      { href: "/proizvodi", label: "Shop", icon: ShoppingBag },
       { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine", icon: Package },
       { href: "/vlasnik/shop", label: "B2B Oprema", guideId: "vl-shop", icon: DollarSign },
     ],
