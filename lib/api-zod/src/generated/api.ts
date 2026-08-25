@@ -73,6 +73,9 @@ export const RegisterBody = zod.object({
   "phoneVerificationCode": zod.string().min(registerBodyPhoneVerificationCodeMin).max(registerBodyPhoneVerificationCodeMax)
 })
 
+export const registerResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const RegisterResponse = zod.object({
   "user": zod.object({
   "id": zod.string(),
@@ -80,7 +83,8 @@ export const RegisterResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "dateOfBirth": zod.string().regex(registerResponseUserDateOfBirthRegExp).nullable(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -124,6 +128,9 @@ export const RegisterBusinessBody = zod.object({
   "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin)
 })
 
+export const registerBusinessResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const RegisterBusinessResponse = zod.object({
   "user": zod.object({
   "id": zod.string(),
@@ -131,7 +138,51 @@ export const RegisterBusinessResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "dateOfBirth": zod.string().regex(registerBusinessResponseUserDateOfBirthRegExp).nullable(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
+  "active": zod.boolean(),
+  "mustChangePassword": zod.boolean(),
+  "marketingEmailsEnabled": zod.boolean()
+}),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Register a JOBSEEKER account
+ */
+
+
+export const registerJobseekerBodyPasswordMin = 8;
+
+export const registerJobseekerBodyPhoneVerificationCodeMin = 6;
+export const registerJobseekerBodyPhoneVerificationCodeMax = 6;
+
+export const registerJobseekerBodyDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const RegisterJobseekerBody = zod.object({
+  "firstName": zod.string().min(1),
+  "lastName": zod.string().min(1),
+  "email": zod.string(),
+  "password": zod.string().min(registerJobseekerBodyPasswordMin),
+  "phone": zod.string(),
+  "phoneVerificationCode": zod.string().min(registerJobseekerBodyPhoneVerificationCodeMin).max(registerJobseekerBodyPhoneVerificationCodeMax),
+  "dateOfBirth": zod.string().regex(registerJobseekerBodyDateOfBirthRegExp)
+})
+
+export const registerJobseekerResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const RegisterJobseekerResponse = zod.object({
+  "user": zod.object({
+  "id": zod.string(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "dateOfBirth": zod.string().regex(registerJobseekerResponseUserDateOfBirthRegExp).nullable(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -151,6 +202,9 @@ export const LoginBody = zod.object({
   "password": zod.string().min(1)
 })
 
+export const loginResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const LoginResponse = zod.object({
   "user": zod.object({
   "id": zod.string(),
@@ -158,7 +212,8 @@ export const LoginResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "dateOfBirth": zod.string().regex(loginResponseUserDateOfBirthRegExp).nullable(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -176,6 +231,9 @@ export const LogoutResponse = zod.void()
 /**
  * @summary Get current user
  */
+export const getCurrentUserResponseUserOneDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const GetCurrentUserResponse = zod.object({
   "user": zod.union([zod.object({
   "id": zod.string(),
@@ -183,7 +241,8 @@ export const GetCurrentUserResponse = zod.object({
   "lastName": zod.string(),
   "email": zod.string(),
   "phone": zod.string().nullish(),
-  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'STUDENT']),
+  "dateOfBirth": zod.string().regex(getCurrentUserResponseUserOneDateOfBirthRegExp).nullable(),
+  "role": zod.enum(['SUPER_ADMIN', 'ADMIN', 'SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'CUSTOMER', 'JOBSEEKER', 'STUDENT']),
   "active": zod.boolean(),
   "mustChangePassword": zod.boolean(),
   "marketingEmailsEnabled": zod.boolean()
@@ -1362,6 +1421,132 @@ export const GetCustomerDashboardResponse = zod.object({
 
 
 /**
+ * @summary Get the signed-in jobseeker profile
+ */
+export const getJobseekerProfileResponseOneBioMax = 4000;
+
+export const getJobseekerProfileResponseOnePortfolioMediaItemRegExp = new RegExp('^/api/media/[0-9a-fA-F-]{36}');
+export const getJobseekerProfileResponseOnePortfolioMediaMin = 3;
+export const getJobseekerProfileResponseOnePortfolioMediaMax = 5;
+
+export const getJobseekerProfileResponseOneSkillTagsItemMax = 80;
+
+export const getJobseekerProfileResponseOneSkillTagsMax = 30;
+
+export const getJobseekerProfileResponseOneCategoryTagsItemMax = 80;
+
+export const getJobseekerProfileResponseOneCategoryTagsMax = 20;
+
+export const getJobseekerProfileResponseTwoDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetJobseekerProfileResponse = zod.object({
+  "bio": zod.string().max(getJobseekerProfileResponseOneBioMax),
+  "portfolioMedia": zod.array(zod.string().regex(getJobseekerProfileResponseOnePortfolioMediaItemRegExp)).min(getJobseekerProfileResponseOnePortfolioMediaMin).max(getJobseekerProfileResponseOnePortfolioMediaMax),
+  "skillTags": zod.array(zod.string().min(1).max(getJobseekerProfileResponseOneSkillTagsItemMax)).max(getJobseekerProfileResponseOneSkillTagsMax),
+  "categoryTags": zod.array(zod.string().min(1).max(getJobseekerProfileResponseOneCategoryTagsItemMax)).max(getJobseekerProfileResponseOneCategoryTagsMax)
+}).and(zod.object({
+  "userId": zod.string(),
+  "dateOfBirth": zod.string().regex(getJobseekerProfileResponseTwoDateOfBirthRegExp).nullable()
+}))
+
+
+/**
+ * @summary Replace the signed-in jobseeker professional profile
+ */
+export const updateJobseekerProfileBodyBioMax = 4000;
+
+export const updateJobseekerProfileBodyPortfolioMediaItemRegExp = new RegExp('^/api/media/[0-9a-fA-F-]{36}');
+export const updateJobseekerProfileBodyPortfolioMediaMin = 3;
+export const updateJobseekerProfileBodyPortfolioMediaMax = 5;
+
+export const updateJobseekerProfileBodySkillTagsItemMax = 80;
+
+export const updateJobseekerProfileBodySkillTagsMax = 30;
+
+export const updateJobseekerProfileBodyCategoryTagsItemMax = 80;
+
+export const updateJobseekerProfileBodyCategoryTagsMax = 20;
+
+
+
+export const UpdateJobseekerProfileBody = zod.object({
+  "bio": zod.string().max(updateJobseekerProfileBodyBioMax),
+  "portfolioMedia": zod.array(zod.string().regex(updateJobseekerProfileBodyPortfolioMediaItemRegExp)).min(updateJobseekerProfileBodyPortfolioMediaMin).max(updateJobseekerProfileBodyPortfolioMediaMax),
+  "skillTags": zod.array(zod.string().min(1).max(updateJobseekerProfileBodySkillTagsItemMax)).max(updateJobseekerProfileBodySkillTagsMax),
+  "categoryTags": zod.array(zod.string().min(1).max(updateJobseekerProfileBodyCategoryTagsItemMax)).max(updateJobseekerProfileBodyCategoryTagsMax)
+})
+
+export const updateJobseekerProfileResponseOneBioMax = 4000;
+
+export const updateJobseekerProfileResponseOnePortfolioMediaItemRegExp = new RegExp('^/api/media/[0-9a-fA-F-]{36}');
+export const updateJobseekerProfileResponseOnePortfolioMediaMin = 3;
+export const updateJobseekerProfileResponseOnePortfolioMediaMax = 5;
+
+export const updateJobseekerProfileResponseOneSkillTagsItemMax = 80;
+
+export const updateJobseekerProfileResponseOneSkillTagsMax = 30;
+
+export const updateJobseekerProfileResponseOneCategoryTagsItemMax = 80;
+
+export const updateJobseekerProfileResponseOneCategoryTagsMax = 20;
+
+export const updateJobseekerProfileResponseTwoDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const UpdateJobseekerProfileResponse = zod.object({
+  "bio": zod.string().max(updateJobseekerProfileResponseOneBioMax),
+  "portfolioMedia": zod.array(zod.string().regex(updateJobseekerProfileResponseOnePortfolioMediaItemRegExp)).min(updateJobseekerProfileResponseOnePortfolioMediaMin).max(updateJobseekerProfileResponseOnePortfolioMediaMax),
+  "skillTags": zod.array(zod.string().min(1).max(updateJobseekerProfileResponseOneSkillTagsItemMax)).max(updateJobseekerProfileResponseOneSkillTagsMax),
+  "categoryTags": zod.array(zod.string().min(1).max(updateJobseekerProfileResponseOneCategoryTagsItemMax)).max(updateJobseekerProfileResponseOneCategoryTagsMax)
+}).and(zod.object({
+  "userId": zod.string(),
+  "dateOfBirth": zod.string().regex(updateJobseekerProfileResponseTwoDateOfBirthRegExp).nullable()
+}))
+
+
+/**
+ * @summary Get private JOBSEEKER dashboard counts
+ */
+export const getJobseekerDashboardResponseActiveListingsMin = 0;
+
+export const getJobseekerDashboardResponseReceivedContactsMin = 0;
+
+export const getJobseekerDashboardResponseEnrollmentsMin = 0;
+
+
+
+export const GetJobseekerDashboardResponse = zod.object({
+  "activeListings": zod.number().int().min(getJobseekerDashboardResponseActiveListingsMin),
+  "receivedContacts": zod.number().int().min(getJobseekerDashboardResponseReceivedContactsMin),
+  "enrollments": zod.number().int().min(getJobseekerDashboardResponseEnrollmentsMin)
+})
+
+
+/**
+ * @summary List the signed-in jobseeker's salon interests
+ */
+export const ListJobseekerSalonInterestsResponseItem = zod.string()
+export const ListJobseekerSalonInterestsResponse = zod.array(ListJobseekerSalonInterestsResponseItem)
+
+
+/**
+ * @summary Replace the signed-in jobseeker's salon interests
+ */
+export const replaceJobseekerSalonInterestsBodySalonIdsItemRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const replaceJobseekerSalonInterestsBodySalonIdsMax = 200;
+
+
+
+export const ReplaceJobseekerSalonInterestsBody = zod.object({
+  "salonIds": zod.array(zod.string().regex(replaceJobseekerSalonInterestsBodySalonIdsItemRegExp)).max(replaceJobseekerSalonInterestsBodySalonIdsMax)
+})
+
+export const ReplaceJobseekerSalonInterestsResponseItem = zod.string()
+export const ReplaceJobseekerSalonInterestsResponse = zod.array(ReplaceJobseekerSalonInterestsResponseItem)
+
+
+/**
  * @summary List favorite salons
  */
 export const ListFavoritesResponseItem = zod.object({
@@ -1678,7 +1863,7 @@ export const requestMediaUploadBodySizeMultipleOf = 1;
 
 
 export const RequestMediaUploadBody = zod.object({
-  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo']),
+  "scope": zod.enum(['salon-profile', 'salon-gallery', 'employee-avatar', 'product', 'education-cover', 'education-gallery', 'education-center', 'instructor-avatar', 'service-category', 'product-category', 'treatment-photo', 'jobseeker-portfolio']),
   "resourceId": zod.string().regex(requestMediaUploadBodyResourceIdRegExp).nullish(),
   "name": zod.string().min(1).max(requestMediaUploadBodyNameMax),
   "size": zod.number().min(1).max(requestMediaUploadBodySizeMax).multipleOf(requestMediaUploadBodySizeMultipleOf),
@@ -11897,6 +12082,7 @@ export const ListBeautyJobsResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -11973,6 +12159,7 @@ export const CreateBeautyJobBody = zod.object({
   "priceAmount": zod.number().int().min(createBeautyJobBodyPriceAmountMin).optional(),
   "pricePeriod": zod.enum(['hour', 'day', 'week', 'month', 'project', 'fixed']).optional(),
   "negotiable": zod.boolean().optional(),
+  "isUrgent": zod.boolean().optional(),
   "photos": zod.array(zod.string().regex(createBeautyJobBodyPhotosItemRegExp)).max(createBeautyJobBodyPhotosMax).optional(),
   "availabilityPattern": zod.string().min(1).max(createBeautyJobBodyAvailabilityPatternMax).optional(),
   "dayLabels": zod.array(zod.string().max(createBeautyJobBodyDayLabelsItemMax)).max(createBeautyJobBodyDayLabelsMax).optional(),
@@ -12005,6 +12192,7 @@ export const CreateBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12079,6 +12267,7 @@ export const ListMyBeautyJobsResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12219,6 +12408,7 @@ export const ListSavedBeautyJobsResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12405,6 +12595,7 @@ export const GetBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12484,6 +12675,7 @@ export const UpdateBeautyJobBody = zod.object({
   "priceAmount": zod.number().int().min(updateBeautyJobBodyPriceAmountMin).nullish(),
   "pricePeriod": zod.enum(['hour', 'day', 'week', 'month', 'project', 'fixed']).nullish(),
   "negotiable": zod.boolean().optional(),
+  "isUrgent": zod.boolean().optional(),
   "photos": zod.array(zod.string().regex(updateBeautyJobBodyPhotosItemRegExp)).max(updateBeautyJobBodyPhotosMax).optional(),
   "availabilityPattern": zod.string().min(1).max(updateBeautyJobBodyAvailabilityPatternMax).nullish(),
   "dayLabels": zod.array(zod.string().max(updateBeautyJobBodyDayLabelsItemMax)).max(updateBeautyJobBodyDayLabelsMax).optional(),
@@ -12516,6 +12708,7 @@ export const UpdateBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12571,6 +12764,7 @@ export const RenewBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12626,6 +12820,7 @@ export const CloseBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -12972,6 +13167,7 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -13089,6 +13285,7 @@ export const ListRejectedBeautyJobsResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -13156,6 +13353,7 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
@@ -13233,6 +13431,7 @@ export const ModerateBeautyJobResponse = zod.object({
   "priceAmount": zod.number().int().nullable(),
   "pricePeriod": zod.string().nullable(),
   "negotiable": zod.boolean(),
+  "isUrgent": zod.boolean(),
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),

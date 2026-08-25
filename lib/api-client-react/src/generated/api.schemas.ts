@@ -74,6 +74,7 @@ export const UserRole = {
   EDUCATION_CENTER_OWNER: 'EDUCATION_CENTER_OWNER',
   INSTRUCTOR: 'INSTRUCTOR',
   CUSTOMER: 'CUSTOMER',
+  JOBSEEKER: 'JOBSEEKER',
   STUDENT: 'STUDENT',
 } as const;
 
@@ -84,6 +85,11 @@ export interface User {
   email: string;
   /** @nullable */
   phone?: string | null;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  dateOfBirth: string | null;
   role: UserRole;
   active: boolean;
   mustChangePassword: boolean;
@@ -112,6 +118,73 @@ export interface RegisterInput {
      * @maxLength 6
      */
   phoneVerificationCode: string;
+}
+
+export interface JobseekerRegistrationInput {
+  /** @minLength 1 */
+  firstName: string;
+  /** @minLength 1 */
+  lastName: string;
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  phone: string;
+  /**
+     * @minLength 6
+     * @maxLength 6
+     */
+  phoneVerificationCode: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  dateOfBirth: string;
+}
+
+export interface JobseekerProfileInput {
+  /** @maxLength 4000 */
+  bio: string;
+  /**
+     * @minItems 3
+     * @maxItems 5
+     * @items.pattern ^/api/media/[0-9a-fA-F-]{36}
+     */
+  portfolioMedia: string[];
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 80
+     */
+  skillTags: string[];
+  /**
+     * @maxItems 20
+     * @items.minLength 1
+     * @items.maxLength 80
+     */
+  categoryTags: string[];
+}
+
+export type JobseekerProfile = JobseekerProfileInput & ({
+  userId: string;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  dateOfBirth: string | null;
+});
+
+export interface JobseekerSalonInterestsInput {
+  /**
+     * @maxItems 200
+     * @items.pattern ^[0-9a-fA-F-]{36}$
+     */
+  salonIds: string[];
+}
+
+export interface JobseekerDashboard {
+  /** @minimum 0 */
+  activeListings: number;
+  /** @minimum 0 */
+  receivedContacts: number;
+  /** @minimum 0 */
+  enrollments: number;
 }
 
 export type BusinessRegistrationInputBusinessType = typeof BusinessRegistrationInputBusinessType[keyof typeof BusinessRegistrationInputBusinessType];
@@ -669,6 +742,7 @@ export const MediaUploadInputScope = {
   'service-category': 'service-category',
   'product-category': 'product-category',
   'treatment-photo': 'treatment-photo',
+  'jobseeker-portfolio': 'jobseeker-portfolio',
 } as const;
 
 export type MediaUploadInputContentType = typeof MediaUploadInputContentType[keyof typeof MediaUploadInputContentType];
@@ -5550,6 +5624,7 @@ export interface BeautyJobListing {
   /** @nullable */
   pricePeriod: string | null;
   negotiable: boolean;
+  isUrgent: boolean;
   photos: string[];
   status: string;
   moderationStatus: string;
@@ -5673,6 +5748,7 @@ export interface BeautyJobCreateInput {
   priceAmount?: number;
   pricePeriod?: BeautyJobCreateInputPricePeriod;
   negotiable?: boolean;
+  isUrgent?: boolean;
   /**
      * @maxItems 8
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$
@@ -5770,6 +5846,7 @@ export interface BeautyJobUpdateInput {
   /** @nullable */
   pricePeriod?: BeautyJobUpdateInputPricePeriod;
   negotiable?: boolean;
+  isUrgent?: boolean;
   /**
      * @maxItems 8
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$

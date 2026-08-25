@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 28;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 30;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -449,6 +449,38 @@ function tableStatements(s: string): string[] {
     // accounts remain opted in so this additive rollout never changes consent
     // without an explicit user action.
     `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS marketing_emails_enabled boolean NOT NULL DEFAULT true`,
+    // v29 — JOBSEEKER is intentionally a distinct account boundary.  This is
+    // additive and the conversion is idempotent, preserving every FK record.
+    `ALTER TYPE ${s}.user_role ADD VALUE IF NOT EXISTS 'JOBSEEKER'`,
+    `ALTER TABLE ${s}.users ADD COLUMN IF NOT EXISTS date_of_birth date`,
+    `CREATE TABLE IF NOT EXISTS ${s}.jobseeker_profiles (
+      user_id uuid PRIMARY KEY REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      bio text NOT NULL DEFAULT '',
+      portfolio_media jsonb NOT NULL DEFAULT '[]'::jsonb,
+      skill_tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+      category_tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT jobseeker_profiles_portfolio_count CHECK (
+        jsonb_array_length(portfolio_media) = 0
+        OR jsonb_array_length(portfolio_media) BETWEEN 3 AND 5
+      )
+    )`,
+    `DO $$ BEGIN
+       ALTER TABLE ${s}.jobseeker_profiles DROP CONSTRAINT IF EXISTS jobseeker_profiles_portfolio_count;
+       ALTER TABLE ${s}.jobseeker_profiles ADD CONSTRAINT jobseeker_profiles_portfolio_count CHECK (
+         jsonb_array_length(portfolio_media) = 0
+         OR jsonb_array_length(portfolio_media) BETWEEN 3 AND 5
+       );
+     END $$`,
+    `CREATE INDEX IF NOT EXISTS jobseeker_profiles_updated_idx ON ${s}.jobseeker_profiles (updated_at)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.jobseeker_salon_interests (
+      user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
+      salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT jobseeker_salon_interests_user_salon_unique UNIQUE (user_id, salon_id)
+    )`,
+    `CREATE INDEX IF NOT EXISTS jobseeker_salon_interests_salon_idx ON ${s}.jobseeker_salon_interests (salon_id)`,
 
     // ── platform_retention_settings (v4: admin-tunable retention thresholds) ─
     // Append-only versioned platform config; highest version is active. Mirrors
@@ -851,6 +883,7 @@ function tableStatements(s: string): string[] {
       price_amount integer,
       price_period ${s}.beauty_job_price_period,
       negotiable boolean NOT NULL DEFAULT false,
+      is_urgent boolean NOT NULL DEFAULT false,
       photos jsonb NOT NULL DEFAULT '[]'::jsonb,
       status ${s}.beauty_job_listing_status NOT NULL DEFAULT 'active',
       moderation_status ${s}.beauty_job_moderation_status NOT NULL DEFAULT 'pending',
@@ -864,6 +897,7 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS is_urgent boolean NOT NULL DEFAULT false`,
     `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS intent ${s}.beauty_job_listing_intent NOT NULL DEFAULT 'offering'`,
   `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderation_reason text`,
    `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderation_internal_note text`,
@@ -887,6 +921,9 @@ function tableStatements(s: string): string[] {
        END IF;
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_coordinates_pair' AND connamespace = current_schema()::regnamespace) THEN
          ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_coordinates_pair CHECK ((latitude IS NULL) = (longitude IS NULL));
+       END IF;
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_urgent_only_freelance' AND connamespace = current_schema()::regnamespace) THEN
+         ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_urgent_only_freelance CHECK (NOT is_urgent OR type = 'freelance');
        END IF;
      END $$`,
     `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_moderation_audit (
@@ -1028,6 +1065,24 @@ function tableStatements(s: string): string[] {
         enabled = EXCLUDED.enabled,
         feature_flag = EXCLUDED.feature_flag,
         updated_at = now()`,
+    // Existing individual marketplace users move once and only once.  No
+    // dependent row is rewritten: listings, contacts, rentals and enrollments
+    // keep their user foreign keys while the account boundary changes.
+    `DO $$ BEGIN
+       IF to_regclass('course_enrollments') IS NOT NULL THEN
+         UPDATE ${s}.users u SET role = 'JOBSEEKER'
+         WHERE u.role = 'CUSTOMER'
+           AND (EXISTS (SELECT 1 FROM ${s}.beauty_job_listings l WHERE l.user_id = u.id)
+             OR EXISTS (
+               SELECT 1 FROM ${s}.course_enrollments e
+               WHERE e.user_id = u.id OR e.purchaser_id = u.id
+             ));
+       ELSE
+         UPDATE ${s}.users u SET role = 'JOBSEEKER'
+         WHERE u.role = 'CUSTOMER'
+           AND EXISTS (SELECT 1 FROM ${s}.beauty_job_listings l WHERE l.user_id = u.id);
+       END IF;
+     END $$`,
   ];
 }
 

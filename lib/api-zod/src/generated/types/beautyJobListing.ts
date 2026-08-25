@@ -32,6 +32,7 @@ export interface BeautyJobListing {
   /** @nullable */
   pricePeriod: string | null;
   negotiable: boolean;
+  isUrgent: boolean;
   photos: string[];
   status: string;
   moderationStatus: string;

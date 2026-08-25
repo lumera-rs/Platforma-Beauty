@@ -15,6 +15,8 @@ import {
   useListSalons,
   useCustomerListPublicPackages,
   useCustomerPurchasePackage,
+  useListJobseekerSalonInterests,
+  useReplaceJobseekerSalonInterests,
   getGetCustomerDashboardQueryKey,
   getGetSalonAvailabilityQueryKey, 
   getGetSalonQueryKey, 
@@ -22,10 +24,11 @@ import {
   getGetSalonFirstAvailableQueryKey,
   getListMyAppointmentsQueryKey,
   getListSalonsQueryKey,
+  getListJobseekerSalonInterestsQueryKey,
   type FirstAvailableServiceSlot
 } from "@workspace/api-client-react";
 import { useParams, useLocation, useSearch, Link } from "wouter";
-import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone } from "lucide-react";
+import { MapPin, Star, Clock, CalendarDays, Loader2, Heart, ShieldCheck, Flame, House, Smartphone, BriefcaseBusiness } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format, isValid, parseISO } from "date-fns";
@@ -74,6 +77,14 @@ export default function SalonProfile() {
   });
   const { data: userResp } = useGetCurrentUser();
   const user = userResp?.user;
+  const { data: jobseekerSalonInterests = [] } = useListJobseekerSalonInterests({
+    query: {
+      queryKey: getListJobseekerSalonInterestsQueryKey(),
+      enabled: user?.role === "JOBSEEKER",
+      retry: false,
+    },
+  });
+  const replaceJobseekerSalonInterests = useReplaceJobseekerSalonInterests();
   const { draft, saveDraft, clearDraft } = useBookingDraft(user?.role === "CUSTOMER" ? user.id : undefined);
 
   const salonData = salon;
@@ -606,6 +617,20 @@ export default function SalonProfile() {
 
   if (!salonData) return <Layout><div className="p-12 text-center text-xl font-medium">Salon nije pronađen.</div></Layout>;
 
+  const isInterestedInSalon = jobseekerSalonInterests.includes(salonData.id);
+  const toggleJobseekerSalonInterest = () => {
+    const salonIds = isInterestedInSalon
+      ? jobseekerSalonInterests.filter((salonId) => salonId !== salonData.id)
+      : [...jobseekerSalonInterests, salonData.id];
+    replaceJobseekerSalonInterests.mutate({ data: { salonIds } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListJobseekerSalonInterestsQueryKey() });
+        toast.success(isInterestedInSalon ? "Salon je uklonjen iz interesovanja." : "Interesovanje za salon je sačuvano.");
+      },
+      onError: () => toast.error("Interesovanje trenutno nije moguće sačuvati."),
+    });
+  };
+
   const renderTopServiceCard = (service: (typeof salonData.topServices)[number]) => {
     const quickBookSlot = firstAvailableResponse?.services?.find(s => s.serviceId === service.id);
     return (
@@ -632,7 +657,7 @@ export default function SalonProfile() {
             </div>
           )}
         </CardContent>
-        <CardFooter className="p-6 pt-0 bg-card">
+        {user?.role !== "JOBSEEKER" && <CardFooter className="p-6 pt-0 bg-card">
           <Button
             variant={quickBookSlot ? "default" : "outline"}
             className={`w-full font-bold text-base h-12 rounded-xl transition-all ${!quickBookSlot ? 'group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary' : 'shadow-md'}`}
@@ -640,7 +665,7 @@ export default function SalonProfile() {
           >
             {quickBookSlot ? "Brzo zakazivanje" : "Izaberi termin"}
           </Button>
-        </CardFooter>
+        </CardFooter>}
       </Card>
     );
   };
@@ -672,6 +697,20 @@ export default function SalonProfile() {
                   </div>
                    {user?.role === "CUSTOMER" && (
                      <SalonFavoriteButton salon={salonData} className="absolute right-4 top-4 md:static md:mt-2 md:mb-6" />
+                   )}
+                   {user?.role === "JOBSEEKER" && (
+                     <Button
+                       type="button"
+                       variant={isInterestedInSalon ? "secondary" : "outline"}
+                       className="mb-6 gap-2"
+                       disabled={replaceJobseekerSalonInterests.isPending}
+                       onClick={toggleJobseekerSalonInterest}
+                     >
+                       {replaceJobseekerSalonInterests.isPending
+                         ? <Loader2 className="h-4 w-4 animate-spin" />
+                         : <BriefcaseBusiness className="h-4 w-4" />}
+                       {isInterestedInSalon ? "Zainteresovani ste za ovaj salon" : "Zanima me rad u ovom salonu"}
+                     </Button>
                    )}
 
                   <button
@@ -832,12 +871,13 @@ export default function SalonProfile() {
                       return (
                         <div
                           key={service.id} 
-                          role="button"
-                          tabIndex={0}
-                          aria-pressed={selectedService === service.id}
-                          className={`w-full px-1 py-5 text-left transition-colors sm:px-2 ${selectedService === service.id ? 'bg-primary/5' : 'hover:bg-muted/45'}`}
-                          onClick={() => handleSelectService(service.id)}
+                          role={user?.role === "JOBSEEKER" ? undefined : "button"}
+                          tabIndex={user?.role === "JOBSEEKER" ? undefined : 0}
+                          aria-pressed={user?.role === "JOBSEEKER" ? undefined : selectedService === service.id}
+                          className={`w-full px-1 py-5 text-left transition-colors sm:px-2 ${user?.role === "JOBSEEKER" ? "" : selectedService === service.id ? "bg-primary/5" : "hover:bg-muted/45"}`}
+                          onClick={user?.role === "JOBSEEKER" ? undefined : () => handleSelectService(service.id)}
                           onKeyDown={(event) => {
+                            if (user?.role === "JOBSEEKER") return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               handleSelectService(service.id);
@@ -875,7 +915,7 @@ export default function SalonProfile() {
                               <p className={`text-lg font-bold leading-tight ${hasPromotion ? "text-primary" : "text-foreground"}`}>{hasPromotion && promotionalPrice !== null ? promotionalPrice : service.price} RSD</p>
                             </div>
                           </div>
-                          {quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
+                          {user?.role !== "JOBSEEKER" && quickBookSlot && quickBookSlot.date && quickBookSlot.startTime && (
                             <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs">
                               <span className="text-muted-foreground">Prvi slobodan: <span className="font-semibold text-foreground">{format(parseISO(quickBookSlot.date), 'dd.MM.')} u {quickBookSlot.startTime}</span></span>
                               <button
@@ -1096,7 +1136,7 @@ export default function SalonProfile() {
         </div>
 
         {/* Right Column: Booking Widget */}
-        <div className="hidden lg:block w-[400px] shrink-0">
+        <div className={user?.role === "JOBSEEKER" ? "hidden" : "hidden lg:block w-[400px] shrink-0"}>
           <div className="sticky top-24 pt-4" id="booking-widget">
             <BookingWidget 
               salon={salonData}
@@ -1131,7 +1171,7 @@ export default function SalonProfile() {
       </div>
       
       {/* Mobile Booking Elements */}
-      <div className="lg:hidden">
+      <div className={user?.role === "JOBSEEKER" ? "hidden" : "lg:hidden"}>
       <MobileBookingTrigger 
           salon={salonData} 
           selectedService={selectedService} 

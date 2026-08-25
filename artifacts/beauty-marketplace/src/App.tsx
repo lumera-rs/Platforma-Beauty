@@ -49,6 +49,8 @@ const RetailSuccessPage = lazy(() => import('./pages/retail-checkout').then((mod
 const RetailTrackingPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailTrackingPage })));
 const Salons = lazy(() => import('./pages/salons'));
 const SalonProfile = lazy(() => import('./pages/salon-profile'));
+const JobseekerDashboard = lazy(() => import('./pages/jobseeker-dashboard'));
+const JobseekerRegistration = lazy(() => import('./pages/jobseeker-registration'));
 const CustomerDashboard = lazy(() => import('./pages/customer-dashboard'));
 const OwnerDashboard = lazy(() => import('./pages/owner/dashboard'));
 const OwnerResources = lazy(() => import('./pages/owner/resources'));
@@ -127,6 +129,10 @@ function LegacyEducationRedirect() {
     const role = data?.user?.role;
     if (role === "SALON_OWNER" || role === "EDUCATION_CENTER_OWNER" || role === "ADMIN" || role === "SUPER_ADMIN") {
       setLocation("/biznis/edukacije");
+    } else if (role === "JOBSEEKER") {
+      setLocation("/poslovi/nalog/edukacije");
+    } else if (role === "STUDENT") {
+      setLocation("/student/edukacije");
     } else if (role === "CUSTOMER") {
       setLocation("/moj-nalog");
     } else {
@@ -183,7 +189,9 @@ function LegacyBeautyJobsDashboardRedirect({
 
     const destination = user.role === "SALON_OWNER" || user.role === "EDUCATION_CENTER_OWNER" || user.role === "INSTRUCTOR"
       ? "/biznis/poslovi"
-      : "/moji-oglasi";
+      : user.role === "JOBSEEKER"
+      ? "/poslovi/nalog/oglasi"
+      : homeForRole(user.role);
     const params = new URLSearchParams(searchString);
     params.set("tab", tab);
     if (newListing) params.set("new", "1");
@@ -232,6 +240,19 @@ function RoleGuard({
   return children;
 }
 
+function JobseekerExcludedRoute({ children }: { children: ReactNode }) {
+  const [, setLocation] = useLocation();
+  const { data, isLoading } = useGetCurrentUser();
+  const isJobseeker = data?.user?.role === "JOBSEEKER";
+
+  useEffect(() => {
+    if (!isLoading && isJobseeker) setLocation("/poslovi/nalog");
+  }, [isJobseeker, isLoading, setLocation]);
+
+  if (isLoading || isJobseeker) return <RouteLoadingFallback />;
+  return children;
+}
+
 function Router() {
   return (
     <RoutedErrorBoundary>
@@ -252,26 +273,27 @@ function Router() {
         <Route path="/beauty-poslovi/:listingId" component={BeautyJobDetail} />
         <Route path="/beauty-poslovi"><RouteRedirect to="/poslovi" /></Route>
         <Route path="/poslovi" component={BeautyJobs} />
+        <Route path="/poslovi/nalog/edukacije/lms/:enrollmentId"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><BusinessEducation /></RoleGuard></Route>
+        <Route path="/poslovi/nalog"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
+        <Route path="/poslovi/nalog/:tab"><RoleGuard allowedRoles={['JOBSEEKER']} loginPath="/prijava"><JobseekerDashboard /></RoleGuard></Route>
         <Route path="/poslovi/:slug/:listingId" component={BeautyJobDetail} />
-        <Route path="/proizvodi" component={PublicProducts} />
-        <Route path="/proizvodi/:productId" component={PublicProductDetail} />
-        <Route path="/korpa" component={RetailCartPage} />
-        <Route path="/korpa/placanje" component={RetailCheckoutPage} />
-        <Route path="/korpa/uspeh" component={RetailSuccessPage} />
-        <Route path="/porudzbina/pracenje" component={RetailTrackingPage} />
+        <Route path="/proizvodi"><JobseekerExcludedRoute><PublicProducts /></JobseekerExcludedRoute></Route>
+        <Route path="/proizvodi/:productId"><JobseekerExcludedRoute><PublicProductDetail /></JobseekerExcludedRoute></Route>
+        <Route path="/korpa"><JobseekerExcludedRoute><RetailCartPage /></JobseekerExcludedRoute></Route>
+        <Route path="/korpa/placanje"><JobseekerExcludedRoute><RetailCheckoutPage /></JobseekerExcludedRoute></Route>
+        <Route path="/korpa/uspeh"><JobseekerExcludedRoute><RetailSuccessPage /></JobseekerExcludedRoute></Route>
+        <Route path="/porudzbina/pracenje"><JobseekerExcludedRoute><RetailTrackingPage /></JobseekerExcludedRoute></Route>
         <Route path="/inspiracija"><MarketplaceGuides kind="inspiration" /></Route>
         <Route path="/recnik"><MarketplaceGuides kind="glossary" /></Route>
         <Route path="/brendovi"><MarketplaceGuides kind="brands" /></Route>
+        <Route path="/pridruzi-se-poslovi"><JobseekerRegistration /></Route>
+
         <Route path="/moj-nalog">
           <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
             <CustomerDashboard />
           </RoleGuard>
         </Route>
-        <Route path="/moji-oglasi">
-          <RoleGuard allowedRoles={['CUSTOMER', 'STUDENT']} loginPath="/prijava">
-            <CustomerBeautyJobs />
-          </RoleGuard>
-        </Route>
+        <Route path="/moji-oglasi"><LegacyBeautyJobsDashboardRedirect /></Route>
         <Route path="/biznis/vodic">
           <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE']} loginPath="/poslovna-prijava">
             <BusinessGuidePage />
@@ -284,11 +306,6 @@ function Router() {
         </Route>
         <Route path="/biznis/edukacije/lms/:enrollmentId">
           <RoleGuard allowedRoles={['SALON_OWNER', 'SALON_EMPLOYEE', 'EDUCATION_CENTER_OWNER', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava">
-            <BusinessEducation />
-          </RoleGuard>
-        </Route>
-        <Route path="/moj-nalog/edukacije/lms/:enrollmentId">
-          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
             <BusinessEducation />
           </RoleGuard>
         </Route>

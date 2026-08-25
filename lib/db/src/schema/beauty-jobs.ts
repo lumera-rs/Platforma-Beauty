@@ -84,6 +84,8 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   priceAmount: integer("price_amount"),
   pricePeriod: beautyJobPricePeriodEnum("price_period"),
   negotiable: boolean("negotiable").notNull().default(false),
+  /** Only freelance authors may mark a listing urgent. Enforced below in SQL. */
+  isUrgent: boolean("is_urgent").notNull().default(false),
   photos: jsonb("photos").$type<string[]>().notNull().default([]),
   isTest: boolean("is_test").notNull().default(false),
   status: beautyJobListingStatusEnum("status").notNull().default("active"),
@@ -109,6 +111,32 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   check("beauty_job_listings_posted_by_matches_author", sql`(${table.postedByType} = 'salon' and ${table.salonId} is not null and ${table.userId} is null) or (${table.postedByType} = 'user' and ${table.userId} is not null and ${table.salonId} is null)`),
   check("beauty_job_listings_price_nonnegative", sql`${table.priceAmount} is null or ${table.priceAmount} >= 0`),
   check("beauty_job_listings_coordinates_pair", sql`(${table.latitude} is null) = (${table.longitude} is null)`),
+  check("beauty_job_listings_urgent_only_freelance", sql`not ${table.isUrgent} or ${table.type} = 'freelance'`),
+]);
+
+/** One normalized professional identity per JOBSEEKER. Portfolio values are
+ * stable media URLs, claimed atomically by the profile route. */
+export const jobseekerProfilesTable = pgTable("jobseeker_profiles", {
+  userId: uuid("user_id").primaryKey().references(() => usersTable.id, { onDelete: "cascade" }),
+  bio: text("bio").notNull().default(""),
+  portfolioMedia: jsonb("portfolio_media").$type<string[]>().notNull().default([]),
+  skillTags: jsonb("skill_tags").$type<string[]>().notNull().default([]),
+  categoryTags: jsonb("category_tags").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("jobseeker_profiles_portfolio_count", sql`jsonb_array_length(${table.portfolioMedia}) = 0 or jsonb_array_length(${table.portfolioMedia}) between 3 and 5`),
+  index("jobseeker_profiles_updated_idx").on(table.updatedAt),
+]);
+
+/** Deliberately independent of customer salon favorites. */
+export const jobseekerSalonInterestsTable = pgTable("jobseeker_salon_interests", {
+  userId: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("jobseeker_salon_interests_user_salon_unique").on(table.userId, table.salonId),
+  index("jobseeker_salon_interests_salon_idx").on(table.salonId),
 ]);
 
 /** No address column by design: rental privacy is a schema-level invariant. */

@@ -21,4 +21,5 @@ export const MediaUploadInputScope = {
   'service-category': 'service-category',
   'product-category': 'product-category',
   'treatment-photo': 'treatment-photo',
+  'jobseeker-portfolio': 'jobseeker-portfolio',
 } as const;

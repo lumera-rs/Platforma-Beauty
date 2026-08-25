@@ -70,6 +70,10 @@ function useEducationPurchase() {
       setLocation("/prijava");
       return;
     }
+    if (currentUser.user.role === "CUSTOMER") {
+      toast.error("Nije dozvoljeno", { description: "Samo poslovni korisnici i studenti mogu da kupuju edukacije." });
+      return;
+    }
     setBuying(course.id);
     try {
       const session = courseSession(course);
@@ -88,7 +92,7 @@ function useEducationPurchase() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Zahtev za kupovinu nije uspeo.");
       toast.success("Zahtev je poslat", { description: "Administrator potvrđuje uplatu. Pristup se aktivira nakon potvrde." });
-      setLocation(currentUser.user.role === "STUDENT" ? "/student/edukacije" : currentUser.user.role === "CUSTOMER" ? "/moj-nalog?tab=education" : "/biznis/edukacije");
+      setLocation(currentUser.user.role === "STUDENT" ? "/student/edukacije" : currentUser.user.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : "/biznis/edukacije");
     } catch (error) {
       toast.error("Zahtev nije poslat", { description: error instanceof Error ? error.message : undefined });
     } finally {
@@ -104,6 +108,7 @@ export function EducationCourseCard({ course, onBuy, buying, compact = false }: 
   buying?: string | null;
   compact?: boolean;
 }) {
+  const { data: currentUser } = useGetCurrentUser();
   const session = courseSession(course);
   return (
     <Card className="group flex h-full flex-col overflow-hidden border-border/60 transition-shadow hover:shadow-lg">
@@ -137,7 +142,7 @@ export function EducationCourseCard({ course, onBuy, buying, compact = false }: 
           <strong className="text-lg">{money(course.price)}</strong>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild><Link href={`/edukacije/${course.id}`}>Detalji</Link></Button>
-            {onBuy && <Button size="sm" disabled={buying === course.id} onClick={() => onBuy(course)}>
+            {onBuy && (!currentUser?.user || currentUser.user.role !== "CUSTOMER") && <Button size="sm" disabled={buying === course.id} onClick={() => onBuy(course)}>
               {buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Lista" : "Prijava"}
             </Button>}
           </div>
@@ -253,6 +258,7 @@ export function EducationPublicCourseDetail() {
   const [, params] = useRoute("/edukacije/:courseId");
   const courseId = params?.courseId ?? "";
   const { data: course, isLoading, isError } = useGetPublicEducationCourse(courseId);
+  const { data: currentUser } = useGetCurrentUser();
   const { buy, buying } = useEducationPurchase();
   const session = course ? courseSession(course) : null;
   const gallery = useMemo(() => course ? [
@@ -276,7 +282,11 @@ export function EducationPublicCourseDetail() {
         {course.center ? <Card><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><OptimizedImage src={course.center.imageUrl} alt={course.center.name} width={64} height={64} preferredSize="thumbnail" responsiveSizes="64px" className="h-16 w-16 rounded-xl object-cover" /><div className="flex-1"><p className="font-semibold">{course.center.name}</p><p className="mt-1 text-sm text-muted-foreground">{course.center.description}</p></div><Button variant="outline" asChild><Link href={`/edukacije/centri/${course.center.id}`}>Profil centra</Link></Button></CardContent></Card> : null}
         {course.reviews.length ? <section><h2 className="mb-4 font-serif text-2xl font-bold">Utisci polaznika</h2><div className="space-y-3">{course.reviews.map((review) => <Card key={review.id}><CardContent className="p-4"><p className="flex items-center gap-1 text-sm text-amber-600"><Star className="h-4 w-4 fill-amber-500" />{review.rating.toFixed(1)}</p><p className="mt-2 text-sm">{review.comment}</p></CardContent></Card>)}</div></section> : null}
       </div>
-      <aside><Card className="sticky top-24 border-primary/25"><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p><p className="mt-1 text-sm text-muted-foreground">Jednokratna kupovina · potvrda uplate od administratora</p><Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div><Button className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>{buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Dodaj se na listu čekanja" : "Prijavi se na edukaciju"}</Button></CardContent></Card></aside>
+      <aside><Card className="sticky top-24 border-primary/25"><CardContent className="p-6"><p className="text-2xl font-bold">{money(course.price)}</p><p className="mt-1 text-sm text-muted-foreground">Jednokratna kupovina · potvrda uplate od administratora</p><Separator className="my-5" /><div className="space-y-3 text-sm"><p className="flex gap-2"><Building2 className="h-4 w-4 text-muted-foreground" />{course.publisher}</p>{course.city ? <p className="flex gap-2"><MapPin className="h-4 w-4 text-muted-foreground" />{course.city} <span className="text-muted-foreground">· detalji po uplati</span></p> : null}<p className="flex gap-2"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{course.refundPolicy}</p></div>
+      {(!currentUser?.user || currentUser.user.role !== "CUSTOMER") && (
+        <Button className="mt-6 w-full" size="lg" disabled={buying === course.id} onClick={() => buy(course)}>{buying === course.id ? <Loader2 className="h-4 w-4 animate-spin" /> : session?.availableSeats === 0 ? "Dodaj se na listu čekanja" : "Prijavi se na edukaciju"}</Button>
+      )}
+      </CardContent></Card></aside>
     </div>
   </main></Layout>;
 }

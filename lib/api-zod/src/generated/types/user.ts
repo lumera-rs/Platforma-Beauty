@@ -14,6 +14,11 @@ export interface User {
   email: string;
   /** @nullable */
   phone?: string | null;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  dateOfBirth: string | null;
   role: UserRole;
   active: boolean;
   mustChangePassword: boolean;

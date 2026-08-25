@@ -23,6 +23,7 @@ import {
   eligibleEmployees,
   normalizedPhone,
 } from "./marketplace";
+import { getCurrentUser } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -169,6 +170,11 @@ router.get("/widget/salons/:slug/availability", async (req, res): Promise<void> 
 router.post("/widget/salons/:slug/appointments", async (req, res): Promise<void> => {
   const slug = String(req.params.slug);
   if (guardRate(req, res, slug, RATE_MAX_BOOKINGS)) return;
+  const signedInUser = await getCurrentUser(req);
+  if (signedInUser?.role === "JOBSEEKER") {
+    res.status(403).json({ error: "JOBSEEKER nalozi ne mogu zakazivati termine." });
+    return;
+  }
   const parsed = CreateWidgetAppointmentBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { serviceId, date, startTime } = parsed.data;

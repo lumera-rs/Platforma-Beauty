@@ -23,6 +23,7 @@ export const userRoleEnum = pgEnum("user_role", [
   "EDUCATION_CENTER_OWNER",
   "INSTRUCTOR",
   "CUSTOMER",
+  "JOBSEEKER",
   "STUDENT",
 ]);
 
@@ -87,6 +88,8 @@ export const usersTable = pgTable("users", {
   email: text("email").notNull().unique(),
   phone: text("phone"),
   phoneNormalized: text("phone_normalized"),
+  /** Calendar-only DOB; never coerce this value through a timestamp. */
+  dateOfBirth: date("date_of_birth", { mode: "string" }),
   activeSalonId: uuid("active_salon_id"),
   passwordHash: text("password_hash").notNull(),
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),

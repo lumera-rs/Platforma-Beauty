@@ -41,6 +41,8 @@ import
   appointmentSeriesTable,
   appointmentsTable,
   beautyGlossaryTable,
+  beautyJobContactsTable,
+  beautyJobListingsTable,
   courseCategoriesTable,
   courseDaysTable,
   courseEnrollmentsTable,
@@ -77,6 +79,8 @@ import
   favoritesTable,
   favoriteEmployeesTable,
   inspirationItemsTable,
+  jobseekerProfilesTable,
+  jobseekerSalonInterestsTable,
   lessonProgressTable,
   loyaltyTiersTable,
   mediaAssetsTable,
@@ -321,6 +325,15 @@ import
   LoginBody,
   LoginResponse,
   RegisterBusinessBody,
+  RegisterJobseekerBody,
+  RegisterJobseekerResponse,
+  GetJobseekerProfileResponse,
+  GetJobseekerDashboardResponse,
+  UpdateJobseekerProfileBody,
+  UpdateJobseekerProfileResponse,
+  ListJobseekerSalonInterestsResponse,
+  ReplaceJobseekerSalonInterestsBody,
+  ReplaceJobseekerSalonInterestsResponse,
   RegisterBody,
   RegisterResponse,
   MarkSalonNotificationReadParams,
@@ -1888,7 +1901,7 @@ async function requireLmsAccess(req: Request, res: Response): Promise<LmsAccess 
     const access = await requireEducationAccess(req, res);
     return access ? { access, learnerEmployeeId: null } : null;
   }
-  if (user.role === "CUSTOMER" || user.role === "STUDENT") {
+  if (user.role === "JOBSEEKER" || user.role === "STUDENT") {
     return { access: { user, salon: null, centers: [], admin: false }, learnerEmployeeId: null };
   }
   if (user.role !== "SALON_EMPLOYEE") {
@@ -3168,6 +3181,143 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   const token = await createSession(user!.id);
   res.cookie(sessionCookieName, token, cookieOptions());
   res.status(201).json(RegisterResponse.parse({ user: publicUser(user!), message: "Dobro došli u Lumeru." }));
+});
+
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime())
+    && date.getUTCFullYear() === Number(value.slice(0, 4))
+    && date.getUTCMonth() + 1 === Number(value.slice(5, 7))
+    && date.getUTCDate() === Number(value.slice(8, 10))
+    && value <= new Date().toISOString().slice(0, 10);
+}
+
+/** A distinct registration flow: browsers cannot choose a role, DOB stays a
+ * date-only value, and phone verification is consumed with account creation. */
+router.post("/auth/jobseeker-register", async (req, res): Promise<void> => {
+  await ensureDemoData();
+  const parsed = RegisterJobseekerBody.safeParse(req.body);
+  if (!parsed.success || !isCalendarDate(parsed.data?.dateOfBirth ?? "")) {
+    res.status(400).json({ error: "Datum rođenja mora biti ispravan datum u formatu YYYY-MM-DD i ne sme biti u budućnosti." }); return;
+  }
+  const input = parsed.data;
+  const email = input.email.toLowerCase();
+  const phoneNormalized = normalizedPhone(input.phone);
+  if (!phoneNormalized) { res.status(400).json({ error: "Potvrdite broj telefona pre registracije." }); return; }
+  const [emailOwner, phoneOwner, verificationRows] = await Promise.all([
+    db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1),
+    db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.phoneNormalized, phoneNormalized)).limit(1),
+    db.select().from(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.phoneNormalized, phoneNormalized)).limit(1),
+  ]);
+  const verification = verificationRows[0];
+  if (emailOwner[0] || phoneOwner[0]) { res.status(409).json({ error: "E-mail ili broj su već povezani sa nalogom." }); return; }
+  if (!verification || verification.expiresAt < new Date() || verification.attempts >= 5
+    || verification.codeHash !== createHash("sha256").update(input.phoneVerificationCode).digest("hex")) {
+    if (verification) await db.update(phoneVerificationCodesTable).set({ attempts: verification.attempts + 1 }).where(eq(phoneVerificationCodesTable.id, verification.id));
+    res.status(400).json({ error: "Kod za potvrdu broja nije ispravan ili je istekao." }); return;
+  }
+  const [user] = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(usersTable).values({
+      firstName: input.firstName, lastName: input.lastName, email, phone: input.phone,
+      phoneNormalized, dateOfBirth: input.dateOfBirth, passwordHash: await hashPassword(input.password),
+      passwordSetAt: new Date(), role: "JOBSEEKER",
+    }).returning();
+    await tx.delete(phoneVerificationCodesTable).where(eq(phoneVerificationCodesTable.id, verification.id));
+    return [created!];
+  });
+  const token = await createSession(user!.id);
+  res.cookie(sessionCookieName, token, cookieOptions());
+  res.status(201).json(RegisterJobseekerResponse.parse({ user: publicUser(user!), message: "JOBSEEKER nalog je kreiran." }));
+});
+
+async function requireJobseeker(req: Request, res: Response) {
+  const user = await current(req, res);
+  if (!user) return null;
+  if (user.role !== "JOBSEEKER") {
+    res.status(403).json({ error: "Ova funkcija je dostupna samo JOBSEEKER nalozima." });
+    return null;
+  }
+  return user;
+}
+
+router.get("/jobseeker/profile", async (req, res): Promise<void> => {
+  const user = await requireJobseeker(req, res); if (!user) return;
+  const [profile] = await db.select().from(jobseekerProfilesTable).where(eq(jobseekerProfilesTable.userId, user.id)).limit(1);
+  if (!profile) { res.status(404).json({ error: "Profesionalni profil još nije popunjen." }); return; }
+  res.json(GetJobseekerProfileResponse.parse({ ...profile, dateOfBirth: user.dateOfBirth }));
+});
+
+router.get("/jobseeker/dashboard", async (req, res): Promise<void> => {
+  const user = await requireJobseeker(req, res); if (!user) return;
+  const [[activeListings], [receivedContacts], [enrollments]] = await Promise.all([
+    db.select({ value: count() }).from(beautyJobListingsTable).where(and(
+      eq(beautyJobListingsTable.userId, user.id), eq(beautyJobListingsTable.status, "active"),
+    )),
+    db.select({ value: count() }).from(beautyJobContactsTable)
+      .innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id))
+      .where(eq(beautyJobListingsTable.userId, user.id)),
+    db.select({ value: count() }).from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.purchaserId, user.id)),
+  ]);
+  res.json(GetJobseekerDashboardResponse.parse({
+    activeListings: activeListings?.value ?? 0,
+    receivedContacts: receivedContacts?.value ?? 0,
+    enrollments: enrollments?.value ?? 0,
+  }));
+});
+
+router.put("/jobseeker/profile", async (req, res): Promise<void> => {
+  const user = await requireJobseeker(req, res); if (!user) return;
+  const parsed = UpdateJobseekerProfileBody.safeParse(req.body);
+  if (!parsed.success || new Set(parsed.data.portfolioMedia).size !== parsed.data.portfolioMedia.length) {
+    res.status(400).json({ error: "Profil ili portfolio fotografije nisu ispravni." }); return;
+  }
+  const [existing] = await db.select().from(jobseekerProfilesTable).where(eq(jobseekerProfilesTable.userId, user.id)).limit(1);
+  const claimable = await Promise.all(parsed.data.portfolioMedia.map((url) => canClaimMediaReference({
+    userId: user.id, url, scope: "jobseeker-portfolio", resourceId: user.id,
+    existingUrls: existing?.portfolioMedia,
+  })));
+  if (claimable.some((ok) => !ok)) { res.status(400).json({ error: "Portfolio mora sadržati vaše završene privatne fotografije." }); return; }
+  const profile = await db.transaction(async (tx) => {
+    for (const url of parsed.data.portfolioMedia) {
+      if (!(await claimMediaReference({ userId: user.id, url, scope: "jobseeker-portfolio", resourceId: user.id, visibility: "private" }, tx))) {
+        throw new MediaClaimConflictError();
+      }
+    }
+    const [saved] = await tx.insert(jobseekerProfilesTable).values({
+      userId: user.id, ...parsed.data, updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: jobseekerProfilesTable.userId,
+      set: { ...parsed.data, updatedAt: new Date() },
+    }).returning();
+    return saved!;
+  }).catch((error) => {
+    if (error instanceof MediaClaimConflictError) return null;
+    throw error;
+  });
+  if (!profile) { res.status(409).json({ error: "Portfolio se promenio; pokušajte ponovo." }); return; }
+  res.json(UpdateJobseekerProfileResponse.parse({ ...profile, dateOfBirth: user.dateOfBirth }));
+});
+
+router.get("/jobseeker/salon-interests", async (req, res): Promise<void> => {
+  const user = await requireJobseeker(req, res); if (!user) return;
+  const rows = await db.select({ salonId: jobseekerSalonInterestsTable.salonId }).from(jobseekerSalonInterestsTable)
+    .where(eq(jobseekerSalonInterestsTable.userId, user.id)).orderBy(asc(jobseekerSalonInterestsTable.salonId));
+  res.json(ListJobseekerSalonInterestsResponse.parse(rows.map((row) => row.salonId)));
+});
+
+router.put("/jobseeker/salon-interests", async (req, res): Promise<void> => {
+  const user = await requireJobseeker(req, res); if (!user) return;
+  const parsed = ReplaceJobseekerSalonInterestsBody.safeParse(req.body);
+  if (!parsed.success || new Set(parsed.data.salonIds).size !== parsed.data.salonIds.length) { res.status(400).json({ error: "Lista salona nije ispravna." }); return; }
+  const salonIds = parsed.data.salonIds;
+  const salons = salonIds.length ? await db.select({ id: salonsTable.id }).from(salonsTable).where(inArray(salonsTable.id, salonIds)) : [];
+  if (salons.length !== salonIds.length) { res.status(400).json({ error: "Jedan od salona ne postoji." }); return; }
+  await db.transaction(async (tx) => {
+    await tx.delete(jobseekerSalonInterestsTable).where(eq(jobseekerSalonInterestsTable.userId, user.id));
+    if (salonIds.length) await tx.insert(jobseekerSalonInterestsTable).values(salonIds.map((salonId) => ({ userId: user.id, salonId })));
+  });
+  res.json(ReplaceJobseekerSalonInterestsResponse.parse(salonIds));
 });
 
 // This separate endpoint intentionally shares validation with customer
@@ -8217,6 +8367,14 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   }));
 });
 
+// Retail carts are cookie-backed, so reject a JOBSEEKER before any anonymous
+// fallback cart can be created or observed.
+router.use("/retail", async (req, res, next): Promise<void> => {
+  const user = await getCurrentUser(req);
+  if (user?.role === "JOBSEEKER") { res.status(403).json({ error: "JOBSEEKER nalozi ne mogu koristiti prodavnicu, korpu ili porudžbine." }); return; }
+  next();
+});
+
 router.get("/retail/cart", async (req, res): Promise<void> => {
   const cart = await retailCartForRequest(req, res);
   res.json(await retailCartDto(cart.id));
@@ -8620,6 +8778,18 @@ router.post("/customer/retail-products/:productId/reviews", async (req, res): Pr
     ? await db.update(retailProductReviewsTable).set({ rating, comment, updatedAt: new Date() }).where(eq(retailProductReviewsTable.id, existing.id)).returning()
     : await db.insert(retailProductReviewsTable).values({ productId: req.params.productId, orderItemId: item.id, userId: user.id, rating, comment }).returning();
   res.json({ id: saved!.id, rating: saved!.rating, comment: saved!.comment, createdAt: saved!.updatedAt.toISOString() });
+});
+
+// Keep catalogue reads public while blocking authenticated JOBSEEKER accounts
+// from every stateful legacy shop surface, including direct URL attempts.
+router.use("/shop", async (req, res, next): Promise<void> => {
+  const user = await getCurrentUser(req);
+  const stateful = /^(\/cart|\/checkout|\/orders|\/notifications|\/summary|\/shipping-quote)(?:\/|$)/.test(req.path)
+    || (req.method !== "GET" && /^\/products\/[^/]+\/reviews$/.test(req.path));
+  if (user?.role === "JOBSEEKER" && stateful) {
+    res.status(403).json({ error: "JOBSEEKER nalozi ne mogu koristiti prodavnicu, korpu ili porudžbine." }); return;
+  }
+  next();
 });
 
 router.get("/shop/products", async (req, res): Promise<void> => {
@@ -10615,8 +10785,8 @@ router.post("/education/courses/:courseId/sessions", async (req, res): Promise<v
 
 router.post("/education/courses/:courseId/enrollments", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["SALON_OWNER", "CUSTOMER", "STUDENT"].includes(user.role)) {
-    res.status(403).json({ error: "Kupovina edukacija je dostupna klijentima i vlasnicima salona." });
+  if (!["SALON_OWNER", "JOBSEEKER", "STUDENT"].includes(user.role)) {
+    res.status(403).json({ error: "Kupovina edukacija je dostupna polaznicima i vlasnicima salona." });
     return;
   }
   const [params, body] = [EnrollInEducationCourseParams.safeParse(req.params), EnrollInEducationCourseBody.safeParse(req.body ?? {})];
@@ -10796,7 +10966,7 @@ router.post("/education/courses/:courseId/enrollments", async (req, res): Promis
 // changes and the position allocation.
 router.post("/education/courses/:courseId/sessions/:sessionId/waitlist", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["CUSTOMER", "STUDENT", "SALON_OWNER"].includes(user.role)) {
+  if (!["JOBSEEKER", "STUDENT", "SALON_OWNER"].includes(user.role)) {
     res.status(403).json({ error: "Lista čekanja je dostupna samo polaznicima i salonima." }); return;
   }
   const courseId = String(req.params.courseId ?? "");
@@ -10847,7 +11017,7 @@ router.post("/education/courses/:courseId/sessions/:sessionId/waitlist", async (
 // enrollment is created in the pending/pending state like a normal request.
 router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (!["CUSTOMER", "STUDENT", "SALON_OWNER"].includes(user.role)) {
+  if (!["JOBSEEKER", "STUDENT", "SALON_OWNER"].includes(user.role)) {
     res.status(403).json({ error: "Lista čekanja je dostupna samo polaznicima i salonima." }); return;
   }
   const waitlistId = String(req.params.waitlistId ?? "");
@@ -10947,7 +11117,7 @@ router.post("/education/waitlist/:waitlistId/accept", async (req, res): Promise<
 
 router.get("/education/notifications", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
-  if (user.role !== "STUDENT" && user.role !== "CUSTOMER") { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
+  if (!["JOBSEEKER", "STUDENT"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
   const notificationRows = await db.select().from(educationNotificationsTable)
     .where(eq(educationNotificationsTable.userId, user.id)).orderBy(desc(educationNotificationsTable.createdAt)).limit(100);
   // Active (offered, unexpired) waitlist offers surface an accept CTA. Each
@@ -11000,6 +11170,7 @@ router.get("/education/notifications", async (req, res): Promise<void> => {
 
 router.patch("/education/notifications/:notificationId/read", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
+  if (!["JOBSEEKER", "STUDENT"].includes(user.role)) { res.status(403).json({ error: "Obaveštenja su privatna za polaznika." }); return; }
   const [updated] = await db.update(educationNotificationsTable).set({ readAt: new Date() })
     .where(and(eq(educationNotificationsTable.id, String(req.params.notificationId ?? "")), eq(educationNotificationsTable.userId, user.id))).returning();
   if (!updated) { res.status(404).json({ error: "Obaveštenje nije pronađeno." }); return; }
@@ -11817,6 +11988,7 @@ router.get("/education/center/status", async (req, res): Promise<void> => {
 
 router.get("/education/purchases", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
+  if (!["JOBSEEKER", "STUDENT"].includes(user.role)) { res.status(403).json({ error: "Edukacije za polaznike su dostupne samo polazničkim nalozima." }); return; }
   // Bounded, stably ordered purchaser list — never full-scans course_enrollments.
   const { limit, offset } = parsePagination(req.query, 50);
   const enrollments = await db.select().from(courseEnrollmentsTable)
@@ -11958,6 +12130,7 @@ function buildCertificatePdf(learnerName: string, courseTitle: string, issuedAt:
 
 router.get("/education/enrollments/:enrollmentId/certificate", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
+  if (user.role === "CUSTOMER") { res.status(403).json({ error: "Edukacije nisu dostupne CUSTOMER nalozima." }); return; }
   const enrollmentId = String(req.params.enrollmentId ?? "");
   const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
   if (!enrollment) { res.status(404).json({ error: "Prijava nije pronađena." }); return; }
@@ -12072,6 +12245,7 @@ function buildIcs(params: {
 
 router.get("/education/enrollments/:enrollmentId/session.ics", async (req, res): Promise<void> => {
   const user = await current(req, res); if (!user) return;
+  if (user.role === "CUSTOMER") { res.status(403).json({ error: "Edukacije nisu dostupne CUSTOMER nalozima." }); return; }
   const enrollmentId = String(req.params.enrollmentId ?? "");
   const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
   if (!enrollment) { res.status(404).json({ error: "Prijava nije pronađena." }); return; }
@@ -12261,6 +12435,9 @@ router.post("/education/courses/:courseId/group-enrollments", async (req, res): 
 });
 
 async function enrollmentAccessForUser(user: typeof usersTable.$inferSelect, enrollmentId: string) {
+  if (user.role === "CUSTOMER") {
+    return { enrollment: null, course: null, center: null, canParticipate: false, admin: false };
+  }
   const [enrollment] = await db.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).limit(1);
   if (!enrollment) return { enrollment: null, course: null, center: null, canParticipate: false, admin: false };
   const [course] = await db.select().from(coursesTable).where(eq(coursesTable.id, enrollment.courseId)).limit(1);

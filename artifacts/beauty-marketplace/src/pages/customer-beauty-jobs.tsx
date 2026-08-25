@@ -41,7 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Briefcase, MessageSquare, Bookmark, Bell, Edit, RotateCcw, XCircle, ChevronRight, CornerDownRight, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 
-export default function CustomerBeautyJobsPage() {
+export default function CustomerBeautyJobsPage({ hideLayout = false }: { hideLayout?: boolean }) {
   const queryClient = useQueryClient();
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
@@ -153,8 +153,8 @@ export default function CustomerBeautyJobsPage() {
     });
   };
 
-  return (
-    <Layout>
+  const content = (
+    <>
       <div className="bg-secondary/30 py-8 border-b">
         <div className="container mx-auto px-4">
           <h1 className="text-3xl font-serif font-bold mb-2">Moji oglasi</h1>
@@ -395,6 +395,14 @@ export default function CustomerBeautyJobsPage() {
         onSuccess={() => { setIsFormOpen(false); setEditingJob(null); queryClient.invalidateQueries({ queryKey: getListMyBeautyJobsQueryKey() }); }}
         initialData={editingJob}
       />
+    </>
+  );
+
+  if (hideLayout) return content;
+
+  return (
+    <Layout>
+      {content}
     </Layout>
   );
 }

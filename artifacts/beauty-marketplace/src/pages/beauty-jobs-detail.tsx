@@ -227,6 +227,9 @@ export default function BeautyJobDetailPage() {
           <Badge variant={isOffer ? "default" : "secondary"}>
             {intentLabel}
           </Badge>
+          {job.type === "freelance" && job.isUrgent && (
+            <Badge variant="destructive" className="animate-pulse">HITNO</Badge>
+          )}
           <Badge variant="outline">{job.categoryName || job.categorySlug}</Badge>
           {isAdminPreview && <Badge variant="secondary">Moderacija: {job.moderationStatus}</Badge>}
           {isAdminPreview && <Badge variant="outline">Status: {job.status}</Badge>}

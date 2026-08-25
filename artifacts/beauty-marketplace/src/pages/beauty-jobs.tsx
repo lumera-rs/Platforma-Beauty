@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useSearch, useLocation } from "wouter";
+import { useSearch, useLocation, Link } from "wouter";
 import { 
   useListBeautyJobs, 
   getListBeautyJobsQueryKey,
@@ -322,6 +322,34 @@ export default function BeautyJobsPage() {
             <p className="text-muted-foreground text-base max-w-2xl">
               Najveća berza poslova i prostora u industriji lepote. Pronađite idealnog radnika, salon ili opremu za rad.
             </p>
+            <div className="mt-6 flex flex-wrap gap-4">
+              {(!user) ? (
+                <div className="flex items-center gap-4">
+                  <Button asChild className="gap-2">
+                    <Link href="/pridruzi-se-poslovi">
+                      <Briefcase className="w-4 h-4" /> Kreiraj profil / Objavi
+                    </Link>
+                  </Button>
+                  <Button variant="outline" asChild className="gap-2">
+                    <Link href="/poslovna-registracija">
+                      Za Salone
+                    </Link>
+                  </Button>
+                </div>
+              ) : (user.role === "JOBSEEKER") ? (
+                <Button asChild className="gap-2">
+                  <Link href="/poslovi/nalog/oglasi?new=1">
+                    <Briefcase className="w-4 h-4" /> Objavi oglas
+                  </Link>
+                </Button>
+              ) : (user.role === "SALON_OWNER") ? (
+                <Button asChild className="gap-2">
+                  <Link href="/biznis/poslovi?tab=my-jobs&new=1">
+                    <Briefcase className="w-4 h-4" /> Objavi oglas
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="lg:hidden">
             <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
@@ -389,7 +417,7 @@ export default function BeautyJobsPage() {
                 <BeautyJobCard 
                   key={job.id} 
                   job={job} 
-                  showSaveButton={user?.role === 'CUSTOMER' || user?.role === 'SALON_OWNER'}
+                  showSaveButton={user?.role === 'JOBSEEKER' || user?.role === 'SALON_OWNER'}
                   onClickToggleSaved={() => handleToggleSaved(job.id, !!job.isSaved)}
                 />
               ))}

@@ -55,6 +55,7 @@ export interface BeautyJobUpdateInput {
   /** @nullable */
   pricePeriod?: BeautyJobUpdateInputPricePeriod;
   negotiable?: boolean;
+  isUrgent?: boolean;
   /**
      * @maxItems 8
      * @items.pattern ^/api/media/images/[0-9a-fA-F-]{36}$

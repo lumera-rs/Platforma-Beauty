@@ -67,8 +67,8 @@ function beautyJobsDestination(
   listingId?: string,
   contactId?: string,
 ) {
-  const dashboard = role === "CUSTOMER" || role === "STUDENT"
-    ? "/moji-oglasi"
+  const dashboard = role === "JOBSEEKER"
+    ? "/poslovi/nalog/oglasi"
     : "/biznis/poslovi";
   if ((emailType === "beauty_job_new_contact" || emailType === "beauty_job_author_reply") && contactId) {
     return {

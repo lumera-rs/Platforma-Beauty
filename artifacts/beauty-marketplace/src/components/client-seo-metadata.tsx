@@ -143,6 +143,9 @@ async function dynamicMetadata(pathname: string, queryClient: QueryClient): Prom
     const name = text(item.name, 'Instruktor');
     return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), image: item.photoUrl, indexable: true };
   }
+  if (pathname === '/poslovi/nalog' || pathname.startsWith('/poslovi/nalog/')) {
+    return null;
+  }
   const beautyJob = pathname.match(/^\/poslovi\/[^/]+\/([a-zA-Z0-9-]+)$/);
   if (beautyJob) {
     const listingId = beautyJob[1];

@@ -84,20 +84,23 @@ const courseSchema = z.object({
   { message: "Unesite i minimalan broj polaznika i procenat popusta za grupni popust.", path: ["groupDiscountPercent"] },
 );
 
-export default function BusinessEducation() {
+export default function BusinessEducation({ hideLayout = false }: { hideLayout?: boolean }) {
   const [matchLms, paramsLms] = useRoute("/biznis/edukacije/lms/:enrollmentId");
-  const [matchCustomerLms, customerLmsParams] = useRoute("/moj-nalog/edukacije/lms/:enrollmentId");
   const [matchStudentLms, studentLmsParams] = useRoute("/student/edukacije/lms/:enrollmentId");
+  const [matchJobseekerLms, jobseekerLmsParams] = useRoute("/poslovi/nalog/edukacije/lms/:enrollmentId");
   const [matchCourse, paramsCourse] = useRoute("/biznis/edukacije/:courseId");
   const { data: userResponse } = useGetCurrentUser();
 
   if (matchStudentLms && studentLmsParams) {
     return <Layout hideCustomerNavigation><LmsView enrollmentId={studentLmsParams.enrollmentId} /></Layout>;
   }
-  if ((matchLms && paramsLms) || (matchCustomerLms && customerLmsParams)) {
+  if (matchJobseekerLms && jobseekerLmsParams) {
+    return <Layout><LmsView enrollmentId={jobseekerLmsParams.enrollmentId} /></Layout>;
+  }
+  if (matchLms && paramsLms) {
     return (
       <BusinessLayout>
-        <LmsView enrollmentId={(paramsLms ?? customerLmsParams)!.enrollmentId} />
+        <LmsView enrollmentId={paramsLms.enrollmentId} />
       </BusinessLayout>
     );
   }
@@ -119,6 +122,10 @@ export default function BusinessEducation() {
   }
   if (userResponse?.user?.role === "STUDENT") {
     return <Layout hideCustomerNavigation><StudentLearningView /></Layout>;
+  }
+  if (userResponse?.user?.role === "JOBSEEKER") {
+    const learningView = <StudentLearningView jobseeker />;
+    return hideLayout ? learningView : <Layout>{learningView}</Layout>;
   }
 
   return (
@@ -268,18 +275,18 @@ function StudentEducationInbox() {
 
 const ENROLLMENTS_PAGE_SIZE = 20;
 
-function StudentLearningView() {
+function StudentLearningView({ jobseeker = false }: { jobseeker?: boolean }) {
   const [page, setPage] = useState(1);
   const { data: enrollments, isLoading, isError } = useListEnrollments({ page, pageSize: ENROLLMENTS_PAGE_SIZE });
   const hasNext = (enrollments?.length ?? 0) === ENROLLMENTS_PAGE_SIZE;
   return <div className="container mx-auto max-w-5xl px-4 py-10">
-    <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> STUDENT</Badge>
+    <Badge variant="secondary" className="mb-3 gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> {jobseeker ? "PROFESIONALAC" : "STUDENT"}</Badge>
     <h1 className="font-serif text-3xl font-bold">Moje edukacije</h1>
     <p className="mt-2 text-muted-foreground">Vaši kupljeni programi, napredak i sertifikati.</p>
     <StudentEducationInbox />
     {isLoading ? <div className="mt-8 grid gap-4 md:grid-cols-2">{[1, 2].map((item) => <Skeleton key={item} className="h-44 rounded-xl" />)}</div>
       : isError ? <Card className="mt-8"><CardContent className="py-10 text-center">Edukacije trenutno nisu dostupne.</CardContent></Card>
-        : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={`/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
+        : enrollments?.length ? <><div className="mt-8 grid gap-5 md:grid-cols-2">{enrollments.map((enrollment: any) => <Card key={enrollment.id}><CardHeader><CardTitle>{enrollment.courseTitle}</CardTitle><p className="text-sm text-muted-foreground">Napredak: {enrollment.progress}%</p></CardHeader><CardContent><Progress value={enrollment.progress} /></CardContent><CardFooter><Button className="w-full" asChild><Link href={jobseeker ? `/poslovi/nalog/edukacije/lms/${enrollment.id}` : `/student/edukacije/lms/${enrollment.id}`}>{enrollment.status === "completed" ? "Pregledaj program" : "Nastavi učenje"} <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardFooter></Card>)}</div><EnrollmentsPager page={page} hasNext={hasNext} onChange={setPage} /></>
           : page > 1 ? <Card className="mt-8"><CardContent className="py-10 text-center"><p className="text-sm text-muted-foreground">Nema više edukacija.</p><Button variant="outline" className="mt-4" onClick={() => setPage((p) => Math.max(1, p - 1))}>Nazad</Button></CardContent></Card>
             : <Card className="mt-8"><CardContent className="py-14 text-center"><GraduationCap className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" /><h2 className="font-serif text-xl font-semibold">Još nemate edukacija</h2><p className="mt-2 text-sm text-muted-foreground">Kada administrator potvrdi vašu kupovinu, kurs će se pojaviti ovde.</p></CardContent></Card>}
   </div>;
@@ -1465,7 +1472,7 @@ function LmsView({ enrollmentId }: { enrollmentId: string }) {
     <div className="flex flex-col md:flex-row min-h-[100dvh]">
       <div className="w-full md:w-80 shrink-0 border-r border-border bg-sidebar flex flex-col md:h-[100dvh] md:sticky md:top-0">
         <div className="p-5 border-b bg-sidebar shadow-sm z-10 relative">
-          <Link href={userResponse?.user?.role === "STUDENT" ? "/student/edukacije" : `/biznis/edukacije/${lms.course.id}`} className="text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground flex items-center mb-5 transition-colors">
+          <Link href={userResponse?.user?.role === "STUDENT" ? "/student/edukacije" : userResponse?.user?.role === "JOBSEEKER" ? "/poslovi/nalog/edukacije" : `/biznis/edukacije/${lms.course.id}`} className="text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground flex items-center mb-5 transition-colors">
             <ArrowLeft className="w-4 h-4 mr-2" /> Izlaz
           </Link>
           <h2 className="font-serif font-bold text-lg leading-tight mb-4 text-sidebar-foreground line-clamp-2" title={lms.course.title}>{lms.course.title}</h2>

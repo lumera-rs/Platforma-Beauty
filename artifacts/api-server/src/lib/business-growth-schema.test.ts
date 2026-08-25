@@ -38,9 +38,18 @@ async function seedLegacySchema(schema: string) {
   await q(`SET search_path TO "${schema}"`);
 
   // Minimal legacy base tables — only the columns the growth FKs/inserts need.
+  // v29 upgrades the pre-existing core role enum rather than recreating users.
+  // Keep this deliberately old: it has CUSTOMER but not JOBSEEKER.
+  await q(`CREATE TYPE "${schema}".user_role AS ENUM ('CUSTOMER', 'SALON_OWNER')`);
   await q(`CREATE TABLE "${schema}".users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    email text NOT NULL
+    email text NOT NULL,
+    role "${schema}".user_role NOT NULL DEFAULT 'CUSTOMER'
+  )`);
+  await q(`CREATE TABLE "${schema}".course_enrollments (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE,
+    purchaser_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE
   )`);
   await q(`CREATE TABLE "${schema}".salons (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -171,6 +180,16 @@ async function seedLegacySchema(schema: string) {
   // Populate legacy rows that MUST survive the upgrade.
   const salon = (await q<{ id: string }>(`INSERT INTO "${schema}".salons (name) VALUES ('Legacy Salon') RETURNING id`)).rows[0]!;
   const user = (await q<{ id: string }>(`INSERT INTO "${schema}".users (email) VALUES ('legacy@bg.test') RETURNING id`)).rows[0]!;
+  const enrollmentLearner = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".users (email) VALUES ('legacy-learner@bg.test') RETURNING id`,
+  )).rows[0]!;
+  const enrollmentPurchaser = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".users (email, role) VALUES ('legacy-purchaser@bg.test', 'SALON_OWNER') RETURNING id`,
+  )).rows[0]!;
+  const enrollment = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".course_enrollments (user_id, purchaser_id) VALUES ($1, $2) RETURNING id`,
+    [enrollmentLearner.id, enrollmentPurchaser.id],
+  )).rows[0]!;
   const employee = (await q<{ id: string }>(`INSERT INTO "${schema}".employees (salon_id, name) VALUES ($1, 'Emp') RETURNING id`, [salon.id])).rows[0]!;
   const service = (await q<{ id: string }>(`INSERT INTO "${schema}".services (salon_id, name) VALUES ($1, 'Svc') RETURNING id`, [salon.id])).rows[0]!;
   const customer = (await q<{ id: string }>(`INSERT INTO "${schema}".salon_customers (salon_id, display_name) VALUES ($1, 'Cust') RETURNING id`, [salon.id])).rows[0]!;
@@ -208,7 +227,10 @@ async function seedLegacySchema(schema: string) {
     [user.id],
   );
 
-  return { salon, user, employee, service, customer, appointment, retailCart, retailProduct };
+  return {
+    salon, user, enrollmentLearner, enrollmentPurchaser, enrollment,
+    employee, service, customer, appointment, retailCart, retailProduct,
+  };
 }
 
 async function run() {
@@ -216,11 +238,23 @@ async function run() {
   try {
     const fixtures = await seedLegacySchema(s);
 
-    // ── Run the rollout TWICE (idempotency) ────────────────────────────────
+    // ── Run the rollout, then exercise its legacy conversion on rerun ──────
     const client = await pool.connect();
     try {
       await runBusinessGrowthSchemaDdl(client, s);
+      // A legacy individual listing is exactly the historical data that v29
+      // converts.  Its FK remains intact when the account role changes.
+      const category = (await q<{ id: string }>(
+        `SELECT id FROM "${s}".beauty_job_categories WHERE slug = 'frizeri'`,
+      )).rows[0]!;
+      await q(
+        `INSERT INTO "${s}".beauty_job_listings
+           (category_id, user_id, posted_by_type, type, title, description, city, region, expires_at)
+         VALUES ($1, $2, 'user', 'job', 'Legacy individual listing', 'Legacy conversion fixture', 'Beograd', 'Vračar', now() + interval '1 day')`,
+        [category.id, fixtures.user.id],
+      );
       await runBusinessGrowthSchemaDdl(client, s); // second run must be a no-op
+      await runBusinessGrowthSchemaDdl(client, s); // conversion is idempotent
     } finally {
       await client.query(`SET search_path TO "$user", public`).catch(() => {});
       client.release();
@@ -228,6 +262,56 @@ async function run() {
 
     // Reset connection search_path for our raw assertions (pool client rotates).
     await q(`SET search_path TO "${s}"`);
+
+    // ── v29 JOBSEEKER account boundary ────────────────────────────────────
+    const roleLabels = (await q<{ enumlabel: string }>(
+      `SELECT e.enumlabel FROM pg_enum e
+       JOIN pg_type t ON t.oid = e.enumtypid
+       JOIN pg_namespace n ON n.oid = t.typnamespace
+       WHERE t.typname = 'user_role' AND n.nspname = $1`,
+      [s],
+    )).rows.map((row) => row.enumlabel);
+    assert.ok(roleLabels.includes("JOBSEEKER"), "legacy user_role enum gains JOBSEEKER");
+    assert.ok(await columnExists("users", "date_of_birth"), "users.date_of_birth added");
+    const convertedUser = (await q<{ role: string }>(
+      `SELECT role FROM "${s}".users WHERE id = $1`, [fixtures.user.id],
+    )).rows[0]!;
+    assert.equal(convertedUser.role, "JOBSEEKER", "legacy CUSTOMER listing author converts exactly once");
+    const convertedLearner = (await q<{ role: string }>(
+      `SELECT role FROM "${s}".users WHERE id = $1`, [fixtures.enrollmentLearner.id],
+    )).rows[0]!;
+    assert.equal(convertedLearner.role, "JOBSEEKER", "legacy CUSTOMER learner converts when another account purchased the seat");
+    const preservedEnrollment = (await q<{ user_id: string; purchaser_id: string }>(
+      `SELECT user_id, purchaser_id FROM "${s}".course_enrollments WHERE id = $1`,
+      [fixtures.enrollment.id],
+    )).rows[0]!;
+    assert.equal(preservedEnrollment.user_id, fixtures.enrollmentLearner.id, "conversion preserves enrollment learner FK");
+    assert.equal(preservedEnrollment.purchaser_id, fixtures.enrollmentPurchaser.id, "conversion preserves enrollment purchaser FK");
+    const preservedListingAuthor = (await q<{ user_id: string }>(
+      `SELECT user_id FROM "${s}".beauty_job_listings WHERE title = 'Legacy individual listing'`,
+    )).rows[0]!;
+    assert.equal(preservedListingAuthor.user_id, fixtures.user.id, "conversion preserves listing user FK");
+    for (const table of ["jobseeker_profiles", "jobseeker_salon_interests"]) {
+      assert.ok(await objectExists(
+        `SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2) AS exists`,
+        [s, table],
+      ), `${table} exists`);
+    }
+    await q(`UPDATE "${s}".users SET date_of_birth = date '1995-05-10' WHERE id = $1`, [fixtures.user.id]);
+    await q(
+      `INSERT INTO "${s}".jobseeker_profiles (user_id, portfolio_media)
+       VALUES ($1, '["/one.jpg", "/two.jpg", "/three.jpg"]'::jsonb)`,
+      [fixtures.user.id],
+    );
+    await q(
+      `INSERT INTO "${s}".jobseeker_salon_interests (user_id, salon_id) VALUES ($1, $2)`,
+      [fixtures.user.id, fixtures.salon.id],
+    );
+    await assert.rejects(
+      q(`INSERT INTO "${s}".jobseeker_salon_interests (user_id, salon_id) VALUES ($1, $2)`, [fixtures.user.id, fixtures.salon.id]),
+      /duplicate key|unique/i,
+      "jobseeker salon interests remain unique per user and salon",
+    );
 
     // ── Legacy rows preserved ──────────────────────────────────────────────
     const smsCount = (await q<{ n: string }>(`SELECT count(*)::text AS n FROM "${s}".sms_deliveries`)).rows[0]!.n;
@@ -796,6 +880,23 @@ async function run() {
        RETURNING id`,
       [beautyCategory.id, fixtures.salon.id],
     )).rows[0]!;
+    assert.ok(await columnExists("beauty_job_listings", "is_urgent"), "beauty_job_listings.is_urgent added");
+    await assert.rejects(
+      q(
+        `INSERT INTO "${s}".beauty_job_listings
+           (category_id, user_id, posted_by_type, type, is_urgent, title, description, city, region, expires_at)
+         VALUES ($1, $2, 'user', 'job', true, 'Nevažeće hitno', 'Hitno je samo za freelance.', 'Beograd', 'Vračar', now())`,
+        [beautyCategory.id, fixtures.user.id],
+      ),
+      /beauty_job_listings_urgent_only_freelance|check constraint/i,
+      "database rejects urgent non-freelance listings",
+    );
+    await q(
+      `INSERT INTO "${s}".beauty_job_listings
+         (category_id, user_id, posted_by_type, type, is_urgent, title, description, city, region, expires_at)
+       VALUES ($1, $2, 'user', 'freelance', true, 'Hitni freelance', 'Dozvoljeni hitni freelance oglas.', 'Beograd', 'Vračar', now())`,
+      [beautyCategory.id, fixtures.user.id],
+    );
     await q(
       `INSERT INTO "${s}".beauty_job_listing_availability (listing_id, availability_pattern)
        VALUES ($1, 'Po dogovoru')`,

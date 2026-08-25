@@ -15,14 +15,20 @@ import { homeForRole } from "@/lib/role-routing";
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
-  const { data: userResp } = useGetCurrentUser();
+  const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const logout = useLogout();
   const user = userResp?.user;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const { data: cartSummary } = useGetRetailCartSummary({
-    query: { queryKey: getGetRetailCartSummaryQueryKey(), staleTime: Infinity, refetchOnWindowFocus: false, retry: false },
+    query: {
+      queryKey: getGetRetailCartSummaryQueryKey(),
+      enabled: !isUserLoading && user?.role !== "JOBSEEKER",
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      retry: false,
+    },
   });
   const cartItemCount = cartSummary?.itemCount ?? 0;
 
@@ -73,7 +79,7 @@ export function Navbar() {
 
   const navLinks = [
     { href: "/saloni", label: "Saloni" },
-    { href: "/proizvodi", label: "Proizvodi" },
+    ...(user?.role !== "JOBSEEKER" ? [{ href: "/proizvodi", label: "Proizvodi" }] : []),
     ...(user?.role !== "SALON_EMPLOYEE" ? [{ href: "/poslovi", label: "Poslovi" }] : []),
     { href: "/inspiracija", label: "Inspiracija" },
     { href: "/recnik", label: "Rečnik" },
@@ -111,16 +117,18 @@ export function Navbar() {
               <BriefcaseBusiness className="h-3.5 w-3.5" />
               Za salone i biznise
             </Link>
-            <Button variant="ghost" size="icon" className="relative" asChild>
-              <Link href="/korpa" aria-label={`Korpa${cartItemCount && cartItemCount > 0 ? `, ${cartItemCount} stavki` : ""}`} data-testid="link-cart">
-                <ShoppingBag className="h-5 w-5" />
-                {cartItemCount > 0 && (
-                  <span data-testid="status-cart-count" className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
-                    {cartItemCount > 99 ? "99+" : cartItemCount}
-                  </span>
-                )}
-              </Link>
-            </Button>
+            {user?.role !== "JOBSEEKER" && (
+              <Button variant="ghost" size="icon" className="relative" asChild>
+                <Link href="/korpa" aria-label={`Korpa${cartItemCount && cartItemCount > 0 ? `, ${cartItemCount} stavki` : ""}`} data-testid="link-cart">
+                  <ShoppingBag className="h-5 w-5" />
+                  {cartItemCount > 0 && (
+                    <span data-testid="status-cart-count" className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
+                      {cartItemCount > 99 ? "99+" : cartItemCount}
+                    </span>
+                  )}
+                </Link>
+              </Button>
+            )}
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -149,13 +157,34 @@ export function Navbar() {
                         <Heart className="mr-2 h-4 w-4" />
                         Omiljeni saloni
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setLocation('/moji-oglasi')}>
-                        <BriefcaseBusiness className="mr-2 h-4 w-4" />
-                        Moji oglasi
-                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setLocation('/moj-nalog?tab=settings')}>
                         <Settings className="mr-2 h-4 w-4" />
                         Profil
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {user.role === 'JOBSEEKER' && (
+                    <>
+                      <DropdownMenuItem onClick={() => setLocation('/poslovi/nalog')}>
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Pregled
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/poslovi/nalog/oglasi')}>
+                        <BriefcaseBusiness className="mr-2 h-4 w-4" />
+                        Moji oglasi
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/poslovi/nalog/edukacije')}>
+                        <Award className="mr-2 h-4 w-4" />
+                        Edukacije
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/poslovi/nalog/profil')}>
+                        <User className="mr-2 h-4 w-4" />
+                        Profil
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setLocation('/poslovi/nalog/podesavanja')}>
+                        <Settings className="mr-2 h-4 w-4" />
+                        Podešavanja
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
@@ -231,15 +260,17 @@ export function Navbar() {
               <BriefcaseBusiness className="h-4 w-4" />
               Za salone i biznise
             </Link>
-            <Link href="/korpa" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={closeMobileMenu} data-testid="link-mobile-cart">
-              <ShoppingBag className="h-4 w-4" />
-              Korpa
-              {cartItemCount > 0 && (
-                <span data-testid="status-mobile-cart-count" className="min-w-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
-                  {cartItemCount > 99 ? "99+" : cartItemCount}
-                </span>
-              )}
-            </Link>
+            {user?.role !== "JOBSEEKER" && (
+              <Link href="/korpa" className="flex items-center gap-2 py-2 text-sm text-muted-foreground" onClick={closeMobileMenu} data-testid="link-mobile-cart">
+                <ShoppingBag className="h-4 w-4" />
+                Korpa
+                {cartItemCount > 0 && (
+                  <span data-testid="status-mobile-cart-count" className="min-w-5 rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-5 text-accent-foreground">
+                    {cartItemCount > 99 ? "99+" : cartItemCount}
+                  </span>
+                )}
+              </Link>
+            )}
             
             <div className="h-px bg-border my-2" />
             
@@ -250,8 +281,16 @@ export function Navbar() {
                   <>
                     <Link href="/moj-nalog?tab=appointments" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji termini</Link>
                     <Link href="/moj-nalog?tab=favorites" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Omiljeni saloni</Link>
-                    <Link href="/moji-oglasi" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji oglasi</Link>
                     <Link href="/moj-nalog?tab=settings" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Profil</Link>
+                  </>
+                )}
+                {user.role === 'JOBSEEKER' && (
+                  <>
+                    <Link href="/poslovi/nalog" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Pregled</Link>
+                    <Link href="/poslovi/nalog/oglasi" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Moji oglasi</Link>
+                    <Link href="/poslovi/nalog/edukacije" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Edukacije</Link>
+                    <Link href="/poslovi/nalog/profil" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Profil</Link>
+                    <Link href="/poslovi/nalog/podesavanja" className="py-2 px-2 text-sm" onClick={closeMobileMenu}>Podešavanja</Link>
                   </>
                 )}
                 {(user.role === 'SALON_OWNER' || user.role === 'EDUCATION_CENTER_OWNER' || user.role === 'INSTRUCTOR' || user.role === 'SALON_EMPLOYEE') && (

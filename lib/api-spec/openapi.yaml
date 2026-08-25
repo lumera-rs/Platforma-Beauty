@@ -70,6 +70,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/jobseeker-register:
+    post:
+      operationId: registerJobseeker
+      tags: [auth]
+      summary: Register a JOBSEEKER account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobseekerRegistrationInput" }
+      responses:
+        "201":
+          description: Registered jobseeker
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
   /auth/login:
     post:
       operationId: login
@@ -551,6 +567,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CustomerDashboard"
+  /jobseeker/profile:
+    get:
+      operationId: getJobseekerProfile
+      tags: [beauty-jobs]
+      summary: Get the signed-in jobseeker profile
+      responses:
+        "200": { description: Profile, content: { application/json: { schema: { $ref: "#/components/schemas/JobseekerProfile" } } } }
+        "403": { description: JOBSEEKER access required }
+    put:
+      operationId: updateJobseekerProfile
+      tags: [beauty-jobs]
+      summary: Replace the signed-in jobseeker professional profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobseekerProfileInput" }
+      responses:
+        "200": { description: Updated profile, content: { application/json: { schema: { $ref: "#/components/schemas/JobseekerProfile" } } } }
+        "400": { description: Invalid profile or media references }
+        "403": { description: JOBSEEKER access required }
+  /jobseeker/dashboard:
+    get:
+      operationId: getJobseekerDashboard
+      tags: [beauty-jobs]
+      summary: Get private JOBSEEKER dashboard counts
+      responses:
+        "200": { description: Dashboard counts, content: { application/json: { schema: { $ref: "#/components/schemas/JobseekerDashboard" } } } }
+        "403": { description: JOBSEEKER access required }
+  /jobseeker/salon-interests:
+    get:
+      operationId: listJobseekerSalonInterests
+      tags: [beauty-jobs]
+      summary: List the signed-in jobseeker's salon interests
+      responses:
+        "200": { description: Salon ids, content: { application/json: { schema: { type: array, items: { type: string } } } } }
+    put:
+      operationId: replaceJobseekerSalonInterests
+      tags: [beauty-jobs]
+      summary: Replace the signed-in jobseeker's salon interests
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobseekerSalonInterestsInput" }
+      responses:
+        "200": { description: Salon ids, content: { application/json: { schema: { type: array, items: { type: string } } } } }
   /customer/favorites:
     get:
       operationId: listFavorites
@@ -5345,13 +5408,14 @@ components:
         lastName: { type: string }
         email: { type: string }
         phone: { type: ["string", "null"] }
+        dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
         role:
           type: string
-          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER, STUDENT]
+          enum: [SUPER_ADMIN, ADMIN, SALON_OWNER, SALON_EMPLOYEE, EDUCATION_CENTER_OWNER, INSTRUCTOR, CUSTOMER, JOBSEEKER, STUDENT]
         active: { type: boolean }
         mustChangePassword: { type: boolean }
         marketingEmailsEnabled: { type: boolean }
-      required: [id, firstName, lastName, email, role, active, mustChangePassword, marketingEmailsEnabled]
+      required: [id, firstName, lastName, email, dateOfBirth, role, active, mustChangePassword, marketingEmailsEnabled]
     EmailPreferencesInput:
       type: object
       properties:
@@ -5372,6 +5436,45 @@ components:
         phone: { type: string }
         phoneVerificationCode: { type: string, minLength: 6, maxLength: 6 }
       required: [firstName, lastName, email, password, phone, phoneVerificationCode]
+    JobseekerRegistrationInput:
+      type: object
+      properties:
+        firstName: { type: string, minLength: 1 }
+        lastName: { type: string, minLength: 1 }
+        email: { type: string }
+        password: { type: string, minLength: 8 }
+        phone: { type: string }
+        phoneVerificationCode: { type: string, minLength: 6, maxLength: 6 }
+        dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      required: [firstName, lastName, email, password, phone, phoneVerificationCode, dateOfBirth]
+    JobseekerProfileInput:
+      type: object
+      properties:
+        bio: { type: string, maxLength: 4000 }
+        portfolioMedia: { type: array, minItems: 3, maxItems: 5, items: { type: string, pattern: '^/api/media/[0-9a-fA-F-]{36}' } }
+        skillTags: { type: array, maxItems: 30, items: { type: string, minLength: 1, maxLength: 80 } }
+        categoryTags: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 80 } }
+      required: [bio, portfolioMedia, skillTags, categoryTags]
+    JobseekerProfile:
+      allOf:
+        - $ref: "#/components/schemas/JobseekerProfileInput"
+        - type: object
+          properties:
+            userId: { type: string }
+            dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
+          required: [userId, dateOfBirth]
+    JobseekerSalonInterestsInput:
+      type: object
+      properties:
+        salonIds: { type: array, maxItems: 200, items: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+      required: [salonIds]
+    JobseekerDashboard:
+      type: object
+      properties:
+        activeListings: { type: integer, minimum: 0 }
+        receivedContacts: { type: integer, minimum: 0 }
+        enrollments: { type: integer, minimum: 0 }
+      required: [activeListings, receivedContacts, enrollments]
     BusinessRegistrationInput:
       type: object
       properties:
@@ -5771,7 +5874,7 @@ components:
       properties:
         scope:
           type: string
-          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo]
+          enum: [salon-profile, salon-gallery, employee-avatar, product, education-cover, education-gallery, education-center, instructor-avatar, service-category, product-category, treatment-photo, jobseeker-portfolio]
         resourceId:
           type: ["string", "null"]
           pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
@@ -9182,6 +9285,7 @@ components:
         priceAmount: { type: [integer, "null"] }
         pricePeriod: { type: [string, "null"] }
         negotiable: { type: boolean }
+        isUrgent: { type: boolean }
         photos: { type: array, items: { type: string } }
         status: { type: string }
         moderationStatus: { type: string }
@@ -9199,7 +9303,7 @@ components:
         isSaved: { type: boolean }
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
-      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, isUrgent, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
     BeautyJobModerationAuditEvent:
       type: object
       description: Administrator-only immutable moderation event. Public reasons may be shown to the listing author elsewhere; internal notes must remain admin-only.
@@ -9235,6 +9339,7 @@ components:
         priceAmount: { type: integer, minimum: 0 }
         pricePeriod: { type: string, enum: [hour, day, week, month, project, fixed] }
         negotiable: { type: boolean }
+        isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
         availabilityPattern: { type: string, minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }
@@ -9255,6 +9360,7 @@ components:
         priceAmount: { type: [integer, "null"], minimum: 0 }
         pricePeriod: { type: [string, "null"], enum: [hour, day, week, month, project, fixed] }
         negotiable: { type: boolean }
+        isUrgent: { type: boolean }
         photos: { type: array, maxItems: 8, items: { type: string, pattern: '^/api/media/images/[0-9a-fA-F-]{36}$' } }
         availabilityPattern: { type: [string, "null"], minLength: 1, maxLength: 1000 }
         dayLabels: { type: array, maxItems: 14, items: { type: string, maxLength: 80 } }

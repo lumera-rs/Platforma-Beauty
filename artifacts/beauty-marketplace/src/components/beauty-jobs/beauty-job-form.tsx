@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, Image as ImageIcon, Loader2, Plus, CalendarClock } from "lucide-react";
@@ -35,6 +35,7 @@ const formSchema = z.object({
   priceAmount: z.coerce.number().optional().nullable(),
   pricePeriod: z.enum(["hour", "day", "week", "month", "project", "fixed"]).optional().nullable(),
   negotiable: z.boolean().default(false),
+  isUrgent: z.boolean().default(false),
   availabilityPattern: z.string().optional().nullable(),
   dayLabels: z.array(z.string()).default([]),
   availableSlots: z.array(z.object({
@@ -135,6 +136,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         priceAmount: initialData.priceAmount,
         pricePeriod: isPricePeriod(initialData.pricePeriod) ? initialData.pricePeriod : null,
         negotiable: initialData.negotiable,
+        isUrgent: initialData.isUrgent || false,
         availabilityPattern: initialData.availabilityPattern || "",
         dayLabels: initialData.dayLabels || [],
         availableSlots: (initialData.availableSlots || []).map((slot) => ({
@@ -157,6 +159,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         priceAmount: null,
         pricePeriod: null,
         negotiable: false,
+        isUrgent: false,
         availabilityPattern: "",
         dayLabels: [],
         availableSlots: [],
@@ -216,6 +219,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
       region: data.region,
       categoryId: data.categoryId,
       negotiable: data.negotiable,
+      isUrgent: data.type === "freelance" ? data.isUrgent : false,
       dayLabels: data.dayLabels,
       photos: data.photos,
       priceAmount: data.priceAmount ?? undefined,
@@ -229,6 +233,7 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
         ...payload,
         priceAmount: data.priceAmount,
         pricePeriod: data.pricePeriod,
+        isUrgent: data.type === "freelance" ? data.isUrgent : false,
         availabilityPattern: data.availabilityPattern || null,
       };
       updateMutation.mutate({ listingId: initialData.id, data: updatePayload }, {
@@ -507,6 +512,28 @@ export function BeautyJobForm({ initialData, onSuccess, onCancel, open }: Beauty
                 )}
               />
             </div>
+
+            {typeWatch === "freelance" && (
+              <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 mt-4">
+                <FormField
+                  control={form.control}
+                  name="isUrgent"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel className="text-destructive font-semibold">Označi kao HITNO</FormLabel>
+                        <FormDescription>
+                          Vaš oglas će biti istaknut crvenom značkom. Koristite samo ako ste slobodni odmah i tražite posao u najkraćem roku.
+                        </FormDescription>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <div className="space-y-4 p-4 rounded-xl border bg-muted/20">
               <h4 className="font-medium text-sm">Vreme i raspoloživost {requiresAvailability && "*"}</h4>

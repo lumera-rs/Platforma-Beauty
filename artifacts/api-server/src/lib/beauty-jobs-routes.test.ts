@@ -6,8 +6,8 @@ import { eq, inArray, like, sql } from "drizzle-orm";
 import {
   beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
-  beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable,
-  employeesTable, pool, salonsTable, smsDeliveriesTable, usersTable,
+  beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable, jobseekerProfilesTable,
+  employeeServicesTable, employeesTable, pool, salonsTable, servicesTable, smsDeliveriesTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -41,7 +41,7 @@ async function request(base: string, path: string, token?: string, method = "GET
   return { status: response.status, body: await response.json() };
 }
 
-async function user(role: "ADMIN" | "CUSTOMER" | "INSTRUCTOR" | "SALON_EMPLOYEE" | "SALON_OWNER" | "STUDENT", label: string) {
+async function user(role: "ADMIN" | "CUSTOMER" | "INSTRUCTOR" | "JOBSEEKER" | "SALON_EMPLOYEE" | "SALON_OWNER" | "STUDENT", label: string) {
   const passwordHash = await hashPassword(`beauty-${suffix}`);
   const [created] = await db.insert(usersTable).values({
     firstName: label, lastName: "Beauty HTTP", email: `${label}-${suffix}@example.test`,
@@ -106,8 +106,14 @@ async function run(): Promise<void> {
     const [settings] = await db.select().from(beautyJobPlatformSettingsTable).limit(1);
     originalSettings = settings;
     const admin = await user("ADMIN", "admin");
-    const customer = await user("CUSTOMER", "customer");
-    const applicant = await user("CUSTOMER", "applicant");
+    // Keep the established individual-author fixture name while moving its
+    // role to the new account boundary; blockedCustomer proves the old role is
+    // rejected without rewriting the rest of this broad regression suite.
+    const customer = await user("JOBSEEKER", "jobseeker-author");
+    const blockedCustomer = await user("CUSTOMER", "customer");
+    const jobseeker = await user("JOBSEEKER", "jobseeker");
+    const otherJobseeker = await user("JOBSEEKER", "other-jobseeker");
+    const applicant = await user("JOBSEEKER", "applicant");
     const student = await user("STUDENT", "student-applicant");
     const instructor = await user("INSTRUCTOR", "instructor-applicant");
     const employee = await user("SALON_EMPLOYEE", "employee");
@@ -125,6 +131,104 @@ async function run(): Promise<void> {
     server = app.listen(0);
     await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const registrationDigits = suffix.replace(/\D/g, "").slice(0, 6).padEnd(6, "7");
+    const registrationPhone = `+38164${registrationDigits}`;
+    const codeResponse = await request(base, "/auth/phone-verification/request", undefined, "POST", { phone: registrationPhone });
+    assert.equal(codeResponse.status, 200, "JOBSEEKER registration can request phone verification");
+    assert.match(codeResponse.body.developmentCode, /^\d{6}$/, "test registration returns a development phone code");
+    const registrationInput = {
+      firstName: "Novi", lastName: "Profesionalac", email: `registered-${suffix}@example.test`,
+      phone: registrationPhone, phoneVerificationCode: codeResponse.body.developmentCode,
+      password: `Jobseeker-${suffix}`, dateOfBirth: "1995-05-12",
+      role: "ADMIN",
+    };
+    assert.equal(
+      (await request(base, "/auth/jobseeker-register", undefined, "POST", { ...registrationInput, dateOfBirth: "2026-02-30" })).status,
+      400,
+      "JOBSEEKER registration rejects impossible calendar dates",
+    );
+    assert.equal(
+      (await request(base, "/auth/jobseeker-register", undefined, "POST", { ...registrationInput, dateOfBirth: "2999-01-01" })).status,
+      400,
+      "JOBSEEKER registration rejects future birth dates",
+    );
+    const registered = await request(base, "/auth/jobseeker-register", undefined, "POST", registrationInput);
+    assert.equal(registered.status, 201, "JOBSEEKER registration succeeds with a verified phone and DOB");
+    createdUsers.push(registered.body.user.id);
+    assert.equal(registered.body.user.role, "JOBSEEKER", "browser-supplied role cannot change the registration role");
+    assert.equal(registered.body.user.dateOfBirth, "1995-05-12", "registration preserves the calendar-only date of birth");
+
+    assert.equal((await request(base, "/jobseeker/profile", jobseeker.token)).status, 404, "new JOBSEEKER starts without a completed professional profile");
+    assert.equal((await request(base, "/jobseeker/profile", blockedCustomer.token)).status, 403, "CUSTOMER cannot read a JOBSEEKER profile");
+    await db.insert(jobseekerProfilesTable).values({
+      userId: otherJobseeker.user.id,
+      bio: "Migrirani profesionalni profil",
+      portfolioMedia: [
+        "/api/media/10000000-0000-4000-8000-000000000001",
+        "/api/media/10000000-0000-4000-8000-000000000002",
+        "/api/media/10000000-0000-4000-8000-000000000003",
+      ],
+      skillTags: ["Masaža"],
+      categoryTags: ["estetika-masaza"],
+    });
+    const migratedProfile = await request(base, "/jobseeker/profile", otherJobseeker.token);
+    assert.equal(migratedProfile.status, 200, "migrated JOBSEEKER without a historical DOB can still use the professional profile");
+    assert.equal(migratedProfile.body.dateOfBirth, null, "legacy missing DOB remains explicit instead of failing response serialization");
+    assert.equal(
+      (await request(base, "/jobseeker/profile", jobseeker.token, "PUT", {
+        bio: "Profesionalni profil", portfolioMedia: ["/api/media/00000000-0000-4000-8000-000000000001", "/api/media/00000000-0000-4000-8000-000000000002", "/api/media/00000000-0000-4000-8000-000000000003"],
+        skillTags: ["Balayage"], categoryTags: ["frizeri"],
+      })).status,
+      400,
+      "JOBSEEKER cannot claim portfolio media it does not own",
+    );
+    assert.equal(
+      (await request(base, "/jobseeker/salon-interests", jobseeker.token, "PUT", { salonIds: [salonOwner.salon.id] })).status,
+      200,
+      "JOBSEEKER may record salon interests",
+    );
+    assert.deepEqual((await request(base, "/jobseeker/salon-interests", jobseeker.token)).body, [salonOwner.salon.id], "JOBSEEKER reads only own salon interests");
+    assert.deepEqual((await request(base, "/jobseeker/salon-interests", otherJobseeker.token)).body, [], "salon interests are isolated between JOBSEEKER accounts");
+    assert.equal((await request(base, "/jobseeker/salon-interests", blockedCustomer.token)).status, 403, "CUSTOMER cannot use JOBSEEKER salon interests");
+    for (const path of ["/customer/favorites", `/customer/reviews/${salonOwner.salon.id}`, "/loyalty/status", "/retail/cart", "/retail/cart-summary"]) {
+      assert.equal((await request(base, path, jobseeker.token)).status, 403, `JOBSEEKER is blocked from ${path}`);
+    }
+
+    // Widget bookings remain guest/customer-only even though the widget itself
+    // is publicly embedded.  A real eligible employee/service pair keeps this
+    // assertion on the allocation route rather than on validation.
+    await db.update(salonsTable).set({ isVerified: true }).where(eq(salonsTable.id, salonOwner.salon.id));
+    const [widgetEmployee] = await db.insert(employeesTable).values({
+      salonId: salonOwner.salon.id, name: `Widget employee ${suffix}`, role: "Stylist",
+      bio: "Widget test employee", avatarUrl: "/widget-test.jpg",
+    }).returning();
+    const [widgetService] = await db.insert(servicesTable).values({
+      salonId: salonOwner.salon.id, categoryName: "Test", name: `Widget service ${suffix}`,
+      description: "Widget booking regression service", durationMinutes: 30, price: 1000, imageUrl: "/widget-test.jpg",
+    }).returning();
+    assert.ok(widgetEmployee && widgetService);
+    await db.insert(employeeServicesTable).values({ employeeId: widgetEmployee.id, serviceId: widgetService.id });
+    const widgetDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const widgetBooking = (startTime: string) => ({
+      serviceId: widgetService.id, date: widgetDate, startTime,
+      firstName: "Widget", lastName: "Booking", phone: "+381641234567",
+    });
+    assert.equal(
+      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, undefined, "POST", widgetBooking("09:00"))).status,
+      201,
+      "guest widget booking remains available",
+    );
+    assert.equal(
+      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, blockedCustomer.token, "POST", widgetBooking("10:00"))).status,
+      201,
+      "CUSTOMER widget booking remains available",
+    );
+    assert.equal(
+      (await request(base, `/widget/salons/${salonOwner.salon.slug}/appointments`, jobseeker.token, "POST", widgetBooking("11:00"))).status,
+      403,
+      "authenticated JOBSEEKER is blocked from widget booking",
+    );
     const publicCategories = await request(base, "/beauty-jobs/categories");
     assert.equal(publicCategories.status, 200);
     for (const slug of ["barberi", "kozmeticari", "lash-brow", "masaza-terapeuti", "sminkeri", "pmu", "estetika-anti-aging", "pomocno-osoblje", "tattoo-piercing"]) {
@@ -142,6 +246,39 @@ async function run(): Promise<void> {
       const r = await request(base, path, employee.token, path === "/beauty-jobs/mine" || path === "/beauty-jobs/inbox" ? "GET" : "POST", path === "/beauty-jobs" ? body(hairCategory.id, "Employee blocked") : path.endsWith("/contact") ? { message: "Pozdrav" } : undefined);
       assert.equal(r.status, 403, `employee must be denied protected ${path}`);
     }
+
+    // JOBSEEKER is the sole individual marketplace role.  The legacy customer
+    // and student account types must never inherit individual job-board access.
+    const jobseekerCreate = await request(base, "/beauty-jobs", jobseeker.token, "POST", body(hairCategory.id, `Jobseeker ${suffix}`));
+    assert.equal(jobseekerCreate.status, 201, "JOBSEEKER may create an individual listing");
+    createdListingIds.push(jobseekerCreate.body.id);
+    assert.equal((await request(base, "/beauty-jobs/mine", jobseeker.token)).status, 200, "JOBSEEKER may manage own listings");
+    assert.equal((await request(base, `/beauty-jobs/${publicListing.id}/save`, jobseeker.token, "POST")).status, 200, "JOBSEEKER may save listings");
+    for (const blocked of [blockedCustomer, student]) {
+      assert.equal((await request(base, "/beauty-jobs", blocked.token, "POST", body(hairCategory.id, `Blocked ${blocked.user.id}`))).status, 403, `${blocked.user.role} cannot create individual listings`);
+      assert.equal((await request(base, "/beauty-jobs/mine", blocked.token)).status, 403, `${blocked.user.role} cannot manage individual listings`);
+      assert.equal((await request(base, `/beauty-jobs/${publicListing.id}/save`, blocked.token, "POST")).status, 403, `${blocked.user.role} cannot save listings`);
+      assert.equal((await request(base, `/beauty-jobs/${publicListing.id}/contact`, blocked.token, "POST", { message: "Nedozvoljeno" })).status, 403, `${blocked.user.role} cannot contact authors`);
+    }
+    assert.equal((await request(base, `/beauty-jobs/${jobseekerCreate.body.id}`, otherJobseeker.token, "PATCH", { title: "cross-account" })).status, 403, "JOBSEEKER cannot manage another JOBSEEKER's listing");
+    assert.equal(
+      (await request(base, "/beauty-jobs", jobseeker.token, "POST", body(hairCategory.id, `Urgent non-freelance ${suffix}`, { isUrgent: true }))).status,
+      400,
+      "the HTTP API rejects urgent non-freelance listings",
+    );
+    const urgentFreelance = await request(base, "/beauty-jobs", jobseeker.token, "POST", body(hairCategory.id, `Urgent freelance ${suffix}`, {
+      type: "freelance", isUrgent: true,
+    }));
+    assert.equal(urgentFreelance.status, 201, "JOBSEEKER may create an urgent freelance listing");
+    createdListingIds.push(urgentFreelance.body.id);
+
+    // Course enrollment is intentionally separate from the job-board boundary:
+    // STUDENT remains a learner, JOBSEEKER is accepted, and CUSTOMER is denied
+    // before any course lookup.  A syntactically valid absent id isolates roles.
+    const absentCourseId = randomUUID();
+    assert.equal((await request(base, `/education/courses/${absentCourseId}/enrollments`, jobseeker.token, "POST", {})).status, 404, "JOBSEEKER passes education role gate");
+    assert.equal((await request(base, `/education/courses/${absentCourseId}/enrollments`, student.token, "POST", {})).status, 404, "STUDENT remains eligible for education");
+    assert.equal((await request(base, `/education/courses/${absentCourseId}/enrollments`, blockedCustomer.token, "POST", {})).status, 403, "CUSTOMER is denied education enrollment");
 
     const customerCreate = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Customer ${suffix}`));
     assert.equal(customerCreate.status, 201);
@@ -189,7 +326,7 @@ async function run(): Promise<void> {
     );
     assert.ok(
       sentEmails.find((email) => email.subject.includes("Oglas je odobren"))?.htmlContent.includes(
-        `https://beauty-links.example.test/moji-oglasi?tab=my-jobs&amp;listingId=${customerListing.id}`,
+        `https://beauty-links.example.test/poslovi/nalog/oglasi?tab=my-jobs&amp;listingId=${customerListing.id}`,
       ),
       "moderation email links to the exact customer listing management screen",
     );
@@ -352,6 +489,18 @@ async function run(): Promise<void> {
     assert.equal((await request(base, `/admin/beauty-jobs/${rentalCreate.body.id}/moderation`, admin.token, "POST", { action: "approve" })).status, 200);
     const rentalSlotId = rentalCreate.body.availableSlots[0].id;
     const secondRentalSlotId = rentalCreate.body.availableSlots[1].id;
+    assert.equal(
+      (await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, jobseeker.token, "POST", { slotId: secondRentalSlotId, message: "JOBSEEKER zahtev" })).status,
+      201,
+      "JOBSEEKER may request a rental slot",
+    );
+    for (const blocked of [customer, student]) {
+      assert.equal(
+        (await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, blocked.token, "POST", { slotId: secondRentalSlotId })).status,
+        403,
+        `${blocked.user.role} cannot request a rental slot`,
+      );
+    }
     const firstRentalRequest = await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, applicant.token, "POST", { slotId: rentalSlotId, message: "Prvi zahtev" });
     const secondRentalRequest = await request(base, `/beauty-jobs/${rentalCreate.body.id}/rental-requests`, salonOwner.token, "POST", { slotId: rentalSlotId, message: "Drugi zahtev" });
     assert.equal(firstRentalRequest.status, 201);
@@ -614,7 +763,7 @@ async function run(): Promise<void> {
     assert.notEqual(contactEmails[0]!.email, applicant.user.email.toLowerCase(), "contact email is never sent back to applicant");
     assert.ok(
       contactEmails[0]!.htmlContent.includes(
-        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
+        `https://beauty-links.example.test/poslovi/nalog/oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
       ),
       "new-contact email links to the exact inbox conversation",
     );
@@ -631,7 +780,7 @@ async function run(): Promise<void> {
     assert.equal(replyEmails[0]!.email, applicant.user.email.toLowerCase(), "reply email is isolated to the applicant");
     assert.ok(
       replyEmails[0]!.htmlContent.includes(
-        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
+        `https://beauty-links.example.test/poslovi/nalog/oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
       ),
       "author-reply email links to the applicant's exact inbox conversation",
     );
@@ -647,54 +796,16 @@ async function run(): Promise<void> {
       false,
       "an unrelated user cannot read the conversation reached from email",
     );
-    const studentContact = await request(base, `/beauty-jobs/${customerListing.id}/contact`, student.token, "POST", {
-      message: "Studentski kontakt za proveru povratne putanje.",
-    });
-    assert.equal(studentContact.status, 201);
-    assert.equal(
-      (await request(base, `/beauty-jobs/contacts/${studentContact.body.id}`, customer.token, "PATCH", {
-        authorReply: "Odgovor za studentski nalog.",
-      })).status,
-      200,
-    );
-    assert.ok(
-      sentEmails.find((email) => email.email === student.user.email.toLowerCase()
-        && email.subject.includes("Dobili ste odgovor"))?.htmlContent.includes(
-        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${studentContact.body.id}`,
-      ),
-      "author-reply email uses the permitted customer inbox route for a student",
-    );
-    assert.equal(
-      (await request(base, "/beauty-jobs/inbox", student.token)).body.contacts.some(
-        (item: any) => item.id === studentContact.body.id && item.authorReply,
-      ),
-      true,
-      "the student recipient can read the conversation reached from email",
-    );
-    const instructorContact = await request(base, `/beauty-jobs/${customerListing.id}/contact`, instructor.token, "POST", {
-      message: "Instruktorski kontakt za proveru poslovne povratne putanje.",
-    });
-    assert.equal(instructorContact.status, 201);
-    assert.equal(
-      (await request(base, `/beauty-jobs/contacts/${instructorContact.body.id}`, customer.token, "PATCH", {
-        authorReply: "Odgovor za instruktorski nalog.",
-      })).status,
-      200,
-    );
-    assert.ok(
-      sentEmails.find((email) => email.email === instructor.user.email.toLowerCase()
-        && email.subject.includes("Dobili ste odgovor"))?.htmlContent.includes(
-        `https://beauty-links.example.test/biznis/poslovi?tab=inbox&amp;contactId=${instructorContact.body.id}`,
-      ),
-      "author-reply email uses the permitted business inbox route for an instructor",
-    );
-    assert.equal(
-      (await request(base, "/beauty-jobs/inbox", instructor.token)).body.contacts.some(
-        (item: any) => item.id === instructorContact.body.id && item.authorReply,
-      ),
-      true,
-      "the instructor recipient can read the conversation reached from email",
-    );
+    for (const blocked of [student, instructor]) {
+      assert.equal(
+        (await request(base, `/beauty-jobs/${customerListing.id}/contact`, blocked.token, "POST", {
+          message: "Nedozvoljen kontakt.",
+        })).status,
+        403,
+        `${blocked.user.role} cannot contact a Beauty Poslovi author`,
+      );
+      assert.equal((await request(base, "/beauty-jobs/inbox", blocked.token)).status, 403);
+    }
     const replyNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.contactId, contact.body.id));
     assert.equal(
@@ -1114,7 +1225,7 @@ async function run(): Promise<void> {
     assert.equal(warningDeliveries.length, 1, "repeated expiry sweeps keep one durable email delivery");
     assert.ok(
       warningDeliveries[0]?.htmlContent?.includes(
-        `https://beauty-links.example.test/moji-oglasi?tab=my-jobs&amp;listingId=${warning.id}`,
+        `https://beauty-links.example.test/poslovi/nalog/oglasi?tab=my-jobs&amp;listingId=${warning.id}`,
       ),
       "expiry warning links to the exact listing management screen",
     );
@@ -1128,7 +1239,7 @@ async function run(): Promise<void> {
     assert.equal((await request(base, `/beauty-jobs/${expired.id}/renew`, customer.token, "POST")).status, 200);
 
     // A fresh author proves the advisory-lock hourly limit under concurrent requests.
-    const limiter = await user("CUSTOMER", "limiter");
+    const limiter = await user("JOBSEEKER", "limiter");
     const concurrent = await Promise.all([
       request(base, "/beauty-jobs", limiter.token, "POST", body(hairCategory.id, `Limit A ${suffix}`)),
       request(base, "/beauty-jobs", limiter.token, "POST", body(hairCategory.id, `Limit B ${suffix}`)),

@@ -69,6 +69,10 @@ async function session(req: import("express").Request, res: import("express").Re
 async function authenticated(req: import("express").Request, res: import("express").Response) {
   const user = await session(req, res);
   if (!user) { if (!res.headersSent) res.status(401).json({ error: "Potrebna je prijava.", code: "UNAUTHORIZED" }); return undefined; }
+  if (!isAdmin(user) && !["JOBSEEKER", "SALON_OWNER"].includes(user.role)) {
+    res.status(403).json({ error: "Beauty Poslovi je dostupan samo JOBSEEKER nalozima i vlasnicima salona.", code: "FORBIDDEN" });
+    return undefined;
+  }
   return user;
 }
 async function ownerSalon(user: typeof usersTable.$inferSelect) {
@@ -92,6 +96,9 @@ async function applicantAuthenticated(req: import("express").Request, res: impor
   const user = await getCurrentUser(req);
   if (!user) { res.status(401).json({ error: "Potrebna je prijava.", code: "UNAUTHORIZED" }); return undefined; }
   if (isAdmin(user)) { res.status(403).json({ error: "Nije dozvoljeno.", code: "FORBIDDEN" }); return undefined; }
+  if (!["JOBSEEKER", "SALON_OWNER", "SALON_EMPLOYEE"].includes(user.role)) {
+    res.status(403).json({ error: "Beauty Poslovi je dostupan samo JOBSEEKER nalozima i salonima.", code: "FORBIDDEN" }); return undefined;
+  }
   return user;
 }
 function validPhotos(photos: string[] | undefined) { return !photos || (photos.length <= 8 && photos.every((p) => MANAGED_URL.test(p))); }
@@ -340,11 +347,12 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
 
 router.post("/beauty-jobs", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return;
-  if (isAdmin(user) || !["CUSTOMER", "SALON_OWNER"].includes(user.role)) return res.status(403).json({ error: "Objavljivanje nije dozvoljeno.", code: "FORBIDDEN" });
+  if (isAdmin(user) || !["JOBSEEKER", "SALON_OWNER"].includes(user.role)) return res.status(403).json({ error: "Objavljivanje nije dozvoljeno.", code: "FORBIDDEN" });
   const body = CreateBeautyJobBody.safeParse(req.body); if (!body.success || !validPhotos(body.data?.photos)) return bad(res);
   if (RENTAL_TYPES.has(body.data.type) && (body.data.latitude !== undefined || body.data.longitude !== undefined)) {
     return res.status(400).json({ error: "Precizne koordinate nisu dozvoljene za oglase o iznajmljivanju.", code: "RENTAL_COORDINATES_NOT_ALLOWED" });
   }
+  if (body.data.isUrgent && body.data.type !== "freelance") return bad(res, "HITNO je dozvoljeno samo za freelance oglase.");
   const [category] = await db.select().from(beautyJobCategoriesTable).where(and(eq(beautyJobCategoriesTable.id, body.data.categoryId), eq(beautyJobCategoriesTable.enabled, true))).limit(1);
   if (!category) return bad(res, "Kategorija nije dostupna."); const compatibility = ensureCompatibility(category.slug, body.data.type, body.data.availabilityPattern); if (compatibility) return bad(res, compatibility);
   const requiresSlots = RENTAL_TYPES.has(body.data.type) && body.data.intent === "offering";
@@ -519,6 +527,9 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
     const categoryId = b.data.categoryId ?? lockedListing.categoryId;
     const [category] = await tx.select().from(beautyJobCategoriesTable).where(and(eq(beautyJobCategoriesTable.id, categoryId), eq(beautyJobCategoriesTable.enabled, true))).limit(1);
     const type = b.data.type ?? lockedListing.type;
+    if ((b.data.isUrgent ?? lockedListing.isUrgent) && type !== "freelance") {
+      return "VALIDATION:HITNO je dozvoljeno samo za freelance oglase.";
+    }
     const intent = b.data.intent ?? lockedListing.intent;
     const pattern = b.data.availabilityPattern ?? lockedAvailability?.pattern;
     const compatibility = !category ? "Kategorija nije pronađena." : ensureCompatibility(category.slug, type, pattern);

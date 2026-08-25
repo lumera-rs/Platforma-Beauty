@@ -205,7 +205,8 @@ type MediaScope =
   | "instructor-avatar"
   | "service-category"
   | "product-category"
-  | "treatment-photo";
+  | "treatment-photo"
+  | "jobseeker-portfolio";
 
 // These references can be removed from public resources after an image URL has
 // been issued. They must revalidate at the origin instead of letting a stable,
@@ -315,6 +316,13 @@ async function authorizeUploadScope(
   scope: MediaScope,
   requestedResourceId: string | null | undefined,
 ): Promise<{ resourceId: string | null; visibility: "public" | "private" | "education" } | null> {
+  if (scope === "jobseeker-portfolio") {
+    // The profile route performs the later atomic claim.  Never trust a
+    // browser-provided resource id for this owner-only private scope.
+    return user.role === "JOBSEEKER" && !requestedResourceId
+      ? { resourceId: null, visibility: "private" }
+      : null;
+  }
   if (scope === "treatment-photo") {
     // Employees upload before/after photos of their own completed treatments.
     // The asset stays PRIVATE and unattached (resourceId null) until the

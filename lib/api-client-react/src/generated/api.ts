@@ -200,6 +200,11 @@ import type {
   GrowthAiQuestionBody,
   HealthStatus,
   IntegrationSettingsVersionConflict,
+  JobseekerDashboard,
+  JobseekerProfile,
+  JobseekerProfileInput,
+  JobseekerRegistrationInput,
+  JobseekerSalonInterestsInput,
   LeaveRequestReviewBody,
   LeaveRequestReviewResult,
   LinkEducationCourseInstructorBody,
@@ -572,6 +577,77 @@ export const useRegisterBusiness = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRegisterBusinessMutationOptions(options));
+    }
+
+export const getRegisterJobseekerUrl = () => {
+
+
+
+
+  return `/api/auth/jobseeker-register`
+}
+
+/**
+ * @summary Register a JOBSEEKER account
+ */
+export const registerJobseeker = async (jobseekerRegistrationInput: JobseekerRegistrationInput, options?: Parameters<typeof customFetch>[1]): Promise<AuthSession> => {
+
+  return customFetch<AuthSession>(getRegisterJobseekerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(jobseekerRegistrationInput)
+  }
+);}
+
+
+
+
+
+export const getRegisterJobseekerMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerJobseeker>>, TError,{data: BodyType<JobseekerRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof registerJobseeker>>, TError,{data: BodyType<JobseekerRegistrationInput>}, TContext> => {
+
+const mutationKey = ['registerJobseeker'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof registerJobseeker>>, {data: BodyType<JobseekerRegistrationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  registerJobseeker(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegisterJobseekerMutationResult = NonNullable<Awaited<ReturnType<typeof registerJobseeker>>>
+    export type RegisterJobseekerMutationBody = BodyType<JobseekerRegistrationInput>
+    export type RegisterJobseekerMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Register a JOBSEEKER account
+ */
+export const useRegisterJobseeker = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof registerJobseeker>>, TError,{data: BodyType<JobseekerRegistrationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof registerJobseeker>>,
+        TError,
+        {data: BodyType<JobseekerRegistrationInput>},
+        TContext
+      > => {
+      return useMutation(getRegisterJobseekerMutationOptions(options));
     }
 
 export const getLoginUrl = () => {
@@ -2480,6 +2556,379 @@ export function useGetCustomerDashboard<TData = Awaited<ReturnType<typeof getCus
 
 
 
+
+export const getGetJobseekerProfileUrl = () => {
+
+
+
+
+  return `/api/jobseeker/profile`
+}
+
+/**
+ * @summary Get the signed-in jobseeker profile
+ */
+export const getJobseekerProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<JobseekerProfile> => {
+
+  return customFetch<JobseekerProfile>(getGetJobseekerProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetJobseekerProfileQueryKey = () => {
+    return [
+    `/api/jobseeker/profile`
+    ] as const;
+    }
+
+
+export const getGetJobseekerProfileQueryOptions = <TData = Awaited<ReturnType<typeof getJobseekerProfile>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJobseekerProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetJobseekerProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getJobseekerProfile>>> = ({ signal }) => getJobseekerProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getJobseekerProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetJobseekerProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getJobseekerProfile>>>
+export type GetJobseekerProfileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the signed-in jobseeker profile
+ */
+
+export function useGetJobseekerProfile<TData = Awaited<ReturnType<typeof getJobseekerProfile>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJobseekerProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetJobseekerProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateJobseekerProfileUrl = () => {
+
+
+
+
+  return `/api/jobseeker/profile`
+}
+
+/**
+ * @summary Replace the signed-in jobseeker professional profile
+ */
+export const updateJobseekerProfile = async (jobseekerProfileInput: JobseekerProfileInput, options?: Parameters<typeof customFetch>[1]): Promise<JobseekerProfile> => {
+
+  return customFetch<JobseekerProfile>(getUpdateJobseekerProfileUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(jobseekerProfileInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateJobseekerProfileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateJobseekerProfile>>, TError,{data: BodyType<JobseekerProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateJobseekerProfile>>, TError,{data: BodyType<JobseekerProfileInput>}, TContext> => {
+
+const mutationKey = ['updateJobseekerProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateJobseekerProfile>>, {data: BodyType<JobseekerProfileInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateJobseekerProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateJobseekerProfileMutationResult = NonNullable<Awaited<ReturnType<typeof updateJobseekerProfile>>>
+    export type UpdateJobseekerProfileMutationBody = BodyType<JobseekerProfileInput>
+    export type UpdateJobseekerProfileMutationError = ErrorType<void>
+
+    /**
+ * @summary Replace the signed-in jobseeker professional profile
+ */
+export const useUpdateJobseekerProfile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateJobseekerProfile>>, TError,{data: BodyType<JobseekerProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateJobseekerProfile>>,
+        TError,
+        {data: BodyType<JobseekerProfileInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateJobseekerProfileMutationOptions(options));
+    }
+
+export const getGetJobseekerDashboardUrl = () => {
+
+
+
+
+  return `/api/jobseeker/dashboard`
+}
+
+/**
+ * @summary Get private JOBSEEKER dashboard counts
+ */
+export const getJobseekerDashboard = async ( options?: Parameters<typeof customFetch>[1]): Promise<JobseekerDashboard> => {
+
+  return customFetch<JobseekerDashboard>(getGetJobseekerDashboardUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetJobseekerDashboardQueryKey = () => {
+    return [
+    `/api/jobseeker/dashboard`
+    ] as const;
+    }
+
+
+export const getGetJobseekerDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getJobseekerDashboard>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJobseekerDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetJobseekerDashboardQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getJobseekerDashboard>>> = ({ signal }) => getJobseekerDashboard({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getJobseekerDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetJobseekerDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getJobseekerDashboard>>>
+export type GetJobseekerDashboardQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get private JOBSEEKER dashboard counts
+ */
+
+export function useGetJobseekerDashboard<TData = Awaited<ReturnType<typeof getJobseekerDashboard>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getJobseekerDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetJobseekerDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListJobseekerSalonInterestsUrl = () => {
+
+
+
+
+  return `/api/jobseeker/salon-interests`
+}
+
+/**
+ * @summary List the signed-in jobseeker's salon interests
+ */
+export const listJobseekerSalonInterests = async ( options?: Parameters<typeof customFetch>[1]): Promise<string[]> => {
+
+  return customFetch<string[]>(getListJobseekerSalonInterestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListJobseekerSalonInterestsQueryKey = () => {
+    return [
+    `/api/jobseeker/salon-interests`
+    ] as const;
+    }
+
+
+export const getListJobseekerSalonInterestsQueryOptions = <TData = Awaited<ReturnType<typeof listJobseekerSalonInterests>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listJobseekerSalonInterests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListJobseekerSalonInterestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listJobseekerSalonInterests>>> = ({ signal }) => listJobseekerSalonInterests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listJobseekerSalonInterests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListJobseekerSalonInterestsQueryResult = NonNullable<Awaited<ReturnType<typeof listJobseekerSalonInterests>>>
+export type ListJobseekerSalonInterestsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List the signed-in jobseeker's salon interests
+ */
+
+export function useListJobseekerSalonInterests<TData = Awaited<ReturnType<typeof listJobseekerSalonInterests>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listJobseekerSalonInterests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListJobseekerSalonInterestsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceJobseekerSalonInterestsUrl = () => {
+
+
+
+
+  return `/api/jobseeker/salon-interests`
+}
+
+/**
+ * @summary Replace the signed-in jobseeker's salon interests
+ */
+export const replaceJobseekerSalonInterests = async (jobseekerSalonInterestsInput: JobseekerSalonInterestsInput, options?: Parameters<typeof customFetch>[1]): Promise<string[]> => {
+
+  return customFetch<string[]>(getReplaceJobseekerSalonInterestsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(jobseekerSalonInterestsInput)
+  }
+);}
+
+
+
+
+
+export const getReplaceJobseekerSalonInterestsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>, TError,{data: BodyType<JobseekerSalonInterestsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>, TError,{data: BodyType<JobseekerSalonInterestsInput>}, TContext> => {
+
+const mutationKey = ['replaceJobseekerSalonInterests'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>, {data: BodyType<JobseekerSalonInterestsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  replaceJobseekerSalonInterests(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceJobseekerSalonInterestsMutationResult = NonNullable<Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>>
+    export type ReplaceJobseekerSalonInterestsMutationBody = BodyType<JobseekerSalonInterestsInput>
+    export type ReplaceJobseekerSalonInterestsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Replace the signed-in jobseeker's salon interests
+ */
+export const useReplaceJobseekerSalonInterests = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>, TError,{data: BodyType<JobseekerSalonInterestsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof replaceJobseekerSalonInterests>>,
+        TError,
+        {data: BodyType<JobseekerSalonInterestsInput>},
+        TContext
+      > => {
+      return useMutation(getReplaceJobseekerSalonInterestsMutationOptions(options));
+    }
 
 export const getListFavoritesUrl = () => {
 

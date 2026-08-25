@@ -160,6 +160,11 @@ export function BeautyJobCard({ job, onClickToggleSaved, showSaveButton = true }
           >
             {intentLabel}
           </span>
+          {job.type === "freelance" && job.isUrgent && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide uppercase bg-destructive/10 text-destructive border border-destructive/20 animate-pulse">
+              HITNO
+            </span>
+          )}
           {job.status === "closed" && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide uppercase bg-destructive/10 text-destructive border border-destructive/20">
               Zatvoren
