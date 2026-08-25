@@ -103,3 +103,4 @@
 - [Terminal detail query deduplication](terminal-detail-query-deduplication.md) — metadata fetches and auth-gated query enablement must reuse terminal 4xx state.
 - [Applicant decision path integrity](applicant-decision-path-integrity.md) — terminal candidate decisions stay immutable and auditable through every legacy and current write path.
 - [Private routes and public SEO matchers](private-route-seo-matchers.md) — exclude private namespaces before broad public-detail metadata patterns run.
+- [Published enum renames](published-enum-renames.md) — live enum labels need an additive compatibility publish before the obsolete label can be removed safely.

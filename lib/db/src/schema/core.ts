@@ -20,11 +20,12 @@ export const userRoleEnum = pgEnum("user_role", [
   "ADMIN",
   "SALON_OWNER",
   "SALON_EMPLOYEE",
-  "EDUKATIVNI_CENTAR",
+  "EDUCATION_CENTER_OWNER",
   "INSTRUCTOR",
   "CUSTOMER",
-  "JOBSEEKER",
   "STUDENT",
+  "JOBSEEKER",
+  "EDUKATIVNI_CENTAR",
 ]);
 
 export const appointmentStatusEnum = pgEnum("appointment_status", [
