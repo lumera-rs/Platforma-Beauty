@@ -375,10 +375,16 @@ export const employeeTimeOffTable = pgTable("employee_time_off", {
   employeeId: uuid("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   startDate: date("start_date", { mode: "string" }).notNull(),
   endDate: date("end_date", { mode: "string" }).notNull(),
+  // Null/null is a legacy-compatible all-day absence. Non-null values represent
+  // a one-day intraday block and are deliberately stored as wall-clock strings.
+  startTime: text("start_time"),
+  endTime: text("end_time"),
   reason: text("reason").notNull(),
 }, (table) => [
   // Leading FK coverage: all time-off for an employee, ordered by date range.
   index("employee_time_off_employee_start_idx").on(table.employeeId, table.startDate),
+  check("employee_time_off_times_together_check", sql`(${table.startTime} is null) = (${table.endTime} is null)`),
+  check("employee_time_off_time_order_check", sql`${table.startTime} is null or ${table.startTime} < ${table.endTime}`),
 ]);
 
 export const employeeLeaveRequestsTable = pgTable("employee_leave_requests", {

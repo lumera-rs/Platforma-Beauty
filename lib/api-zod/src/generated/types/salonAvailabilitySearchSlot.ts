@@ -6,19 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface Review {
-  id: string;
-  authorName: string;
-  /** @nullable */
-  avatarUrl: string | null;
-  verifiedBooking: boolean;
-  /**
-     * @minimum 1
-     * @maximum 5
-     */
-  rating: number;
-  text: string;
+export interface SalonAvailabilitySearchSlot {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
-  serviceName: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  employeeId: string;
+  employeeName: string;
 }

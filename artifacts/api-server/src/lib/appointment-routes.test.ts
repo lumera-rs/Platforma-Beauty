@@ -9,6 +9,7 @@ import {
   appointmentsTable,
   db,
   employeeServicesTable,
+  employeeTimeOffTable,
   employeesTable,
   mediaAssetsTable,
   pool,
@@ -22,6 +23,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
 
@@ -135,6 +137,7 @@ async function assertPublicSalonBooleanFilter(
 }
 
 async function run(): Promise<void> {
+  await ensureBusinessGrowthSchema();
   await ensureDemoData();
   const [seededMenService] = await db.select({
     salonId: servicesTable.salonId,
@@ -1464,6 +1467,76 @@ async function run(): Promise<void> {
     const temporaryResource = temporaryResourceResult.body as { id: string };
     const deleteResourceResult = await request(baseUrl, ownerSession, `/salon/resources/${temporaryResource.id}`, "DELETE", {});
     assert.equal(deleteResourceResult.status, 204, "an unused resource must be deletable");
+
+    // Owner intraday blocks must share the booking availability predicate and
+    // appointment advisory lock discipline, without changing all-day leave.
+    const timeBlockDate = "2099-12-10";
+    const filteredByEmployee = await getRequest(baseUrl, ownerSession, `/salon/appointments?employeeId=${employee!.id}`);
+    assert.equal(filteredByEmployee.status, 200, "owner appointment employee filter must succeed");
+    assert.ok((filteredByEmployee.body as Array<{ employeeId: string | null }>).every((item) => item.employeeId === employee!.id));
+    const filteredByService = await getRequest(baseUrl, ownerSession, `/salon/appointments?serviceId=${service!.id}`);
+    assert.equal(filteredByService.status, 200, "owner appointment service filter must succeed");
+    assert.ok((filteredByService.body as Array<{ serviceId: string }>).every((item) => item.serviceId === service!.id));
+    const foreignFilter = await getRequest(baseUrl, ownerSession, `/salon/appointments?employeeId=${foreignEmployee!.id}`);
+    assert.equal(foreignFilter.status, 404, "owner appointment filter must reject a cross-salon employee");
+
+    const crossSalonBlock = await request(baseUrl, ownerSession, "/salon/time-blocks", "POST", {
+      employeeId: foreignEmployee!.id, date: timeBlockDate, startTime: "12:00", endTime: "13:00", reason: "Nedostupno",
+    });
+    assert.equal(crossSalonBlock.status, 404, "time block creation must reject a cross-salon employee");
+    const createdBlock = await request(baseUrl, ownerSession, "/salon/time-blocks", "POST", {
+      employeeId: employee!.id, date: timeBlockDate, startTime: "12:00", endTime: "13:00", reason: "Pauza",
+    });
+    assert.equal(createdBlock.status, 201, "owner can create a same-day intraday block");
+    const block = createdBlock.body as { id: string; startTime: string; endTime: string };
+    assert.equal(block.startTime, "12:00");
+    assert.equal(block.endTime, "13:00");
+    const listedBlocks = await getRequest(baseUrl, ownerSession, `/salon/time-blocks?date=${timeBlockDate}&employeeId=${employee!.id}`);
+    assert.equal(listedBlocks.status, 200, "owner can list intraday blocks by date and employee");
+    assert.ok((listedBlocks.body as Array<{ id: string }>).some((item) => item.id === block.id));
+    const publicBlocked = await fetch(`${baseUrl}/api/salons/${salon!.id}/availability?serviceId=${service!.id}&employeeId=${employee!.id}&date=${timeBlockDate}`);
+    assert.equal(publicBlocked.status, 200);
+    const publicSlots = await publicBlocked.json() as Array<{ start: string }>;
+    assert.ok(!publicSlots.some((slot) => slot.start === "12:00"), "public availability excludes overlapping intraday block");
+    assert.ok(publicSlots.some((slot) => slot.start === "11:00"), "adjacent slot ending at block start remains available");
+    assert.ok(publicSlots.some((slot) => slot.start === "13:00"), "adjacent slot starting at block end remains available");
+    const ownerSearch = await getRequest(baseUrl, ownerSession, `/salon/availability/search?serviceId=${service!.id}&employeeId=${employee!.id}&startDate=${timeBlockDate}&limit=20`);
+    assert.equal(ownerSearch.status, 200, "owner seven-day availability search succeeds");
+    const ownerSlots = ownerSearch.body as Array<{ date: string; startTime: string; employeeId: string; employeeName: string }>;
+    assert.ok(!ownerSlots.some((slot) => slot.date === timeBlockDate && slot.startTime === "12:00"), "owner search inherits the block exclusion");
+    assert.ok(ownerSlots.every((slot) => slot.employeeId === employee!.id && slot.employeeName === employee!.name), "owner search returns selected employee identity");
+    assert.deepEqual(
+      ownerSlots.filter((slot) => slot.date === timeBlockDate).map((slot) => slot.startTime),
+      publicSlots.map((slot) => slot.start),
+      "batched owner search must preserve exact public canonical slot results for the selected employee",
+    );
+    const deletedBlock = await request(baseUrl, ownerSession, `/salon/time-blocks/${block.id}`, "DELETE", {});
+    assert.equal(deletedBlock.status, 204, "owner can delete an intraday block");
+
+    const [activeConflict] = await db.insert(appointmentsTable).values({
+      salonId: salon!.id, customerId: customer!.id, salonCustomerId: contact!.id, employeeId: employee!.id, serviceId: service!.id,
+      date: timeBlockDate, startTime: "14:00", endTime: "15:00", durationMinutes: 60, price: 1000, status: "confirmed",
+    }).returning();
+    const conflictingBlock = await request(baseUrl, ownerSession, "/salon/time-blocks", "POST", {
+      employeeId: employee!.id, date: timeBlockDate, startTime: "14:30", endTime: "15:30", reason: "Sukob",
+    });
+    assert.equal(conflictingBlock.status, 409, "block overlapping an active appointment is rejected without cancelling it");
+    const [stillActive] = await db.select({ status: appointmentsTable.status }).from(appointmentsTable).where(eq(appointmentsTable.id, activeConflict!.id));
+    assert.equal(stillActive!.status, "confirmed", "block conflict never cancels an existing appointment");
+    const [allDayLeave] = await db.insert(employeeTimeOffTable).values({
+      employeeId: employee!.id, startDate: timeBlockDate, endDate: timeBlockDate, reason: "Odobreno odsustvo",
+    }).returning();
+    const calendarDay = await getRequest(baseUrl, ownerSession, `/salon/calendar-day?date=${timeBlockDate}`);
+    assert.equal(calendarDay.status, 200, "owner calendar day data must succeed");
+    const calendarEmployee = (calendarDay.body as Array<{
+      employeeId: string;
+      unavailable: boolean;
+      unavailableReason: string | null;
+    }>).find((item) => item.employeeId === employee!.id);
+    assert.equal(calendarEmployee?.unavailable, true, "approved all-day leave must mark the employee unavailable");
+    assert.equal(calendarEmployee?.unavailableReason, "Odobreno odsustvo");
+    const allDayDelete = await request(baseUrl, ownerSession, `/salon/time-blocks/${allDayLeave!.id}`, "DELETE", {});
+    assert.equal(allDayDelete.status, 404, "approved all-day leave cannot be deleted through time-block endpoint");
 
     console.log("Resource CRUD and booking capacity tests passed.");
 

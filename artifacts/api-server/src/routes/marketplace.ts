@@ -257,6 +257,8 @@ import
   GetSalonAvailabilityParams,
   GetSalonAvailabilityQueryParams,
   GetSalonAvailabilityResponse,
+  GetSalonCalendarDayQueryParams,
+  GetSalonCalendarDayResponse,
   GetSalonFirstAvailableParams,
   GetSalonFirstAvailableResponse,
   GetSalonDashboardResponse,
@@ -386,6 +388,9 @@ import
   CreateSalonAppointmentResponse,
   CreateSalonAppointmentSeriesBody,
   CreateSalonAppointmentSeriesResponse,
+  CreateSalonTimeBlockBody,
+  CreateSalonTimeBlockResponse,
+  DeleteSalonTimeBlockParams,
   CreateEmployeeAppointmentSeriesBody,
   CreateEmployeeAppointmentSeriesResponse,
   PreviewSalonAppointmentSeriesBody,
@@ -412,6 +417,10 @@ import
   UpdateSalonResourceParams,
   UpdateSalonResourceResponse,
   DeleteSalonResourceParams,
+  ListSalonTimeBlocksQueryParams,
+  ListSalonTimeBlocksResponse,
+  SearchSalonAvailabilityQueryParams,
+  SearchSalonAvailabilityResponse,
 }
  from "@workspace/api-zod"
 ;
@@ -913,6 +922,11 @@ export function appointmentEndTime(startTime: string, durationMinutes: number) {
   return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
 }
 
+function isValidCalendarDate(value: string) {
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 function overlapsAppointment(startTime: string, endTime: string, appointment: typeof appointmentsTable.$inferSelect) {
   return appointment.status !== "cancelled" && appointment.startTime < endTime && appointment.endTime > startTime;
 }
@@ -932,7 +946,12 @@ function employeeWorksAt(
   schedules: (typeof employeeSchedulesTable.$inferSelect)[],
   timeOff: (typeof employeeTimeOffTable.$inferSelect)[],
 ) {
-  if (timeOff.some((item) => item.employeeId === employeeId && item.startDate <= date && item.endDate >= date)) return false;
+  // Legacy rows (and approved leave) have null/null times and block every slot
+  // in their date range. A one-off intraday block only intersects its own
+  // half-open interval, so adjacent bookings remain valid.
+  if (timeOff.some((item) => item.employeeId === employeeId
+    && item.startDate <= date && item.endDate >= date
+    && (item.startTime === null || item.endTime === null || (item.startTime < endTime && item.endTime > startTime)))) return false;
   const weekday = ((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1;
   const daily = schedules.filter((item) => item.employeeId === employeeId && item.weekday === weekday);
   if (!daily.length) return true;
@@ -955,6 +974,46 @@ type ReservedAppointment = {
   endTime: string;
 };
 
+type EmployeeAvailabilityContext = {
+  candidates: (typeof employeesTable.$inferSelect)[];
+  appointments: (typeof appointmentsTable.$inferSelect)[];
+  schedules: (typeof employeeSchedulesTable.$inferSelect)[];
+  timeOff: (typeof employeeTimeOffTable.$inferSelect)[];
+};
+
+function selectAvailableEmployeeFromContext(
+  context: EmployeeAvailabilityContext,
+  date: string,
+  startTime: string,
+  endTime: string,
+  reservedAppointments: ReservedAppointment[] = [],
+  ignoredAppointmentIds: Set<string> = new Set(),
+) {
+  const weekStart = mondayOf(date);
+  const sameDay = context.appointments.filter((appointment) => appointment.date === date);
+  const sameWeek = context.appointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
+  const reservedSameDay = reservedAppointments.filter((appointment) => appointment.date === date);
+  const reservedSameWeek = reservedAppointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
+  const available = context.candidates.filter((employee) =>
+    employeeWorksAt(employee.id, date, startTime, endTime, context.schedules, context.timeOff)
+    && !sameDay.some((appointment) => !ignoredAppointmentIds.has(appointment.id)
+      && appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
+    && !reservedSameDay.some((appointment) => appointment.employeeId === employee.id
+      && appointment.startTime < endTime && appointment.endTime > startTime));
+  if (!available.length) return null;
+  return [...available].sort((a, b) => {
+    const dayA = sameDay.filter((appointment) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
+      + reservedSameDay.filter((appointment) => appointment.employeeId === a.id).length;
+    const dayB = sameDay.filter((appointment) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
+      + reservedSameDay.filter((appointment) => appointment.employeeId === b.id).length;
+    const weekA = sameWeek.filter((appointment) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
+      + reservedSameWeek.filter((appointment) => appointment.employeeId === a.id).length;
+    const weekB = sameWeek.filter((appointment) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
+      + reservedSameWeek.filter((appointment) => appointment.employeeId === b.id).length;
+    return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name);
+  })[0]!;
+}
+
 async function availableEmployeeWithDb(
   store: any,
   salonId: string,
@@ -976,10 +1035,6 @@ async function availableEmployeeWithDb(
   // `store` is often a transaction session. A pg client can execute only one
   // query at a time, so keep these reads sequential instead of queueing them
   // with Promise.all on the transaction's single connection.
-  const sameDay = await store.select().from(appointmentsTable).where(and(
-    eq(appointmentsTable.salonId, salonId),
-    eq(appointmentsTable.date, date),
-  ));
   const sameWeek = await store.select().from(appointmentsTable).where(and(
     eq(appointmentsTable.salonId, salonId),
     sql`${appointmentsTable.date} >= ${weekStart} and ${appointmentsTable.date} <= ${date}`,
@@ -988,23 +1043,10 @@ async function availableEmployeeWithDb(
     .where(inArray(employeeSchedulesTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
   const timeOff = await store.select().from(employeeTimeOffTable)
     .where(inArray(employeeTimeOffTable.employeeId, candidates.map((employee: typeof employeesTable.$inferSelect) => employee.id)));
-  const reservedSameDay = reservedAppointments.filter((appointment) => appointment.date === date);
-  const reservedSameWeek = reservedAppointments.filter((appointment) => appointment.date >= weekStart && appointment.date <= date);
-  const available = candidates.filter((employee: typeof employeesTable.$inferSelect) => employeeWorksAt(employee.id, date, startTime, endTime, schedules, timeOff)
-    && !sameDay.some((appointment: typeof appointmentsTable.$inferSelect) => !ignoredAppointmentIds.has(appointment.id) && appointment.employeeId === employee.id && overlapsAppointment(startTime, endTime, appointment))
-    && !reservedSameDay.some((appointment) => appointment.employeeId === employee.id && appointment.startTime < endTime && appointment.endTime > startTime));
-  if (!available.length) return null;
-  return [...available].sort((a, b) => {
-    const dayA = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
-      + reservedSameDay.filter((appointment) => appointment.employeeId === a.id).length;
-    const dayB = sameDay.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
-      + reservedSameDay.filter((appointment) => appointment.employeeId === b.id).length;
-    const weekA = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === a.id && appointment.status !== "cancelled").length
-      + reservedSameWeek.filter((appointment) => appointment.employeeId === a.id).length;
-    const weekB = sameWeek.filter((appointment: typeof appointmentsTable.$inferSelect) => appointment.employeeId === b.id && appointment.status !== "cancelled").length
-      + reservedSameWeek.filter((appointment) => appointment.employeeId === b.id).length;
-    return dayA - dayB || weekA - weekB || a.name.localeCompare(b.name);
-  })[0]!;
+  return selectAvailableEmployeeFromContext(
+    { candidates, appointments: sameWeek, schedules, timeOff },
+    date, startTime, endTime, reservedAppointments, ignoredAppointmentIds,
+  );
 }
 
 export async function availableEmployee(
@@ -1170,7 +1212,7 @@ async function computeFirstAvailableByService(salonId: string): Promise<FirstAva
       inArray(employeeTimeOffTable.employeeId, employeeIds),
       lte(employeeTimeOffTable.startDate, horizonEnd),
       gte(employeeTimeOffTable.endDate, today),
-    )) : Promise.resolve([]),
+    )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
     serviceIds.length ? db.select({
       serviceId: serviceResourceRequirementsTable.serviceId,
       resourceId: serviceResourceRequirementsTable.resourceId,
@@ -1305,6 +1347,36 @@ type ResourceReservation = {
   endTime: string;
 };
 
+type ResourceAllocationSlot = {
+  resourceId: string;
+  quantity: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+};
+
+function resourcesAvailableFromContext(
+  requirements: ResourceRequirement[],
+  allocations: ResourceAllocationSlot[],
+  date: string,
+  startTime: string,
+  endTime: string,
+  batchReservations: ResourceReservation[] = [],
+) {
+  return requirements.every((requirement) => {
+    if (!requirement.active) return false;
+    const used = allocations
+      .filter((allocation) => allocation.resourceId === requirement.resourceId
+        && allocation.date === date && allocation.startTime < endTime && allocation.endTime > startTime)
+      .reduce((sum, allocation) => sum + allocation.quantity, 0);
+    const batchUsed = batchReservations
+      .filter((reservation) => reservation.resourceId === requirement.resourceId
+        && reservation.date === date && reservation.startTime < endTime && reservation.endTime > startTime)
+      .reduce((sum, reservation) => sum + reservation.quantity, 0);
+    return used + batchUsed + requirement.quantity <= requirement.capacity;
+  });
+}
+
 /**
  * Check whether all requirements for a service can be satisfied for the given
  * slot.  Uses DB counts of already-allocated units plus in-memory reservations
@@ -1323,27 +1395,24 @@ async function resourcesAvailableForSlot(
   batchReservations: ResourceReservation[] = [],
   excludeAppointmentIds: string[] = [],
 ): Promise<boolean> {
-  for (const req of requirements) {
-    if (!req.active) return false;
-    const overlapping = await store.select({
-      usedQty: sql<number>`coalesce(sum(${appointmentResourceAllocationsTable.quantity}), 0)::int`,
-    }).from(appointmentResourceAllocationsTable)
-      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
-      .where(and(
-        eq(appointmentResourceAllocationsTable.resourceId, req.resourceId),
-        eq(appointmentsTable.date, date),
-        ne(appointmentsTable.status, "cancelled"),
-        lt(appointmentsTable.startTime, endTime),
-        gt(appointmentsTable.endTime, startTime),
-        excludeAppointmentIds.length ? notInArray(appointmentsTable.id, excludeAppointmentIds) : sql`true`,
-      )) as Array<{ usedQty: number }>;
-    const dbUsed = overlapping[0]?.usedQty ?? 0;
-    const batchUsed = batchReservations
-      .filter((r) => r.resourceId === req.resourceId && r.date === date && r.startTime < endTime && r.endTime > startTime)
-      .reduce((sum, r) => sum + r.quantity, 0);
-    if (dbUsed + batchUsed + req.quantity > req.capacity) return false;
-  }
-  return true;
+  if (!requirements.length) return true;
+  const allocations = await store.select({
+    resourceId: appointmentResourceAllocationsTable.resourceId,
+    quantity: appointmentResourceAllocationsTable.quantity,
+    date: appointmentsTable.date,
+    startTime: appointmentsTable.startTime,
+    endTime: appointmentsTable.endTime,
+  }).from(appointmentResourceAllocationsTable)
+    .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+    .where(and(
+      inArray(appointmentResourceAllocationsTable.resourceId, requirements.map((requirement) => requirement.resourceId)),
+      eq(appointmentsTable.date, date),
+      ne(appointmentsTable.status, "cancelled"),
+      lt(appointmentsTable.startTime, endTime),
+      gt(appointmentsTable.endTime, startTime),
+      excludeAppointmentIds.length ? notInArray(appointmentsTable.id, excludeAppointmentIds) : sql`true`,
+    )) as ResourceAllocationSlot[];
+  return resourcesAvailableFromContext(requirements, allocations, date, startTime, endTime, batchReservations);
 }
 
 /**
@@ -4756,6 +4825,16 @@ router.get("/salons", async (req, res): Promise<void> => {
               <= (now() at time zone 'UTC')::date + day_offset::integer
             and ${employeeTimeOffTable.endDate}
               >= (now() at time zone 'UTC')::date + day_offset::integer
+             and (
+               ${employeeTimeOffTable.startTime} is null
+               or ${employeeTimeOffTable.endTime} is null
+               or (
+                 ${employeeTimeOffTable.startTime}
+                   < to_char(make_time(slot_hour::integer, 0, 0) + make_interval(mins => ${servicesTable.durationMinutes}), 'HH24:MI')
+                 and ${employeeTimeOffTable.endTime}
+                   > to_char(make_time(slot_hour::integer, 0, 0), 'HH24:MI')
+               )
+             )
         )
         and (
           not exists (
@@ -6153,9 +6232,243 @@ router.get("/salon/appointments", async (req, res): Promise<void> => {
   if (parsed.data.status) predicates.push(sql`${appointmentsTable.status}::text = ${parsed.data.status}`);
   if (parsed.data.from) predicates.push(gte(appointmentsTable.date, calendarDate(parsed.data.from)));
   if (parsed.data.to) predicates.push(lte(appointmentsTable.date, calendarDate(parsed.data.to)));
+  if (parsed.data.employeeId) {
+    if (!(await employeeInSalon(parsed.data.employeeId, salon.id))) {
+      res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." });
+      return;
+    }
+    predicates.push(eq(appointmentsTable.employeeId, parsed.data.employeeId));
+  }
+  if (parsed.data.serviceId) {
+    const [service] = await db.select({ id: servicesTable.id }).from(servicesTable).where(and(
+      eq(servicesTable.id, parsed.data.serviceId),
+      eq(servicesTable.salonId, salon.id),
+    )).limit(1);
+    if (!service) {
+      res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." });
+      return;
+    }
+    predicates.push(eq(appointmentsTable.serviceId, service.id));
+  }
   const { limit, offset } = parsePagination(req.query, 100);
   const items = await appointmentList(and(...predicates), true, { limit, offset });
   res.json(ListSalonAppointmentsResponse.parse(items));
+});
+
+router.get("/salon/time-blocks", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = ListSalonTimeBlocksQueryParams.safeParse(req.query);
+  if (!parsed.success || !isValidCalendarDate(parsed.data.date)) {
+    res.status(400).json({ error: parsed.success ? "Datum nije ispravan." : parsed.error.message }); return;
+  }
+  if (parsed.data.employeeId && !(await employeeInSalon(parsed.data.employeeId, access.salon.id))) {
+    res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." }); return;
+  }
+  const employeeIds = parsed.data.employeeId
+    ? [parsed.data.employeeId]
+    : (await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.salonId, access.salon.id))).map((employee) => employee.id);
+  const blocks = employeeIds.length ? await db.select().from(employeeTimeOffTable).where(and(
+    inArray(employeeTimeOffTable.employeeId, employeeIds),
+    eq(employeeTimeOffTable.startDate, parsed.data.date),
+    eq(employeeTimeOffTable.endDate, parsed.data.date),
+    isNotNull(employeeTimeOffTable.startTime),
+    isNotNull(employeeTimeOffTable.endTime),
+  )).orderBy(asc(employeeTimeOffTable.startTime), asc(employeeTimeOffTable.id)) : [];
+  const response = blocks.map((block) => ({
+    id: block.id, employeeId: block.employeeId, date: block.startDate,
+    startTime: block.startTime!, endTime: block.endTime!, reason: block.reason,
+  }));
+  res.json(ListSalonTimeBlocksResponse.parse(response));
+});
+
+router.post("/salon/time-blocks", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonTimeBlockBody.safeParse(req.body);
+  if (!parsed.success || !isValidCalendarDate(parsed.data.date) || parsed.data.startTime >= parsed.data.endTime) {
+    res.status(400).json({
+      error: !parsed.success
+        ? parsed.error.message
+        : !isValidCalendarDate(parsed.data.date)
+          ? "Datum nije ispravan."
+          : "Vreme početka mora biti pre vremena završetka.",
+    });
+    return;
+  }
+  const employee = await employeeInSalon(parsed.data.employeeId, access.salon.id);
+  if (!employee || !employee.active) { res.status(404).json({ error: "Aktivni zaposleni nije pronađen u ovom salonu." }); return; }
+  const result = await db.transaction(async (tx) => {
+    await lockAppointmentResources(tx, access.salon.id, [{ date: parsed.data.date, employeeId: employee.id }]);
+    const appointments = await tx.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, access.salon.id),
+      eq(appointmentsTable.employeeId, employee.id),
+      eq(appointmentsTable.date, parsed.data.date),
+    ));
+    if (appointments.some((appointment) => overlapsAppointment(parsed.data.startTime, parsed.data.endTime, appointment))) return null;
+    const [block] = await tx.insert(employeeTimeOffTable).values({
+      employeeId: employee.id, startDate: parsed.data.date, endDate: parsed.data.date,
+      startTime: parsed.data.startTime, endTime: parsed.data.endTime, reason: parsed.data.reason.trim(),
+    }).returning();
+    return block!;
+  });
+  if (!result) { res.status(409).json({ error: "Blok se preklapa sa aktivnim terminom." }); return; }
+  res.status(201).json(CreateSalonTimeBlockResponse.parse({
+    id: result.id, employeeId: result.employeeId, date: result.startDate,
+    startTime: result.startTime!, endTime: result.endTime!, reason: result.reason,
+  }));
+});
+
+router.delete("/salon/time-blocks/:timeBlockId", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const params = DeleteSalonTimeBlockParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const deleted = await db.delete(employeeTimeOffTable).where(and(
+    eq(employeeTimeOffTable.id, params.data.timeBlockId),
+    isNotNull(employeeTimeOffTable.startTime),
+    isNotNull(employeeTimeOffTable.endTime),
+    exists(db.select({ id: employeesTable.id }).from(employeesTable).where(and(
+      eq(employeesTable.id, employeeTimeOffTable.employeeId),
+      eq(employeesTable.salonId, access.salon.id),
+    ))),
+  )).returning({ id: employeeTimeOffTable.id });
+  if (!deleted.length) { res.status(404).json({ error: "Blok nije pronađen." }); return; }
+  res.status(204).send();
+});
+
+router.get("/salon/availability/search", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = SearchSalonAvailabilityQueryParams.safeParse(req.query);
+  if (!parsed.success || !isValidCalendarDate(parsed.data.startDate)) {
+    res.status(400).json({ error: parsed.success ? "Početni datum nije ispravan." : parsed.error.message }); return;
+  }
+  const [service] = await db.select().from(servicesTable).where(and(
+    eq(servicesTable.id, parsed.data.serviceId),
+    eq(servicesTable.salonId, access.salon.id),
+    eq(servicesTable.active, true),
+  )).limit(1);
+  if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
+  if (parsed.data.employeeId && !(await employeeInSalon(parsed.data.employeeId, access.salon.id))) {
+    res.status(404).json({ error: "Zaposleni nije pronađen u ovom salonu." }); return;
+  }
+
+  const endDate = dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), 6);
+  const appointmentStart = mondayOf(parsed.data.startDate);
+  const employees = await db.select().from(employeesTable).where(and(
+    eq(employeesTable.salonId, access.salon.id),
+    eq(employeesTable.active, true),
+  ));
+  const employeeIds = employees.map((employee) => employee.id);
+  const [links, appointments, schedules, timeOff, requirements, resourceAllocations] = await Promise.all([
+    employeeIds.length ? db.select().from(employeeServicesTable).where(and(
+      inArray(employeeServicesTable.employeeId, employeeIds),
+      eq(employeeServicesTable.serviceId, service.id),
+    )) : Promise.resolve([] as (typeof employeeServicesTable.$inferSelect)[]),
+    db.select().from(appointmentsTable).where(and(
+      eq(appointmentsTable.salonId, access.salon.id),
+      gte(appointmentsTable.date, appointmentStart),
+      lte(appointmentsTable.date, endDate),
+    )),
+    employeeIds.length ? db.select().from(employeeSchedulesTable).where(
+      inArray(employeeSchedulesTable.employeeId, employeeIds),
+    ) : Promise.resolve([] as (typeof employeeSchedulesTable.$inferSelect)[]),
+    employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
+      inArray(employeeTimeOffTable.employeeId, employeeIds),
+      lte(employeeTimeOffTable.startDate, endDate),
+      gte(employeeTimeOffTable.endDate, parsed.data.startDate),
+    )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
+    fetchServiceResourceRequirements(db, service.id),
+    db.select({
+      resourceId: appointmentResourceAllocationsTable.resourceId,
+      quantity: appointmentResourceAllocationsTable.quantity,
+      date: appointmentsTable.date,
+      startTime: appointmentsTable.startTime,
+      endTime: appointmentsTable.endTime,
+    }).from(appointmentResourceAllocationsTable)
+      .innerJoin(appointmentsTable, eq(appointmentResourceAllocationsTable.appointmentId, appointmentsTable.id))
+      .innerJoin(serviceResourceRequirementsTable, and(
+        eq(serviceResourceRequirementsTable.resourceId, appointmentResourceAllocationsTable.resourceId),
+        eq(serviceResourceRequirementsTable.serviceId, service.id),
+      ))
+      .where(and(
+        gte(appointmentsTable.date, parsed.data.startDate),
+        lte(appointmentsTable.date, endDate),
+        ne(appointmentsTable.status, "cancelled"),
+      )) as Promise<ResourceAllocationSlot[]>,
+  ]);
+  const linkedEmployeeIds = new Set(links.map((link) => link.employeeId));
+  const context: EmployeeAvailabilityContext = {
+    candidates: employees.filter((employee) => linkedEmployeeIds.has(employee.id)
+      && (!parsed.data.employeeId || employee.id === parsed.data.employeeId)),
+    appointments,
+    schedules,
+    timeOff,
+  };
+
+  const slots: Array<{ date: string; startTime: string; endTime: string; employeeId: string; employeeName: string }> = [];
+  const seen = new Set<string>();
+  const cap = parsed.data.limit ?? 50;
+  for (let dayOffset = 0; dayOffset < 7 && slots.length < cap; dayOffset += 1) {
+    const date = dateAtOffset(new Date(`${parsed.data.startDate}T12:00:00.000Z`), dayOffset);
+    for (let hour = 9; hour < 18 && slots.length < cap; hour += 1) {
+      const startTime = `${String(hour).padStart(2, "0")}:00`;
+      const endTime = appointmentEndTime(startTime, service.durationMinutes);
+      if (!endTime) continue;
+      const employee = selectAvailableEmployeeFromContext(context, date, startTime, endTime);
+      if (!employee) continue;
+      if (!resourcesAvailableFromContext(requirements, resourceAllocations, date, startTime, endTime)) continue;
+      const key = `${date}:${startTime}:${employee.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      slots.push({ date, startTime, endTime, employeeId: employee.id, employeeName: employee.name });
+    }
+  }
+  res.json(SearchSalonAvailabilityResponse.parse(slots));
+});
+
+router.get("/salon/calendar-day", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = GetSalonCalendarDayQueryParams.safeParse(req.query);
+  if (!parsed.success || !isValidCalendarDate(parsed.data.date)) {
+    res.status(400).json({ error: parsed.success ? "Datum nije ispravan." : parsed.error.message }); return;
+  }
+  const employees = await db.select().from(employeesTable).where(and(
+    eq(employeesTable.salonId, access.salon.id),
+    eq(employeesTable.active, true),
+  )).orderBy(asc(employeesTable.name), asc(employeesTable.id));
+  const employeeIds = employees.map((employee) => employee.id);
+  const weekday = ((new Date(`${parsed.data.date}T12:00:00.000Z`).getUTCDay() + 6) % 7) + 1;
+  const [schedules, allDayLeave] = await Promise.all([
+    employeeIds.length ? db.select().from(employeeSchedulesTable).where(and(
+      inArray(employeeSchedulesTable.employeeId, employeeIds),
+      eq(employeeSchedulesTable.weekday, weekday),
+    )) : Promise.resolve([] as (typeof employeeSchedulesTable.$inferSelect)[]),
+    employeeIds.length ? db.select().from(employeeTimeOffTable).where(and(
+      inArray(employeeTimeOffTable.employeeId, employeeIds),
+      lte(employeeTimeOffTable.startDate, parsed.data.date),
+      gte(employeeTimeOffTable.endDate, parsed.data.date),
+      isNull(employeeTimeOffTable.startTime),
+      isNull(employeeTimeOffTable.endTime),
+    )) : Promise.resolve([] as (typeof employeeTimeOffTable.$inferSelect)[]),
+  ]);
+  const response = employees.map((employee) => {
+    const windows = schedules.filter((schedule) => schedule.employeeId === employee.id)
+      .map((schedule) => ({
+        startTime: schedule.startTime, endTime: schedule.endTime,
+        breakStart: schedule.breakStart, breakEnd: schedule.breakEnd,
+      }));
+    const leave = allDayLeave.filter((item) => item.employeeId === employee.id);
+    return {
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.role,
+      // This explicitly mirrors employeeWorksAt(): no row means unrestricted,
+      // not closed. The UI can distinguish that from an explicit schedule.
+      hasExplicitSchedule: windows.length > 0,
+      scheduleWindows: windows,
+      unavailable: leave.length > 0,
+      unavailableReason: leave.length ? leave.map((item) => item.reason).join("; ") : null,
+    };
+  });
+  res.json(GetSalonCalendarDayResponse.parse(response));
 });
 
 router.get("/salon/customers", async (req, res): Promise<void> => {

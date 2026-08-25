@@ -71,6 +71,13 @@ async function seedLegacySchema(schema: string) {
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
     name text NOT NULL
   )`);
+  await q(`CREATE TABLE "${schema}".employee_time_off (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id uuid NOT NULL REFERENCES "${schema}".employees(id) ON DELETE CASCADE,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    reason text NOT NULL
+  )`);
   await q(`CREATE TABLE "${schema}".services (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     salon_id uuid NOT NULL REFERENCES "${schema}".salons(id) ON DELETE CASCADE,
@@ -484,6 +491,25 @@ async function run() {
       );
     }
     assert.ok(await columnExists("salon_customers", "birth_date"), "salon_customers.birth_date added");
+    assert.ok(await columnExists("employee_time_off", "start_time"), "employee_time_off.start_time added");
+    assert.ok(await columnExists("employee_time_off", "end_time"), "employee_time_off.end_time added");
+    await q(
+      `INSERT INTO "${s}".employee_time_off (employee_id, start_date, end_date, start_time, end_time, reason)
+       VALUES ($1, date '2099-01-01', date '2099-01-01', '10:00', '11:00', 'Intraday block')`,
+      [fixtures.employee.id],
+    );
+    await assert.rejects(
+      q(`INSERT INTO "${s}".employee_time_off (employee_id, start_date, end_date, start_time, reason)
+         VALUES ($1, date '2099-01-02', date '2099-01-02', '10:00', 'Invalid block')`, [fixtures.employee.id]),
+      /employee_time_off_times_together_check/,
+      "time-off bootstrap enforces both-or-neither times",
+    );
+    await assert.rejects(
+      q(`INSERT INTO "${s}".employee_time_off (employee_id, start_date, end_date, start_time, end_time, reason)
+         VALUES ($1, date '2099-01-03', date '2099-01-03', '11:00', '10:00', 'Invalid block')`, [fixtures.employee.id]),
+      /employee_time_off_time_order_check/,
+      "time-off bootstrap enforces chronological block times",
+    );
     for (const column of ["retail_enabled", "professional_enabled", "public_description", "public_price", "public_discount_price", "catalog_reference"]) {
       assert.ok(await columnExists("products", column), `products.${column} added for retail storefront`);
     }

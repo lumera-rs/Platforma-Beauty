@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 32;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 33;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -483,6 +483,29 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS online_refund_days_override integer`,
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS live_appeal_days_override integer`,
     `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS featured_course_price_override integer`,
+    // v33 — owners can create intraday employee blocks without changing the
+    // all-day leave meaning of existing rows. Both times are present or absent;
+    // when present their lexical HH:MM order is also chronological.
+    `ALTER TABLE ${s}.employee_time_off ADD COLUMN IF NOT EXISTS start_time text`,
+    `ALTER TABLE ${s}.employee_time_off ADD COLUMN IF NOT EXISTS end_time text`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'employee_time_off_times_together_check'
+       ) THEN
+         ALTER TABLE ${s}.employee_time_off ADD CONSTRAINT employee_time_off_times_together_check
+           CHECK ((start_time IS NULL) = (end_time IS NULL));
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'employee_time_off_time_order_check'
+       ) THEN
+         ALTER TABLE ${s}.employee_time_off ADD CONSTRAINT employee_time_off_time_order_check
+           CHECK (start_time IS NULL OR start_time < end_time);
+       END IF;
+     END $$`,
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS employee_time_off_employee_date_time_idx
+       ON ${s}.employee_time_off (employee_id, start_date, end_date, start_time, end_time)`,
     `DO $$ BEGIN
        IF NOT EXISTS (
          SELECT 1 FROM pg_constraint c

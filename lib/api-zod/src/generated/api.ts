@@ -890,6 +890,7 @@ export const getSalonResponseTwoServicesItemResourceRequirementsItemQuantityMult
 export const getSalonResponseTwoReviewsItemRatingMax = 5;
 export const getSalonResponseTwoReviewsItemRatingMultipleOf = 1;
 
+export const getSalonResponseTwoReviewsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const getSalonResponseTwoReturnClientRateMin = 0;
 export const getSalonResponseTwoReturnClientRateMax = 100;
 
@@ -977,7 +978,7 @@ export const GetSalonResponse = zod.object({
   "verifiedBooking": zod.boolean(),
   "rating": zod.number().min(1).max(getSalonResponseTwoReviewsItemRatingMax).multipleOf(getSalonResponseTwoReviewsItemRatingMultipleOf),
   "text": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(getSalonResponseTwoReviewsItemDateRegExp),
   "serviceName": zod.string()
 })),
   "returnClientRate": zod.number().min(getSalonResponseTwoReturnClientRateMin).max(getSalonResponseTwoReturnClientRateMax).nullable(),
@@ -1055,6 +1056,7 @@ export const ListMyAppointmentsQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listMyAppointmentsQueryPageSizeMax).default(listMyAppointmentsQueryPageSizeDefault).describe('Number of appointments per page (1..100).')
 })
 
+export const listMyAppointmentsResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const listMyAppointmentsResponseTravelFeeMin = 0;
 
 
@@ -1070,7 +1072,7 @@ export const ListMyAppointmentsResponseItem = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(listMyAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1138,6 +1140,7 @@ export const CreateAppointmentBody = zod.object({
 }).optional()
 })
 
+export const createAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const createAppointmentResponseTravelFeeMin = 0;
 
 
@@ -1153,7 +1156,7 @@ export const CreateAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(createAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1201,6 +1204,7 @@ export const UpdateAppointmentBody = zod.object({
   "notes": zod.string().optional()
 })
 
+export const updateAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const updateAppointmentResponseTravelFeeMin = 0;
 
 
@@ -1216,7 +1220,7 @@ export const UpdateAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(updateAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1281,6 +1285,7 @@ export const CancelAppointmentBody = zod.object({
   "reason": zod.string().optional()
 })
 
+export const cancelAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const cancelAppointmentResponseTravelFeeMin = 0;
 
 
@@ -1296,7 +1301,7 @@ export const CancelAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(cancelAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1333,6 +1338,7 @@ export const CancelAppointmentResponse = zod.object({
 /**
  * @summary Customer dashboard summary
  */
+export const getCustomerDashboardResponseUpcomingItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const getCustomerDashboardResponseUpcomingItemTravelFeeMin = 0;
 
 
@@ -1349,7 +1355,7 @@ export const GetCustomerDashboardResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(getCustomerDashboardResponseUpcomingItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1697,6 +1703,7 @@ export const GetSalonDashboardQueryParams = zod.object({
   "scope": zod.enum(['location', 'all']).default(getSalonDashboardQueryScopeDefault)
 })
 
+export const getSalonDashboardResponseTodayAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const getSalonDashboardResponseTodayAppointmentsItemTravelFeeMin = 0;
 
 
@@ -1747,7 +1754,7 @@ export const GetSalonDashboardResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(getSalonDashboardResponseTodayAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -1953,10 +1960,13 @@ export const ListSalonAppointmentsQueryParams = zod.object({
   "from": zod.date().optional(),
   "to": zod.date().optional(),
   "status": zod.coerce.string().optional(),
+  "employeeId": zod.coerce.string().optional(),
+  "serviceId": zod.coerce.string().optional(),
   "page": zod.coerce.number().int().min(1).default(listSalonAppointmentsQueryPageDefault).describe('1-based page number for stable pagination (date asc, startTime asc, id asc).'),
   "pageSize": zod.coerce.number().int().min(1).max(listSalonAppointmentsQueryPageSizeMax).default(listSalonAppointmentsQueryPageSizeDefault).describe('Number of appointments per page (1..100).')
 })
 
+export const listSalonAppointmentsResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const listSalonAppointmentsResponseTravelFeeMin = 0;
 
 
@@ -1972,7 +1982,7 @@ export const ListSalonAppointmentsResponseItem = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(listSalonAppointmentsResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -2032,6 +2042,7 @@ export const CreateSalonAppointmentBody = zod.object({
 }).optional()
 })
 
+export const createSalonAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const createSalonAppointmentResponseTravelFeeMin = 0;
 
 
@@ -2047,7 +2058,7 @@ export const CreateSalonAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(createSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -2114,6 +2125,141 @@ export const PreviewSalonAppointmentSeriesResponse = zod.object({
 
 
 /**
+ * @summary List owner-created employee time blocks for a date
+ */
+export const listSalonTimeBlocksQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListSalonTimeBlocksQueryParams = zod.object({
+  "date": zod.coerce.string().regex(listSalonTimeBlocksQueryDateRegExp),
+  "employeeId": zod.coerce.string().optional()
+})
+
+export const listSalonTimeBlocksResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listSalonTimeBlocksResponseStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const listSalonTimeBlocksResponseEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const ListSalonTimeBlocksResponseItem = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "date": zod.string().regex(listSalonTimeBlocksResponseDateRegExp),
+  "startTime": zod.string().regex(listSalonTimeBlocksResponseStartTimeRegExp),
+  "endTime": zod.string().regex(listSalonTimeBlocksResponseEndTimeRegExp),
+  "reason": zod.string()
+})
+export const ListSalonTimeBlocksResponse = zod.array(ListSalonTimeBlocksResponseItem)
+
+
+/**
+ * @summary Create a same-day intraday employee block
+ */
+
+export const createSalonTimeBlockBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createSalonTimeBlockBodyStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const createSalonTimeBlockBodyEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const createSalonTimeBlockBodyReasonMax = 500;
+
+
+
+export const CreateSalonTimeBlockBody = zod.object({
+  "employeeId": zod.string().min(1),
+  "date": zod.string().regex(createSalonTimeBlockBodyDateRegExp),
+  "startTime": zod.string().regex(createSalonTimeBlockBodyStartTimeRegExp),
+  "endTime": zod.string().regex(createSalonTimeBlockBodyEndTimeRegExp),
+  "reason": zod.string().min(1).max(createSalonTimeBlockBodyReasonMax)
+})
+
+export const createSalonTimeBlockResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createSalonTimeBlockResponseStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const createSalonTimeBlockResponseEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const CreateSalonTimeBlockResponse = zod.object({
+  "id": zod.string(),
+  "employeeId": zod.string(),
+  "date": zod.string().regex(createSalonTimeBlockResponseDateRegExp),
+  "startTime": zod.string().regex(createSalonTimeBlockResponseStartTimeRegExp),
+  "endTime": zod.string().regex(createSalonTimeBlockResponseEndTimeRegExp),
+  "reason": zod.string()
+})
+
+
+/**
+ * @summary Delete an owner-created intraday employee block
+ */
+export const DeleteSalonTimeBlockParams = zod.object({
+  "timeBlockId": zod.coerce.string()
+})
+
+export const DeleteSalonTimeBlockResponse = zod.void()
+
+
+/**
+ * @summary Search available owner booking slots over seven calendar days
+ */
+export const searchSalonAvailabilityQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const searchSalonAvailabilityQueryLimitDefault = 50;
+export const searchSalonAvailabilityQueryLimitMax = 100;
+
+
+
+export const SearchSalonAvailabilityQueryParams = zod.object({
+  "serviceId": zod.coerce.string(),
+  "startDate": zod.coerce.string().regex(searchSalonAvailabilityQueryStartDateRegExp),
+  "employeeId": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().int().min(1).max(searchSalonAvailabilityQueryLimitMax).default(searchSalonAvailabilityQueryLimitDefault)
+})
+
+export const searchSalonAvailabilityResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const searchSalonAvailabilityResponseStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const searchSalonAvailabilityResponseEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const SearchSalonAvailabilityResponseItem = zod.object({
+  "date": zod.string().regex(searchSalonAvailabilityResponseDateRegExp),
+  "startTime": zod.string().regex(searchSalonAvailabilityResponseStartTimeRegExp),
+  "endTime": zod.string().regex(searchSalonAvailabilityResponseEndTimeRegExp),
+  "employeeId": zod.string(),
+  "employeeName": zod.string()
+})
+export const SearchSalonAvailabilityResponse = zod.array(SearchSalonAvailabilityResponseItem)
+
+
+/**
+ * @summary Get active employee schedules and all-day leave for an owner calendar day
+ */
+export const getSalonCalendarDayQueryDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetSalonCalendarDayQueryParams = zod.object({
+  "date": zod.coerce.string().regex(getSalonCalendarDayQueryDateRegExp)
+})
+
+export const getSalonCalendarDayResponseScheduleWindowsItemStartTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const getSalonCalendarDayResponseScheduleWindowsItemEndTimeRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const getSalonCalendarDayResponseScheduleWindowsItemBreakStartRegExp = new RegExp('^\\d{2}:\\d{2}$');
+export const getSalonCalendarDayResponseScheduleWindowsItemBreakEndRegExp = new RegExp('^\\d{2}:\\d{2}$');
+
+
+export const GetSalonCalendarDayResponseItem = zod.object({
+  "employeeId": zod.string(),
+  "name": zod.string(),
+  "role": zod.string(),
+  "hasExplicitSchedule": zod.boolean(),
+  "scheduleWindows": zod.array(zod.object({
+  "startTime": zod.string().regex(getSalonCalendarDayResponseScheduleWindowsItemStartTimeRegExp),
+  "endTime": zod.string().regex(getSalonCalendarDayResponseScheduleWindowsItemEndTimeRegExp),
+  "breakStart": zod.string().regex(getSalonCalendarDayResponseScheduleWindowsItemBreakStartRegExp).nullable(),
+  "breakEnd": zod.string().regex(getSalonCalendarDayResponseScheduleWindowsItemBreakEndRegExp).nullable()
+})),
+  "unavailable": zod.boolean(),
+  "unavailableReason": zod.string().nullable()
+})
+export const GetSalonCalendarDayResponse = zod.array(GetSalonCalendarDayResponseItem)
+
+
+/**
  * @summary Create an atomic salon appointment series
  */
 export const createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
@@ -2143,6 +2289,7 @@ export const CreateSalonAppointmentSeriesBody = zod.object({
 }).optional()
 }))
 
+export const createSalonAppointmentSeriesResponseAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const createSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 
@@ -2161,7 +2308,7 @@ export const CreateSalonAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(createSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -2267,6 +2414,7 @@ export const MoveSalonAppointmentSeriesBody = zod.object({
   "startTime": zod.string().regex(moveSalonAppointmentSeriesBodyStartTimeRegExp).optional()
 })
 
+export const moveSalonAppointmentSeriesResponseAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const moveSalonAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 
@@ -2285,7 +2433,7 @@ export const MoveSalonAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(moveSalonAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -2422,6 +2570,7 @@ export const CreateEmployeeAppointmentSeriesBody = zod.object({
 }).optional()
 }))
 
+export const createEmployeeAppointmentSeriesResponseAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const createEmployeeAppointmentSeriesResponseAppointmentsItemTravelFeeMin = 0;
 
 
@@ -2440,7 +2589,7 @@ export const CreateEmployeeAppointmentSeriesResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(createEmployeeAppointmentSeriesResponseAppointmentsItemDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),
@@ -2525,6 +2674,7 @@ export const UpdateSalonAppointmentBody = zod.object({
   "notes": zod.string().optional()
 })
 
+export const updateSalonAppointmentResponseDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const updateSalonAppointmentResponseTravelFeeMin = 0;
 
 
@@ -2540,7 +2690,7 @@ export const UpdateSalonAppointmentResponse = zod.object({
   "serviceName": zod.string(),
   "employeeId": zod.string().nullable(),
   "employeeName": zod.string(),
-  "date": zod.coerce.date(),
+  "date": zod.string().regex(updateSalonAppointmentResponseDateRegExp),
   "startTime": zod.string(),
   "endTime": zod.string(),
   "durationMinutes": zod.number(),

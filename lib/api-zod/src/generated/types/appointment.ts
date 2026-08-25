@@ -22,7 +22,8 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
-  date: Date;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
   startTime: string;
   endTime: string;
   durationMinutes: number;

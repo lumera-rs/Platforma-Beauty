@@ -187,12 +187,15 @@ import type {
   EmployeeLeaveRequestCreate,
   EmployeePerformanceMetrics,
   EmployeeShiftSwapOverview,
+  EmployeeTimeBlock,
+  EmployeeTimeBlockInput,
   FavoriteInput,
   FavoriteResult,
   GetBeautyJobModerationQueueParams,
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
   GetSalonAvailabilityParams,
+  GetSalonCalendarDayParams,
   GetSalonDashboardParams,
   GetShippingQuoteParams,
   GetWidgetAvailabilityParams,
@@ -224,6 +227,7 @@ import type {
   ListSalonClockEntriesParams,
   ListSalonCustomersParams,
   ListSalonNotificationsParams,
+  ListSalonTimeBlocksParams,
   ListSalonsParams,
   ListServiceTemplatesParams,
   LoginInput,
@@ -273,6 +277,8 @@ import type {
   SalonAppointmentCreate,
   SalonAppointmentSeriesInput,
   SalonAppointmentUpdate,
+  SalonAvailabilitySearchSlot,
+  SalonCalendarDayEmployee,
   SalonCard,
   SalonClockEmployeeSummary,
   SalonClockEntryUpdate,
@@ -292,6 +298,7 @@ import type {
   SalonResourceInput,
   SalonResourceUpdate,
   SalonShiftSwapRequest,
+  SearchSalonAvailabilityParams,
   Service,
   ServiceCategoryImageUploadInput,
   ServiceConsumption,
@@ -3987,6 +3994,400 @@ export const usePreviewSalonAppointmentSeries = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getPreviewSalonAppointmentSeriesMutationOptions(options));
     }
+
+export const getListSalonTimeBlocksUrl = (params: ListSalonTimeBlocksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/salon/time-blocks?${stringifiedParams}` : `/api/salon/time-blocks`
+}
+
+/**
+ * @summary List owner-created employee time blocks for a date
+ */
+export const listSalonTimeBlocks = async (params: ListSalonTimeBlocksParams, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeTimeBlock[]> => {
+
+  return customFetch<EmployeeTimeBlock[]>(getListSalonTimeBlocksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSalonTimeBlocksQueryKey = (params?: ListSalonTimeBlocksParams,) => {
+    return [
+    `/api/salon/time-blocks`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSalonTimeBlocksQueryOptions = <TData = Awaited<ReturnType<typeof listSalonTimeBlocks>>, TError = ErrorType<unknown>>(params: ListSalonTimeBlocksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonTimeBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSalonTimeBlocksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSalonTimeBlocks>>> = ({ signal }) => listSalonTimeBlocks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSalonTimeBlocks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSalonTimeBlocksQueryResult = NonNullable<Awaited<ReturnType<typeof listSalonTimeBlocks>>>
+export type ListSalonTimeBlocksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List owner-created employee time blocks for a date
+ */
+
+export function useListSalonTimeBlocks<TData = Awaited<ReturnType<typeof listSalonTimeBlocks>>, TError = ErrorType<unknown>>(
+ params: ListSalonTimeBlocksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSalonTimeBlocks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSalonTimeBlocksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSalonTimeBlockUrl = () => {
+
+
+
+
+  return `/api/salon/time-blocks`
+}
+
+/**
+ * @summary Create a same-day intraday employee block
+ */
+export const createSalonTimeBlock = async (employeeTimeBlockInput: EmployeeTimeBlockInput, options?: Parameters<typeof customFetch>[1]): Promise<EmployeeTimeBlock> => {
+
+  return customFetch<EmployeeTimeBlock>(getCreateSalonTimeBlockUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(employeeTimeBlockInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonTimeBlockMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonTimeBlock>>, TError,{data: BodyType<EmployeeTimeBlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonTimeBlock>>, TError,{data: BodyType<EmployeeTimeBlockInput>}, TContext> => {
+
+const mutationKey = ['createSalonTimeBlock'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonTimeBlock>>, {data: BodyType<EmployeeTimeBlockInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonTimeBlock(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonTimeBlockMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonTimeBlock>>>
+    export type CreateSalonTimeBlockMutationBody = BodyType<EmployeeTimeBlockInput>
+    export type CreateSalonTimeBlockMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a same-day intraday employee block
+ */
+export const useCreateSalonTimeBlock = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonTimeBlock>>, TError,{data: BodyType<EmployeeTimeBlockInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonTimeBlock>>,
+        TError,
+        {data: BodyType<EmployeeTimeBlockInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonTimeBlockMutationOptions(options));
+    }
+
+export const getDeleteSalonTimeBlockUrl = (timeBlockId: string,) => {
+
+
+
+
+  return `/api/salon/time-blocks/${timeBlockId}`
+}
+
+/**
+ * @summary Delete an owner-created intraday employee block
+ */
+export const deleteSalonTimeBlock = async (timeBlockId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSalonTimeBlockUrl(timeBlockId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSalonTimeBlockMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonTimeBlock>>, TError,{timeBlockId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSalonTimeBlock>>, TError,{timeBlockId: string}, TContext> => {
+
+const mutationKey = ['deleteSalonTimeBlock'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSalonTimeBlock>>, {timeBlockId: string}> = (props) => {
+          const {timeBlockId} = props ?? {};
+
+          return  deleteSalonTimeBlock(timeBlockId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSalonTimeBlockMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSalonTimeBlock>>>
+
+    export type DeleteSalonTimeBlockMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete an owner-created intraday employee block
+ */
+export const useDeleteSalonTimeBlock = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSalonTimeBlock>>, TError,{timeBlockId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSalonTimeBlock>>,
+        TError,
+        {timeBlockId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSalonTimeBlockMutationOptions(options));
+    }
+
+export const getSearchSalonAvailabilityUrl = (params: SearchSalonAvailabilityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/salon/availability/search?${stringifiedParams}` : `/api/salon/availability/search`
+}
+
+/**
+ * @summary Search available owner booking slots over seven calendar days
+ */
+export const searchSalonAvailability = async (params: SearchSalonAvailabilityParams, options?: Parameters<typeof customFetch>[1]): Promise<SalonAvailabilitySearchSlot[]> => {
+
+  return customFetch<SalonAvailabilitySearchSlot[]>(getSearchSalonAvailabilityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchSalonAvailabilityQueryKey = (params?: SearchSalonAvailabilityParams,) => {
+    return [
+    `/api/salon/availability/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchSalonAvailabilityQueryOptions = <TData = Awaited<ReturnType<typeof searchSalonAvailability>>, TError = ErrorType<void>>(params: SearchSalonAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSalonAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchSalonAvailabilityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchSalonAvailability>>> = ({ signal }) => searchSalonAvailability(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchSalonAvailability>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchSalonAvailabilityQueryResult = NonNullable<Awaited<ReturnType<typeof searchSalonAvailability>>>
+export type SearchSalonAvailabilityQueryError = ErrorType<void>
+
+
+/**
+ * @summary Search available owner booking slots over seven calendar days
+ */
+
+export function useSearchSalonAvailability<TData = Awaited<ReturnType<typeof searchSalonAvailability>>, TError = ErrorType<void>>(
+ params: SearchSalonAvailabilityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchSalonAvailability>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchSalonAvailabilityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSalonCalendarDayUrl = (params: GetSalonCalendarDayParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/salon/calendar-day?${stringifiedParams}` : `/api/salon/calendar-day`
+}
+
+/**
+ * @summary Get active employee schedules and all-day leave for an owner calendar day
+ */
+export const getSalonCalendarDay = async (params: GetSalonCalendarDayParams, options?: Parameters<typeof customFetch>[1]): Promise<SalonCalendarDayEmployee[]> => {
+
+  return customFetch<SalonCalendarDayEmployee[]>(getGetSalonCalendarDayUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSalonCalendarDayQueryKey = (params?: GetSalonCalendarDayParams,) => {
+    return [
+    `/api/salon/calendar-day`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSalonCalendarDayQueryOptions = <TData = Awaited<ReturnType<typeof getSalonCalendarDay>>, TError = ErrorType<unknown>>(params: GetSalonCalendarDayParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonCalendarDay>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSalonCalendarDayQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSalonCalendarDay>>> = ({ signal }) => getSalonCalendarDay(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSalonCalendarDay>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSalonCalendarDayQueryResult = NonNullable<Awaited<ReturnType<typeof getSalonCalendarDay>>>
+export type GetSalonCalendarDayQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get active employee schedules and all-day leave for an owner calendar day
+ */
+
+export function useGetSalonCalendarDay<TData = Awaited<ReturnType<typeof getSalonCalendarDay>>, TError = ErrorType<unknown>>(
+ params: GetSalonCalendarDayParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSalonCalendarDay>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSalonCalendarDayQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getCreateSalonAppointmentSeriesUrl = () => {
 

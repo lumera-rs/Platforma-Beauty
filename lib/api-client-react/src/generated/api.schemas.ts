@@ -676,6 +676,7 @@ export interface Review {
      */
   rating: number;
   text: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   serviceName: string;
 }
@@ -1224,6 +1225,7 @@ export interface Appointment {
   /** @nullable */
   employeeId: string | null;
   employeeName: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   date: string;
   startTime: string;
   endTime: string;
@@ -5614,6 +5616,73 @@ export interface WidgetSlot {
   employeeName: string;
 }
 
+export interface EmployeeTimeBlock {
+  id: string;
+  employeeId: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  reason: string;
+}
+
+export interface EmployeeTimeBlockInput {
+  /** @minLength 1 */
+  employeeId: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  reason: string;
+}
+
+export interface SalonAvailabilitySearchSlot {
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  date: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  employeeId: string;
+  employeeName: string;
+}
+
+export interface SalonCalendarScheduleWindow {
+  /** @pattern ^\d{2}:\d{2}$ */
+  startTime: string;
+  /** @pattern ^\d{2}:\d{2}$ */
+  endTime: string;
+  /**
+     * @nullable
+     * @pattern ^\d{2}:\d{2}$
+     */
+  breakStart: string | null;
+  /**
+     * @nullable
+     * @pattern ^\d{2}:\d{2}$
+     */
+  breakEnd: string | null;
+}
+
+export interface SalonCalendarDayEmployee {
+  employeeId: string;
+  name: string;
+  role: string;
+  hasExplicitSchedule: boolean;
+  scheduleWindows: SalonCalendarScheduleWindow[];
+  unavailable: boolean;
+  /** @nullable */
+  unavailableReason: string | null;
+}
+
 export interface WidgetAppointmentCreate {
   serviceId: string;
   /** @nullable */
@@ -6579,6 +6648,8 @@ export type ListSalonAppointmentsParams = {
 from?: string;
 to?: string;
 status?: string;
+employeeId?: string;
+serviceId?: string;
 /**
  * 1-based page number for stable pagination (date asc, startTime asc, id asc).
  * @minimum 1
@@ -6590,6 +6661,35 @@ page?: number;
  * @maximum 100
  */
 pageSize?: number;
+};
+
+export type ListSalonTimeBlocksParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date: string;
+employeeId?: string;
+};
+
+export type SearchSalonAvailabilityParams = {
+serviceId: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate: string;
+employeeId?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type GetSalonCalendarDayParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+date: string;
 };
 
 export type ListSalonCustomersParams = {

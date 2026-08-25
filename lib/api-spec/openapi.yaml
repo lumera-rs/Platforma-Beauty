@@ -831,6 +831,12 @@ paths:
         - name: status
           in: query
           schema: { type: string }
+        - name: employeeId
+          in: query
+          schema: { type: string }
+        - name: serviceId
+          in: query
+          schema: { type: string }
         - name: page
           in: query
           description: 1-based page number for stable pagination (date asc, startTime asc, id asc).
@@ -878,6 +884,99 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesPreview" }
+  /salon/time-blocks:
+    get:
+      operationId: listSalonTimeBlocks
+      tags: [salon-management]
+      summary: List owner-created employee time blocks for a date
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: employeeId
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Time blocks
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/EmployeeTimeBlock" } }
+    post:
+      operationId: createSalonTimeBlock
+      tags: [salon-management]
+      summary: Create a same-day intraday employee block
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmployeeTimeBlockInput" }
+      responses:
+        "201":
+          description: Created time block
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeTimeBlock" }
+        "409": { description: The block overlaps an active appointment }
+  /salon/time-blocks/{timeBlockId}:
+    delete:
+      operationId: deleteSalonTimeBlock
+      tags: [salon-management]
+      summary: Delete an owner-created intraday employee block
+      parameters:
+        - name: timeBlockId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+        "404": { description: Time block not found }
+  /salon/availability/search:
+    get:
+      operationId: searchSalonAvailability
+      tags: [salon-management]
+      summary: Search available owner booking slots over seven calendar days
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: startDate
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        - name: employeeId
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Chronological available slots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SalonAvailabilitySearchSlot" }
+        "404": { description: Service or employee not found in the active salon }
+  /salon/calendar-day:
+    get:
+      operationId: getSalonCalendarDay
+      tags: [salon-management]
+      summary: Get active employee schedules and all-day leave for an owner calendar day
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        "200":
+          description: Active employees with their explicit schedule windows and approved all-day leave
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SalonCalendarDayEmployee" } }
   /salon/appointment-series:
     post:
       operationId: createSalonAppointmentSeries
@@ -6132,7 +6231,7 @@ components:
         verifiedBooking: { type: boolean }
         rating: { type: number, minimum: 1, maximum: 5, multipleOf: 1 }
         text: { type: string }
-        date: { type: string, format: date }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         serviceName: { type: string }
       required: [id, authorName, avatarUrl, verifiedBooking, rating, text, date, serviceName]
     CustomerReview:
@@ -6203,7 +6302,7 @@ components:
         serviceName: { type: string }
         employeeId: { type: ["string", "null"] }
         employeeName: { type: string }
-        date: { type: string, format: date }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
         startTime: { type: string }
         endTime: { type: string }
         durationMinutes: { type: number }
@@ -9311,6 +9410,55 @@ components:
         employeeId: { type: string }
         employeeName: { type: string }
       required: [start, end, employeeId, employeeName]
+    EmployeeTimeBlock:
+      type: object
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        reason: { type: string }
+      required: [id, employeeId, date, startTime, endTime, reason]
+    EmployeeTimeBlockInput:
+      type: object
+      properties:
+        employeeId: { type: string, minLength: 1 }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        reason: { type: string, minLength: 1, maxLength: 500 }
+      required: [employeeId, date, startTime, endTime, reason]
+    SalonAvailabilitySearchSlot:
+      type: object
+      properties:
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        startTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        employeeId: { type: string }
+        employeeName: { type: string }
+      required: [date, startTime, endTime, employeeId, employeeName]
+    SalonCalendarScheduleWindow:
+      type: object
+      properties:
+        startTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        endTime: { type: string, pattern: '^\d{2}:\d{2}$' }
+        breakStart: { type: ["string", "null"], pattern: '^\d{2}:\d{2}$' }
+        breakEnd: { type: ["string", "null"], pattern: '^\d{2}:\d{2}$' }
+      required: [startTime, endTime, breakStart, breakEnd]
+    SalonCalendarDayEmployee:
+      type: object
+      properties:
+        employeeId: { type: string }
+        name: { type: string }
+        role: { type: string }
+        hasExplicitSchedule: { type: boolean }
+        scheduleWindows:
+          type: array
+          items: { $ref: "#/components/schemas/SalonCalendarScheduleWindow" }
+        unavailable: { type: boolean }
+        unavailableReason: { type: ["string", "null"] }
+      required: [employeeId, name, role, hasExplicitSchedule, scheduleWindows, unavailable, unavailableReason]
     WidgetAppointmentCreate:
       type: object
       properties:
