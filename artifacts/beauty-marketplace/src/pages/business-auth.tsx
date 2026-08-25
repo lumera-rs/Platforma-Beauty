@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,6 +14,7 @@ import { PasswordInput } from "@/components/password-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { homeForRole } from "@/lib/role-routing";
+import { getSafeReturnTo } from "@/lib/auth-return";
 
 const loginSchema = z.object({
   email: z.string().email("Unesite validnu email adresu."),
@@ -40,11 +41,13 @@ type BusinessAuthProps = {
 
 export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
   const { data: currentUser, isLoading } = useGetCurrentUser();
   const login = useLogin();
   const register = useRegisterBusiness();
   const oauthBusiness = new URLSearchParams(window.location.search).get("oauth") === "1";
+  const returnTo = getSafeReturnTo(searchString);
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -79,11 +82,13 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
       });
       return;
     }
-    setLocation(homeForRole(currentUser.user.role));
-  }, [currentUser, oauthBusiness, registrationForm, setLocation]);
+    setLocation(returnTo ?? homeForRole(currentUser.user.role));
+  }, [currentUser, oauthBusiness, registrationForm, returnTo, setLocation]);
 
   const continueWith = (provider: "google" | "facebook") => {
-    window.location.assign(`/api/auth/oauth/${provider}/start?flow=business`);
+    const params = new URLSearchParams({ flow: "business" });
+    if (returnTo) params.set("returnTo", returnTo);
+    window.location.assign(`/api/auth/oauth/${provider}/start?${params.toString()}`);
   };
 
   if (isLoading) {
@@ -137,7 +142,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         login.mutate({ data: values }, {
                           onSuccess: (response) => {
                             toast.success("Uspešna prijava", { description: "Otvaramo vaš poslovni prostor." });
-                            setLocation(homeForRole(response.user.role));
+                            setLocation(returnTo ?? homeForRole(response.user.role));
                           },
                           onError: () => toast.error("Prijava nije uspela", { description: "Proverite email i lozinku." }),
                         });
@@ -186,7 +191,7 @@ export default function BusinessAuth({ initialTab }: BusinessAuthProps) {
                         register.mutate({ data: values }, {
                           onSuccess: (response) => {
                             toast.success("Poslovni nalog je kreiran", { description: "Dobrodošli u LUMERA Biznis." });
-                            setLocation(homeForRole(response.user.role));
+                            setLocation(returnTo ?? homeForRole(response.user.role));
                           },
                           onError: () => toast.error("Registracija nije uspela", { description: "Proverite podatke ili pokušajte sa drugom email adresom." }),
                         });

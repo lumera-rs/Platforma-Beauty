@@ -9,11 +9,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useLogin, useRegister, useGetCurrentUser } from "@workspace/api-client-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Facebook, Loader2, Mail } from "lucide-react";
 import { homeForRole } from "@/lib/role-routing";
+import { getSafeReturnTo } from "@/lib/auth-return";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Unesite validnu email adresu" }),
@@ -31,9 +32,11 @@ const registerSchema = z.object({
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const studentPortal = window.location.pathname.startsWith("/student/");
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = new URLSearchParams(searchString);
   const tab = searchParams.get("tab") === "register" ? "register" : "login";
+  const returnTo = getSafeReturnTo(searchString);
   
   const { data: userResp, isLoading: isLoadingUser } = useGetCurrentUser();
   const { toast } = useToast();
@@ -44,9 +47,9 @@ export default function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (userResp?.user) {
-      setLocation(homeForRole(userResp.user.role));
+      setLocation(returnTo ?? homeForRole(userResp.user.role));
     }
-  }, [userResp, setLocation]);
+  }, [returnTo, userResp, setLocation]);
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -62,7 +65,7 @@ export default function Login() {
     loginMutation.mutate({ data: values }, {
       onSuccess: (res) => {
         toast.success("Uspešna prijava", { description: "Dobrodošli nazad!" });
-        setLocation(homeForRole(res.user.role));
+        setLocation(returnTo ?? homeForRole(res.user.role));
       },
       onError: (err: unknown) => {
         const message = (err as { data?: { error?: string }; response?: { data?: { error?: string } } })?.data?.error
@@ -92,7 +95,7 @@ export default function Login() {
     registerMutation.mutate({ data: registrationValues }, {
       onSuccess: (res) => {
         toast.success("Uspešna registracija", { description: "Vaš klijentski nalog je kreiran!" });
-        setLocation(homeForRole(res.user.role));
+        setLocation(returnTo ?? homeForRole(res.user.role));
       },
       onError: (err) => {
         toast.error("Greška", { description: "Došlo je do greške prilikom registracije." });
@@ -116,7 +119,9 @@ export default function Login() {
   };
 
   const continueWith = (provider: "google" | "facebook") => {
-    window.location.assign(`/api/auth/oauth/${provider}/start?flow=customer`);
+    const params = new URLSearchParams({ flow: "customer" });
+    if (returnTo) params.set("returnTo", returnTo);
+    window.location.assign(`/api/auth/oauth/${provider}/start?${params.toString()}`);
   };
 
   if (isLoadingUser) return null; // or a spinner

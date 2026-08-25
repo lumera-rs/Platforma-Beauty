@@ -12,10 +12,12 @@ import {
   Route,
   Switch,
   useLocation,
+  useSearch,
   Router as WouterRouter,
 } from 'wouter';
 
 import { homeForRole } from './lib/role-routing';
+import { loginPathWithReturnTo } from './lib/auth-return';
 
 // Every page boundary stays out of the initial bundle. Shared application
 // providers, guards and the small route fallback are intentionally eager.
@@ -150,6 +152,7 @@ function RoleGuard({
   allowEmployeePasswordChange?: boolean;
 }) {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { data, isLoading } = useGetCurrentUser();
   const user = data?.user;
   const allowed = user ? allowedRoles.includes(user.role) : false;
@@ -157,10 +160,13 @@ function RoleGuard({
 
   useEffect(() => {
     if (isLoading) return;
-    if (!user) setLocation(loginPath);
+    if (!user) {
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      setLocation(loginPathWithReturnTo(loginPath, currentPath));
+    }
     else if (passwordChangeRequired) setLocation("/zaposleni/promeni-lozinku");
     else if (!allowed) setLocation(homeForRole(user.role));
-  }, [allowed, isLoading, loginPath, passwordChangeRequired, setLocation, user]);
+  }, [allowed, isLoading, loginPath, passwordChangeRequired, searchString, setLocation, user]);
 
   if (isLoading || !allowed || passwordChangeRequired) {
     return (
@@ -204,7 +210,7 @@ function Router() {
           </RoleGuard>
         </Route>
         <Route path="/moji-oglasi">
-          <RoleGuard allowedRoles={['CUSTOMER']} loginPath="/prijava">
+          <RoleGuard allowedRoles={['CUSTOMER', 'STUDENT']} loginPath="/prijava">
             <CustomerBeautyJobs />
           </RoleGuard>
         </Route>
@@ -272,7 +278,7 @@ function Router() {
         <Route path="/vlasnik/prodavnica/pregled"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerCheckoutReviewPage /></RoleGuard></Route>
         <Route path="/vlasnik/prodavnica/porudzbina/:id/potvrda"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrderConfirmationPage /></RoleGuard></Route>
         <Route path="/vlasnik/shop/proizvodi/:productId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerProductDetail /></RoleGuard></Route>
-        <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
+        <Route path="/biznis/poslovi"><RoleGuard allowedRoles={['SALON_OWNER', 'EDUCATION_CENTER_OWNER', 'INSTRUCTOR', 'ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><BusinessBeautyJobs /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine/:orderId"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/porudzbine"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerOrders /></RoleGuard></Route>
         <Route path="/vlasnik/obavestenja"><RoleGuard allowedRoles={['SALON_OWNER']} loginPath="/poslovna-prijava"><OwnerNotifications /></RoleGuard></Route>

@@ -618,7 +618,7 @@ router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
 router.get("/beauty-jobs/inbox", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
   const scope = salon ? eq(beautyJobListingsTable.salonId, salon.id) : eq(beautyJobListingsTable.userId, user.id);
-  const contacts = await db.select({ contact: beautyJobContactsTable, listingTitle: beautyJobListingsTable.title, applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}` }).from(beautyJobContactsTable).innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id)).innerJoin(usersTable, eq(beautyJobContactsTable.applicantUserId, usersTable.id)).where(scope).orderBy(desc(beautyJobContactsTable.createdAt));
+  const contacts = await db.select({ contact: beautyJobContactsTable, listingTitle: beautyJobListingsTable.title, applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}` }).from(beautyJobContactsTable).innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id)).innerJoin(usersTable, eq(beautyJobContactsTable.applicantUserId, usersTable.id)).where(or(scope, eq(beautyJobContactsTable.applicantUserId, user.id))).orderBy(desc(beautyJobContactsTable.createdAt));
   res.json(ListBeautyJobInboxResponse.parse({ contacts: contacts.map((r) => contactView(r.contact, { listingTitle: r.listingTitle, applicantDisplayName: r.applicantDisplayName })) }));
 } catch (e) { next(e); } });
 router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try {

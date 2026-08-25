@@ -589,6 +589,35 @@ function oauthFailurePath(flow: string, reason: string) {
   return `${page}${page.includes("?") ? "&" : "?"}oauth_error=${encodeURIComponent(reason)}`;
 }
 
+function safeInternalReturnPath(value: unknown) {
+  if (typeof value !== "string" || value.length > 2_000) return null;
+  try {
+    const placeholderOrigin = "https://lumera-return.invalid";
+    const url = new URL(value, placeholderOrigin);
+    if (url.origin !== placeholderOrigin || !url.pathname.startsWith("/") || url.pathname.startsWith("//")) return null;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function oauthBrowserState(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      state?: unknown;
+      returnTo?: unknown;
+    };
+    if (typeof parsed.state !== "string") return null;
+    return {
+      state: parsed.state,
+      returnTo: safeInternalReturnPath(parsed.returnTo),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function emailCampaignView(campaign: typeof emailCampaignsTable.$inferSelect) {
   return {
     id: campaign.id,
@@ -3177,6 +3206,7 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
   if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
   const requestedFlow = typeof req.query.flow === "string" ? req.query.flow : "";
   const flow = requestedFlow === "business" ? "business" : requestedFlow === "link" ? "link" : "customer";
+  const returnTo = flow === "link" ? null : safeInternalReturnPath(req.query.returnTo);
   const linkingUser = flow === "link" ? await getCurrentUser(req) : null;
   if (flow === "link" && !linkingUser) {
     res.redirect(oauthFailurePath("link", "Prijavite se da biste dodali način prijave."));
@@ -3196,7 +3226,7 @@ router.get("/auth/oauth/:provider/start", async (req, res): Promise<void> => {
     codeVerifier,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
   });
-  res.cookie(OAUTH_STATE_COOKIE, state, {
+  res.cookie(OAUTH_STATE_COOKIE, Buffer.from(JSON.stringify({ state, returnTo })).toString("base64url"), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -3222,12 +3252,13 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
   const provider = req.params.provider;
   if (provider !== "google" && provider !== "facebook") { res.status(404).json({ error: "Nepoznat OAuth provajder." }); return; }
   const state = typeof req.query.state === "string" ? req.query.state : "";
-  const browserState = req.cookies?.[OAUTH_STATE_COOKIE];
+  const browserState = oauthBrowserState(req.cookies?.[OAUTH_STATE_COOKIE]);
   res.clearCookie(OAUTH_STATE_COOKIE, { path: "/api/auth/oauth" });
-  if (typeof browserState !== "string" || browserState !== state) {
+  if (!browserState || browserState.state !== state) {
     res.redirect(oauthFailurePath("customer", "Prijava nije povezana sa ovim browserom. Pokušajte ponovo."));
     return;
   }
+  const returnTo = browserState.returnTo;
   const [loginState] = await db.select().from(oauthLoginStatesTable).where(and(eq(oauthLoginStatesTable.state, state), eq(oauthLoginStatesTable.provider, provider))).limit(1);
   if (!loginState || loginState.expiresAt <= new Date()) { res.redirect(oauthFailurePath(loginState?.flow ?? "customer", "Prijava je istekla. Pokušajte ponovo.")); return; }
   await db.delete(oauthLoginStatesTable).where(eq(oauthLoginStatesTable.id, loginState.id));
@@ -3313,7 +3344,7 @@ router.get("/auth/oauth/:provider/callback", async (req, res): Promise<void> => 
     });
     const token = await createSession(user.id);
     res.cookie(sessionCookieName, token, cookieOptions());
-    res.redirect(loginState.flow === "business" ? "/poslovna-registracija?oauth=1" : "/moj-nalog");
+    res.redirect(returnTo ?? (loginState.flow === "business" ? "/poslovna-registracija?oauth=1" : "/moj-nalog"));
   } catch {
     res.redirect(oauthFailurePath(loginState.flow, "Nismo mogli da potvrdimo nalog kod provajdera."));
   }

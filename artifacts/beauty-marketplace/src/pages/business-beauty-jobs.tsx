@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import { format } from "date-fns";
 import { srLatn } from "date-fns/locale";
 import {
@@ -22,7 +22,8 @@ import {
   useReplyToBeautyJobContact,
   useMarkBeautyJobNotificationRead,
   BeautyJobListing,
-  BeautyJobContact
+  BeautyJobContact,
+  useGetCurrentUser
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BusinessLayout } from "@/components/business-layout";
@@ -42,9 +43,19 @@ import { toast } from "sonner";
 
 export default function BusinessBeautyJobsPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("my-jobs");
+  const searchString = useSearch();
+  const searchParams = new URLSearchParams(searchString);
+  const requestedTab = searchParams.get("tab");
+  const requestedListingId = searchParams.get("listingId");
+  const requestedContactId = searchParams.get("contactId");
+  const [activeTab, setActiveTab] = useState(
+    requestedTab === "saved" || requestedTab === "inbox" || requestedTab === "rentals" || requestedTab === "notifications"
+      ? requestedTab
+      : "my-jobs",
+  );
   const [editingJob, setEditingJob] = useState<BeautyJobListing | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const { data: currentUser } = useGetCurrentUser();
   
   const { data: myJobs, isLoading: isLoadingMyJobs } = useListMyBeautyJobs({ query: { queryKey: getListMyBeautyJobsQueryKey() } });
   const { data: savedJobs, isLoading: isLoadingSaved } = useListSavedBeautyJobs({ query: { queryKey: getListSavedBeautyJobsQueryKey() } });
@@ -60,6 +71,30 @@ export default function BusinessBeautyJobsPage() {
   const markReadMutation = useMarkBeautyJobNotificationRead();
   const respondRentalMutation = useRespondToBeautyJobRentalRequest();
   const [respondingRequestId, setRespondingRequestId] = useState<string>();
+
+  useEffect(() => {
+    if (requestedTab === "my-jobs" || requestedTab === "saved" || requestedTab === "inbox" || requestedTab === "rentals" || requestedTab === "notifications") {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
+
+  useEffect(() => {
+    if (!requestedListingId || !myJobs?.items) return;
+    const requestedListing = myJobs.items.find((job) => job.id === requestedListingId);
+    if (!requestedListing) return;
+    setActiveTab("my-jobs");
+    setEditingJob(requestedListing);
+    setIsFormOpen(true);
+  }, [myJobs?.items, requestedListingId]);
+
+  useEffect(() => {
+    if (!requestedContactId || !inbox?.contacts?.some((contact) => contact.id === requestedContactId)) return;
+    setActiveTab("inbox");
+    const timeout = window.setTimeout(() => {
+      document.getElementById(`beauty-job-contact-${requestedContactId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [inbox?.contacts, requestedContactId]);
 
   const handleToggleSaved = (jobId: string, currentState: boolean) => {
     toggleSaved.mutate({ listingId: jobId }, {
@@ -234,11 +269,17 @@ export default function BusinessBeautyJobsPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {inbox?.contacts?.map((contact) => (
-                  <div key={contact.id} className="p-5 rounded-xl border bg-card shadow-sm space-y-4 transition-all hover:border-primary/20">
+                {inbox?.contacts?.map((contact) => {
+                  const isOutgoing = contact.applicantUserId === currentUser?.user?.id;
+                  return (
+                  <div
+                    id={`beauty-job-contact-${contact.id}`}
+                    key={contact.id}
+                    className={`p-5 rounded-xl border bg-card shadow-sm space-y-4 transition-all hover:border-primary/20 ${requestedContactId === contact.id ? "ring-2 ring-primary ring-offset-2" : ""}`}
+                  >
                     <div className="flex justify-between items-start gap-4">
                       <div>
-                        <h4 className="font-medium text-foreground text-lg">{contact.applicantDisplayName}</h4>
+                        <h4 className="font-medium text-foreground text-lg">{isOutgoing ? "Vaš kontakt" : contact.applicantDisplayName}</h4>
                         <p className="text-sm font-medium text-primary">Oglas: {contact.listingTitle}</p>
                       </div>
                       <div className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-md shrink-0">
@@ -251,11 +292,13 @@ export default function BusinessBeautyJobsPage() {
                     {contact.authorReply ? (
                       <div className="pl-4 border-l-2 border-primary/50 mt-4 space-y-2">
                         <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                          <CornerDownRight className="w-3.5 h-3.5" /> Vaš odgovor
+                          <CornerDownRight className="w-3.5 h-3.5" /> {isOutgoing ? "Odgovor autora" : "Vaš odgovor"}
                         </p>
                         <p className="text-sm text-foreground">{contact.authorReply}</p>
                         <Badge variant="outline" className="mt-2 text-xs bg-card">Status kandidata: {contact.authorStatus}</Badge>
                       </div>
+                    ) : isOutgoing ? (
+                      <Badge variant="outline">Čeka se odgovor autora</Badge>
                     ) : (
                       <div className="pt-2 flex justify-end">
                         <Dialog open={replyContact?.id === contact.id} onOpenChange={(open) => {
@@ -296,7 +339,8 @@ export default function BusinessBeautyJobsPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </TabsContent>

@@ -35,7 +35,7 @@ async function request(base: string, path: string, token?: string, method = "GET
   return { status: response.status, body: await response.json() };
 }
 
-async function user(role: "ADMIN" | "CUSTOMER" | "SALON_EMPLOYEE" | "SALON_OWNER", label: string) {
+async function user(role: "ADMIN" | "CUSTOMER" | "INSTRUCTOR" | "SALON_EMPLOYEE" | "SALON_OWNER" | "STUDENT", label: string) {
   const passwordHash = await hashPassword(`beauty-${suffix}`);
   const [created] = await db.insert(usersTable).values({
     firstName: label, lastName: "Beauty HTTP", email: `${label}-${suffix}@example.test`,
@@ -79,13 +79,16 @@ async function insertApproved(categoryId: string, authorId: string, title: strin
 async function run(): Promise<void> {
   await ensureBusinessGrowthSchema();
   let originalSettings: typeof beautyJobPlatformSettingsTable.$inferSelect | undefined;
-  const sentEmails: Array<{ email: string; subject: string; idempotencyKey: string }> = [];
+  const originalAppBaseUrl = process.env["APP_BASE_URL"];
+  process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
+  const sentEmails: Array<{ email: string; subject: string; idempotencyKey: string; htmlContent: string }> = [];
   const routeTransport: TransactionalEmailTransport = {
     async send(input) {
       sentEmails.push({
         email: input.to.email,
         subject: input.subject,
         idempotencyKey: input.idempotencyKey,
+          htmlContent: input.htmlContent,
       });
       return { messageId: `beauty-jobs-test-${sentEmails.length}` };
     },
@@ -97,6 +100,8 @@ async function run(): Promise<void> {
     const admin = await user("ADMIN", "admin");
     const customer = await user("CUSTOMER", "customer");
     const applicant = await user("CUSTOMER", "applicant");
+    const student = await user("STUDENT", "student-applicant");
+    const instructor = await user("INSTRUCTOR", "instructor-applicant");
     const employee = await user("SALON_EMPLOYEE", "employee");
     const salonOwner = await owner("owner");
     const otherOwner = await owner("other-owner");
@@ -148,6 +153,23 @@ async function run(): Promise<void> {
       sentEmails.filter((email) => email.subject.includes("Oglas je odobren")).length,
       1,
       "concurrent identical moderation emits one email",
+    );
+    assert.ok(
+      sentEmails.find((email) => email.subject.includes("Oglas je odobren"))?.htmlContent.includes(
+        `https://beauty-links.example.test/moji-oglasi?tab=my-jobs&amp;listingId=${customerListing.id}`,
+      ),
+      "moderation email links to the exact customer listing management screen",
+    );
+    assert.equal(
+      (await request(base, `/admin/beauty-jobs/${ownerListing.id}/moderation`, admin.token, "POST", { action: "approve" })).status,
+      200,
+    );
+    assert.ok(
+      sentEmails.find((email) => email.email === salonOwner.user.email.toLowerCase()
+        && email.subject.includes("Oglas je odobren"))?.htmlContent.includes(
+        `https://beauty-links.example.test/biznis/poslovi?tab=my-jobs&amp;listingId=${ownerListing.id}`,
+      ),
+      "moderation email uses the business management route for a salon owner",
     );
     const initialModerationNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.listingId, customerListing.id));
@@ -281,6 +303,12 @@ async function run(): Promise<void> {
     assert.equal(contactEmails.length, 1, "new contact sends exactly one email");
     assert.equal(contactEmails[0]!.email, customer.user.email.toLowerCase(), "contact email is isolated to listing author");
     assert.notEqual(contactEmails[0]!.email, applicant.user.email.toLowerCase(), "contact email is never sent back to applicant");
+    assert.ok(
+      contactEmails[0]!.htmlContent.includes(
+        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
+      ),
+      "new-contact email links to the exact inbox conversation",
+    );
     assert.equal((await request(base, "/beauty-jobs/inbox", customer.token)).body.contacts.some((x: any) => x.id === contact.body.id), true);
     assert.equal((await request(base, `/beauty-jobs/contacts/${contact.body.id}`, otherOwner.token, "PATCH", { authorReply: "Neovlašćeno" })).status, 404);
     const concurrentReplies = await Promise.all([
@@ -292,6 +320,72 @@ async function run(): Promise<void> {
     const replyEmails = sentEmails.filter((email) => email.subject.includes("Dobili ste odgovor"));
     assert.equal(replyEmails.length, 1, "editing an existing reply does not duplicate the reply email");
     assert.equal(replyEmails[0]!.email, applicant.user.email.toLowerCase(), "reply email is isolated to the applicant");
+    assert.ok(
+      replyEmails[0]!.htmlContent.includes(
+        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${contact.body.id}`,
+      ),
+      "author-reply email links to the applicant's exact inbox conversation",
+    );
+    const applicantInbox = await request(base, "/beauty-jobs/inbox", applicant.token);
+    assert.equal(
+      applicantInbox.body.contacts.some((item: any) => item.id === contact.body.id && item.authorReply),
+      true,
+      "the applicant can read the replied conversation reached from email",
+    );
+    const unrelatedInbox = await request(base, "/beauty-jobs/inbox", otherOwner.token);
+    assert.equal(
+      unrelatedInbox.body.contacts.some((item: any) => item.id === contact.body.id),
+      false,
+      "an unrelated user cannot read the conversation reached from email",
+    );
+    const studentContact = await request(base, `/beauty-jobs/${customerListing.id}/contact`, student.token, "POST", {
+      message: "Studentski kontakt za proveru povratne putanje.",
+    });
+    assert.equal(studentContact.status, 201);
+    assert.equal(
+      (await request(base, `/beauty-jobs/contacts/${studentContact.body.id}`, customer.token, "PATCH", {
+        authorReply: "Odgovor za studentski nalog.",
+      })).status,
+      200,
+    );
+    assert.ok(
+      sentEmails.find((email) => email.email === student.user.email.toLowerCase()
+        && email.subject.includes("Dobili ste odgovor"))?.htmlContent.includes(
+        `https://beauty-links.example.test/moji-oglasi?tab=inbox&amp;contactId=${studentContact.body.id}`,
+      ),
+      "author-reply email uses the permitted customer inbox route for a student",
+    );
+    assert.equal(
+      (await request(base, "/beauty-jobs/inbox", student.token)).body.contacts.some(
+        (item: any) => item.id === studentContact.body.id && item.authorReply,
+      ),
+      true,
+      "the student recipient can read the conversation reached from email",
+    );
+    const instructorContact = await request(base, `/beauty-jobs/${customerListing.id}/contact`, instructor.token, "POST", {
+      message: "Instruktorski kontakt za proveru poslovne povratne putanje.",
+    });
+    assert.equal(instructorContact.status, 201);
+    assert.equal(
+      (await request(base, `/beauty-jobs/contacts/${instructorContact.body.id}`, customer.token, "PATCH", {
+        authorReply: "Odgovor za instruktorski nalog.",
+      })).status,
+      200,
+    );
+    assert.ok(
+      sentEmails.find((email) => email.email === instructor.user.email.toLowerCase()
+        && email.subject.includes("Dobili ste odgovor"))?.htmlContent.includes(
+        `https://beauty-links.example.test/biznis/poslovi?tab=inbox&amp;contactId=${instructorContact.body.id}`,
+      ),
+      "author-reply email uses the permitted business inbox route for an instructor",
+    );
+    assert.equal(
+      (await request(base, "/beauty-jobs/inbox", instructor.token)).body.contacts.some(
+        (item: any) => item.id === instructorContact.body.id && item.authorReply,
+      ),
+      true,
+      "the instructor recipient can read the conversation reached from email",
+    );
     const replyNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.contactId, contact.body.id));
     assert.equal(
@@ -315,6 +409,8 @@ async function run(): Promise<void> {
       subject: "Retry test",
       title: "Retry test",
       content: "Prolazni kvar mora ostati u outbox redu.",
+      listingId: customerListing.id,
+      contactId: contact.body.id,
     }, temporaryFailure);
     assert.deepEqual(firstRetryAttempt, { failed: true });
     assert.equal(failureCalls, 1);
@@ -354,6 +450,12 @@ async function run(): Promise<void> {
     const warningDeliveries = await db.select().from(emailDeliveriesTable)
       .where(eq(emailDeliveriesTable.eventKey, `beauty-job:expiry-warning:${warning.id}:recipient:${customer.user.id}`));
     assert.equal(warningDeliveries.length, 1, "repeated expiry sweeps keep one durable email delivery");
+    assert.ok(
+      warningDeliveries[0]?.htmlContent?.includes(
+        `https://beauty-links.example.test/moji-oglasi?tab=my-jobs&amp;listingId=${warning.id}`,
+      ),
+      "expiry warning links to the exact listing management screen",
+    );
     const warningNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.listingId, warning.id));
     assert.equal(
@@ -371,7 +473,25 @@ async function run(): Promise<void> {
     ]);
     assert.deepEqual(concurrent.map((x) => x.status).sort(), [201, 429], "one concurrent create must be rate limited");
     for (const result of concurrent) if (result.status === 201) createdListingIds.push(result.body.id);
+
+    delete process.env["APP_BASE_URL"];
+    await assert.rejects(
+      sendBeautyJobEmail({
+        eventKey: `beauty-job:missing-base-url:${suffix}`,
+        emailType: "beauty_job_moderation",
+        recipientUserId: customer.user.id,
+        subject: "Test konfiguracije",
+        title: "Test konfiguracije",
+        content: "Ovaj mejl ne sme ostati bez CTA linka.",
+        listingId: customerListing.id,
+      }),
+      /APP_BASE_URL/,
+      "missing production base URL must fail visibly instead of sending an email without a CTA",
+    );
+    process.env["APP_BASE_URL"] = "https://beauty-links.example.test/";
   } finally {
+    if (originalAppBaseUrl === undefined) delete process.env["APP_BASE_URL"];
+    else process.env["APP_BASE_URL"] = originalAppBaseUrl;
     setBeautyJobEmailTransportForTests(undefined);
     if (server) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
     if (originalSettings) await db.update(beautyJobPlatformSettingsTable).set({
