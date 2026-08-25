@@ -6996,6 +6996,9 @@ export type ListBeautyJobsParams = {
 category?: string;
 type?: ListBeautyJobsType;
 intent?: ListBeautyJobsIntent;
+/**
+ * Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.
+ */
 listingMode?: ListBeautyJobsListingMode;
 city?: string;
 region?: string;
@@ -7048,6 +7051,8 @@ export const ListBeautyJobsListingMode = {
   offering: 'offering',
   rental: 'rental',
   seeking: 'seeking',
+  seeking_work: 'seeking_work',
+  seeking_rental: 'seeking_rental',
 } as const;
 
 export type ListBeautyJobsSort = typeof ListBeautyJobsSort[keyof typeof ListBeautyJobsSort];
@@ -7064,6 +7069,9 @@ export const ListBeautyJobsSort = {
 export type GetBeautyJobModerationQueueParams = {
 status?: GetBeautyJobModerationQueueStatus;
 type?: GetBeautyJobModerationQueueType;
+/**
+ * Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.
+ */
 listingMode?: GetBeautyJobModerationQueueListingMode;
 category?: string;
 postedBy?: GetBeautyJobModerationQueuePostedBy;
@@ -7113,6 +7121,8 @@ export const GetBeautyJobModerationQueueListingMode = {
   offering: 'offering',
   rental: 'rental',
   seeking: 'seeking',
+  seeking_work: 'seeking_work',
+  seeking_rental: 'seeking_rental',
 } as const;
 
 export type GetBeautyJobModerationQueuePostedBy = typeof GetBeautyJobModerationQueuePostedBy[keyof typeof GetBeautyJobModerationQueuePostedBy];

@@ -7,6 +7,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { salonNotificationsQueryKey } from "@/lib/salon-notifications";
+import { salonOwnerNavLinks } from "@/lib/salon-owner-navigation";
+import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,20 +173,7 @@ export function BusinessNavbar() {
     
     switch (user.role) {
       case 'SALON_OWNER':
-        return [
-          { href: "/vlasnik", label: "Dashboard", guideId: "vl-dashboard" },
-          { href: "/vlasnik/kalendar", label: "Kalendar", guideId: "vl-kalendar" },
-          { href: "/vlasnik/usluge", label: "Usluge", guideId: "vl-usluge" },
-          { href: "/vlasnik/zaposleni", label: "Zaposleni", guideId: "vl-zaposleni" },
-          { href: "/vlasnik/radno-vreme", label: "Radno vreme", guideId: "vl-radno-vreme" },
-          { href: "/vlasnik/inventar", label: "Zalihe", guideId: "vl-inventar" },
-          { href: "/vlasnik/shop", label: "Shop", guideId: "vl-shop" },
-          { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine" },
-          { href: "/vlasnik/obavestenja", label: "Obaveštenja", guideId: "vl-obavestenja" },
-          { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije" },
-          { href: "/biznis/poslovi", label: "Poslovi", guideId: "vl-poslovi" },
-          { href: "/biznis/vodic", label: "Pomoć" },
-        ];
+        return salonOwnerNavLinks;
       case 'SALON_EMPLOYEE':
         return [
           { href: "/zaposleni", label: "Moj portal", guideId: "za-portal" },
@@ -221,7 +210,7 @@ export function BusinessNavbar() {
             </span>
           </Link>
 
-          <div className="hidden 2xl:flex items-center gap-6">
+          <div className={cn("hidden items-center gap-6", user?.role !== "SALON_OWNER" && "2xl:flex")}>
             {navLinks.map((link) => (
               <Link 
                 key={link.href} 
@@ -324,7 +313,7 @@ export function BusinessNavbar() {
             ref={mobileMenuButtonRef}
             variant="ghost" 
             size="icon" 
-            className="2xl:hidden text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground"
+            className={cn("text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-foreground", user?.role !== "SALON_OWNER" && "2xl:hidden")}
             onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
             aria-label={isMobileMenuOpen ? "Zatvori meni" : "Otvori meni"}
             data-testid="button-mobile-menu"
@@ -335,7 +324,23 @@ export function BusinessNavbar() {
       </div>
 
       {isMobileMenuOpen && (
-        <div ref={mobileMenuRef} className="2xl:hidden border-t border-white/10 bg-foreground" data-testid="business-mobile-menu">
+        <div
+          ref={mobileMenuRef}
+          className={cn(
+            "border-t border-white/10 bg-foreground",
+            user?.role === "SALON_OWNER"
+              ? "fixed inset-x-0 bottom-0 top-16 ml-auto w-full max-w-sm shadow-2xl"
+              : "2xl:hidden",
+          )}
+          data-testid="business-mobile-menu"
+        >
+          {user?.role === "SALON_OWNER" ? (
+            <SalonOwnerNavigation
+              variant="dark"
+              onNavigate={closeMobileMenu}
+              unreadNotificationCount={unreadNotificationCount}
+            />
+          ) : (
           <div className="container mx-auto px-4 py-4 flex flex-col gap-4">
             <Link 
               href="/"
@@ -383,34 +388,6 @@ export function BusinessNavbar() {
                 </div>
               );
             })}
-            {user?.role === "SALON_OWNER" && managedSalons.length > 1 && (
-              <label className="flex flex-col gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-3 text-sm font-medium text-background">
-                Aktivna lokacija
-                <select
-                  aria-label="Aktivni salon (mobilni)"
-                  disabled={isSwitchingSalon}
-                  className="rounded-md border border-white/20 bg-foreground px-2 py-2 text-sm text-background disabled:cursor-wait disabled:opacity-70"
-                  value={activeSalonId}
-                  onChange={(event) => {
-                    closeMobileMenu();
-                    void switchSalon(event.target.value);
-                  }}
-                >
-                  {managedSalons.map((salon) => <option className="text-foreground" key={salon.id} value={salon.id}>{salon.name}</option>)}
-                </select>
-              </label>
-            )}
-            {user?.role === "SALON_OWNER" && (
-              <Link
-                href="/vlasnik/prodavnica/korpa"
-                className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-background"
-                onClick={closeMobileMenu}
-              >
-                <span className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Korpa</span>
-                <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">{cart?.itemCount ?? 0}</span>
-              </Link>
-            )}
-            
             <div className="h-px bg-white/10 my-2" />
             
             {user ? (
@@ -442,6 +419,7 @@ export function BusinessNavbar() {
               </div>
             )}
           </div>
+          )}
         </div>
       )}
     </nav>

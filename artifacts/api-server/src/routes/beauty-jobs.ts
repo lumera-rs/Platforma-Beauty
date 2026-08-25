@@ -267,6 +267,8 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
    if (q.listingMode === "rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "offering"));
    if (q.listingMode === "offering") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "offering"));
    if (q.listingMode === "seeking") conditions.push(eq(beautyJobListingsTable.intent, "seeking"));
+   if (q.listingMode === "seeking_work") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "seeking"));
+   if (q.listingMode === "seeking_rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "seeking"));
    // Salon owners may not browse competing salon job offers. Freelance work,
    // rentals, seeking listings, their own listings, and all other audiences stay public.
    if (viewerSalon) conditions.push(sql`not (
@@ -766,10 +768,12 @@ router.get("/admin/beauty-jobs/queue", async (req, res, next) => { try {
   else conditions.push(eq(beautyJobListingsTable.status, "closed"));
   if (q.type && !["job", "equipment_rental", "space_rental", "freelance"].includes(q.type)) return bad(res);
   if (q.type) conditions.push(eq(beautyJobListingsTable.type, q.type as "job" | "equipment_rental" | "space_rental" | "freelance"));
-  if (q.listingMode && !["offering", "rental", "seeking"].includes(q.listingMode)) return bad(res);
+  if (q.listingMode && !["offering", "rental", "seeking", "seeking_work", "seeking_rental"].includes(q.listingMode)) return bad(res);
   if (q.listingMode === "rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]));
   if (q.listingMode === "offering") conditions.push(eq(beautyJobListingsTable.intent, "offering"));
   if (q.listingMode === "seeking") conditions.push(eq(beautyJobListingsTable.intent, "seeking"));
+  if (q.listingMode === "seeking_work") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "seeking"));
+  if (q.listingMode === "seeking_rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "seeking"));
   if (q.category) conditions.push(eq(beautyJobCategoriesTable.slug, q.category));
   if (q.postedBy && q.postedBy !== "salon" && q.postedBy !== "user") return bad(res);
   if (q.postedBy) conditions.push(eq(beautyJobListingsTable.postedByType, q.postedBy as "salon" | "user"));

@@ -370,10 +370,12 @@ async function run(): Promise<void> {
     const filterJob = await insertApproved(hairCategory.id, customer.user.id, `query-token-${suffix}`, { city: `PriceCity${suffix}`, region: `QueryRegion${suffix}`, priceAmount: 111, latitude: 44.8, longitude: 20.4 });
     const filterRental = await insertApproved(rentalCategory.id, customer.user.id, `rental-token-${suffix}`, { type: "equipment_rental", intent: "offering", city: `PriceCity${suffix}`, region: `RentalRegion${suffix}`, priceAmount: 999 });
     const filterSeeking = await insertApproved(hairCategory.id, customer.user.id, `seeking-token-${suffix}`, { intent: "seeking", city: `SeekingCity${suffix}`, region: `SeekingRegion${suffix}`, priceAmount: 555 });
+    const filterSeekingRental = await insertApproved(rentalCategory.id, customer.user.id, `seeking-rental-token-${suffix}`, { type: "equipment_rental", intent: "seeking", city: `SeekingRentalCity${suffix}`, region: `SeekingRentalRegion${suffix}`, priceAmount: 777 });
     await db.insert(beautyJobListingAvailabilityTable).values({ listingId: filterRental.id, availabilityPattern: `Availability-${suffix}`, dayLabels: [] });
     const filters: Array<[string, string]> = [
       [`query=query-token-${suffix}`, filterJob.id], ["type=equipment_rental", filterRental.id],
-       ["intent=seeking", filterSeeking.id], ["listingMode=offering", filterJob.id], ["listingMode=rental", filterRental.id], ["listingMode=seeking", filterSeeking.id], ["category=frizeri", filterJob.id],
+       ["intent=seeking", filterSeeking.id], ["listingMode=offering", filterJob.id], ["listingMode=rental", filterRental.id], ["listingMode=seeking", filterSeeking.id],
+       ["listingMode=seeking_work", filterSeeking.id], ["listingMode=seeking_rental", filterSeekingRental.id], ["category=frizeri", filterJob.id],
        [`city=PriceCity${suffix}`, filterJob.id], [`region=QueryRegion${suffix}`, filterJob.id],
       ["minPrice=900", filterRental.id], ["maxPrice=200", filterJob.id],
       [`availability=Availability-${suffix}`, filterRental.id], ["sort=price_asc", filterJob.id],
@@ -384,6 +386,15 @@ async function run(): Promise<void> {
       assert.equal(result.status, 200, `filter ${query} must succeed`);
       assert.ok(result.body.items.some((item: any) => item.id === expected), `filter ${query} must include isolated fixture`);
     }
+    const seekingWork = await request(base, "/beauty-jobs?listingMode=seeking_work");
+    assert.ok(seekingWork.body.items.some((item: any) => item.id === filterSeeking.id));
+    assert.ok(!seekingWork.body.items.some((item: any) => item.id === filterSeekingRental.id), "seeking_work must exclude rental/resource requests");
+    const seekingRental = await request(base, "/beauty-jobs?listingMode=seeking_rental");
+    assert.ok(seekingRental.body.items.some((item: any) => item.id === filterSeekingRental.id));
+    assert.ok(!seekingRental.body.items.some((item: any) => item.id === filterSeeking.id), "seeking_rental must exclude work/service requests");
+    const legacySeeking = await request(base, "/beauty-jobs?listingMode=seeking");
+    assert.ok(legacySeeking.body.items.some((item: any) => item.id === filterSeeking.id));
+    assert.ok(legacySeeking.body.items.some((item: any) => item.id === filterSeekingRental.id), "legacy seeking remains a broad backward-compatible alias");
     const priceDesc = await request(base, `/beauty-jobs?sort=price_desc&city=PriceCity${suffix}`);
     assert.ok(priceDesc.body.items.findIndex((x: any) => x.id === filterRental.id) < priceDesc.body.items.findIndex((x: any) => x.id === filterJob.id), "price_desc must order fixtures");
 
@@ -432,7 +443,20 @@ async function run(): Promise<void> {
     const queueA = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Queue alpha ${suffix}`));
     const queueB = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Queue beta ${suffix}`));
     assert.equal(queueA.status, 201); assert.equal(queueB.status, 201);
-    createdListingIds.push(queueA.body.id, queueB.body.id);
+    const [queueSeekingWork] = await db.insert(beautyJobListingsTable).values({
+      categoryId: hairCategory.id, userId: customer.user.id, postedByType: "user",
+      type: "job", intent: "seeking", title: `Queue seeking work ${suffix}`,
+      description: `Pending work request ${suffix}`, city: "Beograd", region: "Vračar",
+      status: "active", moderationStatus: "pending", expiresAt: new Date(Date.now() + 86400000),
+    }).returning();
+    const [queueSeekingRental] = await db.insert(beautyJobListingsTable).values({
+      categoryId: rentalCategory.id, userId: customer.user.id, postedByType: "user",
+      type: "equipment_rental", intent: "seeking", title: `Queue seeking rental ${suffix}`,
+      description: `Pending rental request ${suffix}`, city: "Beograd", region: "Vračar",
+      status: "active", moderationStatus: "pending", expiresAt: new Date(Date.now() + 86400000),
+    }).returning();
+    assert.ok(queueSeekingWork); assert.ok(queueSeekingRental);
+    createdListingIds.push(queueA.body.id, queueB.body.id, queueSeekingWork.id, queueSeekingRental.id);
     await db.insert(beautyJobReportsTable).values({ listingId: queueA.body.id, reason: `Queue report ${suffix}` });
     assert.equal((await request(base, `/admin/beauty-jobs/queue?reportedOnly=true`, customer.token)).status, 403);
     const reportedQueue = await request(base, `/admin/beauty-jobs/queue?status=pending&reportedOnly=true&search=${encodeURIComponent(`Queue alpha ${suffix}`)}&sort=oldest&page=1&pageSize=1`, admin.token);
@@ -440,6 +464,14 @@ async function run(): Promise<void> {
     assert.equal(reportedQueue.body.page, 1); assert.equal(reportedQueue.body.pageSize, 1);
     assert.equal(reportedQueue.body.listings.length, 1); assert.equal(reportedQueue.body.listings[0].id, queueA.body.id);
     assert.equal(reportedQueue.body.listings[0].reportCount, 1);
+    const queueWorkMode = await request(base, `/admin/beauty-jobs/queue?status=pending&listingMode=seeking_work&search=${encodeURIComponent(suffix)}`, admin.token);
+    assert.equal(queueWorkMode.status, 200, "moderation queue accepts seeking_work");
+    assert.ok(queueWorkMode.body.listings.some((item: any) => item.id === queueSeekingWork.id));
+    assert.ok(!queueWorkMode.body.listings.some((item: any) => item.id === queueSeekingRental.id), "moderation seeking_work excludes rental/resource requests");
+    const queueRentalMode = await request(base, `/admin/beauty-jobs/queue?status=pending&listingMode=seeking_rental&search=${encodeURIComponent(suffix)}`, admin.token);
+    assert.equal(queueRentalMode.status, 200, "moderation queue accepts seeking_rental");
+    assert.ok(queueRentalMode.body.listings.some((item: any) => item.id === queueSeekingRental.id));
+    assert.ok(!queueRentalMode.body.listings.some((item: any) => item.id === queueSeekingWork.id), "moderation seeking_rental excludes work/service requests");
     for (const query of ["type=invalid", "listingMode=invalid", "postedBy=invalid", "reportedOnly=maybe", "sort=invalid", "period=custom&from=2026-02-30&to=2026-03-01"]) {
       assert.equal((await request(base, `/admin/beauty-jobs/queue?${query}`, admin.token)).status, 400, `queue rejects unsupported or impossible ${query}`);
     }

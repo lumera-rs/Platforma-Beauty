@@ -118,7 +118,7 @@ export default function BeautyJobDetailPage() {
 
   const intentLabel = isOffer
     ? (job.type === "job" ? "Nudim posao" : job.type === "freelance" ? "Nudim usluge" : "Izdajem")
-    : (job.type === "job" ? "Tražim posao" : job.type === "freelance" ? "Tražim angažman" : "Tražim prostor/opremu");
+    : (job.type === "job" ? "Tražim posao" : job.type === "freelance" ? "Tražim usluge" : "Tražim opremu/prostor");
 
   const handleToggleSaved = () => {
     if (!user) return setLocation("/prijava");

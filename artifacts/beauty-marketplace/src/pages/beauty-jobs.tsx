@@ -24,7 +24,7 @@ const PAGE_SIZE = 10;
 const beautyJobSortValues = ["newest", "oldest", "price_asc", "price_desc", "nearest"] as const;
 const beautyJobTypeValues = ["job", "equipment_rental", "space_rental", "freelance"] as const;
 const beautyJobIntentValues = ["offering", "seeking"] as const;
-const beautyJobListingModeValues = ["offering", "rental", "seeking"] as const;
+const beautyJobListingModeValues = ["offering", "rental", "seeking", "seeking_work", "seeking_rental"] as const;
 
 function isBeautyJobSort(value: string | null): value is NonNullable<ListBeautyJobsParams["sort"]> {
   return value !== null && (beautyJobSortValues as readonly string[]).includes(value);
@@ -260,7 +260,10 @@ export default function BeautyJobsPage() {
             <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "rental"} onChange={() => updateFilters({ listingMode: "rental", intent: "" })} /> Izdajem opremu / prostor
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "seeking"} onChange={() => updateFilters({ listingMode: "seeking", intent: "" })} /> Tražim
+            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "seeking_work" || listingMode === "seeking"} onChange={() => updateFilters({ listingMode: "seeking_work", intent: "" })} /> Tražim posao / usluge
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "seeking_rental"} onChange={() => updateFilters({ listingMode: "seeking_rental", intent: "" })} /> Tražim opremu / prostor
           </label>
         </div>
       </div>

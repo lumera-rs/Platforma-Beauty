@@ -4952,7 +4952,7 @@ paths:
         - { name: category, in: query, schema: { type: string } }
         - { name: type, in: query, schema: { type: string, enum: [job, equipment_rental, space_rental, freelance] } }
         - { name: intent, in: query, schema: { type: string, enum: [offering, seeking] } }
-        - { name: listingMode, in: query, schema: { type: string, enum: [offering, rental, seeking] } }
+        - { name: listingMode, in: query, description: Derived marketplace intent; legacy seeking remains a broad backward-compatible alias., schema: { type: string, enum: [offering, rental, seeking, seeking_work, seeking_rental] } }
         - { name: city, in: query, schema: { type: string } }
         - { name: region, in: query, schema: { type: string } }
         - { name: minPrice, in: query, schema: { type: integer, minimum: 0 } }
@@ -5139,7 +5139,7 @@ paths:
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [pending, active, rejected, expiring, expired, filled], default: pending } }
         - { name: type, in: query, schema: { type: string, enum: [job, equipment_rental, space_rental, freelance] } }
-        - { name: listingMode, in: query, schema: { type: string, enum: [offering, rental, seeking] } }
+        - { name: listingMode, in: query, description: Derived marketplace intent; legacy seeking remains a broad backward-compatible alias., schema: { type: string, enum: [offering, rental, seeking, seeking_work, seeking_rental] } }
         - { name: category, in: query, schema: { type: string } }
         - { name: postedBy, in: query, schema: { type: string, enum: [salon, user] } }
         - { name: period, in: query, schema: { type: string, enum: [today, week, month, custom, all], default: all } }

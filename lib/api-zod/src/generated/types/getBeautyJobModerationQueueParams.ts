@@ -15,6 +15,9 @@ import type { GetBeautyJobModerationQueueType } from './getBeautyJobModerationQu
 export type GetBeautyJobModerationQueueParams = {
 status?: GetBeautyJobModerationQueueStatus;
 type?: GetBeautyJobModerationQueueType;
+/**
+ * Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.
+ */
 listingMode?: GetBeautyJobModerationQueueListingMode;
 category?: string;
 postedBy?: GetBeautyJobModerationQueuePostedBy;

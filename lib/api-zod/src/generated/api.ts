@@ -11860,7 +11860,7 @@ export const ListBeautyJobsQueryParams = zod.object({
   "category": zod.coerce.string().optional(),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']).optional(),
   "intent": zod.enum(['offering', 'seeking']).optional(),
-  "listingMode": zod.enum(['offering', 'rental', 'seeking']).optional(),
+  "listingMode": zod.enum(['offering', 'rental', 'seeking', 'seeking_work', 'seeking_rental']).optional().describe('Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.'),
   "city": zod.coerce.string().optional(),
   "region": zod.coerce.string().optional(),
   "minPrice": zod.coerce.number().int().min(listBeautyJobsQueryMinPriceMin).optional(),
@@ -12824,7 +12824,7 @@ export const getBeautyJobModerationQueueQueryPageSizeMax = 100;
 export const GetBeautyJobModerationQueueQueryParams = zod.object({
   "status": zod.enum(['pending', 'active', 'rejected', 'expiring', 'expired', 'filled']).default(getBeautyJobModerationQueueQueryStatusDefault),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']).optional(),
-  "listingMode": zod.enum(['offering', 'rental', 'seeking']).optional(),
+  "listingMode": zod.enum(['offering', 'rental', 'seeking', 'seeking_work', 'seeking_rental']).optional().describe('Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.'),
   "category": zod.coerce.string().optional(),
   "postedBy": zod.enum(['salon', 'user']).optional(),
   "period": zod.enum(['today', 'week', 'month', 'custom', 'all']).default(getBeautyJobModerationQueueQueryPeriodDefault),

@@ -14,6 +14,9 @@ export type ListBeautyJobsParams = {
 category?: string;
 type?: ListBeautyJobsType;
 intent?: ListBeautyJobsIntent;
+/**
+ * Derived marketplace intent; legacy seeking remains a broad backward-compatible alias.
+ */
 listingMode?: ListBeautyJobsListingMode;
 city?: string;
 region?: string;

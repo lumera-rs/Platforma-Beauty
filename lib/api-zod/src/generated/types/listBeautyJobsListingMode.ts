@@ -13,4 +13,6 @@ export const ListBeautyJobsListingMode = {
   offering: 'offering',
   rental: 'rental',
   seeking: 'seeking',
+  seeking_work: 'seeking_work',
+  seeking_rental: 'seeking_rental',
 } as const;

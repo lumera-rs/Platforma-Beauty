@@ -86,7 +86,7 @@ export function BeautyJobCard({ job, onClickToggleSaved, showSaveButton = true }
 
   const intentLabel = isOffer
     ? (job.type === "job" ? "Nudim posao" : job.type === "freelance" ? "Nudim usluge" : "Izdajem")
-    : (job.type === "job" ? "Tražim posao" : job.type === "freelance" ? "Tražim angažman" : "Tražim prostor/opremu");
+    : (job.type === "job" ? "Tražim posao" : job.type === "freelance" ? "Tražim usluge" : "Tražim opremu/prostor");
 
   const theme = THEME_COLORS[job.type as keyof typeof THEME_COLORS] || THEME_COLORS.job;
 

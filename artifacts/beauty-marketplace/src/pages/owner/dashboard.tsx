@@ -1,88 +1,21 @@
 import { BusinessLayout } from "@/components/business-layout";
-import { GuideHelpLink } from "@/components/guide-help-link";
 import { Link, useLocation } from "wouter";
 import { useGetSalonDashboard, useGetCurrentUser, getGetSalonDashboardQueryKey } from "@workspace/api-client-react";
 import { useEffect, useState } from "react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Loader2, TrendingUp, Users, Calendar, Clock3, DollarSign, Settings, Bell, Star, GraduationCap, Package, Store, LayoutGrid, HeartHandshake, Zap, Box, BarChart3, Bot, Menu } from "lucide-react";
+import { Calendar, DollarSign, Loader2, Star, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SalonOwnerNavigation } from "@/components/salon-owner-navigation";
 
-export function OwnerSidebar({ current }: { current: string }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const links = [
-    { href: "/vlasnik", label: "Dashboard", guideId: "vl-dashboard", icon: <TrendingUp className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/kalendar", label: "Kalendar", guideId: "vl-kalendar", icon: <Calendar className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/usluge", label: "Usluge", guideId: "vl-usluge", icon: <Settings className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/resursi", label: "Resursi", guideId: "vl-resursi", icon: <LayoutGrid className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/profil", label: "Profil salona", guideId: "vl-profil", icon: <Store className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/zaposleni", label: "Zaposleni", guideId: "vl-zaposleni", icon: <Users className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/klijenti", label: "CRM & Retencija", guideId: "vl-klijenti", icon: <HeartHandshake className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/inventar", label: "Zalihe", guideId: "vl-inventar", icon: <Package className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/radno-vreme", label: "Radno vreme", guideId: "vl-radno-vreme", icon: <Clock3 className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/automatizacije", label: "Automatizacije", guideId: "vl-automatizacije", icon: <Zap className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/paketi", label: "Paketi tretmana", guideId: "vl-paketi", icon: <Box className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/performanse", label: "Performanse tima", guideId: "vl-performanse", icon: <BarChart3 className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/ai-asistent", label: "AI Asistent", guideId: "vl-ai", icon: <Bot className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/shop", label: "B2B Oprema", guideId: "vl-shop", icon: <DollarSign className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/porudzbine", label: "Porudžbine", guideId: "vl-porudzbine", icon: <Package className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/obavestenja", label: "Obaveštenja", guideId: "vl-obavestenja", icon: <Bell className="w-4 h-4 mr-2" /> },
-    { href: "/vlasnik/loyalty", label: "Loyalty Program", guideId: "vl-loyalty", icon: <Star className="w-4 h-4 mr-2" /> },
-    { href: "/biznis/edukacije", label: "Edukacije", guideId: "vl-edukacije", icon: <GraduationCap className="w-4 h-4 mr-2" /> },
-  ];
-
-  const sidebarContent = (
-    <div className="space-y-1">
-      {links.map((link) => (
-        <div key={link.href} className="flex items-center gap-1">
-          <Link
-            href={link.href}
-            onClick={() => setIsOpen(false)}
-            className={`flex min-w-0 flex-1 items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${current === link.href ? 'bg-primary text-primary-foreground' : 'text-foreground/80 hover:bg-muted'}`}
-          >
-            {link.icon} <span className="truncate">{link.label}</span>
-          </Link>
-          <GuideHelpLink
-            sectionId={link.guideId}
-            label={link.label}
-            onClick={() => setIsOpen(false)}
-          />
-        </div>
-      ))}
-    </div>
-  );
-
-  const currentLabel = links.find(l => l.href === current)?.label || "Meni";
-
+export function OwnerSidebar({ current: _current }: { current: string }) {
   return (
-    <>
-      {/* Mobile Drawer Trigger */}
-      <div className="md:hidden w-full mb-4">
-        <Sheet open={isOpen} onOpenChange={setIsOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" className="w-full flex justify-between items-center">
-              <span>{currentLabel}</span>
-              <Menu className="w-4 h-4" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[300px] overflow-y-auto">
-            <div className="py-4">
-              <h2 className="font-bold text-lg mb-4 px-4">Navigacija</h2>
-              {sidebarContent}
-            </div>
-          </SheetContent>
-        </Sheet>
-      </div>
-
-      {/* Desktop Sidebar */}
-      <aside
-        className="hidden md:block w-64 shrink-0 max-h-[calc(100vh-7rem)] overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
-        data-testid="owner-sidebar"
-      >
-        {sidebarContent}
-      </aside>
-    </>
+    <aside
+      className="sticky top-20 hidden h-[calc(100vh-6rem)] w-64 shrink-0 overflow-hidden rounded-xl border bg-background md:block"
+      data-testid="owner-sidebar"
+    >
+      <SalonOwnerNavigation />
+    </aside>
   );
 }
 
