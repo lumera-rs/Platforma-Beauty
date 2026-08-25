@@ -100,3 +100,4 @@
 - [Rental booking serialization](rental-booking-serialization.md) — derive slot invariants from listing state reread under listing→slot locks.
 - [Production demo content isolation](production-demo-content-isolation.md) — production demos must be dedicated, marker-owned records seeded atomically under a cross-instance lock.
 - [Listing audience enforcement](listing-audience-enforcement.md) — audience restrictions must cover discovery, detail, saved retrieval, and every interaction-by-ID path.
+- [Terminal detail query deduplication](terminal-detail-query-deduplication.md) — metadata fetches and auth-gated query enablement must reuse terminal 4xx state.

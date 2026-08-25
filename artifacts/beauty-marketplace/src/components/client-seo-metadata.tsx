@@ -1,6 +1,12 @@
 import { useEffect } from 'react';
 import { useLocation, useSearch } from 'wouter';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { getBeautyJob, getGetBeautyJobQueryKey } from '@workspace/api-client-react';
 import { getPublicCategoryPage } from '@/lib/public-category-pages';
+import {
+  isRetryableBeautyJobDetailError,
+  shouldRetryBeautyJobDetail,
+} from '@/lib/beauty-job-detail-query';
 
 type SeoPayload = {
   title: string;
@@ -80,7 +86,7 @@ function applySeo(pathname: string, payload: SeoPayload) {
   link.href = canonical;
 }
 
-async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
+async function dynamicMetadata(pathname: string, queryClient: QueryClient): Promise<SeoPayload | null> {
   const product = pathname.match(/^\/proizvodi\/([^/]+)$/);
   if (product) {
     const response = await fetch(`/api/shop/public/products/${encodeURIComponent(product[1])}`);
@@ -139,9 +145,18 @@ async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
   }
   const beautyJob = pathname.match(/^\/poslovi\/[^/]+\/([a-zA-Z0-9-]+)$/);
   if (beautyJob) {
-    const response = await fetch(`/api/beauty-jobs/${encodeURIComponent(beautyJob[1])}`);
-    if (!response.ok) return null;
-    const item = await response.json();
+    const listingId = beautyJob[1];
+    const queryKey = getGetBeautyJobQueryKey(listingId);
+    const cachedItem = queryClient.getQueryData<Awaited<ReturnType<typeof getBeautyJob>>>(queryKey);
+    const cachedError = queryClient.getQueryState(queryKey)?.error;
+    if (cachedError && !isRetryableBeautyJobDetailError(cachedError)) return null;
+
+    const item = cachedItem ?? await queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => getBeautyJob(listingId),
+      retry: shouldRetryBeautyJobDetail,
+    });
+    if (!item) return null;
     const title = text(item.title, 'Beauty oglas');
     return {
       title: `${title} | LUMERA Poslovi`,
@@ -156,6 +171,7 @@ async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
 export function ClientSeoMetadata() {
   const [pathname] = useLocation();
   const searchString = useSearch();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     let cancelled = false;
@@ -164,7 +180,7 @@ export function ClientSeoMetadata() {
       applySeo(pathname, { ...fallback, indexable: fallback.indexable && searchString.length === 0 });
       return;
     }
-    void dynamicMetadata(pathname).then((payload) => {
+    void dynamicMetadata(pathname, queryClient).then((payload) => {
       if (!cancelled) applySeo(pathname, payload ? {
         ...payload,
         indexable: payload.indexable && searchString.length === 0,
@@ -181,7 +197,7 @@ export function ClientSeoMetadata() {
       });
     });
     return () => { cancelled = true; };
-  }, [pathname, searchString]);
+  }, [pathname, queryClient, searchString]);
 
   return null;
 }

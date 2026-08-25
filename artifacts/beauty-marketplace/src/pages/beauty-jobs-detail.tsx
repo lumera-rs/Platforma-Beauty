@@ -26,6 +26,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2, CalendarClock, History, Lock } from "lucide-react";
+import {
+  isRetryableBeautyJobDetailError,
+  shouldRetryBeautyJobDetail,
+  shouldRetryBeautyJobDetailOnMount,
+} from "@/lib/beauty-job-detail-query";
 
 export default function BeautyJobDetailPage() {
   const [, canonicalParams] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
@@ -36,6 +41,14 @@ export default function BeautyJobDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const queryClient = useQueryClient();
+  const publicQueryKey = getGetBeautyJobQueryKey(listingId ?? "");
+  const adminPreviewQueryKey = getGetBeautyJobAdminPreviewQueryKey(listingId ?? "");
+  const hasTerminalPublicQueryError = !isRetryableBeautyJobDetailError(
+    queryClient.getQueryState(publicQueryKey)?.error,
+  );
+  const hasTerminalAdminPreviewQueryError = !isRetryableBeautyJobDetailError(
+    queryClient.getQueryState(adminPreviewQueryKey)?.error,
+  );
 
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
   const user = userResp?.user;
@@ -48,14 +61,18 @@ export default function BeautyJobDetailPage() {
 
   const publicQuery = useGetBeautyJob(listingId ?? "", {
     query: {
-      enabled: !!listingId && !isAdminPreview && !isUserLoading && user?.role !== "SALON_EMPLOYEE",
-      queryKey: getGetBeautyJobQueryKey(listingId ?? "")
+        enabled: !!listingId && !isAdminPreview && !isUserLoading && user?.role !== "SALON_EMPLOYEE" && !hasTerminalPublicQueryError,
+        queryKey: publicQueryKey,
+        retry: shouldRetryBeautyJobDetail,
+        retryOnMount: shouldRetryBeautyJobDetailOnMount,
     }
   });
   const adminPreviewQuery = useGetBeautyJobAdminPreview(listingId ?? "", {
     query: {
-      enabled: !!listingId && isAdminPreview && !isUserLoading && (user?.role === "ADMIN" || user?.role === "SUPER_ADMIN"),
-      queryKey: getGetBeautyJobAdminPreviewQueryKey(listingId ?? "")
+        enabled: !!listingId && isAdminPreview && !isUserLoading && (user?.role === "ADMIN" || user?.role === "SUPER_ADMIN") && !hasTerminalAdminPreviewQueryError,
+        queryKey: adminPreviewQueryKey,
+        retry: shouldRetryBeautyJobDetail,
+        retryOnMount: shouldRetryBeautyJobDetailOnMount,
     }
   });
   const job = isAdminPreview ? adminPreviewQuery.data?.listing : publicQuery.data;

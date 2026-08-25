@@ -84,6 +84,12 @@ async function openListingDetail(page: Page, listingId: string) {
   return responsePromise;
 }
 
+function isBeautyJobDetailResponse(response: { request(): { method(): string }; url(): string }, listingId: string): boolean {
+  const url = new URL(response.url());
+  return response.request().method() === "GET"
+    && url.pathname === `/api/beauty-jobs/${listingId}`;
+}
+
 test.afterAll(cleanUpFixtures);
 
 test("keeps competing employment out of an owner's catalog without hiding public listing types", async ({ browser }) => {
@@ -284,11 +290,19 @@ test("keeps competing employment out of an owner's catalog without hiding public
     await expect(ownerPage.getByRole("heading", { name: titles.ownEmployment, exact: true })).toBeVisible();
     await expect(ownerPage.getByText("Oglas nije pronađen", { exact: true })).toHaveCount(0);
 
+    const competingDetailStartedAt = Date.now();
     const competingDetailResponse = await openListingDetail(ownerPage, competingEmployment.id);
     expect(competingDetailResponse.status(), "a competing salon employment listing detail must look absent").toBe(404);
+
+    const competingDetailRetryPromise = ownerPage.waitForResponse(
+      (response) => isBeautyJobDetailResponse(response, competingEmployment.id),
+      { timeout: 1_500 },
+    ).then(() => true).catch(() => false);
     await expect(
       ownerPage.getByRole("heading", { name: "Oglas nije pronađen", exact: true }),
-    ).toBeVisible({ timeout: 12_000 });
+    ).toBeVisible({ timeout: 2_000 });
+    expect(Date.now() - competingDetailStartedAt, "not-found feedback must not wait for retry backoff").toBeLessThan(2_000);
+    expect(await competingDetailRetryPromise, "a final 404 must not trigger a second detail request").toBe(false);
     await expect(ownerPage.getByText(titles.competingEmployment, { exact: true })).toHaveCount(0);
 
     for (const context of [customerContext, guestContext]) {
