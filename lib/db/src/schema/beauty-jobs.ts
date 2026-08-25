@@ -89,6 +89,8 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   status: beautyJobListingStatusEnum("status").notNull().default("active"),
   moderationStatus: beautyJobModerationStatusEnum("moderation_status").notNull().default("pending"),
   moderationReason: text("moderation_reason"),
+  /** Private moderator context; never expose this on public listing responses. */
+  moderationInternalNote: text("moderation_internal_note"),
   moderatedAt: timestamp("moderated_at", { withTimezone: true }),
   contactCount: integer("contact_count").notNull().default(0),
   viewCount: integer("view_count").notNull().default(0),
@@ -102,6 +104,7 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   index("beauty_job_listings_salon_created_idx").on(table.salonId, table.createdAt),
   index("beauty_job_listings_user_created_idx").on(table.userId, table.createdAt),
   index("beauty_job_listings_expiry_idx").on(table.status, table.expiresAt),
+  index("beauty_job_listings_moderation_created_idx").on(table.moderationStatus, table.createdAt),
   check("beauty_job_listings_exactly_one_author", sql`((${table.salonId} is not null)::integer + (${table.userId} is not null)::integer) = 1`),
   check("beauty_job_listings_posted_by_matches_author", sql`(${table.postedByType} = 'salon' and ${table.salonId} is not null and ${table.userId} is null) or (${table.postedByType} = 'user' and ${table.userId} is not null and ${table.salonId} is null)`),
   check("beauty_job_listings_price_nonnegative", sql`${table.priceAmount} is null or ${table.priceAmount} >= 0`),
@@ -189,6 +192,24 @@ export const beautyJobReportsTable = pgTable("beauty_job_reports", {
   index("beauty_job_reports_listing_status_idx").on(table.listingId, table.status),
   index("beauty_job_reports_reporter_idx").on(table.reporterUserId),
   index("beauty_job_reports_resolved_by_idx").on(table.resolvedByUserId),
+]);
+
+/** Immutable record of every administrative marketplace moderation decision. */
+export const beautyJobModerationAuditTable = pgTable("beauty_job_moderation_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Intentionally not a foreign key: immutable audit history must survive a
+  // listing's physical removal while retaining the original subject id.
+  listingId: uuid("listing_id").notNull(),
+  actingAdminUserId: uuid("acting_admin_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  // Text deliberately keeps this additive and avoids a production enum rollout.
+  action: text("action").notNull(),
+  publicReason: text("public_reason"),
+  internalNote: text("internal_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("beauty_job_moderation_audit_listing_created_idx").on(table.listingId, table.createdAt),
+  index("beauty_job_moderation_audit_admin_created_idx").on(table.actingAdminUserId, table.createdAt),
+  index("beauty_job_moderation_audit_action_created_idx").on(table.action, table.createdAt),
 ]);
 
 export const beautyJobNotificationsTable = pgTable("beauty_job_notifications", {

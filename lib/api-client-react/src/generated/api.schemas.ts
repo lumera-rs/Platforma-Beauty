@@ -5878,6 +5878,11 @@ export interface BeautyJobModerationInput {
   action: BeautyJobModerationInputAction;
   /** @maxLength 1000 */
   reason?: string;
+  /**
+     * Administrator-only moderation context.
+     * @maxLength 2000
+     */
+  internalNote?: string;
 }
 
 export type BeautyJobReportResolveInputStatus = typeof BeautyJobReportResolveInputStatus[keyof typeof BeautyJobReportResolveInputStatus];
@@ -6071,6 +6076,21 @@ export interface BeautyJobListResponse {
   pageSize: number;
 }
 
+export type BeautyJobRejectedListing = BeautyJobListing & ({
+  /**
+     * Administrator-only moderation context.
+     * @nullable
+     */
+  internalNote: string | null;
+});
+
+export interface BeautyJobRejectedListResponse {
+  items: BeautyJobRejectedListing[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface BeautyJobContactsResponse {
   contacts: BeautyJobContact[];
 }
@@ -6083,9 +6103,57 @@ export interface BeautyJobRentalRequestsResponse {
   requests: BeautyJobRentalRequest[];
 }
 
+export type BeautyJobModerationListing = BeautyJobListing & {
+  reportCount: number;
+  contactCount: number;
+};
+
 export interface BeautyJobModerationQueue {
-  listings: BeautyJobListing[];
+  listings: BeautyJobModerationListing[];
   reports: BeautyJobReport[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type BeautyJobBulkModerationInputAction = typeof BeautyJobBulkModerationInputAction[keyof typeof BeautyJobBulkModerationInputAction];
+
+
+export const BeautyJobBulkModerationInputAction = {
+  approve: 'approve',
+  reject: 'reject',
+} as const;
+
+export interface BeautyJobBulkModerationInput {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     * @items.pattern ^[0-9a-fA-F-]{36}$
+     */
+  listingIds: string[];
+  action: BeautyJobBulkModerationInputAction;
+  /** @maxLength 1000 */
+  reason?: string;
+  /** @maxLength 2000 */
+  internalNote?: string;
+}
+
+export type BeautyJobBulkModerationResultResultsItemStatus = typeof BeautyJobBulkModerationResultResultsItemStatus[keyof typeof BeautyJobBulkModerationResultResultsItemStatus];
+
+
+export const BeautyJobBulkModerationResultResultsItemStatus = {
+  processed: 'processed',
+  not_found: 'not_found',
+} as const;
+
+export type BeautyJobBulkModerationResultResultsItem = {
+  id: string;
+  status: BeautyJobBulkModerationResultResultsItemStatus;
+};
+
+export interface BeautyJobBulkModerationResult {
+  processed: number;
+  results: BeautyJobBulkModerationResultResultsItem[];
 }
 
 export type CityQueryParameter = string;
@@ -6991,6 +7059,88 @@ export const ListBeautyJobsSort = {
   price_asc: 'price_asc',
   price_desc: 'price_desc',
   nearest: 'nearest',
+} as const;
+
+export type GetBeautyJobModerationQueueParams = {
+status?: GetBeautyJobModerationQueueStatus;
+type?: GetBeautyJobModerationQueueType;
+listingMode?: GetBeautyJobModerationQueueListingMode;
+category?: string;
+postedBy?: GetBeautyJobModerationQueuePostedBy;
+period?: GetBeautyJobModerationQueuePeriod;
+from?: string;
+to?: string;
+search?: string;
+reportedOnly?: boolean;
+sort?: GetBeautyJobModerationQueueSort;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type GetBeautyJobModerationQueueStatus = typeof GetBeautyJobModerationQueueStatus[keyof typeof GetBeautyJobModerationQueueStatus];
+
+
+export const GetBeautyJobModerationQueueStatus = {
+  pending: 'pending',
+  active: 'active',
+  rejected: 'rejected',
+  expiring: 'expiring',
+  expired: 'expired',
+  filled: 'filled',
+} as const;
+
+export type GetBeautyJobModerationQueueType = typeof GetBeautyJobModerationQueueType[keyof typeof GetBeautyJobModerationQueueType];
+
+
+export const GetBeautyJobModerationQueueType = {
+  job: 'job',
+  equipment_rental: 'equipment_rental',
+  space_rental: 'space_rental',
+  freelance: 'freelance',
+} as const;
+
+export type GetBeautyJobModerationQueueListingMode = typeof GetBeautyJobModerationQueueListingMode[keyof typeof GetBeautyJobModerationQueueListingMode];
+
+
+export const GetBeautyJobModerationQueueListingMode = {
+  offering: 'offering',
+  rental: 'rental',
+  seeking: 'seeking',
+} as const;
+
+export type GetBeautyJobModerationQueuePostedBy = typeof GetBeautyJobModerationQueuePostedBy[keyof typeof GetBeautyJobModerationQueuePostedBy];
+
+
+export const GetBeautyJobModerationQueuePostedBy = {
+  salon: 'salon',
+  user: 'user',
+} as const;
+
+export type GetBeautyJobModerationQueuePeriod = typeof GetBeautyJobModerationQueuePeriod[keyof typeof GetBeautyJobModerationQueuePeriod];
+
+
+export const GetBeautyJobModerationQueuePeriod = {
+  today: 'today',
+  week: 'week',
+  month: 'month',
+  custom: 'custom',
+  all: 'all',
+} as const;
+
+export type GetBeautyJobModerationQueueSort = typeof GetBeautyJobModerationQueueSort[keyof typeof GetBeautyJobModerationQueueSort];
+
+
+export const GetBeautyJobModerationQueueSort = {
+  oldest: 'oldest',
+  newest: 'newest',
+  activity: 'activity',
 } as const;
 
 export type ListRejectedBeautyJobsParams = {

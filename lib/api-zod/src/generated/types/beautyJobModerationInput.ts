@@ -11,4 +11,9 @@ export interface BeautyJobModerationInput {
   action: BeautyJobModerationInputAction;
   /** @maxLength 1000 */
   reason?: string;
+  /**
+     * Administrator-only moderation context.
+     * @maxLength 2000
+     */
+  internalNote?: string;
 }

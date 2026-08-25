@@ -79,6 +79,8 @@ import type {
   AutomationStats,
   AutomationStatsOverviewItem,
   AutomationTestRunResult,
+  BeautyJobBulkModerationInput,
+  BeautyJobBulkModerationResult,
   BeautyJobCategoriesResponse,
   BeautyJobContact,
   BeautyJobContactCreateInput,
@@ -93,6 +95,7 @@ import type {
   BeautyJobModerationQueue,
   BeautyJobNotification,
   BeautyJobNotificationsResponse,
+  BeautyJobRejectedListResponse,
   BeautyJobRentalRequest,
   BeautyJobRentalRequestCreateInput,
   BeautyJobRentalRequestUpdateInput,
@@ -182,6 +185,7 @@ import type {
   EmployeeShiftSwapOverview,
   FavoriteInput,
   FavoriteResult,
+  GetBeautyJobModerationQueueParams,
   GetMarketplaceHomeDiscoveryParams,
   GetMediaAssetParams,
   GetSalonAvailabilityParams,
@@ -22344,17 +22348,27 @@ export const useRetryBeautyJobDelivery = <TError = ErrorType<void>,
       return useMutation(getRetryBeautyJobDeliveryMutationOptions(options));
     }
 
-export const getGetBeautyJobModerationQueueUrl = () => {
+export const getGetBeautyJobModerationQueueUrl = (params?: GetBeautyJobModerationQueueParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/admin/beauty-jobs/queue`
+  return stringifiedParams.length > 0 ? `/api/admin/beauty-jobs/queue?${stringifiedParams}` : `/api/admin/beauty-jobs/queue`
 }
 
-export const getBeautyJobModerationQueue = async ( options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobModerationQueue> => {
+/**
+ * @summary Search and paginate authorized Beauty Poslovi moderation listings
+ */
+export const getBeautyJobModerationQueue = async (params?: GetBeautyJobModerationQueueParams, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobModerationQueue> => {
 
-  return customFetch<BeautyJobModerationQueue>(getGetBeautyJobModerationQueueUrl(),
+  return customFetch<BeautyJobModerationQueue>(getGetBeautyJobModerationQueueUrl(params),
   {
     ...options,
     method: 'GET'
@@ -22367,23 +22381,23 @@ export const getBeautyJobModerationQueue = async ( options?: Parameters<typeof c
 
 
 
-export const getGetBeautyJobModerationQueueQueryKey = () => {
+export const getGetBeautyJobModerationQueueQueryKey = (params?: GetBeautyJobModerationQueueParams,) => {
     return [
-    `/api/admin/beauty-jobs/queue`
+    `/api/admin/beauty-jobs/queue`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetBeautyJobModerationQueueQueryOptions = <TData = Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetBeautyJobModerationQueueQueryOptions = <TData = Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError = ErrorType<unknown>>(params?: GetBeautyJobModerationQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetBeautyJobModerationQueueQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetBeautyJobModerationQueueQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>> = ({ signal }) => getBeautyJobModerationQueue({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>> = ({ signal }) => getBeautyJobModerationQueue(params, { signal, ...requestOptions });
 
 
 
@@ -22396,13 +22410,16 @@ export type GetBeautyJobModerationQueueQueryResult = NonNullable<Awaited<ReturnT
 export type GetBeautyJobModerationQueueQueryError = ErrorType<unknown>
 
 
+/**
+ * @summary Search and paginate authorized Beauty Poslovi moderation listings
+ */
 
 export function useGetBeautyJobModerationQueue<TData = Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetBeautyJobModerationQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobModerationQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetBeautyJobModerationQueueQueryOptions(options)
+  const queryOptions = getGetBeautyJobModerationQueueQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -22414,6 +22431,77 @@ export function useGetBeautyJobModerationQueue<TData = Awaited<ReturnType<typeof
 
 
 
+
+export const getBulkModerateBeautyJobsUrl = () => {
+
+
+
+
+  return `/api/admin/beauty-jobs/bulk-moderation`
+}
+
+/**
+ * @summary Atomically moderate up to 100 Beauty Poslovi listings
+ */
+export const bulkModerateBeautyJobs = async (beautyJobBulkModerationInput: BeautyJobBulkModerationInput, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobBulkModerationResult> => {
+
+  return customFetch<BeautyJobBulkModerationResult>(getBulkModerateBeautyJobsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(beautyJobBulkModerationInput)
+  }
+);}
+
+
+
+
+
+export const getBulkModerateBeautyJobsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkModerateBeautyJobs>>, TError,{data: BodyType<BeautyJobBulkModerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkModerateBeautyJobs>>, TError,{data: BodyType<BeautyJobBulkModerationInput>}, TContext> => {
+
+const mutationKey = ['bulkModerateBeautyJobs'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkModerateBeautyJobs>>, {data: BodyType<BeautyJobBulkModerationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkModerateBeautyJobs(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkModerateBeautyJobsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkModerateBeautyJobs>>>
+    export type BulkModerateBeautyJobsMutationBody = BodyType<BeautyJobBulkModerationInput>
+    export type BulkModerateBeautyJobsMutationError = ErrorType<void>
+
+    /**
+ * @summary Atomically moderate up to 100 Beauty Poslovi listings
+ */
+export const useBulkModerateBeautyJobs = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkModerateBeautyJobs>>, TError,{data: BodyType<BeautyJobBulkModerationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkModerateBeautyJobs>>,
+        TError,
+        {data: BodyType<BeautyJobBulkModerationInput>},
+        TContext
+      > => {
+      return useMutation(getBulkModerateBeautyJobsMutationOptions(options));
+    }
 
 export const getListRejectedBeautyJobsUrl = (params?: ListRejectedBeautyJobsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -22433,9 +22521,9 @@ export const getListRejectedBeautyJobsUrl = (params?: ListRejectedBeautyJobsPara
 /**
  * @summary List rejected Beauty Poslovi listings for moderation review
  */
-export const listRejectedBeautyJobs = async (params?: ListRejectedBeautyJobsParams, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListResponse> => {
+export const listRejectedBeautyJobs = async (params?: ListRejectedBeautyJobsParams, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobRejectedListResponse> => {
 
-  return customFetch<BeautyJobListResponse>(getListRejectedBeautyJobsUrl(params),
+  return customFetch<BeautyJobRejectedListResponse>(getListRejectedBeautyJobsUrl(params),
   {
     ...options,
     method: 'GET'

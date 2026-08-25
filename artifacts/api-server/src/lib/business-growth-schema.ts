@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 25;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 27;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -855,6 +855,7 @@ function tableStatements(s: string): string[] {
       status ${s}.beauty_job_listing_status NOT NULL DEFAULT 'active',
       moderation_status ${s}.beauty_job_moderation_status NOT NULL DEFAULT 'pending',
       moderation_reason text,
+       moderation_internal_note text,
       moderated_at timestamptz,
       contact_count integer NOT NULL DEFAULT 0,
       view_count integer NOT NULL DEFAULT 0,
@@ -865,6 +866,7 @@ function tableStatements(s: string): string[] {
     )`,
     `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS intent ${s}.beauty_job_listing_intent NOT NULL DEFAULT 'offering'`,
   `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderation_reason text`,
+   `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderation_internal_note text`,
   `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderated_at timestamptz`,
     `DROP INDEX IF EXISTS ${s}.beauty_job_listings_category_visibility_created_idx`,
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_category_visibility_created_idx ON ${s}.beauty_job_listings (category_id, intent, status, moderation_status, created_at)`,
@@ -872,6 +874,7 @@ function tableStatements(s: string): string[] {
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_salon_created_idx ON ${s}.beauty_job_listings (salon_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_user_created_idx ON ${s}.beauty_job_listings (user_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_expiry_idx ON ${s}.beauty_job_listings (status, expires_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_listings_moderation_created_idx ON ${s}.beauty_job_listings (moderation_status, created_at)`,
     `DO $$ BEGIN
        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'beauty_job_listings_exactly_one_author' AND connamespace = current_schema()::regnamespace) THEN
          ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_exactly_one_author CHECK (((salon_id IS NOT NULL)::integer + (user_id IS NOT NULL)::integer) = 1);
@@ -886,6 +889,19 @@ function tableStatements(s: string): string[] {
          ALTER TABLE ${s}.beauty_job_listings ADD CONSTRAINT beauty_job_listings_coordinates_pair CHECK ((latitude IS NULL) = (longitude IS NULL));
        END IF;
      END $$`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_moderation_audit (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      listing_id uuid NOT NULL,
+      acting_admin_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      action text NOT NULL,
+      public_reason text,
+      internal_note text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `ALTER TABLE ${s}.beauty_job_moderation_audit DROP CONSTRAINT IF EXISTS beauty_job_moderation_audit_listing_id_fkey`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_moderation_audit_listing_created_idx ON ${s}.beauty_job_moderation_audit (listing_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_moderation_audit_admin_created_idx ON ${s}.beauty_job_moderation_audit (acting_admin_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_moderation_audit_action_created_idx ON ${s}.beauty_job_moderation_audit (action, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_listing_availability (
       listing_id uuid PRIMARY KEY REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,
       availability_pattern text NOT NULL,

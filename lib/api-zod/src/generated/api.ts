@@ -12808,16 +12808,45 @@ export const RetryBeautyJobDeliveryResponse = zod.object({
 })
 
 
-export const getBeautyJobModerationQueueResponseListingsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobModerationQueueResponseListingsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+/**
+ * @summary Search and paginate authorized Beauty Poslovi moderation listings
+ */
+export const getBeautyJobModerationQueueQueryStatusDefault = `pending`;
+export const getBeautyJobModerationQueueQueryPeriodDefault = `all`;
+export const getBeautyJobModerationQueueQuerySortDefault = `oldest`;
+export const getBeautyJobModerationQueueQueryPageDefault = 1;
+
+export const getBeautyJobModerationQueueQueryPageSizeDefault = 24;
+export const getBeautyJobModerationQueueQueryPageSizeMax = 100;
+
+
+
+export const GetBeautyJobModerationQueueQueryParams = zod.object({
+  "status": zod.enum(['pending', 'active', 'rejected', 'expiring', 'expired', 'filled']).default(getBeautyJobModerationQueueQueryStatusDefault),
+  "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']).optional(),
+  "listingMode": zod.enum(['offering', 'rental', 'seeking']).optional(),
+  "category": zod.coerce.string().optional(),
+  "postedBy": zod.enum(['salon', 'user']).optional(),
+  "period": zod.enum(['today', 'week', 'month', 'custom', 'all']).default(getBeautyJobModerationQueueQueryPeriodDefault),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
+  "search": zod.coerce.string().optional(),
+  "reportedOnly": zod.coerce.boolean().optional(),
+  "sort": zod.enum(['oldest', 'newest', 'activity']).default(getBeautyJobModerationQueueQuerySortDefault),
+  "page": zod.coerce.number().int().min(1).default(getBeautyJobModerationQueueQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(getBeautyJobModerationQueueQueryPageSizeMax).default(getBeautyJobModerationQueueQueryPageSizeDefault)
+})
+
+export const getBeautyJobModerationQueueResponseListingsItemOneIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobModerationQueueResponseListingsItemOneCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const GetBeautyJobModerationQueueResponse = zod.object({
   "listings": zod.array(zod.object({
-  "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemIdRegExp),
-  "categoryId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemCategoryIdRegExp),
+  "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneIdRegExp),
+  "categoryId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneCategoryIdRegExp),
   "categorySlug": zod.string(),
   "categoryName": zod.string(),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']),
@@ -12848,13 +12877,16 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
-  "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemIdRegExp),
-  "listingId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemAvailableSlotsItemListingIdRegExp),
+  "id": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(getBeautyJobModerationQueueResponseListingsItemOneAvailableSlotsItemListingIdRegExp),
   "startsAt": zod.coerce.date(),
   "endsAt": zod.coerce.date(),
   "available": zod.boolean()
 }))
-})),
+}).and(zod.object({
+  "reportCount": zod.number().int(),
+  "contactCount": zod.number().int()
+}))),
   "reports": zod.array(zod.object({
   "id": zod.string(),
   "listingId": zod.string(),
@@ -12868,6 +12900,37 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "listingTitle": zod.string().optional(),
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
+})),
+  "total": zod.number().int(),
+  "page": zod.number().int(),
+  "pageSize": zod.number().int()
+})
+
+
+/**
+ * @summary Atomically moderate up to 100 Beauty Poslovi listings
+ */
+export const bulkModerateBeautyJobsBodyListingIdsItemRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const bulkModerateBeautyJobsBodyListingIdsMax = 100;
+
+export const bulkModerateBeautyJobsBodyReasonMax = 1000;
+
+export const bulkModerateBeautyJobsBodyInternalNoteMax = 2000;
+
+
+
+export const BulkModerateBeautyJobsBody = zod.object({
+  "listingIds": zod.array(zod.string().regex(bulkModerateBeautyJobsBodyListingIdsItemRegExp)).min(1).max(bulkModerateBeautyJobsBodyListingIdsMax),
+  "action": zod.enum(['approve', 'reject']),
+  "reason": zod.string().max(bulkModerateBeautyJobsBodyReasonMax).optional(),
+  "internalNote": zod.string().max(bulkModerateBeautyJobsBodyInternalNoteMax).optional()
+}).strict()
+
+export const BulkModerateBeautyJobsResponse = zod.object({
+  "processed": zod.number().int(),
+  "results": zod.array(zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['processed', 'not_found'])
 }))
 })
 
@@ -12891,16 +12954,16 @@ export const ListRejectedBeautyJobsQueryParams = zod.object({
   "pageSize": zod.coerce.number().int().min(1).max(listRejectedBeautyJobsQueryPageSizeMax).default(listRejectedBeautyJobsQueryPageSizeDefault)
 })
 
-export const listRejectedBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const listRejectedBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
-export const listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemOneIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemOneCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 
 export const ListRejectedBeautyJobsResponse = zod.object({
   "items": zod.array(zod.object({
-  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemIdRegExp),
-  "categoryId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemCategoryIdRegExp),
+  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneIdRegExp),
+  "categoryId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneCategoryIdRegExp),
   "categorySlug": zod.string(),
   "categoryName": zod.string(),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']),
@@ -12931,13 +12994,15 @@ export const ListRejectedBeautyJobsResponse = zod.object({
   "isSaved": zod.boolean(),
   "isOwner": zod.boolean(),
   "availableSlots": zod.array(zod.object({
-  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
-  "listingId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
+  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemOneAvailableSlotsItemListingIdRegExp),
   "startsAt": zod.coerce.date(),
   "endsAt": zod.coerce.date(),
   "available": zod.boolean()
 }))
-})),
+}).and(zod.object({
+  "internalNote": zod.string().nullable().describe('Administrator-only moderation context.')
+}))),
   "total": zod.number().int(),
   "page": zod.number().int(),
   "pageSize": zod.number().int()
@@ -13011,11 +13076,14 @@ export const ModerateBeautyJobParams = zod.object({
 
 export const moderateBeautyJobBodyReasonMax = 1000;
 
+export const moderateBeautyJobBodyInternalNoteMax = 2000;
+
 
 
 export const ModerateBeautyJobBody = zod.object({
   "action": zod.enum(['approve', 'reject', 'close', 'reactivate']),
-  "reason": zod.string().max(moderateBeautyJobBodyReasonMax).optional()
+  "reason": zod.string().max(moderateBeautyJobBodyReasonMax).optional(),
+  "internalNote": zod.string().max(moderateBeautyJobBodyInternalNoteMax).optional().describe('Administrator-only moderation context.')
 }).strict()
 
 export const moderateBeautyJobResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');

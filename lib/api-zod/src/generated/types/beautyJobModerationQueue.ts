@@ -5,10 +5,13 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { BeautyJobListing } from './beautyJobListing';
+import type { BeautyJobModerationListing } from './beautyJobModerationListing';
 import type { BeautyJobReport } from './beautyJobReport';
 
 export interface BeautyJobModerationQueue {
-  listings: BeautyJobListing[];
+  listings: BeautyJobModerationListing[];
   reports: BeautyJobReport[];
+  total: number;
+  page: number;
+  pageSize: number;
 }

@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
-import { eq, inArray, like } from "drizzle-orm";
+import { eq, inArray, like, sql } from "drizzle-orm";
 import {
   beautyJobCategoriesTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
-  beautyJobNotificationsTable, beautyJobPlatformSettingsTable, db, emailDeliveriesTable,
+  beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
+  beautyJobReportsTable, db, emailDeliveriesTable,
   pool, salonsTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
@@ -147,6 +148,16 @@ async function run(): Promise<void> {
     assert.equal(pendingAdminPreview.status, 200, "admin can privately preview a pending listing");
     assert.equal(pendingAdminPreview.body.id, customerListing.id);
     assert.equal(pendingAdminPreview.body.moderationStatus, "pending");
+    await db.update(beautyJobListingsTable)
+      .set({ expiresAt: sql`now() + interval '3 days'` })
+      .where(eq(beautyJobListingsTable.id, customerListing.id));
+    const pendingExpiringQueue = await request(base, "/admin/beauty-jobs/queue?status=expiring", admin.token);
+    assert.equal(pendingExpiringQueue.status, 200);
+    assert.equal(
+      pendingExpiringQueue.body.listings.some((item: any) => item.id === customerListing.id),
+      false,
+      "an unapproved pending listing must not appear in the expiring queue",
+    );
     const ownerCreate = await request(base, "/beauty-jobs", salonOwner.token, "POST", body(hairCategory.id, `Owner ${suffix}`));
     assert.equal(ownerCreate.status, 201);
     const ownerListing = ownerCreate.body;
@@ -190,6 +201,7 @@ async function run(): Promise<void> {
     const rejectedOwner = await request(base, `/admin/beauty-jobs/${ownerListing.id}/moderation`, admin.token, "POST", {
       action: "reject",
       reason: rejectedReason,
+      internalNote: `Privatna napomena ${suffix}`,
     });
     assert.equal(rejectedOwner.status, 200);
     assert.equal(rejectedOwner.body.moderationStatus, "rejected");
@@ -201,7 +213,10 @@ async function run(): Promise<void> {
     assert.equal(rejectedQueue.status, 200);
     const rejectedRecord = rejectedQueue.body.items.find((item: any) => item.id === ownerListing.id);
     assert.equal(rejectedRecord?.moderationReason, rejectedReason, "rejected listing review exposes the saved moderation reason");
+    assert.equal(rejectedRecord?.internalNote, `Privatna napomena ${suffix}`, "rejected history exposes the administrator-only note");
     assert.equal(typeof rejectedRecord?.moderatedAt, "string", "rejected listing review exposes its decision time");
+    const ownerAudit = await db.select().from(beautyJobModerationAuditTable).where(eq(beautyJobModerationAuditTable.listingId, ownerListing.id));
+    assert.ok(ownerAudit.some((entry) => entry.action === "reject" && entry.publicReason === rejectedReason && entry.internalNote === `Privatna napomena ${suffix}`), "individual rejection has an immutable audit row");
     assert.equal((await request(base, "/admin/beauty-jobs/rejected?period=custom&from=not-a-date&to=2026-01-01", admin.token)).status, 400);
     const initialModerationNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.listingId, customerListing.id));
@@ -210,6 +225,54 @@ async function run(): Promise<void> {
       1,
       "concurrent identical moderation emits one in-app notification",
     );
+    // Bulk moderation validates the complete request, records every decision,
+    // and must not notify again when the same decision is retried.
+    const bulkApprove = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Bulk approve ${suffix}`));
+    const bulkReject = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Bulk reject ${suffix}`));
+    assert.equal(bulkApprove.status, 201); assert.equal(bulkReject.status, 201);
+    createdListingIds.push(bulkApprove.body.id, bulkReject.body.id);
+    assert.equal((await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [bulkReject.body.id], action: "reject",
+    })).status, 400, "bulk rejection requires a public reason");
+    assert.equal((await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [bulkApprove.body.id, bulkApprove.body.id], action: "approve",
+    })).status, 400, "bulk ids must be unique");
+    assert.equal((await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [bulkReject.body.id], action: "reject", reason: "x".repeat(1001),
+    })).status, 400, "bulk rejection reason enforces the API contract maximum");
+    const closedBulk = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Bulk closed ${suffix}`));
+    const expiredBulk = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Bulk expired ${suffix}`));
+    assert.equal(closedBulk.status, 201); assert.equal(expiredBulk.status, 201);
+    createdListingIds.push(closedBulk.body.id, expiredBulk.body.id);
+    await db.update(beautyJobListingsTable).set({ status: "closed" }).where(eq(beautyJobListingsTable.id, closedBulk.body.id));
+    await db.update(beautyJobListingsTable).set({ status: "expired" }).where(eq(beautyJobListingsTable.id, expiredBulk.body.id));
+    assert.equal((await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [closedBulk.body.id, expiredBulk.body.id], action: "approve",
+    })).status, 409, "bulk approval must not reopen closed or expired listings");
+    const lifecycleRows = await db.select({ id: beautyJobListingsTable.id, status: beautyJobListingsTable.status })
+      .from(beautyJobListingsTable)
+      .where(inArray(beautyJobListingsTable.id, [closedBulk.body.id, expiredBulk.body.id]));
+    assert.equal(lifecycleRows.find((row) => row.id === closedBulk.body.id)?.status, "closed");
+    assert.equal(lifecycleRows.find((row) => row.id === expiredBulk.body.id)?.status, "expired");
+    const bulkEmailBefore = sentEmails.length;
+    const bulkResult = await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [bulkApprove.body.id, bulkReject.body.id], action: "reject",
+      reason: `Bulk public ${suffix}`, internalNote: `Bulk private ${suffix}`,
+    });
+    assert.equal(bulkResult.status, 200); assert.equal(bulkResult.body.processed, 2);
+    assert.equal((await request(base, "/admin/beauty-jobs/bulk-moderation", admin.token, "POST", {
+      listingIds: [bulkApprove.body.id, bulkReject.body.id], action: "reject",
+      reason: `Bulk public ${suffix}`, internalNote: `Bulk private ${suffix}`,
+    })).status, 200);
+    assert.equal(sentEmails.length, bulkEmailBefore + 2, "repeated identical bulk moderation emits no duplicate email");
+    const bulkAudits = await db.select().from(beautyJobModerationAuditTable)
+      .where(inArray(beautyJobModerationAuditTable.listingId, [bulkApprove.body.id, bulkReject.body.id]));
+    assert.equal(bulkAudits.filter((entry) => entry.action === "bulk_reject").length, 4, "each bulk request remains append-only audited per listing");
+    assert.ok(bulkAudits.every((entry) => entry.publicReason === `Bulk public ${suffix}` && entry.internalNote === `Bulk private ${suffix}`));
+    await db.delete(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, bulkReject.body.id));
+    const retainedAudit = await db.select().from(beautyJobModerationAuditTable)
+      .where(eq(beautyJobModerationAuditTable.listingId, bulkReject.body.id));
+    assert.equal(retainedAudit.length, 2, "moderation audit history must survive physical listing removal");
     const edited = await request(base, `/beauty-jobs/${customerListing.id}`, customer.token, "PATCH", { title: `Edited ${suffix}` });
     assert.equal(edited.status, 200);
     assert.equal(edited.body.moderationStatus, "pending", "editing must re-enter moderation");
@@ -323,6 +386,89 @@ async function run(): Promise<void> {
     }
     const priceDesc = await request(base, `/beauty-jobs?sort=price_desc&city=PriceCity${suffix}`);
     assert.ok(priceDesc.body.items.findIndex((x: any) => x.id === filterRental.id) < priceDesc.body.items.findIndex((x: any) => x.id === filterJob.id), "price_desc must order fixtures");
+
+    // A salon owner must not discover a competing salon's employment offer,
+    // including through totals or direct detail views. Other listing modes
+    // remain deliberately visible to salon owners.
+    const insertSalonFixture = async (title: string, values: Record<string, any> = {}) => {
+      const [listing] = await db.insert(beautyJobListingsTable).values({
+        categoryId: hairCategory.id, salonId: otherOwner.salon.id, postedByType: "salon",
+        type: "job", intent: "offering", title, description: `Salon visibility ${title}`,
+        city: "Beograd", region: "Vračar", status: "active", moderationStatus: "approved",
+        expiresAt: new Date(Date.now() + 86400000), ...values,
+      }).returning();
+      assert.ok(listing); createdListingIds.push(listing!.id); return listing!;
+    };
+    const competingJob = await insertSalonFixture(`Foreign employment ${suffix}`);
+    const foreignFreelance = await insertSalonFixture(`Foreign freelance ${suffix}`, { type: "freelance" });
+    const foreignSeeking = await insertSalonFixture(`Foreign seeking ${suffix}`, { intent: "seeking" });
+    const foreignRental = await insertSalonFixture(`Foreign rental ${suffix}`, {
+      categoryId: rentalCategory.id, type: "equipment_rental",
+    });
+    const ownSalonJob = await db.insert(beautyJobListingsTable).values({
+      categoryId: hairCategory.id, salonId: salonOwner.salon.id, postedByType: "salon",
+      type: "job", intent: "offering", title: `Own employment ${suffix}`, description: "Vlasnikov vidljivi oglas",
+      city: "Beograd", region: "Vračar", status: "active", moderationStatus: "approved", expiresAt: new Date(Date.now() + 86400000),
+    }).returning();
+    assert.ok(ownSalonJob[0]); createdListingIds.push(ownSalonJob[0]!.id);
+    const ownerPublic = await request(base, `/beauty-jobs?query=${encodeURIComponent(suffix)}`, salonOwner.token);
+    assert.equal(ownerPublic.status, 200);
+    assert.equal(ownerPublic.body.items.some((item: any) => item.id === competingJob.id), false);
+    assert.equal(ownerPublic.body.total, ownerPublic.body.items.length, "hidden competitor rows cannot leak through a public total");
+    for (const listing of [foreignFreelance, foreignSeeking, foreignRental, ownSalonJob[0]!]) {
+      assert.ok(ownerPublic.body.items.some((item: any) => item.id === listing.id), `${listing.title} remains visible to a salon owner`);
+      assert.equal((await request(base, `/beauty-jobs/${listing.id}`, salonOwner.token)).status, 200);
+    }
+    const competingViewsBefore = competingJob.viewCount;
+    assert.equal((await request(base, `/beauty-jobs/${competingJob.id}`, salonOwner.token)).status, 404);
+    const [competingAfterHiddenDetail] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, competingJob.id));
+    assert.equal(competingAfterHiddenDetail?.viewCount, competingViewsBefore, "hidden detail must not increment views");
+    for (const token of [undefined, customer.token, admin.token]) {
+      assert.equal((await request(base, `/beauty-jobs/${competingJob.id}`, token)).status, 200, "non-salon audiences retain employment visibility");
+    }
+
+    // Queue filters are authorized, paginated, deterministically sortable,
+    // and include report counts without relying on shared fixture ordering.
+    const queueA = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Queue alpha ${suffix}`));
+    const queueB = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Queue beta ${suffix}`));
+    assert.equal(queueA.status, 201); assert.equal(queueB.status, 201);
+    createdListingIds.push(queueA.body.id, queueB.body.id);
+    await db.insert(beautyJobReportsTable).values({ listingId: queueA.body.id, reason: `Queue report ${suffix}` });
+    assert.equal((await request(base, `/admin/beauty-jobs/queue?reportedOnly=true`, customer.token)).status, 403);
+    const reportedQueue = await request(base, `/admin/beauty-jobs/queue?status=pending&reportedOnly=true&search=${encodeURIComponent(`Queue alpha ${suffix}`)}&sort=oldest&page=1&pageSize=1`, admin.token);
+    assert.equal(reportedQueue.status, 200); assert.equal(reportedQueue.body.total, 1);
+    assert.equal(reportedQueue.body.page, 1); assert.equal(reportedQueue.body.pageSize, 1);
+    assert.equal(reportedQueue.body.listings.length, 1); assert.equal(reportedQueue.body.listings[0].id, queueA.body.id);
+    assert.equal(reportedQueue.body.listings[0].reportCount, 1);
+    for (const query of ["type=invalid", "listingMode=invalid", "postedBy=invalid", "reportedOnly=maybe", "sort=invalid", "period=custom&from=2026-02-30&to=2026-03-01"]) {
+      assert.equal((await request(base, `/admin/beauty-jobs/queue?${query}`, admin.token)).status, 400, `queue rejects unsupported or impossible ${query}`);
+    }
+    const unreported = await request(base, "/admin/beauty-jobs/queue?status=pending&sort=newest&page=2&pageSize=1", admin.token);
+    assert.equal(unreported.status, 200); assert.ok(unreported.body.total > 1);
+    assert.equal(unreported.body.listings.length, 1, "queue pagination applies after filtering");
+    assert.equal((await request(base, `/beauty-jobs/${queueB.body.id}`, admin.token, "PATCH", { title: `Queue beta edited ${suffix}` })).status, 200);
+    const adminEditAudit = await db.select().from(beautyJobModerationAuditTable)
+      .where(eq(beautyJobModerationAuditTable.listingId, queueB.body.id));
+    assert.ok(adminEditAudit.some((entry) => entry.action === "edit" && entry.actingAdminUserId === admin.user.id), "administrator PATCH has an audit record");
+    const expiringSixDays = await insertApproved(hairCategory.id, customer.user.id, `Six days ${suffix}`, { expiresAt: new Date(Date.now() + 6 * 86400000) });
+    const expiringQueue = await request(base, `/admin/beauty-jobs/queue?status=expiring&search=${encodeURIComponent(`Six days ${suffix}`)}`, admin.token);
+    assert.equal(expiringQueue.status, 200);
+    assert.equal(expiringQueue.body.total, 0, "expiring queue means the next five days, not seven");
+    const activityLow = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Activity ${suffix} low`));
+    const activityHigh = await request(base, "/beauty-jobs", customer.token, "POST", body(hairCategory.id, `Activity ${suffix} high`));
+    assert.equal(activityLow.status, 201); assert.equal(activityHigh.status, 201);
+    createdListingIds.push(activityLow.body.id, activityHigh.body.id);
+    await db.insert(beautyJobReportsTable).values([
+      { listingId: activityHigh.body.id, reason: `Activity one ${suffix}` },
+      { listingId: activityHigh.body.id, reason: `Activity two ${suffix}` },
+    ]);
+    const activityQueue = await request(
+      base,
+      `/admin/beauty-jobs/queue?status=pending&sort=activity&pageSize=100&search=${encodeURIComponent(`Activity ${suffix}`)}`,
+      admin.token,
+    );
+    assert.equal(activityQueue.status, 200);
+    assert.equal(activityQueue.body.listings[0]?.id, activityHigh.body.id, "activity sort uses report/contact activity rather than listing update time");
 
     const save = await request(base, `/beauty-jobs/${customerListing.id}/save`, applicant.token, "POST");
     assert.equal(save.status, 200); assert.equal(save.body.saved, true);
@@ -636,6 +782,9 @@ async function run(): Promise<void> {
     assert.equal(queue.status, 200); assert.ok(queue.body.reports.some((x: any) => x.id === report.body.id));
     assert.equal((await request(base, `/admin/beauty-jobs/reports/${report.body.id}/resolve`, admin.token, "POST", { status: "resolved", resolutionNote: "Uklonjeno" })).status, 200);
     assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`)).status, 404, "resolved report must hide listing");
+    const reportAudit = await db.select().from(beautyJobModerationAuditTable)
+      .where(eq(beautyJobModerationAuditTable.listingId, customerListing.id));
+    assert.ok(reportAudit.some((entry) => entry.action === "report_reject" && entry.publicReason === "Uklonjeno" && entry.internalNote === "Uklonjeno"), "report-driven rejection keeps its private audit trail");
 
     assert.equal((await request(base, "/admin/beauty-jobs/settings", admin.token)).status, 200);
     assert.equal((await request(base, "/admin/beauty-jobs/settings", admin.token, "PATCH", { listingExpiryDays: 2, hourlyPostingLimit: 1 })).status, 200);
@@ -697,7 +846,10 @@ async function run(): Promise<void> {
       updatedByUserId: originalSettings.updatedByUserId, updatedAt: originalSettings.updatedAt,
     }).where(eq(beautyJobPlatformSettingsTable.id, originalSettings.id));
     else await db.delete(beautyJobPlatformSettingsTable);
-    if (createdListingIds.length) await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
+    if (createdListingIds.length) {
+      await db.delete(beautyJobModerationAuditTable).where(inArray(beautyJobModerationAuditTable.listingId, createdListingIds));
+      await db.delete(beautyJobListingsTable).where(inArray(beautyJobListingsTable.id, createdListingIds));
+    }
     if (monitorAlertEventKeys.length) {
       await db.delete(emailDeliveriesTable).where(inArray(emailDeliveriesTable.eventKey, monitorAlertEventKeys));
     }

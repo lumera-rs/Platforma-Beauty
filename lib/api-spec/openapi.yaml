@@ -5135,7 +5135,32 @@ paths:
     get:
       operationId: getBeautyJobModerationQueue
       tags: [admin]
+      summary: Search and paginate authorized Beauty Poslovi moderation listings
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, active, rejected, expiring, expired, filled], default: pending } }
+        - { name: type, in: query, schema: { type: string, enum: [job, equipment_rental, space_rental, freelance] } }
+        - { name: listingMode, in: query, schema: { type: string, enum: [offering, rental, seeking] } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: postedBy, in: query, schema: { type: string, enum: [salon, user] } }
+        - { name: period, in: query, schema: { type: string, enum: [today, week, month, custom, all], default: all } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: reportedOnly, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, enum: [oldest, newest, activity], default: oldest } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
       responses: { "200": { description: Queue, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobModerationQueue" } } } } }
+  /admin/beauty-jobs/bulk-moderation:
+    post:
+      operationId: bulkModerateBeautyJobs
+      tags: [admin]
+      summary: Atomically moderate up to 100 Beauty Poslovi listings
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobBulkModerationInput" } } } }
+      responses:
+        "200": { description: Per-listing moderation results, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobBulkModerationResult" } } } }
+        "400": { description: Invalid bulk request }
+        "409": { description: One or more listings cannot be moderated from their current lifecycle state }
   /admin/beauty-jobs/rejected:
     get:
       operationId: listRejectedBeautyJobs
@@ -5148,7 +5173,7 @@ paths:
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
       responses:
-        "200": { description: Rejected listing page, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
+        "200": { description: Rejected listing page, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobRejectedListResponse" } } } }
   /admin/beauty-jobs/{listingId}/preview:
     get:
       operationId: getBeautyJobAdminPreview
@@ -9248,6 +9273,7 @@ components:
       properties:
         action: { type: string, enum: [approve, reject, close, reactivate] }
         reason: { type: string, maxLength: 1000 }
+        internalNote: { type: string, maxLength: 2000, description: Administrator-only moderation context. }
       required: [action]
     BeautyJobReportResolveInput:
       type: object
@@ -9378,6 +9404,21 @@ components:
         page: { type: integer }
         pageSize: { type: integer }
       required: [items, total, page, pageSize]
+    BeautyJobRejectedListing:
+      allOf:
+        - $ref: "#/components/schemas/BeautyJobListing"
+        - type: object
+          properties:
+            internalNote: { type: [string, "null"], description: Administrator-only moderation context. }
+          required: [internalNote]
+    BeautyJobRejectedListResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/BeautyJobRejectedListing" } }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+      required: [items, total, page, pageSize]
     BeautyJobContactsResponse:
       type: object
       properties: { contacts: { type: array, items: { $ref: "#/components/schemas/BeautyJobContact" } } }
@@ -9393,6 +9434,38 @@ components:
     BeautyJobModerationQueue:
       type: object
       properties:
-        listings: { type: array, items: { $ref: "#/components/schemas/BeautyJobListing" } }
+        listings: { type: array, items: { $ref: "#/components/schemas/BeautyJobModerationListing" } }
         reports: { type: array, items: { $ref: "#/components/schemas/BeautyJobReport" } }
-      required: [listings, reports]
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+      required: [listings, reports, total, page, pageSize]
+    BeautyJobModerationListing:
+      allOf:
+        - $ref: "#/components/schemas/BeautyJobListing"
+        - type: object
+          properties:
+            reportCount: { type: integer }
+            contactCount: { type: integer }
+          required: [reportCount, contactCount]
+    BeautyJobBulkModerationInput:
+      type: object
+      required: [listingIds, action]
+      properties:
+        listingIds: { type: array, minItems: 1, maxItems: 100, uniqueItems: true, items: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+        action: { type: string, enum: [approve, reject] }
+        reason: { type: string, maxLength: 1000 }
+        internalNote: { type: string, maxLength: 2000 }
+    BeautyJobBulkModerationResult:
+      type: object
+      required: [processed, results]
+      properties:
+        processed: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            required: [id, status]
+            properties:
+              id: { type: string }
+              status: { type: string, enum: [processed, not_found] }
