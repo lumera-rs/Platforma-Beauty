@@ -1,4 +1,5 @@
 import { BusinessLayout } from "@/components/business-layout";
+import { CreateListingCta } from "@/components/beauty-jobs/create-listing-cta";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
@@ -30,9 +31,10 @@ export default function BusinessLandingJobs() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-secondary text-secondary-foreground hover:bg-secondary/90 h-14 px-8 text-base shadow-lg transition-transform hover:scale-105" asChild>
-                <Link href="/poslovna-registracija">Objavite oglas</Link>
-              </Button>
+              <CreateListingCta
+                size="lg"
+                className="bg-secondary text-secondary-foreground hover:bg-secondary/90 h-14 px-8 text-base shadow-lg transition-transform hover:scale-105"
+              />
               <Button size="lg" variant="outline" className="border-white/30 bg-white/5 text-white hover:bg-white/10 hover:text-white h-14 px-8 text-base" asChild>
                 <Link href="/poslovi">Pregledajte oglase</Link>
               </Button>

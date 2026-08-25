@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
+import { CreateListingCta } from "@/components/beauty-jobs/create-listing-cta";
 import { BeautyJobCard } from "@/components/beauty-jobs/beauty-job-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -323,32 +324,7 @@ export default function BeautyJobsPage() {
               Najveća berza poslova i prostora u industriji lepote. Pronađite idealnog radnika, salon ili opremu za rad.
             </p>
             <div className="mt-6 flex flex-wrap gap-4">
-              {(!user) ? (
-                <div className="flex items-center gap-4">
-                  <Button asChild className="gap-2">
-                    <Link href="/pridruzi-se-poslovi">
-                      <Briefcase className="w-4 h-4" /> Kreiraj profil / Objavi
-                    </Link>
-                  </Button>
-                  <Button variant="outline" asChild className="gap-2">
-                    <Link href="/poslovna-registracija">
-                      Za Salone
-                    </Link>
-                  </Button>
-                </div>
-              ) : (user.role === "JOBSEEKER") ? (
-                <Button asChild className="gap-2">
-                  <Link href="/poslovi/nalog/oglasi?new=1">
-                    <Briefcase className="w-4 h-4" /> Objavi oglas
-                  </Link>
-                </Button>
-              ) : (user.role === "SALON_OWNER" || user.role === "EDUKATIVNI_CENTAR") ? (
-                <Button asChild className="gap-2">
-                  <Link href="/biznis/poslovi?tab=my-jobs&new=1">
-                    <Briefcase className="w-4 h-4" /> Objavi oglas
-                  </Link>
-                </Button>
-              ) : null}
+              <CreateListingCta className="gap-2" />
             </div>
           </div>
           <div className="lg:hidden">

@@ -32,3 +32,21 @@ export function homeForRole(role: UserRole): string {
       return "/";
   }
 }
+
+export function beautyJobCreationPathForRole(role: UserRole): string {
+  switch (role) {
+    case "JOBSEEKER":
+      return "/poslovi/nalog/oglasi?new=1";
+    case "SALON_OWNER":
+    case "EDUKATIVNI_CENTAR":
+    case "INSTRUCTOR":
+      return "/biznis/poslovi?tab=my-jobs&new=1";
+    case "ADMIN":
+    case "SUPER_ADMIN":
+      return "/admin/poslovi";
+    case "SALON_EMPLOYEE":
+      return "/zaposleni";
+    default:
+      return homeForRole(role);
+  }
+}
