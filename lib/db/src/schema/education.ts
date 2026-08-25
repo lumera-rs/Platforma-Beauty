@@ -109,6 +109,7 @@ export const coursesTable = pgTable("courses", {
   rating: integer("rating").notNull().default(0),
   certification: boolean("certification").notNull().default(false),
   imageUrl: text("image_url").notNull(),
+  isTest: boolean("is_test").notNull().default(false),
   published: boolean("published").notNull().default(true),
   archived: boolean("archived").notNull().default(false),
   isFeatured: boolean("is_featured").notNull().default(false),

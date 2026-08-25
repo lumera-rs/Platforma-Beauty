@@ -453,6 +453,7 @@ async function seed(): Promise<void> {
     rating: 45 + (index % 5),
     certification: true,
     imageUrl: "/lumera-media/course-1.jpg",
+    isTest: true,
     description: "Praktičan program za beauty profesionalce, uz jasno strukturisane lekcije i mentorsku podršku.",
     startDate: `2026-09-${String(4 + index).padStart(2, "0")}`,
   }))).returning();
@@ -469,6 +470,7 @@ async function seed(): Promise<void> {
     rating: 48,
     certification: true,
     imageUrl: "/lumera-media/course-1.jpg",
+    isTest: true,
     startDate: "2026-09-18",
   }).returning();
   const [module] = await db.insert(courseModulesTable).values({

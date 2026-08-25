@@ -85,6 +85,7 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   pricePeriod: beautyJobPricePeriodEnum("price_period"),
   negotiable: boolean("negotiable").notNull().default(false),
   photos: jsonb("photos").$type<string[]>().notNull().default([]),
+  isTest: boolean("is_test").notNull().default(false),
   status: beautyJobListingStatusEnum("status").notNull().default("active"),
   moderationStatus: beautyJobModerationStatusEnum("moderation_status").notNull().default("pending"),
   contactCount: integer("contact_count").notNull().default(0),

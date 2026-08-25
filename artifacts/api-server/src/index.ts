@@ -28,6 +28,7 @@ import { createResilientScheduledJob } from "./lib/scheduler-resilience";
 import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
+import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
 
 const rawPort = process.env["PORT"];
 
@@ -50,6 +51,7 @@ await ensureBusinessGrowthSchema();
 await ensureMediaSchema();
 await ensureShippingConfigSchema();
 await ensureMarketplacePerformanceIndexes();
+await reconcileKnownTestListings();
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");
