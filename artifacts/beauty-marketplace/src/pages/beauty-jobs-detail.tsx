@@ -5,6 +5,8 @@ import { srLatn } from "date-fns/locale";
 import { 
   useGetBeautyJob, 
   getGetBeautyJobQueryKey,
+  useGetBeautyJobAdminPreview,
+  getGetBeautyJobAdminPreviewQueryKey,
   useContactBeautyJobAuthor,
   useReportBeautyJob,
   useToggleSavedBeautyJob,
@@ -28,7 +30,9 @@ import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Brief
 export default function BeautyJobDetailPage() {
   const [, canonicalParams] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
   const [, legacyParams] = useRoute<{ listingId: string }>("/beauty-poslovi/:listingId");
-  const listingId = canonicalParams?.listingId ?? legacyParams?.listingId;
+  const [, adminPreviewParams] = useRoute<{ listingId: string }>("/admin/poslovi/pregled/:listingId");
+  const isAdminPreview = !!adminPreviewParams?.listingId;
+  const listingId = canonicalParams?.listingId ?? legacyParams?.listingId ?? adminPreviewParams?.listingId;
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const queryClient = useQueryClient();
@@ -42,12 +46,21 @@ export default function BeautyJobDetailPage() {
     }
   }, [isUserLoading, user, setLocation]);
 
-  const { data: job, isLoading, error } = useGetBeautyJob(listingId ?? "", {
+  const publicQuery = useGetBeautyJob(listingId ?? "", {
     query: {
-      enabled: !!listingId && !isUserLoading && user?.role !== "SALON_EMPLOYEE",
+      enabled: !!listingId && !isAdminPreview && !isUserLoading && user?.role !== "SALON_EMPLOYEE",
       queryKey: getGetBeautyJobQueryKey(listingId ?? "")
     }
   });
+  const adminPreviewQuery = useGetBeautyJobAdminPreview(listingId ?? "", {
+    query: {
+      enabled: !!listingId && isAdminPreview && !isUserLoading && (user?.role === "ADMIN" || user?.role === "SUPER_ADMIN"),
+      queryKey: getGetBeautyJobAdminPreviewQueryKey(listingId ?? "")
+    }
+  });
+  const job = isAdminPreview ? adminPreviewQuery.data : publicQuery.data;
+  const isLoading = isAdminPreview ? adminPreviewQuery.isLoading : publicQuery.isLoading;
+  const error = isAdminPreview ? adminPreviewQuery.error : publicQuery.error;
 
   useEffect(() => {
     if (!legacyParams?.listingId || !job) return;
@@ -90,7 +103,9 @@ export default function BeautyJobDetailPage() {
           <h1 className="text-3xl font-serif font-bold text-primary mb-4">Oglas nije pronađen</h1>
           <p className="text-muted-foreground mb-8">Ovaj oglas ne postoji, obrisan je ili je istekao.</p>
           <Button asChild>
-            <Link href="/poslovi">Nazad na sve poslove</Link>
+            <Link href={isAdminPreview ? "/admin/poslovi" : "/poslovi"}>
+              {isAdminPreview ? "Nazad na moderaciju" : "Nazad na sve poslove"}
+            </Link>
           </Button>
         </div>
       </Layout>
@@ -178,18 +193,25 @@ export default function BeautyJobDetailPage() {
     <Layout>
       <div className="bg-secondary/30 border-b">
         <div className="container mx-auto px-4 py-4">
-          <Link href="/poslovi" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="w-4 h-4" /> Nazad na poslove
+          <Link href={isAdminPreview ? "/admin/poslovi" : "/poslovi"} className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-4 h-4" /> {isAdminPreview ? "Nazad na moderaciju" : "Nazad na poslove"}
           </Link>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-8 max-w-4xl">
+        {isAdminPreview && (
+          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <strong>Privatni admin pregled.</strong> Ovaj prikaz je dostupan moderatorima bez obzira na javni status oglasa.
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <Badge variant={isOffer ? "default" : "secondary"}>
             {intentLabel}
           </Badge>
           <Badge variant="outline">{job.categoryName || job.categorySlug}</Badge>
+          {isAdminPreview && <Badge variant="secondary">Moderacija: {job.moderationStatus}</Badge>}
+          {isAdminPreview && <Badge variant="outline">Status: {job.status}</Badge>}
           {job.status === "closed" && <Badge variant="destructive">Zatvoren</Badge>}
         </div>
 
@@ -216,7 +238,7 @@ export default function BeautyJobDetailPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            {(user?.role !== "SALON_EMPLOYEE" && !job.isOwner) && (
+            {(!isAdminPreview && user?.role !== "SALON_EMPLOYEE" && !job.isOwner) && (
               <>
                 <Button variant={job.isSaved ? "secondary" : "outline"} className="gap-2" onClick={handleToggleSaved}>
                   <Bookmark className={`w-4 h-4 ${job.isSaved ? 'fill-current text-primary' : ''}`} />
@@ -326,11 +348,11 @@ export default function BeautyJobDetailPage() {
                       <div key={slot.id} className={`rounded-xl border p-4 ${slot.available ? "bg-card" : "bg-muted/40 opacity-70"}`}>
                         <p className="font-medium capitalize">{format(new Date(slot.startsAt), "EEEE, dd.MM.yyyy.", { locale: srLatn })}</p>
                         <p className="mt-1 text-sm text-muted-foreground">{format(new Date(slot.startsAt), "HH:mm", { locale: srLatn })}–{format(new Date(slot.endsAt), "HH:mm", { locale: srLatn })}</p>
-                        <Button className="mt-3 w-full" size="sm" variant={slot.available ? "default" : "secondary"} disabled={!slot.available || job.isOwner} onClick={() => {
+                        <Button className="mt-3 w-full" size="sm" variant={slot.available ? "default" : "secondary"} disabled={isAdminPreview || !slot.available || job.isOwner} onClick={() => {
                           if (!user) setLocation("/prijava");
                           else setBookingSlotId(slot.id);
                         }}>
-                          {slot.available ? (job.isOwner ? "Vaš termin" : "Zatraži termin") : "Rezervisano"}
+                          {isAdminPreview ? "Privatni pregled" : slot.available ? (job.isOwner ? "Vaš termin" : "Zatraži termin") : "Rezervisano"}
                         </Button>
                       </div>
                     ))}
@@ -408,7 +430,7 @@ export default function BeautyJobDetailPage() {
               </dl>
             </div>
             
-            {!job.isOwner && (
+            {!isAdminPreview && !job.isOwner && (
               <div className="text-center pt-4">
                 <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
                   <DialogTrigger asChild>

@@ -28,3 +28,6 @@ packages = ["glib", "nss", "nspr", "atk", "at-spi2-atk", "cups", "dbus", "expat"
 
 [userenv.production]
 APP_BASE_URL = "https://beauty-partner-hub.replit.app"
+
+[userenv.development]
+APP_BASE_URL = "https://6b6c8a4c-09a1-427b-b1ad-9e4e1d89549a-00-1j27uqb8wl0i8.archer.replit.dev"

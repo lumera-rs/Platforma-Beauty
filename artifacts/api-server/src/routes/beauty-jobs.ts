@@ -12,6 +12,7 @@ import {
   CreateBeautyJobRentalRequestBody, CreateBeautyJobRentalRequestParams,
   CreateBeautyJobRentalRequestResponse,
   CreateBeautyJobBody, CreateBeautyJobResponse,
+  GetBeautyJobAdminPreviewParams, GetBeautyJobAdminPreviewResponse,
   GetBeautyJobModerationQueueResponse, GetBeautyJobParams, GetBeautyJobResponse,
   GetBeautyJobDeliveryIssuesResponse,
   GetBeautyJobSettingsResponse, ListBeautyJobCategoriesResponse,
@@ -726,6 +727,14 @@ router.get("/admin/beauty-jobs/queue", async (req, res, next) => { try {
     listings: listings.map((r) => view({ ...r.listing, ...r })),
     reports: reports.map((r) => reportView(r.report, { listingTitle: r.listingTitle, authorSalonId: r.authorSalonId, authorUserId: r.authorUserId })),
   }));
+} catch (e) { next(e); } });
+router.get("/admin/beauty-jobs/:listingId/preview", async (req, res, next) => { try {
+  const user = await admin(req, res); if (!user) return;
+  const p = GetBeautyJobAdminPreviewParams.safeParse(req.params); if (!p.success) return bad(res);
+  const [row] = await listingQuery({ id: user.id }).where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1);
+  if (!row) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
+  const slotMap = await rentalSlotsByListing([p.data.listingId]);
+  res.json(GetBeautyJobAdminPreviewResponse.parse(view({ ...row.listing, ...row }, slotMap.get(p.data.listingId))));
 } catch (e) { next(e); } });
 router.post("/admin/beauty-jobs/:listingId/moderation", async (req, res, next) => { try {
   const user = await admin(req, res); if (!user) return; const p = ModerateBeautyJobParams.safeParse(req.params), b = ModerateBeautyJobBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);

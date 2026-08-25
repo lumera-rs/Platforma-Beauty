@@ -12853,6 +12853,62 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
 })
 
 
+/**
+ * @summary Preview a Beauty Poslovi listing regardless of public moderation status
+ */
+export const getBeautyJobAdminPreviewPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const GetBeautyJobAdminPreviewParams = zod.object({
+  "listingId": zod.coerce.string().regex(getBeautyJobAdminPreviewPathListingIdRegExp)
+})
+
+export const getBeautyJobAdminPreviewResponseIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const getBeautyJobAdminPreviewResponseAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const GetBeautyJobAdminPreviewResponse = zod.object({
+  "id": zod.string().regex(getBeautyJobAdminPreviewResponseIdRegExp),
+  "categoryId": zod.string().regex(getBeautyJobAdminPreviewResponseCategoryIdRegExp),
+  "categorySlug": zod.string(),
+  "categoryName": zod.string(),
+  "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']),
+  "intent": zod.enum(['offering', 'seeking']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "city": zod.string(),
+  "region": zod.string(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "priceAmount": zod.number().int().nullable(),
+  "pricePeriod": zod.string().nullable(),
+  "negotiable": zod.boolean(),
+  "photos": zod.array(zod.string()),
+  "status": zod.string(),
+  "moderationStatus": zod.string(),
+  "contactCount": zod.number().int(),
+  "viewCount": zod.number().int(),
+  "expiresAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date(),
+  "availabilityPattern": zod.string().nullable(),
+  "dayLabels": zod.array(zod.string()),
+  "authorDisplayName": zod.string(),
+  "postedByType": zod.enum(['salon', 'user']),
+  "updatedAt": zod.coerce.date(),
+  "isSaved": zod.boolean(),
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(getBeautyJobAdminPreviewResponseAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(getBeautyJobAdminPreviewResponseAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
+})
+
+
 export const moderateBeautyJobPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 
 

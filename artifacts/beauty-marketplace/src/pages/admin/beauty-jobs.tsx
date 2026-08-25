@@ -209,7 +209,7 @@ export default function AdminBeautyJobsPage() {
                       <h4 className="font-bold text-lg">{job.title}</h4>
                       <p className="text-sm text-muted-foreground">Autor: {job.authorDisplayName}</p>
                     </div>
-                    <Link href={`/poslovi/pregled/${job.id}`} target="_blank" className="text-sm font-medium text-primary hover:underline">
+                    <Link href={`/admin/poslovi/pregled/${job.id}`} target="_blank" className="text-sm font-medium text-primary hover:underline">
                       Otvori oglas ↗
                     </Link>
                   </div>
@@ -372,7 +372,7 @@ export default function AdminBeautyJobsPage() {
                       <h4 className="font-bold">Oglas ID: {report.listingId}</h4>
                       <p className="text-sm text-muted-foreground">Prijavio korisnik ID: {report.reporterUserId}</p>
                     </div>
-                    <Link href={`/poslovi/pregled/${report.listingId}`} target="_blank" className="text-sm font-medium text-primary hover:underline">
+                    <Link href={`/admin/poslovi/pregled/${report.listingId}`} target="_blank" className="text-sm font-medium text-primary hover:underline">
                       Otvori oglas ↗
                     </Link>
                   </div>

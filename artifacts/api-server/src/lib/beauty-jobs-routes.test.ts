@@ -140,6 +140,13 @@ async function run(): Promise<void> {
     const customerListing = customerCreate.body;
     createdListingIds.push(customerListing.id);
     assert.equal(customerListing.moderationStatus, "pending");
+    assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`)).status, 404, "pending listing remains private");
+    assert.equal((await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`)).status, 401, "admin preview requires authentication");
+    assert.equal((await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`, customer.token)).status, 403, "admin preview rejects non-admin users");
+    const pendingAdminPreview = await request(base, `/admin/beauty-jobs/${customerListing.id}/preview`, admin.token);
+    assert.equal(pendingAdminPreview.status, 200, "admin can privately preview a pending listing");
+    assert.equal(pendingAdminPreview.body.id, customerListing.id);
+    assert.equal(pendingAdminPreview.body.moderationStatus, "pending");
     const ownerCreate = await request(base, "/beauty-jobs", salonOwner.token, "POST", body(hairCategory.id, `Owner ${suffix}`));
     assert.equal(ownerCreate.status, 201);
     const ownerListing = ownerCreate.body;
@@ -156,6 +163,7 @@ async function run(): Promise<void> {
       request(base, `/admin/beauty-jobs/${customerListing.id}/moderation`, admin.token, "POST", { action: "approve" }),
     ]);
     assert.deepEqual(concurrentApprovals.map((result) => result.status), [200, 200]);
+    assert.equal((await request(base, `/beauty-jobs/${customerListing.id}`)).status, 200, "approved listing becomes publicly visible");
     assert.equal(
       sentEmails.filter((email) => email.subject.includes("Oglas je odobren")).length,
       1,

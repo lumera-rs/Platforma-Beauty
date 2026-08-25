@@ -22414,6 +22414,83 @@ export function useGetBeautyJobModerationQueue<TData = Awaited<ReturnType<typeof
 
 
 
+export const getGetBeautyJobAdminPreviewUrl = (listingId: string,) => {
+
+
+
+
+  return `/api/admin/beauty-jobs/${listingId}/preview`
+}
+
+/**
+ * @summary Preview a Beauty Poslovi listing regardless of public moderation status
+ */
+export const getBeautyJobAdminPreview = async (listingId: string, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListing> => {
+
+  return customFetch<BeautyJobListing>(getGetBeautyJobAdminPreviewUrl(listingId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBeautyJobAdminPreviewQueryKey = (listingId: string,) => {
+    return [
+    `/api/admin/beauty-jobs/${listingId}/preview`
+    ] as const;
+    }
+
+
+export const getGetBeautyJobAdminPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getBeautyJobAdminPreview>>, TError = ErrorType<void>>(listingId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobAdminPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBeautyJobAdminPreviewQueryKey(listingId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBeautyJobAdminPreview>>> = ({ signal }) => getBeautyJobAdminPreview(listingId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: listingId !== null && listingId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobAdminPreview>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBeautyJobAdminPreviewQueryResult = NonNullable<Awaited<ReturnType<typeof getBeautyJobAdminPreview>>>
+export type GetBeautyJobAdminPreviewQueryError = ErrorType<void>
+
+
+/**
+ * @summary Preview a Beauty Poslovi listing regardless of public moderation status
+ */
+
+export function useGetBeautyJobAdminPreview<TData = Awaited<ReturnType<typeof getBeautyJobAdminPreview>>, TError = ErrorType<void>>(
+ listingId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBeautyJobAdminPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBeautyJobAdminPreviewQueryOptions(listingId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getModerateBeautyJobUrl = (listingId: string,) => {
 
 

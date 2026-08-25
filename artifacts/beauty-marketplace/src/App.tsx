@@ -351,6 +351,7 @@ function Router() {
         <Route path="/admin/saloni"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSalons /></RoleGuard></Route>
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
+        <Route path="/admin/poslovi/pregled/:listingId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><BeautyJobDetail /></RoleGuard></Route>
         <Route path="/admin/poslovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBeautyJobs /></RoleGuard></Route>
         <Route path="/admin/profil"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProfile /></RoleGuard></Route>
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>
