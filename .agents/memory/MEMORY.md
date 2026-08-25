@@ -98,3 +98,4 @@
 - [tsx inline module execution](tsx-inline-module-execution.md) — use stdin for top-level await; eval is CommonJS and forced input-type can poison imported loaders.
 - [URL numeric filter absence](url-numeric-filter-absence.md) — missing numeric query parameters must stay absent instead of silently becoming zero.
 - [Rental booking serialization](rental-booking-serialization.md) — derive slot invariants from listing state reread under listing→slot locks.
+- [Production demo content isolation](production-demo-content-isolation.md) — production demos must be dedicated, marker-owned records seeded atomically under a cross-instance lock.

@@ -29,6 +29,7 @@ import { runBrevoWebhookCoverageMonitor } from "./lib/monitoring";
 import { expireBeautyJobListings } from "./lib/beauty-jobs-maintenance";
 import { runBeautyJobDeliveryFailureAlerts } from "./lib/beauty-jobs-delivery-monitor";
 import { reconcileKnownTestListings } from "./lib/test-listing-reconciliation";
+import { seedProductionMarketplaceDemoContent } from "./lib/production-marketplace-demo-seed";
 
 const rawPort = process.env["PORT"];
 
@@ -52,6 +53,9 @@ await ensureMediaSchema();
 await ensureShippingConfigSchema();
 await ensureMarketplacePerformanceIndexes();
 await reconcileKnownTestListings();
+if (process.env.NODE_ENV === "production") {
+  await seedProductionMarketplaceDemoContent();
+}
 
 void startSalonNotificationEventListener().catch((error: unknown) => {
   logger.error({ err: error }, "Salon notification event listener failed to start");
