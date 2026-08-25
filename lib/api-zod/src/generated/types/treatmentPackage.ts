@@ -5,6 +5,8 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { PackageServiceQuota } from './packageServiceQuota';
+import type { TreatmentPackageQuotaPolicy } from './treatmentPackageQuotaPolicy';
 
 export interface TreatmentPackage {
   id: string;
@@ -15,7 +17,9 @@ export interface TreatmentPackage {
   sessionCount: number;
   validityDays: number;
   active: boolean;
+  quotaPolicy: TreatmentPackageQuotaPolicy;
   serviceIds: string[];
+  serviceQuotas: PackageServiceQuota[];
   createdAt: Date;
   updatedAt: Date;
 }

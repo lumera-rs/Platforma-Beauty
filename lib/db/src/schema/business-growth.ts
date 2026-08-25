@@ -259,6 +259,8 @@ export const treatmentPackagesTable = pgTable("treatment_packages", {
   validityDays: integer("validity_days").notNull().default(365),
   /** Soft-delete: deactivated packages are hidden but purchases remain valid */
   active: boolean("active").notNull().default(true),
+  /** Legacy definitions retain a shared pool; new definitions are per-service. */
+  quotaPolicy: text("quota_policy").notNull().default("shared_pool"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -273,6 +275,8 @@ export const packageServiceLinksTable = pgTable("package_service_links", {
   id: uuid("id").defaultRandom().primaryKey(),
   packageId: uuid("package_id").notNull().references(() => treatmentPackagesTable.id, { onDelete: "cascade" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+  /** Explicit per-service allowance for new package definitions. */
+  quota: integer("quota").notNull().default(1),
 }, (table) => [
   uniqueIndex("package_service_links_unique").on(table.packageId, table.serviceId),
   index("package_service_links_service_idx").on(table.serviceId),
@@ -291,6 +295,10 @@ export const packagePurchaseServiceLinksTable = pgTable("package_purchase_servic
   id: uuid("id").defaultRandom().primaryKey(),
   purchaseId: uuid("purchase_id").notNull().references(() => customerPackagePurchasesTable.id, { onDelete: "cascade" }),
   serviceId: uuid("service_id").notNull().references(() => servicesTable.id, { onDelete: "cascade" }),
+  /** Immutable allowance snapshot for this service. */
+  totalQuota: integer("total_quota").notNull().default(0),
+  /** Balance for per_service purchases; legacy shared_pool purchases do not consume it. */
+  remainingQuota: integer("remaining_quota").notNull().default(0),
 }, (table) => [
   uniqueIndex("package_purchase_service_links_unique").on(table.purchaseId, table.serviceId),
   index("package_purchase_service_links_purchase_idx").on(table.purchaseId),
@@ -311,6 +319,11 @@ export const customerPackagePurchasesTable = pgTable("customer_package_purchases
   totalSessions: integer("total_sessions").notNull(),
   /** Remaining balance — atomically decremented on redemption, incremented on reversal */
   remainingSessions: integer("remaining_sessions").notNull(),
+  /**
+   * Explicit persisted interpretation of balances. Never infer this from package
+   * links: historic purchases retain their shared aggregate pool forever.
+   */
+  quotaPolicy: text("quota_policy").notNull().default("shared_pool"),
   priceInDinars: integer("price_in_dinars").notNull(),
   /** How the customer will pay; default is pay_at_salon */
   paymentMethod: packagePaymentMethodEnum("payment_method").notNull().default("pay_at_salon"),
@@ -342,6 +355,10 @@ export const packageRedemptionsTable = pgTable("package_redemptions", {
   salonId: uuid("salon_id").notNull().references(() => salonsTable.id, { onDelete: "cascade" }),
   appointmentId: uuid("appointment_id").notNull().references(() => appointmentsTable.id, { onDelete: "restrict" }),
   salonCustomerId: uuid("salon_customer_id").notNull().references(() => salonCustomersTable.id, { onDelete: "cascade" }),
+  /** Exact immutable service snapshot consumed; null only for pre-rollout rows. */
+  purchaseServiceLinkId: uuid("purchase_service_link_id").references(() => packagePurchaseServiceLinksTable.id, { onDelete: "restrict" }),
+  /** Denormalized service identity for audit and legacy backfill. */
+  serviceId: uuid("service_id").references(() => servicesTable.id, { onDelete: "restrict" }),
   status: packageRedemptionStatusEnum("status").notNull().default("redeemed"),
   /** Original appointment price at redemption time — restored when reversed */
   originalAppointmentPrice: integer("original_appointment_price").notNull().default(0),
@@ -359,6 +376,7 @@ export const packageRedemptionsTable = pgTable("package_redemptions", {
   index("package_redemptions_reversed_by_idx").on(table.reversedByUserId),
   /** Leading FK coverage: salonCustomerId (existing composite leads with salonId). */
   index("package_redemptions_customer_idx").on(table.salonCustomerId),
+  index("package_redemptions_purchase_service_link_idx").on(table.purchaseServiceLinkId),
 ]);
 
 // ---------------------------------------------------------------------------

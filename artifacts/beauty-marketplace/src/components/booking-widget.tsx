@@ -12,7 +12,7 @@ import {
   User as UserIcon, Check, Loader2,
   MapPin, AlertCircle, Heart, X
 } from "lucide-react";
-import type { SalonProfile, TimeSlot, CurrentUserResponse, Employee } from "@workspace/api-client-react";
+import type { SalonProfile, TimeSlot, CurrentUserResponse, Employee, PackagePurchase, TreatmentPackagePublic } from "@workspace/api-client-react";
 import { useCustomerListMyPurchases, useCustomerListPublicPackages } from "@workspace/api-client-react";
 import { AvatarImage as OptimizedAvatarImage } from "@/components/optimized-image";
 
@@ -86,13 +86,24 @@ export function BookingWidget(props: BookingWidgetProps) {
 
   const applicablePackages = useMemo(() => {
     if (!customerPackages || !props.selectedService || !publicPackages) return [];
-    return customerPackages.filter((p: any) => {
-      if (p.status !== 'active' || p.remainingSessions <= 0 || p.salonId !== props.salon.id) return false;
+    const selectedServiceId = props.selectedService;
+    return customerPackages.flatMap((purchase: PackagePurchase) => {
+      if (purchase.status !== 'active' || purchase.salonId !== props.salon.id) return [];
       // Package must not be expired
-      if (p.expiresAt && new Date(p.expiresAt) < new Date()) return false;
-      const pkgDef = publicPackages.find((def: any) => def.id === p.packageId);
-      if (!pkgDef) return false;
-      return pkgDef.serviceIds.includes(props.selectedService!);
+      if (purchase.expiresAt && new Date(purchase.expiresAt) < new Date()) return [];
+      const packageDefinition = publicPackages.find((definition: TreatmentPackagePublic) => definition.id === purchase.packageId);
+      if (!packageDefinition || !packageDefinition.serviceIds.includes(selectedServiceId)) return [];
+
+      if (purchase.quotaPolicy === "per_service") {
+        const selectedServiceQuota = purchase.serviceQuotas.find(({ serviceId }) => serviceId === selectedServiceId);
+        return selectedServiceQuota && selectedServiceQuota.remainingQuota > 0
+          ? [{ purchase, remaining: selectedServiceQuota.remainingQuota, total: selectedServiceQuota.totalQuota }]
+          : [];
+      }
+
+      return purchase.remainingSessions > 0
+        ? [{ purchase, remaining: purchase.remainingSessions, total: purchase.totalSessions }]
+        : [];
     });
   }, [customerPackages, props.selectedService, publicPackages, props.salon.id]);
 
@@ -576,19 +587,19 @@ export function BookingWidget(props: BookingWidgetProps) {
                         <Check className="w-4 h-4" /> Imate aktivan paket za ovu uslugu
                       </p>
                       <div className="space-y-2">
-                        {applicablePackages.map((pkg) => (
-                          <label key={pkg.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedPackageId === pkg.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:border-primary/40'}`}>
+                        {applicablePackages.map(({ purchase, remaining, total }) => (
+                          <label key={purchase.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedPackageId === purchase.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:border-primary/40'}`}>
                             <input
                               type="radio"
                               name="package_payment"
-                              checked={selectedPackageId === pkg.id}
-                              onChange={() => setSelectedPackageId(pkg.id)}
+                              checked={selectedPackageId === purchase.id}
+                              onChange={() => setSelectedPackageId(purchase.id)}
                               className="accent-primary"
                             />
                             <div>
-                              <p className="font-bold text-sm leading-none">{pkg.packageName}</p>
-                              <p className={`text-xs mt-1 ${selectedPackageId === pkg.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                                Preostalo: {pkg.remainingSessions} tretmana
+                              <p className="font-bold text-sm leading-none">{purchase.packageName}</p>
+                              <p className={`text-xs mt-1 ${selectedPackageId === purchase.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                Preostalo za izabranu uslugu: {remaining} / {total} tretmana
                               </p>
                             </div>
                           </label>

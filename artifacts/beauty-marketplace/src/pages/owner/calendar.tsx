@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SearchableCombobox, type SearchableComboboxOption } from "@/components/ui/searchable-combobox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -39,13 +40,19 @@ import {
   getSearchSalonAvailabilityQueryKey,
   useGetSalonCalendarDay,
   getGetSalonCalendarDayQueryKey,
+  useOwnerListCustomerPackages,
+  getOwnerListCustomerPackagesQueryKey,
+  usePreviewSalonPackageAppointments,
+  useCreateSalonPackageAppointments,
   type Appointment,
   type EmployeeTimeBlock,
   type GetSalonCalendarDayParams,
   type ListSalonAppointmentsParams,
   type ListSalonTimeBlocksParams,
   type SalonCalendarDayEmployee,
-  type SearchSalonAvailabilityParams
+  type SearchSalonAvailabilityParams,
+  type PackagePurchase,
+  type SalonPackageAppointmentSlot
 } from "@workspace/api-client-react";
 import { CalendarDays, Clock3, House, Loader2, MapPin, MessageSquareOff, Pencil, Plus, Repeat2, Trash2, UserRoundPlus, Search, Ban, AlignLeft, CalendarRange } from "lucide-react";
 
@@ -128,9 +135,9 @@ function AppointmentDayButton({ day, modifiers, className, ...props }: Component
 
 const today = dateKey(new Date());
 type SeriesSlot = { date: string; startTime: string };
-type OwnerBookingForm = { serviceId: string; employeeId: string; date: string; startTime: string; notes: string; customerId: string; firstName: string; lastName: string; phone: string; email: string; recurrence: "daily" | "every-2-days" | "every-3-days" | "weekly" | "biweekly" | "monthly" | "custom"; customDays: string; count: string };
+type OwnerBookingForm = { serviceId: string; employeeId: string; date: string; startTime: string; notes: string; customerId: string; firstName: string; lastName: string; phone: string; email: string; recurrence: "daily" | "every-2-days" | "every-3-days" | "weekly" | "biweekly" | "monthly" | "custom"; customDays: string; count: string; packagePurchaseId: string };
 type CalendarListItem = (Appointment & { _type: "appointment" }) | (EmployeeTimeBlock & { _type: "block" });
-const initialForm: OwnerBookingForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "", recurrence: "weekly", customDays: "7", count: "5" };
+const initialForm: OwnerBookingForm = { serviceId: "", employeeId: "", date: today, startTime: "10:00", notes: "", customerId: "new", firstName: "", lastName: "", phone: "", email: "", recurrence: "weekly", customDays: "7", count: "5", packagePurchaseId: "" };
 
 function buildSeriesSlots(form: OwnerBookingForm): SeriesSlot[] {
   const count = Math.max(1, Math.min(24, Number(form.count) || 1));
@@ -246,7 +253,7 @@ function CalendarTimeline({
           <div className="w-16 flex-none border-r bg-muted/5 relative">
             {hours.map(h => (
               <div key={h} className="absolute w-full text-right pr-2 text-xs text-muted-foreground font-medium"
-                   style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE - 7 }}>
+                   style={{ top: Math.max(2, (h - START_HOUR) * 60 * PIXELS_PER_MINUTE - 7) }}>
                 {String(h).padStart(2, '0')}:00
               </div>
             ))}
@@ -416,6 +423,14 @@ export default function OwnerCalendar() {
   const [customersPage, setCustomersPage] = useState(1);
   const customersParams = useMemo(() => ({ page: customersPage, pageSize: CUSTOMERS_PAGE_SIZE }), [customersPage]);
   const { data: customers, refetch: refetchCustomers } = useListSalonCustomers(customersParams, { query: { enabled: !!userResp?.user, queryKey: getListSalonCustomersQueryKey(customersParams) } });
+  const customerOptions = useMemo<SearchableComboboxOption[]>(() => (customers ?? []).map((customer) => ({
+    value: customer.id,
+    label: `${customer.firstName} ${customer.lastName} · ${customer.phone ?? "bez telefona"}`,
+    keywords: `${customer.firstName} ${customer.lastName} ${customer.phone ?? ""}`,
+  })), [customers]);
+  const serviceOptions = useMemo<SearchableComboboxOption[]>(() => (services ?? [])
+    .filter((service) => service.active)
+    .map((service) => ({ value: service.id, label: `${service.name} · ${service.durationMinutes} min`, keywords: service.name })), [services]);
 
   const create = useCreateSalonAppointment();
   const createSeries = useCreateSalonAppointmentSeries();
@@ -427,12 +442,66 @@ export default function OwnerCalendar() {
   const updateCustomer = useUpdateSalonCustomer();
   const createBlock = useCreateSalonTimeBlock();
   const deleteBlock = useDeleteSalonTimeBlock();
+  const previewPackageSeries = usePreviewSalonPackageAppointments();
+  const createPackageSeries = useCreateSalonPackageAppointments();
+  const queryClient = useQueryClient();
 
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [bookingMode, setBookingMode] = useState<"standard" | "package">("standard");
   const [form, setForm] = useState(initialForm);
   const [isSeries, setIsSeries] = useState(false);
   const [seriesSlots, setSeriesSlots] = useState<SeriesSlot[]>([]);
+
+  const { data: customerPackages, refetch: refetchCustomerPackages } = useOwnerListCustomerPackages(
+    { salonCustomerId: form.customerId, status: 'active' },
+    { query: { enabled: !!userResp?.user && form.customerId !== "" && form.customerId !== "new", queryKey: getOwnerListCustomerPackagesQueryKey({ salonCustomerId: form.customerId, status: 'active' }) } }
+  );
+
+  type PackagePlannerRow = { id: string; serviceId: string; employeeId: string; date: string; startTime: string };
+  const [packagePlannerPackageId, setPackagePlannerPackageId] = useState("");
+  const [packagePlannerRows, setPackagePlannerRows] = useState<PackagePlannerRow[]>([]);
+  const updatePackagePlannerRow = (index: number, patch: Partial<PackagePlannerRow>) => {
+    previewPackageSeries.reset();
+    setPackagePlannerRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  };
+
+  const handlePlannerPackageChange = (id: string) => {
+    setPackagePlannerPackageId(id);
+    const pkg = customerPackages?.find(p => p.id === id);
+    if (!pkg) {
+      setPackagePlannerRows([]);
+      previewPackageSeries.reset();
+      return;
+    }
+    const newRows: PackagePlannerRow[] = [];
+    if (pkg.quotaPolicy === 'per_service') {
+      pkg.serviceQuotas.forEach(q => {
+        for (let i = 0; i < q.remainingQuota; i++) {
+          newRows.push({
+            id: Math.random().toString(36).slice(2),
+            serviceId: q.serviceId,
+            employeeId: "",
+            date: today,
+            startTime: "10:00"
+          });
+        }
+      });
+    } else if (pkg.quotaPolicy === 'shared_pool') {
+      const firstCoveredServiceId = pkg.serviceQuotas[0]?.serviceId || "";
+      for (let i = 0; i < pkg.remainingSessions; i++) {
+        newRows.push({
+          id: Math.random().toString(36).slice(2),
+          serviceId: firstCoveredServiceId,
+          employeeId: "",
+          date: today,
+          startTime: "10:00"
+        });
+      }
+    }
+    setPackagePlannerRows(newRows);
+    previewPackageSeries.reset();
+  };
   const [editing, setEditing] = useState<{ id: string; seriesId: string | null; status: "pending" | "confirmed" | "completed" | "cancelled" | "no-show"; employeeId: string; notes: string } | null>(null);
   const [seriesMove, setSeriesMove] = useState<{ seriesId: string; dayOffset: string; startTime: string } | null>(null);
   const [seriesMovePreviewKey, setSeriesMovePreviewKey] = useState<string | null>(null);
@@ -476,8 +545,12 @@ export default function OwnerCalendar() {
   const openNewAppointment = (overrides?: Partial<OwnerBookingForm>) => {
     setForm({ ...initialForm, date: selectedDate ?? today, ...overrides });
     setIsSeries(false);
+    setBookingMode("standard");
     setSeriesSlots([]);
+    setPackagePlannerPackageId("");
+    setPackagePlannerRows([]);
     previewSeries.reset();
+    previewPackageSeries.reset();
     setOpen(true);
   };
 
@@ -486,7 +559,7 @@ export default function OwnerCalendar() {
     setBlockOpen(true);
   };
 
-  useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, seriesSlots]);
+  useEffect(() => { previewSeries.reset(); }, [form.serviceId, form.employeeId, form.packagePurchaseId, form.customerId, seriesSlots]);
   useEffect(() => { previewSeriesMove.reset(); setSeriesMovePreviewKey(null); }, [seriesMove?.seriesId, seriesMove?.dayOffset, seriesMove?.startTime]);
 
   const createAppointment = (event: React.FormEvent) => {
@@ -498,10 +571,12 @@ export default function OwnerCalendar() {
     if (isSeries) {
       if (!seriesSlots.length) { toast.error("Prvo primenite pravilo ponavljanja."); return; }
       if (!previewSeries.data?.allAvailable) { toast.error("Pregledom potvrdite da su svi termini dostupni."); return; }
+      if (previewSeries.data?.packageEligible === false) { toast.error(`Paket problem: ${previewSeries.data.packageReason}`); return; }
       createSeries.mutate({
         data: {
           serviceId: form.serviceId, employeeId: form.employeeId || null, notes: form.notes || undefined,
           slots: seriesSlots,
+          packagePurchaseId: form.packagePurchaseId || undefined,
           ...(form.customerId === "new"
             ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
             : { salonCustomerId: form.customerId }),
@@ -509,7 +584,7 @@ export default function OwnerCalendar() {
       }, {
         onSuccess: () => {
           toast.success("Serija termina je sačuvana", { description: "Svaki termin ima zasebnu SMS i e-mail potvrdu kada su podaci dostupni." });
-          setOpen(false); selectDate(seriesSlots[0]!.date); setForm(initialForm); setSeriesSlots([]); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers();
+          setOpen(false); selectDate(seriesSlots[0]!.date); setForm(initialForm); setSeriesSlots([]); refetchAppointments(); refetchUnfilteredAppointments(); refetchCustomers(); refetchCustomerPackages();
         },
         onError: (error) => toast.error("Serija nije sačuvana", { description: error instanceof Error ? error.message : "Ponovo proverite dostupnost." }),
       });
@@ -522,6 +597,7 @@ export default function OwnerCalendar() {
         date: form.date,
         startTime: form.startTime,
         notes: form.notes || undefined,
+        packagePurchaseId: form.packagePurchaseId || undefined,
         ...(form.customerId === "new"
           ? { guest: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), phone: form.phone.trim(), ...(form.email.trim() ? { email: form.email.trim() } : {}) } }
           : { salonCustomerId: form.customerId }),
@@ -535,8 +611,40 @@ export default function OwnerCalendar() {
         refetchAppointments();
         refetchUnfilteredAppointments();
         refetchCustomers();
+        refetchCustomerPackages();
       },
       onError: (error) => toast.error("Termin nije sačuvan", { description: error instanceof Error ? error.message : "Proverite dostupnost termina." }),
+    });
+  };
+
+  const submitPlanner = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!previewPackageSeries.data?.allAvailable || !previewPackageSeries.data?.packageEligible) {
+      toast.error("Prvo proverite i potvrdite da su svi termini slobodni.");
+      return;
+    }
+    createPackageSeries.mutate({
+      data: {
+        packagePurchaseId: packagePlannerPackageId,
+        slots: packagePlannerRows.map(r => ({
+          serviceId: r.serviceId,
+          date: r.date,
+          startTime: r.startTime,
+          employeeId: r.employeeId || null,
+        }))
+      }
+    }, {
+      onSuccess: () => {
+        toast.success("Ceo paket je raspoređen.");
+        setOpen(false);
+        const firstDate = packagePlannerRows[0]?.date;
+        if (firstDate) selectDate(firstDate);
+        refetchAppointments();
+        refetchUnfilteredAppointments();
+        refetchCustomers();
+        refetchCustomerPackages();
+      },
+      onError: (err) => toast.error("Paket nije sačuvan", { description: err instanceof Error ? err.message : "Pokušajte ponovo." })
     });
   };
 
@@ -588,7 +696,22 @@ export default function OwnerCalendar() {
 
   const runSeriesPreview = () => {
     if (!form.serviceId || !seriesSlots.length) { toast.error("Izaberite uslugu i primenite pravilo serije."); return; }
-    previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: form.employeeId || null, slots: seriesSlots } });
+    previewSeries.mutate({ data: { serviceId: form.serviceId, employeeId: form.employeeId || null, slots: seriesSlots, packagePurchaseId: form.packagePurchaseId || null, salonCustomerId: form.customerId !== "new" ? form.customerId : null } });
+  };
+
+  const runPlannerPreview = () => {
+    if (!packagePlannerPackageId || !packagePlannerRows.length) return;
+    previewPackageSeries.mutate({
+      data: {
+        packagePurchaseId: packagePlannerPackageId,
+        slots: packagePlannerRows.map(r => ({
+          serviceId: r.serviceId,
+          date: r.date,
+          startTime: r.startTime,
+          employeeId: r.employeeId || null,
+        }))
+      }
+    });
   };
 
   const openSeriesMove = (seriesId: string) => {
@@ -648,6 +771,18 @@ export default function OwnerCalendar() {
 
   const timelineEmployees = calendarDayData ? (filterEmployeeId ? calendarDayData.filter(e => e.employeeId === filterEmployeeId) : calendarDayData) : [];
 
+  function getEligiblePackageOptions(packages: PackagePurchase[], serviceId: string) {
+    if (!serviceId) return [];
+    return packages.filter(p => {
+      if (p.status !== 'active') return false;
+      const quota = p.serviceQuotas.find(q => q.serviceId === serviceId);
+      if (!quota) return false;
+      return p.quotaPolicy === 'shared_pool' ? p.remainingSessions > 0 : quota.remainingQuota > 0;
+    });
+  }
+
+  const eligiblePackages = getEligiblePackageOptions(customerPackages ?? [], form.serviceId);
+
   return (
     <BusinessLayout>
       <div className="container mx-auto flex w-full max-w-[1600px] flex-col items-start gap-8 px-4 py-8 lg:px-6 xl:flex-row">
@@ -674,21 +809,144 @@ export default function OwnerCalendar() {
               </Dialog>
               <Dialog open={open} onOpenChange={setOpen}>
                 <DialogTrigger asChild><Button data-testid="calendar-new-appointment" onClick={() => openNewAppointment()}><Plus className="mr-2 h-4 w-4" /> Novi termin</Button></DialogTrigger>
-                <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-                  <DialogHeader><DialogTitle>Ručno zakazivanje termina</DialogTitle></DialogHeader>
-                  <form className="space-y-5 pt-2" onSubmit={createAppointment}>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2"><Label>Usluga</Label><select required className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></div>
-                      <div className="space-y-2"><Label>Zaposleni</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })}><option value="">Prvi dostupan</option>{employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></div>
-                      <div className="space-y-2"><Label>Datum</Label><Input required type="date" min={today} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-                      <div className="space-y-2"><Label>Vreme</Label><Input required type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
-                    </div>
-                    <div className="space-y-2"><Label>Klijent</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}><option value="new">Novi klijent (brzi unos)</option>{customers?.map((customer) => <option key={customer.id} value={customer.id}>{customer.firstName} {customer.lastName} · {customer.phone ?? "bez telefona"}</option>)}</select></div>
-                    {form.customerId === "new" && <div className="rounded-lg border border-dashed bg-muted/30 p-4"><div className="mb-3 flex items-center gap-2 font-medium"><UserRoundPlus className="h-4 w-4 text-primary" /> Walk-in klijent</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Ime</Label><Input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></div><div className="space-y-2"><Label>Prezime</Label><Input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></div><div className="space-y-2"><Label>Telefon</Label><Input required placeholder="+381 6x..." value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="space-y-2"><Label>E-mail <span className="text-muted-foreground">(opciono)</span></Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div></div></div>}
-                    <div className="space-y-2"><Label>Napomena <span className="text-muted-foreground">(opciono)</span></Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
-                    <div className="rounded-xl border bg-muted/20 p-4"><label className="flex cursor-pointer items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={isSeries} onChange={(event) => { setIsSeries(event.target.checked); if (event.target.checked) setSeriesSlots(buildSeriesSlots(form)); else { setSeriesSlots([]); previewSeries.reset(); } }} /> <Repeat2 className="h-4 w-4 text-primary" /> Zakaži seriju termina</label>{isSeries && <div className="mt-4 space-y-3"><div className="grid gap-3 sm:grid-cols-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={form.recurrence} onChange={(event) => setForm({ ...form, recurrence: event.target.value as OwnerBookingForm["recurrence"] })}><option value="daily">Svaki dan</option><option value="every-2-days">Svaka 2 dana</option><option value="every-3-days">Svaka 3 dana</option><option value="weekly">Nedeljno</option><option value="biweekly">Na 2 nedelje</option><option value="monthly">Mesečno</option><option value="custom">Prilagođeno (dani)</option></select>{form.recurrence === "custom" && <Input type="number" min="1" max="90" value={form.customDays} onChange={(event) => setForm({ ...form, customDays: event.target.value })} /> }<Input type="number" min="1" max="24" value={form.count} onChange={(event) => setForm({ ...form, count: event.target.value })} /></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setSeriesSlots(buildSeriesSlots(form))}>Primeni pravilo</Button><Button type="button" size="sm" variant="outline" disabled={previewSeries.isPending} onClick={runSeriesPreview}>{previewSeries.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Proveri dostupnost</Button></div>{seriesSlots.length > 0 && <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border bg-background p-2">{seriesSlots.map((slot, index) => { const state = previewSeries.data?.slots.find((item) => appointmentDateKey(item.date) === slot.date && item.startTime === slot.startTime); return <div className="flex items-center gap-2" key={`${slot.date}-${index}`}><Input className="h-8" type="date" value={slot.date} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} /><Input className="h-8" type="time" value={slot.startTime} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, startTime: event.target.value } : item))} /><span className={cn("text-xs", state?.available === false ? "text-destructive" : state?.available ? "text-emerald-700" : "text-muted-foreground")}>{state ? (state.available ? "Slobodno" : "Konflikt") : "Nije provereno"}</span><Button type="button" variant="ghost" size="icon" aria-label="Ukloni termin iz serije" onClick={() => setSeriesSlots(seriesSlots.filter((_, i) => i !== index))}><Trash2 className="h-4 w-4" /></Button></div>; })}</div>}</div>}</div>
-                    <Button className="w-full" type="submit" disabled={create.isPending || createSeries.isPending}>{(create.isPending || createSeries.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {isSeries ? "Sačuvaj seriju termina" : "Sačuvaj termin"}</Button>
-                  </form>
+                <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                  <DialogHeader><DialogTitle>Zakazivanje</DialogTitle></DialogHeader>
+                  <Tabs value={bookingMode} onValueChange={(v) => setBookingMode(v as "standard" | "package")} className="mt-2">
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                      <TabsTrigger value="standard">Jedan termin ili serija</TabsTrigger>
+                      <TabsTrigger value="package">Planiranje celog paketa</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="standard">
+                      <form className="space-y-5" onSubmit={createAppointment}>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-2"><Label>Usluga</Label><select required className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.serviceId} onChange={(e) => { setForm({ ...form, serviceId: e.target.value, packagePurchaseId: "" }); previewSeries.reset(); }}><option value="">Izaberite uslugu</option>{services?.filter((service) => service.active).map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}</select></div>
+                          <div className="space-y-2"><Label>Zaposleni</Label><select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })}><option value="">Prvi dostupan</option>{employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></div>
+                          <div className="space-y-2"><Label>Datum</Label><Input required type="date" min={today} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
+                          <div className="space-y-2"><Label>Vreme</Label><Input required type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} /></div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Klijent</Label>
+                          <SearchableCombobox
+                            value={form.customerId}
+                            onValueChange={(customerId) => { previewPackageSeries.reset(); setForm({ ...form, customerId, packagePurchaseId: "" }); setPackagePlannerPackageId(""); setPackagePlannerRows([]); }}
+                            options={customerOptions}
+                            placeholder="Izaberite klijenta"
+                            searchPlaceholder="Pretražite klijente..."
+                            emptyMessage="Nema klijenata na ovoj strani."
+                            pinnedAction={{ label: "Novi klijent (brzi unos)", value: "new" }}
+                            data-testid="appointment-customer-combobox"
+                            aria-label="Izaberite klijenta"
+                            footer={
+                              <div className="flex items-center justify-between gap-2">
+                                <Button type="button" size="sm" variant="outline" disabled={customersPage <= 1} onClick={() => setCustomersPage((page) => Math.max(1, page - 1))}>Prethodna</Button>
+                                <span className="text-xs text-muted-foreground" aria-live="polite">Strana {customersPage}</span>
+                                <Button type="button" size="sm" variant="outline" disabled={(customers?.length ?? 0) < CUSTOMERS_PAGE_SIZE} onClick={() => setCustomersPage((page) => page + 1)}>Sledeća</Button>
+                              </div>
+                            }
+                          />
+                        </div>
+                        {form.customerId !== "new" && eligiblePackages.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Korišćenje paketa (opciono)</Label>
+                            <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.packagePurchaseId} onChange={(e) => setForm({ ...form, packagePurchaseId: e.target.value })}>
+                              <option value="">Redovno plaćanje (ne koristi paket)</option>
+                              {eligiblePackages.map(p => {
+                                const q = p.serviceQuotas.find(sq => sq.serviceId === form.serviceId);
+                                const label = p.quotaPolicy === 'shared_pool' ? `${p.packageName} (Zajedničkih termina: ${p.remainingSessions})` : `${p.packageName} (Preostalo za ovu uslugu: ${q?.remainingQuota}/${q?.totalQuota})`;
+                                return <option key={p.id} value={p.id}>{label}</option>;
+                              })}
+                            </select>
+                          </div>
+                        )}
+                        {form.customerId === "new" && <div className="rounded-lg border border-dashed bg-muted/30 p-4"><div className="mb-3 flex items-center gap-2 font-medium"><UserRoundPlus className="h-4 w-4 text-primary" /> Walk-in klijent</div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Ime</Label><Input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></div><div className="space-y-2"><Label>Prezime</Label><Input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></div><div className="space-y-2"><Label>Telefon</Label><Input required placeholder="+381 6x..." value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div><div className="space-y-2"><Label>E-mail <span className="text-muted-foreground">(opciono)</span></Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div></div></div>}
+                        <div className="space-y-2"><Label>Napomena <span className="text-muted-foreground">(opciono)</span></Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+                        <div className="rounded-xl border bg-muted/20 p-4"><label className="flex cursor-pointer items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={isSeries} onChange={(event) => { setIsSeries(event.target.checked); if (event.target.checked) setSeriesSlots(buildSeriesSlots(form)); else { setSeriesSlots([]); previewSeries.reset(); } }} /> <Repeat2 className="h-4 w-4 text-primary" /> Zakaži seriju termina</label>{isSeries && <div className="mt-4 space-y-3"><div className="grid gap-3 sm:grid-cols-3"><select className="h-10 rounded-md border bg-background px-3 text-sm" value={form.recurrence} onChange={(event) => setForm({ ...form, recurrence: event.target.value as OwnerBookingForm["recurrence"] })}><option value="daily">Svaki dan</option><option value="every-2-days">Svaka 2 dana</option><option value="every-3-days">Svaka 3 dana</option><option value="weekly">Nedeljno</option><option value="biweekly">Na 2 nedelje</option><option value="monthly">Mesečno</option><option value="custom">Prilagođeno (dani)</option></select>{form.recurrence === "custom" && <Input type="number" min="1" max="90" value={form.customDays} onChange={(event) => setForm({ ...form, customDays: event.target.value })} /> }<Input type="number" min="1" max="24" value={form.count} onChange={(event) => setForm({ ...form, count: event.target.value })} /></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => setSeriesSlots(buildSeriesSlots(form))}>Primeni pravilo</Button><Button type="button" size="sm" variant="outline" disabled={previewSeries.isPending} onClick={runSeriesPreview}>{previewSeries.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Proveri dostupnost</Button></div>{previewSeries.data?.packageEligible === false && <Badge variant="destructive" className="mt-2 w-full text-center">Paket problem: {previewSeries.data.packageReason}</Badge>}{seriesSlots.length > 0 && <div className="max-h-44 space-y-2 overflow-y-auto rounded-lg border bg-background p-2">{seriesSlots.map((slot, index) => { const state = previewSeries.data?.slots.find((item) => appointmentDateKey(item.date) === slot.date && item.startTime === slot.startTime); return <div className="flex items-center gap-2" key={`${slot.date}-${index}`}><Input className="h-8" type="date" value={slot.date} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, date: event.target.value } : item))} /><Input className="h-8" type="time" value={slot.startTime} onChange={(event) => setSeriesSlots(seriesSlots.map((item, i) => i === index ? { ...item, startTime: event.target.value } : item))} /><span className={cn("text-xs", state?.available === false ? "text-destructive" : state?.available ? "text-emerald-700" : "text-muted-foreground")}>{state ? (state.available ? "Slobodno" : "Konflikt") : "Nije provereno"}</span><Button type="button" variant="ghost" size="icon" aria-label="Ukloni termin iz serije" onClick={() => setSeriesSlots(seriesSlots.filter((_, i) => i !== index))}><Trash2 className="h-4 w-4" /></Button></div>; })}</div>}</div>}</div>
+                        <Button className="w-full" type="submit" disabled={create.isPending || createSeries.isPending || previewSeries.data?.packageEligible === false}>{(create.isPending || createSeries.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {isSeries ? "Sačuvaj seriju termina" : "Sačuvaj termin"}</Button>
+                      </form>
+                    </TabsContent>
+
+                    <TabsContent value="package">
+                      <form className="space-y-5" onSubmit={submitPlanner}>
+                        <div className="space-y-2">
+                          <Label>Klijent</Label>
+                          <SearchableCombobox
+                            value={form.customerId}
+                            onValueChange={(customerId) => { setForm({ ...form, customerId, packagePurchaseId: "" }); setPackagePlannerPackageId(""); setPackagePlannerRows([]); }}
+                            options={customerOptions}
+                            placeholder="Izaberite klijenta"
+                            searchPlaceholder="Pretražite klijente..."
+                            emptyMessage="Nema klijenata na ovoj strani."
+                            pinnedAction={{ label: "Novi klijent (brzi unos)", value: "new" }}
+                            data-testid="planner-customer-combobox"
+                          />
+                        </div>
+                        {form.customerId === "new" ? (
+                          <div className="p-4 text-center text-sm text-muted-foreground bg-muted/20 rounded-xl border">Walk-in klijenti ne mogu koristiti pakete.</div>
+                        ) : form.customerId !== "" ? (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Aktivni paket za raspoređivanje</Label>
+                              <select className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={packagePlannerPackageId} onChange={(e) => handlePlannerPackageChange(e.target.value)}>
+                                <option value="">Izaberite paket</option>
+                                {customerPackages?.filter(p => p.status === 'active' && p.remainingSessions > 0).map(p => (
+                                  <option key={p.id} value={p.id}>{p.packageName} ({p.remainingSessions} preostalih termina)</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {packagePlannerPackageId && (
+                              <div className="space-y-4">
+                                <div className="max-h-[50vh] overflow-y-auto p-1 space-y-3 custom-scrollbar">
+                                  {packagePlannerRows.map((row, index) => {
+                                    const state = previewPackageSeries.data?.slots[index];
+                                    const activePackage = customerPackages?.find(p => p.id === packagePlannerPackageId);
+                                    const isShared = activePackage?.quotaPolicy === 'shared_pool';
+                                    const coveredServices = isShared ? (activePackage?.serviceQuotas.map(q => q.serviceId) || []) : [];
+
+                                    return (
+                                      <div key={row.id} className="flex flex-col gap-2 rounded-lg border bg-muted/10 p-3 shadow-sm">
+                                        <div className="flex items-center justify-between text-sm font-medium mb-1">
+                                          <span>Termin #{index + 1}</span>
+                                          <span className={cn("text-xs", state?.available === false ? "text-destructive" : state?.available ? "text-emerald-700" : "text-muted-foreground")}>{state ? (state.available ? "Slobodno" : "Konflikt") : "Nije provereno"}</span>
+                                        </div>
+                                        {state?.reason && <p className="text-xs text-destructive">{state.reason}</p>}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          {isShared ? (
+                                            <select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={row.serviceId} onChange={(e) => updatePackagePlannerRow(index, { serviceId: e.target.value })}>
+                                              {coveredServices.map(sid => {
+                                                const s = services?.find(serv => serv.id === sid);
+                                                return <option key={sid} value={sid}>{s?.name || sid}</option>;
+                                              })}
+                                            </select>
+                                          ) : (
+                                            <div className="h-9 w-full rounded-md border bg-muted/30 px-3 text-sm flex items-center text-muted-foreground">{services?.find(s => s.id === row.serviceId)?.name || row.serviceId}</div>
+                                          )}
+                                          <select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={row.employeeId} onChange={(e) => updatePackagePlannerRow(index, { employeeId: e.target.value })}>
+                                            <option value="">Zaposleni: Prvi dostupan</option>
+                                            {employees?.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+                                          </select>
+                                          <Input className="h-9 text-sm" type="date" min={today} value={row.date} onChange={(e) => updatePackagePlannerRow(index, { date: e.target.value })} />
+                                          <Input className="h-9 text-sm" type="time" value={row.startTime} onChange={(e) => updatePackagePlannerRow(index, { startTime: e.target.value })} />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {previewPackageSeries.data?.packageEligible === false && <Badge variant="destructive" className="w-full text-center p-2">Problem sa paketom: {previewPackageSeries.data.packageReason}</Badge>}
+                                <div className="flex flex-col gap-2">
+                                  <Button type="button" variant="outline" disabled={previewPackageSeries.isPending || packagePlannerRows.length === 0} onClick={runPlannerPreview}>{previewPackageSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Proveri dostupnost celog plana</Button>
+                                  <Button type="submit" disabled={createPackageSeries.isPending || !previewPackageSeries.data?.allAvailable || previewPackageSeries.data?.packageEligible === false || packagePlannerRows.length === 0}>
+                                    {createPackageSeries.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sačuvaj raspored paketa
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : null}
+                      </form>
+                    </TabsContent>
+                  </Tabs>
                 </DialogContent>
               </Dialog>
             </div>
@@ -755,10 +1013,15 @@ export default function OwnerCalendar() {
                 <CardContent className="space-y-4 px-5 py-5 sm:px-7">
                   <div className="space-y-2">
                     <Label>Usluga</Label>
-                    <select data-testid="search-service-select" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={searchForm.serviceId} onChange={(e) => setSearchForm({...searchForm, serviceId: e.target.value})}>
-                      <option value="">Izaberite uslugu</option>
-                      {services?.filter(s => s.active).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                    <SearchableCombobox
+                      value={searchForm.serviceId}
+                      onValueChange={(serviceId) => setSearchForm({ ...searchForm, serviceId })}
+                      options={serviceOptions}
+                      placeholder="Izaberite uslugu"
+                      searchPlaceholder="Pretražite usluge..."
+                      data-testid="search-service-combobox"
+                      aria-label="Izaberite uslugu za pretragu"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Zaposleni (opciono)</Label>

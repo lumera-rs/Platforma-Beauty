@@ -43,6 +43,71 @@ export type RedeemResult =
 export type ReverseResult =
   | { ok: true; remainingSessions: number }
   | { ok: false; reason: "not_found" | "already_reversed" | "wrong_salon" };
+type RedeemFailureReason = Extract<RedeemResult, { ok: false }>["reason"];
+
+function validatePackageEntitlement(
+  purchase: typeof customerPackagePurchasesTable.$inferSelect,
+  links: (typeof packagePurchaseServiceLinksTable.$inferSelect)[],
+  input: { salonId: string; salonCustomerId: string; requiredByService: Map<string, number>; now?: Date },
+): { ok: true; remainingSessions: number } | { ok: false; reason: RedeemFailureReason } {
+  if (purchase.salonId !== input.salonId) return { ok: false, reason: "wrong_salon" };
+  if (purchase.salonCustomerId !== input.salonCustomerId) return { ok: false, reason: "wrong_customer" };
+  if (purchase.status !== "active") return { ok: false, reason: "not_active" };
+  if (purchase.expiresAt <= (input.now ?? new Date())) return { ok: false, reason: "expired" };
+  const required = [...input.requiredByService.values()].reduce((total, count) => total + count, 0);
+  if (purchase.remainingSessions < required) return { ok: false, reason: "no_sessions_left" };
+  const linksByService = new Map(links.map((link) => [link.serviceId, link]));
+  for (const [serviceId, count] of input.requiredByService) {
+    const link = linksByService.get(serviceId);
+    if (!link) return { ok: false, reason: "service_not_covered" };
+    if (purchase.quotaPolicy === "per_service" && link.remainingQuota < count) {
+      return { ok: false, reason: "no_sessions_left" };
+    }
+  }
+  return { ok: true, remainingSessions: purchase.remainingSessions };
+}
+
+/** Read-only entitlement check used by booking previews. Creation must still
+ * call redeemPackageSessionInTx, which locks and revalidates this snapshot. */
+export async function packageEntitlementForServices(
+  store: DbOrTx,
+  input: { purchaseId: string; salonId: string; salonCustomerId: string; requiredByService: Map<string, number>; now?: Date },
+): Promise<{ ok: true; remainingSessions: number } | { ok: false; reason: RedeemFailureReason }> {
+  const [purchase] = await store.select().from(customerPackagePurchasesTable)
+    .where(eq(customerPackagePurchasesTable.id, input.purchaseId)).limit(1);
+  if (!purchase) return { ok: false, reason: "not_found" };
+  const links = await store.select().from(packagePurchaseServiceLinksTable)
+    .where(eq(packagePurchaseServiceLinksTable.purchaseId, purchase.id));
+  return validatePackageEntitlement(purchase, links, input);
+}
+
+/**
+ * Creation-time entitlement snapshot. The purchase and all immutable service
+ * snapshot rows remain locked until the caller's transaction commits, so an
+ * exact-all-remaining booking cannot race a cancellation/reversal restore.
+ */
+export async function lockPackageEntitlementForServicesInTx(
+  tx: Tx,
+  input: { purchaseId: string; salonId: string; salonCustomerId: string; requiredByService: Map<string, number>; now?: Date },
+): Promise<
+  | {
+      ok: true;
+      remainingSessions: number;
+      purchase: typeof customerPackagePurchasesTable.$inferSelect;
+      links: (typeof packagePurchaseServiceLinksTable.$inferSelect)[];
+    }
+  | { ok: false; reason: RedeemFailureReason }
+> {
+  const [purchase] = await tx.select().from(customerPackagePurchasesTable)
+    .where(eq(customerPackagePurchasesTable.id, input.purchaseId)).for("update");
+  if (!purchase) return { ok: false, reason: "not_found" };
+  const links = await tx.select().from(packagePurchaseServiceLinksTable)
+    .where(eq(packagePurchaseServiceLinksTable.purchaseId, purchase.id))
+    .for("update");
+  const validation = validatePackageEntitlement(purchase, links, input);
+  if (!validation.ok) return validation;
+  return { ...validation, purchase, links };
+}
 
 // ---------------------------------------------------------------------------
 // Core redeem logic — operates within a caller-supplied transaction.
@@ -108,7 +173,11 @@ export async function redeemPackageSessionInTx(
     // If the snapshot is empty (should not happen for valid purchases, but handled
     // fail-safe) we reject rather than broadening access.
     const [snapshotLink] = await tx
-      .select({ id: packagePurchaseServiceLinksTable.id })
+      .select({
+        id: packagePurchaseServiceLinksTable.id,
+        serviceId: packagePurchaseServiceLinksTable.serviceId,
+        remainingQuota: packagePurchaseServiceLinksTable.remainingQuota,
+      })
       .from(packagePurchaseServiceLinksTable)
       .where(and(
         eq(packagePurchaseServiceLinksTable.purchaseId, input.purchaseId),
@@ -116,6 +185,9 @@ export async function redeemPackageSessionInTx(
       ))
       .limit(1);
     if (!snapshotLink) return { ok: false, reason: "service_not_covered" };
+    if (purchase.quotaPolicy === "per_service" && snapshotLink.remainingQuota <= 0) {
+      return { ok: false, reason: "no_sessions_left" };
+    }
 
     // Idempotency: check for existing active redemption
     const [existing] = await tx
@@ -128,7 +200,23 @@ export async function redeemPackageSessionInTx(
       .limit(1);
     if (existing?.status === "redeemed") return { ok: false, reason: "already_redeemed" };
 
-    // Atomic decrement — guard against race
+    // Per-service purchases consume the immutable service snapshot balance as
+    // well as the legacy aggregate compatibility balance. The purchase row lock
+    // serializes aggregate changes; this guarded update makes the service cap
+    // independently fail closed if an out-of-band writer races us.
+    if (purchase.quotaPolicy === "per_service") {
+      const decremented = await tx
+        .update(packagePurchaseServiceLinksTable)
+        .set({ remainingQuota: sql`${packagePurchaseServiceLinksTable.remainingQuota} - 1` })
+        .where(and(
+          eq(packagePurchaseServiceLinksTable.id, snapshotLink.id),
+          sql`${packagePurchaseServiceLinksTable.remainingQuota} > 0`,
+        ))
+        .returning({ id: packagePurchaseServiceLinksTable.id });
+      if (!decremented.length) return { ok: false, reason: "no_sessions_left" };
+    }
+
+    // Atomic aggregate decrement — retained for backwards compatibility.
     const [updatedPurchase] = await tx
       .update(customerPackagePurchasesTable)
       .set({
@@ -157,6 +245,8 @@ export async function redeemPackageSessionInTx(
         salonId: input.salonId,
         appointmentId: input.appointmentId,
         salonCustomerId: input.requestingCustomerId,
+        purchaseServiceLinkId: snapshotLink.id,
+        serviceId: snapshotLink.serviceId,
         status: "redeemed",
         originalAppointmentPrice: originalPrice,
         redeemedAt: now,
@@ -241,7 +331,23 @@ export async function reversePackageRedemptionInTx(
       .returning({ id: packageRedemptionsTable.id });
     if (!marked.length) return { ok: false, reason: "already_reversed" };
 
-    // Restore session count
+    // Restore exactly the snapshot balance consumed by this redemption. Legacy
+    // rows have no snapshot link and intentionally remain aggregate-only.
+    if (purchase.quotaPolicy === "per_service") {
+      if (!redemption.purchaseServiceLinkId) {
+        throw new Error("Per-service redemption is missing its service snapshot link");
+      }
+      const restoredLink = await tx
+        .update(packagePurchaseServiceLinksTable)
+        .set({ remainingQuota: sql`${packagePurchaseServiceLinksTable.remainingQuota} + 1` })
+        .where(eq(packagePurchaseServiceLinksTable.id, redemption.purchaseServiceLinkId))
+        .returning({ id: packagePurchaseServiceLinksTable.id });
+      if (!restoredLink.length) {
+        throw new Error("Per-service redemption snapshot link is missing");
+      }
+    }
+
+    // Restore aggregate session count
     const [updatedPurchase] = await tx
       .update(customerPackagePurchasesTable)
       .set({

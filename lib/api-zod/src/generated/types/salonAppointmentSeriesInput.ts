@@ -8,8 +8,10 @@
 import type { AppointmentSeriesPreviewInput } from './appointmentSeriesPreviewInput';
 import type { SalonAppointmentSeriesInputGuest } from './salonAppointmentSeriesInputGuest';
 
-export type SalonAppointmentSeriesInput = AppointmentSeriesPreviewInput & {
+export type SalonAppointmentSeriesInput = AppointmentSeriesPreviewInput & ({
   notes?: string;
   salonCustomerId?: string;
   guest?: SalonAppointmentSeriesInputGuest;
-};
+  /** @nullable */
+  packagePurchaseId?: string | null;
+});

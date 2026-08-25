@@ -116,6 +116,8 @@ import
   serviceTemplatesTable,
   servicesTable,
   appointmentResourceAllocationsTable,
+  customerPackagePurchasesTable,
+  packagePurchaseServiceLinksTable,
   subscriptionPlansTable,
   subscriptionsTable,
   smsDeliveriesTable,
@@ -398,6 +400,10 @@ import
   PreviewSalonAppointmentSeriesMoveBody,
   PreviewSalonAppointmentSeriesMoveParams,
   PreviewSalonAppointmentSeriesMoveResponse,
+  PreviewSalonPackageAppointmentsBody,
+  PreviewSalonPackageAppointmentsResponse,
+  CreateSalonPackageAppointmentsBody,
+  CreateSalonPackageAppointmentsResponse,
   PreviewEmployeeAppointmentSeriesBody,
   PreviewEmployeeAppointmentSeriesResponse,
   MoveSalonAppointmentSeriesBody,
@@ -536,7 +542,8 @@ import
 
 import 
 {
- redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx 
+  redeemPackageSessionInTx, handleAppointmentCancellationReversalsInTx, packageEntitlementForServices,
+  lockPackageEntitlementForServicesInTx
 }
  from "../lib/package-entitlement"
 ;
@@ -1527,7 +1534,12 @@ export async function createAllocatedAppointment(input: {
   });
 }
 
-type PreparedSeriesSlot = { date: string; startTime: string; endTime: string };
+type PreparedSeriesSlot = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  preferredEmployeeId?: string | null;
+};
 
 function prepareSeriesSlots(
   slots: Array<{ date: string | Date; startTime: string }>,
@@ -1596,9 +1608,15 @@ async function createAppointmentSeries(input: {
   createdByUserId: string;
   notes?: string | null;
   preferredEmployeeId?: string | null;
+  packagePurchaseId?: string | null;
+  /** Allows package-wide booking to keep all per-service series in one tx. */
+  tx?: any;
 }) {
-  return db.transaction(async (tx) => {
-    await lockAppointmentResources(tx, input.salonId, input.slots);
+  const createInTx = async (tx: any) => {
+    await lockAppointmentResources(tx, input.salonId, input.slots.map((slot) => ({
+      date: slot.date,
+      employeeId: slot.preferredEmployeeId ?? input.preferredEmployeeId ?? null,
+    })));
     const allocations: Array<{ slot: PreparedSeriesSlot; employee: typeof employeesTable.$inferSelect }> = [];
     const reservedAppointments: ReservedAppointment[] = [];
     const requirements = await fetchServiceResourceRequirements(tx, input.service.id);
@@ -1613,7 +1631,7 @@ async function createAppointmentSeries(input: {
         slot.date,
         slot.startTime,
         slot.endTime,
-        input.preferredEmployeeId,
+        slot.preferredEmployeeId ?? input.preferredEmployeeId,
         reservedAppointments,
       );
       if (!employee) throw new AppointmentSeriesError(`Termin ${slot.date} u ${slot.startTime} više nije slobodan.`);
@@ -1627,11 +1645,12 @@ async function createAppointmentSeries(input: {
       date: slot.date,
       employeeId: employee.id,
     })));
+    const allocatedEmployeeIds = [...new Set(allocations.map(({ employee }) => employee.id))];
     const [series] = await tx.insert(appointmentSeriesTable).values({
       salonId: input.salonId,
       salonCustomerId: input.salonCustomerId,
       serviceId: input.service.id,
-      employeeId: input.preferredEmployeeId ?? null,
+      employeeId: allocatedEmployeeIds.length === 1 ? allocatedEmployeeIds[0]! : null,
       totalAppointments: input.slots.length,
       createdByUserId: input.createdByUserId,
     }).returning();
@@ -1654,10 +1673,22 @@ async function createAppointmentSeries(input: {
       }).returning();
       // allocateResourcesInTx throws ResourceCapacityError → rolls back.
       await allocateResourcesInTx(tx, input.salonId, requirements, appointment!.id, slot.date, slot.startTime, slot.endTime);
+      if (input.packagePurchaseId) {
+        const redemption = await redeemPackageSessionInTx(tx, {
+          purchaseId: input.packagePurchaseId,
+          appointmentId: appointment!.id,
+          salonId: input.salonId,
+          requestingCustomerId: input.salonCustomerId,
+        });
+        if (!redemption.ok) throw new PackageRedemptionError(redemption.reason);
+        appointments.push({ ...appointment!, price: 0 });
+        continue;
+      }
       appointments.push(appointment!);
     }
     return { series: series!, appointments };
-  });
+  };
+  return input.tx ? createInTx(input.tx) : db.transaction(createInTx);
 }
 
 type SeriesMoveSlot = {
@@ -6604,6 +6635,9 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
   if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
     res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
   }
+  if (parsed.data.packagePurchaseId && !parsed.data.salonCustomerId) {
+    res.status(400).json({ error: "Paket se može iskoristiti samo za postojećeg CRM klijenta." }); return;
+  }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, salon.id), eq(servicesTable.active, true))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
   const date = calendarDate(parsed.data.date);
@@ -6643,11 +6677,15 @@ router.post("/salon/appointments", async (req, res): Promise<void> => {
       status: "confirmed",
       notes: parsed.data.notes ?? null,
       preferredEmployeeId: parsed.data.employeeId,
+      packagePurchaseId: parsed.data.packagePurchaseId,
     });
   } catch (err: unknown) {
     if (err instanceof ResourceCapacityError) {
       res.status(409).json({ error: err.message });
       return;
+    }
+    if (err instanceof PackageRedemptionError) {
+      res.status(409).json({ error: err.message, code: "PACKAGE_ERROR", reason: err.reason }); return;
     }
     throw err;
   }
@@ -6678,8 +6716,21 @@ router.post("/salon/appointment-series/preview", async (req, res): Promise<void>
   }
   try {
     const slots = prepareSeriesSlots(parsed.data.slots, service.durationMinutes);
+    let entitlement: { ok: boolean; reason?: string } = { ok: true };
+    if (parsed.data.packagePurchaseId) {
+      if (!parsed.data.salonCustomerId) {
+        res.status(400).json({ error: "Za pregled paketa izaberite CRM klijenta." }); return;
+      }
+      entitlement = await packageEntitlementForServices(db, {
+        purchaseId: parsed.data.packagePurchaseId, salonId: access.salon.id,
+        salonCustomerId: parsed.data.salonCustomerId,
+        requiredByService: new Map([[service.id, slots.length]]),
+      });
+    }
     const response = PreviewSalonAppointmentSeriesResponse.parse(
-      await previewSeriesSlots(access.salon.id, service.id, slots, parsed.data.employeeId),
+      { ...(await previewSeriesSlots(access.salon.id, service.id, slots, parsed.data.employeeId)),
+        packageEligible: parsed.data.packagePurchaseId ? entitlement.ok : null,
+        packageReason: parsed.data.packagePurchaseId && !entitlement.ok ? entitlement.reason : null },
     );
     res.json({
       ...response,
@@ -6691,12 +6742,156 @@ router.post("/salon/appointment-series/preview", async (req, res): Promise<void>
   }
 });
 
+async function packageBookingInput(
+  store: typeof db | any,
+  input: {
+    salonId: string;
+    purchaseId: string;
+    slots: Array<{ serviceId: string; date: string | Date; startTime: string; employeeId?: string | null }>;
+    lockEntitlement?: boolean;
+  },
+) {
+  const [purchase] = await store.select().from(customerPackagePurchasesTable).where(eq(customerPackagePurchasesTable.id, input.purchaseId)).limit(1);
+  if (!purchase || purchase.salonId !== input.salonId) throw new PackageRedemptionError(purchase ? "wrong_salon" : "not_found");
+  const [contact] = await store.select().from(salonCustomersTable).where(and(eq(salonCustomersTable.id, purchase.salonCustomerId), eq(salonCustomersTable.salonId, input.salonId))).limit(1);
+  if (!contact) throw new PackageRedemptionError("wrong_customer");
+  const required = new Map<string, number>();
+  for (const slot of input.slots) required.set(slot.serviceId, (required.get(slot.serviceId) ?? 0) + 1);
+  const entitlement = input.lockEntitlement
+    ? await lockPackageEntitlementForServicesInTx(store, {
+        purchaseId: purchase.id,
+        salonId: input.salonId,
+        salonCustomerId: contact.id,
+        requiredByService: required,
+      })
+    : await packageEntitlementForServices(store, {
+        purchaseId: purchase.id,
+        salonId: input.salonId,
+        salonCustomerId: contact.id,
+        requiredByService: required,
+      });
+  if (!entitlement.ok) throw new PackageRedemptionError(entitlement.reason);
+  const currentPurchase = "purchase" in entitlement ? entitlement.purchase : purchase;
+  const links = "links" in entitlement
+    ? entitlement.links
+    : await store.select().from(packagePurchaseServiceLinksTable).where(eq(packagePurchaseServiceLinksTable.purchaseId, purchase.id));
+  if (currentPurchase.quotaPolicy === "per_service") {
+    if (required.size !== links.filter((link: typeof packagePurchaseServiceLinksTable.$inferSelect) => link.remainingQuota > 0).length ||
+      links.some((link: typeof packagePurchaseServiceLinksTable.$inferSelect) => link.remainingQuota > 0 && required.get(link.serviceId) !== link.remainingQuota)) throw new AppointmentSeriesError("Morate zakazati tačno sve preostale termine paketa.", 400);
+  } else if ([...required.values()].reduce((sum, value) => sum + value, 0) !== currentPurchase.remainingSessions) {
+    throw new AppointmentSeriesError("Morate zakazati tačno sve preostale termine paketa.", 400);
+  }
+  const services = await store.select().from(servicesTable).where(and(eq(servicesTable.salonId, input.salonId), inArray(servicesTable.id, [...required.keys()])));
+  if (services.length !== required.size || services.some((service: typeof servicesTable.$inferSelect) => !service.active)) throw new PackageRedemptionError("service_not_covered");
+  return { purchase: currentPurchase, contact, services, required };
+}
+
+async function previewPackageSlots(salonId: string, services: (typeof servicesTable.$inferSelect)[], slots: Array<{ serviceId: string; date: string | Date; startTime: string; employeeId?: string | null }>) {
+  const reservedAppointments: ReservedAppointment[] = [];
+  const reservations: ResourceReservation[] = [];
+  const result: Array<{ serviceId: string; date: string; startTime: string; employeeId?: string | null; available: boolean; reason: string | null }> = [];
+  for (const slot of slots) {
+    const service = services.find((item) => item.id === slot.serviceId)!;
+    const prepared = prepareSeriesSlots([slot], service.durationMinutes)[0]!;
+    const requirements = await fetchServiceResourceRequirements(db, service.id);
+    const employee = await availableEmployee(salonId, service.id, prepared.date, prepared.startTime, prepared.endTime, slot.employeeId, reservedAppointments, reservations);
+    const available = Boolean(employee);
+    result.push({ ...slot, date: prepared.date, available, reason: available ? null : "Nema slobodnog zaposlenog, termin izlazi van radnog vremena, ili nema dostupnih resursa." });
+    if (employee) {
+      reservedAppointments.push({ employeeId: employee.id, date: prepared.date, startTime: prepared.startTime, endTime: prepared.endTime });
+      for (const requirement of requirements) reservations.push({ resourceId: requirement.resourceId, quantity: requirement.quantity, date: prepared.date, startTime: prepared.startTime, endTime: prepared.endTime });
+    }
+  }
+  return result;
+}
+
+router.post("/salon/package-appointments/preview", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = PreviewSalonPackageAppointmentsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci paketa nisu ispravni." }); return; }
+  try {
+    const prepared = await packageBookingInput(db, { salonId: access.salon.id, purchaseId: parsed.data.packagePurchaseId, slots: parsed.data.slots });
+    const slots = await previewPackageSlots(access.salon.id, prepared.services, parsed.data.slots);
+    res.json(PreviewSalonPackageAppointmentsResponse.parse({ slots, allAvailable: slots.every((slot) => slot.available), packageEligible: true, packageReason: null, remainingSessions: prepared.purchase.remainingSessions }));
+  } catch (error) {
+    const reason = error instanceof PackageRedemptionError ? error.reason : null;
+    res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error instanceof Error ? error.message : "Pregled paketa nije uspeo.", ...(reason ? { code: "PACKAGE_ERROR", reason } : {}) });
+  }
+});
+
+router.post("/salon/package-appointments", async (req, res): Promise<void> => {
+  const access = await requireSalonOwner(req, res); if (!access) return;
+  const parsed = CreateSalonPackageAppointmentsBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Podaci paketa nisu ispravni." }); return; }
+  try {
+    let prepared!: Awaited<ReturnType<typeof packageBookingInput>>;
+    const created = await db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, access.salon.id, parsed.data.slots.map((slot) => ({
+        date: calendarDate(slot.date),
+        employeeId: slot.employeeId ?? null,
+      })));
+      prepared = await packageBookingInput(tx, {
+        salonId: access.salon.id,
+        purchaseId: parsed.data.packagePurchaseId,
+        slots: parsed.data.slots,
+        lockEntitlement: true,
+      });
+      const groups = new Map<string, typeof parsed.data.slots>();
+      for (const slot of parsed.data.slots) groups.set(slot.serviceId, [...(groups.get(slot.serviceId) ?? []), slot]);
+      const result = [];
+      for (const [serviceId, slots] of groups) {
+        const service = prepared.services.find((item: typeof servicesTable.$inferSelect) => item.id === serviceId)!;
+        const preferredEmployeeBySlot = new Map(
+          slots.map((slot) => [`${calendarDate(slot.date)}:${slot.startTime}`, slot.employeeId ?? null]),
+        );
+        const preparedSlots = prepareSeriesSlots(slots, service.durationMinutes).map((slot) => ({
+          ...slot,
+          preferredEmployeeId: preferredEmployeeBySlot.get(`${slot.date}:${slot.startTime}`) ?? null,
+        }));
+        result.push(await createAppointmentSeries({
+          salonId: access.salon.id,
+          customerId: prepared.contact.userId,
+          salonCustomerId: prepared.contact.id,
+          service,
+          slots: preparedSlots,
+          createdByUserId: access.user.id,
+          packagePurchaseId: prepared.purchase.id,
+          tx,
+        }));
+      }
+      const [updated] = await tx.select().from(customerPackagePurchasesTable).where(eq(customerPackagePurchasesTable.id, prepared.purchase.id));
+      return { result, remainingSessions: updated!.remainingSessions };
+    });
+    const allIds = created.result.flatMap((item) => item.appointments.map((appointment) => appointment.id));
+    const views = await appointmentList(and(eq(appointmentsTable.salonId, access.salon.id), inArray(appointmentsTable.id, allIds)), true);
+    const viewById = new Map(views.map((view) => [view.id, view]));
+    const series = created.result.map((item) => ({ id: item.series.id, totalAppointments: item.appointments.length, appointments: item.appointments.map((appointment) => viewById.get(appointment.id)!) }));
+    res.status(201).json(CreateSalonPackageAppointmentsResponse.parse({ series, remainingSessions: created.remainingSessions }));
+    for (const item of created.result) {
+      try {
+        await sendSeriesConfirmations({ appointments: item.appointments, contact: prepared.contact, salon: access.salon });
+      } catch (notificationError) {
+        logger.error(
+          { err: notificationError, seriesId: item.series.id },
+          "Package appointment confirmations failed after commit",
+        );
+      }
+    }
+  } catch (error) {
+    const reason = error instanceof PackageRedemptionError ? error.reason : null;
+    res.status(error instanceof AppointmentSeriesError ? error.status : 409).json({ error: error instanceof Error ? error.message : "Paket nije sačuvan.", ...(reason ? { code: "PACKAGE_ERROR", reason } : {}) });
+  }
+});
+
 router.post("/salon/appointment-series", async (req, res): Promise<void> => {
   const access = await requireSalonOwner(req, res); if (!access) return;
   const parsed = CreateSalonAppointmentSeriesBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Podaci za seriju termina nisu ispravni." }); return; }
   if (Boolean(parsed.data.salonCustomerId) === Boolean(parsed.data.guest)) {
     res.status(400).json({ error: "Izaberite CRM klijenta ili unesite podatke novog gosta." }); return;
+  }
+  if (parsed.data.packagePurchaseId && !parsed.data.salonCustomerId) {
+    res.status(400).json({ error: "Paket se može iskoristiti samo za postojećeg CRM klijenta." }); return;
   }
   const [service] = await db.select().from(servicesTable).where(and(eq(servicesTable.id, parsed.data.serviceId), eq(servicesTable.salonId, access.salon.id), eq(servicesTable.active, true))).limit(1);
   if (!service) { res.status(404).json({ error: "Usluga nije pronađena u ovom salonu." }); return; }
@@ -6725,6 +6920,7 @@ router.post("/salon/appointment-series", async (req, res): Promise<void> => {
     const created = await createAppointmentSeries({
       salonId: access.salon.id, customerId: contact!.userId, salonCustomerId: contact!.id, service, slots,
       createdByUserId: access.user.id, notes: parsed.data.notes ?? null, preferredEmployeeId: parsed.data.employeeId,
+      packagePurchaseId: parsed.data.packagePurchaseId,
     });
     const employeeIds = [...new Set(created.appointments.flatMap((item) => item.employeeId ? [item.employeeId] : []))];
     const [employees, allocsByAppt] = await Promise.all([
@@ -6737,10 +6933,11 @@ router.post("/salon/appointment-series", async (req, res): Promise<void> => {
     CreateSalonAppointmentSeriesResponse.parse(response);
     res.status(201).json(response);
   } catch (error) {
-    const message = error instanceof ResourceCapacityError ? error.message
+    const message = error instanceof PackageRedemptionError ? error.message
+      : error instanceof ResourceCapacityError ? error.message
       : error instanceof AppointmentSeriesError ? error.message
         : "Serija termina nije sačuvana.";
-    res.status(error instanceof ResourceCapacityError ? 409 : error instanceof AppointmentSeriesError ? error.status : 500).json({ error: message });
+    res.status(error instanceof PackageRedemptionError ? 409 : error instanceof ResourceCapacityError ? 409 : error instanceof AppointmentSeriesError ? error.status : 500).json(error instanceof PackageRedemptionError ? { error: message, code: "PACKAGE_ERROR", reason: error.reason } : { error: message });
   }
 });
 

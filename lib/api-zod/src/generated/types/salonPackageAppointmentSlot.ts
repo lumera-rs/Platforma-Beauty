@@ -5,18 +5,12 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
-import type { SalonAppointmentCreateGuest } from './salonAppointmentCreateGuest';
 
-export interface SalonAppointmentCreate {
+export interface SalonPackageAppointmentSlot {
   serviceId: string;
-  /** @nullable */
-  employeeId?: string | null;
   date: Date;
   /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
   startTime: string;
-  notes?: string;
-  salonCustomerId?: string;
   /** @nullable */
-  packagePurchaseId?: string | null;
-  guest?: SalonAppointmentCreateGuest;
+  employeeId?: string | null;
 }

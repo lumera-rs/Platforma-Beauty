@@ -884,6 +884,38 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppointmentSeriesPreview" }
+  /salon/package-appointments/preview:
+    post:
+      operationId: previewSalonPackageAppointments
+      tags: [salon-management]
+      summary: Preview booking every remaining session in a purchased package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonPackageAppointmentsInput" }
+      responses:
+        "200":
+          description: Package booking availability and entitlement preview
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonPackageAppointmentsPreview" }
+  /salon/package-appointments:
+    post:
+      operationId: createSalonPackageAppointments
+      tags: [salon-management]
+      summary: Atomically book every remaining session in a purchased package
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SalonPackageAppointmentsInput" }
+      responses:
+        "201":
+          description: Created per-service series and package appointments
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SalonPackageAppointmentsResult" }
   /salon/time-blocks:
     get:
       operationId: listSalonTimeBlocks
@@ -6426,6 +6458,8 @@ components:
       properties:
         serviceId: { type: string }
         employeeId: { type: ["string", "null"] }
+        packagePurchaseId: { type: ["string", "null"] }
+        salonCustomerId: { type: ["string", "null"] }
         slots:
           type: array
           minItems: 1
@@ -6447,6 +6481,8 @@ components:
           type: array
           items: { $ref: "#/components/schemas/AppointmentSeriesPreviewSlot" }
         allAvailable: { type: boolean }
+        packageEligible: { type: ["boolean", "null"] }
+        packageReason: { type: ["string", "null"] }
       required: [slots, allAvailable]
     SalonAppointmentSeriesInput:
       allOf:
@@ -6463,6 +6499,7 @@ components:
                 phone: { type: string, minLength: 5 }
                 email: { type: string }
               required: [firstName, lastName, phone]
+            packagePurchaseId: { type: ["string", "null"] }
     EmployeeAppointmentSeriesInput:
       allOf:
         - $ref: "#/components/schemas/AppointmentSeriesPreviewInput"
@@ -6600,6 +6637,7 @@ components:
         startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
         notes: { type: string }
         salonCustomerId: { type: string }
+        packagePurchaseId: { type: ["string", "null"] }
         guest:
           type: object
           properties:
@@ -6609,6 +6647,52 @@ components:
             email: { type: string }
           required: [firstName, lastName, phone]
       required: [serviceId, date, startTime]
+    SalonPackageAppointmentSlot:
+      type: object
+      additionalProperties: false
+      properties:
+        serviceId: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        employeeId: { type: ["string", "null"] }
+      required: [serviceId, date, startTime]
+    SalonPackageAppointmentsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        packagePurchaseId: { type: string }
+        slots:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SalonPackageAppointmentSlot" }
+      required: [packagePurchaseId, slots]
+    SalonPackageAppointmentsPreview:
+      type: object
+      properties:
+        slots:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/SalonPackageAppointmentSlot"
+              - type: object
+                properties:
+                  available: { type: boolean }
+                  reason: { type: ["string", "null"] }
+                required: [available, reason]
+        allAvailable: { type: boolean }
+        packageEligible: { type: boolean }
+        packageReason: { type: ["string", "null"] }
+        remainingSessions: { type: number }
+      required: [slots, allAvailable, packageEligible, packageReason, remainingSessions]
+    SalonPackageAppointmentsResult:
+      type: object
+      properties:
+        series:
+          type: array
+          items: { $ref: "#/components/schemas/AppointmentSeriesResult" }
+        remainingSessions: { type: number }
+      required: [series, remainingSessions]
     SmsDelivery:
       type: object
       properties:
@@ -8768,12 +8852,16 @@ components:
         sessionCount: { type: number }
         validityDays: { type: number }
         active: { type: boolean }
+        quotaPolicy: { type: string, enum: [shared_pool, per_service] }
         serviceIds:
           type: array
           items: { type: string }
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PackageServiceQuota" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, active, serviceIds, createdAt, updatedAt]
+      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, active, quotaPolicy, serviceIds, serviceQuotas, createdAt, updatedAt]
 
     TreatmentPackagePublic:
       type: object
@@ -8785,10 +8873,22 @@ components:
         priceInDinars: { type: number }
         sessionCount: { type: number }
         validityDays: { type: number }
+        quotaPolicy: { type: string, enum: [shared_pool, per_service] }
         serviceIds:
           type: array
           items: { type: string }
-      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, serviceIds]
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PackageServiceQuota" }
+      required: [id, salonId, name, description, priceInDinars, sessionCount, validityDays, quotaPolicy, serviceIds, serviceQuotas]
+
+    PackageServiceQuota:
+      type: object
+      additionalProperties: false
+      properties:
+        serviceId: { type: string }
+        quota: { type: number, minimum: 1, maximum: 100, multipleOf: 1 }
+      required: [serviceId, quota]
 
     CreateTreatmentPackageBody:
       type: object
@@ -8797,14 +8897,20 @@ components:
         name: { type: string, minLength: 1, maxLength: 200 }
         description: { type: string }
         priceInDinars: { type: number, minimum: 0, multipleOf: 1 }
+        # Deprecated compatibility fields. Runtime requires serviceQuotas for
+        # every new definition; retained temporarily so older generated clients
+        # can be upgraded without a compile-time break.
         sessionCount: { type: number, minimum: 1, maximum: 100, multipleOf: 1 }
-        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
-        active: { type: boolean }
         serviceIds:
           type: array
           items: { type: string }
+        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
+        active: { type: boolean }
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PackageServiceQuota" }
           minItems: 1
-      required: [name, priceInDinars, sessionCount, serviceIds]
+      required: [name, priceInDinars]
 
     UpdateTreatmentPackageBody:
       type: object
@@ -8814,11 +8920,14 @@ components:
         description: { type: string }
         priceInDinars: { type: number, minimum: 0, multipleOf: 1 }
         sessionCount: { type: number, minimum: 1, maximum: 100, multipleOf: 1 }
-        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
-        active: { type: boolean }
         serviceIds:
           type: array
           items: { type: string }
+        validityDays: { type: number, minimum: 1, maximum: 3650, multipleOf: 1 }
+        active: { type: boolean }
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PackageServiceQuota" }
           minItems: 1
 
     PackagePurchase:
@@ -8831,6 +8940,10 @@ components:
         salonCustomerId: { type: string }
         totalSessions: { type: number }
         remainingSessions: { type: number }
+        quotaPolicy: { type: string, enum: [shared_pool, per_service] }
+        serviceQuotas:
+          type: array
+          items: { $ref: "#/components/schemas/PurchaseServiceQuota" }
         priceInDinars: { type: number }
         paymentMethod: { type: string, enum: [pay_at_salon, bank_transfer] }
         status: { type: string, enum: [pending_payment, active, completed, expired, cancelled] }
@@ -8839,7 +8952,16 @@ components:
         notes: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, salonId, packageId, packageName, salonCustomerId, totalSessions, remainingSessions, priceInDinars, paymentMethod, status, expiresAt, createdAt, updatedAt]
+      required: [id, salonId, packageId, packageName, salonCustomerId, totalSessions, remainingSessions, quotaPolicy, serviceQuotas, priceInDinars, paymentMethod, status, expiresAt, createdAt, updatedAt]
+
+    PurchaseServiceQuota:
+      type: object
+      additionalProperties: false
+      properties:
+        serviceId: { type: string }
+        totalQuota: { type: number }
+        remainingQuota: { type: number }
+      required: [serviceId, totalQuota, remainingQuota]
 
     PurchasePackageBody:
       type: object

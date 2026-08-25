@@ -149,7 +149,7 @@ async function makePackage(salonId: string, serviceId: string, suffix: string) {
     priceInDinars: 10000, sessionCount: 3, validityDays: 90, active: true,
   }).returning();
   assert.ok(pkg);
-  await db.insert(packageServiceLinksTable).values({ packageId: pkg.id, serviceId });
+  await db.insert(packageServiceLinksTable).values({ packageId: pkg.id, serviceId, quota: 3 });
   return pkg;
 }
 
@@ -638,8 +638,8 @@ async function runIntegrationTests(): Promise<void> {
       const r = await fetch(`${baseUrl}/growth/packages`, {
         method: "POST", headers: ownerAHeaders(),
         body: JSON.stringify({
-          name: "Bad Package", priceInDinars: 5000, sessionCount: 3,
-          serviceIds: [svcA.id, foreignServiceId],
+          name: "Bad Package", priceInDinars: 5000,
+          serviceQuotas: [{ serviceId: svcA.id, quota: 2 }, { serviceId: foreignServiceId, quota: 1 }],
         }),
       });
       assert.equal(r.status, 400, "Invalid serviceId must be rejected before insert");
@@ -2031,6 +2031,48 @@ async function runIntegrationTests(): Promise<void> {
     }
     console.log("✓ Immutable purchase snapshot: old purchase covers A after definition changed to B");
 
+    // ── Test 36b: Per-service quota exhaustion and exact restoration ───────
+    {
+      const ownerQuota = await makeOwnerAndSalon(`quota-${suffix}`);
+      toCleanup.userIds.push(ownerQuota.owner.id);
+      toCleanup.salonIds.push(ownerQuota.salon.id);
+      const serviceA = await makeService(ownerQuota.salon.id, `Quota A ${suffix}`);
+      const serviceB = await makeService(ownerQuota.salon.id, `Quota B ${suffix}`);
+      const customer = await makeSalonCustomer(custInfo.user.id, ownerQuota.salon.id);
+      const pkg = await makePackage(ownerQuota.salon.id, serviceA.id, `quota-${suffix}`);
+      const [purchase] = await db.insert(customerPackagePurchasesTable).values({
+        salonId: ownerQuota.salon.id, packageId: pkg.id, salonCustomerId: customer.id,
+        totalSessions: 3, remainingSessions: 3, quotaPolicy: "per_service",
+        priceInDinars: 10000, paymentMethod: "pay_at_salon", status: "active",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      }).returning();
+      assert.ok(purchase);
+      toCleanup.purchaseIds.push(purchase.id);
+      await db.insert(packagePurchaseServiceLinksTable).values([
+        { purchaseId: purchase.id, serviceId: serviceA.id, totalQuota: 2, remainingQuota: 2 },
+        { purchaseId: purchase.id, serviceId: serviceB.id, totalQuota: 1, remainingQuota: 1 },
+      ]);
+      const apptA1 = await makeAppointment(ownerQuota.salon.id, customer.id, serviceA.id, "pending");
+      const apptA2 = await makeAppointment(ownerQuota.salon.id, customer.id, serviceA.id, "pending");
+      const apptA3 = await makeAppointment(ownerQuota.salon.id, customer.id, serviceA.id, "pending");
+      const apptB = await makeAppointment(ownerQuota.salon.id, customer.id, serviceB.id, "pending");
+      const redeemA1 = await redeemPackageSession({ purchaseId: purchase.id, appointmentId: apptA1.id, salonId: ownerQuota.salon.id, requestingCustomerId: customer.id });
+      const redeemA2 = await redeemPackageSession({ purchaseId: purchase.id, appointmentId: apptA2.id, salonId: ownerQuota.salon.id, requestingCustomerId: customer.id });
+      assert.ok(redeemA1.ok && redeemA2.ok, "two A allowances redeem");
+      const exhaustedA = await redeemPackageSession({ purchaseId: purchase.id, appointmentId: apptA3.id, salonId: ownerQuota.salon.id, requestingCustomerId: customer.id });
+      assert.equal(exhaustedA.ok, false, "A is exhausted even while aggregate allowance remains");
+      assert.equal((exhaustedA as { reason: string }).reason, "no_sessions_left");
+      const redeemedB = await redeemPackageSession({ purchaseId: purchase.id, appointmentId: apptB.id, salonId: ownerQuota.salon.id, requestingCustomerId: customer.id });
+      assert.ok(redeemedB.ok, "B allowance remains redeemable");
+      const reversed = await reversePackageRedemption({ redemptionId: redeemA1.redemptionId, salonId: ownerQuota.salon.id });
+      assert.ok(reversed.ok, "reversal restores its consumed service allowance");
+      const quotas = await db.select().from(packagePurchaseServiceLinksTable)
+        .where(eq(packagePurchaseServiceLinksTable.purchaseId, purchase.id));
+      assert.equal(quotas.find((row) => row.serviceId === serviceA.id)?.remainingQuota, 1, "only A receives the restored quota");
+      assert.equal(quotas.find((row) => row.serviceId === serviceB.id)?.remainingQuota, 0, "B remains consumed");
+    }
+    console.log("✓ Per-service package quotas exhaust and restore independently");
+
     // ── Test 37: SMS provider-success / local-status-crash recovery → sent ─
     // The provider accepted the SMS (smsDeliveriesTable row = "sent"), but the
     // automation delivery row got stuck "processing" with an EXPIRED lease
@@ -2145,13 +2187,13 @@ async function runIntegrationTests(): Promise<void> {
       const oldSet = new Set([svcLA.id, svcLB.id]);
       const newSet = new Set([svcLC.id]);
 
-      // Fire the purchase and the definition edit (serviceIds → [C]) concurrently.
+      // Fire the purchase and the definition edit (service quotas → C) concurrently.
       const [rPurchase, rEdit] = await Promise.all([
         fetch(`${baseUrl}/growth/packages/${pkgL.id}/purchases`, {
           method: "POST", headers: custLHeaders(), body: JSON.stringify({ paymentMethod: "pay_at_salon" }),
         }),
         fetch(`${baseUrl}/growth/packages/${pkgL.id}`, {
-          method: "PATCH", headers: ownerLHeaders(), body: JSON.stringify({ serviceIds: [svcLC.id] }),
+          method: "PATCH", headers: ownerLHeaders(), body: JSON.stringify({ serviceQuotas: [{ serviceId: svcLC.id, quota: 3 }] }),
         }),
       ]);
 

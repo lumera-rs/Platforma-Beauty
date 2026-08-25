@@ -1366,6 +1366,10 @@ export interface AppointmentSeriesPreviewInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @nullable */
+  packagePurchaseId?: string | null;
+  /** @nullable */
+  salonCustomerId?: string | null;
   /**
      * @minItems 1
      * @maxItems 24
@@ -1382,6 +1386,10 @@ export type AppointmentSeriesPreviewSlot = AppointmentSlot & ({
 export interface AppointmentSeriesPreview {
   slots: AppointmentSeriesPreviewSlot[];
   allAvailable: boolean;
+  /** @nullable */
+  packageEligible?: boolean | null;
+  /** @nullable */
+  packageReason?: string | null;
 }
 
 export type SalonAppointmentSeriesInputGuest = {
@@ -1394,11 +1402,13 @@ export type SalonAppointmentSeriesInputGuest = {
   email?: string;
 };
 
-export type SalonAppointmentSeriesInput = AppointmentSeriesPreviewInput & {
+export type SalonAppointmentSeriesInput = AppointmentSeriesPreviewInput & ({
   notes?: string;
   salonCustomerId?: string;
   guest?: SalonAppointmentSeriesInputGuest;
-};
+  /** @nullable */
+  packagePurchaseId?: string | null;
+});
 
 export type EmployeeAppointmentSeriesInputGuest = {
   /** @minLength 1 */
@@ -1591,7 +1601,47 @@ export interface SalonAppointmentCreate {
   startTime: string;
   notes?: string;
   salonCustomerId?: string;
+  /** @nullable */
+  packagePurchaseId?: string | null;
   guest?: SalonAppointmentCreateGuest;
+}
+
+export interface SalonPackageAppointmentSlot {
+  serviceId: string;
+  date: string;
+  /** @pattern ^[0-2][0-9]:[0-5][0-9]$ */
+  startTime: string;
+  /** @nullable */
+  employeeId?: string | null;
+}
+
+export interface SalonPackageAppointmentsInput {
+  packagePurchaseId: string;
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  slots: SalonPackageAppointmentSlot[];
+}
+
+export type SalonPackageAppointmentsPreviewSlotsItem = SalonPackageAppointmentSlot & ({
+  available: boolean;
+  /** @nullable */
+  reason: string | null;
+});
+
+export interface SalonPackageAppointmentsPreview {
+  slots: SalonPackageAppointmentsPreviewSlotsItem[];
+  allAvailable: boolean;
+  packageEligible: boolean;
+  /** @nullable */
+  packageReason: string | null;
+  remainingSessions: number;
+}
+
+export interface SalonPackageAppointmentsResult {
+  series: AppointmentSeriesResult[];
+  remainingSessions: number;
 }
 
 export type SmsDeliveryMessageType = typeof SmsDeliveryMessageType[keyof typeof SmsDeliveryMessageType];
@@ -4760,6 +4810,23 @@ export interface AutomationTestRunResult {
   triggerBreakdown?: AutomationTestRunResultTriggerBreakdown;
 }
 
+export type TreatmentPackageQuotaPolicy = typeof TreatmentPackageQuotaPolicy[keyof typeof TreatmentPackageQuotaPolicy];
+
+
+export const TreatmentPackageQuotaPolicy = {
+  shared_pool: 'shared_pool',
+  per_service: 'per_service',
+} as const;
+
+export interface PackageServiceQuota {
+  serviceId: string;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  quota: number;
+}
+
 export interface TreatmentPackage {
   id: string;
   salonId: string;
@@ -4769,10 +4836,20 @@ export interface TreatmentPackage {
   sessionCount: number;
   validityDays: number;
   active: boolean;
+  quotaPolicy: TreatmentPackageQuotaPolicy;
   serviceIds: string[];
+  serviceQuotas: PackageServiceQuota[];
   createdAt: string;
   updatedAt: string;
 }
+
+export type TreatmentPackagePublicQuotaPolicy = typeof TreatmentPackagePublicQuotaPolicy[keyof typeof TreatmentPackagePublicQuotaPolicy];
+
+
+export const TreatmentPackagePublicQuotaPolicy = {
+  shared_pool: 'shared_pool',
+  per_service: 'per_service',
+} as const;
 
 export interface TreatmentPackagePublic {
   id: string;
@@ -4782,7 +4859,9 @@ export interface TreatmentPackagePublic {
   priceInDinars: number;
   sessionCount: number;
   validityDays: number;
+  quotaPolicy: TreatmentPackagePublicQuotaPolicy;
   serviceIds: string[];
+  serviceQuotas: PackageServiceQuota[];
 }
 
 export interface CreateTreatmentPackageBody {
@@ -4798,7 +4877,8 @@ export interface CreateTreatmentPackageBody {
      * @minimum 1
      * @maximum 100
      */
-  sessionCount: number;
+  sessionCount?: number;
+  serviceIds?: string[];
   /**
      * @minimum 1
      * @maximum 3650
@@ -4806,7 +4886,7 @@ export interface CreateTreatmentPackageBody {
   validityDays?: number;
   active?: boolean;
   /** @minItems 1 */
-  serviceIds: string[];
+  serviceQuotas?: PackageServiceQuota[];
 }
 
 export interface UpdateTreatmentPackageBody {
@@ -4823,6 +4903,7 @@ export interface UpdateTreatmentPackageBody {
      * @maximum 100
      */
   sessionCount?: number;
+  serviceIds?: string[];
   /**
      * @minimum 1
      * @maximum 3650
@@ -4830,8 +4911,16 @@ export interface UpdateTreatmentPackageBody {
   validityDays?: number;
   active?: boolean;
   /** @minItems 1 */
-  serviceIds?: string[];
+  serviceQuotas?: PackageServiceQuota[];
 }
+
+export type PackagePurchaseQuotaPolicy = typeof PackagePurchaseQuotaPolicy[keyof typeof PackagePurchaseQuotaPolicy];
+
+
+export const PackagePurchaseQuotaPolicy = {
+  shared_pool: 'shared_pool',
+  per_service: 'per_service',
+} as const;
 
 export type PackagePurchasePaymentMethod = typeof PackagePurchasePaymentMethod[keyof typeof PackagePurchasePaymentMethod];
 
@@ -4852,6 +4941,12 @@ export const PackagePurchaseStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export interface PurchaseServiceQuota {
+  serviceId: string;
+  totalQuota: number;
+  remainingQuota: number;
+}
+
 export interface PackagePurchase {
   id: string;
   salonId: string;
@@ -4860,6 +4955,8 @@ export interface PackagePurchase {
   salonCustomerId: string;
   totalSessions: number;
   remainingSessions: number;
+  quotaPolicy: PackagePurchaseQuotaPolicy;
+  serviceQuotas: PurchaseServiceQuota[];
   priceInDinars: number;
   paymentMethod: PackagePurchasePaymentMethod;
   status: PackagePurchaseStatus;

@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PackagePurchasePaymentMethod } from './packagePurchasePaymentMethod';
+import type { PackagePurchaseQuotaPolicy } from './packagePurchaseQuotaPolicy';
 import type { PackagePurchaseStatus } from './packagePurchaseStatus';
+import type { PurchaseServiceQuota } from './purchaseServiceQuota';
 
 export interface PackagePurchase {
   id: string;
@@ -16,6 +18,8 @@ export interface PackagePurchase {
   salonCustomerId: string;
   totalSessions: number;
   remainingSessions: number;
+  quotaPolicy: PackagePurchaseQuotaPolicy;
+  serviceQuotas: PurchaseServiceQuota[];
   priceInDinars: number;
   paymentMethod: PackagePurchasePaymentMethod;
   status: PackagePurchaseStatus;

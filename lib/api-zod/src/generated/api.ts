@@ -2034,6 +2034,7 @@ export const CreateSalonAppointmentBody = zod.object({
   "startTime": zod.string().regex(createSalonAppointmentBodyStartTimeRegExp),
   "notes": zod.string().optional(),
   "salonCustomerId": zod.string().optional(),
+  "packagePurchaseId": zod.string().nullish(),
   "guest": zod.object({
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
@@ -2103,6 +2104,8 @@ export const previewSalonAppointmentSeriesBodySlotsMax = 24;
 export const PreviewSalonAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "packagePurchaseId": zod.string().nullish(),
+  "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(previewSalonAppointmentSeriesBodySlotsItemStartTimeRegExp)
@@ -2120,7 +2123,122 @@ export const PreviewSalonAppointmentSeriesResponse = zod.object({
   "available": zod.boolean(),
   "reason": zod.string().nullable()
 }))),
-  "allAvailable": zod.boolean()
+  "allAvailable": zod.boolean(),
+  "packageEligible": zod.boolean().nullish(),
+  "packageReason": zod.string().nullish()
+})
+
+
+/**
+ * @summary Preview booking every remaining session in a purchased package
+ */
+export const previewSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const previewSalonPackageAppointmentsBodySlotsMax = 100;
+
+
+
+export const PreviewSalonPackageAppointmentsBody = zod.object({
+  "packagePurchaseId": zod.string(),
+  "slots": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewSalonPackageAppointmentsBodySlotsItemStartTimeRegExp),
+  "employeeId": zod.string().nullish()
+})).min(1).max(previewSalonPackageAppointmentsBodySlotsMax)
+})
+
+export const previewSalonPackageAppointmentsResponseSlotsItemOneStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+
+
+export const PreviewSalonPackageAppointmentsResponse = zod.object({
+  "slots": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(previewSalonPackageAppointmentsResponseSlotsItemOneStartTimeRegExp),
+  "employeeId": zod.string().nullish()
+}).and(zod.object({
+  "available": zod.boolean(),
+  "reason": zod.string().nullable()
+}))),
+  "allAvailable": zod.boolean(),
+  "packageEligible": zod.boolean(),
+  "packageReason": zod.string().nullable(),
+  "remainingSessions": zod.number()
+})
+
+
+/**
+ * @summary Atomically book every remaining session in a purchased package
+ */
+export const createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp = new RegExp('^[0-2][0-9]:[0-5][0-9]$');
+export const createSalonPackageAppointmentsBodySlotsMax = 100;
+
+
+
+export const CreateSalonPackageAppointmentsBody = zod.object({
+  "packagePurchaseId": zod.string(),
+  "slots": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "date": zod.coerce.date(),
+  "startTime": zod.string().regex(createSalonPackageAppointmentsBodySlotsItemStartTimeRegExp),
+  "employeeId": zod.string().nullish()
+})).min(1).max(createSalonPackageAppointmentsBodySlotsMax)
+})
+
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTravelFeeMin = 0;
+
+
+
+
+export const CreateSalonPackageAppointmentsResponse = zod.object({
+  "series": zod.array(zod.object({
+  "id": zod.string(),
+  "totalAppointments": zod.number(),
+  "appointments": zod.array(zod.object({
+  "id": zod.string(),
+  "salonId": zod.string(),
+  "salonSlug": zod.string(),
+  "salonName": zod.string(),
+  "serviceId": zod.string(),
+  "customerName": zod.string(),
+  "serviceName": zod.string(),
+  "employeeId": zod.string().nullable(),
+  "employeeName": zod.string(),
+  "date": zod.string().regex(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemDateRegExp),
+  "startTime": zod.string(),
+  "endTime": zod.string(),
+  "durationMinutes": zod.number(),
+  "price": zod.number(),
+  "treatmentLocation": zod.enum(['salon', 'home']),
+  "travelFee": zod.number().min(createSalonPackageAppointmentsResponseSeriesItemAppointmentsItemTravelFeeMin),
+  "treatmentAddress": zod.object({
+  "line1": zod.string(),
+  "city": zod.string(),
+  "postalCode": zod.string().nullable(),
+  "details": zod.string().nullable()
+}).nullable(),
+  "seriesId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'completed', 'cancelled', 'no-show']),
+  "notes": zod.string().nullish(),
+  "rescheduledConfirmation": zod.object({
+  "sms": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable(),
+  "email": zod.object({
+  "status": zod.enum(['queued', 'processing', 'sent', 'failed', 'skipped']),
+  "nextRetryAt": zod.coerce.date().nullish()
+}).nullable()
+}).nullish(),
+  "allocatedResources": zod.array(zod.object({
+  "resourceId": zod.string(),
+  "resourceName": zod.string(),
+  "quantity": zod.number().min(1)
+}))
+}))
+})),
+  "remainingSessions": zod.number()
 })
 
 
@@ -2274,6 +2392,8 @@ export const createSalonAppointmentSeriesBodyTwoGuestPhoneMin = 5;
 export const CreateSalonAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "packagePurchaseId": zod.string().nullish(),
+  "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createSalonAppointmentSeriesBodyOneSlotsItemStartTimeRegExp)
@@ -2286,7 +2406,8 @@ export const CreateSalonAppointmentSeriesBody = zod.object({
   "lastName": zod.string().min(1),
   "phone": zod.string().min(createSalonAppointmentSeriesBodyTwoGuestPhoneMin),
   "email": zod.string().optional()
-}).optional()
+}).optional(),
+  "packagePurchaseId": zod.string().nullish()
 }))
 
 export const createSalonAppointmentSeriesResponseAppointmentsItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
@@ -2520,6 +2641,8 @@ export const previewEmployeeAppointmentSeriesBodySlotsMax = 24;
 export const PreviewEmployeeAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "packagePurchaseId": zod.string().nullish(),
+  "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(previewEmployeeAppointmentSeriesBodySlotsItemStartTimeRegExp)
@@ -2537,7 +2660,9 @@ export const PreviewEmployeeAppointmentSeriesResponse = zod.object({
   "available": zod.boolean(),
   "reason": zod.string().nullable()
 }))),
-  "allAvailable": zod.boolean()
+  "allAvailable": zod.boolean(),
+  "packageEligible": zod.boolean().nullish(),
+  "packageReason": zod.string().nullish()
 })
 
 
@@ -2556,6 +2681,8 @@ export const createEmployeeAppointmentSeriesBodyTwoGuestPhoneMin = 5;
 export const CreateEmployeeAppointmentSeriesBody = zod.object({
   "serviceId": zod.string(),
   "employeeId": zod.string().nullish(),
+  "packagePurchaseId": zod.string().nullish(),
+  "salonCustomerId": zod.string().nullish(),
   "slots": zod.array(zod.object({
   "date": zod.coerce.date(),
   "startTime": zod.string().regex(createEmployeeAppointmentSeriesBodyOneSlotsItemStartTimeRegExp)
@@ -10298,6 +10425,11 @@ export const OwnerCreateAutomationFromAiProposalResponse = zod.object({
 /**
  * @summary List treatment packages for the active salon (owner)
  */
+export const ownerListPackagesResponseServiceQuotasItemQuotaMax = 100;
+export const ownerListPackagesResponseServiceQuotasItemQuotaMultipleOf = 1;
+
+
+
 export const OwnerListPackagesResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -10307,7 +10439,12 @@ export const OwnerListPackagesResponseItem = zod.object({
   "sessionCount": zod.number(),
   "validityDays": zod.number(),
   "active": zod.boolean(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
   "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerListPackagesResponseServiceQuotasItemQuotaMax).multipleOf(ownerListPackagesResponseServiceQuotasItemQuotaMultipleOf)
+})),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -10328,6 +10465,9 @@ export const ownerCreatePackageBodySessionCountMultipleOf = 1;
 export const ownerCreatePackageBodyValidityDaysMax = 3650;
 export const ownerCreatePackageBodyValidityDaysMultipleOf = 1;
 
+export const ownerCreatePackageBodyServiceQuotasItemQuotaMax = 100;
+export const ownerCreatePackageBodyServiceQuotasItemQuotaMultipleOf = 1;
+
 
 
 
@@ -10335,11 +10475,20 @@ export const OwnerCreatePackageBody = zod.object({
   "name": zod.string().min(1).max(ownerCreatePackageBodyNameMax),
   "description": zod.string().optional(),
   "priceInDinars": zod.number().min(ownerCreatePackageBodyPriceInDinarsMin).multipleOf(ownerCreatePackageBodyPriceInDinarsMultipleOf),
-  "sessionCount": zod.number().min(1).max(ownerCreatePackageBodySessionCountMax).multipleOf(ownerCreatePackageBodySessionCountMultipleOf),
+  "sessionCount": zod.number().min(1).max(ownerCreatePackageBodySessionCountMax).multipleOf(ownerCreatePackageBodySessionCountMultipleOf).optional(),
+  "serviceIds": zod.array(zod.string()).optional(),
   "validityDays": zod.number().min(1).max(ownerCreatePackageBodyValidityDaysMax).multipleOf(ownerCreatePackageBodyValidityDaysMultipleOf).optional(),
   "active": zod.boolean().optional(),
-  "serviceIds": zod.array(zod.string()).min(1)
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerCreatePackageBodyServiceQuotasItemQuotaMax).multipleOf(ownerCreatePackageBodyServiceQuotasItemQuotaMultipleOf)
+})).min(1).optional()
 })
+
+export const ownerCreatePackageResponseServiceQuotasItemQuotaMax = 100;
+export const ownerCreatePackageResponseServiceQuotasItemQuotaMultipleOf = 1;
+
+
 
 export const OwnerCreatePackageResponse = zod.object({
   "id": zod.string(),
@@ -10350,7 +10499,12 @@ export const OwnerCreatePackageResponse = zod.object({
   "sessionCount": zod.number(),
   "validityDays": zod.number(),
   "active": zod.boolean(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
   "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerCreatePackageResponseServiceQuotasItemQuotaMax).multipleOf(ownerCreatePackageResponseServiceQuotasItemQuotaMultipleOf)
+})),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -10363,6 +10517,11 @@ export const OwnerGetPackageParams = zod.object({
   "packageId": zod.coerce.string()
 })
 
+export const ownerGetPackageResponseServiceQuotasItemQuotaMax = 100;
+export const ownerGetPackageResponseServiceQuotasItemQuotaMultipleOf = 1;
+
+
+
 export const OwnerGetPackageResponse = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -10372,7 +10531,12 @@ export const OwnerGetPackageResponse = zod.object({
   "sessionCount": zod.number(),
   "validityDays": zod.number(),
   "active": zod.boolean(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
   "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerGetPackageResponseServiceQuotasItemQuotaMax).multipleOf(ownerGetPackageResponseServiceQuotasItemQuotaMultipleOf)
+})),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -10396,6 +10560,9 @@ export const ownerUpdatePackageBodySessionCountMultipleOf = 1;
 export const ownerUpdatePackageBodyValidityDaysMax = 3650;
 export const ownerUpdatePackageBodyValidityDaysMultipleOf = 1;
 
+export const ownerUpdatePackageBodyServiceQuotasItemQuotaMax = 100;
+export const ownerUpdatePackageBodyServiceQuotasItemQuotaMultipleOf = 1;
+
 
 
 
@@ -10404,10 +10571,19 @@ export const OwnerUpdatePackageBody = zod.object({
   "description": zod.string().optional(),
   "priceInDinars": zod.number().min(ownerUpdatePackageBodyPriceInDinarsMin).multipleOf(ownerUpdatePackageBodyPriceInDinarsMultipleOf).optional(),
   "sessionCount": zod.number().min(1).max(ownerUpdatePackageBodySessionCountMax).multipleOf(ownerUpdatePackageBodySessionCountMultipleOf).optional(),
+  "serviceIds": zod.array(zod.string()).optional(),
   "validityDays": zod.number().min(1).max(ownerUpdatePackageBodyValidityDaysMax).multipleOf(ownerUpdatePackageBodyValidityDaysMultipleOf).optional(),
   "active": zod.boolean().optional(),
-  "serviceIds": zod.array(zod.string()).min(1).optional()
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerUpdatePackageBodyServiceQuotasItemQuotaMax).multipleOf(ownerUpdatePackageBodyServiceQuotasItemQuotaMultipleOf)
+})).min(1).optional()
 })
+
+export const ownerUpdatePackageResponseServiceQuotasItemQuotaMax = 100;
+export const ownerUpdatePackageResponseServiceQuotasItemQuotaMultipleOf = 1;
+
+
 
 export const OwnerUpdatePackageResponse = zod.object({
   "id": zod.string(),
@@ -10418,7 +10594,12 @@ export const OwnerUpdatePackageResponse = zod.object({
   "sessionCount": zod.number(),
   "validityDays": zod.number(),
   "active": zod.boolean(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
   "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(ownerUpdatePackageResponseServiceQuotasItemQuotaMax).multipleOf(ownerUpdatePackageResponseServiceQuotasItemQuotaMultipleOf)
+})),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -10441,6 +10622,11 @@ export const CustomerListPublicPackagesQueryParams = zod.object({
   "salonId": zod.coerce.string()
 })
 
+export const customerListPublicPackagesResponseServiceQuotasItemQuotaMax = 100;
+export const customerListPublicPackagesResponseServiceQuotasItemQuotaMultipleOf = 1;
+
+
+
 export const CustomerListPublicPackagesResponseItem = zod.object({
   "id": zod.string(),
   "salonId": zod.string(),
@@ -10449,7 +10635,12 @@ export const CustomerListPublicPackagesResponseItem = zod.object({
   "priceInDinars": zod.number(),
   "sessionCount": zod.number(),
   "validityDays": zod.number(),
-  "serviceIds": zod.array(zod.string())
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceIds": zod.array(zod.string()),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "quota": zod.number().min(1).max(customerListPublicPackagesResponseServiceQuotasItemQuotaMax).multipleOf(customerListPublicPackagesResponseServiceQuotasItemQuotaMultipleOf)
+}))
 })
 export const CustomerListPublicPackagesResponse = zod.array(CustomerListPublicPackagesResponseItem)
 
@@ -10474,6 +10665,12 @@ export const CustomerPurchasePackageResponse = zod.object({
   "salonCustomerId": zod.string(),
   "totalSessions": zod.number(),
   "remainingSessions": zod.number(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "totalQuota": zod.number(),
+  "remainingQuota": zod.number()
+})),
   "priceInDinars": zod.number(),
   "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
   "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
@@ -10501,6 +10698,12 @@ export const OwnerConfirmPackagePaymentResponse = zod.object({
   "salonCustomerId": zod.string(),
   "totalSessions": zod.number(),
   "remainingSessions": zod.number(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "totalQuota": zod.number(),
+  "remainingQuota": zod.number()
+})),
   "priceInDinars": zod.number(),
   "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
   "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
@@ -10523,6 +10726,12 @@ export const CustomerListMyPurchasesResponseItem = zod.object({
   "salonCustomerId": zod.string(),
   "totalSessions": zod.number(),
   "remainingSessions": zod.number(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "totalQuota": zod.number(),
+  "remainingQuota": zod.number()
+})),
   "priceInDinars": zod.number(),
   "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
   "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),
@@ -10569,6 +10778,12 @@ export const OwnerListCustomerPackagesResponseItem = zod.object({
   "salonCustomerId": zod.string(),
   "totalSessions": zod.number(),
   "remainingSessions": zod.number(),
+  "quotaPolicy": zod.enum(['shared_pool', 'per_service']),
+  "serviceQuotas": zod.array(zod.object({
+  "serviceId": zod.string(),
+  "totalQuota": zod.number(),
+  "remainingQuota": zod.number()
+})),
   "priceInDinars": zod.number(),
   "paymentMethod": zod.enum(['pay_at_salon', 'bank_transfer']),
   "status": zod.enum(['pending_payment', 'active', 'completed', 'expired', 'cancelled']),

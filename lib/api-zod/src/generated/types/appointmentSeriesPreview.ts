@@ -10,4 +10,8 @@ import type { AppointmentSeriesPreviewSlot } from './appointmentSeriesPreviewSlo
 export interface AppointmentSeriesPreview {
   slots: AppointmentSeriesPreviewSlot[];
   allAvailable: boolean;
+  /** @nullable */
+  packageEligible?: boolean | null;
+  /** @nullable */
+  packageReason?: string | null;
 }

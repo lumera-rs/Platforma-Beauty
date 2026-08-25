@@ -291,6 +291,9 @@ import type {
   SalonLeaveRequest,
   SalonManagedService,
   SalonNotification,
+  SalonPackageAppointmentsInput,
+  SalonPackageAppointmentsPreview,
+  SalonPackageAppointmentsResult,
   SalonProfile,
   SalonProfileMedia,
   SalonProfileMediaUpdate,
@@ -3993,6 +3996,148 @@ export const usePreviewSalonAppointmentSeries = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getPreviewSalonAppointmentSeriesMutationOptions(options));
+    }
+
+export const getPreviewSalonPackageAppointmentsUrl = () => {
+
+
+
+
+  return `/api/salon/package-appointments/preview`
+}
+
+/**
+ * @summary Preview booking every remaining session in a purchased package
+ */
+export const previewSalonPackageAppointments = async (salonPackageAppointmentsInput: SalonPackageAppointmentsInput, options?: Parameters<typeof customFetch>[1]): Promise<SalonPackageAppointmentsPreview> => {
+
+  return customFetch<SalonPackageAppointmentsPreview>(getPreviewSalonPackageAppointmentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonPackageAppointmentsInput)
+  }
+);}
+
+
+
+
+
+export const getPreviewSalonPackageAppointmentsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext> => {
+
+const mutationKey = ['previewSalonPackageAppointments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewSalonPackageAppointments>>, {data: BodyType<SalonPackageAppointmentsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewSalonPackageAppointments(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewSalonPackageAppointmentsMutationResult = NonNullable<Awaited<ReturnType<typeof previewSalonPackageAppointments>>>
+    export type PreviewSalonPackageAppointmentsMutationBody = BodyType<SalonPackageAppointmentsInput>
+    export type PreviewSalonPackageAppointmentsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Preview booking every remaining session in a purchased package
+ */
+export const usePreviewSalonPackageAppointments = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewSalonPackageAppointments>>,
+        TError,
+        {data: BodyType<SalonPackageAppointmentsInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewSalonPackageAppointmentsMutationOptions(options));
+    }
+
+export const getCreateSalonPackageAppointmentsUrl = () => {
+
+
+
+
+  return `/api/salon/package-appointments`
+}
+
+/**
+ * @summary Atomically book every remaining session in a purchased package
+ */
+export const createSalonPackageAppointments = async (salonPackageAppointmentsInput: SalonPackageAppointmentsInput, options?: Parameters<typeof customFetch>[1]): Promise<SalonPackageAppointmentsResult> => {
+
+  return customFetch<SalonPackageAppointmentsResult>(getCreateSalonPackageAppointmentsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(salonPackageAppointmentsInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSalonPackageAppointmentsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext> => {
+
+const mutationKey = ['createSalonPackageAppointments'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSalonPackageAppointments>>, {data: BodyType<SalonPackageAppointmentsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSalonPackageAppointments(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSalonPackageAppointmentsMutationResult = NonNullable<Awaited<ReturnType<typeof createSalonPackageAppointments>>>
+    export type CreateSalonPackageAppointmentsMutationBody = BodyType<SalonPackageAppointmentsInput>
+    export type CreateSalonPackageAppointmentsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Atomically book every remaining session in a purchased package
+ */
+export const useCreateSalonPackageAppointments = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSalonPackageAppointments>>, TError,{data: BodyType<SalonPackageAppointmentsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSalonPackageAppointments>>,
+        TError,
+        {data: BodyType<SalonPackageAppointmentsInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSalonPackageAppointmentsMutationOptions(options));
     }
 
 export const getListSalonTimeBlocksUrl = (params: ListSalonTimeBlocksParams,) => {

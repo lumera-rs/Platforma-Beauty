@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BusinessLayout } from "@/components/business-layout";
 import { OwnerSidebar } from "./dashboard";
 import { 
@@ -11,6 +11,9 @@ import {
   getOwnerListPackagesQueryKey,
   useListSalonServices,
   getListSalonServicesQueryKey,
+  type CreateTreatmentPackageBody,
+  type PackagePurchase,
+  type TreatmentPackage,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,10 +70,9 @@ export default function OwnerPackages() {
     name: "",
     description: "",
     priceInDinars: 0,
-    sessionCount: 5,
     validityDays: 180,
     active: true,
-    serviceIds: [] as string[],
+    serviceQuotas: {} as Record<string, number>,
   });
 
   const resetForm = () => {
@@ -78,37 +80,57 @@ export default function OwnerPackages() {
       name: "",
       description: "",
       priceInDinars: 0,
-      sessionCount: 5,
       validityDays: 180,
       active: true,
-      serviceIds: [],
+      serviceQuotas: {},
     });
     setCurrentId(null);
   };
 
-  const handleEdit = (pkg: any) => {
+  const handleEdit = (pkg: TreatmentPackage) => {
     setFormData({
       name: pkg.name,
       description: pkg.description || "",
       priceInDinars: pkg.priceInDinars,
-      sessionCount: pkg.sessionCount,
       validityDays: pkg.validityDays,
       active: pkg.active,
-      serviceIds: pkg.serviceIds || [],
+      serviceQuotas: Object.fromEntries(
+        pkg.serviceQuotas.map(({ serviceId, quota }) => [serviceId, quota]),
+      ),
     });
     setCurrentId(pkg.id);
     setIsEditing(true);
   };
 
+  const serviceQuotas = useMemo(
+    () => Object.entries(formData.serviceQuotas).map(([serviceId, quota]) => ({ serviceId, quota: Number(quota) })),
+    [formData.serviceQuotas],
+  );
+  const totalSessions = useMemo(
+    () => serviceQuotas.reduce((total, { quota }) => total + quota, 0),
+    [serviceQuotas],
+  );
+  const validationError = useMemo(() => {
+    if (!formData.name.trim()) return "Unesite naziv paketa.";
+    if (!Number.isFinite(formData.priceInDinars) || formData.priceInDinars < 0) return "Cena mora biti nula ili veća.";
+    if (!Number.isInteger(formData.validityDays) || formData.validityDays < 1) return "Važenje mora biti najmanje jedan dan.";
+    if (serviceQuotas.length === 0) return "Izaberite najmanje jednu uslugu.";
+    if (serviceQuotas.some(({ quota }) => !Number.isInteger(quota) || quota < 1)) return "Kvota za svaku uslugu mora biti pozitivan ceo broj.";
+    return null;
+  }, [formData.name, formData.priceInDinars, formData.validityDays, serviceQuotas]);
+
   const handleSave = () => {
-    const payload = {
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    const payload: CreateTreatmentPackageBody = {
       name: formData.name,
       description: formData.description,
       priceInDinars: Number(formData.priceInDinars),
-      sessionCount: Number(formData.sessionCount),
       validityDays: Number(formData.validityDays),
       active: formData.active,
-      serviceIds: formData.serviceIds,
+      serviceQuotas,
     };
 
     const callbacks = {
@@ -130,10 +152,14 @@ export default function OwnerPackages() {
   const toggleService = (id: string) => {
     setFormData(prev => ({
       ...prev,
-      serviceIds: prev.serviceIds.includes(id) 
-        ? prev.serviceIds.filter(sId => sId !== id)
-        : [...prev.serviceIds, id]
+      serviceQuotas: Object.prototype.hasOwnProperty.call(prev.serviceQuotas, id)
+        ? Object.fromEntries(Object.entries(prev.serviceQuotas).filter(([serviceId]) => serviceId !== id))
+        : { ...prev.serviceQuotas, [id]: 1 },
     }));
+  };
+
+  const setServiceQuota = (id: string, quota: number) => {
+    setFormData(prev => ({ ...prev, serviceQuotas: { ...prev.serviceQuotas, [id]: quota } }));
   };
 
   const handleConfirmPayment = (packageId: string, purchaseId: string) => {
@@ -184,7 +210,7 @@ export default function OwnerPackages() {
                 </Card>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {packages?.map((pkg: any) => (
+                  {packages?.map((pkg: TreatmentPackage) => (
                     <Card key={pkg.id} className={!pkg.active ? "opacity-60" : ""}>
                       <CardHeader className="pb-3 border-b">
                         <div className="flex justify-between items-start gap-4">
@@ -205,9 +231,9 @@ export default function OwnerPackages() {
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Važi za usluge:</p>
                           <div className="flex flex-wrap gap-1">
-                            {pkg.serviceIds.map((sId: string) => {
-                              const srv = services?.find(s => s.id === sId);
-                              return srv ? <Badge key={sId} variant="secondary" className="text-xs">{srv.name}</Badge> : null;
+                            {pkg.serviceQuotas.map(({ serviceId, quota }) => {
+                              const srv = services?.find(s => s.id === serviceId);
+                              return srv ? <Badge key={serviceId} variant="secondary" className="text-xs">{srv.name} × {quota}</Badge> : null;
                             })}
                           </div>
                         </div>
@@ -231,7 +257,7 @@ export default function OwnerPackages() {
                     <div className="p-12 text-center text-muted-foreground">Još nema prodatih paketa.</div>
                   ) : (
                     <div className="divide-y">
-                      {customerPackages?.map((purchase: any) => (
+                      {customerPackages?.map((purchase: PackagePurchase) => (
                         <div key={purchase.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
@@ -242,7 +268,18 @@ export default function OwnerPackages() {
                               {purchase.status === 'expired' && <Badge variant="destructive">Istekao</Badge>}
                             </div>
                             <p className="text-sm text-muted-foreground">Kupljeno: {format(parseISO(purchase.createdAt), 'dd.MM.yyyy')} · Važi do: {format(parseISO(purchase.expiresAt), 'dd.MM.yyyy')}</p>
-                            <p className="text-sm mt-1">Preostalo: <strong>{purchase.remainingSessions} / {purchase.totalSessions}</strong> tretmana</p>
+                            {purchase.quotaPolicy === "shared_pool" ? (
+                              <p className="text-sm mt-1">Preostalo: <strong>{purchase.remainingSessions} / {purchase.totalSessions}</strong> tretmana <span className="text-muted-foreground">(zajednički fond)</span></p>
+                            ) : (
+                              <div className="text-sm mt-1">
+                                <span className="text-muted-foreground">Preostalo po usluzi:</span>
+                                <ul className="mt-1 space-y-0.5">
+                                  {purchase.serviceQuotas.map(({ serviceId, remainingQuota, totalQuota }) => (
+                                    <li key={serviceId}><strong>{services?.find(service => service.id === serviceId)?.name ?? "Usluga"}: {remainingQuota} / {totalQuota}</strong></li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <span className="font-bold text-lg">{purchase.priceInDinars.toLocaleString()} RSD</span>
@@ -280,11 +317,7 @@ export default function OwnerPackages() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Broj tretmana u paketu</Label>
-                <Input type="number" min="2" value={formData.sessionCount} onChange={e => setFormData({...formData, sessionCount: Number(e.target.value)})} />
-              </div>
-              <div className="space-y-2">
+              <div className="space-y-2 col-span-2">
                 <Label>Ukupna cena (RSD)</Label>
                 <Input type="number" min="1" value={formData.priceInDinars} onChange={e => setFormData({...formData, priceInDinars: Number(e.target.value)})} />
               </div>
@@ -304,18 +337,30 @@ export default function OwnerPackages() {
                 ) : (
                   activeServices.map(srv => (
                     <label key={srv.id} className="flex items-center gap-2 text-sm cursor-pointer p-1.5 hover:bg-muted/30 rounded">
-                      <input 
+                      <input
                         type="checkbox" 
                         className="rounded border-gray-300"
-                        checked={formData.serviceIds.includes(srv.id)}
+                        checked={Object.prototype.hasOwnProperty.call(formData.serviceQuotas, srv.id)}
                         onChange={() => toggleService(srv.id)}
                       />
                       <span className="truncate">{srv.name}</span>
+                      {Object.prototype.hasOwnProperty.call(formData.serviceQuotas, srv.id) && (
+                        <Input
+                          aria-label={`Kvota za ${srv.name}`}
+                          className="ml-auto h-8 w-20"
+                          type="number"
+                          min="1"
+                          value={formData.serviceQuotas[srv.id]}
+                          onChange={event => setServiceQuota(srv.id, Number(event.target.value))}
+                        />
+                      )}
                     </label>
                   ))
                 )}
               </div>
             </div>
+            <p className="text-sm font-medium">Ukupno tretmana: <strong>{totalSessions}</strong></p>
+            {validationError && <p className="text-sm text-destructive">{validationError}</p>}
 
             <div className="flex items-center gap-2 pt-2">
               <input type="checkbox" id="pkg-active" checked={formData.active} onChange={e => setFormData({...formData, active: e.target.checked})} className="rounded border-gray-300" />
@@ -325,7 +370,7 @@ export default function OwnerPackages() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditing(false)}>Odustani</Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending || formData.serviceIds.length === 0}>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending || Boolean(validationError)}>
               {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Sačuvaj paket
             </Button>

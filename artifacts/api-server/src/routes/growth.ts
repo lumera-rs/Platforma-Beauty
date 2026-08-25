@@ -1362,7 +1362,7 @@ router.post("/growth/automations/:automationId/test-run", async (req, res, next)
 async function loadPackageWithServiceIds(packageId: string): Promise<{
   id: string; salonId: string; name: string; description: string;
   priceInDinars: number; sessionCount: number; validityDays: number;
-  active: boolean; serviceIds: string[]; createdAt: Date; updatedAt: Date;
+  active: boolean; quotaPolicy: string; serviceIds: string[]; serviceQuotas: { serviceId: string; quota: number }[]; createdAt: Date; updatedAt: Date;
 } | null> {
   const [pkg] = await db
     .select()
@@ -1372,11 +1372,23 @@ async function loadPackageWithServiceIds(packageId: string): Promise<{
   if (!pkg) return null;
 
   const links = await db
-    .select({ serviceId: packageServiceLinksTable.serviceId })
+    .select({ serviceId: packageServiceLinksTable.serviceId, quota: packageServiceLinksTable.quota })
     .from(packageServiceLinksTable)
     .where(eq(packageServiceLinksTable.packageId, packageId));
 
-  return { ...pkg, serviceIds: links.map((l) => l.serviceId) };
+  return { ...pkg, serviceIds: links.map((l) => l.serviceId), serviceQuotas: links };
+}
+
+async function withPurchaseServiceQuotas<T extends { id: string }>(purchase: T) {
+  const serviceQuotas = await db
+    .select({
+      serviceId: packagePurchaseServiceLinksTable.serviceId,
+      totalQuota: packagePurchaseServiceLinksTable.totalQuota,
+      remainingQuota: packagePurchaseServiceLinksTable.remainingQuota,
+    })
+    .from(packagePurchaseServiceLinksTable)
+    .where(eq(packagePurchaseServiceLinksTable.purchaseId, purchase.id));
+  return { ...purchase, serviceQuotas };
 }
 
 router.get("/growth/packages", async (req, res, next) => {
@@ -1393,10 +1405,10 @@ router.get("/growth/packages", async (req, res, next) => {
     const result = await Promise.all(
       packages.map(async (pkg) => {
         const links = await db
-          .select({ serviceId: packageServiceLinksTable.serviceId })
+          .select({ serviceId: packageServiceLinksTable.serviceId, quota: packageServiceLinksTable.quota })
           .from(packageServiceLinksTable)
           .where(eq(packageServiceLinksTable.packageId, pkg.id));
-        return { ...pkg, serviceIds: links.map((l) => l.serviceId) };
+        return { ...pkg, serviceIds: links.map((l) => l.serviceId), serviceQuotas: links };
       }),
     );
 
@@ -1414,7 +1426,22 @@ router.post("/growth/packages", async (req, res, next) => {
       res.status(400).json({ error: "Validation error.", code: "VALIDATION_ERROR", issues: parsed.error.issues });
       return;
     }
-    const { name, description, priceInDinars, sessionCount, validityDays, active, serviceIds } = parsed.data;
+    const { name, description, priceInDinars, validityDays, active } = parsed.data;
+    const serviceQuotas = parsed.data.serviceQuotas;
+    if (!serviceQuotas?.length) {
+      res.status(400).json({ error: "Explicit positive serviceQuotas are required.", code: "SERVICE_QUOTAS_REQUIRED" });
+      return;
+    }
+    const serviceIds = serviceQuotas.map((item) => item.serviceId);
+    if (new Set(serviceIds).size !== serviceIds.length) {
+      res.status(400).json({ error: "Each service may have only one quota.", code: "DUPLICATE_SERVICE_QUOTA" });
+      return;
+    }
+    const sessionCount = serviceQuotas.reduce((sum, item) => sum + item.quota, 0);
+    if (parsed.data.sessionCount !== undefined && parsed.data.sessionCount !== sessionCount) {
+      res.status(400).json({ error: "sessionCount must equal the sum of serviceQuotas.", code: "SESSION_COUNT_MISMATCH" });
+      return;
+    }
 
     // Atomically validate all service IDs BEFORE inserting the package
     if (serviceIds && serviceIds.length > 0) {
@@ -1441,15 +1468,16 @@ router.post("/growth/packages", async (req, res, next) => {
         description: description ?? "",
         priceInDinars,
         sessionCount,
+        quotaPolicy: "per_service",
         validityDays: validityDays ?? 365,
         active: active ?? true,
       }).returning();
 
       if (!pkg) throw new Error("Package insert failed");
 
-      if (serviceIds && serviceIds.length > 0) {
+      if (serviceQuotas.length > 0) {
         await tx.insert(packageServiceLinksTable).values(
-          serviceIds.map((serviceId) => ({ packageId: pkg.id, serviceId })),
+          serviceQuotas.map(({ serviceId, quota }) => ({ packageId: pkg.id, serviceId, quota })),
         );
       }
 
@@ -1474,7 +1502,7 @@ router.get("/growth/packages/public", async (req, res, next) => {
     const result = await Promise.all(
       packages.map(async (pkg) => {
         const links = await db
-          .select({ serviceId: packageServiceLinksTable.serviceId })
+          .select({ serviceId: packageServiceLinksTable.serviceId, quota: packageServiceLinksTable.quota })
           .from(packageServiceLinksTable)
           .where(eq(packageServiceLinksTable.packageId, pkg.id));
         return {
@@ -1484,8 +1512,10 @@ router.get("/growth/packages/public", async (req, res, next) => {
           description: pkg.description,
           priceInDinars: pkg.priceInDinars,
           sessionCount: pkg.sessionCount,
+          quotaPolicy: pkg.quotaPolicy,
           validityDays: pkg.validityDays,
           serviceIds: links.map((l) => l.serviceId),
+          serviceQuotas: links,
         };
       }),
     );
@@ -1524,15 +1554,30 @@ router.patch("/growth/packages/:packageId", async (req, res, next) => {
       res.status(400).json({ error: "Validation error.", code: "VALIDATION_ERROR", issues: parsed.error.issues });
       return;
     }
+    if ((parsed.data.serviceIds !== undefined || parsed.data.sessionCount !== undefined)
+      && parsed.data.serviceQuotas === undefined) {
+      res.status(400).json({ error: "Changing services requires explicit serviceQuotas.", code: "SERVICE_QUOTAS_REQUIRED" });
+      return;
+    }
+    if (parsed.data.serviceQuotas !== undefined && parsed.data.sessionCount !== undefined
+      && parsed.data.sessionCount !== parsed.data.serviceQuotas.reduce((sum, item) => sum + item.quota, 0)) {
+      res.status(400).json({ error: "sessionCount must equal the sum of serviceQuotas.", code: "SESSION_COUNT_MISMATCH" });
+      return;
+    }
 
     // Validate service IDs before any mutations
-    if (parsed.data.serviceIds !== undefined && parsed.data.serviceIds.length > 0) {
+    if (parsed.data.serviceQuotas !== undefined && parsed.data.serviceQuotas.length > 0) {
+      const serviceIds = parsed.data.serviceQuotas.map((item) => item.serviceId);
+      if (new Set(serviceIds).size !== serviceIds.length) {
+        res.status(400).json({ error: "Each service may have only one quota.", code: "DUPLICATE_SERVICE_QUOTA" });
+        return;
+      }
       const validServices = await db
         .select({ id: servicesTable.id })
         .from(servicesTable)
-        .where(and(inArray(servicesTable.id, parsed.data.serviceIds), eq(servicesTable.salonId, ctx.salon.id)));
+        .where(and(inArray(servicesTable.id, serviceIds), eq(servicesTable.salonId, ctx.salon.id)));
       const validIds = new Set(validServices.map((s) => s.id));
-      const invalid = parsed.data.serviceIds.filter((id) => !validIds.has(id));
+      const invalid = serviceIds.filter((id) => !validIds.has(id));
       if (invalid.length > 0) {
         res.status(400).json({
           error: "Some service IDs are invalid or do not belong to this salon.",
@@ -1547,7 +1592,10 @@ router.patch("/growth/packages/:packageId", async (req, res, next) => {
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
     if (parsed.data.description !== undefined) updates.description = parsed.data.description ?? "";
     if (parsed.data.priceInDinars !== undefined) updates.priceInDinars = parsed.data.priceInDinars;
-    if (parsed.data.sessionCount !== undefined) updates.sessionCount = parsed.data.sessionCount;
+    if (parsed.data.serviceQuotas !== undefined) {
+      updates.sessionCount = parsed.data.serviceQuotas.reduce((sum, item) => sum + item.quota, 0);
+      updates.quotaPolicy = "per_service";
+    }
     if (parsed.data.validityDays !== undefined) updates.validityDays = parsed.data.validityDays;
     if (parsed.data.active !== undefined) updates.active = parsed.data.active;
 
@@ -1565,11 +1613,11 @@ router.patch("/growth/packages/:packageId", async (req, res, next) => {
 
       await tx.update(treatmentPackagesTable).set(updates).where(eq(treatmentPackagesTable.id, existing.id));
 
-      if (parsed.data.serviceIds !== undefined) {
+      if (parsed.data.serviceQuotas !== undefined) {
         await tx.delete(packageServiceLinksTable).where(eq(packageServiceLinksTable.packageId, existing.id));
-        if (parsed.data.serviceIds.length > 0) {
+        if (parsed.data.serviceQuotas.length > 0) {
           await tx.insert(packageServiceLinksTable).values(
-            parsed.data.serviceIds.map((serviceId) => ({ packageId: existing.id, serviceId })),
+            parsed.data.serviceQuotas.map(({ serviceId, quota }) => ({ packageId: existing.id, serviceId, quota })),
           );
         }
       }
@@ -1666,7 +1714,7 @@ router.post("/growth/packages/:packageId/purchases", async (req, res, next) => {
 
       // Read covered services under the same row lock.
       const currentServiceLinks = await tx
-        .select({ serviceId: packageServiceLinksTable.serviceId })
+        .select({ serviceId: packageServiceLinksTable.serviceId, quota: packageServiceLinksTable.quota })
         .from(packageServiceLinksTable)
         .where(eq(packageServiceLinksTable.packageId, pkg.id));
 
@@ -1678,6 +1726,7 @@ router.post("/growth/packages/:packageId/purchases", async (req, res, next) => {
         salonCustomerId: salonCustomer.id, // always from auth, never from body
         totalSessions: pkg.sessionCount,
         remainingSessions: pkg.sessionCount,
+        quotaPolicy: pkg.quotaPolicy,
         priceInDinars: pkg.priceInDinars,
         paymentMethod: paymentMethod as typeof customerPackagePurchasesTable.$inferInsert["paymentMethod"],
         status: "pending_payment",
@@ -1690,7 +1739,9 @@ router.post("/growth/packages/:packageId/purchases", async (req, res, next) => {
       // (but redemption will fail service_not_covered — fail-safe).
       if (currentServiceLinks.length > 0) {
         await tx.insert(packagePurchaseServiceLinksTable).values(
-          currentServiceLinks.map((l) => ({ purchaseId: p.id, serviceId: l.serviceId })),
+          currentServiceLinks.map((l) => ({
+            purchaseId: p.id, serviceId: l.serviceId, totalQuota: l.quota, remainingQuota: l.quota,
+          })),
         );
       }
 
@@ -1702,7 +1753,7 @@ router.post("/growth/packages/:packageId/purchases", async (req, res, next) => {
       res.status(409).json({ error: "Package is no longer available for purchase.", code: "PACKAGE_INACTIVE" }); return;
     }
 
-    res.status(201).json({ ...result.purchase, packageName: result.packageName });
+    res.status(201).json({ ...(await withPurchaseServiceQuotas(result.purchase)), packageName: result.packageName });
   } catch (err) { next(err); }
 });
 
@@ -1730,7 +1781,7 @@ router.post("/growth/packages/:packageId/purchases/:purchaseId/confirm-payment",
     // Idempotent: already confirmed → return as-is
     if (purchase.status === "active") {
       const [pkg] = await db.select({ name: treatmentPackagesTable.name }).from(treatmentPackagesTable).where(eq(treatmentPackagesTable.id, purchase.packageId)).limit(1);
-      res.json({ ...purchase, packageName: pkg?.name ?? "" });
+      res.json({ ...(await withPurchaseServiceQuotas(purchase)), packageName: pkg?.name ?? "" });
       return;
     }
 
@@ -1746,7 +1797,7 @@ router.post("/growth/packages/:packageId/purchases/:purchaseId/confirm-payment",
       .returning();
 
     const [pkg] = await db.select({ name: treatmentPackagesTable.name }).from(treatmentPackagesTable).where(eq(treatmentPackagesTable.id, purchase.packageId)).limit(1);
-    res.json({ ...updated, packageName: pkg?.name ?? "" });
+    res.json({ ...(await withPurchaseServiceQuotas(updated!)), packageName: pkg?.name ?? "" });
   } catch (err) { next(err); }
 });
 
@@ -1779,7 +1830,9 @@ router.get("/growth/my-purchases", async (req, res, next) => {
       : [];
     const packageNameMap = new Map(packages.map((p) => [p.id, p.name]));
 
-    res.json(purchases.map((p) => ({ ...p, packageName: packageNameMap.get(p.packageId) ?? "" })));
+    res.json(await Promise.all(purchases.map(async (p) => ({
+      ...(await withPurchaseServiceQuotas(p)), packageName: packageNameMap.get(p.packageId) ?? "",
+    }))));
   } catch (err) { next(err); }
 });
 
@@ -1905,7 +1958,9 @@ router.get("/growth/salon-customer-packages", async (req, res, next) => {
       : [];
     const packageNameMap = new Map(packages.map((p) => [p.id, p.name]));
 
-    res.json(purchases.map((p) => ({ ...p, packageName: packageNameMap.get(p.packageId) ?? "" })));
+    res.json(await Promise.all(purchases.map(async (p) => ({
+      ...(await withPurchaseServiceQuotas(p)), packageName: packageNameMap.get(p.packageId) ?? "",
+    }))));
   } catch (err) { next(err); }
 });
 

@@ -7,11 +7,14 @@ import {
   appointmentResourceAllocationsTable,
   appointmentSeriesTable,
   appointmentsTable,
+  customerPackagePurchasesTable,
   db,
   employeeServicesTable,
   employeeTimeOffTable,
   employeesTable,
   mediaAssetsTable,
+  packagePurchaseServiceLinksTable,
+  packageRedemptionsTable,
   pool,
   salonCustomersTable,
   salonHoursTable,
@@ -19,10 +22,12 @@ import {
   serviceResourceRequirementsTable,
   salonsTable,
   servicesTable,
+  treatmentPackagesTable,
   usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
+import { lockAppointmentResources } from "./appointment-locks";
 import { ensureBusinessGrowthSchema } from "./business-growth-schema";
 import { assertNoPgBusyClientWarnings } from "./pg-busy-client.test-support";
 import { ensureDemoData } from "./seed";
@@ -1537,6 +1542,152 @@ async function run(): Promise<void> {
     assert.equal(calendarEmployee?.unavailableReason, "Odobreno odsustvo");
     const allDayDelete = await request(baseUrl, ownerSession, `/salon/time-blocks/${allDayLeave!.id}`, "DELETE", {});
     assert.equal(allDayDelete.status, 404, "approved all-day leave cannot be deleted through time-block endpoint");
+
+    // -------------------------------------------------------------------------
+    // Owner package entitlement booking: single, series and full package flows.
+    // Dates are isolated Sunday hours so availability is deterministic.
+    // -------------------------------------------------------------------------
+    const [packageService] = await db.insert(servicesTable).values({
+      salonId: salon!.id, categoryName: "Test", name: `Paket druga usluga ${suffix}`,
+      description: "Druga usluga za paketne HTTP testove.", durationMinutes: 60, price: 1200, imageUrl: "/test.jpg",
+    }).returning();
+    await db.insert(employeeServicesTable).values({ employeeId: employee!.id, serviceId: packageService!.id });
+    let [otherContact] = await db.select().from(salonCustomersTable).where(and(
+      eq(salonCustomersTable.salonId, salon!.id), eq(salonCustomersTable.userId, otherCustomer!.id),
+    )).limit(1);
+    if (!otherContact) {
+      [otherContact] = await db.insert(salonCustomersTable).values({
+        salonId: salon!.id, userId: otherCustomer!.id, firstName: otherCustomer!.firstName, lastName: otherCustomer!.lastName,
+        phone: "+381611234530", phoneNormalized: "+381611234530",
+      }).returning();
+    }
+    const expiresAt = new Date("2101-01-01T00:00:00.000Z");
+    const createActivePurchase = async (name: string, quotas: Array<{ serviceId: string; quota: number }>) => {
+      const [definition] = await db.insert(treatmentPackagesTable).values({
+        salonId: salon!.id, name: `${name} ${suffix}`, description: "", priceInDinars: 1000,
+        sessionCount: quotas.reduce((total, item) => total + item.quota, 0), validityDays: 365, active: true, quotaPolicy: "per_service",
+      }).returning();
+      const total = quotas.reduce((sum, item) => sum + item.quota, 0);
+      const [purchase] = await db.insert(customerPackagePurchasesTable).values({
+        salonId: salon!.id, packageId: definition!.id, salonCustomerId: contact!.id, totalSessions: total, remainingSessions: total,
+        quotaPolicy: "per_service", priceInDinars: 1000, status: "active", expiresAt,
+      }).returning();
+      await db.insert(packagePurchaseServiceLinksTable).values(quotas.map((item) => ({
+        purchaseId: purchase!.id, serviceId: item.serviceId, totalQuota: item.quota, remainingQuota: item.quota,
+      })));
+      return purchase!;
+    };
+    const purchaseBalances = async (purchaseId: string) => db.select({
+      serviceId: packagePurchaseServiceLinksTable.serviceId, remainingQuota: packagePurchaseServiceLinksTable.remainingQuota,
+    }).from(packagePurchaseServiceLinksTable).where(eq(packagePurchaseServiceLinksTable.purchaseId, purchaseId));
+
+    const singlePurchase = await createActivePurchase("Jedan termin", [{ serviceId: service!.id, quota: 1 }]);
+    const singleBooked = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      salonCustomerId: contact!.id, serviceId: service!.id, date: "2100-01-03", startTime: "10:00", employeeId: employee!.id,
+      packagePurchaseId: singlePurchase.id,
+    });
+    assert.equal(singleBooked.status, 201, "owner single booking redeems an active per-service package");
+    const singleAppointment = singleBooked.body as { id: string; price: number };
+    assert.equal(singleAppointment.price, 0, "package single booking zeroes appointment price");
+    assert.deepEqual(await purchaseBalances(singlePurchase.id), [{ serviceId: service!.id, remainingQuota: 0 }], "single redemption consumes only its selected service quota");
+    assert.equal((await db.select().from(packageRedemptionsTable).where(eq(packageRedemptionsTable.appointmentId, singleAppointment.id))).length, 1, "single booking writes one redemption");
+    const wrongCustomerSingle = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      salonCustomerId: otherContact!.id, serviceId: service!.id, date: "2100-01-03", startTime: "11:00", employeeId: employee!.id,
+      packagePurchaseId: singlePurchase.id,
+    });
+    assert.equal(wrongCustomerSingle.status, 409, "owner cannot use another CRM customer's purchase");
+    const uncoveredSingle = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      salonCustomerId: contact!.id, serviceId: packageService!.id, date: "2100-01-03", startTime: "11:00", employeeId: employee!.id,
+      packagePurchaseId: singlePurchase.id,
+    });
+    assert.equal(uncoveredSingle.status, 409, "owner cannot use a purchase for an uncovered service");
+    assert.deepEqual(await purchaseBalances(singlePurchase.id), [{ serviceId: service!.id, remainingQuota: 0 }], "rejected single uses do not consume package balance");
+
+    const seriesPurchase = await createActivePurchase("Serija", [{ serviceId: service!.id, quota: 2 }]);
+    const seriesBody = {
+      salonCustomerId: contact!.id, serviceId: service!.id, employeeId: employee!.id, packagePurchaseId: seriesPurchase.id,
+      slots: [{ date: "2100-01-10", startTime: "10:00" }, { date: "2100-01-10", startTime: "11:00" }],
+    };
+    const seriesPreview = await request(baseUrl, ownerSession, "/salon/appointment-series/preview", "POST", seriesBody);
+    assert.equal(seriesPreview.status, 200, "owner package series preview succeeds");
+    assert.equal((seriesPreview.body as { packageEligible: boolean }).packageEligible, true, "series preview reports sufficient package balance");
+    const seriesCreated = await request(baseUrl, ownerSession, "/salon/appointment-series", "POST", seriesBody);
+    assert.equal(seriesCreated.status, 201, "owner package series creates atomically");
+    assert.deepEqual(await purchaseBalances(seriesPurchase.id), [{ serviceId: service!.id, remainingQuota: 0 }], "series consumes exact number of per-service sessions");
+    const insufficientPurchase = await createActivePurchase("Nedovoljno", [{ serviceId: service!.id, quota: 1 }]);
+    const beforeInsufficientSeries = (await db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, salon!.id))).length;
+    const insufficientSeries = await request(baseUrl, ownerSession, "/salon/appointment-series", "POST", { ...seriesBody, packagePurchaseId: insufficientPurchase.id, slots: [{ date: "2100-01-10", startTime: "12:00" }, { date: "2100-01-10", startTime: "13:00" }] });
+    assert.equal(insufficientSeries.status, 409, "insufficient package series is rejected");
+    assert.equal((await db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, salon!.id))).length, beforeInsufficientSeries, "insufficient series leaves no partial series");
+    assert.deepEqual(await purchaseBalances(insufficientPurchase.id), [{ serviceId: service!.id, remainingQuota: 1 }], "insufficient series leaves balance intact");
+
+    const fullPurchase = await createActivePurchase("Kompletan", [{ serviceId: service!.id, quota: 1 }, { serviceId: packageService!.id, quota: 1 }]);
+    const fullBody = { packagePurchaseId: fullPurchase.id, slots: [
+      { serviceId: service!.id, date: "2100-01-17", startTime: "10:00", employeeId: employee!.id },
+      { serviceId: packageService!.id, date: "2100-01-17", startTime: "11:00", employeeId: employee!.id },
+    ] };
+    const fullPreview = await request(baseUrl, ownerSession, "/salon/package-appointments/preview", "POST", fullBody);
+    assert.equal(fullPreview.status, 200, "full package preview succeeds");
+    assert.equal((fullPreview.body as { allAvailable: boolean; packageEligible: boolean }).allAvailable, true);
+    assert.equal((fullPreview.body as { packageEligible: boolean }).packageEligible, true);
+    const fullCreated = await request(baseUrl, ownerSession, "/salon/package-appointments", "POST", fullBody);
+    assert.equal(fullCreated.status, 201, "full multi-service package creates atomically");
+    assert.equal((fullCreated.body as { series: unknown[] }).series.length, 2, "full package creates a separate series for each service");
+    assert.deepEqual((await purchaseBalances(fullPurchase.id)).sort((a, b) => a.serviceId.localeCompare(b.serviceId)).map((item) => item.remainingQuota), [0, 0], "full package consumes exact service balances");
+    const staleFull = await request(baseUrl, ownerSession, "/salon/package-appointments", "POST", fullBody);
+    assert.equal(staleFull.status, 409, "a stale already-consumed full package request fails");
+
+    const reversalRacePurchase = await createActivePurchase("Povrat tokom kompletnog plana", [{ serviceId: service!.id, quota: 2 }]);
+    const reversalRaceSingle = await request(baseUrl, ownerSession, "/salon/appointments", "POST", {
+      salonCustomerId: contact!.id, serviceId: service!.id, date: "2100-01-31", startTime: "10:00", employeeId: employee!.id,
+      packagePurchaseId: reversalRacePurchase.id,
+    });
+    assert.equal(reversalRaceSingle.status, 201, "race fixture consumes one of two package sessions");
+    const [reversalRaceRedemption] = await db.select().from(packageRedemptionsTable)
+      .where(eq(packageRedemptionsTable.appointmentId, (reversalRaceSingle.body as { id: string }).id)).limit(1);
+    assert.ok(reversalRaceRedemption, "race fixture redemption exists");
+    const reversalRaceBody = {
+      packagePurchaseId: reversalRacePurchase.id,
+      slots: [{ serviceId: service!.id, date: "2100-02-07", startTime: "10:00", employeeId: employee!.id }],
+    };
+    const reversalRacePreview = await request(baseUrl, ownerSession, "/salon/package-appointments/preview", "POST", reversalRaceBody);
+    assert.equal(reversalRacePreview.status, 200, "one remaining session initially previews as a complete package plan");
+
+    let releaseCalendarLock!: () => void;
+    let calendarLockAcquired!: () => void;
+    const calendarLockReady = new Promise<void>((resolve) => { calendarLockAcquired = resolve; });
+    const holdCalendarLock = new Promise<void>((resolve) => { releaseCalendarLock = resolve; });
+    const calendarBlocker = db.transaction(async (tx) => {
+      await lockAppointmentResources(tx, salon!.id, [{ date: "2100-02-07", employeeId: employee!.id }]);
+      calendarLockAcquired();
+      await holdCalendarLock;
+    });
+    await calendarLockReady;
+    const racedCreatePromise = request(baseUrl, ownerSession, "/salon/package-appointments", "POST", reversalRaceBody);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const concurrentReversal = await request(baseUrl, ownerSession, `/growth/redemptions/${reversalRaceRedemption!.id}/reverse`, "POST", {});
+    assert.equal(concurrentReversal.status, 200, "concurrent reversal restores the second entitlement while create waits on the calendar lock");
+    releaseCalendarLock();
+    await calendarBlocker;
+    const racedCreate = await racedCreatePromise;
+    assert.equal(racedCreate.status, 400, "full-package create revalidates the exact-all set after acquiring its transaction locks");
+    assert.deepEqual(await purchaseBalances(reversalRacePurchase.id), [{ serviceId: service!.id, remainingQuota: 2 }], "raced full-package create leaves both restored sessions unbooked");
+
+    const blockedPurchase = await createActivePurchase("Blokiran", [{ serviceId: service!.id, quota: 1 }, { serviceId: packageService!.id, quota: 1 }]);
+    const blockedTimeBlock = await request(baseUrl, ownerSession, "/salon/time-blocks", "POST", {
+      employeeId: employee!.id, date: "2100-01-24", startTime: "10:00", endTime: "11:00", reason: "Paket blokada",
+    });
+    assert.equal(blockedTimeBlock.status, 201, "fixture time block is created for blocked package slot");
+    const beforeBlockedAppointments = (await db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon!.id))).length;
+    const beforeBlockedSeries = (await db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, salon!.id))).length;
+    const blockedFull = await request(baseUrl, ownerSession, "/salon/package-appointments", "POST", { packagePurchaseId: blockedPurchase.id, slots: [
+      { serviceId: service!.id, date: "2100-01-24", startTime: "10:00", employeeId: employee!.id },
+      { serviceId: packageService!.id, date: "2100-01-24", startTime: "11:00", employeeId: employee!.id },
+    ] });
+    assert.equal(blockedFull.status, 409, "one blocked full-package slot rejects the entire request");
+    assert.equal((await db.select().from(appointmentsTable).where(eq(appointmentsTable.salonId, salon!.id))).length, beforeBlockedAppointments, "blocked full package creates no appointments");
+    assert.equal((await db.select().from(appointmentSeriesTable).where(eq(appointmentSeriesTable.salonId, salon!.id))).length, beforeBlockedSeries, "blocked full package creates no series");
+    assert.deepEqual((await purchaseBalances(blockedPurchase.id)).map((item) => item.remainingQuota).sort(), [1, 1], "blocked full package leaves every quota unchanged");
 
     console.log("Resource CRUD and booking capacity tests passed.");
 

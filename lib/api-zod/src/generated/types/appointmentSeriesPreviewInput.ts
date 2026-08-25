@@ -11,6 +11,10 @@ export interface AppointmentSeriesPreviewInput {
   serviceId: string;
   /** @nullable */
   employeeId?: string | null;
+  /** @nullable */
+  packagePurchaseId?: string | null;
+  /** @nullable */
+  salonCustomerId?: string | null;
   /**
      * @minItems 1
      * @maxItems 24

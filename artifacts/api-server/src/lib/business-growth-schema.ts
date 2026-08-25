@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 33;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 34;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -730,17 +730,35 @@ function tableStatements(s: string): string[] {
       session_count integer NOT NULL,
       validity_days integer NOT NULL DEFAULT 365,
       active boolean NOT NULL DEFAULT true,
+       quota_policy text NOT NULL DEFAULT 'shared_pool',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE ${s}.treatment_packages ADD COLUMN IF NOT EXISTS quota_policy text NOT NULL DEFAULT 'shared_pool'`,
     `CREATE INDEX IF NOT EXISTS treatment_packages_salon_active_idx ON ${s}.treatment_packages (salon_id, active)`,
 
     // ── package_service_links ─────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS ${s}.package_service_links (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       package_id uuid NOT NULL REFERENCES ${s}.treatment_packages(id) ON DELETE CASCADE,
-      service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE
+       service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE,
+       quota integer NOT NULL DEFAULT 1
     )`,
+    // Existing definitions used a shared session_count. Preserve their historic
+    // coverage while making each legacy link visibly carry that old allowance.
+    `ALTER TABLE ${s}.package_service_links ADD COLUMN IF NOT EXISTS quota integer`,
+    `UPDATE ${s}.package_service_links l
+       SET quota = p.session_count
+      FROM ${s}.treatment_packages p
+     WHERE l.package_id = p.id AND l.quota IS NULL`,
+    `ALTER TABLE ${s}.package_service_links ALTER COLUMN quota SET DEFAULT 1`,
+    `ALTER TABLE ${s}.package_service_links ALTER COLUMN quota SET NOT NULL`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'package_service_links_quota_positive'
+         AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())) THEN
+         ALTER TABLE ${s}.package_service_links ADD CONSTRAINT package_service_links_quota_positive CHECK (quota > 0);
+       END IF;
+     END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS package_service_links_unique ON ${s}.package_service_links (package_id, service_id)`,
     `CREATE INDEX IF NOT EXISTS package_service_links_service_idx ON ${s}.package_service_links (service_id)`,
 
@@ -752,6 +770,7 @@ function tableStatements(s: string): string[] {
       salon_customer_id uuid NOT NULL REFERENCES ${s}.salon_customers(id) ON DELETE CASCADE,
       total_sessions integer NOT NULL,
       remaining_sessions integer NOT NULL,
+       quota_policy text NOT NULL DEFAULT 'shared_pool',
       price_in_dinars integer NOT NULL,
       payment_method ${s}.package_payment_method NOT NULL DEFAULT 'pay_at_salon',
       status ${s}.package_purchase_status NOT NULL DEFAULT 'pending_payment',
@@ -763,6 +782,7 @@ function tableStatements(s: string): string[] {
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE ${s}.customer_package_purchases ADD COLUMN IF NOT EXISTS payment_method ${s}.package_payment_method NOT NULL DEFAULT 'pay_at_salon'`,
+    `ALTER TABLE ${s}.customer_package_purchases ADD COLUMN IF NOT EXISTS quota_policy text NOT NULL DEFAULT 'shared_pool'`,
     `CREATE INDEX IF NOT EXISTS customer_package_purchases_salon_customer_idx ON ${s}.customer_package_purchases (salon_id, salon_customer_id)`,
     `CREATE INDEX IF NOT EXISTS customer_package_purchases_package_idx ON ${s}.customer_package_purchases (package_id)`,
     `CREATE INDEX IF NOT EXISTS customer_package_purchases_status_idx ON ${s}.customer_package_purchases (status, expires_at)`,
@@ -773,8 +793,26 @@ function tableStatements(s: string): string[] {
     `CREATE TABLE IF NOT EXISTS ${s}.package_purchase_service_links (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       purchase_id uuid NOT NULL REFERENCES ${s}.customer_package_purchases(id) ON DELETE CASCADE,
-      service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE
+       service_id uuid NOT NULL REFERENCES ${s}.services(id) ON DELETE CASCADE,
+       total_quota integer NOT NULL DEFAULT 0,
+       remaining_quota integer NOT NULL DEFAULT 0
     )`,
+    `ALTER TABLE ${s}.package_purchase_service_links ADD COLUMN IF NOT EXISTS total_quota integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.package_purchase_service_links ADD COLUMN IF NOT EXISTS remaining_quota integer NOT NULL DEFAULT 0`,
+    // These values are audit snapshots only for old shared-pool purchases. Their
+    // quota_policy remains shared_pool, so they are never reinterpreted as caps.
+    `UPDATE ${s}.package_purchase_service_links l
+       SET total_quota = p.total_sessions,
+           remaining_quota = p.remaining_sessions
+      FROM ${s}.customer_package_purchases p
+     WHERE l.purchase_id = p.id AND l.total_quota = 0 AND l.remaining_quota = 0`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'package_purchase_service_links_quota_nonnegative'
+         AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())) THEN
+         ALTER TABLE ${s}.package_purchase_service_links ADD CONSTRAINT package_purchase_service_links_quota_nonnegative
+           CHECK (total_quota >= 0 AND remaining_quota >= 0 AND remaining_quota <= total_quota);
+       END IF;
+     END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS package_purchase_service_links_unique ON ${s}.package_purchase_service_links (purchase_id, service_id)`,
     `CREATE INDEX IF NOT EXISTS package_purchase_service_links_purchase_idx ON ${s}.package_purchase_service_links (purchase_id)`,
     `CREATE INDEX IF NOT EXISTS package_purchase_service_links_service_idx ON ${s}.package_purchase_service_links (service_id)`,
@@ -786,6 +824,8 @@ function tableStatements(s: string): string[] {
       salon_id uuid NOT NULL REFERENCES ${s}.salons(id) ON DELETE CASCADE,
       appointment_id uuid NOT NULL REFERENCES ${s}.appointments(id) ON DELETE RESTRICT,
       salon_customer_id uuid NOT NULL REFERENCES ${s}.salon_customers(id) ON DELETE CASCADE,
+       purchase_service_link_id uuid REFERENCES ${s}.package_purchase_service_links(id) ON DELETE RESTRICT,
+       service_id uuid REFERENCES ${s}.services(id) ON DELETE RESTRICT,
       status ${s}.package_redemption_status NOT NULL DEFAULT 'redeemed',
       original_appointment_price integer NOT NULL DEFAULT 0,
       redeemed_at timestamptz NOT NULL DEFAULT now(),
@@ -794,12 +834,32 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE ${s}.package_redemptions ADD COLUMN IF NOT EXISTS original_appointment_price integer NOT NULL DEFAULT 0`,
+    `ALTER TABLE ${s}.package_redemptions ADD COLUMN IF NOT EXISTS purchase_service_link_id uuid REFERENCES ${s}.package_purchase_service_links(id) ON DELETE RESTRICT`,
+    `ALTER TABLE ${s}.package_redemptions ADD COLUMN IF NOT EXISTS service_id uuid REFERENCES ${s}.services(id) ON DELETE RESTRICT`,
+    // Very old appointment schemas predate service_id. Keep the rollout
+    // additive/idempotent instead of failing startup before the core schema
+    // migration has had a chance to add that column.
+    `DO $$ BEGIN
+       IF EXISTS (
+         SELECT 1
+           FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = 'appointments'
+            AND column_name = 'service_id'
+       ) THEN
+         UPDATE ${s}.package_redemptions r
+            SET service_id = a.service_id
+           FROM ${s}.appointments a
+          WHERE r.appointment_id = a.id AND r.service_id IS NULL;
+       END IF;
+     END $$`,
     `CREATE UNIQUE INDEX IF NOT EXISTS package_redemptions_purchase_appointment_unique ON ${s}.package_redemptions (purchase_id, appointment_id)`,
     `CREATE INDEX IF NOT EXISTS package_redemptions_purchase_idx ON ${s}.package_redemptions (purchase_id)`,
     `CREATE INDEX IF NOT EXISTS package_redemptions_salon_customer_idx ON ${s}.package_redemptions (salon_id, salon_customer_id)`,
     `CREATE INDEX IF NOT EXISTS package_redemptions_appointment_idx ON ${s}.package_redemptions (appointment_id)`,
     `CREATE INDEX IF NOT EXISTS package_redemptions_reversed_by_idx ON ${s}.package_redemptions (reversed_by_user_id)`,
     `CREATE INDEX IF NOT EXISTS package_redemptions_customer_idx ON ${s}.package_redemptions (salon_customer_id)`,
+    `CREATE INDEX IF NOT EXISTS package_redemptions_purchase_service_link_idx ON ${s}.package_redemptions (purchase_service_link_id)`,
 
     // ── employee_commission_settings ─────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS ${s}.employee_commission_settings (
