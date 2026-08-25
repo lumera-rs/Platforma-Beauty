@@ -219,6 +219,34 @@ function listingQuery(viewer?: { id: string; salonId?: string }) {
     .leftJoin(usersTable, eq(beautyJobListingsTable.userId, usersTable.id))
     .leftJoin(beautyJobSavedListingsTable, and(eq(beautyJobSavedListingsTable.listingId, beautyJobListingsTable.id), eq(beautyJobSavedListingsTable.userId, savedUserId)));
 }
+function salonOwnerListingVisibility(salonId: string) {
+  return sql`not (
+    ${beautyJobListingsTable.postedByType} = 'salon'
+    and ${beautyJobListingsTable.salonId} <> ${salonId}
+    and ${beautyJobListingsTable.type} = 'job'
+    and ${beautyJobListingsTable.intent} = 'offering'
+  )`;
+}
+function publicListingConditions(salonId?: string) {
+  const conditions = [
+    eq(beautyJobListingsTable.status, "active"),
+    eq(beautyJobListingsTable.moderationStatus, "approved"),
+    sql`${beautyJobListingsTable.expiresAt} > now()`,
+  ];
+  if (salonId) conditions.push(salonOwnerListingVisibility(salonId));
+  return conditions;
+}
+function salonOwnerNotificationVisibility(salonId: string) {
+  return or(
+    isNull(beautyJobNotificationsTable.listingId),
+    sql`exists (
+      select 1
+      from ${beautyJobListingsTable}
+      where ${beautyJobListingsTable.id} = ${beautyJobNotificationsTable.listingId}
+        and ${salonOwnerListingVisibility(salonId)}
+    )`,
+  )!;
+}
 async function canManage(user: typeof usersTable.$inferSelect, listing: typeof beautyJobListingsTable.$inferSelect) {
   if (isAdmin(user)) return true;
   if (listing.userId) return listing.userId === user.id;
@@ -260,7 +288,7 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
   const viewerSalon = viewer?.role === "SALON_OWNER" ? await ownerSalon(viewer) : undefined;
   const parsed = ListBeautyJobsQueryParams.safeParse(req.query); if (!parsed.success) return bad(res);
   const q = parsed.data; const page = q.page ?? 1; const pageSize = q.pageSize ?? 24;
-  const conditions = [eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), eq(beautyJobCategoriesTable.enabled, true), sql`${beautyJobListingsTable.expiresAt} > now()`];
+  const conditions = [...publicListingConditions(viewerSalon?.id), eq(beautyJobCategoriesTable.enabled, true)];
   if (q.category) conditions.push(eq(beautyJobCategoriesTable.slug, q.category));
   if (q.type) conditions.push(eq(beautyJobListingsTable.type, q.type));
    if (q.intent) conditions.push(eq(beautyJobListingsTable.intent, q.intent));
@@ -269,14 +297,6 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
    if (q.listingMode === "seeking") conditions.push(eq(beautyJobListingsTable.intent, "seeking"));
    if (q.listingMode === "seeking_work") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "seeking"));
    if (q.listingMode === "seeking_rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "seeking"));
-   // Salon owners may not browse competing salon job offers. Freelance work,
-   // rentals, seeking listings, their own listings, and all other audiences stay public.
-   if (viewerSalon) conditions.push(sql`not (
-     ${beautyJobListingsTable.postedByType} = 'salon'
-     and ${beautyJobListingsTable.salonId} <> ${viewerSalon.id}
-     and ${beautyJobListingsTable.type} = 'job'
-     and ${beautyJobListingsTable.intent} = 'offering'
-   )`);
   if (q.minPrice !== undefined && q.maxPrice !== undefined && q.minPrice > q.maxPrice) return bad(res, "Minimalna cena ne može biti veća od maksimalne.");
   if ((q.latitude === undefined) !== (q.longitude === undefined)) return bad(res, "Latitude i longitude se navode zajedno.");
   if (q.city) conditions.push(ilike(beautyJobListingsTable.city, `%${q.city}%`));
@@ -448,7 +468,9 @@ router.post("/beauty-jobs/:listingId/close", async (req, res, next) => { try {
 
 router.post("/beauty-jobs/:listingId/save", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const p = ToggleSavedBeautyJobParams.safeParse(req.params); if (!p.success) return bad(res);
-  const [listing] = await db.select({ id: beautyJobListingsTable.id }).from(beautyJobListingsTable).where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), sql`${beautyJobListingsTable.expiresAt} > now()`)).limit(1);
+  const salon = await ownerSalon(user);
+  const [listing] = await db.select({ id: beautyJobListingsTable.id }).from(beautyJobListingsTable)
+    .where(and(eq(beautyJobListingsTable.id, p.data.listingId), ...publicListingConditions(salon?.id))).limit(1);
   if (!listing) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   const [saved] = await db.select().from(beautyJobSavedListingsTable).where(and(eq(beautyJobSavedListingsTable.userId, user.id), eq(beautyJobSavedListingsTable.listingId, p.data.listingId))).limit(1);
   if (saved) {
@@ -460,7 +482,10 @@ router.post("/beauty-jobs/:listingId/save", async (req, res, next) => { try {
   }
 } catch (e) { next(e); } });
 router.get("/beauty-jobs/saved", async (req, res, next) => { try {
-  const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user); const items = await listingQuery({ id: user.id, salonId: salon?.id }).where(eq(beautyJobSavedListingsTable.userId, user.id)).orderBy(desc(beautyJobSavedListingsTable.createdAt));
+  const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
+  const items = await listingQuery({ id: user.id, salonId: salon?.id })
+    .where(and(eq(beautyJobSavedListingsTable.userId, user.id), ...publicListingConditions(salon?.id)))
+    .orderBy(desc(beautyJobSavedListingsTable.createdAt));
   res.json(ListSavedBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r })), total: items.length, page: 1, pageSize: items.length }));
 } catch (e) { next(e); } });
 
@@ -613,7 +638,9 @@ router.patch("/beauty-jobs/rental-requests/:requestId", async (req, res, next) =
 
 router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const p = ContactBeautyJobAuthorParams.safeParse(req.params), b = ContactBeautyJobAuthorBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
-  const [listing] = await db.select().from(beautyJobListingsTable).where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), sql`${beautyJobListingsTable.expiresAt} > now()`)).limit(1);
+  const salon = await ownerSalon(user);
+  const [listing] = await db.select().from(beautyJobListingsTable)
+    .where(and(eq(beautyJobListingsTable.id, p.data.listingId), ...publicListingConditions(salon?.id))).limit(1);
   if (!listing) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" }); const recipient = await listingRecipient(listing); if (!recipient || recipient === user.id) return res.status(403).json({ error: "Kontakt nije dozvoljen.", code: "FORBIDDEN" });
   const contact = await db.transaction(async (tx) => {
     const [created] = await tx.insert(beautyJobContactsTable).values({
@@ -652,7 +679,9 @@ router.post("/beauty-jobs/:listingId/contact", async (req, res, next) => { try {
 router.get("/beauty-jobs/inbox", async (req, res, next) => { try {
   const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
   const scope = salon ? eq(beautyJobListingsTable.salonId, salon.id) : eq(beautyJobListingsTable.userId, user.id);
-  const contacts = await db.select({ contact: beautyJobContactsTable, listingTitle: beautyJobListingsTable.title, applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}` }).from(beautyJobContactsTable).innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id)).innerJoin(usersTable, eq(beautyJobContactsTable.applicantUserId, usersTable.id)).where(or(scope, eq(beautyJobContactsTable.applicantUserId, user.id))).orderBy(desc(beautyJobContactsTable.createdAt));
+  const inboxConditions = [or(scope, eq(beautyJobContactsTable.applicantUserId, user.id))!];
+  if (salon) inboxConditions.push(salonOwnerListingVisibility(salon.id));
+  const contacts = await db.select({ contact: beautyJobContactsTable, listingTitle: beautyJobListingsTable.title, applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}` }).from(beautyJobContactsTable).innerJoin(beautyJobListingsTable, eq(beautyJobContactsTable.listingId, beautyJobListingsTable.id)).innerJoin(usersTable, eq(beautyJobContactsTable.applicantUserId, usersTable.id)).where(and(...inboxConditions)).orderBy(desc(beautyJobContactsTable.createdAt));
   res.json(ListBeautyJobInboxResponse.parse({ contacts: contacts.map((r) => contactView(r.contact, { listingTitle: r.listingTitle, applicantDisplayName: r.applicantDisplayName })) }));
 } catch (e) { next(e); } });
 router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try {
@@ -703,18 +732,34 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
 
 router.post("/beauty-jobs/:listingId/report", async (req, res, next) => { try {
   const user = await session(req, res); if (user === undefined && res.headersSent) return; const p = ReportBeautyJobParams.safeParse(req.params), b = ReportBeautyJobBody.safeParse(req.body); if (!p.success || !b.success) return bad(res);
-  const [listing] = await db.select({ id: beautyJobListingsTable.id }).from(beautyJobListingsTable).where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), sql`${beautyJobListingsTable.expiresAt} > now()`)).limit(1);
+  const salon = user ? await ownerSalon(user) : undefined;
+  const [listing] = await db.select({ id: beautyJobListingsTable.id }).from(beautyJobListingsTable)
+    .where(and(eq(beautyJobListingsTable.id, p.data.listingId), ...publicListingConditions(salon?.id))).limit(1);
   if (!listing) return res.status(404).json({ error: "Oglas nije pronađen.", code: "NOT_FOUND" });
   const [report] = await db.insert(beautyJobReportsTable).values({ listingId: p.data.listingId, reporterUserId: user?.id, reason: b.data.reason }).returning();
   res.status(201).json(ReportBeautyJobResponse.parse(reportView(report!)));
 } catch (e) { next(e); } });
 
 router.get("/beauty-jobs/notifications", async (req, res, next) => { try {
-  const user = await authenticated(req, res); if (!user) return; const notifications = await db.select().from(beautyJobNotificationsTable).where(eq(beautyJobNotificationsTable.recipientUserId, user.id)).orderBy(desc(beautyJobNotificationsTable.createdAt)).limit(100);
+  const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
+  const notificationConditions = [eq(beautyJobNotificationsTable.recipientUserId, user.id)];
+  if (salon) notificationConditions.push(salonOwnerNotificationVisibility(salon.id));
+  const notifications = await db.select()
+    .from(beautyJobNotificationsTable)
+    .where(and(...notificationConditions))
+    .orderBy(desc(beautyJobNotificationsTable.createdAt))
+    .limit(100);
   res.json(ListBeautyJobNotificationsResponse.parse({ notifications: notifications.map(notificationView) }));
 } catch (e) { next(e); } });
 router.post("/beauty-jobs/notifications/:notificationId/read", async (req, res, next) => { try {
-  const user = await authenticated(req, res); if (!user) return; const p = MarkBeautyJobNotificationReadParams.safeParse(req.params); if (!p.success) return bad(res); const [n] = await db.update(beautyJobNotificationsTable).set({ readAt: new Date() }).where(and(eq(beautyJobNotificationsTable.id, p.data.notificationId), eq(beautyJobNotificationsTable.recipientUserId, user.id))).returning(); if (!n) return res.status(404).json({ error: "Obaveštenje nije pronađeno.", code: "NOT_FOUND" });
+  const user = await authenticated(req, res); if (!user) return; const p = MarkBeautyJobNotificationReadParams.safeParse(req.params); if (!p.success) return bad(res);
+  const salon = await ownerSalon(user);
+  const conditions = [
+    eq(beautyJobNotificationsTable.id, p.data.notificationId),
+    eq(beautyJobNotificationsTable.recipientUserId, user.id),
+  ];
+  if (salon) conditions.push(salonOwnerNotificationVisibility(salon.id));
+  const [n] = await db.update(beautyJobNotificationsTable).set({ readAt: new Date() }).where(and(...conditions)).returning(); if (!n) return res.status(404).json({ error: "Obaveštenje nije pronađeno.", code: "NOT_FOUND" });
   res.json(MarkBeautyJobNotificationReadResponse.parse(notificationView(n)));
 } catch (e) { next(e); } });
 
@@ -1049,16 +1094,8 @@ router.get("/beauty-jobs/:listingId", async (req, res, next) => { try {
   const p = GetBeautyJobParams.safeParse(req.params); if (!p.success) return bad(res);
   const visible = [
     eq(beautyJobListingsTable.id, p.data.listingId),
-    eq(beautyJobListingsTable.status, "active"),
-    eq(beautyJobListingsTable.moderationStatus, "approved"),
-    sql`${beautyJobListingsTable.expiresAt} > now()`,
+    ...publicListingConditions(viewerSalon?.id),
   ];
-  if (viewerSalon) visible.push(sql`not (
-    ${beautyJobListingsTable.postedByType} = 'salon'
-    and ${beautyJobListingsTable.salonId} <> ${viewerSalon.id}
-    and ${beautyJobListingsTable.type} = 'job'
-    and ${beautyJobListingsTable.intent} = 'offering'
-  )`);
   const row = await db.transaction(async (tx) => {
     const [updated] = await tx.update(beautyJobListingsTable)
       .set({ viewCount: sql`${beautyJobListingsTable.viewCount} + 1` })

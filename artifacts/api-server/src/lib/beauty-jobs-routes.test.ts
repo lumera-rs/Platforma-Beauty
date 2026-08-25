@@ -4,9 +4,9 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { eq, inArray, like, sql } from "drizzle-orm";
 import {
-  beautyJobCategoriesTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
+  beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
-  beautyJobReportsTable, db, emailDeliveriesTable,
+  beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable,
   pool, salonsTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
@@ -422,6 +422,38 @@ async function run(): Promise<void> {
       city: "Beograd", region: "Vračar", status: "active", moderationStatus: "approved", expiresAt: new Date(Date.now() + 86400000),
     }).returning();
     assert.ok(ownSalonJob[0]); createdListingIds.push(ownSalonJob[0]!.id);
+    const [hiddenLegacyContact, visibleLegacyContact] = await db.insert(beautyJobContactsTable).values([
+      {
+        listingId: competingJob.id,
+        applicantUserId: salonOwner.user.id,
+        applicantMessage: "Istorijski kontakt koji mora ostati skriven",
+      },
+      {
+        listingId: foreignFreelance.id,
+        applicantUserId: salonOwner.user.id,
+        applicantMessage: "Vidljivi kontrolni istorijski kontakt",
+      },
+    ]).returning();
+    assert.ok(hiddenLegacyContact && visibleLegacyContact);
+    const [hiddenLegacyNotification, visibleLegacyNotification] = await db.insert(beautyJobNotificationsTable).values([
+      {
+        recipientUserId: salonOwner.user.id,
+        listingId: competingJob.id,
+        contactId: hiddenLegacyContact.id,
+        type: "author_reply",
+        title: "Skriveno istorijsko obaveštenje",
+        body: competingJob.title,
+      },
+      {
+        recipientUserId: salonOwner.user.id,
+        listingId: foreignFreelance.id,
+        contactId: visibleLegacyContact.id,
+        type: "author_reply",
+        title: "Vidljivo kontrolno obaveštenje",
+        body: foreignFreelance.title,
+      },
+    ]).returning();
+    assert.ok(hiddenLegacyNotification && visibleLegacyNotification);
     const ownerPublic = await request(base, `/beauty-jobs?query=${encodeURIComponent(suffix)}`, salonOwner.token);
     assert.equal(ownerPublic.status, 200);
     assert.equal(ownerPublic.body.items.some((item: any) => item.id === competingJob.id), false);
@@ -434,6 +466,50 @@ async function run(): Promise<void> {
     assert.equal((await request(base, `/beauty-jobs/${competingJob.id}`, salonOwner.token)).status, 404);
     const [competingAfterHiddenDetail] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, competingJob.id));
     assert.equal(competingAfterHiddenDetail?.viewCount, competingViewsBefore, "hidden detail must not increment views");
+    assert.equal(
+      (await request(base, `/beauty-jobs/${competingJob.id}/save`, salonOwner.token, "POST")).status,
+      404,
+      "a hidden competing employment listing cannot be saved by id",
+    );
+    assert.equal(
+      (await request(base, `/beauty-jobs/${competingJob.id}/contact`, salonOwner.token, "POST", { message: "Neovlašćen kontakt" })).status,
+      404,
+      "a hidden competing employment listing cannot be contacted by id",
+    );
+    assert.equal(
+      (await request(base, `/beauty-jobs/${competingJob.id}/report`, salonOwner.token, "POST", { reason: "Neovlašćena prijava" })).status,
+      404,
+      "a hidden competing employment listing cannot be reported by id",
+    );
+    await db.insert(beautyJobSavedListingsTable).values({
+      userId: salonOwner.user.id,
+      listingId: competingJob.id,
+    });
+    const ownerSaved = await request(base, "/beauty-jobs/saved", salonOwner.token);
+    assert.equal(ownerSaved.status, 200);
+    assert.equal(
+      ownerSaved.body.items.some((item: any) => item.id === competingJob.id),
+      false,
+      "legacy saved rows cannot expose a hidden competing employment listing",
+    );
+    const ownerInbox = await request(base, "/beauty-jobs/inbox", salonOwner.token);
+    assert.equal(ownerInbox.status, 200);
+    assert.equal(ownerInbox.body.contacts.some((item: any) => item.id === hiddenLegacyContact.id), false);
+    assert.equal(ownerInbox.body.contacts.some((item: any) => item.id === visibleLegacyContact.id), true);
+    const ownerNotifications = await request(base, "/beauty-jobs/notifications", salonOwner.token);
+    assert.equal(ownerNotifications.status, 200);
+    assert.equal(ownerNotifications.body.notifications.some((item: any) => item.id === hiddenLegacyNotification.id), false);
+    assert.equal(ownerNotifications.body.notifications.some((item: any) => item.id === visibleLegacyNotification.id), true);
+    assert.equal(
+      (await request(base, `/beauty-jobs/notifications/${hiddenLegacyNotification.id}/read`, salonOwner.token, "POST")).status,
+      404,
+      "a known hidden notification id cannot reveal competing listing data",
+    );
+    assert.equal(
+      (await request(base, `/beauty-jobs/notifications/${visibleLegacyNotification.id}/read`, salonOwner.token, "POST")).status,
+      200,
+      "a visible freelance notification remains readable",
+    );
     for (const token of [undefined, customer.token, admin.token]) {
       assert.equal((await request(base, `/beauty-jobs/${competingJob.id}`, token)).status, 200, "non-salon audiences retain employment visibility");
     }

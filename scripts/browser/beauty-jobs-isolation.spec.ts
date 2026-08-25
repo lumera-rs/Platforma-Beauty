@@ -3,7 +3,9 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   beautyJobCategoriesTable,
+  beautyJobContactsTable,
   beautyJobListingsTable,
+  beautyJobNotificationsTable,
   db,
   salonsTable,
   usersTable,
@@ -66,6 +68,16 @@ async function openCatalog(page: Page) {
   const response = await responsePromise;
   expect(response.ok()).toBe(true);
   return response.json() as Promise<{ items: Array<{ id: string; title: string }>; total: number }>;
+}
+
+async function openListingDetail(page: Page, listingId: string) {
+  const responsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET"
+      && url.pathname === `/api/beauty-jobs/${listingId}`;
+  });
+  await page.goto(`/poslovi/oglas/${listingId}`);
+  return responsePromise;
 }
 
 test.afterAll(cleanUpFixtures);
@@ -168,6 +180,39 @@ test("keeps competing employment out of an owner's catalog without hiding public
     { ...baseListing, salonId: salonB.id, type: "job", intent: "seeking", title: titles.seeking },
   ]).returning({ id: beautyJobListingsTable.id, title: beautyJobListingsTable.title });
   fixtureListingIds.push(...createdListings.map((listing) => listing.id));
+  const ownEmployment = createdListings.find((listing) => listing.title === titles.ownEmployment)!;
+  const competingEmployment = createdListings.find((listing) => listing.title === titles.competingEmployment)!;
+  const visibleFreelance = createdListings.find((listing) => listing.title === titles.freelance)!;
+  const [hiddenLegacyContact, visibleLegacyContact] = await db.insert(beautyJobContactsTable).values([
+    {
+      listingId: competingEmployment.id,
+      applicantUserId: ownerA.id,
+      applicantMessage: "Istorijski browser kontakt koji mora ostati skriven",
+    },
+    {
+      listingId: visibleFreelance.id,
+      applicantUserId: ownerA.id,
+      applicantMessage: "Vidljivi kontrolni browser kontakt",
+    },
+  ]).returning({ id: beautyJobContactsTable.id });
+  const [hiddenLegacyNotification, visibleLegacyNotification] = await db.insert(beautyJobNotificationsTable).values([
+    {
+      recipientUserId: ownerA.id,
+      listingId: competingEmployment.id,
+      contactId: hiddenLegacyContact!.id,
+      type: "author_reply",
+      title: "Skriveno browser obaveštenje",
+      body: titles.competingEmployment,
+    },
+    {
+      recipientUserId: ownerA.id,
+      listingId: visibleFreelance.id,
+      contactId: visibleLegacyContact!.id,
+      type: "author_reply",
+      title: "Vidljivo kontrolno browser obaveštenje",
+      body: titles.freelance,
+    },
+  ]).returning({ id: beautyJobNotificationsTable.id });
 
   const ownerAContext = await browser.newContext();
   const ownerBContext = await browser.newContext();
@@ -194,6 +239,52 @@ test("keeps competing employment out of an owner's catalog without hiding public
       await expect(ownerPage.getByText(visibleTitle, { exact: true })).toBeVisible();
     }
     await expect(ownerPage.getByText("Prikazano 4 oglasa", { exact: true })).toBeVisible();
+
+    const competingSave = await ownerAContext.request.post(`/api/beauty-jobs/${competingEmployment.id}/save`);
+    expect(competingSave.status(), "a competing employment listing cannot be saved by a known id").toBe(404);
+    const competingContact = await ownerAContext.request.post(`/api/beauty-jobs/${competingEmployment.id}/contact`, {
+      data: { message: "Neovlašćen browser kontakt" },
+    });
+    expect(competingContact.status(), "a competing employment listing cannot be contacted by a known id").toBe(404);
+
+    const ownSave = await ownerAContext.request.post(`/api/beauty-jobs/${ownEmployment.id}/save`);
+    expect(ownSave.ok(), "the owner's visible control listing must remain saveable").toBe(true);
+    expect((await ownSave.json()).saved).toBe(true);
+    const ownerSaved = await ownerAContext.request.get("/api/beauty-jobs/saved");
+    expect(ownerSaved.ok()).toBe(true);
+    const ownerSavedBody = await ownerSaved.json() as { items: Array<{ id: string; title: string }> };
+    expect(ownerSavedBody.items.some((item) => item.id === ownEmployment.id)).toBe(true);
+    expect(ownerSavedBody.items.some((item) => item.id === competingEmployment.id)).toBe(false);
+    const ownerInbox = await ownerAContext.request.get("/api/beauty-jobs/inbox");
+    expect(ownerInbox.ok()).toBe(true);
+    const ownerInboxBody = await ownerInbox.json() as { contacts: Array<{ id: string }> };
+    expect(ownerInboxBody.contacts.some((item) => item.id === hiddenLegacyContact!.id)).toBe(false);
+    expect(ownerInboxBody.contacts.some((item) => item.id === visibleLegacyContact!.id)).toBe(true);
+    const ownerNotifications = await ownerAContext.request.get("/api/beauty-jobs/notifications");
+    expect(ownerNotifications.ok()).toBe(true);
+    const ownerNotificationsBody = await ownerNotifications.json() as { notifications: Array<{ id: string }> };
+    expect(ownerNotificationsBody.notifications.some((item) => item.id === hiddenLegacyNotification!.id)).toBe(false);
+    expect(ownerNotificationsBody.notifications.some((item) => item.id === visibleLegacyNotification!.id)).toBe(true);
+    const hiddenNotificationRead = await ownerAContext.request.post(
+      `/api/beauty-jobs/notifications/${hiddenLegacyNotification!.id}/read`,
+    );
+    expect(hiddenNotificationRead.status()).toBe(404);
+    const visibleNotificationRead = await ownerAContext.request.post(
+      `/api/beauty-jobs/notifications/${visibleLegacyNotification!.id}/read`,
+    );
+    expect(visibleNotificationRead.ok()).toBe(true);
+
+    const ownDetailResponse = await openListingDetail(ownerPage, ownEmployment.id);
+    expect(ownDetailResponse.status(), "an owner must retain access to their own employment listing detail").toBe(200);
+    await expect(ownerPage.getByRole("heading", { name: titles.ownEmployment, exact: true })).toBeVisible();
+    await expect(ownerPage.getByText("Oglas nije pronađen", { exact: true })).toHaveCount(0);
+
+    const competingDetailResponse = await openListingDetail(ownerPage, competingEmployment.id);
+    expect(competingDetailResponse.status(), "a competing salon employment listing detail must look absent").toBe(404);
+    await expect(
+      ownerPage.getByRole("heading", { name: "Oglas nije pronađen", exact: true }),
+    ).toBeVisible({ timeout: 12_000 });
+    await expect(ownerPage.getByText(titles.competingEmployment, { exact: true })).toHaveCount(0);
 
     for (const context of [customerContext, guestContext]) {
       const audiencePage = await context.newPage();

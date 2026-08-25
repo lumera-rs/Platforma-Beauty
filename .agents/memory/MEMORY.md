@@ -99,3 +99,4 @@
 - [URL numeric filter absence](url-numeric-filter-absence.md) — missing numeric query parameters must stay absent instead of silently becoming zero.
 - [Rental booking serialization](rental-booking-serialization.md) — derive slot invariants from listing state reread under listing→slot locks.
 - [Production demo content isolation](production-demo-content-isolation.md) — production demos must be dedicated, marker-owned records seeded atomically under a cross-instance lock.
+- [Listing audience enforcement](listing-audience-enforcement.md) — audience restrictions must cover discovery, detail, saved retrieval, and every interaction-by-ID path.

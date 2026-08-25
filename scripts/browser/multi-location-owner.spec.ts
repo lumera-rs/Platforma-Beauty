@@ -93,6 +93,8 @@ test("owner can use the all-locations dashboard and switch location from mobile 
     await page.getByRole("button", { name: "Otvori meni" }).click();
     const mobileSalonSelect = page.getByLabel("Aktivni salon (mobilni)");
     await expect(mobileSalonSelect).toBeVisible();
+    await expect(page.getByRole("link", { name: "Otvori korpu" }))
+      .toHaveAttribute("href", "/vlasnik/prodavnica/korpa");
     const switchResponse = page.waitForResponse((response) =>
       response.request().method() === "PUT"
       && new URL(response.url()).pathname === "/api/salon/active-salon",
