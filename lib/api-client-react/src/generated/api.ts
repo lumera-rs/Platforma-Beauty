@@ -80,6 +80,8 @@ import type {
   AutomationStatsOverviewItem,
   AutomationTestRunResult,
   BeautyJobAdminPreview,
+  BeautyJobApplicantDecisionInput,
+  BeautyJobApplicantsResponse,
   BeautyJobBulkModerationInput,
   BeautyJobBulkModerationResult,
   BeautyJobCategoriesResponse,
@@ -205,6 +207,7 @@ import type {
   ListCoursesParams,
   ListEnrollmentsParams,
   ListMyAppointmentsParams,
+  ListMyBeautyJobsParams,
   ListOrdersParams,
   ListPopularEducationCoursesParams,
   ListProductsParams,
@@ -20847,17 +20850,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getCreateBeautyJobMutationOptions(options));
     }
 
-export const getListMyBeautyJobsUrl = () => {
+export const getListMyBeautyJobsUrl = (params?: ListMyBeautyJobsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/beauty-jobs/mine`
+  return stringifiedParams.length > 0 ? `/api/beauty-jobs/mine?${stringifiedParams}` : `/api/beauty-jobs/mine`
 }
 
-export const listMyBeautyJobs = async ( options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListResponse> => {
+export const listMyBeautyJobs = async (params?: ListMyBeautyJobsParams, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListResponse> => {
 
-  return customFetch<BeautyJobListResponse>(getListMyBeautyJobsUrl(),
+  return customFetch<BeautyJobListResponse>(getListMyBeautyJobsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -20870,23 +20880,23 @@ export const listMyBeautyJobs = async ( options?: Parameters<typeof customFetch>
 
 
 
-export const getListMyBeautyJobsQueryKey = () => {
+export const getListMyBeautyJobsQueryKey = (params?: ListMyBeautyJobsParams,) => {
     return [
-    `/api/beauty-jobs/mine`
+    `/api/beauty-jobs/mine`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListMyBeautyJobsQueryOptions = <TData = Awaited<ReturnType<typeof listMyBeautyJobs>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListMyBeautyJobsQueryOptions = <TData = Awaited<ReturnType<typeof listMyBeautyJobs>>, TError = ErrorType<unknown>>(params?: ListMyBeautyJobsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListMyBeautyJobsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListMyBeautyJobsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyBeautyJobs>>> = ({ signal }) => listMyBeautyJobs({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMyBeautyJobs>>> = ({ signal }) => listMyBeautyJobs(params, { signal, ...requestOptions });
 
 
 
@@ -20901,11 +20911,11 @@ export type ListMyBeautyJobsQueryError = ErrorType<unknown>
 
 
 export function useListMyBeautyJobs<TData = Awaited<ReturnType<typeof listMyBeautyJobs>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListMyBeautyJobsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMyBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListMyBeautyJobsQueryOptions(options)
+  const queryOptions = getListMyBeautyJobsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -20917,6 +20927,143 @@ export function useListMyBeautyJobs<TData = Awaited<ReturnType<typeof listMyBeau
 
 
 
+
+export const getListBeautyJobApplicantsUrl = (listingId: string,) => {
+
+
+
+
+  return `/api/beauty-jobs/${listingId}/applicants`
+}
+
+export const listBeautyJobApplicants = async (listingId: string, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobApplicantsResponse> => {
+
+  return customFetch<BeautyJobApplicantsResponse>(getListBeautyJobApplicantsUrl(listingId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListBeautyJobApplicantsQueryKey = (listingId: string,) => {
+    return [
+    `/api/beauty-jobs/${listingId}/applicants`
+    ] as const;
+    }
+
+
+export const getListBeautyJobApplicantsQueryOptions = <TData = Awaited<ReturnType<typeof listBeautyJobApplicants>>, TError = ErrorType<void>>(listingId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBeautyJobApplicants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListBeautyJobApplicantsQueryKey(listingId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBeautyJobApplicants>>> = ({ signal }) => listBeautyJobApplicants(listingId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: listingId !== null && listingId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listBeautyJobApplicants>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListBeautyJobApplicantsQueryResult = NonNullable<Awaited<ReturnType<typeof listBeautyJobApplicants>>>
+export type ListBeautyJobApplicantsQueryError = ErrorType<void>
+
+
+
+export function useListBeautyJobApplicants<TData = Awaited<ReturnType<typeof listBeautyJobApplicants>>, TError = ErrorType<void>>(
+ listingId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBeautyJobApplicants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListBeautyJobApplicantsQueryOptions(listingId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDecideBeautyJobApplicantsUrl = (listingId: string,) => {
+
+
+
+
+  return `/api/beauty-jobs/${listingId}/applicants/decision`
+}
+
+export const decideBeautyJobApplicants = async (listingId: string,
+    beautyJobApplicantDecisionInput: BeautyJobApplicantDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobApplicantsResponse> => {
+
+  return customFetch<BeautyJobApplicantsResponse>(getDecideBeautyJobApplicantsUrl(listingId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(beautyJobApplicantDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getDecideBeautyJobApplicantsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideBeautyJobApplicants>>, TError,{listingId: string;data: BodyType<BeautyJobApplicantDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideBeautyJobApplicants>>, TError,{listingId: string;data: BodyType<BeautyJobApplicantDecisionInput>}, TContext> => {
+
+const mutationKey = ['decideBeautyJobApplicants'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideBeautyJobApplicants>>, {listingId: string;data: BodyType<BeautyJobApplicantDecisionInput>}> = (props) => {
+          const {listingId,data} = props ?? {};
+
+          return  decideBeautyJobApplicants(listingId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideBeautyJobApplicantsMutationResult = NonNullable<Awaited<ReturnType<typeof decideBeautyJobApplicants>>>
+    export type DecideBeautyJobApplicantsMutationBody = BodyType<BeautyJobApplicantDecisionInput>
+    export type DecideBeautyJobApplicantsMutationError = ErrorType<void>
+
+    export const useDecideBeautyJobApplicants = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideBeautyJobApplicants>>, TError,{listingId: string;data: BodyType<BeautyJobApplicantDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof decideBeautyJobApplicants>>,
+        TError,
+        {listingId: string;data: BodyType<BeautyJobApplicantDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getDecideBeautyJobApplicantsMutationOptions(options));
+    }
 
 export const getListSavedBeautyJobsUrl = () => {
 

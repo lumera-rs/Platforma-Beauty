@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
-  beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable,
+  beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable,
   beautyJobListingsTable, beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobRentalRequestsTable, beautyJobRentalSlotsTable, beautyJobReportsTable,
-  beautyJobSavedListingsTable, db, salonsTable, usersTable,
+  beautyJobSavedListingsTable, db, employeesTable, salonsTable, usersTable,
 } from "@workspace/db";
 import {
   BulkModerateBeautyJobsBody,
@@ -19,7 +19,9 @@ import {
   GetBeautyJobSettingsResponse, ListBeautyJobCategoriesResponse,
   ListBeautyJobInboxResponse, ListBeautyJobNotificationsResponse,
   ListBeautyJobRentalRequestInboxResponse, ListMyBeautyJobRentalRequestsResponse,
-  ListBeautyJobsQueryParams, ListBeautyJobsResponse, ListMyBeautyJobsResponse,
+  ListBeautyJobsQueryParams, ListBeautyJobsResponse, ListMyBeautyJobsQueryParams, ListMyBeautyJobsResponse,
+  DecideBeautyJobApplicantsBody, DecideBeautyJobApplicantsParams, DecideBeautyJobApplicantsResponse,
+  ListBeautyJobApplicantsParams, ListBeautyJobApplicantsResponse,
   ListSavedBeautyJobsResponse, MarkBeautyJobNotificationReadParams,
   MarkBeautyJobNotificationReadResponse, ModerateBeautyJobBody,
   ModerateBeautyJobParams, ModerateBeautyJobResponse, RenewBeautyJobParams,
@@ -73,6 +75,24 @@ async function ownerSalon(user: typeof usersTable.$inferSelect) {
   if (user.role !== "SALON_OWNER" || !user.activeSalonId) return undefined;
   const [salon] = await db.select().from(salonsTable).where(and(eq(salonsTable.id, user.activeSalonId), eq(salonsTable.ownerId, user.id))).limit(1);
   return salon;
+}
+/** The sole employee exception to the Beauty Poslovi employee block: read and
+ * decide applications for a salon to which the account has an active staff row.
+ * Never use activeSalonId for this tenant boundary. */
+async function applicantSalon(user: typeof usersTable.$inferSelect) {
+  if (user.role === "SALON_OWNER") return ownerSalon(user);
+  if (user.role !== "SALON_EMPLOYEE") return undefined;
+  const [membership] = await db.select({ salon: salonsTable }).from(employeesTable)
+    .innerJoin(salonsTable, eq(employeesTable.salonId, salonsTable.id))
+    .where(and(eq(employeesTable.userId, user.id), eq(employeesTable.active, true)))
+    .orderBy(asc(employeesTable.id)).limit(1);
+  return membership?.salon;
+}
+async function applicantAuthenticated(req: import("express").Request, res: import("express").Response) {
+  const user = await getCurrentUser(req);
+  if (!user) { res.status(401).json({ error: "Potrebna je prijava.", code: "UNAUTHORIZED" }); return undefined; }
+  if (isAdmin(user)) { res.status(403).json({ error: "Nije dozvoljeno.", code: "FORBIDDEN" }); return undefined; }
+  return user;
 }
 function validPhotos(photos: string[] | undefined) { return !photos || (photos.length <= 8 && photos.every((p) => MANAGED_URL.test(p))); }
 function ensureCompatibility(categorySlug: string, type: string, availability?: string | null) {
@@ -278,7 +298,6 @@ async function lockBeautyJobEvent(tx: BeautyJobTransaction, id: string) {
 }
 
 router.get("/beauty-jobs/categories", async (req, res, next) => { try {
-  if (await session(req, res) === undefined && res.headersSent) return;
   const categories = await db.select().from(beautyJobCategoriesTable).where(eq(beautyJobCategoriesTable.enabled, true)).orderBy(asc(beautyJobCategoriesTable.name));
   res.json(ListBeautyJobCategoriesResponse.parse({ categories: categories.map((category) => ({ id: category.id, slug: category.slug, name: category.name, subtypeLabels: category.subtypeLabels, featureFlag: category.featureFlag })) }));
 } catch (e) { next(e); } });
@@ -353,11 +372,139 @@ router.post("/beauty-jobs", async (req, res, next) => { try {
 } catch (e) { next(e); } });
 
 router.get("/beauty-jobs/mine", async (req, res, next) => { try {
-  const user = await authenticated(req, res); if (!user) return; const salon = await ownerSalon(user);
+  const user = await applicantAuthenticated(req, res); if (!user) return; const salon = await applicantSalon(user);
+  if (user.role === "SALON_EMPLOYEE" && !salon) return res.status(403).json({ error: "Aktivno članstvo salona nije dostupno.", code: "FORBIDDEN" });
+  const raw = req.query as Record<string, unknown>;
+  const from = raw.from === undefined ? undefined : strictDateOnly(String(raw.from));
+  const to = raw.to === undefined ? undefined : strictDateOnly(String(raw.to));
+  if ((raw.from !== undefined && !from) || (raw.to !== undefined && !to)) return bad(res, "Datumi moraju biti u formatu YYYY-MM-DD.");
+  const parsed = ListMyBeautyJobsQueryParams.safeParse({ ...raw, from, to }); if (!parsed.success) return bad(res);
+  const q = parsed.data;
+  if (q.posted === "custom" && (!from || !to || from > to)) return bad(res, "Za prilagođeni period navedite ispravan opseg.");
+  if (q.posted !== "custom" && (raw.from !== undefined || raw.to !== undefined)) return bad(res, "Datumi su dozvoljeni samo za prilagođeni period.");
   const where = salon ? eq(beautyJobListingsTable.salonId, salon.id) : eq(beautyJobListingsTable.userId, user.id);
-  const items = await listingQuery({ id: user.id, salonId: salon?.id }).where(where).orderBy(desc(beautyJobListingsTable.createdAt));
+  const conditions = [where, eq(beautyJobCategoriesTable.enabled, true)];
+  if (q.status === "pending") conditions.push(eq(beautyJobListingsTable.moderationStatus, "pending"));
+  if (q.status === "rejected") conditions.push(eq(beautyJobListingsTable.moderationStatus, "rejected"));
+  if (q.status === "expired") conditions.push(eq(beautyJobListingsTable.status, "expired"));
+  if (q.status === "filled") conditions.push(eq(beautyJobListingsTable.status, "closed"));
+  if (q.status === "expiring") conditions.push(
+    eq(beautyJobListingsTable.status, "active"),
+    eq(beautyJobListingsTable.moderationStatus, "approved"),
+    sql`${beautyJobListingsTable.expiresAt} > now() and ${beautyJobListingsTable.expiresAt} <= now() + interval '5 days'`,
+  );
+  if (q.status === "active") conditions.push(
+    eq(beautyJobListingsTable.status, "active"),
+    eq(beautyJobListingsTable.moderationStatus, "approved"),
+    sql`${beautyJobListingsTable.expiresAt} > now() + interval '5 days'`,
+  );
+  if (q.type === "rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]));
+  else if (q.type) conditions.push(eq(beautyJobListingsTable.type, q.type));
+  if (q.category) conditions.push(eq(beautyJobCategoriesTable.slug, q.category));
+  if (q.listingMode === "rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "offering"));
+  if (q.listingMode === "offering") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "offering"));
+  if (q.listingMode === "seeking") conditions.push(eq(beautyJobListingsTable.intent, "seeking"));
+  if (q.listingMode === "seeking_work") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "seeking"));
+  if (q.listingMode === "seeking_rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "seeking"));
+  if (q.query) conditions.push(ilike(beautyJobListingsTable.title, `%${q.query}%`));
+  const now = new Date(); const start = new Date(now); start.setHours(0, 0, 0, 0);
+  if (q.posted === "today") conditions.push(sql`${beautyJobListingsTable.createdAt} >= ${start}`);
+  if (q.posted === "week") {
+    const weekStart = new Date(start);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    conditions.push(sql`${beautyJobListingsTable.createdAt} >= ${weekStart}`);
+  }
+  if (q.posted === "month") conditions.push(sql`${beautyJobListingsTable.createdAt} >= ${new Date(start.getFullYear(), start.getMonth(), 1)}`);
+  if (q.posted === "custom") conditions.push(sql`${beautyJobListingsTable.createdAt} >= ${from!} and ${beautyJobListingsTable.createdAt} < ${new Date(to!.getTime() + 86400000)}`);
+  const order = q.sort === "oldest" ? [asc(beautyJobListingsTable.createdAt), asc(beautyJobListingsTable.id)]
+    : q.sort === "activity" ? [desc(beautyJobListingsTable.contactCount), desc(beautyJobListingsTable.createdAt), desc(beautyJobListingsTable.id)]
+      : [desc(beautyJobListingsTable.createdAt), desc(beautyJobListingsTable.id)];
+  const filter = and(...conditions);
+  const [items, totals] = await Promise.all([
+    listingQuery({ id: user.id, salonId: salon?.id }).where(filter).orderBy(...order).limit(q.pageSize).offset((q.page - 1) * q.pageSize),
+    db.select({ total: count() }).from(beautyJobListingsTable).innerJoin(beautyJobCategoriesTable, eq(beautyJobListingsTable.categoryId, beautyJobCategoriesTable.id)).where(filter),
+  ]);
   const slotMap = await rentalSlotsByListing(items.map((item) => item.listing.id));
-  res.json(ListMyBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r }, slotMap.get(r.listing.id))), total: items.length, page: 1, pageSize: items.length }));
+  res.json(ListMyBeautyJobsResponse.parse({ items: items.map((r) => view({ ...r.listing, ...r }, slotMap.get(r.listing.id))), total: totals[0]?.total ?? 0, page: q.page, pageSize: q.pageSize }));
+} catch (e) { next(e); } });
+
+async function applicantViews(listingId: string) {
+  const rows = await db.select({
+    contact: beautyJobContactsTable,
+    applicantDisplayName: sql<string>`${usersTable.firstName} || ' ' || ${usersTable.lastName}`,
+  }).from(beautyJobContactsTable).innerJoin(usersTable, eq(beautyJobContactsTable.applicantUserId, usersTable.id))
+    .where(eq(beautyJobContactsTable.listingId, listingId))
+    .orderBy(desc(beautyJobContactsTable.createdAt), desc(beautyJobContactsTable.id));
+  const ids = rows.map((row) => row.contact.id);
+  const actions = ids.length ? await db.select().from(beautyJobApplicationActionsTable)
+    .where(inArray(beautyJobApplicationActionsTable.contactId, ids))
+    .orderBy(asc(beautyJobApplicationActionsTable.createdAt), asc(beautyJobApplicationActionsTable.id)) : [];
+  const byContact = new Map<string, typeof actions>();
+  for (const action of actions) byContact.set(action.contactId, [...(byContact.get(action.contactId) ?? []), action]);
+  return rows.map(({ contact, applicantDisplayName }) => ({
+    ...contact,
+    rejectionNote: contact.rejectionNote ?? null,
+    decisionActorUserId: contact.decisionActorUserId ?? null,
+    decisionAt: contact.decisionAt?.toISOString() ?? null,
+    repliedAt: contact.repliedAt?.toISOString() ?? null,
+    createdAt: contact.createdAt.toISOString(), updatedAt: contact.updatedAt.toISOString(), applicantDisplayName,
+    actions: (byContact.get(contact.id) ?? []).map((action) => ({
+      ...action, privateNote: action.privateNote ?? null, actorUserId: action.actorUserId ?? null,
+      createdAt: action.createdAt.toISOString(),
+    })),
+  }));
+}
+async function ownedEmploymentListing(user: typeof usersTable.$inferSelect, listingId: string) {
+  const salon = await applicantSalon(user);
+  if (!salon) return { salon: undefined, listing: undefined };
+  const [listing] = await db.select().from(beautyJobListingsTable)
+    .where(and(eq(beautyJobListingsTable.id, listingId), eq(beautyJobListingsTable.salonId, salon.id), eq(beautyJobListingsTable.type, "job"))).limit(1);
+  return { salon, listing };
+}
+router.get("/beauty-jobs/:listingId/applicants", async (req, res, next) => { try {
+  const user = await applicantAuthenticated(req, res); if (!user) return;
+  const p = ListBeautyJobApplicantsParams.safeParse(req.params); if (!p.success) return bad(res);
+  const { salon, listing } = await ownedEmploymentListing(user, p.data.listingId);
+  if (!salon) return res.status(403).json({ error: "Aktivno članstvo salona je potrebno.", code: "FORBIDDEN" });
+  if (!listing) return res.status(409).json({ error: "Oglas nije salonov oglas za zapošljavanje.", code: "STALE_STATE" });
+  res.json(ListBeautyJobApplicantsResponse.parse({ applicants: await applicantViews(listing.id) }));
+} catch (e) { next(e); } });
+
+router.post("/beauty-jobs/:listingId/applicants/decision", async (req, res, next) => { try {
+  const user = await applicantAuthenticated(req, res); if (!user) return;
+  const p = DecideBeautyJobApplicantsParams.safeParse(req.params), b = DecideBeautyJobApplicantsBody.safeParse(req.body);
+  if (!p.success || !b.success || new Set(b.data.contactIds).size !== b.data.contactIds.length) return bad(res);
+  const salon = await applicantSalon(user);
+  if (!salon) return res.status(403).json({ error: "Aktivno članstvo salona je potrebno.", code: "FORBIDDEN" });
+  const ids = [...b.data.contactIds].sort();
+  const result = await db.transaction(async (tx) => {
+    const [listing] = await tx.select().from(beautyJobListingsTable)
+      .where(and(eq(beautyJobListingsTable.id, p.data.listingId), eq(beautyJobListingsTable.salonId, salon.id), eq(beautyJobListingsTable.type, "job"))).for("update").limit(1);
+    if (!listing) return false;
+    const contacts = await tx.select().from(beautyJobContactsTable)
+      .where(and(eq(beautyJobContactsTable.listingId, listing.id), inArray(beautyJobContactsTable.id, ids)))
+      .orderBy(asc(beautyJobContactsTable.id)).for("update");
+    if (contacts.length !== ids.length || contacts.some((contact, index) => contact.id !== ids[index])) return false;
+    const target: "accepted" | "declined" = b.data.action === "approve" ? "accepted" : "declined";
+    // An exact retry is a no-op. Any attempt to overwrite an existing different
+    // decision is stale, so the whole bulk request remains atomic.
+    if (contacts.some((contact) => !["pending", "viewed", "replied", target].includes(contact.authorStatus))) return false;
+    const now = new Date();
+    for (const contact of contacts) {
+      if (contact.authorStatus === target) continue;
+      await tx.update(beautyJobContactsTable).set({
+        authorStatus: target, rejectionNote: b.data.action === "reject" ? (b.data.internalNote ?? null) : null,
+        decisionActorUserId: user.id, decisionAt: now, updatedAt: now,
+      }).where(eq(beautyJobContactsTable.id, contact.id));
+      await tx.insert(beautyJobApplicationActionsTable).values({
+        contactId: contact.id, listingId: listing.id, fromStatus: contact.authorStatus, toStatus: target,
+        privateNote: b.data.internalNote ?? null, actorUserId: user.id, createdAt: now,
+      });
+    }
+    return true;
+  });
+  if (!result) return res.status(409).json({ error: "Prijave ili oglas više nisu u očekivanom stanju.", code: "STALE_STATE" });
+  res.json(DecideBeautyJobApplicantsResponse.parse({ applicants: await applicantViews(p.data.listingId) }));
 } catch (e) { next(e); } });
 
 router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
@@ -696,13 +843,40 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
       .where(eq(beautyJobContactsTable.id, row.contact.id)).limit(1);
     if (!fresh) return null;
     const isFirstReply = Boolean(b.data.authorReply && !fresh.contact.authorReply);
+    const existingIsDecision = fresh.contact.authorStatus === "accepted" || fresh.contact.authorStatus === "declined";
+    if (
+      existingIsDecision
+      && b.data.authorStatus !== undefined
+      && b.data.authorStatus !== fresh.contact.authorStatus
+    ) {
+      return { kind: "conflict" as const };
+    }
+    const nextAuthorStatus = b.data.authorStatus
+      ?? (b.data.authorReply && !existingIsDecision ? "replied" : fresh.contact.authorStatus);
+    const isDecision = nextAuthorStatus === "accepted" || nextAuthorStatus === "declined";
+    const decisionChanged = isDecision && fresh.contact.authorStatus !== nextAuthorStatus;
+    const decisionAt = decisionChanged ? new Date() : fresh.contact.decisionAt;
     const [updated] = await tx.update(beautyJobContactsTable).set({
       authorReply: b.data.authorReply ?? fresh.contact.authorReply,
-      authorStatus: b.data.authorStatus ?? (b.data.authorReply ? "replied" : fresh.contact.authorStatus),
+      authorStatus: nextAuthorStatus,
+      rejectionNote: decisionChanged ? null : fresh.contact.rejectionNote,
+      decisionActorUserId: decisionChanged ? user.id : fresh.contact.decisionActorUserId,
+      decisionAt,
       repliedAt: b.data.authorReply ? new Date() : fresh.contact.repliedAt,
       updatedAt: new Date(),
     }).where(eq(beautyJobContactsTable.id, fresh.contact.id)).returning();
-    if (!isFirstReply) return { updated: updated!, eventKey: null };
+    if (decisionChanged) {
+      await tx.insert(beautyJobApplicationActionsTable).values({
+        contactId: fresh.contact.id,
+        listingId: fresh.listing.id,
+        fromStatus: fresh.contact.authorStatus,
+        toStatus: nextAuthorStatus,
+        privateNote: null,
+        actorUserId: user.id,
+        createdAt: decisionAt!,
+      });
+    }
+    if (!isFirstReply) return { kind: "ok" as const, updated: updated!, eventKey: null };
     const [replyNotification] = await tx.insert(beautyJobNotificationsTable).values({
       recipientUserId: updated!.applicantUserId,
       listingId: fresh.listing.id,
@@ -723,9 +897,12 @@ router.patch("/beauty-jobs/contacts/:contactId", async (req, res, next) => { try
       contactId: updated!.id,
       metadata: { notificationId: replyNotification!.id },
     });
-    return { updated: updated!, eventKey };
+    return { kind: "ok" as const, updated: updated!, eventKey };
   });
   if (!replyResult) return res.status(404).json({ error: "Kontakt nije pronađen.", code: "NOT_FOUND" });
+  if (replyResult.kind === "conflict") {
+    return res.status(409).json({ error: "Odluka o kandidatu je u međuvremenu promenjena.", code: "STALE_STATE" });
+  }
   if (replyResult.eventKey) await deliverBeautyJobEmail(replyResult.eventKey);
   res.json(ReplyToBeautyJobContactResponse.parse(contactView(replyResult.updated)));
 } catch (e) { next(e); } });

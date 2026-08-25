@@ -4,10 +4,10 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { eq, inArray, like, sql } from "drizzle-orm";
 import {
-  beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
+  beautyJobApplicationActionsTable, beautyJobCategoriesTable, beautyJobContactsTable, beautyJobListingAvailabilityTable, beautyJobListingsTable,
   beautyJobModerationAuditTable, beautyJobNotificationsTable, beautyJobPlatformSettingsTable,
   beautyJobReportsTable, beautyJobSavedListingsTable, db, emailDeliveriesTable,
-  pool, salonsTable, usersTable,
+  employeesTable, pool, salonsTable, usersTable,
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
@@ -126,8 +126,10 @@ async function run(): Promise<void> {
       assert.ok(publicCategories.body.categories.some((category: { slug: string }) => category.slug === slug), `${slug} is an active Beauty Poslovi filter`);
     }
 
-    // Employees are denied even on the otherwise-public Beauty Poslovi module.
-    for (const path of ["/beauty-jobs/categories", "/beauty-jobs", `/beauty-jobs/${publicListing.id}`, `/beauty-jobs/${publicListing.id}/report`]) {
+    assert.equal((await request(base, "/beauty-jobs/categories", employee.token)).status, 200, "public categories remain available to the employee applicant-management filter");
+    // Employees remain denied on the public listing module outside their
+    // narrow salon-applicant management capability.
+    for (const path of ["/beauty-jobs", `/beauty-jobs/${publicListing.id}`, `/beauty-jobs/${publicListing.id}/report`]) {
       const r = await request(base, path, employee.token, path.endsWith("/report") ? "POST" : "GET", path.endsWith("/report") ? { reason: "Neprimeren sadržaj" } : undefined);
       assert.equal(r.status, 403, `employee must be denied ${path}`);
     }
@@ -695,6 +697,129 @@ async function run(): Promise<void> {
       1,
       "concurrent first replies emit one in-app notification",
     );
+
+    // Owner management is deliberately a separate, salon-scoped view. Seed
+    // directly so every lifecycle/moderation boundary is independently named.
+    const ownerFixture = async (title: string, values: Record<string, unknown> = {}) => {
+      const [listing] = await db.insert(beautyJobListingsTable).values({
+        categoryId: hairCategory.id, salonId: salonOwner.salon.id, userId: null, postedByType: "salon",
+        type: "job", intent: "offering", title, description: `Owner filter ${title}`,
+        city: "Beograd", region: "Vračar", status: "active", moderationStatus: "approved",
+        expiresAt: new Date(Date.now() + 10 * 86400000), ...values,
+      }).returning();
+      assert.ok(listing); createdListingIds.push(listing.id); return listing;
+    };
+    const mineActive = await ownerFixture(`mine-active ${suffix}`);
+    const mineExpiring = await ownerFixture(`mine-expiring ${suffix}`, { expiresAt: new Date(Date.now() + 3 * 86400000) });
+    const minePending = await ownerFixture(`mine-pending ${suffix}`, { moderationStatus: "pending" });
+    const mineUnapprovedExpiring = await ownerFixture(`mine-unapproved-expiring ${suffix}`, { moderationStatus: "pending", expiresAt: new Date(Date.now() + 3 * 86400000) });
+    const mineRental = await ownerFixture(`mine-rental ${suffix}`, { type: "equipment_rental" });
+    const mineSeekingWork = await ownerFixture(`mine-seeking-work ${suffix}`, { intent: "seeking" });
+    const mineSeekingRental = await ownerFixture(`mine-seeking-rental ${suffix}`, { type: "space_rental", intent: "seeking" });
+    const titleOnly = await ownerFixture(`title-only-${suffix}`, { description: `description-only-${suffix}` });
+    const descriptionOnly = await ownerFixture(`unrelated-${suffix}`, { description: `title-only-${suffix}` });
+    await db.update(beautyJobListingsTable).set({ contactCount: 1 }).where(eq(beautyJobListingsTable.id, mineActive.id));
+    await db.update(beautyJobListingsTable).set({ contactCount: 9 }).where(eq(beautyJobListingsTable.id, mineRental.id));
+    for (const [query, present, absent] of [
+      ["status=active", mineActive.id, mineExpiring.id],
+      ["status=expiring", mineExpiring.id, mineUnapprovedExpiring.id],
+      ["status=pending", minePending.id, mineActive.id],
+      ["type=rental", mineRental.id, mineActive.id],
+      ["listingMode=offering", mineActive.id, mineSeekingWork.id],
+      ["listingMode=rental", mineRental.id, mineSeekingWork.id],
+      ["listingMode=seeking", mineSeekingWork.id, mineActive.id],
+      ["listingMode=seeking_work", mineSeekingWork.id, mineSeekingRental.id],
+      ["listingMode=seeking_rental", mineSeekingRental.id, mineSeekingWork.id],
+      [`query=title-only-${suffix}`, titleOnly.id, descriptionOnly.id],
+    ] as Array<[string, string, string]>) {
+      const response = await request(base, `/beauty-jobs/mine?${query}&pageSize=100`, salonOwner.token);
+      assert.equal(response.status, 200, `owner mine accepts ${query}`);
+      assert.ok(response.body.items.some((item: any) => item.id === present), `${query} includes matching listing`);
+      assert.ok(!response.body.items.some((item: any) => item.id === absent), `${query} excludes nonmatching listing`);
+    }
+    const activeMine = await request(base, "/beauty-jobs/mine?status=active&pageSize=100", salonOwner.token);
+    assert.ok(!activeMine.body.items.some((item: any) => item.id === minePending.id), "active owner listings require approved moderation");
+    const activityMine = await request(base, `/beauty-jobs/mine?sort=activity&pageSize=100`, salonOwner.token);
+    assert.equal(activityMine.status, 200);
+    assert.ok(
+      activityMine.body.items.findIndex((item: any) => item.id === mineRental.id)
+        < activityMine.body.items.findIndex((item: any) => item.id === mineActive.id),
+      "owner activity sorting uses contactCount descending",
+    );
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const monday = new Date(midnight); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const inMondayWeek = await ownerFixture(`mine-monday ${suffix}`, { createdAt: new Date(monday.getTime() + 3600000) });
+    const beforeMonday = await ownerFixture(`mine-before-monday ${suffix}`, { createdAt: new Date(monday.getTime() - 3600000) });
+    const weekMine = await request(base, `/beauty-jobs/mine?posted=week&pageSize=100`, salonOwner.token);
+    assert.ok(weekMine.body.items.some((item: any) => item.id === inMondayWeek.id));
+    assert.ok(!weekMine.body.items.some((item: any) => item.id === beforeMonday.id), "week starts Monday, not Sunday");
+    assert.equal((await request(base, "/beauty-jobs/mine?posted=custom&from=2026-02-30&to=2026-03-01", salonOwner.token)).status, 400);
+
+    // Applicant decisions are only available to the owning salon and its active
+    // employees; all IDs are prevalidated before any mutable decision occurs.
+    const applicantListing = await ownerFixture(`applicant-job ${suffix}`);
+    const nonJobListing = await ownerFixture(`applicant-rental ${suffix}`, { type: "equipment_rental" });
+    const [firstApplication, foreignApplication] = await db.insert(beautyJobContactsTable).values([
+      { listingId: applicantListing.id, applicantUserId: applicant.user.id, applicantMessage: "Prva prijava" },
+      { listingId: mineActive.id, applicantUserId: applicant.user.id, applicantMessage: "Strana prijava" },
+    ]).returning();
+    assert.ok(firstApplication && foreignApplication);
+    assert.equal((await request(base, `/beauty-jobs/${applicantListing.id}/applicants`, employee.token)).status, 403, "employee without membership remains blocked");
+    await db.insert(employeesTable).values({
+      salonId: salonOwner.salon.id, userId: employee.user.id, name: "Applicant employee", role: "staff",
+      bio: "Applicant access test", avatarUrl: "/employee.jpg", active: true,
+    });
+    const employeeApplicants = await request(base, `/beauty-jobs/${applicantListing.id}/applicants`, employee.token);
+    assert.equal(employeeApplicants.status, 200, "active employee can read own salon applicants");
+    assert.equal((await request(base, "/beauty-jobs/categories", employee.token)).status, 200, "employee applicant filters can load public categories");
+    assert.equal((await request(base, `/beauty-jobs/${applicantListing.id}/applicants`, otherOwner.token)).status, 409, "other salon tenant is isolated");
+    assert.equal((await request(base, `/beauty-jobs/${nonJobListing.id}/applicants`, salonOwner.token)).status, 409, "non-job listings cannot expose applicant management");
+    const atomicForeign = await request(base, `/beauty-jobs/${applicantListing.id}/applicants/decision`, salonOwner.token, "POST", {
+      contactIds: [firstApplication.id, foreignApplication.id], action: "approve",
+    });
+    assert.equal(atomicForeign.status, 409, "foreign contact makes the full batch stale");
+    const [stillPending] = await db.select().from(beautyJobContactsTable).where(eq(beautyJobContactsTable.id, firstApplication.id));
+    assert.equal(stillPending?.authorStatus, "pending", "foreign batch leaves valid contact untouched");
+    const decision = await request(base, `/beauty-jobs/${applicantListing.id}/applicants/decision`, employee.token, "POST", {
+      contactIds: [firstApplication.id], action: "reject", internalNote: `Private ${suffix}`,
+    });
+    assert.equal(decision.status, 200);
+    assert.equal(decision.body.applicants[0].rejectionNote, `Private ${suffix}`);
+    const [afterDecision] = await db.select().from(beautyJobContactsTable).where(eq(beautyJobContactsTable.id, firstApplication.id));
+    assert.equal(afterDecision?.decisionActorUserId, employee.user.id);
+    assert.ok(afterDecision?.decisionAt);
+    const actionRows = await db.select().from(beautyJobApplicationActionsTable).where(eq(beautyJobApplicationActionsTable.contactId, firstApplication.id));
+    assert.equal(actionRows.length, 1); assert.equal(actionRows[0]?.actorUserId, employee.user.id);
+    const [listingAfterDecision] = await db.select().from(beautyJobListingsTable).where(eq(beautyJobListingsTable.id, applicantListing.id));
+    assert.equal(listingAfterDecision?.moderationStatus, "approved");
+    assert.equal(listingAfterDecision?.status, "active", "candidate decision never changes listing lifecycle");
+    assert.equal((await request(base, `/beauty-jobs/${applicantListing.id}/applicants/decision`, salonOwner.token, "POST", {
+      contactIds: [firstApplication.id], action: "reject", internalNote: `Private ${suffix}`,
+    })).status, 200, "exact decision retry is idempotent");
+    assert.equal((await db.select().from(beautyJobApplicationActionsTable).where(eq(beautyJobApplicationActionsTable.contactId, firstApplication.id))).length, 1);
+    assert.equal((await request(base, `/beauty-jobs/${applicantListing.id}/applicants/decision`, salonOwner.token, "POST", {
+      contactIds: [firstApplication.id], action: "approve",
+    })).status, 409, "opposite stale decision is rejected");
+    const privateApplicantInbox = await request(base, "/beauty-jobs/inbox", applicant.token);
+    const applicantContact = privateApplicantInbox.body.contacts.find((item: any) => item.id === firstApplication.id);
+    assert.equal(applicantContact?.rejectionNote, undefined, "ordinary applicant inbox never leaks private rejection note");
+    assert.equal(applicantContact?.decisionActorUserId, undefined, "ordinary applicant inbox never leaks decision actor");
+    const ordinaryContactResponse = await request(base, `/beauty-jobs/contacts/${firstApplication.id}`, salonOwner.token, "PATCH", {
+      authorReply: "Primljeno.",
+    });
+    assert.equal(ordinaryContactResponse.status, 200);
+    assert.equal(ordinaryContactResponse.body.rejectionNote, undefined, "ordinary contact response never leaks private rejection note");
+    assert.equal(ordinaryContactResponse.body.decisionActorUserId, undefined, "ordinary contact response never leaks decision actor");
+    const [afterTerminalReply] = await db.select().from(beautyJobContactsTable).where(eq(beautyJobContactsTable.id, firstApplication.id));
+    assert.equal(afterTerminalReply?.authorStatus, "declined", "replying after a terminal decision preserves the decision status");
+    assert.equal(afterTerminalReply?.rejectionNote, `Private ${suffix}`, "replying after rejection preserves the private note");
+    assert.equal((await db.select().from(beautyJobApplicationActionsTable).where(eq(beautyJobApplicationActionsTable.contactId, firstApplication.id))).length, 1, "terminal reply does not duplicate decision audit");
+    assert.equal((await request(base, `/beauty-jobs/contacts/${firstApplication.id}`, salonOwner.token, "PATCH", {
+      authorStatus: "replied",
+    })).status, 409, "legacy reply endpoint cannot reopen a terminal decision");
+    assert.equal((await request(base, `/beauty-jobs/contacts/${firstApplication.id}`, salonOwner.token, "PATCH", {
+      authorStatus: "accepted",
+    })).status, 409, "legacy reply endpoint cannot reverse a terminal decision");
 
     const retryEventKey = `beauty-job:test-retry:${suffix}`;
     let failureCalls = 0;

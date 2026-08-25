@@ -12031,6 +12031,31 @@ export const CreateBeautyJobResponse = zod.object({
 })
 
 
+export const listMyBeautyJobsQueryPostedDefault = `all`;
+export const listMyBeautyJobsQueryQueryMax = 200;
+
+export const listMyBeautyJobsQuerySortDefault = `newest`;
+export const listMyBeautyJobsQueryPageDefault = 1;
+
+export const listMyBeautyJobsQueryPageSizeDefault = 24;
+export const listMyBeautyJobsQueryPageSizeMax = 100;
+
+
+
+export const ListMyBeautyJobsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'active', 'rejected', 'expiring', 'expired', 'filled']).optional(),
+  "type": zod.enum(['job', 'rental', 'freelance']).optional().describe('Grouped owner listing type.'),
+  "listingMode": zod.enum(['offering', 'rental', 'seeking', 'seeking_work', 'seeking_rental']).optional(),
+  "category": zod.coerce.string().optional(),
+  "posted": zod.enum(['today', 'week', 'month', 'custom', 'all']).default(listMyBeautyJobsQueryPostedDefault),
+  "from": zod.date().optional().describe('Strict YYYY-MM-DD; required with custom.'),
+  "to": zod.date().optional().describe('Strict YYYY-MM-DD; required with custom.'),
+  "query": zod.coerce.string().max(listMyBeautyJobsQueryQueryMax).optional().describe('Title-only search.'),
+  "sort": zod.enum(['oldest', 'newest', 'activity']).default(listMyBeautyJobsQuerySortDefault),
+  "page": zod.coerce.number().int().min(1).default(listMyBeautyJobsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listMyBeautyJobsQueryPageSizeMax).default(listMyBeautyJobsQueryPageSizeDefault)
+})
+
 export const listMyBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listMyBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
 export const listMyBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
@@ -12081,6 +12106,93 @@ export const ListMyBeautyJobsResponse = zod.object({
   "total": zod.number().int(),
   "page": zod.number().int(),
   "pageSize": zod.number().int()
+})
+
+
+export const listBeautyJobApplicantsPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const ListBeautyJobApplicantsParams = zod.object({
+  "listingId": zod.coerce.string().regex(listBeautyJobApplicantsPathListingIdRegExp)
+})
+
+export const ListBeautyJobApplicantsResponse = zod.object({
+  "applicants": zod.array(zod.object({
+  "id": zod.string(),
+  "listingId": zod.string(),
+  "applicantUserId": zod.string(),
+  "applicantMessage": zod.string(),
+  "applicantStatus": zod.string(),
+  "authorReply": zod.string().nullable(),
+  "authorStatus": zod.string(),
+  "rejectionNote": zod.string().nullable(),
+  "decisionActorUserId": zod.string().nullable(),
+  "decisionAt": zod.coerce.date().nullable(),
+  "repliedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "applicantDisplayName": zod.string(),
+  "actions": zod.array(zod.object({
+  "id": zod.string(),
+  "contactId": zod.string(),
+  "listingId": zod.string(),
+  "fromStatus": zod.string(),
+  "toStatus": zod.string(),
+  "privateNote": zod.string().nullable(),
+  "actorUserId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+})
+
+
+export const decideBeautyJobApplicantsPathListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const DecideBeautyJobApplicantsParams = zod.object({
+  "listingId": zod.coerce.string().regex(decideBeautyJobApplicantsPathListingIdRegExp)
+})
+
+export const decideBeautyJobApplicantsBodyContactIdsItemRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const decideBeautyJobApplicantsBodyContactIdsMax = 100;
+
+export const decideBeautyJobApplicantsBodyInternalNoteMax = 2000;
+
+
+
+export const DecideBeautyJobApplicantsBody = zod.object({
+  "contactIds": zod.array(zod.string().regex(decideBeautyJobApplicantsBodyContactIdsItemRegExp)).min(1).max(decideBeautyJobApplicantsBodyContactIdsMax),
+  "action": zod.enum(['approve', 'reject']),
+  "internalNote": zod.string().max(decideBeautyJobApplicantsBodyInternalNoteMax).optional()
+})
+
+export const DecideBeautyJobApplicantsResponse = zod.object({
+  "applicants": zod.array(zod.object({
+  "id": zod.string(),
+  "listingId": zod.string(),
+  "applicantUserId": zod.string(),
+  "applicantMessage": zod.string(),
+  "applicantStatus": zod.string(),
+  "authorReply": zod.string().nullable(),
+  "authorStatus": zod.string(),
+  "rejectionNote": zod.string().nullable(),
+  "decisionActorUserId": zod.string().nullable(),
+  "decisionAt": zod.coerce.date().nullable(),
+  "repliedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "applicantDisplayName": zod.string(),
+  "actions": zod.array(zod.object({
+  "id": zod.string(),
+  "contactId": zod.string(),
+  "listingId": zod.string(),
+  "fromStatus": zod.string(),
+  "toStatus": zod.string(),
+  "privateNote": zod.string().nullable(),
+  "actorUserId": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 })
 
 

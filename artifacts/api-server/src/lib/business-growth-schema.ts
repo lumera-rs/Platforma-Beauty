@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 27;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 28;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -946,8 +946,26 @@ function tableStatements(s: string): string[] {
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
+    `ALTER TABLE ${s}.beauty_job_contacts ADD COLUMN IF NOT EXISTS rejection_note text`,
+    `ALTER TABLE ${s}.beauty_job_contacts ADD COLUMN IF NOT EXISTS decision_actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL`,
+    `ALTER TABLE ${s}.beauty_job_contacts ADD COLUMN IF NOT EXISTS decision_at timestamptz`,
     `CREATE INDEX IF NOT EXISTS beauty_job_contacts_listing_created_idx ON ${s}.beauty_job_contacts (listing_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_contacts_applicant_created_idx ON ${s}.beauty_job_contacts (applicant_user_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_contacts_listing_status_created_idx ON ${s}.beauty_job_contacts (listing_id, author_status, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_contacts_decision_actor_idx ON ${s}.beauty_job_contacts (decision_actor_user_id)`,
+    `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_application_actions (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      contact_id uuid NOT NULL,
+      listing_id uuid NOT NULL,
+      from_status ${s}.beauty_job_contact_status NOT NULL,
+      to_status ${s}.beauty_job_contact_status NOT NULL,
+      private_note text,
+      actor_user_id uuid REFERENCES ${s}.users(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_application_actions_contact_created_idx ON ${s}.beauty_job_application_actions (contact_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_application_actions_listing_created_idx ON ${s}.beauty_job_application_actions (listing_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS beauty_job_application_actions_actor_created_idx ON ${s}.beauty_job_application_actions (actor_user_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS ${s}.beauty_job_saved_listings (
       user_id uuid NOT NULL REFERENCES ${s}.users(id) ON DELETE CASCADE,
       listing_id uuid NOT NULL REFERENCES ${s}.beauty_job_listings(id) ON DELETE CASCADE,

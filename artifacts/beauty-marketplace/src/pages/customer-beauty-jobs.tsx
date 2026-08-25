@@ -58,7 +58,7 @@ export default function CustomerBeautyJobsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const { data: currentUser } = useGetCurrentUser();
   
-  const { data: myJobs, isLoading: isLoadingMyJobs } = useListMyBeautyJobs({ query: { queryKey: getListMyBeautyJobsQueryKey() } });
+  const { data: myJobs, isLoading: isLoadingMyJobs } = useListMyBeautyJobs(undefined, { query: { queryKey: getListMyBeautyJobsQueryKey() } });
   const { data: savedJobs, isLoading: isLoadingSaved } = useListSavedBeautyJobs({ query: { queryKey: getListSavedBeautyJobsQueryKey() } });
   const { data: inbox, isLoading: isLoadingInbox } = useListBeautyJobInbox({ query: { queryKey: getListBeautyJobInboxQueryKey() } });
   const { data: notifications, isLoading: isLoadingNotifications } = useListBeautyJobNotifications({ query: { queryKey: getListBeautyJobNotificationsQueryKey() } });

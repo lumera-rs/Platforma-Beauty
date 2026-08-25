@@ -4976,8 +4976,42 @@ paths:
     get:
       operationId: listMyBeautyJobs
       tags: [beauty-jobs]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, active, rejected, expiring, expired, filled] } }
+        - { name: type, in: query, description: Grouped owner listing type., schema: { type: string, enum: [job, rental, freelance] } }
+        - { name: listingMode, in: query, schema: { type: string, enum: [offering, rental, seeking, seeking_work, seeking_rental] } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: posted, in: query, schema: { type: string, enum: [today, week, month, custom, all], default: all } }
+        - { name: from, in: query, description: Strict YYYY-MM-DD; required with custom., schema: { type: string, format: date } }
+        - { name: to, in: query, description: Strict YYYY-MM-DD; required with custom., schema: { type: string, format: date } }
+        - { name: query, in: query, description: Title-only search., schema: { type: string, maxLength: 200 } }
+        - { name: sort, in: query, schema: { type: string, enum: [oldest, newest, activity], default: newest } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
       responses:
         "200": { description: Owned listings, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
+  /beauty-jobs/{listingId}/applicants:
+    get:
+      operationId: listBeautyJobApplicants
+      tags: [beauty-jobs]
+      parameters:
+        - { name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+      responses:
+        "200": { description: Employment applicants for an owned job listing, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobApplicantsResponse" } } } }
+        "403": { description: Active salon membership required }
+        "409": { description: Listing is not an owned employment listing }
+  /beauty-jobs/{listingId}/applicants/decision:
+    post:
+      operationId: decideBeautyJobApplicants
+      tags: [beauty-jobs]
+      parameters:
+        - { name: listingId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobApplicantDecisionInput" } } }
+      responses:
+        "200": { description: Updated employment applications, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobApplicantsResponse" } } } }
+        "409": { description: "Stale, foreign, or non-job application state; no contacts were changed" }
   /beauty-jobs/saved:
     get:
       operationId: listSavedBeautyJobs
@@ -9278,6 +9312,18 @@ components:
       properties:
         authorReply: { type: string, minLength: 1, maxLength: 4000 }
         authorStatus: { type: string, enum: [pending, viewed, accepted, declined, replied] }
+    BeautyJobApplicantDecisionInput:
+      type: object
+      properties:
+        contactIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+        action: { type: string, enum: [approve, reject] }
+        internalNote: { type: string, maxLength: 2000 }
+      required: [contactIds, action]
     BeautyJobReportCreateInput:
       type: object
       properties: { reason: { type: string, minLength: 3, maxLength: 1000 } }
@@ -9326,6 +9372,39 @@ components:
         listingTitle: { type: string }
         applicantDisplayName: { type: string }
       required: [id, listingId, applicantUserId, applicantMessage, applicantStatus, authorReply, authorStatus, repliedAt, createdAt, updatedAt]
+    BeautyJobApplicant:
+      type: object
+      properties:
+        id: { type: string }
+        listingId: { type: string }
+        applicantUserId: { type: string }
+        applicantMessage: { type: string }
+        applicantStatus: { type: string }
+        authorReply: { type: [string, "null"] }
+        authorStatus: { type: string }
+        rejectionNote: { type: [string, "null"] }
+        decisionActorUserId: { type: [string, "null"] }
+        decisionAt: { type: [string, "null"], format: date-time }
+        repliedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        applicantDisplayName: { type: string }
+        actions:
+          type: array
+          items: { $ref: "#/components/schemas/BeautyJobApplicationAction" }
+      required: [id, listingId, applicantUserId, applicantMessage, applicantStatus, authorReply, authorStatus, rejectionNote, decisionActorUserId, decisionAt, repliedAt, createdAt, updatedAt, applicantDisplayName, actions]
+    BeautyJobApplicationAction:
+      type: object
+      properties:
+        id: { type: string }
+        contactId: { type: string }
+        listingId: { type: string }
+        fromStatus: { type: string }
+        toStatus: { type: string }
+        privateNote: { type: [string, "null"] }
+        actorUserId: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, contactId, listingId, fromStatus, toStatus, privateNote, actorUserId, createdAt]
     BeautyJobReport:
       type: object
       properties:
@@ -9443,6 +9522,10 @@ components:
       type: object
       properties: { contacts: { type: array, items: { $ref: "#/components/schemas/BeautyJobContact" } } }
       required: [contacts]
+    BeautyJobApplicantsResponse:
+      type: object
+      properties: { applicants: { type: array, items: { $ref: "#/components/schemas/BeautyJobApplicant" } } }
+      required: [applicants]
     BeautyJobNotificationsResponse:
       type: object
       properties: { notifications: { type: array, items: { $ref: "#/components/schemas/BeautyJobNotification" } } }

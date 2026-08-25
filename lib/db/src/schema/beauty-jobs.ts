@@ -161,12 +161,35 @@ export const beautyJobContactsTable = pgTable("beauty_job_contacts", {
   applicantStatus: beautyJobContactStatusEnum("applicant_status").notNull().default("pending"),
   authorReply: text("author_reply"),
   authorStatus: beautyJobContactStatusEnum("author_status").notNull().default("pending"),
+  /** Internal recruiting context; never returned to the applicant. */
+  rejectionNote: text("rejection_note"),
+  decisionActorUserId: uuid("decision_actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  decisionAt: timestamp("decision_at", { withTimezone: true }),
   repliedAt: timestamp("replied_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("beauty_job_contacts_listing_created_idx").on(table.listingId, table.createdAt),
   index("beauty_job_contacts_applicant_created_idx").on(table.applicantUserId, table.createdAt),
+  index("beauty_job_contacts_listing_status_created_idx").on(table.listingId, table.authorStatus, table.createdAt),
+  index("beauty_job_contacts_decision_actor_idx").on(table.decisionActorUserId),
+]);
+
+/** Immutable salon employment-decision history. Listing/contact ids deliberately
+ * have no FK so audit evidence survives physical deletion of its subject. */
+export const beautyJobApplicationActionsTable = pgTable("beauty_job_application_actions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactId: uuid("contact_id").notNull(),
+  listingId: uuid("listing_id").notNull(),
+  fromStatus: beautyJobContactStatusEnum("from_status").notNull(),
+  toStatus: beautyJobContactStatusEnum("to_status").notNull(),
+  privateNote: text("private_note"),
+  actorUserId: uuid("actor_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("beauty_job_application_actions_contact_created_idx").on(table.contactId, table.createdAt),
+  index("beauty_job_application_actions_listing_created_idx").on(table.listingId, table.createdAt),
+  index("beauty_job_application_actions_actor_created_idx").on(table.actorUserId, table.createdAt),
 ]);
 
 export const beautyJobSavedListingsTable = pgTable("beauty_job_saved_listings", {
