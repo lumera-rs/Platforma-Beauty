@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 23;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 24;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -968,16 +968,28 @@ function tableStatements(s: string): string[] {
        WHERE type = 'expiry_warning' AND listing_id IS NOT NULL`,
     `INSERT INTO ${s}.beauty_job_categories (slug, name, subtype_labels, enabled, feature_flag) VALUES
       ('frizeri', 'Frizeri', '["Ženski frizer", "Muški frizer", "Kolorista"]'::jsonb, true, NULL),
-      ('pomocno-osoblje', 'Pomoćno osoblje', '["Recepcija", "Asistent u salonu", "Šampon"]'::jsonb, true, NULL),
-      ('nokti', 'Nokti (Manikir/Pedikir)', '["Manikir", "Pedikir", "Nail artist"]'::jsonb, true, NULL),
-      ('make-up', 'Make-up', '["Dnevna šminka", "Svečana šminka", "PMU"]'::jsonb, true, NULL),
+      ('barberi', 'Barberi', '["Šišanje", "Brijanje", "Stilizovanje brade"]'::jsonb, true, NULL),
       ('kozmetika', 'Kozmetika', '[]'::jsonb, true, NULL),
+      ('kozmeticari', 'Kozmetičari', '["Nega lica", "Depilacija", "Tretmani tela"]'::jsonb, true, NULL),
+      ('nokti', 'Nokti (Manikir/Pedikir)', '["Manikir", "Pedikir", "Nail artist"]'::jsonb, true, NULL),
+      ('lash-brow', 'Lash/Brow', '["Ekstenzije trepavica", "Laminacija trepavica", "Obrve"]'::jsonb, true, NULL),
+      ('make-up', 'Make-up', '["Dnevna šminka", "Svečana šminka"]'::jsonb, true, NULL),
+      ('sminkeri', 'Šminkeri', '["Dnevna šminka", "Svečana šminka", "Editorial"]'::jsonb, true, NULL),
+      ('pmu', 'PMU', '["Obrve", "Usne", "Eyeliner"]'::jsonb, true, NULL),
       ('estetika-masaza', 'Estetika i masaža', '["Estetika", "Masaža", "Terapeut"]'::jsonb, true, NULL),
-      ('tattoo-piercing', 'Tattoo/Piercing', '["Tattoo", "Piercing"]'::jsonb, false, 'beauty_jobs_tattoo_piercing'),
+      ('masaza-terapeuti', 'Masaža/Terapeuti', '["Relaks masaža", "Sportska masaža", "Terapeut"]'::jsonb, true, NULL),
+      ('estetika-anti-aging', 'Estetika/anti-aging', '["Anti-aging", "Mezoterapija", "Nega lica"]'::jsonb, true, NULL),
+      ('pomocno-osoblje', 'Pomoćno osoblje', '["Recepcija", "Asistent u salonu", "Šampon"]'::jsonb, true, NULL),
+      ('tattoo-piercing', 'Tattoo/Piercing', '["Tattoo", "Piercing"]'::jsonb, true, 'beauty_jobs_tattoo_piercing'),
       ('iznajmljivanje-opreme', 'Iznajmljivanje opreme', '[]'::jsonb, true, NULL),
       ('iznajmljivanje-prostora-stolice', 'Iznajmljivanje prostora/stolice', '["Stolica", "Kabina", "Prostor"]'::jsonb, true, NULL),
       ('freelance-angazmani', 'Freelance/angažmani', '[]'::jsonb, true, NULL)
-      ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, subtype_labels = EXCLUDED.subtype_labels, feature_flag = EXCLUDED.feature_flag`,
+      ON CONFLICT (slug) DO UPDATE SET
+        name = EXCLUDED.name,
+        subtype_labels = EXCLUDED.subtype_labels,
+        enabled = EXCLUDED.enabled,
+        feature_flag = EXCLUDED.feature_flag,
+        updated_at = now()`,
   ];
 }
 

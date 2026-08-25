@@ -32,6 +32,7 @@ function staticMetadata(pathname: string): SeoPayload | null {
     '/za-biznise': { title: 'LUMERA za biznise | Rast vašeg salona', description: 'Upravljajte zakazivanjima, klijentima i rastom salona uz LUMERA poslovnu platformu.', indexable: true },
     '/saloni': { title: 'Saloni i beauty tretmani | LUMERA', description: 'Istražite salone, wellness centre i beauty tretmane, uporedite ocene i pronađite svoj sledeći termin.', indexable: true },
     '/proizvodi': { title: 'Beauty proizvodi za kupce | LUMERA', description: 'Istražite javno dostupne beauty proizvode sa jasnim cenama i opisima za kupce.', indexable: true },
+    '/poslovi': { title: 'Beauty poslovi i oglasi | LUMERA', description: 'Pronađite poslove, freelance angažmane i oglase za iznajmljivanje beauty opreme, prostora i stolica.', indexable: true },
     '/inspiracija': { title: 'Beauty inspiracija | LUMERA vodič', description: 'Ideje za frizure, nokte, negu lica i wellness tretmane iz LUMERA salona.', indexable: true },
     '/recnik': { title: 'Rečnik beauty pojmova | LUMERA', description: 'Jasna objašnjenja beauty tretmana, tehnika i profesionalnih pojmova pre zakazivanja.', indexable: true },
     '/brendovi': { title: 'Profesionalni beauty brendovi | LUMERA', description: 'Pronađite salone prema profesionalnim brendovima i proizvodima koje koriste.', indexable: true },
@@ -135,6 +136,19 @@ async function dynamicMetadata(pathname: string): Promise<SeoPayload | null> {
     const item = await response.json();
     const name = text(item.name, 'Instruktor');
     return { title: `${name} | LUMERA edukacije`, description: text(item.biography, `Upoznajte instruktora ${name} i dostupne beauty edukacije.`), image: item.photoUrl, indexable: true };
+  }
+  const beautyJob = pathname.match(/^\/poslovi\/[^/]+\/([a-zA-Z0-9-]+)$/);
+  if (beautyJob) {
+    const response = await fetch(`/api/beauty-jobs/${encodeURIComponent(beautyJob[1])}`);
+    if (!response.ok) return null;
+    const item = await response.json();
+    const title = text(item.title, 'Beauty oglas');
+    return {
+      title: `${title} | LUMERA Poslovi`,
+      description: text(item.description, `${title} — beauty oglas na LUMERA platformi.`),
+      image: item.photos?.[0],
+      indexable: true,
+    };
   }
   return null;
 }

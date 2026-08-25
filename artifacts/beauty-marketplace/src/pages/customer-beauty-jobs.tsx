@@ -48,6 +48,7 @@ export default function CustomerBeautyJobsPage() {
   const requestedTab = searchParams.get("tab");
   const requestedListingId = searchParams.get("listingId");
   const requestedContactId = searchParams.get("contactId");
+  const shouldOpenNewListing = searchParams.get("new") === "1";
   const [activeTab, setActiveTab] = useState(
     requestedTab === "saved" || requestedTab === "inbox" || requestedTab === "rentals" || requestedTab === "notifications"
       ? requestedTab
@@ -86,6 +87,13 @@ export default function CustomerBeautyJobsPage() {
     setEditingJob(requestedListing);
     setIsFormOpen(true);
   }, [myJobs?.items, requestedListingId]);
+
+  useEffect(() => {
+    if (!shouldOpenNewListing) return;
+    setActiveTab("my-jobs");
+    setEditingJob(null);
+    setIsFormOpen(true);
+  }, [shouldOpenNewListing]);
 
   useEffect(() => {
     if (!requestedContactId || !inbox?.contacts?.some((contact) => contact.id === requestedContactId)) return;

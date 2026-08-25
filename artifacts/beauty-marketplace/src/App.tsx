@@ -140,6 +140,58 @@ function LegacyEducationRedirect() {
   );
 }
 
+function RouteRedirect({ to }: { to: string }) {
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+
+  useEffect(() => {
+    setLocation(`${to}${searchString}`);
+  }, [searchString, setLocation, to]);
+
+  return <RouteLoadingFallback />;
+}
+
+function LegacyBeautyJobsDashboardRedirect({
+  tab = "my-jobs",
+  newListing = false,
+}: {
+  tab?: "my-jobs" | "inbox";
+  newListing?: boolean;
+}) {
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const { data, isLoading } = useGetCurrentUser();
+  const user = data?.user;
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (!user) {
+      setLocation(loginPathWithReturnTo("/prijava", currentPath));
+      return;
+    }
+    if (user.role === "SALON_EMPLOYEE") {
+      setLocation("/zaposleni");
+      return;
+    }
+    if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+      setLocation("/admin/poslovi");
+      return;
+    }
+
+    const destination = user.role === "SALON_OWNER" || user.role === "EDUCATION_CENTER_OWNER" || user.role === "INSTRUCTOR"
+      ? "/biznis/poslovi"
+      : "/moji-oglasi";
+    const params = new URLSearchParams(searchString);
+    params.set("tab", tab);
+    if (newListing) params.set("new", "1");
+    setLocation(`${destination}?${params.toString()}`);
+  }, [isLoading, newListing, searchString, setLocation, tab, user]);
+
+  return <RouteLoadingFallback />;
+}
+
 function RoleGuard({
   children,
   allowedRoles,
@@ -193,6 +245,11 @@ function Router() {
         <Route path="/saloni" component={Salons} />
         <Route path="/saloni/kategorija/:categorySlug" component={Salons} />
         <Route path="/saloni/:slug" component={SalonProfile} />
+        <Route path="/beauty-poslovi/novi"><LegacyBeautyJobsDashboardRedirect newListing /></Route>
+        <Route path="/beauty-poslovi/moji-oglasi"><LegacyBeautyJobsDashboardRedirect /></Route>
+        <Route path="/beauty-poslovi/prijave"><LegacyBeautyJobsDashboardRedirect tab="inbox" /></Route>
+        <Route path="/beauty-poslovi/:listingId" component={BeautyJobDetail} />
+        <Route path="/beauty-poslovi"><RouteRedirect to="/poslovi" /></Route>
         <Route path="/poslovi" component={BeautyJobs} />
         <Route path="/poslovi/:slug/:listingId" component={BeautyJobDetail} />
         <Route path="/proizvodi" component={PublicProducts} />

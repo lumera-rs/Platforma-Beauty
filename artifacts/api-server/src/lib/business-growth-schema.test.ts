@@ -767,6 +767,28 @@ async function run() {
     assert.equal(supportCategory.name, "Pomoćno osoblje", "support staff category is seeded");
     assert.equal(supportCategory.enabled, true, "support staff category is enabled");
     assert.deepEqual(supportCategory.subtype_labels, ["Recepcija", "Asistent u salonu", "Šampon"], "support staff subtypes are seeded");
+    const expectedTaxonomy = new Map([
+      ["frizeri", "Frizeri"],
+      ["barberi", "Barberi"],
+      ["kozmeticari", "Kozmetičari"],
+      ["nokti", "Nokti (Manikir/Pedikir)"],
+      ["lash-brow", "Lash/Brow"],
+      ["masaza-terapeuti", "Masaža/Terapeuti"],
+      ["sminkeri", "Šminkeri"],
+      ["pmu", "PMU"],
+      ["estetika-anti-aging", "Estetika/anti-aging"],
+      ["pomocno-osoblje", "Pomoćno osoblje"],
+      ["tattoo-piercing", "Tattoo/Piercing"],
+    ]);
+    const taxonomyRows = (await q<{ slug: string; name: string; enabled: boolean }>(
+      `SELECT slug, name, enabled FROM "${s}".beauty_job_categories WHERE slug = ANY($1::text[])`,
+      [[...expectedTaxonomy.keys()]],
+    )).rows;
+    assert.equal(taxonomyRows.length, expectedTaxonomy.size, "complete Beauty Poslovi taxonomy is seeded");
+    for (const category of taxonomyRows) {
+      assert.equal(category.name, expectedTaxonomy.get(category.slug), `${category.slug} retains its canonical label`);
+      assert.equal(category.enabled, true, `${category.slug} is visible in the public category catalog`);
+    }
     const beautyListing = (await q<{ id: string }>(
       `INSERT INTO "${s}".beauty_job_listings
         (category_id, salon_id, posted_by_type, type, title, description, city, region, expires_at)

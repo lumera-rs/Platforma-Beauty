@@ -230,3 +230,30 @@ test('Beauty Poslovi index, detail metadata and sitemap use only public data', a
     global.fetch = originalFetch;
   }
 });
+
+test('legacy Beauty Poslovi public URLs permanently redirect to canonical routes', async () => {
+  const originalFetch = global.fetch;
+  const job = {
+    id: 'a8e75f170-bf62-4587-a80f-f9cd385f75d2',
+    title: 'Potreban barber',
+    type: 'job',
+    intent: 'offering',
+  };
+  global.fetch = async (url) => {
+    const pathname = new URL(url).pathname;
+    return new Response(JSON.stringify(pathname === `/api/beauty-jobs/${job.id}` ? job : []), {
+      status: pathname === `/api/beauty-jobs/${job.id}` ? 200 : 404,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const catalog = await createSeoResponse(request('/beauty-poslovi?category=barberi'), template);
+    const detail = await createSeoResponse(request(`/beauty-poslovi/${job.id}`), template);
+    assert.equal(catalog.status, 308);
+    assert.equal(catalog.headers.location, '/poslovi?category=barberi');
+    assert.equal(detail.status, 308);
+    assert.equal(detail.headers.location, `/poslovi/potreban-barber/${job.id}`);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

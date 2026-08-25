@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 import { srLatn } from "date-fns/locale";
 import { 
@@ -26,9 +26,11 @@ import { toast } from "sonner";
 import { MapPin, Calendar, Clock, Eye, Bookmark, MessageSquare, ArrowLeft, Briefcase, Scissors, Flag, CheckCircle2, CalendarClock } from "lucide-react";
 
 export default function BeautyJobDetailPage() {
-  const [, params] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
-  const listingId = params?.listingId;
+  const [, canonicalParams] = useRoute<{ listingId: string }>("/poslovi/:slug/:listingId");
+  const [, legacyParams] = useRoute<{ listingId: string }>("/beauty-poslovi/:listingId");
+  const listingId = canonicalParams?.listingId ?? legacyParams?.listingId;
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const queryClient = useQueryClient();
 
   const { data: userResp, isLoading: isUserLoading } = useGetCurrentUser();
@@ -46,6 +48,12 @@ export default function BeautyJobDetailPage() {
       queryKey: getGetBeautyJobQueryKey(listingId ?? "")
     }
   });
+
+  useEffect(() => {
+    if (!legacyParams?.listingId || !job) return;
+    const slug = job.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "oglas";
+    setLocation(`/poslovi/${slug}/${job.id}${searchString}`);
+  }, [job, legacyParams?.listingId, searchString, setLocation]);
 
   const contactMutation = useContactBeautyJobAuthor();
   const reportMutation = useReportBeautyJob();

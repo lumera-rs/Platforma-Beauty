@@ -122,6 +122,14 @@ function beautyJobIntentLabel(intent) {
   return intent === 'seeking' ? 'Tražim' : 'Nudim';
 }
 
+function beautyJobSlug(job) {
+  if (typeof job?.slug === 'string' && job.slug.trim()) return job.slug.trim();
+  return String(job?.title ?? 'oglas')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'oglas';
+}
+
 function beautyJobSchema(job, origin, pathname) {
   if (job.type === 'job') {
     const salary = job.priceAmount ? {
@@ -211,13 +219,13 @@ async function renderPublicPage(req, pathname) {
           itemListElement: jobs.map((job, index) => ({
             '@type': 'ListItem',
             position: index + 1,
-            url: `${origin}/poslovi/${encodeURIComponent(job.slug)}/${encodeURIComponent(job.id)}`,
+            url: `${origin}/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`,
             name: job.title,
           })),
         },
       });
       const cards = jobs.map((job) => card({
-        href: `/poslovi/${encodeURIComponent(job.slug)}/${encodeURIComponent(job.id)}`,
+        href: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`,
         title: job.title,
         description: job.description,
         image: job.photos?.[0],
@@ -314,7 +322,7 @@ async function renderPublicPage(req, pathname) {
   if (beautyJobMatch) {
     const job = await getJson(req, `/api/beauty-jobs/${encodeURIComponent(beautyJobMatch[1])}`);
     if (!job) return null;
-    const canonicalPath = `/poslovi/${encodeURIComponent(job.slug)}/${encodeURIComponent(job.id)}`;
+    const canonicalPath = `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`;
     const description = job.description || `${job.title} — ${beautyJobTypeLabel(job.type).toLowerCase()} u mestu ${job.city}.`;
     const meta = makeMeta(canonicalPath, `${job.title} | LUMERA Poslovi`, description, {
       image: job.photos?.[0],
@@ -416,7 +424,7 @@ async function buildSitemap(req) {
     entries.push({ pathname: `/proizvodi/${encodeURIComponent(product.id)}`, priority: '0.7' });
   }
   for (const job of beautyJobs) {
-    entries.push({ pathname: `/poslovi/${encodeURIComponent(job.slug)}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
+    entries.push({ pathname: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}`, lastmod: job.updatedAt ? new Date(job.updatedAt).toISOString().slice(0, 10) : undefined, priority: '0.7' });
   }
   return sitemapXml(origin, entries);
 }
@@ -430,8 +438,32 @@ export async function createSeoResponse(req, template) {
   const url = new URL(req.url ?? '/', requestOrigin(req));
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
   const origin = requestOrigin(req);
+  if (pathname === '/beauty-poslovi') {
+    return {
+      status: 308,
+      type: 'text/plain; charset=utf-8',
+      body: 'Permanent redirect to the canonical Beauty Poslovi catalog.',
+      headers: { location: `/poslovi${url.search}` },
+    };
+  }
+  const legacyBeautyJob = pathname.match(/^\/beauty-poslovi\/([a-zA-Z0-9-]+)$/);
+  if (legacyBeautyJob) {
+    try {
+      const job = await getJson(req, `/api/beauty-jobs/${encodeURIComponent(legacyBeautyJob[1])}`);
+      if (job) {
+        return {
+          status: 308,
+          type: 'text/plain; charset=utf-8',
+          body: 'Permanent redirect to the canonical Beauty Poslovi listing.',
+          headers: { location: `/poslovi/${encodeURIComponent(beautyJobSlug(job))}/${encodeURIComponent(job.id)}${url.search}` },
+        };
+      }
+    } catch {
+      // Private fallback below keeps an unknown legacy identifier non-indexable.
+    }
+  }
   if (pathname === '/robots.txt') {
-    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nSitemap: ${origin}/sitemap.xml\n` };
+    return { status: 200, type: 'text/plain; charset=utf-8', body: `User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /vlasnik/\nDisallow: /zaposleni/\nDisallow: /moj-nalog\nDisallow: /korpa\nDisallow: /porudzbina/pracenje\nDisallow: /biznis/\nDisallow: /prijava\nDisallow: /poslovna-\nDisallow: /student/\nDisallow: /widget/\nDisallow: /beauty-poslovi/\nSitemap: ${origin}/sitemap.xml\n` };
   }
   if (pathname === '/sitemap.xml') {
     try { return { status: 200, type: 'application/xml; charset=utf-8', body: await buildSitemap(req) }; }
@@ -468,7 +500,11 @@ async function start() {
       return;
     }
     const response = await createSeoResponse(req, template);
-    res.writeHead(response.status, { 'content-type': response.type, 'cache-control': response.type.includes('html') ? 'public, max-age=60, s-maxage=300' : 'public, max-age=300, s-maxage=600' });
+    res.writeHead(response.status, {
+      'content-type': response.type,
+      'cache-control': response.type.includes('html') ? 'public, max-age=60, s-maxage=300' : 'public, max-age=300, s-maxage=600',
+      ...(response.headers ?? {}),
+    });
     res.end(response.body);
   }).listen(port, '0.0.0.0');
 }

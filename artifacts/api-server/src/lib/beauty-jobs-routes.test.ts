@@ -119,6 +119,11 @@ async function run(): Promise<void> {
     server = app.listen(0);
     await once(server, "listening");
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const publicCategories = await request(base, "/beauty-jobs/categories");
+    assert.equal(publicCategories.status, 200);
+    for (const slug of ["barberi", "kozmeticari", "lash-brow", "masaza-terapeuti", "sminkeri", "pmu", "estetika-anti-aging", "pomocno-osoblje", "tattoo-piercing"]) {
+      assert.ok(publicCategories.body.categories.some((category: { slug: string }) => category.slug === slug), `${slug} is an active Beauty Poslovi filter`);
+    }
 
     // Employees are denied even on the otherwise-public Beauty Poslovi module.
     for (const path of ["/beauty-jobs/categories", "/beauty-jobs", `/beauty-jobs/${publicListing.id}`, `/beauty-jobs/${publicListing.id}/report`]) {
