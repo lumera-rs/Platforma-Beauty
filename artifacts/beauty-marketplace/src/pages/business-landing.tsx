@@ -4,11 +4,50 @@ import { Link } from "wouter";
 import { OptimizedImage } from "@/components/optimized-image";
 import {
   Building2,
-  GraduationCap, 
+  GraduationCap,
   Briefcase,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  UsersRound,
+  Boxes,
+  Bot,
+  BadgeCheck,
+  ChartNoAxesCombined,
+  Workflow,
 } from "lucide-react";
+
+const salonModuleHighlights = [
+  {
+    title: "Zaposleni",
+    description: "Rasporedi, timske uloge i upravljanje zaposlenima.",
+    icon: UsersRound,
+  },
+  {
+    title: "Zalihe",
+    description: "Pregled potrošnje i pravovremena dopuna proizvoda.",
+    icon: Boxes,
+  },
+  {
+    title: "AI Asistent",
+    description: "Pametna podrška za svakodnevne poslovne odluke.",
+    icon: Bot,
+  },
+  {
+    title: "Paketi tretmana",
+    description: "Kreiranje i prodaja paketa prilagođenih klijentima.",
+    icon: BadgeCheck,
+  },
+  {
+    title: "Performanse tima",
+    description: "Jasan pregled rezultata salona i svakog člana tima.",
+    icon: ChartNoAxesCombined,
+  },
+  {
+    title: "Automatizacije",
+    description: "Manje rutinskog rada uz automatizovane procese.",
+    icon: Workflow,
+  },
+];
 
 export default function BusinessLanding() {
   return (
@@ -63,6 +102,45 @@ export default function BusinessLanding() {
                 </div>
               </div>
             </Link>
+
+            <div className="md:col-span-2 rounded-2xl border border-primary/15 bg-primary/[0.035] p-6 md:p-8">
+              <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                    Sve za moderan salon
+                  </p>
+                  <h2 className="text-2xl font-serif font-bold text-foreground">
+                    Više alata, manje administracije
+                  </h2>
+                </div>
+                <Link
+                  href="/za-biznise/saloni"
+                  className="inline-flex items-center text-sm font-medium text-primary hover:underline"
+                >
+                  Saznajte više
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {salonModuleHighlights.map(({ title, description, icon: Icon }) => (
+                  <div
+                    key={title}
+                    className="flex gap-3 rounded-xl border border-border/70 bg-background/85 p-4"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{title}</h3>
+                      <p className="mt-1 text-sm leading-snug text-muted-foreground">
+                        {description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <Link href="/za-biznise/poslovi" className="block group">
               <div className="bg-card border border-border p-8 rounded-2xl shadow-sm hover:shadow-xl transition-all h-full flex flex-col items-start relative overflow-hidden">
