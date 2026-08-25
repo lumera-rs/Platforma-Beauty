@@ -44,7 +44,7 @@ test("creates an exact public demo set and never trusts a user description marke
     const [validPublisher, validEducationOwner, foreignCenterOwner] = await db.insert(usersTable).values([
       {
         firstName: "LUMERA", lastName: "Demo oglasi", email: demoPublisherEmail,
-        passwordHash: collisionPasswordHash, role: "CUSTOMER", active: false,
+        passwordHash: collisionPasswordHash, role: "JOBSEEKER", active: false,
       },
       {
         firstName: "LUMERA", lastName: "Demo edukacije", email: demoEducationOwnerEmail,
@@ -80,7 +80,7 @@ test("creates an exact public demo set and never trusts a user description marke
       db.select({ id: educationCentersTable.id }).from(educationCentersTable)
         .where(eq(educationCentersTable.description, demoCenterDescription)).limit(1),
     ]).then(([publishers, centers]) => [publishers[0], centers[0]]);
-    assert.ok(publisher && center, "production reconciliation creates only its bounded support accounts");
+    assert.ok(publisher && center, "production reconciliation accepts the migrated JOBSEEKER publisher and creates only its bounded support accounts");
 
     const [ownedJobs, ownedCourses] = await Promise.all([
       db.select({

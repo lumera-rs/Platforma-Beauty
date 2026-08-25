@@ -143,11 +143,11 @@ async function ensureProductionDemoMarketplace(): Promise<{
         email: DEMO_PUBLISHER_EMAIL,
         passwordHash: await hashPassword("disabled-demo-marketplace-account"),
         passwordSetAt: new Date(),
-        role: "CUSTOMER",
+        role: "JOBSEEKER",
         active: false,
         marketingEmailsEnabled: false,
       }).returning({ id: usersTable.id, active: usersTable.active, role: usersTable.role });
-    } else if (publisher.active || publisher.role !== "CUSTOMER") {
+    } else if (publisher.active || publisher.role !== "JOBSEEKER") {
       throw new Error("Demo Beauty Poslovi publisher identity is already in use; refusing to mutate production data.");
     }
 
