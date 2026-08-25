@@ -103,6 +103,7 @@ function view(
     latitude: RENTAL_TYPES.has(row.type) ? null : row.latitude,
     longitude: RENTAL_TYPES.has(row.type) ? null : row.longitude,
     expiresAt: row.expiresAt.toISOString(), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+    moderationReason: row.moderationReason ?? null, moderatedAt: row.moderatedAt?.toISOString() ?? null,
     availableSlots,
   };
 }
@@ -253,7 +254,10 @@ router.get("/beauty-jobs", async (req, res, next) => { try {
   const conditions = [eq(beautyJobListingsTable.status, "active"), eq(beautyJobListingsTable.moderationStatus, "approved"), eq(beautyJobCategoriesTable.enabled, true), sql`${beautyJobListingsTable.expiresAt} > now()`];
   if (q.category) conditions.push(eq(beautyJobCategoriesTable.slug, q.category));
   if (q.type) conditions.push(eq(beautyJobListingsTable.type, q.type));
-  if (q.intent) conditions.push(eq(beautyJobListingsTable.intent, q.intent));
+   if (q.intent) conditions.push(eq(beautyJobListingsTable.intent, q.intent));
+   if (q.listingMode === "rental") conditions.push(inArray(beautyJobListingsTable.type, ["equipment_rental", "space_rental"]), eq(beautyJobListingsTable.intent, "offering"));
+   if (q.listingMode === "offering") conditions.push(inArray(beautyJobListingsTable.type, ["job", "freelance"]), eq(beautyJobListingsTable.intent, "offering"));
+   if (q.listingMode === "seeking") conditions.push(eq(beautyJobListingsTable.intent, "seeking"));
   if (q.minPrice !== undefined && q.maxPrice !== undefined && q.minPrice > q.maxPrice) return bad(res, "Minimalna cena ne može biti veća od maksimalne.");
   if ((q.latitude === undefined) !== (q.longitude === undefined)) return bad(res, "Latitude i longitude se navode zajedno.");
   if (q.city) conditions.push(ilike(beautyJobListingsTable.city, `%${q.city}%`));
@@ -388,6 +392,8 @@ router.patch("/beauty-jobs/:listingId", async (req, res, next) => { try {
       longitude: RENTAL_TYPES.has(type) ? null : b.data.longitude,
       moderationStatus: "pending",
       status: lockedListing.status === "rejected" ? "active" : lockedListing.status,
+      moderationReason: null,
+      moderatedAt: null,
       updatedAt: new Date(),
     }).where(eq(beautyJobListingsTable.id, existing.id));
     if (RENTAL_TYPES.has(type)) {
@@ -720,13 +726,48 @@ router.post("/admin/beauty-jobs/email-deliveries/:deliveryId/retry", async (req,
 } catch (e) { next(e); } });
 router.get("/admin/beauty-jobs/queue", async (req, res, next) => { try {
   if (!(await admin(req, res))) return; const [listings, reports] = await Promise.all([
-    listingQuery().where(or(eq(beautyJobListingsTable.moderationStatus, "pending"), eq(beautyJobListingsTable.moderationStatus, "rejected"))).orderBy(desc(beautyJobListingsTable.createdAt)),
+    listingQuery().where(eq(beautyJobListingsTable.moderationStatus, "pending")).orderBy(desc(beautyJobListingsTable.createdAt)),
     db.select({ report: beautyJobReportsTable, listingTitle: beautyJobListingsTable.title, authorSalonId: beautyJobListingsTable.salonId, authorUserId: beautyJobListingsTable.userId }).from(beautyJobReportsTable).innerJoin(beautyJobListingsTable, eq(beautyJobReportsTable.listingId, beautyJobListingsTable.id)).where(eq(beautyJobReportsTable.status, "pending")).orderBy(desc(beautyJobReportsTable.createdAt)),
   ]);
   res.json(GetBeautyJobModerationQueueResponse.parse({
     listings: listings.map((r) => view({ ...r.listing, ...r })),
     reports: reports.map((r) => reportView(r.report, { listingTitle: r.listingTitle, authorSalonId: r.authorSalonId, authorUserId: r.authorUserId })),
   }));
+} catch (e) { next(e); } });
+router.get("/admin/beauty-jobs/rejected", async (req, res, next) => { try {
+  if (!(await admin(req, res))) return;
+  const rawPeriod = typeof req.query.period === "string" ? req.query.period : "month";
+  const period = ["week", "month", "last_30_days", "custom", "all"].includes(rawPeriod) ? rawPeriod : undefined;
+  const page = Number.isInteger(Number(req.query.page)) && Number(req.query.page) > 0 ? Number(req.query.page) : 1;
+  const pageSize = Math.min(100, Math.max(1, Number.isInteger(Number(req.query.pageSize)) ? Number(req.query.pageSize) : 24));
+  if (!period) return bad(res, "Neispravan vremenski period.");
+  const dayStart = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const now = new Date();
+  let from: Date | undefined;
+  let to: Date | undefined;
+  if (period === "week") {
+    from = dayStart(now); from.setDate(from.getDate() - ((from.getDay() + 6) % 7));
+  } else if (period === "month") {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (period === "last_30_days") {
+    from = dayStart(now); from.setDate(from.getDate() - 29);
+  } else if (period === "custom") {
+    const fromRaw = typeof req.query.from === "string" ? req.query.from : "";
+    const toRaw = typeof req.query.to === "string" ? req.query.to : "";
+    const parsedFrom = /^\d{4}-\d{2}-\d{2}$/.test(fromRaw) ? new Date(`${fromRaw}T00:00:00`) : null;
+    const parsedTo = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) ? new Date(`${toRaw}T00:00:00`) : null;
+    if (!parsedFrom || !parsedTo || Number.isNaN(parsedFrom.getTime()) || Number.isNaN(parsedTo.getTime()) || parsedFrom > parsedTo) return bad(res, "Za prilagođeni period unesite važeći početni i krajnji datum.");
+    from = parsedFrom; to = new Date(parsedTo); to.setDate(to.getDate() + 1);
+  }
+  const conditions = [eq(beautyJobListingsTable.moderationStatus, "rejected")];
+  if (from) conditions.push(sql`${beautyJobListingsTable.moderatedAt} >= ${from}`);
+  if (to) conditions.push(sql`${beautyJobListingsTable.moderatedAt} < ${to}`);
+  const where = and(...conditions);
+  const [items, totals] = await Promise.all([
+    listingQuery().where(where).orderBy(desc(beautyJobListingsTable.moderatedAt), desc(beautyJobListingsTable.updatedAt)).limit(pageSize).offset((page - 1) * pageSize),
+    db.select({ total: count() }).from(beautyJobListingsTable).where(where),
+  ]);
+  res.json(ListBeautyJobsResponse.parse({ items: items.map((row) => view({ ...row.listing, ...row })), total: totals[0]?.total ?? 0, page, pageSize }));
 } catch (e) { next(e); } });
 router.get("/admin/beauty-jobs/:listingId/preview", async (req, res, next) => { try {
   const user = await admin(req, res); if (!user) return;
@@ -744,13 +785,14 @@ router.post("/admin/beauty-jobs/:listingId/moderation", async (req, res, next) =
     const [existing] = await tx.select().from(beautyJobListingsTable)
       .where(eq(beautyJobListingsTable.id, p.data.listingId)).limit(1);
     if (!existing) return null;
+    const moderatedAt = new Date();
     const values = b.data.action === "approve"
-      ? { moderationStatus: "approved" as const, status: "active" as const }
+      ? { moderationStatus: "approved" as const, status: "active" as const, moderationReason: null, moderatedAt }
       : b.data.action === "reject"
-        ? { moderationStatus: "rejected" as const, status: "rejected" as const }
+        ? { moderationStatus: "rejected" as const, status: "rejected" as const, moderationReason: b.data.reason!.trim(), moderatedAt }
         : b.data.action === "close"
           ? { status: "closed" as const, closedAt: new Date() }
-          : { moderationStatus: "approved" as const, status: "active" as const };
+          : { moderationStatus: "approved" as const, status: "active" as const, moderationReason: null, moderatedAt };
     const stateChanged = b.data.action === "approve" || b.data.action === "reactivate"
       ? existing.moderationStatus !== "approved" || existing.status !== "active"
       : b.data.action === "reject"
@@ -797,7 +839,13 @@ router.post("/admin/beauty-jobs/reports/:reportId/resolve", async (req, res, nex
     if (!updated) return null;
     if (b.data.status !== "resolved") return { report: updated, eventKey: null };
     const [listing] = await tx.update(beautyJobListingsTable)
-      .set({ moderationStatus: "rejected", status: "rejected", updatedAt: new Date() })
+      .set({
+        moderationStatus: "rejected",
+        status: "rejected",
+        moderationReason: b.data.resolutionNote?.trim() || "Oglas je uklonjen nakon rešene prijave.",
+        moderatedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(beautyJobListingsTable.id, updated.listingId)).returning();
     if (!listing) return { report: updated, eventKey: null };
     const recipient = await transactionListingRecipient(tx, listing);

@@ -186,6 +186,23 @@ async function run(): Promise<void> {
       ),
       "moderation email uses the business management route for a salon owner",
     );
+    const rejectedReason = `Nedostaje obavezna informacija ${suffix}`;
+    const rejectedOwner = await request(base, `/admin/beauty-jobs/${ownerListing.id}/moderation`, admin.token, "POST", {
+      action: "reject",
+      reason: rejectedReason,
+    });
+    assert.equal(rejectedOwner.status, 200);
+    assert.equal(rejectedOwner.body.moderationStatus, "rejected");
+    assert.equal(rejectedOwner.body.moderationReason, rejectedReason, "the moderation response preserves the rejection reason");
+    const pendingQueue = await request(base, "/admin/beauty-jobs/queue", admin.token);
+    assert.equal(pendingQueue.status, 200);
+    assert.equal(pendingQueue.body.listings.some((item: any) => item.id === ownerListing.id), false, "rejected listings must leave the pending moderation queue");
+    const rejectedQueue = await request(base, "/admin/beauty-jobs/rejected?period=all", admin.token);
+    assert.equal(rejectedQueue.status, 200);
+    const rejectedRecord = rejectedQueue.body.items.find((item: any) => item.id === ownerListing.id);
+    assert.equal(rejectedRecord?.moderationReason, rejectedReason, "rejected listing review exposes the saved moderation reason");
+    assert.equal(typeof rejectedRecord?.moderatedAt, "string", "rejected listing review exposes its decision time");
+    assert.equal((await request(base, "/admin/beauty-jobs/rejected?period=custom&from=not-a-date&to=2026-01-01", admin.token)).status, 400);
     const initialModerationNotifications = await db.select().from(beautyJobNotificationsTable)
       .where(eq(beautyJobNotificationsTable.listingId, customerListing.id));
     assert.equal(
@@ -287,23 +304,24 @@ async function run(): Promise<void> {
     assert.ok(ownerApplicantNotifications.body.notifications.some((item: any) => item.listingId === rentalCreate.body.id && item.type.startsWith("rental_request_")));
 
     // Individually identifiable approved fixtures keep every public filter deterministic.
-    const filterJob = await insertApproved(hairCategory.id, customer.user.id, `query-token-${suffix}`, { city: `QueryCity${suffix}`, region: `QueryRegion${suffix}`, priceAmount: 111, latitude: 44.8, longitude: 20.4 });
-    const filterRental = await insertApproved(rentalCategory.id, customer.user.id, `rental-token-${suffix}`, { type: "equipment_rental", intent: "seeking", city: `RentalCity${suffix}`, region: `RentalRegion${suffix}`, priceAmount: 999 });
+    const filterJob = await insertApproved(hairCategory.id, customer.user.id, `query-token-${suffix}`, { city: `PriceCity${suffix}`, region: `QueryRegion${suffix}`, priceAmount: 111, latitude: 44.8, longitude: 20.4 });
+    const filterRental = await insertApproved(rentalCategory.id, customer.user.id, `rental-token-${suffix}`, { type: "equipment_rental", intent: "offering", city: `PriceCity${suffix}`, region: `RentalRegion${suffix}`, priceAmount: 999 });
+    const filterSeeking = await insertApproved(hairCategory.id, customer.user.id, `seeking-token-${suffix}`, { intent: "seeking", city: `SeekingCity${suffix}`, region: `SeekingRegion${suffix}`, priceAmount: 555 });
     await db.insert(beautyJobListingAvailabilityTable).values({ listingId: filterRental.id, availabilityPattern: `Availability-${suffix}`, dayLabels: [] });
     const filters: Array<[string, string]> = [
       [`query=query-token-${suffix}`, filterJob.id], ["type=equipment_rental", filterRental.id],
-      ["intent=seeking", filterRental.id], ["category=frizeri", filterJob.id],
-      [`city=QueryCity${suffix}`, filterJob.id], [`region=QueryRegion${suffix}`, filterJob.id],
+       ["intent=seeking", filterSeeking.id], ["listingMode=offering", filterJob.id], ["listingMode=rental", filterRental.id], ["listingMode=seeking", filterSeeking.id], ["category=frizeri", filterJob.id],
+       [`city=PriceCity${suffix}`, filterJob.id], [`region=QueryRegion${suffix}`, filterJob.id],
       ["minPrice=900", filterRental.id], ["maxPrice=200", filterJob.id],
       [`availability=Availability-${suffix}`, filterRental.id], ["sort=price_asc", filterJob.id],
-      ["sort=oldest", publicListing.id], ["sort=nearest&latitude=44.8&longitude=20.4", filterJob.id],
+       [`query=query-token-${suffix}&sort=oldest`, filterJob.id], ["sort=nearest&latitude=44.8&longitude=20.4", filterJob.id],
     ];
     for (const [query, expected] of filters) {
       const result = await request(base, `/beauty-jobs?${query}`);
       assert.equal(result.status, 200, `filter ${query} must succeed`);
       assert.ok(result.body.items.some((item: any) => item.id === expected), `filter ${query} must include isolated fixture`);
     }
-    const priceDesc = await request(base, "/beauty-jobs?sort=price_desc");
+    const priceDesc = await request(base, `/beauty-jobs?sort=price_desc&city=PriceCity${suffix}`);
     assert.ok(priceDesc.body.items.findIndex((x: any) => x.id === filterRental.id) < priceDesc.body.items.findIndex((x: any) => x.id === filterJob.id), "price_desc must order fixtures");
 
     const save = await request(base, `/beauty-jobs/${customerListing.id}/save`, applicant.token, "POST");

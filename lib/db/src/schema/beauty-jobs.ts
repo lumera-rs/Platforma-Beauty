@@ -88,6 +88,8 @@ export const beautyJobListingsTable = pgTable("beauty_job_listings", {
   isTest: boolean("is_test").notNull().default(false),
   status: beautyJobListingStatusEnum("status").notNull().default("active"),
   moderationStatus: beautyJobModerationStatusEnum("moderation_status").notNull().default("pending"),
+  moderationReason: text("moderation_reason"),
+  moderatedAt: timestamp("moderated_at", { withTimezone: true }),
   contactCount: integer("contact_count").notNull().default(0),
   viewCount: integer("view_count").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

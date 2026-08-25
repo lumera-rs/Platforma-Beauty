@@ -205,6 +205,7 @@ import type {
   ListProductsParams,
   ListPublicEducationCoursesParams,
   ListPublicProductsParams,
+  ListRejectedBeautyJobsParams,
   ListSalonAppointmentsParams,
   ListSalonClockEntriesParams,
   ListSalonCustomersParams,
@@ -22402,6 +22403,90 @@ export function useGetBeautyJobModerationQueue<TData = Awaited<ReturnType<typeof
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetBeautyJobModerationQueueQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListRejectedBeautyJobsUrl = (params?: ListRejectedBeautyJobsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/admin/beauty-jobs/rejected?${stringifiedParams}` : `/api/admin/beauty-jobs/rejected`
+}
+
+/**
+ * @summary List rejected Beauty Poslovi listings for moderation review
+ */
+export const listRejectedBeautyJobs = async (params?: ListRejectedBeautyJobsParams, options?: Parameters<typeof customFetch>[1]): Promise<BeautyJobListResponse> => {
+
+  return customFetch<BeautyJobListResponse>(getListRejectedBeautyJobsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRejectedBeautyJobsQueryKey = (params?: ListRejectedBeautyJobsParams,) => {
+    return [
+    `/api/admin/beauty-jobs/rejected`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListRejectedBeautyJobsQueryOptions = <TData = Awaited<ReturnType<typeof listRejectedBeautyJobs>>, TError = ErrorType<unknown>>(params?: ListRejectedBeautyJobsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRejectedBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRejectedBeautyJobsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRejectedBeautyJobs>>> = ({ signal }) => listRejectedBeautyJobs(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRejectedBeautyJobs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRejectedBeautyJobsQueryResult = NonNullable<Awaited<ReturnType<typeof listRejectedBeautyJobs>>>
+export type ListRejectedBeautyJobsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List rejected Beauty Poslovi listings for moderation review
+ */
+
+export function useListRejectedBeautyJobs<TData = Awaited<ReturnType<typeof listRejectedBeautyJobs>>, TError = ErrorType<unknown>>(
+ params?: ListRejectedBeautyJobsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRejectedBeautyJobs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRejectedBeautyJobsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

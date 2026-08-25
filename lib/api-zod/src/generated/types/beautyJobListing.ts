@@ -35,6 +35,10 @@ export interface BeautyJobListing {
   photos: string[];
   status: string;
   moderationStatus: string;
+  /** @nullable */
+  moderationReason: string | null;
+  /** @nullable */
+  moderatedAt: Date | null;
   contactCount: number;
   viewCount: number;
   expiresAt: Date;

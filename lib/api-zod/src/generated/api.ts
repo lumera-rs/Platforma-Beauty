@@ -11860,6 +11860,7 @@ export const ListBeautyJobsQueryParams = zod.object({
   "category": zod.coerce.string().optional(),
   "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']).optional(),
   "intent": zod.enum(['offering', 'seeking']).optional(),
+  "listingMode": zod.enum(['offering', 'rental', 'seeking']).optional(),
   "city": zod.coerce.string().optional(),
   "region": zod.coerce.string().optional(),
   "minPrice": zod.coerce.number().int().min(listBeautyJobsQueryMinPriceMin).optional(),
@@ -11899,6 +11900,8 @@ export const ListBeautyJobsResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12005,6 +12008,8 @@ export const CreateBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12052,6 +12057,8 @@ export const ListMyBeautyJobsResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12103,6 +12110,8 @@ export const ListSavedBeautyJobsResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12287,6 +12296,8 @@ export const GetBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12396,6 +12407,8 @@ export const UpdateBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12449,6 +12462,8 @@ export const RenewBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12502,6 +12517,8 @@ export const CloseBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12817,6 +12834,8 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12850,6 +12869,78 @@ export const GetBeautyJobModerationQueueResponse = zod.object({
   "authorSalonId": zod.string().nullish(),
   "authorUserId": zod.string().nullish()
 }))
+})
+
+
+/**
+ * @summary List rejected Beauty Poslovi listings for moderation review
+ */
+export const listRejectedBeautyJobsQueryPeriodDefault = `month`;
+export const listRejectedBeautyJobsQueryPageDefault = 1;
+
+export const listRejectedBeautyJobsQueryPageSizeDefault = 24;
+export const listRejectedBeautyJobsQueryPageSizeMax = 100;
+
+
+
+export const ListRejectedBeautyJobsQueryParams = zod.object({
+  "period": zod.enum(['week', 'month', 'last_30_days', 'custom', 'all']).default(listRejectedBeautyJobsQueryPeriodDefault),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
+  "page": zod.coerce.number().int().min(1).default(listRejectedBeautyJobsQueryPageDefault),
+  "pageSize": zod.coerce.number().int().min(1).max(listRejectedBeautyJobsQueryPageSizeMax).default(listRejectedBeautyJobsQueryPageSizeDefault)
+})
+
+export const listRejectedBeautyJobsResponseItemsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemCategoryIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+export const listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp = new RegExp('^[0-9a-fA-F-]{36}$');
+
+
+export const ListRejectedBeautyJobsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemIdRegExp),
+  "categoryId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemCategoryIdRegExp),
+  "categorySlug": zod.string(),
+  "categoryName": zod.string(),
+  "type": zod.enum(['job', 'equipment_rental', 'space_rental', 'freelance']),
+  "intent": zod.enum(['offering', 'seeking']),
+  "title": zod.string(),
+  "description": zod.string(),
+  "city": zod.string(),
+  "region": zod.string(),
+  "latitude": zod.number().nullable(),
+  "longitude": zod.number().nullable(),
+  "priceAmount": zod.number().int().nullable(),
+  "pricePeriod": zod.string().nullable(),
+  "negotiable": zod.boolean(),
+  "photos": zod.array(zod.string()),
+  "status": zod.string(),
+  "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
+  "contactCount": zod.number().int(),
+  "viewCount": zod.number().int(),
+  "expiresAt": zod.coerce.date(),
+  "createdAt": zod.coerce.date(),
+  "availabilityPattern": zod.string().nullable(),
+  "dayLabels": zod.array(zod.string()),
+  "authorDisplayName": zod.string(),
+  "postedByType": zod.enum(['salon', 'user']),
+  "updatedAt": zod.coerce.date(),
+  "isSaved": zod.boolean(),
+  "isOwner": zod.boolean(),
+  "availableSlots": zod.array(zod.object({
+  "id": zod.string().regex(listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemIdRegExp),
+  "listingId": zod.string().regex(listRejectedBeautyJobsResponseItemsItemAvailableSlotsItemListingIdRegExp),
+  "startsAt": zod.coerce.date(),
+  "endsAt": zod.coerce.date(),
+  "available": zod.boolean()
+}))
+})),
+  "total": zod.number().int(),
+  "page": zod.number().int(),
+  "pageSize": zod.number().int()
 })
 
 
@@ -12888,6 +12979,8 @@ export const GetBeautyJobAdminPreviewResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),
@@ -12950,6 +13043,8 @@ export const ModerateBeautyJobResponse = zod.object({
   "photos": zod.array(zod.string()),
   "status": zod.string(),
   "moderationStatus": zod.string(),
+  "moderationReason": zod.string().nullable(),
+  "moderatedAt": zod.coerce.date().nullable(),
   "contactCount": zod.number().int(),
   "viewCount": zod.number().int(),
   "expiresAt": zod.coerce.date(),

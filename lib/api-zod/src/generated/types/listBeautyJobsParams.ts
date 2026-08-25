@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListBeautyJobsIntent } from './listBeautyJobsIntent';
+import type { ListBeautyJobsListingMode } from './listBeautyJobsListingMode';
 import type { ListBeautyJobsSort } from './listBeautyJobsSort';
 import type { ListBeautyJobsType } from './listBeautyJobsType';
 
@@ -13,6 +14,7 @@ export type ListBeautyJobsParams = {
 category?: string;
 type?: ListBeautyJobsType;
 intent?: ListBeautyJobsIntent;
+listingMode?: ListBeautyJobsListingMode;
 city?: string;
 region?: string;
 /**

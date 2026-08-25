@@ -40,6 +40,7 @@ const BeautyJobDetail = lazy(() => import('./pages/beauty-jobs-detail'));
 const CustomerBeautyJobs = lazy(() => import('./pages/customer-beauty-jobs'));
 const BusinessBeautyJobs = lazy(() => import('./pages/business-beauty-jobs'));
 const AdminBeautyJobs = lazy(() => import('./pages/admin/beauty-jobs'));
+const AdminRejectedBeautyJobs = lazy(() => import('./pages/admin/rejected-beauty-jobs'));
 
 const PublicProducts = lazy(() => import('./pages/public-products'));
 const RetailCartPage = lazy(() => import('./pages/retail-checkout').then((module) => ({ default: module.RetailCartPage })));
@@ -352,6 +353,7 @@ function Router() {
         <Route path="/admin/predlosci-usluga"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminServiceTemplates /></RoleGuard></Route>
         <Route path="/admin/korisnici"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminUsers /></RoleGuard></Route>
         <Route path="/admin/poslovi/pregled/:listingId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><BeautyJobDetail /></RoleGuard></Route>
+        <Route path="/admin/odbijeni-oglasi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminRejectedBeautyJobs /></RoleGuard></Route>
         <Route path="/admin/poslovi"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminBeautyJobs /></RoleGuard></Route>
         <Route path="/admin/profil"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminProfile /></RoleGuard></Route>
         <Route path="/admin/loyalty"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminLoyalty /></RoleGuard></Route>

@@ -5553,6 +5553,10 @@ export interface BeautyJobListing {
   photos: string[];
   status: string;
   moderationStatus: string;
+  /** @nullable */
+  moderationReason: string | null;
+  /** @nullable */
+  moderatedAt: string | null;
   contactCount: number;
   viewCount: number;
   expiresAt: string;
@@ -6924,6 +6928,7 @@ export type ListBeautyJobsParams = {
 category?: string;
 type?: ListBeautyJobsType;
 intent?: ListBeautyJobsIntent;
+listingMode?: ListBeautyJobsListingMode;
 city?: string;
 region?: string;
 /**
@@ -6968,6 +6973,15 @@ export const ListBeautyJobsIntent = {
   seeking: 'seeking',
 } as const;
 
+export type ListBeautyJobsListingMode = typeof ListBeautyJobsListingMode[keyof typeof ListBeautyJobsListingMode];
+
+
+export const ListBeautyJobsListingMode = {
+  offering: 'offering',
+  rental: 'rental',
+  seeking: 'seeking',
+} as const;
+
 export type ListBeautyJobsSort = typeof ListBeautyJobsSort[keyof typeof ListBeautyJobsSort];
 
 
@@ -6977,4 +6991,30 @@ export const ListBeautyJobsSort = {
   price_asc: 'price_asc',
   price_desc: 'price_desc',
   nearest: 'nearest',
+} as const;
+
+export type ListRejectedBeautyJobsParams = {
+period?: ListRejectedBeautyJobsPeriod;
+from?: string;
+to?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+pageSize?: number;
+};
+
+export type ListRejectedBeautyJobsPeriod = typeof ListRejectedBeautyJobsPeriod[keyof typeof ListRejectedBeautyJobsPeriod];
+
+
+export const ListRejectedBeautyJobsPeriod = {
+  week: 'week',
+  month: 'month',
+  last_30_days: 'last_30_days',
+  custom: 'custom',
+  all: 'all',
 } as const;

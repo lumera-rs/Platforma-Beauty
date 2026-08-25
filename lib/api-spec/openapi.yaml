@@ -4952,6 +4952,7 @@ paths:
         - { name: category, in: query, schema: { type: string } }
         - { name: type, in: query, schema: { type: string, enum: [job, equipment_rental, space_rental, freelance] } }
         - { name: intent, in: query, schema: { type: string, enum: [offering, seeking] } }
+        - { name: listingMode, in: query, schema: { type: string, enum: [offering, rental, seeking] } }
         - { name: city, in: query, schema: { type: string } }
         - { name: region, in: query, schema: { type: string } }
         - { name: minPrice, in: query, schema: { type: integer, minimum: 0 } }
@@ -5135,6 +5136,19 @@ paths:
       operationId: getBeautyJobModerationQueue
       tags: [admin]
       responses: { "200": { description: Queue, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobModerationQueue" } } } } }
+  /admin/beauty-jobs/rejected:
+    get:
+      operationId: listRejectedBeautyJobs
+      tags: [admin]
+      summary: List rejected Beauty Poslovi listings for moderation review
+      parameters:
+        - { name: period, in: query, schema: { type: string, enum: [week, month, last_30_days, custom, all], default: month } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 24 } }
+      responses:
+        "200": { description: Rejected listing page, content: { application/json: { schema: { $ref: "#/components/schemas/BeautyJobListResponse" } } } }
   /admin/beauty-jobs/{listingId}/preview:
     get:
       operationId: getBeautyJobAdminPreview
@@ -9112,6 +9126,8 @@ components:
         photos: { type: array, items: { type: string } }
         status: { type: string }
         moderationStatus: { type: string }
+        moderationReason: { type: [string, "null"] }
+        moderatedAt: { type: [string, "null"], format: date-time }
         contactCount: { type: integer }
         viewCount: { type: integer }
         expiresAt: { type: string, format: date-time }
@@ -9124,7 +9140,7 @@ components:
         isSaved: { type: boolean }
         isOwner: { type: boolean }
         availableSlots: { type: array, items: { $ref: "#/components/schemas/BeautyJobRentalSlot" } }
-      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
+      required: [id, categoryId, categorySlug, categoryName, type, intent, title, description, city, region, latitude, longitude, priceAmount, pricePeriod, negotiable, photos, status, moderationStatus, moderationReason, moderatedAt, contactCount, viewCount, expiresAt, createdAt, updatedAt, availabilityPattern, dayLabels, authorDisplayName, postedByType, isSaved, isOwner, availableSlots]
     BeautyJobCreateInput:
       type: object
       properties:

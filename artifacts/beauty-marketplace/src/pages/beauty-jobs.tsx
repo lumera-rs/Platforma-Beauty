@@ -24,6 +24,7 @@ const PAGE_SIZE = 10;
 const beautyJobSortValues = ["newest", "oldest", "price_asc", "price_desc", "nearest"] as const;
 const beautyJobTypeValues = ["job", "equipment_rental", "space_rental", "freelance"] as const;
 const beautyJobIntentValues = ["offering", "seeking"] as const;
+const beautyJobListingModeValues = ["offering", "rental", "seeking"] as const;
 
 function isBeautyJobSort(value: string | null): value is NonNullable<ListBeautyJobsParams["sort"]> {
   return value !== null && (beautyJobSortValues as readonly string[]).includes(value);
@@ -37,6 +38,10 @@ function isBeautyJobIntent(value: string | null): value is NonNullable<ListBeaut
   return value !== null && (beautyJobIntentValues as readonly string[]).includes(value);
 }
 
+function isBeautyJobListingMode(value: string | null): value is NonNullable<ListBeautyJobsParams["listingMode"]> {
+  return value !== null && (beautyJobListingModeValues as readonly string[]).includes(value);
+}
+
 function positiveNumberParam(params: URLSearchParams, key: string): number | undefined {
   const rawValue = params.get(key);
   if (rawValue === null || rawValue.trim() === "") return undefined;
@@ -46,12 +51,19 @@ function positiveNumberParam(params: URLSearchParams, key: string): number | und
 
 export default function BeautyJobsPage() {
   const searchString = useSearch();
-  const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString, historyVersion]);
   const [, setLocationPath] = useLocation();
   
   const queryClient = useQueryClient();
   const { data: userResp, isLoading: isLoadingUser } = useGetCurrentUser();
   const user = userResp?.user;
+
+  useEffect(() => {
+    const rehydrateFromHistory = () => setHistoryVersion((version) => version + 1);
+    window.addEventListener("popstate", rehydrateFromHistory);
+    return () => window.removeEventListener("popstate", rehydrateFromHistory);
+  }, []);
 
   useEffect(() => {
     if (!isLoadingUser && user?.role === "SALON_EMPLOYEE") {
@@ -63,8 +75,10 @@ export default function BeautyJobsPage() {
   const query = searchParams.get("query") || "";
   const rawType = searchParams.get("type");
   const rawIntent = searchParams.get("intent");
+  const rawListingMode = searchParams.get("listingMode");
   const type = isBeautyJobType(rawType) ? rawType : undefined;
   const intent = isBeautyJobIntent(rawIntent) ? rawIntent : undefined;
+  const listingMode = isBeautyJobListingMode(rawListingMode) ? rawListingMode : undefined;
   const categorySlug = searchParams.get("category") || "";
   const city = searchParams.get("city") || "";
   const region = searchParams.get("region") || "";
@@ -85,6 +99,15 @@ export default function BeautyJobsPage() {
   const [localMinPrice, setLocalMinPrice] = useState(minPrice ? String(minPrice) : "");
   const [localMaxPrice, setLocalMaxPrice] = useState(maxPrice ? String(maxPrice) : "");
 
+  useEffect(() => {
+    setLocalQuery(query);
+    setLocalCity(city);
+    setLocalRegion(region);
+    setLocalAvailability(availability);
+    setLocalMinPrice(minPrice === undefined ? "" : String(minPrice));
+    setLocalMaxPrice(maxPrice === undefined ? "" : String(maxPrice));
+  }, [query, city, region, availability, minPrice, maxPrice]);
+
   const debouncedQuery = useDebouncedSearch(localQuery);
   const debouncedCity = useDebouncedSearch(localCity);
   const debouncedRegion = useDebouncedSearch(localRegion);
@@ -104,7 +127,7 @@ export default function BeautyJobsPage() {
         maxPrice: debouncedMaxPrice 
       });
     }
-  }, [debouncedQuery, debouncedCity, debouncedRegion, debouncedAvailability, debouncedMinPrice, debouncedMaxPrice]);
+  }, [debouncedQuery, debouncedCity, debouncedRegion, debouncedAvailability, debouncedMinPrice, debouncedMaxPrice, query, city, region, availability, minPrice, maxPrice]);
 
   const updateFilters = (updates: Record<string, string | number | undefined | null>) => {
     const newParams = new URLSearchParams(searchString);
@@ -149,6 +172,7 @@ export default function BeautyJobsPage() {
     query: debouncedQuery || undefined,
     type,
     intent,
+    listingMode,
     category: categorySlug || undefined,
     city: debouncedCity || undefined,
     region: debouncedRegion || undefined,
@@ -158,7 +182,7 @@ export default function BeautyJobsPage() {
     sort,
     latitude: sort === "nearest" ? locationCoords?.latitude : undefined,
     longitude: sort === "nearest" ? locationCoords?.longitude : undefined,
-  }), [debouncedQuery, type, intent, categorySlug, debouncedCity, debouncedRegion, minPrice, maxPrice, debouncedAvailability, sort, locationCoords]);
+  }), [debouncedQuery, type, intent, listingMode, categorySlug, debouncedCity, debouncedRegion, minPrice, maxPrice, debouncedAvailability, sort, locationCoords]);
 
   const params = useMemo<ListBeautyJobsParams>(() => ({
     ...filterParams,
@@ -227,13 +251,16 @@ export default function BeautyJobsPage() {
         <h3 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">Namera</h3>
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="radio" name="intent" className="accent-primary" checked={!intent} onChange={() => updateFilters({ intent: "" })} /> Sve
+            <input type="radio" name="listingMode" className="accent-primary" checked={!listingMode && !intent} onChange={() => updateFilters({ listingMode: "", intent: "" })} /> Sve
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="radio" name="intent" className="accent-primary" checked={intent === "offering"} onChange={() => updateFilters({ intent: "offering" })} /> Nudim / Izdajem
+            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "offering"} onChange={() => updateFilters({ listingMode: "offering", intent: "" })} /> Nudim posao / usluge
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="radio" name="intent" className="accent-primary" checked={intent === "seeking"} onChange={() => updateFilters({ intent: "seeking" })} /> Tražim
+            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "rental"} onChange={() => updateFilters({ listingMode: "rental", intent: "" })} /> Izdajem opremu / prostor
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="listingMode" className="accent-primary" checked={listingMode === "seeking"} onChange={() => updateFilters({ listingMode: "seeking", intent: "" })} /> Tražim
           </label>
         </div>
       </div>
@@ -274,7 +301,7 @@ export default function BeautyJobsPage() {
 
       <Button variant="outline" className="w-full" onClick={() => {
         setLocalQuery(""); setLocalCity(""); setLocalRegion(""); setLocalAvailability(""); setLocalMinPrice(""); setLocalMaxPrice("");
-        updateFilters({ type: "", intent: "", category: "", city: "", region: "", availability: "", minPrice: "", maxPrice: "", query: "", sort: "newest" });
+        updateFilters({ type: "", intent: "", listingMode: "", category: "", city: "", region: "", availability: "", minPrice: "", maxPrice: "", query: "", sort: "newest" });
       }}>
         Resetuj filtere
       </Button>
@@ -308,14 +335,14 @@ export default function BeautyJobsPage() {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-200px)] min-h-[800px]">
+      <div className="container mx-auto px-4 py-8 flex flex-col lg:flex-row gap-6 items-start">
         <aside className="hidden lg:block w-64 shrink-0 space-y-6 sticky top-24 h-[calc(100vh-120px)] overflow-y-auto custom-scrollbar pr-4">
           <FiltersContent />
         </aside>
 
-        <div className="flex-1 w-full h-full min-h-0">
-          <div className="flex w-full h-full min-h-0 flex-col">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 shrink-0">
+        <div className="flex-1 w-full">
+          <div className="flex w-full flex-col">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
               <p className="text-muted-foreground text-sm font-medium">
                 {isResultsLoading ? "Učitavanje..." : (paginatedJobs.length === 0 ? "Nema rezultata" : `Prikazano ${paginatedJobs.length} oglasa`)}
               </p>
@@ -330,7 +357,7 @@ export default function BeautyJobsPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
               {isResultsLoading ? (
                 Array(4).fill(0).map((_, i) => (
                   <div key={i} className="flex gap-4 p-4 rounded-xl border bg-card">

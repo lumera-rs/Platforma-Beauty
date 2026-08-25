@@ -2,7 +2,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetCurrentUser } from "@workspace/api-client-react";
 import { BusinessLayout } from "@/components/business-layout";
-import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness } from "lucide-react";
+import { Loader2, LayoutDashboard, Store, Users, Star, CreditCard, MessageSquare, Menu, X, Package, FolderTree, Tags, Truck, Mail, MessageSquareText, PlugZap, FileText, GraduationCap, SlidersHorizontal, BriefcaseBusiness, ListX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navLinks = [
@@ -11,6 +11,7 @@ const navLinks = [
   { href: "/admin/predlosci-usluga", label: "Predlošci usluga", icon: FileText },
   { href: "/admin/korisnici", label: "Korisnici", icon: Users },
   { href: "/admin/poslovi", label: "Oglasi & izveštaji", icon: BriefcaseBusiness },
+  { href: "/admin/odbijeni-oglasi", label: "Odbijeni oglasi", icon: ListX },
   { href: "/admin/loyalty", label: "Loyalty Program", icon: Star },
   { href: "/admin/retencija", label: "Pragovi retencije", icon: SlidersHorizontal },
   { href: "/admin/pretplate", label: "Pretplate", icon: CreditCard },

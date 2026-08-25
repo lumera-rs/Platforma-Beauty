@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 24;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 25;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -854,6 +854,8 @@ function tableStatements(s: string): string[] {
       photos jsonb NOT NULL DEFAULT '[]'::jsonb,
       status ${s}.beauty_job_listing_status NOT NULL DEFAULT 'active',
       moderation_status ${s}.beauty_job_moderation_status NOT NULL DEFAULT 'pending',
+      moderation_reason text,
+      moderated_at timestamptz,
       contact_count integer NOT NULL DEFAULT 0,
       view_count integer NOT NULL DEFAULT 0,
       expires_at timestamptz NOT NULL,
@@ -862,6 +864,8 @@ function tableStatements(s: string): string[] {
       updated_at timestamptz NOT NULL DEFAULT now()
     )`,
     `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS intent ${s}.beauty_job_listing_intent NOT NULL DEFAULT 'offering'`,
+  `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderation_reason text`,
+  `ALTER TABLE ${s}.beauty_job_listings ADD COLUMN IF NOT EXISTS moderated_at timestamptz`,
     `DROP INDEX IF EXISTS ${s}.beauty_job_listings_category_visibility_created_idx`,
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_category_visibility_created_idx ON ${s}.beauty_job_listings (category_id, intent, status, moderation_status, created_at)`,
     `CREATE INDEX IF NOT EXISTS beauty_job_listings_city_region_idx ON ${s}.beauty_job_listings (city, region)`,
