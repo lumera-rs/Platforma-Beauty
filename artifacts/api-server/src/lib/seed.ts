@@ -42,6 +42,11 @@ import {
   usersTable,
 } from "@workspace/db";
 import { hashPassword } from "./auth";
+import {
+  lockEducationBillingRules,
+  lockEducationCenterFinancials,
+  resolveEducationBillingSettings,
+} from "./education-billing";
 import { getOrCreateShippingConfig } from "./shipping-config";
 
 let seedPromise: Promise<void> | undefined;
@@ -1081,9 +1086,52 @@ async function seedEducationContent(): Promise<void> {
   }
 }
 
+export async function ensureSeedEducationEscrowSnapshot(input: {
+  enrollmentId: string;
+  purchaserId: string;
+  centerId: string;
+  price: number;
+}) {
+  return db.transaction(async (tx) => {
+    await lockEducationBillingRules(tx, "shared");
+    await lockEducationCenterFinancials(tx, input.centerId);
+    const [existingEscrow] = await tx.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.enrollmentId, input.enrollmentId))
+      .limit(1)
+      .for("update");
+    if (existingEscrow) return existingEscrow;
+    const settings = await resolveEducationBillingSettings(input.centerId, tx);
+    const platformFee = Math.floor(input.price * settings.effective.commissionPercent / 100);
+    const reserveAmount = Math.floor(input.price * settings.effective.reservePercent / 100);
+    const [escrow] = await tx.insert(educationEscrowsTable).values({
+      enrollmentId: input.enrollmentId,
+      centerId: input.centerId,
+      grossAmount: input.price,
+      platformFee,
+      reserveAmount,
+      netAmount: input.price - platformFee - reserveAmount,
+      releaseAt: new Date(Date.now() + settings.effective.onlineRefundDays * 24 * 60 * 60 * 1000),
+      paymentReference: `seed:${input.enrollmentId}`,
+    }).returning();
+    await tx.insert(educationLedgerEntriesTable).values([
+      { escrowId: escrow!.id, enrollmentId: input.enrollmentId, centerId: input.centerId, type: "charge", amount: input.price, note: "Demo potvrđena kupovina." },
+      { escrowId: escrow!.id, enrollmentId: input.enrollmentId, centerId: input.centerId, type: "platform_fee", amount: -platformFee, note: "Demo platformská provizija." },
+      { escrowId: escrow!.id, enrollmentId: input.enrollmentId, centerId: input.centerId, type: "reserve_hold", amount: -reserveAmount, note: "Demo zadržana rezerva." },
+    ]);
+    await tx.insert(educationFinancialEventsTable).values({
+      escrowId: escrow!.id, enrollmentId: input.enrollmentId,
+      eventType: "purchase_confirmed", nextStatus: "held", amount: input.price, note: "Demo monetizaciona evidencija.",
+    });
+    await tx.insert(educationThreadsTable).values({
+      enrollmentId: input.enrollmentId,
+      purchaserId: input.purchaserId,
+      centerId: input.centerId,
+    }).onConflictDoNothing();
+    return escrow!;
+  });
+}
+
 async function seedEducationMonetization(): Promise<void> {
-  const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
-  const activeSettings = settings ?? (await db.insert(educationPlatformSettingsTable).values({}).returning())[0]!;
   const [plan] = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.active, true)).limit(1);
   const demoCenterNames = ["Akademija Ritual", "Studio Forma Edu", "Wellbeing Institut"];
   const centers = await db.select().from(educationCentersTable).where(inArray(educationCentersTable.name, demoCenterNames));
@@ -1106,33 +1154,10 @@ async function seedEducationMonetization(): Promise<void> {
     .where(inArray(coursesTable.centerId, centers.map((center) => center.id)))
     .limit(1);
   if (!enrollment || !enrollment.courses.centerId) return;
-  const [existingEscrow] = await db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.enrollmentId, enrollment.course_enrollments.id)).limit(1);
-  if (existingEscrow) return;
-  const price = enrollment.courses.price;
-  const platformFee = Math.floor(price * activeSettings.commissionPercent / 100);
-  const reserveAmount = Math.floor(price * activeSettings.reservePercent / 100);
-  const [escrow] = await db.insert(educationEscrowsTable).values({
-    enrollmentId: enrollment.course_enrollments.id,
-    centerId: enrollment.courses.centerId,
-    grossAmount: price,
-    platformFee,
-    reserveAmount,
-    netAmount: price - platformFee - reserveAmount,
-    releaseAt: new Date(Date.now() + activeSettings.onlineRefundDays * 24 * 60 * 60 * 1000),
-    paymentReference: `seed:${enrollment.course_enrollments.id}`,
-  }).returning();
-  await db.insert(educationLedgerEntriesTable).values([
-    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "charge", amount: price, note: "Demo potvrđena kupovina." },
-    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "platform_fee", amount: -platformFee, note: "Demo platformská provizija." },
-    { escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id, centerId: enrollment.courses.centerId, type: "reserve_hold", amount: -reserveAmount, note: "Demo zadržana rezerva." },
-  ]);
-  await db.insert(educationFinancialEventsTable).values({
-    escrowId: escrow!.id, enrollmentId: enrollment.course_enrollments.id,
-    eventType: "purchase_confirmed", nextStatus: "held", amount: price, note: "Demo monetizaciona evidencija.",
-  });
-  await db.insert(educationThreadsTable).values({
+  await ensureSeedEducationEscrowSnapshot({
     enrollmentId: enrollment.course_enrollments.id,
     purchaserId: enrollment.course_enrollments.purchaserId,
     centerId: enrollment.courses.centerId,
-  }).onConflictDoNothing();
+    price: enrollment.courses.price,
+  });
 }

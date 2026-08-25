@@ -46,6 +46,17 @@ async function seedLegacySchema(schema: string) {
     email text NOT NULL,
     role "${schema}".user_role NOT NULL DEFAULT 'CUSTOMER'
   )`);
+  await q(`CREATE TABLE "${schema}".education_centers (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id uuid NOT NULL REFERENCES "${schema}".users(id),
+    name text NOT NULL,
+    city text NOT NULL,
+    description text NOT NULL,
+    image_url text NOT NULL,
+    verification_status text NOT NULL DEFAULT 'pending',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
   await q(`CREATE TABLE "${schema}".course_enrollments (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES "${schema}".users(id) ON DELETE CASCADE,
@@ -189,6 +200,13 @@ async function seedLegacySchema(schema: string) {
   const legacyEducationOwner = (await q<{ id: string }>(
     `INSERT INTO "${schema}".users (email, role) VALUES ('legacy-education@bg.test', 'EDUCATION_CENTER_OWNER') RETURNING id`,
   )).rows[0]!;
+  const legacyEducationCenter = (await q<{ id: string }>(
+    `INSERT INTO "${schema}".education_centers
+       (owner_id, name, city, description, image_url)
+     VALUES ($1, 'Legacy Education Center', 'Beograd', 'Legacy center', '/legacy-center.jpg')
+     RETURNING id`,
+    [legacyEducationOwner.id],
+  )).rows[0]!;
   const enrollment = (await q<{ id: string }>(
     `INSERT INTO "${schema}".course_enrollments (user_id, purchaser_id) VALUES ($1, $2) RETURNING id`,
     [enrollmentLearner.id, enrollmentPurchaser.id],
@@ -231,7 +249,7 @@ async function seedLegacySchema(schema: string) {
   );
 
   return {
-    salon, user, enrollmentLearner, enrollmentPurchaser, enrollment, legacyEducationOwner,
+    salon, user, enrollmentLearner, enrollmentPurchaser, enrollment, legacyEducationOwner, legacyEducationCenter,
     employee, service, customer, appointment, retailCart, retailProduct,
   };
 }
@@ -282,6 +300,30 @@ async function run() {
     )).rows[0]!;
     assert.equal(migratedEducationOwner.role, "EDUKATIVNI_CENTAR", "legacy education owner row is preserved and migrated");
     assert.ok(await columnExists("users", "date_of_birth"), "users.date_of_birth added");
+    for (const column of [
+      "pib",
+      "commission_percent_override",
+      "reserve_percent_override",
+      "online_refund_days_override",
+      "live_appeal_days_override",
+      "featured_course_price_override",
+    ]) {
+      assert.ok(await columnExists("education_centers", column), `education_centers.${column} added`);
+    }
+    const legacyCenter = (await q<{
+      id: string;
+      pib: string | null;
+      commission_percent_override: number | null;
+      reserve_percent_override: number | null;
+    }>(
+      `SELECT id, pib, commission_percent_override, reserve_percent_override
+       FROM "${s}".education_centers WHERE id = $1`,
+      [fixtures.legacyEducationCenter.id],
+    )).rows[0]!;
+    assert.equal(legacyCenter.id, fixtures.legacyEducationCenter.id, "legacy education center row is preserved");
+    assert.equal(legacyCenter.pib, null, "legacy education center may keep a null PIB");
+    assert.equal(legacyCenter.commission_percent_override, null, "legacy center inherits global commission");
+    assert.equal(legacyCenter.reserve_percent_override, null, "legacy center inherits global reserve");
     const convertedUser = (await q<{ role: string }>(
       `SELECT role FROM "${s}".users WHERE id = $1`, [fixtures.user.id],
     )).rows[0]!;
@@ -754,6 +796,35 @@ async function run() {
     assert.ok(await constraintExists("reviews_employee_id_employees_id_fk"), "reviews.employee_id FK created");
     assert.ok(await constraintExists("automation_runs_event_key_unique"), "automation_runs event_key unique constraint");
     assert.ok(await constraintExists("automation_deliveries_event_key_unique"), "automation_deliveries event_key unique constraint");
+    for (const constraint of [
+      "education_centers_commission_override_check",
+      "education_centers_reserve_override_check",
+      "education_centers_online_refund_override_check",
+      "education_centers_live_appeal_override_check",
+      "education_centers_featured_price_override_check",
+    ]) {
+      assert.ok(await constraintExists(constraint), `${constraint} created`);
+    }
+    await q(
+      `UPDATE "${s}".education_centers SET
+         pib = '101010101',
+         commission_percent_override = 0,
+         reserve_percent_override = 100,
+         online_refund_days_override = 365,
+         live_appeal_days_override = 0,
+         featured_course_price_override = 0
+       WHERE id = $1`,
+      [fixtures.legacyEducationCenter.id],
+    );
+    await assert.rejects(
+      q(
+        `UPDATE "${s}".education_centers
+         SET commission_percent_override = 101
+         WHERE id = $1`,
+        [fixtures.legacyEducationCenter.id],
+      ),
+      /education_centers_commission_override_check|check constraint/i,
+    );
 
     // ── Representative growth inserts succeed ──────────────────────────────
     const rule = (await q<{ id: string }>(

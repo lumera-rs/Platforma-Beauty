@@ -98,48 +98,51 @@ export const RegisterResponse = zod.object({
  */
 
 
-export const registerBusinessBodyPasswordMin = 8;
+export const registerBusinessBodyTwoPasswordMin = 8;
 
-export const registerBusinessBodyPhoneMin = 6;
+export const registerBusinessBodyTwoPhoneMin = 6;
 
-export const registerBusinessBodyBusinessNameMin = 2;
+export const registerBusinessBodyTwoBusinessNameMin = 2;
 
-export const registerBusinessBodyCityMin = 2;
+export const registerBusinessBodyTwoCityMin = 2;
 
-export const registerBusinessBodyMunicipalityMin = 2;
+export const registerBusinessBodyTwoMunicipalityMin = 2;
 
-export const registerBusinessBodyAddressMin = 3;
+export const registerBusinessBodyTwoAddressMin = 3;
 
-export const registerBusinessBodyPostalCodeMin = 4;
+export const registerBusinessBodyTwoPostalCodeMin = 4;
 
-export const registerBusinessBodyContactPhoneMin = 6;
+export const registerBusinessBodyTwoContactPhoneMin = 6;
 
-export const registerBusinessBodyContactAddressMin = 3;
+export const registerBusinessBodyTwoContactAddressMin = 3;
 
-export const registerBusinessBodyDescriptionMin = 20;
-export const registerBusinessBodyDescriptionMax = 2000;
+export const registerBusinessBodyTwoPibMax = 50;
+
+export const registerBusinessBodyTwoDescriptionMin = 20;
+export const registerBusinessBodyTwoDescriptionMax = 2000;
 
 
 
-export const RegisterBusinessBody = zod.object({
+export const RegisterBusinessBody = zod.unknown().and(zod.object({
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
   "email": zod.string(),
-  "password": zod.string().min(registerBusinessBodyPasswordMin).optional(),
-  "phone": zod.string().min(registerBusinessBodyPhoneMin),
+  "password": zod.string().min(registerBusinessBodyTwoPasswordMin).optional(),
+  "phone": zod.string().min(registerBusinessBodyTwoPhoneMin),
   "businessType": zod.enum(['SALON', 'EDUCATION_CENTER']),
-  "businessName": zod.string().min(registerBusinessBodyBusinessNameMin),
-  "city": zod.string().min(registerBusinessBodyCityMin),
-  "municipality": zod.string().min(registerBusinessBodyMunicipalityMin),
-  "address": zod.string().min(registerBusinessBodyAddressMin),
-  "postalCode": zod.string().min(registerBusinessBodyPostalCodeMin),
+  "businessName": zod.string().min(registerBusinessBodyTwoBusinessNameMin),
+  "city": zod.string().min(registerBusinessBodyTwoCityMin),
+  "municipality": zod.string().min(registerBusinessBodyTwoMunicipalityMin),
+  "address": zod.string().min(registerBusinessBodyTwoAddressMin),
+  "postalCode": zod.string().min(registerBusinessBodyTwoPostalCodeMin),
   "contactEmail": zod.string().optional(),
-  "contactPhone": zod.string().min(registerBusinessBodyContactPhoneMin).optional(),
-  "contactAddress": zod.string().min(registerBusinessBodyContactAddressMin).optional(),
+  "contactPhone": zod.string().min(registerBusinessBodyTwoContactPhoneMin).optional(),
+  "contactAddress": zod.string().min(registerBusinessBodyTwoContactAddressMin).optional(),
+  "pib": zod.string().min(1).max(registerBusinessBodyTwoPibMax).optional().describe('Required when businessType is EDUCATION_CENTER; omitted for salon registration.'),
   "websiteUrl": zod.string().url().optional(),
   "instagramUrl": zod.string().url().optional(),
-  "description": zod.string().min(registerBusinessBodyDescriptionMin).max(registerBusinessBodyDescriptionMax).optional()
-})
+  "description": zod.string().min(registerBusinessBodyTwoDescriptionMin).max(registerBusinessBodyTwoDescriptionMax).optional()
+}))
 
 export const registerBusinessResponseUserDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 
@@ -4809,6 +4812,7 @@ export const ListAdminEducationCentersResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
+  "pib": zod.string().nullish(),
   "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
   "verificationNote": zod.string().nullish(),
   "subscriptionStatus": zod.string().nullish(),
@@ -4819,28 +4823,146 @@ export const ListAdminEducationCentersResponseItem = zod.object({
 export const ListAdminEducationCentersResponse = zod.array(ListAdminEducationCentersResponseItem)
 
 
-export const UpdateAdminEducationCenterParams = zod.object({
+export const GetAdminEducationCenterParams = zod.object({
   "centerId": zod.coerce.string()
 })
 
-export const UpdateAdminEducationCenterBody = zod.object({
-  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']).optional(),
-  "verificationNote": zod.string().nullish(),
-  "subscriptionStatus": zod.enum(['trial', 'active', 'past_due', 'cancelled', 'suspended', 'free_via_loyalty']).optional(),
-  "planId": zod.string().optional()
-}).strict()
-
-export const UpdateAdminEducationCenterResponse = zod.object({
+export const GetAdminEducationCenterResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "city": zod.string(),
+  "pib": zod.string().nullish(),
   "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
   "verificationNote": zod.string().nullish(),
   "subscriptionStatus": zod.string().nullish(),
   "subscriptionPlanId": zod.string().nullish(),
   "subscriptionPlan": zod.string().nullish(),
   "heldAmount": zod.number()
+}).and(zod.object({
+  "description": zod.string(),
+  "contactEmail": zod.string().nullish(),
+  "contactPhone": zod.string().nullish(),
+  "billingSettings": zod.object({
+  "commissionPercent": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "reservePercent": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "onlineRefundDays": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "liveAppealDays": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "featuredCoursePrice": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
 })
+})
+}))
+
+
+export const UpdateAdminEducationCenterParams = zod.object({
+  "centerId": zod.coerce.string()
+})
+
+export const updateAdminEducationCenterBodyPibMax = 50;
+
+export const updateAdminEducationCenterBodyBillingOverridesCommissionPercentMin = 0;
+export const updateAdminEducationCenterBodyBillingOverridesCommissionPercentMax = 100;
+
+export const updateAdminEducationCenterBodyBillingOverridesReservePercentMin = 0;
+export const updateAdminEducationCenterBodyBillingOverridesReservePercentMax = 100;
+
+export const updateAdminEducationCenterBodyBillingOverridesOnlineRefundDaysMin = 0;
+export const updateAdminEducationCenterBodyBillingOverridesOnlineRefundDaysMax = 365;
+
+export const updateAdminEducationCenterBodyBillingOverridesLiveAppealDaysMin = 0;
+export const updateAdminEducationCenterBodyBillingOverridesLiveAppealDaysMax = 365;
+
+export const updateAdminEducationCenterBodyBillingOverridesFeaturedCoursePriceMin = 0;
+export const updateAdminEducationCenterBodyBillingOverridesFeaturedCoursePriceMax = 100000000;
+
+
+
+export const UpdateAdminEducationCenterBody = zod.object({
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']).optional(),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.enum(['trial', 'active', 'past_due', 'cancelled', 'suspended', 'free_via_loyalty']).optional(),
+  "planId": zod.string().optional(),
+  "pib": zod.string().max(updateAdminEducationCenterBodyPibMax).nullish(),
+  "billingOverrides": zod.object({
+  "commissionPercent": zod.number().int().min(updateAdminEducationCenterBodyBillingOverridesCommissionPercentMin).max(updateAdminEducationCenterBodyBillingOverridesCommissionPercentMax).nullish(),
+  "reservePercent": zod.number().int().min(updateAdminEducationCenterBodyBillingOverridesReservePercentMin).max(updateAdminEducationCenterBodyBillingOverridesReservePercentMax).nullish(),
+  "onlineRefundDays": zod.number().int().min(updateAdminEducationCenterBodyBillingOverridesOnlineRefundDaysMin).max(updateAdminEducationCenterBodyBillingOverridesOnlineRefundDaysMax).nullish(),
+  "liveAppealDays": zod.number().int().min(updateAdminEducationCenterBodyBillingOverridesLiveAppealDaysMin).max(updateAdminEducationCenterBodyBillingOverridesLiveAppealDaysMax).nullish(),
+  "featuredCoursePrice": zod.number().int().min(updateAdminEducationCenterBodyBillingOverridesFeaturedCoursePriceMin).max(updateAdminEducationCenterBodyBillingOverridesFeaturedCoursePriceMax).nullish()
+}).optional()
+}).strict()
+
+export const UpdateAdminEducationCenterResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "city": zod.string(),
+  "pib": zod.string().nullish(),
+  "verificationStatus": zod.enum(['pending', 'verified', 'rejected', 'suspended']),
+  "verificationNote": zod.string().nullish(),
+  "subscriptionStatus": zod.string().nullish(),
+  "subscriptionPlanId": zod.string().nullish(),
+  "subscriptionPlan": zod.string().nullish(),
+  "heldAmount": zod.number()
+}).and(zod.object({
+  "description": zod.string(),
+  "contactEmail": zod.string().nullish(),
+  "contactPhone": zod.string().nullish(),
+  "billingSettings": zod.object({
+  "commissionPercent": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "reservePercent": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "onlineRefundDays": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "liveAppealDays": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+}),
+  "featuredCoursePrice": zod.object({
+  "override": zod.number().int().nullable(),
+  "globalDefault": zod.number().int(),
+  "effectiveValue": zod.number().int(),
+  "source": zod.enum(['global', 'custom'])
+})
+})
+}))
 
 
 export const GetAdminEducationFinanceResponse = zod.object({

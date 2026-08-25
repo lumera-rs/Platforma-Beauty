@@ -22,7 +22,7 @@ import {
 } from "@workspace/db";
 import app from "../app";
 import { createSession, hashPassword, sessionCookieName } from "./auth";
-import { ensureDemoData } from "./seed";
+import { ensureDemoData, ensureSeedEducationEscrowSnapshot } from "./seed";
 
 const suffix = randomUUID();
 const password = "education-finance-test-password";
@@ -138,7 +138,7 @@ async function run(): Promise<void> {
         email: `education-buyer-${suffix}@example.test`,
         passwordHash: fixturePasswordHash,
         passwordSetAt: new Date(),
-        role: "CUSTOMER",
+        role: "STUDENT",
       },
       {
         firstName: "Drugi",
@@ -146,7 +146,7 @@ async function run(): Promise<void> {
         email: `education-outsider-${suffix}@example.test`,
         passwordHash: fixturePasswordHash,
         passwordSetAt: new Date(),
-        role: "CUSTOMER",
+        role: "STUDENT",
       },
     ]).returning();
     createdUserIds.push(...fixtureUsers.map((user) => user.id));
@@ -412,6 +412,150 @@ async function run(): Promise<void> {
     const [settings] = await db.select().from(educationPlatformSettingsTable).limit(1);
     assert.ok(settings);
 
+    assert.equal(
+      (await request(baseUrl, `/admin/education/centers/${center.id}`)).status,
+      401,
+      "Center billing details require authentication.",
+    );
+    assert.equal(
+      (await request(baseUrl, `/admin/education/centers/${center.id}`, { cookie: centerOwnerCookie })).status,
+      403,
+      "Center owners cannot read administrator billing overrides.",
+    );
+    const inheritedCenterResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, { cookie: adminCookie });
+    assert.equal(inheritedCenterResponse.status, 200);
+    const inheritedCenter = await json<{
+      billingSettings: Record<string, { override: number | null; globalDefault: number; effectiveValue: number; source: string }>;
+    }>(inheritedCenterResponse);
+    assert.equal(inheritedCenter.billingSettings.commissionPercent?.source, "global");
+    assert.equal(inheritedCenter.billingSettings.commissionPercent?.effectiveValue, settings.commissionPercent);
+
+    const partialOverrideResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        billingOverrides: {
+          commissionPercent: 100 - settings.reservePercent,
+          reservePercent: null,
+        },
+      },
+    });
+    assert.equal(partialOverrideResponse.status, 200);
+    const conflictingGlobalResponse = await request(baseUrl, "/admin/education/settings", {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        commissionPercent: settings.commissionPercent,
+        reservePercent: settings.reservePercent + 1,
+        onlineRefundDays: settings.onlineRefundDays,
+        liveAppealDays: settings.liveAppealDays,
+        featuredCoursePrice: settings.featuredCoursePrice,
+      },
+    });
+    assert.equal(
+      conflictingGlobalResponse.status,
+      409,
+      "A globally valid pair must be rejected when a partial center override would resolve above 100 percent.",
+    );
+
+    const invalidOverrideResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { billingOverrides: { commissionPercent: 100, reservePercent: 1 } },
+    });
+    assert.equal(invalidOverrideResponse.status, 409, "Effective commission and reserve cannot exceed 100 percent.");
+
+    const customOverrideResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        pib: "101010101",
+        billingOverrides: {
+          commissionPercent: 5,
+          reservePercent: 0,
+          onlineRefundDays: 3,
+          liveAppealDays: 2,
+          featuredCoursePrice: 2500,
+        },
+      },
+    });
+    assert.equal(customOverrideResponse.status, 200);
+    const customCenter = await json<{
+      pib: string | null;
+      billingSettings: Record<string, { override: number | null; globalDefault: number; effectiveValue: number; source: string }>;
+    }>(customOverrideResponse);
+    assert.equal(customCenter.pib, "101010101");
+    assert.equal(customCenter.billingSettings.reservePercent?.source, "custom");
+    assert.equal(customCenter.billingSettings.reservePercent?.effectiveValue, 0, "Explicit zero remains a custom override.");
+    assert.equal(customCenter.billingSettings.featuredCoursePrice?.effectiveValue, 2500);
+
+    const featuredStatusResponse = await request(baseUrl, `/education/courses/${onlineCourse!.id}/featured`, {
+      cookie: centerOwnerCookie,
+    });
+    assert.equal(featuredStatusResponse.status, 200);
+    assert.equal(
+      (await json<{ featuredCoursePrice: number }>(featuredStatusResponse)).featuredCoursePrice,
+      2500,
+      "Featured course pricing uses the center override.",
+    );
+    const featuredActivationResponse = await request(baseUrl, `/education/courses/${onlineCourse!.id}/featured`, {
+      method: "PATCH",
+      cookie: centerOwnerCookie,
+      body: { active: true, paymentReference: `featured-${suffix}` },
+    });
+    assert.equal(featuredActivationResponse.status, 200);
+    const featuredActivation = await json<{
+      featuredFee: number;
+      featuredCoursePrice: number;
+      charge: { amount: number; status: string } | null;
+    }>(featuredActivationResponse);
+    assert.equal(featuredActivation.featuredFee, 2500);
+    assert.equal(featuredActivation.featuredCoursePrice, 2500);
+    assert.equal(featuredActivation.charge?.amount, 2500, "Featured activation snapshots the center price override.");
+    assert.equal(featuredActivation.charge?.status, "pending");
+    assert.equal(
+      (await request(baseUrl, `/education/courses/${onlineCourse!.id}/featured`, {
+        method: "PATCH",
+        cookie: centerOwnerCookie,
+        body: { active: false },
+      })).status,
+      200,
+    );
+    const [seedSnapshotEnrollment] = await db.insert(courseEnrollmentsTable).values({
+      courseId: onlineCourse!.id,
+      userId: outsider.id,
+      purchaserId: outsider.id,
+      status: "active",
+      paymentStatus: "paid",
+      auditData: { source: "seed-override-regression" },
+    }).returning();
+    const seedReleaseStartedAt = Date.now();
+    const seedSnapshotEscrow = await ensureSeedEducationEscrowSnapshot({
+      enrollmentId: seedSnapshotEnrollment!.id,
+      purchaserId: outsider.id,
+      centerId: center.id,
+      price: onlineCourse!.price,
+    });
+    assert.equal(seedSnapshotEscrow.platformFee, 500, "Demo escrow snapshots the center commission override.");
+    assert.equal(seedSnapshotEscrow.reserveAmount, 0, "Demo escrow preserves an explicit zero reserve override.");
+    assert.equal(seedSnapshotEscrow.netAmount, 9500);
+    assert.ok(
+      Math.abs(seedSnapshotEscrow.releaseAt.getTime() - (seedReleaseStartedAt + 3 * 24 * 60 * 60 * 1000)) < 5_000,
+      "Demo escrow uses the center refund-window override.",
+    );
+    await db.delete(educationThreadsTable).where(eq(educationThreadsTable.enrollmentId, seedSnapshotEnrollment!.id));
+    await db.delete(educationFinancialEventsTable).where(eq(educationFinancialEventsTable.escrowId, seedSnapshotEscrow.id));
+    await db.delete(educationLedgerEntriesTable).where(eq(educationLedgerEntriesTable.escrowId, seedSnapshotEscrow.id));
+    await db.delete(educationEscrowsTable).where(eq(educationEscrowsTable.id, seedSnapshotEscrow.id));
+    await db.delete(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, seedSnapshotEnrollment!.id));
+
+    const financeOverrideResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { billingOverrides: { reservePercent: 10 } },
+    });
+    assert.equal(financeOverrideResponse.status, 200, "A later custom reserve applies only to future settlements.");
+
     const publicCoursesResponse = await request(baseUrl, "/education/public/courses");
     assert.equal(publicCoursesResponse.status, 200);
     const publicCourses = await json<Array<{ id: string }>>(publicCoursesResponse);
@@ -657,15 +801,46 @@ async function run(): Promise<void> {
       .where(eq(educationEscrowsTable.enrollmentId, liveEnrollmentId)))[0];
     assert.ok(onlineEscrowBeforeDispute);
     assert.ok(liveEscrowBeforeDispute);
+    assert.equal(onlineEscrowBeforeDispute.platformFee, 500, "Escrow snapshots the center commission override.");
+    assert.equal(onlineEscrowBeforeDispute.reserveAmount, 1000, "Escrow snapshots the center reserve override.");
     assert.ok(onlineEscrowBeforeDispute.releaseAt.getTime() > now);
     assert.ok(
-      onlineEscrowBeforeDispute.releaseAt.getTime() <= now + (settings.onlineRefundDays + 1) * 24 * 60 * 60 * 1000,
-      "Online escrow must use the configured refund window.",
+      onlineEscrowBeforeDispute.releaseAt.getTime() <= now + 4 * 24 * 60 * 60 * 1000,
+      "Online escrow must use the center refund-window override.",
     );
     assert.equal(
       liveEscrowBeforeDispute.releaseAt.getTime(),
-      futureSessionEnd.getTime() + settings.liveAppealDays * 24 * 60 * 60 * 1000,
-      "Live escrow must use the assigned future session end, not the course's earliest session.",
+      futureSessionEnd.getTime() + 2 * 24 * 60 * 60 * 1000,
+      "Live escrow must use the center appeal override and assigned future session end.",
+    );
+    const clearOverridesResponse = await request(baseUrl, `/admin/education/centers/${center.id}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: {
+        billingOverrides: {
+          commissionPercent: null,
+          reservePercent: null,
+          onlineRefundDays: null,
+          liveAppealDays: null,
+          featuredCoursePrice: 0,
+        },
+      },
+    });
+    assert.equal(clearOverridesResponse.status, 200);
+    const clearedCenter = await json<{
+      billingSettings: Record<string, { override: number | null; globalDefault: number; effectiveValue: number; source: string }>;
+    }>(clearOverridesResponse);
+    assert.equal(clearedCenter.billingSettings.commissionPercent?.source, "global");
+    assert.equal(clearedCenter.billingSettings.commissionPercent?.effectiveValue, settings.commissionPercent);
+    assert.equal(clearedCenter.billingSettings.featuredCoursePrice?.source, "custom");
+    assert.equal(clearedCenter.billingSettings.featuredCoursePrice?.effectiveValue, 0);
+    const [snapshottedOnlineEscrow] = await db.select().from(educationEscrowsTable)
+      .where(eq(educationEscrowsTable.id, onlineEscrowBeforeDispute.id));
+    assert.equal(snapshottedOnlineEscrow?.platformFee, 500, "Changing overrides never rewrites historical escrow amounts.");
+    assert.equal(
+      snapshottedOnlineEscrow?.releaseAt.getTime(),
+      onlineEscrowBeforeDispute.releaseAt.getTime(),
+      "Changing overrides never rewrites historical release deadlines.",
     );
     const [storedFutureSession] = await db.select().from(courseSessionsTable)
       .where(eq(courseSessionsTable.id, futureSession!.id));
@@ -696,12 +871,7 @@ async function run(): Promise<void> {
     assert.ok(buyerPurchaseRows.some((purchase) => purchase.id === onlineEnrollmentId), "Buyer must see their own purchase.");
 
     const ownerPurchases = await request(baseUrl, "/education/purchases", { cookie: centerOwnerCookie });
-    assert.equal(ownerPurchases.status, 200);
-    assert.equal(
-      (await json<Array<{ id: string }>>(ownerPurchases)).some((purchase) => purchase.id === onlineEnrollmentId),
-      false,
-      "Center owner must not see a buyer's purchase through the buyer-scoped endpoint.",
-    );
+    assert.equal(ownerPurchases.status, 403, "The buyer-scoped endpoint rejects education-center accounts.");
     const outsiderPurchases = await request(baseUrl, "/education/purchases", { cookie: outsiderCookie });
     assert.equal(outsiderPurchases.status, 200);
     assert.equal(
@@ -710,12 +880,7 @@ async function run(): Promise<void> {
       "Another buyer must not see someone else's purchase.",
     );
     const adminPurchases = await request(baseUrl, "/education/purchases", { cookie: adminCookie });
-    assert.equal(adminPurchases.status, 200);
-    assert.equal(
-      (await json<Array<{ id: string }>>(adminPurchases)).some((purchase) => purchase.id === onlineEnrollmentId),
-      false,
-      "Admin access to finance must not turn the buyer-scoped purchases endpoint into a data dump.",
-    );
+    assert.equal(adminPurchases.status, 403, "The buyer-scoped endpoint rejects administrator accounts.");
 
     const buyerMessages = await request(baseUrl, `/education/purchases/${onlineEnrollmentId}/messages`, { cookie: buyerCookie });
     assert.equal(buyerMessages.status, 200, "Buyer must read their paid purchase thread.");

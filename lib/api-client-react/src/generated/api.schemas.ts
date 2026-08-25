@@ -195,7 +195,7 @@ export const BusinessRegistrationInputBusinessType = {
   EDUCATION_CENTER: 'EDUCATION_CENTER',
 } as const;
 
-export interface BusinessRegistrationInput {
+export type BusinessRegistrationInput = unknown & {
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -221,6 +221,12 @@ export interface BusinessRegistrationInput {
   contactPhone?: string;
   /** @minLength 3 */
   contactAddress?: string;
+  /**
+     * Required when businessType is EDUCATION_CENTER; omitted for salon registration.
+     * @minLength 1
+     * @maxLength 50
+     */
+  pib?: string;
   websiteUrl?: string;
   instagramUrl?: string;
   /**
@@ -228,7 +234,7 @@ export interface BusinessRegistrationInput {
      * @maxLength 2000
      */
   description?: string;
-}
+};
 
 export interface LoginInput {
   email: string;
@@ -3288,6 +3294,8 @@ export interface EducationAdminCenter {
   id: string;
   name: string;
   city: string;
+  /** @nullable */
+  pib?: string | null;
   verificationStatus: EducationAdminCenterVerificationStatus;
   /** @nullable */
   verificationNote?: string | null;
@@ -3322,13 +3330,85 @@ export const EducationAdminCenterUpdateSubscriptionStatus = {
   free_via_loyalty: 'free_via_loyalty',
 } as const;
 
+export interface EducationBillingOverridesInput {
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  commissionPercent?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  reservePercent?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 365
+     * @nullable
+     */
+  onlineRefundDays?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 365
+     * @nullable
+     */
+  liveAppealDays?: number | null;
+  /**
+     * @minimum 0
+     * @maximum 100000000
+     * @nullable
+     */
+  featuredCoursePrice?: number | null;
+}
+
 export interface EducationAdminCenterUpdate {
   verificationStatus?: EducationAdminCenterUpdateVerificationStatus;
   /** @nullable */
   verificationNote?: string | null;
   subscriptionStatus?: EducationAdminCenterUpdateSubscriptionStatus;
   planId?: string;
+  /**
+     * @maxLength 50
+     * @nullable
+     */
+  pib?: string | null;
+  billingOverrides?: EducationBillingOverridesInput;
 }
+
+export type EducationResolvedBillingValueSource = typeof EducationResolvedBillingValueSource[keyof typeof EducationResolvedBillingValueSource];
+
+
+export const EducationResolvedBillingValueSource = {
+  global: 'global',
+  custom: 'custom',
+} as const;
+
+export interface EducationResolvedBillingValue {
+  /** @nullable */
+  override: number | null;
+  globalDefault: number;
+  effectiveValue: number;
+  source: EducationResolvedBillingValueSource;
+}
+
+export interface EducationResolvedBillingSettings {
+  commissionPercent: EducationResolvedBillingValue;
+  reservePercent: EducationResolvedBillingValue;
+  onlineRefundDays: EducationResolvedBillingValue;
+  liveAppealDays: EducationResolvedBillingValue;
+  featuredCoursePrice: EducationResolvedBillingValue;
+}
+
+export type EducationAdminCenterDetail = EducationAdminCenter & ({
+  description: string;
+  /** @nullable */
+  contactEmail?: string | null;
+  /** @nullable */
+  contactPhone?: string | null;
+  billingSettings: EducationResolvedBillingSettings;
+});
 
 export type EducationFinanceEscrowStatus = typeof EducationFinanceEscrowStatus[keyof typeof EducationFinanceEscrowStatus];
 

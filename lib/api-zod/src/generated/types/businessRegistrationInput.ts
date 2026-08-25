@@ -7,7 +7,7 @@
  */
 import type { BusinessRegistrationInputBusinessType } from './businessRegistrationInputBusinessType';
 
-export interface BusinessRegistrationInput {
+export type BusinessRegistrationInput = unknown & {
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -33,6 +33,12 @@ export interface BusinessRegistrationInput {
   contactPhone?: string;
   /** @minLength 3 */
   contactAddress?: string;
+  /**
+     * Required when businessType is EDUCATION_CENTER; omitted for salon registration.
+     * @minLength 1
+     * @maxLength 50
+     */
+  pib?: string;
   websiteUrl?: string;
   instagramUrl?: string;
   /**
@@ -40,4 +46,4 @@ export interface BusinessRegistrationInput {
      * @maxLength 2000
      */
   description?: string;
-}
+};

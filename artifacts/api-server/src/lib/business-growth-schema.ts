@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 31;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 32;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -472,6 +472,62 @@ function tableStatements(s: string): string[] {
          WHERE role = 'EDUCATION_CENTER_OWNER';
        ELSIF has_old THEN
          ALTER TYPE ${s}.user_role RENAME VALUE 'EDUCATION_CENTER_OWNER' TO 'EDUKATIVNI_CENTAR';
+       END IF;
+     END $$`,
+    // v32 — per-center education billing and tax identity. education_centers
+    // is a pre-existing core table, so production needs additive ALTERs for
+    // both populated legacy databases and subsequent idempotent boots.
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS pib text`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS commission_percent_override integer`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS reserve_percent_override integer`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS online_refund_days_override integer`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS live_appeal_days_override integer`,
+    `ALTER TABLE ${s}.education_centers ADD COLUMN IF NOT EXISTS featured_course_price_override integer`,
+    `DO $$ BEGIN
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+         JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'education_centers_commission_override_check'
+       ) THEN
+         ALTER TABLE ${s}.education_centers
+           ADD CONSTRAINT education_centers_commission_override_check
+           CHECK (commission_percent_override BETWEEN 0 AND 100);
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+         JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'education_centers_reserve_override_check'
+       ) THEN
+         ALTER TABLE ${s}.education_centers
+           ADD CONSTRAINT education_centers_reserve_override_check
+           CHECK (reserve_percent_override BETWEEN 0 AND 100);
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+         JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'education_centers_online_refund_override_check'
+       ) THEN
+         ALTER TABLE ${s}.education_centers
+           ADD CONSTRAINT education_centers_online_refund_override_check
+           CHECK (online_refund_days_override BETWEEN 0 AND 365);
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+         JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'education_centers_live_appeal_override_check'
+       ) THEN
+         ALTER TABLE ${s}.education_centers
+           ADD CONSTRAINT education_centers_live_appeal_override_check
+           CHECK (live_appeal_days_override BETWEEN 0 AND 365);
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint c
+         JOIN pg_namespace n ON n.oid = c.connamespace
+         WHERE n.nspname = current_schema() AND c.conname = 'education_centers_featured_price_override_check'
+       ) THEN
+         ALTER TABLE ${s}.education_centers
+           ADD CONSTRAINT education_centers_featured_price_override_check
+           CHECK (featured_course_price_override >= 0);
        END IF;
      END $$`,
     // v29 — JOBSEEKER is intentionally a distinct account boundary.  This is

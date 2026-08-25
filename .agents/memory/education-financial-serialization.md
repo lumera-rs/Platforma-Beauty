@@ -50,3 +50,9 @@ Buyers may only open disputes while the protected purchase deadline remains acti
 **Why:** Letting an expired escrow be frozen after the appeal period lets a buyer block an otherwise valid payout.
 
 **How to apply:** Check the locked escrow release time before creating a dispute and in the guarded freeze update; hide the customer dispute control after that same deadline, but treat the server transaction as authoritative.
+
+Per-center billing overrides and global billing defaults must share a second advisory-lock domain: effective-value readers take the global lock in shared mode before the center lock, while global-default updates take it exclusively and validate every resolved center combination.
+
+**Why:** A globally valid commission/reserve pair can still make a center invalid when combined with one nullable override, and resolving settings outside the financial write transaction can snapshot stale fees or deadlines.
+
+**How to apply:** Use the shared billing resolver and global-shared → center lock order for settlement, featured charges, demo seed escrows, and any future financial snapshot. Global updates must reject if any center would resolve above 100%; explicit zero remains custom, while only null inherits.

@@ -134,6 +134,7 @@ import type {
   DeleteSalonResource409,
   DeleteSalonService409,
   EducationAdminCenter,
+  EducationAdminCenterDetail,
   EducationAdminCenterUpdate,
   EducationCategory,
   EducationCenterPublic,
@@ -8615,6 +8616,77 @@ export function useListAdminEducationCenters<TData = Awaited<ReturnType<typeof l
 
 
 
+export const getGetAdminEducationCenterUrl = (centerId: string,) => {
+
+
+
+
+  return `/api/admin/education/centers/${centerId}`
+}
+
+export const getAdminEducationCenter = async (centerId: string, options?: Parameters<typeof customFetch>[1]): Promise<EducationAdminCenterDetail> => {
+
+  return customFetch<EducationAdminCenterDetail>(getGetAdminEducationCenterUrl(centerId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAdminEducationCenterQueryKey = (centerId: string,) => {
+    return [
+    `/api/admin/education/centers/${centerId}`
+    ] as const;
+    }
+
+
+export const getGetAdminEducationCenterQueryOptions = <TData = Awaited<ReturnType<typeof getAdminEducationCenter>>, TError = ErrorType<void>>(centerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationCenter>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAdminEducationCenterQueryKey(centerId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAdminEducationCenter>>> = ({ signal }) => getAdminEducationCenter(centerId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: centerId !== null && centerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationCenter>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAdminEducationCenterQueryResult = NonNullable<Awaited<ReturnType<typeof getAdminEducationCenter>>>
+export type GetAdminEducationCenterQueryError = ErrorType<void>
+
+
+
+export function useGetAdminEducationCenter<TData = Awaited<ReturnType<typeof getAdminEducationCenter>>, TError = ErrorType<void>>(
+ centerId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAdminEducationCenter>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAdminEducationCenterQueryOptions(centerId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getUpdateAdminEducationCenterUrl = (centerId: string,) => {
 
 
@@ -8624,9 +8696,9 @@ export const getUpdateAdminEducationCenterUrl = (centerId: string,) => {
 }
 
 export const updateAdminEducationCenter = async (centerId: string,
-    educationAdminCenterUpdate: EducationAdminCenterUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EducationAdminCenter> => {
+    educationAdminCenterUpdate: EducationAdminCenterUpdate, options?: Parameters<typeof customFetch>[1]): Promise<EducationAdminCenterDetail> => {
 
-  return customFetch<EducationAdminCenter>(getUpdateAdminEducationCenterUrl(centerId),
+  return customFetch<EducationAdminCenterDetail>(getUpdateAdminEducationCenterUrl(centerId),
   {
     ...options,
     method: 'PATCH',

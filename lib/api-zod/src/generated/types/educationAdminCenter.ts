@@ -11,6 +11,8 @@ export interface EducationAdminCenter {
   id: string;
   name: string;
   city: string;
+  /** @nullable */
+  pib?: string | null;
   verificationStatus: EducationAdminCenterVerificationStatus;
   /** @nullable */
   verificationNote?: string | null;

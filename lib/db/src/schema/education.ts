@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   index,
   jsonb,
@@ -38,8 +39,14 @@ export const educationCentersTable = pgTable("education_centers", {
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   contactAddress: text("contact_address"),
+  pib: text("pib"),
   websiteUrl: text("website_url"),
   instagramUrl: text("instagram_url"),
+  commissionPercentOverride: integer("commission_percent_override"),
+  reservePercentOverride: integer("reserve_percent_override"),
+  onlineRefundDaysOverride: integer("online_refund_days_override"),
+  liveAppealDaysOverride: integer("live_appeal_days_override"),
+  featuredCoursePriceOverride: integer("featured_course_price_override"),
   verificationStatus: educationCenterVerificationStatusEnum("verification_status").notNull().default("pending"),
   verificationNote: text("verification_note"),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
@@ -50,6 +57,11 @@ export const educationCentersTable = pgTable("education_centers", {
   // Leading FK coverage for ownerId and verifiedByUserId.
   index("education_centers_owner_idx").on(table.ownerId),
   index("education_centers_verified_by_idx").on(table.verifiedByUserId),
+  check("education_centers_commission_override_check", sql`${table.commissionPercentOverride} between 0 and 100`),
+  check("education_centers_reserve_override_check", sql`${table.reservePercentOverride} between 0 and 100`),
+  check("education_centers_online_refund_override_check", sql`${table.onlineRefundDaysOverride} between 0 and 365`),
+  check("education_centers_live_appeal_override_check", sql`${table.liveAppealDaysOverride} between 0 and 365`),
+  check("education_centers_featured_price_override_check", sql`${table.featuredCoursePriceOverride} >= 0`),
 ]);
 
 export const educationCenterSubscriptionsTable = pgTable("education_center_subscriptions", {

@@ -152,6 +152,28 @@ async function run(): Promise<void> {
       "a rejected registration leaves no user row behind",
     );
 
+    const missingPibEmail = `missing-pib-center-${suffix}@example.test`;
+    const missingPibRegistration = await request(base, "/auth/business-register", undefined, "POST", {
+      firstName: "Milica",
+      lastName: "Edukator",
+      email: missingPibEmail,
+      password: `Education-${suffix}`,
+      phone: "+381641234567",
+      businessType: "EDUCATION_CENTER",
+      businessName: `Centar bez PIB-a ${suffix.slice(0, 8)}`,
+      city: "Beograd",
+      municipality: "Vračar",
+      address: "Njegoševa 10",
+      postalCode: "11000",
+      description: "Stručne beauty edukacije sa dovoljno dugim opisom za validaciju registracije.",
+    });
+    assert.equal(missingPibRegistration.status, 400, "new education-center registration requires PIB");
+    assert.equal(
+      (await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, missingPibEmail))).length,
+      0,
+      "missing PIB rejects the complete registration transaction",
+    );
+
     const educationPassword = `Education-${suffix}`;
     const educationRegistration = await request(base, "/auth/business-register", undefined, "POST", {
       firstName: "Milica",
@@ -161,6 +183,7 @@ async function run(): Promise<void> {
       phone: "+381641234567",
       businessType: "EDUCATION_CENTER",
       businessName: `Akademija ${suffix.slice(0, 8)}`,
+      pib: "109876543",
       city: "Beograd",
       municipality: "Vračar",
       address: "Njegoševa 10",
@@ -185,6 +208,7 @@ async function run(): Promise<void> {
     assert.equal(registeredEducationUser.activeSalonId, registeredEducationSalon?.id, "active salon points to the created workspace");
     assert.equal(registeredEducationSalon?.active, false, "new operational workspace is private until onboarding completes");
     assert.equal(registeredEducationCenter?.description, "Stručne beauty edukacije, praktični programi i sertifikacije za profesionalce.");
+    assert.equal(registeredEducationCenter?.pib, "109876543");
     assert.equal(registeredEducationCenter?.contactEmail, `education-contact-${suffix}@example.test`);
     assert.equal(registeredEducationCenter?.websiteUrl, "https://education.example.test");
     const educationToken = await createSession(educationRegistration.body.user.id);

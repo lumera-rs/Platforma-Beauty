@@ -103,6 +103,7 @@ const AdminEmailMarketing = lazy(() => import('./pages/admin/email-marketing'));
 const AdminSmsDeliveries = lazy(() => import('./pages/admin/sms-deliveries'));
 const AdminIntegrations = lazy(() => import('./pages/admin/integrations'));
 const AdminEducationMarketplace = lazy(() => import('./pages/admin/education-marketplace'));
+const AdminEducationCenterDetail = lazy(() => import('./pages/admin/education-center-detail'));
 
 const queryClient = new QueryClient();
 
@@ -395,6 +396,7 @@ function Router() {
         <Route path="/admin/porudzbine/:orderId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/porudzbine"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminOrders /></RoleGuard></Route>
         <Route path="/admin/pretplate"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminSubscriptions /></RoleGuard></Route>
+        <Route path="/admin/edukacije/centri/:centerId"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationCenterDetail /></RoleGuard></Route>
         <Route path="/admin/edukacije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminEducationMarketplace /></RoleGuard></Route>
         <Route path="/admin/recenzije"><RoleGuard allowedRoles={['ADMIN', 'SUPER_ADMIN']} loginPath="/poslovna-prijava"><AdminReviews /></RoleGuard></Route>
 

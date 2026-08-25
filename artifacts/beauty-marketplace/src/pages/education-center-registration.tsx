@@ -22,6 +22,7 @@ const eduRegistrationSchema = z.object({
   password: z.string().min(8, "Lozinka mora imati najmanje 8 karaktera."),
   phone: z.string().min(6, "Unesite kontakt telefon."),
   businessName: z.string().min(2, "Naziv edukativnog centra je obavezan."),
+  pib: z.string().trim().min(1, "PIB je obavezan.").max(50, "PIB može imati najviše 50 karaktera."),
   city: z.string().min(2, "Grad je obavezan."),
   municipality: z.string().min(2, "Opština je obavezna."),
   address: z.string().min(3, "Adresa je obavezna."),
@@ -48,6 +49,7 @@ export default function EducationCenterRegistration() {
       password: "",
       phone: "",
       businessName: "",
+      pib: "",
       city: "",
       municipality: "",
       address: "",
@@ -62,6 +64,7 @@ export default function EducationCenterRegistration() {
     registerBusiness.mutate({
       data: {
         ...values,
+        pib: values.pib.trim(),
         businessType: "EDUCATION_CENTER",
         contactEmail: values.email,
         contactPhone: values.phone,
@@ -163,7 +166,7 @@ export default function EducationCenterRegistration() {
                         name="firstName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Ime menadžera</FormLabel>
+                            <FormLabel>Ime vlasnika/menadžera</FormLabel>
                             <FormControl><Input autoComplete="given-name" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -174,7 +177,7 @@ export default function EducationCenterRegistration() {
                         name="lastName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Prezime menadžera</FormLabel>
+                            <FormLabel>Prezime vlasnika/menadžera</FormLabel>
                             <FormControl><Input autoComplete="family-name" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -214,7 +217,7 @@ export default function EducationCenterRegistration() {
                         </FormItem>
                       )}
                     />
-                    
+
                     <Button type="button" size="lg" className="w-full h-14 mt-4 text-base" onClick={nextStep}>
                       Dalje <ChevronRight className="w-5 h-5 ml-2" />
                     </Button>
@@ -230,6 +233,18 @@ export default function EducationCenterRegistration() {
                         <FormItem>
                           <FormLabel>Zvanični naziv edukativnog centra</FormLabel>
                           <FormControl><Input placeholder="Npr. Beauty Akademija Beograd" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="pib"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>PIB (Poreski identifikacioni broj)</FormLabel>
+                          <FormControl><Input placeholder="123456789" {...field} /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}

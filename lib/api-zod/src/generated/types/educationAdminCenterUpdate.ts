@@ -7,6 +7,7 @@
  */
 import type { EducationAdminCenterUpdateSubscriptionStatus } from './educationAdminCenterUpdateSubscriptionStatus';
 import type { EducationAdminCenterUpdateVerificationStatus } from './educationAdminCenterUpdateVerificationStatus';
+import type { EducationBillingOverridesInput } from './educationBillingOverridesInput';
 
 export interface EducationAdminCenterUpdate {
   verificationStatus?: EducationAdminCenterUpdateVerificationStatus;
@@ -14,4 +15,10 @@ export interface EducationAdminCenterUpdate {
   verificationNote?: string | null;
   subscriptionStatus?: EducationAdminCenterUpdateSubscriptionStatus;
   planId?: string;
+  /**
+     * @maxLength 50
+     * @nullable
+     */
+  pib?: string | null;
+  billingOverrides?: EducationBillingOverridesInput;
 }

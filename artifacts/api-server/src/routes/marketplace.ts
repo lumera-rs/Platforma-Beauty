@@ -131,6 +131,15 @@ import
  from "../lib/shipping-config"
 ;
 
+import {
+  educationBillingOverrideColumns,
+  getEducationPlatformSettings,
+  lockEducationBillingRules,
+  lockEducationCenterFinancials,
+  resolveEducationBillingSettings,
+  type EducationBillingKey,
+} from "../lib/education-billing";
+
 import 
 {
 
@@ -1932,17 +1941,6 @@ function hasActiveEducationSubscription(status: string | null | undefined) {
   return status === "active" || status === "free_via_loyalty";
 }
 
-async function getEducationPlatformSettings() {
-  const [existing] = await db.select().from(educationPlatformSettingsTable).orderBy(asc(educationPlatformSettingsTable.createdAt)).limit(1);
-  if (existing) return existing;
-  const [created] = await db.insert(educationPlatformSettingsTable).values({}).returning();
-  return created!;
-}
-
-async function lockEducationCenterFinancials(tx: any, centerId: string) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${centerId}`}))`);
-}
-
 async function educationCenterEligibility(centerId: string) {
   const [center, subscription] = await Promise.all([
     db.select().from(educationCentersTable).where(eq(educationCentersTable.id, centerId)).limit(1),
@@ -2018,7 +2016,7 @@ async function isPubliclyFeaturedEducationCourse(course: typeof coursesTable.$in
 
 async function releaseAtForEducationCourse(
   course: typeof coursesTable.$inferSelect,
-  settings: typeof educationPlatformSettingsTable.$inferSelect,
+  settings: Pick<Record<EducationBillingKey, number>, "onlineRefundDays" | "liveAppealDays">,
   assignedSession?: Pick<typeof courseSessionsTable.$inferSelect, "id" | "endsAt"> | null,
 ) {
   if (course.format === "online") {
@@ -4489,6 +4487,10 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Opis edukativnih programa i sertifikacija je obavezan." });
     return;
   }
+  if (input.businessType === "EDUCATION_CENTER" && !input.pib?.trim()) {
+    res.status(400).json({ error: "PIB edukativnog centra je obavezan." });
+    return;
+  }
   const email = input.email.toLowerCase();
   const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
   const signedIn = await getCurrentUser(req);
@@ -4544,6 +4546,7 @@ router.post("/auth/business-register", async (req, res): Promise<void> => {
           contactEmail: input.contactEmail?.trim() || email,
           contactPhone: input.contactPhone?.trim() || input.phone,
           contactAddress: input.contactAddress?.trim() || input.address,
+          pib: input.pib!.trim(),
           websiteUrl: input.websiteUrl?.trim() || undefined,
           instagramUrl: input.instagramUrl?.trim() || undefined,
         });
@@ -10574,12 +10577,12 @@ router.get("/education/courses/:courseId/featured", async (req, res): Promise<vo
   const access = await requireEducationAccess(req, res); if (!access) return;
   const courseId = String(req.params.courseId ?? "");
   const course = await requireOwnedCourse(access, courseId, res); if (!course) return;
-  const settings = await getEducationPlatformSettings();
+  const settings = await resolveEducationBillingSettings(course.centerId);
   const isActive = course.isFeatured && (!course.featuredUntil || course.featuredUntil > new Date());
   res.json({
     courseId: course.id, isFeatured: isActive,
     featuredUntil: course.featuredUntil?.toISOString() ?? null,
-    featuredFee: course.featuredFee, featuredCoursePrice: settings.featuredCoursePrice,
+    featuredFee: course.featuredFee, featuredCoursePrice: settings.effective.featuredCoursePrice,
     charge: featuredChargeView(await latestFeaturedCharge(course.id)),
   });
 });
@@ -10593,24 +10596,35 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
   const paymentReference = typeof req.body?.paymentReference === "string" && req.body.paymentReference.trim().length > 0
     ? req.body.paymentReference.trim().slice(0, 200)
     : null;
-  const settings = await getEducationPlatformSettings();
   // Activating featured placement records an auditable platform charge for the
   // configured fee. A non-zero fee stays "pending" until an administrator confirms
   // the manual payment (mirroring how enrollment escrow settlement works); a zero
   // fee is recorded as paid because there is nothing to collect.
-  const { updated, charge } = await db.transaction(async (tx) => {
+  const { updated, charge, featuredCoursePrice } = await db.transaction(async (tx) => {
+    await lockEducationBillingRules(tx, "shared");
+    if (course.centerId) await lockEducationCenterFinancials(tx, course.centerId);
+    const [lockedCourse] = await tx.select().from(coursesTable)
+      .where(eq(coursesTable.id, course.id))
+      .for("update")
+      .limit(1);
+    if (!lockedCourse
+      || lockedCourse.centerId !== course.centerId
+      || lockedCourse.salonId !== course.salonId) {
+      throw new Error("Kurs nije pronađen.");
+    }
+    const settings = await resolveEducationBillingSettings(lockedCourse.centerId, tx);
     let row: typeof coursesTable.$inferSelect;
     let chargeRow: typeof educationFeaturedChargesTable.$inferSelect | null = null;
     if (active) {
-      const fee = settings.featuredCoursePrice;
+      const fee = settings.effective.featuredCoursePrice;
       [row] = await tx.update(coursesTable).set({
         isFeatured: true, featuredActivatedAt: new Date(),
         featuredUntil: null, featuredFee: fee, updatedAt: new Date(),
-      }).where(eq(coursesTable.id, course.id)).returning() as [typeof coursesTable.$inferSelect];
+      }).where(eq(coursesTable.id, lockedCourse.id)).returning() as [typeof coursesTable.$inferSelect];
       [chargeRow] = await tx.insert(educationFeaturedChargesTable).values({
-        courseId: course.id,
-        centerId: course.centerId ?? null,
-        salonId: course.salonId ?? null,
+        courseId: lockedCourse.id,
+        centerId: lockedCourse.centerId ?? null,
+        salonId: lockedCourse.salonId ?? null,
         amount: fee,
         status: fee > 0 ? "pending" : "paid",
         paymentReference,
@@ -10623,23 +10637,23 @@ router.patch("/education/courses/:courseId/featured", async (req, res): Promise<
     } else {
       [row] = await tx.update(coursesTable).set({
         isFeatured: false, featuredUntil: new Date(), updatedAt: new Date(),
-      }).where(eq(coursesTable.id, course.id)).returning() as [typeof coursesTable.$inferSelect];
+      }).where(eq(coursesTable.id, lockedCourse.id)).returning() as [typeof coursesTable.$inferSelect];
       // Cancel any still-pending charge when the owner turns featuring off.
       await tx.update(educationFeaturedChargesTable).set({ status: "cancelled", updatedAt: new Date() })
-        .where(and(eq(educationFeaturedChargesTable.courseId, course.id), eq(educationFeaturedChargesTable.status, "pending")));
+        .where(and(eq(educationFeaturedChargesTable.courseId, lockedCourse.id), eq(educationFeaturedChargesTable.status, "pending")));
       chargeRow = await (async () => {
         const [c] = await tx.select().from(educationFeaturedChargesTable)
-          .where(eq(educationFeaturedChargesTable.courseId, course.id))
+          .where(eq(educationFeaturedChargesTable.courseId, lockedCourse.id))
           .orderBy(desc(educationFeaturedChargesTable.createdAt)).limit(1);
         return c ?? null;
       })();
     }
-    return { updated: row, charge: chargeRow };
+    return { updated: row, charge: chargeRow, featuredCoursePrice: settings.effective.featuredCoursePrice };
   });
   res.json({
     courseId: updated.id, isFeatured: updated.isFeatured && (!updated.featuredUntil || updated.featuredUntil > new Date()),
     featuredUntil: updated.featuredUntil?.toISOString() ?? null,
-    featuredFee: updated.featuredFee, featuredCoursePrice: settings.featuredCoursePrice,
+    featuredFee: updated.featuredFee, featuredCoursePrice,
     charge: featuredChargeView(charge),
   });
 });
@@ -11197,6 +11211,7 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
   let settled: typeof courseEnrollmentsTable.$inferSelect;
   try {
     settled = await db.transaction(async (tx) => {
+      await lockEducationBillingRules(tx, "shared");
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`education-center:${coursePreview.centerId}`}))`);
       const [enrollment] = await tx.select().from(courseEnrollmentsTable).where(eq(courseEnrollmentsTable.id, enrollmentId)).for("update").limit(1);
       if (!enrollment || enrollment.status !== "pending" || enrollment.paymentStatus !== "pending") throw new Error("Ovaj zahtev je već obrađen.");
@@ -11230,14 +11245,14 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
         updatedAt: new Date(),
       }).where(and(eq(courseEnrollmentsTable.id, enrollment.id), eq(courseEnrollmentsTable.status, "pending"), eq(courseEnrollmentsTable.paymentStatus, "pending"))).returning();
       if (!confirmed) throw new Error("Zahtev je izmenjen u drugoj operaciji.");
-      const settings = await getEducationPlatformSettings();
+      const settings = await resolveEducationBillingSettings(course.centerId, tx, center);
       // Charge the amount captured at request time (group discount survives here);
       // fall back to the current course price for legacy rows without it.
       const grossAmount = confirmed.chargedAmount ?? course.price;
-      const platformFee = Math.floor(grossAmount * settings.commissionPercent / 100);
-      const reserveAmount = Math.floor(grossAmount * settings.reservePercent / 100);
+      const platformFee = Math.floor(grossAmount * settings.effective.commissionPercent / 100);
+      const reserveAmount = Math.floor(grossAmount * settings.effective.reservePercent / 100);
       const netAmount = grossAmount - platformFee - reserveAmount;
-      const releaseAt = await releaseAtForEducationCourse(course, settings, session);
+      const releaseAt = await releaseAtForEducationCourse(course, settings.effective, session);
       const [escrow] = await tx.insert(educationEscrowsTable).values({
         enrollmentId: confirmed.id, centerId: course.centerId, grossAmount, platformFee, reserveAmount, netAmount, releaseAt,
         paymentReference: `manual-settlement:${confirmed.id}`,
@@ -11249,7 +11264,14 @@ router.post("/admin/education/enrollments/:enrollmentId/settle", async (req, res
       ]);
       await tx.insert(educationFinancialEventsTable).values({
         escrowId: escrow!.id, enrollmentId: confirmed.id, actorUserId: admin.id, eventType: "purchase_settled_manual", nextStatus: "held", amount: grossAmount,
-        metadata: { releaseAt: releaseAt.toISOString(), commissionPercent: settings.commissionPercent, reservePercent: settings.reservePercent, chargedAmount: grossAmount },
+        metadata: {
+          releaseAt: releaseAt.toISOString(),
+          commissionPercent: settings.effective.commissionPercent,
+          reservePercent: settings.effective.reservePercent,
+          onlineRefundDays: settings.effective.onlineRefundDays,
+          liveAppealDays: settings.effective.liveAppealDays,
+          chargedAmount: grossAmount,
+        },
       });
       await tx.insert(educationThreadsTable).values({ enrollmentId: confirmed.id, purchaserId: confirmed.purchaserId, centerId: course.centerId });
       return confirmed;
@@ -12831,11 +12853,29 @@ router.patch("/admin/education/settings", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Proverite procente i rokove. Zbir provizije i rezerve ne može preći 100%." });
     return;
   }
-  const currentSettings = await getEducationPlatformSettings();
-  const [settings] = await db.update(educationPlatformSettingsTable).set({
-    ...candidate, updatedByUserId: user.id, updatedAt: new Date(),
-  }).where(eq(educationPlatformSettingsTable.id, currentSettings.id)).returning();
-  res.json(educationSettingsView(settings!));
+  try {
+    const settings = await db.transaction(async (tx) => {
+      await lockEducationBillingRules(tx, "exclusive");
+      const currentSettings = await getEducationPlatformSettings(tx);
+      const [invalidCenter] = await tx.select({ id: educationCentersTable.id })
+        .from(educationCentersTable)
+        .where(sql`
+          coalesce(${educationCentersTable.commissionPercentOverride}, ${candidate.commissionPercent})
+          + coalesce(${educationCentersTable.reservePercentOverride}, ${candidate.reservePercent}) > 100
+        `)
+        .limit(1);
+      if (invalidCenter) {
+        throw new Error("Globalna pravila bi za najmanje jedan centar dala zbir provizije i rezerve veći od 100%.");
+      }
+      const [saved] = await tx.update(educationPlatformSettingsTable).set({
+        ...candidate, updatedByUserId: user.id, updatedAt: new Date(),
+      }).where(eq(educationPlatformSettingsTable.id, currentSettings.id)).returning();
+      return saved!;
+    });
+    res.json(educationSettingsView(settings));
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : "Globalna pravila nisu sačuvana." });
+  }
 });
 
 router.get("/admin/education/centers", async (req, res): Promise<void> => {
@@ -12853,12 +12893,55 @@ router.get("/admin/education/centers", async (req, res): Promise<void> => {
     const held = escrows.filter((item) => item.centerId === center.id && ["held", "frozen"].includes(item.status)).reduce((sum, item) => sum + item.netAmount, 0);
     return {
       id: center.id, name: center.name, city: center.city, description: center.description, imageUrl: center.imageUrl,
+      pib: center.pib,
       verificationStatus: center.verificationStatus, verificationNote: center.verificationNote,
       verifiedAt: center.verifiedAt?.toISOString() ?? null, subscriptionStatus: subscription?.status ?? null,
       subscriptionPlanId: subscription?.planId ?? null, subscriptionPlan: plan?.name ?? null, heldAmount: held,
       createdAt: center.createdAt.toISOString(),
     };
   }));
+});
+
+async function adminEducationCenterDetail(centerId: string) {
+  const [center] = await db.select().from(educationCentersTable)
+    .where(eq(educationCentersTable.id, centerId))
+    .limit(1);
+  if (!center) return null;
+  const [subscriptions, plans, escrows, resolved] = await Promise.all([
+    db.select().from(educationCenterSubscriptionsTable).where(eq(educationCenterSubscriptionsTable.centerId, center.id)).limit(1),
+    db.select().from(subscriptionPlansTable),
+    db.select().from(educationEscrowsTable).where(eq(educationEscrowsTable.centerId, center.id)),
+    resolveEducationBillingSettings(center.id, db, center),
+  ]);
+  const subscription = subscriptions[0];
+  const plan = plans.find((item) => item.id === subscription?.planId);
+  const heldAmount = escrows
+    .filter((item) => ["held", "frozen"].includes(item.status))
+    .reduce((sum, item) => sum + item.netAmount, 0);
+  return {
+    id: center.id,
+    name: center.name,
+    city: center.city,
+    description: center.description,
+    pib: center.pib,
+    contactEmail: center.contactEmail,
+    contactPhone: center.contactPhone,
+    verificationStatus: center.verificationStatus,
+    verificationNote: center.verificationNote,
+    verifiedAt: center.verifiedAt?.toISOString() ?? null,
+    subscriptionStatus: subscription?.status ?? null,
+    subscriptionPlanId: subscription?.planId ?? null,
+    subscriptionPlan: plan?.name ?? null,
+    heldAmount,
+    billingSettings: resolved.billingSettings,
+  };
+}
+
+router.get("/admin/education/centers/:centerId", async (req, res): Promise<void> => {
+  const user = await requireAdmin(req, res); if (!user) return;
+  const detail = await adminEducationCenterDetail(String(req.params.centerId));
+  if (!detail) { res.status(404).json({ error: "Edukativni centar nije pronađen." }); return; }
+  res.json(detail);
 });
 
 router.patch("/admin/education/centers/:centerId", async (req, res): Promise<void> => {
@@ -12873,10 +12956,48 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
   if (!allowedVerification.includes(verificationStatus) || (subscriptionStatus && !allowedSubscription.includes(subscriptionStatus))) {
     res.status(400).json({ error: "Status nije ispravan." }); return;
   }
+  const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(req.body ?? {}, key);
+  const pib = hasOwn("pib")
+    ? typeof req.body.pib === "string"
+      ? req.body.pib.trim().slice(0, 50) || null
+      : req.body.pib === null
+        ? null
+        : undefined
+    : center.pib;
+  if (hasOwn("pib") && pib === undefined) {
+    res.status(400).json({ error: "PIB mora biti tekstualna vrednost ili null." }); return;
+  }
+  const billingOverrides = req.body?.billingOverrides;
+  if (billingOverrides !== undefined && (!billingOverrides || typeof billingOverrides !== "object" || Array.isArray(billingOverrides))) {
+    res.status(400).json({ error: "Pravila obračuna nisu ispravna." }); return;
+  }
+  const overrideLimits: Record<EducationBillingKey, number> = {
+    commissionPercent: 100,
+    reservePercent: 100,
+    onlineRefundDays: 365,
+    liveAppealDays: 365,
+    featuredCoursePrice: 100_000_000,
+  };
+  const overrideUpdates: Partial<Record<(typeof educationBillingOverrideColumns)[EducationBillingKey], number | null>> = {};
+  if (billingOverrides) {
+    const unknownKeys = Object.keys(billingOverrides).filter((key) => !(key in educationBillingOverrideColumns));
+    if (unknownKeys.length) {
+      res.status(400).json({ error: "Nepoznato pravilo obračuna." }); return;
+    }
+    for (const key of Object.keys(educationBillingOverrideColumns) as EducationBillingKey[]) {
+      if (!Object.prototype.hasOwnProperty.call(billingOverrides, key)) continue;
+      const value = billingOverrides[key];
+      if (value !== null && (!Number.isInteger(value) || value < 0 || value > overrideLimits[key])) {
+        res.status(400).json({ error: "Vrednost pravila obračuna nije ispravna." }); return;
+      }
+      overrideUpdates[educationBillingOverrideColumns[key]] = value;
+    }
+  }
   const planId = typeof req.body?.planId === "string" ? req.body.planId : null;
   let updated: typeof center | undefined;
   try {
     await db.transaction(async (tx) => {
+      await lockEducationBillingRules(tx, "shared");
       // Verification changes and settlements must share the same center lock.
       // Otherwise a settlement can pass its eligibility check while a revocation
       // is waiting to commit, then create access and financial records anyway.
@@ -12887,11 +13008,27 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
         .limit(1);
       if (!currentCenter) throw new Error("Edukativni centar nije pronađen.");
       const currentVerificationStatus = verificationStatus as typeof currentCenter.verificationStatus;
+      const globalSettings = await getEducationPlatformSettings(tx);
+      const effectiveCommissionOverride = Object.prototype.hasOwnProperty.call(overrideUpdates, "commissionPercentOverride")
+        ? overrideUpdates.commissionPercentOverride!
+        : currentCenter.commissionPercentOverride;
+      const effectiveReserveOverride = Object.prototype.hasOwnProperty.call(overrideUpdates, "reservePercentOverride")
+        ? overrideUpdates.reservePercentOverride!
+        : currentCenter.reservePercentOverride;
+      const effectiveCommission = effectiveCommissionOverride
+        ?? globalSettings.commissionPercent;
+      const effectiveReserve = effectiveReserveOverride
+        ?? globalSettings.reservePercent;
+      if (effectiveCommission + effectiveReserve > 100) {
+        throw new Error("Zbir efektivne provizije i rezerve ne može preći 100%.");
+      }
       [updated] = await tx.update(educationCentersTable).set({
         verificationStatus: currentVerificationStatus,
         verificationNote: typeof req.body?.verificationNote === "string" ? req.body.verificationNote.trim().slice(0, 1000) || null : currentCenter.verificationNote,
-        verifiedAt: currentVerificationStatus === "verified" ? new Date() : null,
-        verifiedByUserId: currentVerificationStatus === "verified" ? user.id : null,
+        verifiedAt: currentVerificationStatus === "verified" ? currentCenter.verifiedAt ?? new Date() : null,
+        verifiedByUserId: currentVerificationStatus === "verified" ? currentCenter.verifiedByUserId ?? user.id : null,
+        pib,
+        ...overrideUpdates,
         updatedAt: new Date(),
       }).where(eq(educationCentersTable.id, currentCenter.id)).returning();
       if (subscriptionStatus) {
@@ -12924,7 +13061,8 @@ router.patch("/admin/education/centers/:centerId", async (req, res): Promise<voi
     return;
   }
   void publishCatalogInvalidation(["education-categories"]);
-  res.json({ id: updated!.id, verificationStatus: updated!.verificationStatus, verificationNote: updated!.verificationNote, verifiedAt: updated!.verifiedAt?.toISOString() ?? null });
+  const detail = await adminEducationCenterDetail(updated!.id);
+  res.json(detail);
 });
 
 router.get("/admin/education/finance", async (req, res): Promise<void> => {

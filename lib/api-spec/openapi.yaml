@@ -1991,6 +1991,17 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/EducationAdminCenter" }
   /admin/education/centers/{centerId}:
+    get:
+      operationId: getAdminEducationCenter
+      tags: [admin, education]
+      parameters: [{ $ref: "#/components/parameters/EducationCenterId" }]
+      responses:
+        "200":
+          description: Education center details with resolved billing settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EducationAdminCenterDetail" }
+        "404": { description: Education center not found }
     patch:
       operationId: updateAdminEducationCenter
       tags: [admin, education]
@@ -2002,10 +2013,10 @@ paths:
             schema: { $ref: "#/components/schemas/EducationAdminCenterUpdate" }
       responses:
         "200":
-          description: Center status updated
+          description: Center details and billing overrides updated
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EducationAdminCenter" }
+              schema: { $ref: "#/components/schemas/EducationAdminCenterDetail" }
   /admin/education/finance:
     get:
       operationId: getAdminEducationFinance
@@ -5494,10 +5505,21 @@ components:
         contactEmail: { type: string }
         contactPhone: { type: string, minLength: 6 }
         contactAddress: { type: string, minLength: 3 }
+        pib:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Required when businessType is EDUCATION_CENTER; omitted for salon registration.
         websiteUrl: { type: string, format: uri }
         instagramUrl: { type: string, format: uri }
         description: { type: string, minLength: 20, maxLength: 2000 }
       required: [firstName, lastName, email, phone, businessType, businessName, city, municipality, address, postalCode]
+      allOf:
+        - if:
+            properties:
+              businessType: { const: EDUCATION_CENTER }
+          then:
+            required: [pib]
     LoginInput:
       type: object
       properties:
@@ -7567,6 +7589,7 @@ components:
         id: { type: string }
         name: { type: string }
         city: { type: string }
+        pib: { type: ["string", "null"] }
         verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
         verificationNote: { type: ["string", "null"] }
         subscriptionStatus: { type: ["string", "null"] }
@@ -7576,11 +7599,51 @@ components:
       required: [id, name, city, verificationStatus, heldAmount]
     EducationAdminCenterUpdate:
       type: object
+      additionalProperties: false
       properties:
         verificationStatus: { type: string, enum: [pending, verified, rejected, suspended] }
         verificationNote: { type: ["string", "null"] }
         subscriptionStatus: { type: string, enum: [trial, active, past_due, cancelled, suspended, free_via_loyalty] }
         planId: { type: string }
+        pib: { type: ["string", "null"], maxLength: 50 }
+        billingOverrides:
+          $ref: "#/components/schemas/EducationBillingOverridesInput"
+    EducationBillingOverridesInput:
+      type: object
+      additionalProperties: false
+      properties:
+        commissionPercent: { type: ["integer", "null"], minimum: 0, maximum: 100 }
+        reservePercent: { type: ["integer", "null"], minimum: 0, maximum: 100 }
+        onlineRefundDays: { type: ["integer", "null"], minimum: 0, maximum: 365 }
+        liveAppealDays: { type: ["integer", "null"], minimum: 0, maximum: 365 }
+        featuredCoursePrice: { type: ["integer", "null"], minimum: 0, maximum: 100000000 }
+    EducationResolvedBillingValue:
+      type: object
+      properties:
+        override: { type: ["integer", "null"] }
+        globalDefault: { type: integer }
+        effectiveValue: { type: integer }
+        source: { type: string, enum: [global, custom] }
+      required: [override, globalDefault, effectiveValue, source]
+    EducationResolvedBillingSettings:
+      type: object
+      properties:
+        commissionPercent: { $ref: "#/components/schemas/EducationResolvedBillingValue" }
+        reservePercent: { $ref: "#/components/schemas/EducationResolvedBillingValue" }
+        onlineRefundDays: { $ref: "#/components/schemas/EducationResolvedBillingValue" }
+        liveAppealDays: { $ref: "#/components/schemas/EducationResolvedBillingValue" }
+        featuredCoursePrice: { $ref: "#/components/schemas/EducationResolvedBillingValue" }
+      required: [commissionPercent, reservePercent, onlineRefundDays, liveAppealDays, featuredCoursePrice]
+    EducationAdminCenterDetail:
+      allOf:
+        - $ref: "#/components/schemas/EducationAdminCenter"
+        - type: object
+          properties:
+            description: { type: string }
+            contactEmail: { type: ["string", "null"] }
+            contactPhone: { type: ["string", "null"] }
+            billingSettings: { $ref: "#/components/schemas/EducationResolvedBillingSettings" }
+          required: [description, billingSettings]
     EducationFinanceEscrow:
       type: object
       properties:

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { AlertTriangle, BadgeCheck, Banknote, Building2, Loader2, Save, ShieldAlert } from "lucide-react";
 import { AdminLayout } from "./layout";
 import { Button } from "@/components/ui/button";
@@ -182,9 +183,9 @@ export default function AdminEducationMarketplace() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="flex gap-2"><Building2 className="h-5 w-5 text-primary" />Edukativni centri</CardTitle><CardDescription>Kurs je javno vidljiv i dostupan za kupovinu samo kada je centar verifikovan i pretplata aktivna.</CardDescription></CardHeader>
-          <CardContent className="space-y-3">{centers.map((center) => <div key={center.id} className="flex flex-col gap-3 rounded-xl border p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{center.name}</p><Badge variant={center.verificationStatus === "verified" ? "default" : "secondary"}>{center.verificationStatus}</Badge><Badge variant={center.subscriptionStatus === "active" ? "outline" : "secondary"}>{center.subscriptionStatus ?? "bez pretplate"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{center.city} · zadržano: {money(center.heldAmount)}</p>{center.verificationNote ? <p className="mt-1 text-xs text-muted-foreground">{center.verificationNote}</p> : null}</div>
+          <CardHeader><CardTitle className="flex gap-2"><Building2 className="h-5 w-5 text-primary" />Edukativni centri</CardTitle><CardDescription>Kurs je javno vidljiv i dostupan za kupovinu samo kada je centar verifikovan i pretplata aktivna. Kliknite na ime centra za detaljna pravila obračuna.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">{centers.map((center) => <div key={center.id} className="flex flex-col gap-3 rounded-xl border p-4 lg:flex-row lg:items-center lg:justify-between hover:bg-muted/5 transition-colors">
+            <div><div className="flex flex-wrap items-center gap-2"><Link href={`/admin/edukacije/centri/${center.id}`} className="font-semibold text-primary hover:underline">{center.name}</Link><Badge variant={center.verificationStatus === "verified" ? "default" : "secondary"}>{center.verificationStatus}</Badge><Badge variant={center.subscriptionStatus === "active" ? "outline" : "secondary"}>{center.subscriptionStatus ?? "bez pretplate"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{center.city} · zadržano: {money(center.heldAmount)}</p>{center.verificationNote ? <p className="mt-1 text-xs text-muted-foreground">{center.verificationNote}</p> : null}</div>
             <div className="flex gap-2">{center.verificationStatus !== "verified" ? <Button size="sm" onClick={() => changeCenter(center, "verified")} disabled={actionGuard.isActive(`center:${center.id}`)}><BadgeCheck className="mr-2 h-4 w-4" />Verifikuj i aktiviraj</Button> : <Button size="sm" variant="outline" onClick={() => changeCenter(center, "suspended")} disabled={actionGuard.isActive(`center:${center.id}`)}>Obustavi</Button>}</div>
           </div>)}</CardContent>
         </Card>
