@@ -48,6 +48,8 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
   const baseUrl = `http://127.0.0.1:${port}/api`;
   const fixtureMarker = `retail-query-budget-${randomUUID()}`;
   let customerId: string | undefined;
+  let availabilityOwnerId: string | undefined;
+  let availabilitySalonId: string | undefined;
 
   try {
     const login = await fetch(`${baseUrl}/auth/login`, {
@@ -233,6 +235,165 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       firstAvailableSalons.queries.some((query) => query.sql.includes("generate_series")),
       "first-available sorting must retain its canonical availability expression",
     );
+
+    const availabilityOwner = await pool.query<{ id: string }>(
+      `INSERT INTO users (first_name, last_name, email, password_hash, role)
+       VALUES ('Query budget', 'Owner', $1, 'query-budget-fixture-password', 'SALON_OWNER')
+       RETURNING id`,
+      [`${fixtureMarker}-owner@example.test`],
+    );
+    availabilityOwnerId = availabilityOwner.rows[0]?.id;
+    assert.ok(availabilityOwnerId, "availability query budget owner must be created");
+    const availabilitySalon = await pool.query<{ id: string }>(
+      `INSERT INTO salons (
+         owner_id, name, slug, city, municipality, address, phone, email,
+         short_description, description, image_url, active
+       )
+       VALUES ($1, 'Availability query budget', $2, 'Novi Sad', 'Centar',
+               'Query budget 1', '+381601111111', $3, 'Fixture', 'Fixture',
+               '/query-budget.jpg', true)
+       RETURNING id`,
+      [
+        availabilityOwnerId,
+        `${fixtureMarker}-salon`,
+        `${fixtureMarker}-salon@example.test`,
+      ],
+    );
+    availabilitySalonId = availabilitySalon.rows[0]?.id;
+    assert.ok(availabilitySalonId, "availability query budget salon must be created");
+    const availabilityService = await pool.query<{ id: string }>(
+      `INSERT INTO services (
+         salon_id, category_name, name, description, duration_minutes, price,
+         image_url, active
+       )
+       VALUES ($1, 'Query budget', 'Canonical service', 'Fixture', 60, 1000,
+               '/query-budget-service.jpg', true)
+       RETURNING id`,
+      [availabilitySalonId],
+    );
+    const availabilityServiceId = availabilityService.rows[0]?.id;
+    assert.ok(availabilityServiceId, "availability query budget service must be created");
+    await pool.query(
+      `INSERT INTO salon_hours (salon_id, weekday, open_time, close_time, closed)
+       SELECT $1, weekday, '09:00', '18:00', false
+       FROM generate_series(1, 7) AS weekdays(weekday)`,
+      [availabilitySalonId],
+    );
+    const firstEmployee = await pool.query<{ id: string }>(
+      `WITH employee AS (
+         INSERT INTO employees (salon_id, name, role, bio, avatar_url, active)
+         VALUES ($1, 'Employee 01', 'Stylist', 'Fixture', '/employee.jpg', true)
+         RETURNING id
+       ), link AS (
+         INSERT INTO employee_services (employee_id, service_id)
+         SELECT id, $2 FROM employee
+       )
+       SELECT id FROM employee`,
+      [availabilitySalonId, availabilityServiceId],
+    );
+    const firstEmployeeId = firstEmployee.rows[0]?.id;
+    assert.ok(firstEmployeeId, "availability query budget employee must be created");
+    await pool.query(
+      `INSERT INTO employee_schedules (employee_id, weekday, start_time, end_time)
+       SELECT $1, weekday, '09:00', '18:00'
+       FROM generate_series(1, 7) AS weekdays(weekday)`,
+      [firstEmployeeId],
+    );
+    const ownerCookie = `${sessionCookieName}=${await createSession(availabilityOwnerId)}`;
+    const searchPath = `/salon/availability/search?serviceId=${availabilityServiceId}&startDate=2099-12-14&limit=50`;
+    const smallAvailability = await countedRequest(`${baseUrl}${searchPath}`, {
+      headers: { cookie: ownerCookie },
+    });
+    assert.equal(smallAvailability.response.status, 200);
+
+    await pool.query(
+      `WITH new_employees AS (
+         INSERT INTO employees (salon_id, name, role, bio, avatar_url, active)
+         SELECT $1, 'Employee ' || lpad(series_number::text, 2, '0'),
+                'Stylist', 'Fixture', '/employee.jpg', true
+         FROM generate_series(2, 40) AS series(series_number)
+         RETURNING id
+       ), links AS (
+         INSERT INTO employee_services (employee_id, service_id)
+         SELECT id, $2 FROM new_employees
+       )
+       INSERT INTO employee_schedules (employee_id, weekday, start_time, end_time)
+       SELECT employees.id, weekdays.weekday, '09:00', '18:00'
+       FROM new_employees AS employees
+       CROSS JOIN generate_series(1, 7) AS weekdays(weekday)`,
+      [availabilitySalonId, availabilityServiceId],
+    );
+    await pool.query(
+      `INSERT INTO employee_time_off (employee_id, start_date, end_date, start_time, end_time, reason)
+       SELECT id, '2099-12-14', '2099-12-14', '12:00', '13:00', 'Fixture block'
+       FROM employees
+       WHERE salon_id = $1 AND name <> 'Employee 01'`,
+      [availabilitySalonId],
+    );
+    const resource = await pool.query<{ id: string }>(
+      `INSERT INTO salon_resources (salon_id, name, type, capacity)
+       VALUES ($1, 'Shared room', 'room', 40)
+       RETURNING id`,
+      [availabilitySalonId],
+    );
+    const resourceId = resource.rows[0]?.id;
+    assert.ok(resourceId, "availability query budget resource must be created");
+    await pool.query(
+      `INSERT INTO service_resource_requirements (service_id, resource_id, quantity)
+       VALUES ($1, $2, 1)`,
+      [availabilityServiceId, resourceId],
+    );
+    await pool.query(
+      `WITH fixture_appointments AS (
+         INSERT INTO appointments (
+           salon_id, employee_id, service_id, appointment_date, start_time,
+           end_time, duration_minutes, price, status
+         )
+         SELECT $1, id, $2, '2099-12-14', '17:00', '18:00', 60, 1000, 'confirmed'
+         FROM employees
+         WHERE salon_id = $1
+         RETURNING id
+       )
+       INSERT INTO appointment_resource_allocations (appointment_id, resource_id, quantity)
+       SELECT id, $3, 1 FROM fixture_appointments`,
+      [availabilitySalonId, availabilityServiceId, resourceId],
+    );
+
+    const largeAvailability = await countedRequest(`${baseUrl}${searchPath}`, {
+      headers: { cookie: ownerCookie },
+    });
+    assert.equal(largeAvailability.response.status, 200);
+    const largeAvailabilitySlots = JSON.parse(largeAvailability.body) as Array<{
+      date: string;
+      startTime: string;
+      employeeId: string;
+    }>;
+    assert.ok(largeAvailabilitySlots.length > 0, "large availability fixture must retain available slots");
+    assert.ok(
+      largeAvailability.queries.length <= 12,
+      `seven-day availability search used ${largeAvailability.queries.length} SQL queries for 40 employees`,
+    );
+    assert.ok(
+      largeAvailability.queries.length <= smallAvailability.queries.length,
+      `availability query count grew with candidate count (${smallAvailability.queries.length} -> ${largeAvailability.queries.length})`,
+    );
+
+    const selectedSearch = await countedRequest(
+      `${baseUrl}/salon/availability/search?serviceId=${availabilityServiceId}&employeeId=${firstEmployeeId}&startDate=2099-12-14&limit=50`,
+      { headers: { cookie: ownerCookie } },
+    );
+    const publicAvailability = await fetch(
+      `${baseUrl}/salons/${availabilitySalonId}/availability?serviceId=${availabilityServiceId}&employeeId=${firstEmployeeId}&date=2099-12-14`,
+    );
+    assert.equal(selectedSearch.response.status, 200);
+    assert.equal(publicAvailability.status, 200);
+    const selectedSlots = JSON.parse(selectedSearch.body) as Array<{ date: string; startTime: string }>;
+    const publicSlots = await publicAvailability.json() as Array<{ start: string }>;
+    assert.deepEqual(
+      selectedSlots.filter((slot) => slot.date === "2099-12-14").map((slot) => slot.startTime),
+      publicSlots.map((slot) => slot.start),
+      "batched owner search must preserve the public canonical availability result",
+    );
   } finally {
     await pool.query(
       "DELETE FROM retail_orders WHERE order_number LIKE $1 OR order_number LIKE $2",
@@ -243,6 +404,8 @@ test("optimized marketplace lists stay within fixed SQL query budgets", async ()
       [`${fixtureMarker}-cart-%`, `${fixtureMarker}-customer-cart-%`],
     );
     if (customerId) await pool.query("DELETE FROM users WHERE id = $1", [customerId]);
+    if (availabilitySalonId) await pool.query("DELETE FROM salons WHERE id = $1", [availabilitySalonId]);
+    if (availabilityOwnerId) await pool.query("DELETE FROM users WHERE id = $1", [availabilityOwnerId]);
     await new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     });
