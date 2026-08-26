@@ -19,6 +19,7 @@ import type {
   AdminProductInput,
   AdminListProductsParams,
   ProductVariant,
+  QuantityPricingTier,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -74,6 +78,14 @@ const emptyForm = {
   variantType: null,
   variants: null,
   active: true,
+  similarProductsMode: "AUTO_CATEGORY",
+  similarProductIds: [],
+  crossSellProductIds: [],
+  quantityPricingTiers: [],
+  minimumOrderQuantity: 1,
+  deliveryBusinessDaysOverride: null,
+  subscriptionAllowed: false,
+  subscriptionDiscountPercent: null,
 } as unknown as AdminProductInput;
 
 function formatRSD(v: number) {
@@ -94,10 +106,12 @@ function ProductFormDialog({
   const queryClient = useQueryClient();
   const createProduct = useAdminCreateProduct();
   const updateProduct = useAdminUpdateProduct();
+  const createBrand = useAdminCreateBrand();
   const { data: categories = [] } = useAdminListProductCategories();
   const { data: brands = [] } = useAdminListBrands();
   const { data: suppliers = [] } = useAdminListSuppliers();
   const actionGuard = useImmediateActionGuard();
+  const [newBrandName, setNewBrandName] = useState("");
 
   const [form, setForm] = useState<AdminProductInput & { supplierId: string, market: "B2B" | "B2C" | "BOTH" }>(
     editing
@@ -129,6 +143,14 @@ function ProductFormDialog({
            variantType: editing.variantType ?? editing.variants?.[0]?.label ?? null,
           variants: editing.variants ?? null,
           active: editing.active,
+          similarProductsMode: editing.similarProductsMode,
+          similarProductIds: editing.similarProductIds,
+          crossSellProductIds: editing.crossSellProductIds,
+          quantityPricingTiers: editing.quantityPricingTiers,
+          minimumOrderQuantity: editing.minimumOrderQuantity,
+          deliveryBusinessDaysOverride: editing.deliveryBusinessDaysOverride,
+          subscriptionAllowed: editing.subscriptionAllowed,
+          subscriptionDiscountPercent: editing.subscriptionDiscountPercent,
         }
       : { ...(emptyForm as any), supplierId: "", market: "B2B" }
   );
@@ -158,6 +180,60 @@ function ProductFormDialog({
 
   const selectedSupplier = suppliers.find(s => s.id === form.supplierId);
   const availableCategories = categories.filter(c => c.supplierId === form.supplierId);
+  const relatedProductsParams = useMemo<AdminListProductsParams>(() => ({
+    supplierId: form.supplierId || undefined,
+    page: 1,
+    pageSize: 100,
+    sortBy: "name",
+    sortDir: "asc",
+  }), [form.supplierId]);
+  const { data: relatedProductsData } = useAdminListProducts(relatedProductsParams, {
+    query: {
+      enabled: Boolean(form.supplierId),
+      queryKey: getAdminListProductsQueryKey(relatedProductsParams),
+    },
+  });
+  const selectedRelationshipIds = useMemo(
+    () => [...new Set([...(form.similarProductIds ?? []), ...(form.crossSellProductIds ?? [])])],
+    [form.similarProductIds, form.crossSellProductIds],
+  );
+  const selectedProductsParams = useMemo<AdminListProductsParams>(() => ({
+    supplierId: form.supplierId || undefined,
+    productIds: selectedRelationshipIds.join(","),
+    page: 1,
+    pageSize: 100,
+    sortBy: "name",
+    sortDir: "asc",
+  }), [form.supplierId, selectedRelationshipIds]);
+  const { data: selectedProductsData } = useAdminListProducts(selectedProductsParams, {
+    query: {
+      enabled: Boolean(form.supplierId && selectedRelationshipIds.length),
+      queryKey: getAdminListProductsQueryKey(selectedProductsParams),
+    },
+  });
+  const relatedProductOptions = useMemo(() => {
+    const productsById = new Map(
+      [...(relatedProductsData?.items ?? []), ...(selectedProductsData?.items ?? [])]
+        .map((product) => [product.id, product] as const),
+    );
+    return [...productsById.values()]
+    .filter((product) => product.id !== editing?.id && product.supplierId === form.supplierId)
+    .map((product) => ({ value: product.id, label: product.name, keywords: `${product.sku} ${product.brand ?? ""}` }));
+  }, [editing?.id, form.supplierId, relatedProductsData?.items, selectedProductsData?.items]);
+
+  const createAndSelectBrand = () => {
+    const name = newBrandName.trim();
+    if (!name || createBrand.isPending) return;
+    createBrand.mutate({ data: { name, description: "", logoUrl: null, active: true } }, {
+      onSuccess: (brand) => {
+        setForm((current) => ({ ...current, brand: brand.name }));
+        setNewBrandName("");
+        queryClient.invalidateQueries({ queryKey: getAdminListBrandsQueryKey() });
+        toast.success("Brend je kreiran.");
+      },
+      onError: (error) => toast.error("Greška", { description: extractApiError(error, "Brend nije kreiran.") }),
+    });
+  };
 
   // Discount percent display — parsed from rawNums for live feedback
   const rawPrice = parseFloat(rawNums.price);
@@ -299,9 +375,42 @@ function ProductFormDialog({
     if (weightGrams <= 0) { toast.error("Greška", { description: "Težina je obavezna (u gramima ili kilogramima)." }); return; }
 
     const selectedCategory = availableCategories.find(c => c.id === form.categoryId);
+    const crossSellCount = form.crossSellProductIds?.length ?? 0;
+    if (crossSellCount !== 0 && (crossSellCount < 3 || crossSellCount > 5)) {
+      toast.error("Greška", { description: "Često kupljeni proizvodi moraju biti prazni ili sadržati 3 do 5 proizvoda." }); return;
+    }
+    const minimumOrderQuantity = form.minimumOrderQuantity;
+    if (!Number.isInteger(minimumOrderQuantity) || (minimumOrderQuantity ?? 0) < 1) {
+      toast.error("Greška", { description: "Minimalna količina porudžbine mora biti ceo broj najmanje 1." }); return;
+    }
+    if (form.deliveryBusinessDaysOverride != null && (!Number.isInteger(form.deliveryBusinessDaysOverride) || form.deliveryBusinessDaysOverride < 1 || form.deliveryBusinessDaysOverride > 365)) {
+      toast.error("Greška", { description: "Broj radnih dana do isporuke mora biti između 1 i 365." }); return;
+    }
+    if (form.subscriptionAllowed && (!Number.isInteger(form.subscriptionDiscountPercent) || (form.subscriptionDiscountPercent ?? 0) < 1 || (form.subscriptionDiscountPercent ?? 0) > 100)) {
+      toast.error("Greška", { description: "Popust za pretplatu mora biti ceo broj između 1 i 100." }); return;
+    }
+    const tiers = form.quantityPricingTiers ?? [];
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      if (!Number.isInteger(tier.minQuantity) || tier.minQuantity < 1 || !Number.isInteger(tier.unitPrice) || tier.unitPrice < 1 || (tier.maxQuantity != null && (!Number.isInteger(tier.maxQuantity) || tier.maxQuantity < tier.minQuantity))) {
+        toast.error("Greška", { description: `Prag ${index + 1} mora imati pozitivne cele brojeve i ispravan raspon.` }); return;
+      }
+      if (tier.maxQuantity == null && index !== tiers.length - 1) {
+        toast.error("Greška", { description: "Samo poslednji prag može biti bez gornje granice." }); return;
+      }
+    }
+    const sortedTiers = [...tiers].sort((a, b) => a.minQuantity - b.minQuantity);
+    for (let index = 1; index < sortedTiers.length; index += 1) {
+      if (sortedTiers[index - 1].maxQuantity == null || sortedTiers[index].minQuantity <= sortedTiers[index - 1].maxQuantity!) {
+        toast.error("Greška", { description: "Rasponi količinskih cena ne smeju da se preklapaju." }); return;
+      }
+    }
 
-    const payload = {
-      ...form,
+    const productForm = Object.fromEntries(
+      Object.entries(form).filter(([key]) => key !== "market"),
+    ) as AdminProductInput;
+    const payload: AdminProductInput = {
+      ...productForm,
       categoryName: selectedCategory ? selectedCategory.name : form.categoryName,
       professionalEnabled: form.market === "B2B" || form.market === "BOTH",
       retailEnabled: form.market === "B2C" || form.market === "BOTH",
@@ -313,6 +422,15 @@ function ProductFormDialog({
       stock: variantInventoryMode === "per-variant" ? variantStockTotal : stockParsed.value,
       weightGrams,
       images: form.images?.length ? form.images : [form.imageUrl],
+      brand: form.brand?.trim() || null,
+      similarProductsMode: form.similarProductsMode ?? "AUTO_CATEGORY",
+      similarProductIds: form.similarProductsMode === "MANUAL" ? (form.similarProductIds ?? []) : [],
+      crossSellProductIds: form.crossSellProductIds ?? [],
+      quantityPricingTiers: tiers,
+      minimumOrderQuantity,
+      deliveryBusinessDaysOverride: form.deliveryBusinessDaysOverride ?? null,
+      subscriptionAllowed: form.subscriptionAllowed ?? false,
+      subscriptionDiscountPercent: form.subscriptionAllowed ? (form.subscriptionDiscountPercent ?? null) : null,
     };
     if (!actionGuard.begin("save-product")) return;
     const opts = {
@@ -350,7 +468,7 @@ function ProductFormDialog({
                   value={form.supplierId || "__none__"}
                   onValueChange={(v) => {
                     const newSupplierId = v === "__none__" ? "" : v;
-                    setForm({ ...form, supplierId: newSupplierId, categoryId: null, categoryName: "" });
+                    setForm({ ...form, supplierId: newSupplierId, categoryId: null, categoryName: "", similarProductIds: [], crossSellProductIds: [] });
                   }}
                   disabled={!!editing}
                 >
@@ -389,15 +507,16 @@ function ProductFormDialog({
               </div>
               <div className="space-y-2">
                 <Label>Brend</Label>
-                <div className="flex gap-2">
-                  <Select value={form.brand ?? "__none__"} onValueChange={(v) => setForm({ ...form, brand: v === "__none__" ? null : v })}>
-                    <SelectTrigger data-testid="select-product-brand"><SelectValue placeholder="Izaberi brend" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Bez brenda</SelectItem>
-                      {brands.filter((b) => b.active).map((b) => <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <SearchableCombobox
+                  value={form.brand ?? ""}
+                  onValueChange={(value) => setForm({ ...form, brand: value || null })}
+                  options={brands.filter((brand) => brand.active || brand.name === form.brand).map((brand) => ({ value: brand.name, label: brand.name }))}
+                  placeholder="Izaberi brend"
+                  searchPlaceholder="Pretražite brendove..."
+                  clearable
+                  data-testid="select-product-brand"
+                  footer={<div className="flex gap-2"><Input value={newBrandName} onChange={(event) => setNewBrandName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); createAndSelectBrand(); } }} placeholder="Naziv novog brenda" data-testid="input-new-brand" /><Button type="button" size="sm" onClick={createAndSelectBrand} disabled={!newBrandName.trim() || createBrand.isPending} data-testid="button-create-brand">{createBrand.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}<span className="sr-only">Kreiraj brend</span></Button></div>}
+                />
               </div>
               <div className="space-y-2">
                 <Label>SKU (šifra) *</Label>
@@ -655,6 +774,122 @@ function ProductFormDialog({
                 ))}
               </ul>
             )}
+          </section>
+
+          {/* ── Merchandising ── */}
+          <section className="space-y-5 border rounded-xl p-4">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">Slični proizvodi</h4>
+              <p className="mt-1 text-xs text-muted-foreground">Odredite kako se biraju preporuke prikazane na stranici proizvoda.</p>
+            </div>
+            <RadioGroup
+              value={form.similarProductsMode ?? "AUTO_CATEGORY"}
+              onValueChange={(value) => setForm({ ...form, similarProductsMode: value as "AUTO_CATEGORY" | "MANUAL", similarProductIds: value === "MANUAL" ? (form.similarProductIds ?? []) : [] })}
+              className="grid gap-3 sm:grid-cols-2"
+              data-testid="radio-similar-products-mode"
+            >
+              <Label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal">
+                <RadioGroupItem value="AUTO_CATEGORY" />
+                <span><strong className="block">Automatski — ista kategorija</strong><span className="text-xs text-muted-foreground">Preporuke se biraju iz iste kategorije</span></span>
+              </Label>
+              <Label className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 font-normal">
+                <RadioGroupItem value="MANUAL" />
+                <span><strong className="block">Ručno izabrani proizvodi</strong><span className="text-xs text-muted-foreground">Izaberite proizvode istog dobavljača</span></span>
+              </Label>
+            </RadioGroup>
+            {form.similarProductsMode === "MANUAL" && (
+              <SearchableMultiSelect
+                value={form.similarProductIds ?? []}
+                onValueChange={(similarProductIds) => setForm({ ...form, similarProductIds })}
+                options={relatedProductOptions}
+                placeholder={form.supplierId ? "Izaberite slične proizvode" : "Prvo izaberite dobavljača"}
+                disabled={!form.supplierId}
+                aria-label="Ručno izabrani slični proizvodi"
+                data-testid="select-similar-products"
+              />
+            )}
+
+            <div className="border-t pt-5">
+              <h4 className="text-sm font-semibold text-foreground">Često kupljeno zajedno</h4>
+              <p className="mt-1 mb-3 text-xs text-muted-foreground">Izaberite ili 0 proizvoda, ili između 3 i 5 proizvoda istog dobavljača.</p>
+              <SearchableMultiSelect
+                value={form.crossSellProductIds ?? []}
+                onValueChange={(crossSellProductIds) => setForm({ ...form, crossSellProductIds })}
+                options={relatedProductOptions}
+                placeholder={form.supplierId ? "Izaberite proizvode" : "Prvo izaberite dobavljača"}
+                disabled={!form.supplierId}
+                maxSelected={5}
+                aria-label="Često kupljeno zajedno"
+                data-testid="select-cross-sell-products"
+              />
+              {(form.crossSellProductIds?.length ?? 0) > 0 && (form.crossSellProductIds?.length ?? 0) < 3 && (
+                <p className="mt-2 text-xs text-destructive" data-testid="error-cross-sell-count">Izaberite još najmanje {3 - (form.crossSellProductIds?.length ?? 0)} proizvoda ili uklonite sve.</p>
+              )}
+            </div>
+          </section>
+
+          {/* ── Uslovi kupovine ── */}
+          <section className="space-y-5 border rounded-xl p-4">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">Količinske cene</h4>
+              <p className="mt-1 text-xs text-muted-foreground">Definišite cenu po jedinici za nepreklapajuće raspone količina.</p>
+            </div>
+            {(form.quantityPricingTiers ?? []).length > 0 && (
+              <div className="space-y-3">
+                <div className="hidden grid-cols-[1fr_1fr_1.4fr_auto] gap-3 px-1 text-xs font-medium text-muted-foreground sm:grid">
+                  <span>Od količine</span><span>Do količine</span><span>Cena po jedinici RSD</span><span className="sr-only">Akcija</span>
+                </div>
+                {(form.quantityPricingTiers ?? []).map((tier, index) => {
+                  const updateTier = (patch: Partial<QuantityPricingTier>) => setForm({
+                    ...form,
+                    quantityPricingTiers: (form.quantityPricingTiers ?? []).map((current, currentIndex) => currentIndex === index ? { ...current, ...patch } : current),
+                  });
+                  return (
+                    <div key={index} className="grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_1.4fr_auto]" data-testid={`row-quantity-tier-${index}`}>
+                      <Label className="space-y-1 text-xs sm:contents">
+                        <span className="sm:sr-only">Od količine</span>
+                        <Input type="number" min="1" step="1" value={tier.minQuantity || ""} onChange={(event) => updateTier({ minQuantity: Number(event.target.value) })} data-testid={`input-tier-min-${index}`} />
+                      </Label>
+                      <Label className="space-y-1 text-xs sm:contents">
+                        <span className="sm:sr-only">Do količine (opciono)</span>
+                        <Input type="number" min="1" step="1" value={tier.maxQuantity ?? ""} onChange={(event) => updateTier({ maxQuantity: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Bez granice" data-testid={`input-tier-max-${index}`} />
+                      </Label>
+                      <Label className="space-y-1 text-xs sm:contents">
+                        <span className="sm:sr-only">Cena po jedinici RSD</span>
+                        <Input type="number" min="1" step="1" value={tier.unitPrice || ""} onChange={(event) => updateTier({ unitPrice: Number(event.target.value) })} data-testid={`input-tier-price-${index}`} />
+                      </Label>
+                      <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => setForm({ ...form, quantityPricingTiers: (form.quantityPricingTiers ?? []).filter((_, currentIndex) => currentIndex !== index) })} aria-label={`Ukloni prag ${index + 1}`} data-testid={`button-remove-tier-${index}`}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={() => setForm({ ...form, quantityPricingTiers: [...(form.quantityPricingTiers ?? []), { minQuantity: 1, maxQuantity: null, unitPrice: 1 }] })} data-testid="button-add-quantity-tier"><Plus className="mr-2 h-4 w-4" />Dodaj prag</Button>
+
+            <div className="grid grid-cols-1 gap-4 border-t pt-5 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Minimalna količina porudžbine *</Label>
+                <Input type="number" min="1" step="1" value={form.minimumOrderQuantity ?? 1} onChange={(event) => setForm({ ...form, minimumOrderQuantity: Number(event.target.value) })} data-testid="input-minimum-order-quantity" />
+              </div>
+              <div className="space-y-2">
+                <Label>Broj radnih dana do isporuke</Label>
+                <Input type="number" min="1" max="365" step="1" value={form.deliveryBusinessDaysOverride ?? ""} onChange={(event) => setForm({ ...form, deliveryBusinessDaysOverride: event.target.value === "" ? null : Number(event.target.value) })} placeholder="Globalna vrednost" data-testid="input-delivery-days-override" />
+                <p className="text-xs text-muted-foreground">Ostavite prazno da bi se koristila globalna vrednost.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 border-t pt-5">
+              <div className="flex items-center justify-between gap-4">
+                <div><Label htmlFor="subscription-allowed">Dozvoli pretplatu</Label><p className="mt-1 text-xs text-muted-foreground">Kupci će moći da izaberu periodično naručivanje.</p></div>
+                <Switch id="subscription-allowed" checked={form.subscriptionAllowed ?? false} onCheckedChange={(checked) => setForm({ ...form, subscriptionAllowed: checked, subscriptionDiscountPercent: checked ? form.subscriptionDiscountPercent : null })} data-testid="switch-subscription-allowed" />
+              </div>
+              {form.subscriptionAllowed && (
+                <div className="max-w-xs space-y-2">
+                  <Label>% popusta za pretplatu *</Label>
+                  <Input type="number" min="1" max="100" step="1" value={form.subscriptionDiscountPercent ?? ""} onChange={(event) => setForm({ ...form, subscriptionDiscountPercent: event.target.value === "" ? null : Number(event.target.value) })} data-testid="input-subscription-discount" />
+                </div>
+              )}
+            </div>
           </section>
 
           {/* ── Vidljivost ── */}
@@ -941,16 +1176,22 @@ export default function AdminProducts() {
                         data-testid="checkbox-select-all"
                       />
                     </th>
-                    <th className="p-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("name")}>
-                      <span className="flex items-center gap-1">Proizvod <ArrowUpDown className="w-3 h-3 opacity-50" /></span>
+                    <th className="p-3 font-medium" aria-sort={sortBy === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                      <button type="button" className="flex items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort("name")}>
+                        Proizvod <ArrowUpDown className="w-3 h-3 opacity-50" aria-hidden="true" />
+                      </button>
                     </th>
                     <th className="p-3 font-medium hidden md:table-cell">Kategorija</th>
                     <th className="p-3 font-medium hidden lg:table-cell">SKU</th>
-                    <th className="p-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("price")}>
-                      <span className="flex items-center gap-1">Cena <ArrowUpDown className="w-3 h-3 opacity-50" /></span>
+                    <th className="p-3 font-medium" aria-sort={sortBy === "price" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                      <button type="button" className="flex items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort("price")}>
+                        Cena <ArrowUpDown className="w-3 h-3 opacity-50" aria-hidden="true" />
+                      </button>
                     </th>
-                    <th className="p-3 font-medium cursor-pointer select-none" onClick={() => toggleSort("stock")}>
-                      <span className="flex items-center gap-1">Stanje <ArrowUpDown className="w-3 h-3 opacity-50" /></span>
+                    <th className="p-3 font-medium" aria-sort={sortBy === "stock" ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                      <button type="button" className="flex items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => toggleSort("stock")}>
+                        Stanje <ArrowUpDown className="w-3 h-3 opacity-50" aria-hidden="true" />
+                      </button>
                     </th>
                     <th className="p-3 font-medium hidden lg:table-cell">Težina</th>
                     <th className="p-3 font-medium hidden sm:table-cell">Status</th>

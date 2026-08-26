@@ -33,4 +33,10 @@ export interface PublicProduct {
   unit: string;
   isNew: boolean;
   isBestseller: boolean;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride: number | null;
 }

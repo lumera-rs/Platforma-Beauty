@@ -2258,6 +2258,12 @@ export interface Product {
   /** @nullable */
   averageRating?: number | null;
   reviewCount: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride: number | null;
 }
 
 export interface ProductList {
@@ -2295,6 +2301,30 @@ export interface PublicProduct {
   unit: string;
   isNew: boolean;
   isBestseller: boolean;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride: number | null;
+}
+
+/**
+ * Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
+ */
+export interface RelatedProductCard {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** @nullable */
+  brand: string | null;
+  /** @minimum 0 */
+  price: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  discountPrice: number | null;
 }
 
 export interface PublicProductList {
@@ -2306,7 +2336,7 @@ export interface PublicProductList {
 }
 
 export type PublicProductDetail = PublicProduct & {
-  relatedProducts: PublicProduct[];
+  relatedProducts: RelatedProductCard[];
 };
 
 export interface ProductReview {
@@ -2334,7 +2364,11 @@ export interface ProductReviewInput {
 
 export type ProductDetail = Product & {
   reviews: ProductReview[];
-  relatedProducts: Product[];
+  relatedProducts: RelatedProductCard[];
+};
+
+export type ProductRelatedDetail = Product & {
+  relatedProducts: RelatedProductCard[];
 };
 
 export interface ShopSummary {
@@ -4167,9 +4201,29 @@ export interface ProductVariant {
   sku?: string;
 }
 
+export interface QuantityPricingTier {
+  /** @minimum 1 */
+  minQuantity: number;
+  /**
+     * @minimum 1
+     * @nullable
+     */
+  maxQuantity: number | null;
+  /** @minimum 1 */
+  unitPrice: number;
+}
+
+export type AdminProductSimilarProductsMode = typeof AdminProductSimilarProductsMode[keyof typeof AdminProductSimilarProductsMode];
+
+
+export const AdminProductSimilarProductsMode = {
+  AUTO_CATEGORY: 'AUTO_CATEGORY',
+  MANUAL: 'MANUAL',
+} as const;
+
 export interface AdminProduct {
   id: string;
-  supplierId?: string;
+  supplierId: string;
   name: string;
   /** @nullable */
   categoryId?: string | null;
@@ -4216,6 +4270,26 @@ export interface AdminProduct {
   variants?: ProductVariant[] | null;
   /** @nullable */
   variantType?: string | null;
+  similarProductsMode: AdminProductSimilarProductsMode;
+  similarProductIds: string[];
+  /** @maxItems 5 */
+  crossSellProductIds: string[];
+  quantityPricingTiers: QuantityPricingTier[];
+  /** @minimum 1 */
+  minimumOrderQuantity: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride: number | null;
+  subscriptionAllowed: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent: number | null;
   active: boolean;
   createdAt: string;
 }
@@ -4227,6 +4301,14 @@ export interface AdminProductList {
   pageSize: number;
   totalPages: number;
 }
+
+export type AdminProductInputSimilarProductsMode = typeof AdminProductInputSimilarProductsMode[keyof typeof AdminProductInputSimilarProductsMode];
+
+
+export const AdminProductInputSimilarProductsMode = {
+  AUTO_CATEGORY: 'AUTO_CATEGORY',
+  MANUAL: 'MANUAL',
+} as const;
 
 export interface AdminProductInput {
   /** @minLength 1 */
@@ -4302,7 +4384,35 @@ export interface AdminProductInput {
   /** @nullable */
   variantType?: string | null;
   active?: boolean;
+  similarProductsMode?: AdminProductInputSimilarProductsMode;
+  similarProductIds?: string[];
+  /** @maxItems 5 */
+  crossSellProductIds?: string[];
+  quantityPricingTiers?: QuantityPricingTier[];
+  /** @minimum 1 */
+  minimumOrderQuantity?: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride?: number | null;
+  subscriptionAllowed?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent?: number | null;
 }
+
+export type AdminProductUpdateSimilarProductsMode = typeof AdminProductUpdateSimilarProductsMode[keyof typeof AdminProductUpdateSimilarProductsMode];
+
+
+export const AdminProductUpdateSimilarProductsMode = {
+  AUTO_CATEGORY: 'AUTO_CATEGORY',
+  MANUAL: 'MANUAL',
+} as const;
 
 export interface AdminProductUpdate {
   /** @minLength 1 */
@@ -4378,6 +4488,26 @@ export interface AdminProductUpdate {
   /** @nullable */
   variantType?: string | null;
   active?: boolean;
+  similarProductsMode?: AdminProductUpdateSimilarProductsMode;
+  similarProductIds?: string[];
+  /** @maxItems 5 */
+  crossSellProductIds?: string[];
+  quantityPricingTiers?: QuantityPricingTier[];
+  /** @minimum 1 */
+  minimumOrderQuantity?: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride?: number | null;
+  subscriptionAllowed?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent?: number | null;
 }
 
 export type AdminProductBulkUpdateAction = typeof AdminProductBulkUpdateAction[keyof typeof AdminProductBulkUpdateAction];
@@ -7580,6 +7710,10 @@ category?: string;
 subcategory?: string;
 brand?: string;
 supplierId?: string;
+/**
+ * Comma-separated product IDs used to hydrate already selected relationships
+ */
+productIds?: string;
 market?: AdminListProductsMarket;
 lowStock?: boolean;
 status?: AdminListProductsStatus;

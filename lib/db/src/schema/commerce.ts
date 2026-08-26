@@ -57,6 +57,7 @@ export const subscriptionStatusEnum = pgEnum("subscription_status", [
 
 /** The storefronts in which a platform-managed supplier may sell. */
 export const supplierScopeEnum = pgEnum("supplier_scope", ["B2B", "B2C", "BOTH"]);
+export const similarProductsModeEnum = pgEnum("similar_products_mode", ["AUTO_CATEGORY", "MANUAL"]);
 
 export const suppliersTable = pgTable("suppliers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -128,6 +129,17 @@ export const productsTable = pgTable("products", {
   isBestseller: boolean("is_bestseller").notNull().default(false),
   variantType: text("variant_type"),
   variants: jsonb("variants").$type<Array<{ label: string; value: string; priceAdjust?: number; price?: number; stock?: number; sku?: string }>>(),
+  similarProductsMode: similarProductsModeEnum("similar_products_mode").notNull().default("AUTO_CATEGORY"),
+  similarProductIds: jsonb("similar_product_ids").$type<string[]>().notNull().default([]),
+  crossSellProductIds: jsonb("cross_sell_product_ids").$type<string[]>().notNull().default([]),
+  quantityPricingTiers: jsonb("quantity_pricing_tiers")
+    .$type<Array<{ minQuantity: number; maxQuantity: number | null; unitPrice: number }>>()
+    .notNull()
+    .default([]),
+  minimumOrderQuantity: integer("minimum_order_quantity").notNull().default(1),
+  deliveryBusinessDaysOverride: integer("delivery_business_days_override"),
+  subscriptionAllowed: boolean("subscription_allowed").notNull().default(false),
+  subscriptionDiscountPercent: integer("subscription_discount_percent"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

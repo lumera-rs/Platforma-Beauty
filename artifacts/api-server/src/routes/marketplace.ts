@@ -649,6 +649,7 @@ export function setAdminSummaryAfterFirstReadForTest(
 }
 
 class MediaClaimConflictError extends Error {}
+class ProductRelationshipConflictError extends Error {}
 
 function cookieOptions() {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", maxAge: 1000 * 60 * 60 * 24 * 14, path: "/" };
@@ -8833,7 +8834,10 @@ router.get("/suppliers/:supplierSlug/products/:productId", async (req, res): Pro
   const product = rows[0]?.product;
   if (!product) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
   const aggregates = await productReviewAggregates([product.id]);
-  res.json(GetSupplierProductResponse.parse(productDtoWithAggregate(product, aggregates.get(product.id))));
+  res.json(GetSupplierProductResponse.parse({
+    ...productDtoWithAggregate(product, aggregates.get(product.id)),
+    relatedProducts: await similarProductCards(product, "B2B"),
+  }));
 });
 router.get("/suppliers/:supplierSlug/public-products", async (req, res): Promise<void> => {
   const params = ListSupplierPublicProductsParams.safeParse(req.params);
@@ -8861,7 +8865,10 @@ router.get("/suppliers/:supplierSlug/public-products/:productId", async (req, re
       eq(productsTable.id, params.data.productId), eq(productsTable.active, true), eq(productsTable.retailEnabled, true), activeCategoryCondition(),
       isNotNull(productsTable.publicDescription), isNotNull(productsTable.publicPrice))).limit(1);
   if (!rows[0]) { res.status(404).json({ error: "Proizvod nije pronađen." }); return; }
-  res.json(GetSupplierPublicProductResponse.parse(publicProductDto(rows[0].product)));
+  res.json(GetSupplierPublicProductResponse.parse({
+    ...publicProductDto(rows[0].product),
+    relatedProducts: await similarProductCards(rows[0].product, "B2C"),
+  }));
 });
 
 function productBelongsToActiveCategory(
@@ -8967,6 +8974,7 @@ function productDtoWithAggregate(
     variants: item.variants ?? null,
     averageRating: aggregate?.averageRating ?? null,
     reviewCount: aggregate?.count ?? 0,
+    deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
   };
 }
 
@@ -8995,7 +9003,54 @@ function publicProductDto(item: typeof productsTable.$inferSelect) {
     unit: item.unit,
     isNew: item.isNew,
     isBestseller: item.isBestseller,
+    deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
   };
+}
+
+function relatedProductCard(item: typeof productsTable.$inferSelect, market: "B2B" | "B2C") {
+  const price = market === "B2B" ? item.price : item.publicPrice;
+  if (price == null) throw new Error("Attempted to serialize an ineligible related product.");
+  return {
+    id: item.id,
+    name: item.name,
+    imageUrl: item.imageUrl,
+    brand: item.brand ?? null,
+    price,
+    discountPrice: market === "B2B" ? item.discountPrice ?? null : item.publicDiscountPrice ?? null,
+  };
+}
+
+async function similarProductCards(item: typeof productsTable.$inferSelect, market: "B2B" | "B2C") {
+  const channelCondition = market === "B2B"
+    ? eq(productsTable.professionalEnabled, true)
+    : and(eq(productsTable.retailEnabled, true), isNotNull(productsTable.publicPrice),
+      isNotNull(productsTable.publicDescription), retailVariantCompatibleCondition());
+  const common = and(
+    eq(productsTable.supplierId, item.supplierId),
+    ne(productsTable.id, item.id),
+    eq(productsTable.active, true),
+    channelCondition,
+    activeCategoryCondition(),
+    activeSupplierCondition(market),
+  );
+  if (item.similarProductsMode === "MANUAL") {
+    if (!item.similarProductIds.length) return [];
+    const rows = await db.select().from(productsTable)
+      .where(and(common, inArray(productsTable.id, item.similarProductIds)));
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return item.similarProductIds.flatMap((id) => {
+      const row = byId.get(id);
+      return row ? [relatedProductCard(row, market)] : [];
+    });
+  }
+  const categoryCondition = item.categoryId
+    ? eq(productsTable.categoryId, item.categoryId)
+    : eq(productsTable.categoryName, item.categoryName);
+  const rows = await db.select().from(productsTable)
+    .where(and(common, categoryCondition))
+    .orderBy(asc(productsTable.name), asc(productsTable.id))
+    .limit(4);
+  return rows.map((row) => relatedProductCard(row, market));
 }
 const retailVariantCompatibleCondition = () => or(
   isNull(productsTable.variants),
@@ -9300,12 +9355,9 @@ router.get("/shop/public/products/:productId", async (req, res): Promise<void> =
   const [product] = await db.select().from(productsTable)
     .where(and(eq(productsTable.id, parsed.data.productId), publicCondition)).limit(1);
   if (!product) { res.status(404).json({ error: "Javni proizvod nije pronađen." }); return; }
-  const related = await db.select().from(productsTable)
-    .where(and(publicCondition, eq(productsTable.categoryName, product.categoryName), ne(productsTable.id, product.id)))
-    .orderBy(asc(productsTable.name), asc(productsTable.id)).limit(4);
   res.json(GetPublicProductResponse.parse({
     ...publicProductDto(product),
-    relatedProducts: related.map(publicProductDto),
+    relatedProducts: await similarProductCards(product, "B2C"),
   }));
 });
 
@@ -9865,19 +9917,13 @@ router.get("/shop/products/:productId", async (req, res): Promise<void> => {
   // Fetch up to 4 related candidates in SQL, already excluding the current
   // product and enforcing category availability, so the full same-category set
   // is never loaded into memory.
-  const [reviewRows, related] = await Promise.all([
+  const [reviewRows, relatedProducts] = await Promise.all([
     productReviewViews(item.id, access.salon.id),
-    db
-      .select()
-      .from(productsTable)
-      .where(and(eq(productsTable.active, true), eq(productsTable.professionalEnabled, true), eq(productsTable.categoryName, item.categoryName), ne(productsTable.id, item.id), activeCategoryCondition(), activeSupplierCondition("B2B")))
-      .orderBy(asc(productsTable.name), asc(productsTable.id))
-      .limit(4),
+    similarProductCards(item, "B2B"),
   ]);
   // Review aggregates are queried only for the current product plus the related
   // ones and read from grouped maps instead of repeated array filters.
-  const aggregates = await productReviewAggregates([item.id, ...related.map((candidate) => candidate.id)]);
-  const relatedProducts = related.map((candidate) => productDtoWithAggregate(candidate, aggregates.get(candidate.id)));
+  const aggregates = await productReviewAggregates([item.id]);
   res.json(GetShopProductResponse.parse({
     ...productDtoWithAggregate(item, aggregates.get(item.id)),
     reviews: reviewRows,
@@ -15342,6 +15388,7 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     publicDiscountPrice: item.publicDiscountPrice ?? null,
     discountPercent,
     stock: item.stock,
+    catalogReference: item.catalogReference,
     sku: item.sku,
     unit: item.unit,
     weightGrams: item.weightGrams ?? null,
@@ -15349,9 +15396,107 @@ function adminProductDto(item: typeof productsTable.$inferSelect) {
     isBestseller: item.isBestseller,
     variantType: item.variantType ?? null,
     variants: item.variants ?? null,
+    similarProductsMode: item.similarProductsMode,
+    similarProductIds: item.similarProductIds,
+    crossSellProductIds: item.crossSellProductIds,
+    quantityPricingTiers: item.quantityPricingTiers,
+    minimumOrderQuantity: item.minimumOrderQuantity,
+    deliveryBusinessDaysOverride: item.deliveryBusinessDaysOverride ?? null,
+    subscriptionAllowed: item.subscriptionAllowed,
+    subscriptionDiscountPercent: item.subscriptionDiscountPercent ?? null,
     active: item.active,
     createdAt: item.createdAt.toISOString(),
   };
+}
+
+type QuantityPricingTier = { minQuantity: number; maxQuantity: number | null; unitPrice: number };
+type MerchandisingConfig = {
+  similarProductsMode: "AUTO_CATEGORY" | "MANUAL";
+  similarProductIds: string[];
+  crossSellProductIds: string[];
+  quantityPricingTiers: QuantityPricingTier[];
+  minimumOrderQuantity: number;
+  deliveryBusinessDaysOverride: number | null;
+  subscriptionAllowed: boolean;
+  subscriptionDiscountPercent: number | null;
+};
+
+function canonicalMerchandisingConfig(
+  value: Partial<MerchandisingConfig>,
+  fallback?: MerchandisingConfig,
+): { data?: MerchandisingConfig; error?: string } {
+  const mode = value.similarProductsMode ?? fallback?.similarProductsMode ?? "AUTO_CATEGORY";
+  const similarProductIds = mode === "MANUAL"
+    ? (value.similarProductIds ?? fallback?.similarProductIds ?? [])
+    : [];
+  const crossSellProductIds = value.crossSellProductIds ?? fallback?.crossSellProductIds ?? [];
+  if (new Set(similarProductIds).size !== similarProductIds.length
+    || new Set(crossSellProductIds).size !== crossSellProductIds.length) {
+    return { error: "Povezani proizvodi moraju imati jedinstvene ID vrednosti." };
+  }
+  if (crossSellProductIds.length !== 0 && (crossSellProductIds.length < 3 || crossSellProductIds.length > 5)) {
+    return { error: "Cross-sell lista mora biti prazna ili sadržati 3 do 5 proizvoda." };
+  }
+  const tiers = [...(value.quantityPricingTiers ?? fallback?.quantityPricingTiers ?? [])]
+    .sort((a, b) => a.minQuantity - b.minQuantity);
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tier = tiers[index]!;
+    if (!Number.isInteger(tier.minQuantity) || tier.minQuantity < 1
+      || !Number.isInteger(tier.unitPrice) || tier.unitPrice < 1
+      || (tier.maxQuantity !== null && (!Number.isInteger(tier.maxQuantity) || tier.maxQuantity < tier.minQuantity))) {
+      return { error: "Količinski cenovni rangovi sadrže neispravne vrednosti." };
+    }
+    if (tier.maxQuantity === null && index !== tiers.length - 1) {
+      return { error: "Otvoren količinski rang može biti samo poslednji." };
+    }
+    if (index > 0) {
+      const previous = tiers[index - 1]!;
+      if (previous.maxQuantity === null || tier.minQuantity <= previous.maxQuantity) {
+        return { error: "Količinski cenovni rangovi ne smeju da se preklapaju." };
+      }
+    }
+  }
+  const minimumOrderQuantity = value.minimumOrderQuantity ?? fallback?.minimumOrderQuantity ?? 1;
+  const deliveryBusinessDaysOverride = value.deliveryBusinessDaysOverride !== undefined
+    ? value.deliveryBusinessDaysOverride
+    : fallback?.deliveryBusinessDaysOverride ?? null;
+  if (!Number.isInteger(minimumOrderQuantity) || minimumOrderQuantity < 1
+    || (deliveryBusinessDaysOverride !== null
+      && (!Number.isInteger(deliveryBusinessDaysOverride) || deliveryBusinessDaysOverride < 1 || deliveryBusinessDaysOverride > 365))) {
+    return { error: "MOQ ili rok isporuke nije ispravan." };
+  }
+  const subscriptionAllowed = value.subscriptionAllowed ?? fallback?.subscriptionAllowed ?? false;
+  const subscriptionDiscountPercent = subscriptionAllowed
+    ? (value.subscriptionDiscountPercent !== undefined
+      ? value.subscriptionDiscountPercent
+      : fallback?.subscriptionDiscountPercent ?? null)
+    : null;
+  if (subscriptionAllowed && (subscriptionDiscountPercent === null
+    || !Number.isInteger(subscriptionDiscountPercent)
+    || subscriptionDiscountPercent < 1 || subscriptionDiscountPercent > 100)) {
+    return { error: "Popust od 1 do 100 procenata je obavezan kada je pretplata dozvoljena." };
+  }
+  return { data: {
+    similarProductsMode: mode, similarProductIds, crossSellProductIds,
+    quantityPricingTiers: tiers, minimumOrderQuantity, deliveryBusinessDaysOverride,
+    subscriptionAllowed, subscriptionDiscountPercent,
+  } };
+}
+
+async function validateMerchandisingRelationships(
+  supplierId: string,
+  selfId: string | null,
+  config: MerchandisingConfig,
+): Promise<string | null> {
+  const ids = [...new Set([...config.similarProductIds, ...config.crossSellProductIds])];
+  if (selfId && ids.includes(selfId)) return "Proizvod ne može biti povezan sam sa sobom.";
+  if (!ids.length) return null;
+  const products = await db.select({ id: productsTable.id, supplierId: productsTable.supplierId })
+    .from(productsTable).where(inArray(productsTable.id, ids));
+  if (products.length !== ids.length || products.some((product) => product.supplierId !== supplierId)) {
+    return "Svi povezani proizvodi moraju postojati i pripadati istom dobavljaču.";
+  }
+  return null;
 }
 
 function publicStorefrontError(data: {
@@ -15428,11 +15573,20 @@ router.get("/admin/products", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const q = parsed.data;
   const filters: Parameters<typeof and>[0][] = [];
+  const productIds = q.productIds
+    ? [...new Set(q.productIds.split(",").map((id) => id.trim()).filter(Boolean))]
+    : [];
+  const productIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (productIds.length > 100 || productIds.some((id) => !productIdPattern.test(id))) {
+    res.status(400).json({ error: "Lista proizvoda nije ispravna." });
+    return;
+  }
   if (q.search) filters.push(sql`lower(${productsTable.name} || ' ' || ${productsTable.sku} || ' ' || coalesce(${productsTable.brand}, '') || ' ' || ${productsTable.description}) like ${`%${q.search.toLowerCase()}%`}`);
   if (q.category) filters.push(eq(productsTable.categoryName, q.category));
   if (q.subcategory) filters.push(eq(productsTable.subcategoryName, q.subcategory));
   if (q.brand) filters.push(sql`lower(${productsTable.brand}) = ${q.brand.toLowerCase()}`);
   if (q.supplierId) filters.push(eq(productsTable.supplierId, q.supplierId));
+  if (productIds.length) filters.push(inArray(productsTable.id, productIds));
   if (q.market === "B2B") filters.push(eq(productsTable.professionalEnabled, true));
   if (q.market === "B2C") filters.push(eq(productsTable.retailEnabled, true));
   if (q.lowStock) filters.push(sql`${productsTable.stock} > 0 AND ${productsTable.stock} <= 5`);
@@ -15481,6 +15635,10 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   }
   const variantError = validateVariantInventory(body.variants ?? null, body.stock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
+  const merchandising = canonicalMerchandisingConfig(body);
+  if (!merchandising.data) { res.status(400).json({ error: merchandising.error }); return; }
+  const relationshipError = await validateMerchandisingRelationships(body.supplierId, null, merchandising.data);
+  if (relationshipError) { res.status(400).json({ error: relationshipError }); return; }
   const imageReferences = [...new Set([body.imageUrl, ...(body.images ?? [])])];
   const imageOwnership = await Promise.all(imageReferences.map((url) => canClaimMediaReference({
     userId: user.id, url, scope: "product",
@@ -15493,6 +15651,16 @@ router.post("/admin/products", async (req, res): Promise<void> => {
   let product: typeof productsTable.$inferSelect | undefined;
   try {
     [product] = await db.transaction(async (tx) => {
+      const relationshipIds = [...new Set([...merchandising.data!.similarProductIds, ...merchandising.data!.crossSellProductIds])];
+      if (relationshipIds.length) {
+        const locked = await tx.execute<{ id: string }>(sql`
+          SELECT id FROM products
+          WHERE id IN (${sql.join(relationshipIds.map((id) => sql`${id}`), sql`, `)})
+            AND supplier_id = ${body.supplierId}
+          FOR SHARE
+        `);
+        if (locked.rows.length !== relationshipIds.length) throw new ProductRelationshipConflictError();
+      }
       const rows = await tx.insert(productsTable).values({
         supplierId: body.supplierId,
         name: body.name,
@@ -15517,6 +15685,7 @@ router.post("/admin/products", async (req, res): Promise<void> => {
         isBestseller: body.isBestseller ?? false,
         variantType: body.variantType?.trim() || null,
         variants: body.variants ?? null,
+        ...merchandising.data,
         active: body.active ?? true,
       }).returning();
       for (const url of imageReferences) {
@@ -15533,6 +15702,9 @@ router.post("/admin/products", async (req, res): Promise<void> => {
       return rows;
     });
   } catch (error) {
+    if (error instanceof ProductRelationshipConflictError) {
+      res.status(409).json({ error: "Povezani proizvod je promenjen tokom čuvanja." }); return;
+    }
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
@@ -15662,6 +15834,17 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
   const nextVariants = body.variants !== undefined ? body.variants : existing.variants;
   const variantError = validateVariantInventory(nextVariants, nextStock);
   if (variantError) { res.status(400).json({ error: variantError }); return; }
+  const merchandising = canonicalMerchandisingConfig(body, {
+    similarProductsMode: existing.similarProductsMode,
+    similarProductIds: existing.similarProductIds,
+    crossSellProductIds: existing.crossSellProductIds,
+    quantityPricingTiers: existing.quantityPricingTiers,
+    minimumOrderQuantity: existing.minimumOrderQuantity,
+    deliveryBusinessDaysOverride: existing.deliveryBusinessDaysOverride,
+    subscriptionAllowed: existing.subscriptionAllowed,
+    subscriptionDiscountPercent: existing.subscriptionDiscountPercent,
+  });
+  if (!merchandising.data) { res.status(400).json({ error: merchandising.error }); return; }
   const nextImageUrl = body.imageUrl ?? existing.imageUrl;
   const nextImages = body.images ?? existing.images;
   const nextActive = body.active ?? existing.active;
@@ -15709,10 +15892,38 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
     || ((body.professionalEnabled ?? existing.professionalEnabled) && nextSupplier.scope === "B2C")) {
     res.status(400).json({ error: "Izabrani kanali prodaje nisu dozvoljeni za dobavljača." }); return;
   }
+  const relationshipError = await validateMerchandisingRelationships(nextSupplierId, existing.id, merchandising.data);
+  if (relationshipError) { res.status(400).json({ error: relationshipError }); return; }
   const managedImageReferences = imageReferences.filter((url) => mediaAssetIdFromUrl(url));
   let product: typeof productsTable.$inferSelect | undefined;
   try {
     [product] = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM products WHERE id = ${existing.id} FOR UPDATE`);
+      if (nextSupplierId !== existing.supplierId) {
+        const inboundRelationships = await tx.execute<{ id: string }>(sql`
+          SELECT id
+          FROM products
+          WHERE id <> ${existing.id}
+            AND (
+              similar_product_ids @> jsonb_build_array(${existing.id}::text)
+              OR cross_sell_product_ids @> jsonb_build_array(${existing.id}::text)
+            )
+          ORDER BY id
+          FOR UPDATE
+        `);
+        if (inboundRelationships.rows.length) throw new ProductRelationshipConflictError();
+      }
+      const relationshipIds = [...new Set([...merchandising.data!.similarProductIds, ...merchandising.data!.crossSellProductIds])];
+      if (relationshipIds.length) {
+        const locked = await tx.execute<{ id: string }>(sql`
+          SELECT id FROM products
+          WHERE id IN (${sql.join(relationshipIds.map((id) => sql`${id}`), sql`, `)})
+            AND supplier_id = ${nextSupplierId}
+            AND id <> ${existing.id}
+          FOR SHARE
+        `);
+        if (locked.rows.length !== relationshipIds.length) throw new ProductRelationshipConflictError();
+      }
       for (const url of managedImageReferences) {
         if (!await claimMediaReference({
           userId: user.id,
@@ -15750,8 +15961,25 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
         isBestseller: body.isBestseller ?? existing.isBestseller,
         variantType: body.variantType !== undefined ? body.variantType?.trim() || null : existing.variantType,
         variants: nextVariants,
+        ...merchandising.data,
         active: nextActive,
-      }).where(eq(productsTable.id, productId)).returning();
+      }).where(and(
+        eq(productsTable.id, productId),
+        eq(productsTable.supplierId, existing.supplierId),
+        eq(productsTable.similarProductsMode, existing.similarProductsMode),
+        sql`${productsTable.similarProductIds} = ${JSON.stringify(existing.similarProductIds)}::jsonb`,
+        sql`${productsTable.crossSellProductIds} = ${JSON.stringify(existing.crossSellProductIds)}::jsonb`,
+        sql`${productsTable.quantityPricingTiers} = ${JSON.stringify(existing.quantityPricingTiers)}::jsonb`,
+        eq(productsTable.minimumOrderQuantity, existing.minimumOrderQuantity),
+        existing.deliveryBusinessDaysOverride === null
+          ? isNull(productsTable.deliveryBusinessDaysOverride)
+          : eq(productsTable.deliveryBusinessDaysOverride, existing.deliveryBusinessDaysOverride),
+        eq(productsTable.subscriptionAllowed, existing.subscriptionAllowed),
+        existing.subscriptionDiscountPercent === null
+          ? isNull(productsTable.subscriptionDiscountPercent)
+          : eq(productsTable.subscriptionDiscountPercent, existing.subscriptionDiscountPercent),
+      )).returning();
+      if (!rows.length) throw new ProductRelationshipConflictError();
       if (revokedProductAssetIds.length) {
         await releaseMediaReferenceClaims({
           urls: existingImageReferences.filter((url) => revokedProductAssetIds.includes(mediaAssetIdFromUrl(url) ?? "")),
@@ -15762,6 +15990,9 @@ router.patch("/admin/products/:productId", async (req, res): Promise<void> => {
       return rows;
     });
   } catch (error) {
+    if (error instanceof ProductRelationshipConflictError) {
+      res.status(409).json({ error: "Povezani proizvod je promenjen tokom čuvanja." }); return;
+    }
     if (!(error instanceof MediaClaimConflictError)) throw error;
     res.status(409).json({ error: "Jedna fotografija je u međuvremenu povezana sa drugim zapisom." });
     return;
@@ -15802,14 +16033,33 @@ router.delete("/admin/products/:productId", async (req, res): Promise<void> => {
     res.json(adminProductDto(deactivated!));
     return;
   }
-  await db.transaction(async (tx) => {
-    await releaseMediaReferenceClaims({
-      urls: [existing.imageUrl, ...existing.images],
-      resourceId: existing.id,
-      visibility: "private",
-    }, tx);
-    await tx.delete(productsTable).where(eq(productsTable.id, productId));
-  });
+  try {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM products WHERE id = ${productId} FOR UPDATE`);
+      const inboundRelationships = await tx.execute<{ id: string }>(sql`
+        SELECT id
+        FROM products
+        WHERE id <> ${productId}
+          AND (
+            similar_product_ids @> jsonb_build_array(${productId}::text)
+            OR cross_sell_product_ids @> jsonb_build_array(${productId}::text)
+          )
+        ORDER BY id
+        FOR UPDATE
+      `);
+      if (inboundRelationships.rows.length) throw new ProductRelationshipConflictError();
+      await releaseMediaReferenceClaims({
+        urls: [existing.imageUrl, ...existing.images],
+        resourceId: existing.id,
+        visibility: "private",
+      }, tx);
+      await tx.delete(productsTable).where(eq(productsTable.id, productId));
+    });
+  } catch (error) {
+    if (!(error instanceof ProductRelationshipConflictError)) throw error;
+    res.status(409).json({ error: "Proizvod je povezan sa drugim proizvodom i ne može biti obrisan." });
+    return;
+  }
   res.json(adminProductDto({ ...existing, active: false }));
 });
 

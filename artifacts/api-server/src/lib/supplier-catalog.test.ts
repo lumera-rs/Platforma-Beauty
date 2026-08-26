@@ -329,6 +329,125 @@ test("supplier B2B products require authentication and public products expose on
   }
 });
 
+test("product merchandising validates, canonicalizes, isolates suppliers and returns channel-safe related cards", async () => {
+  const categoryId = conflictProduct.categoryId!;
+  const candidates = await db.insert(productsTable).values([1, 2, 3].map((index) => ({
+    supplierId: supplierA.id,
+    categoryId,
+    categoryName: conflictProduct.categoryName,
+    name: `${marker} related ${index}`,
+    description: `${marker} wholesale ${index}`,
+    publicDescription: `${marker} public ${index}`,
+    imageUrl: "/supplier-catalog-test.jpg",
+    price: 1_000 + index,
+    publicPrice: 2_000 + index,
+    professionalEnabled: true,
+    retailEnabled: true,
+    stock: 20,
+    sku: `${marker}-related-${index}`,
+    unit: "kom",
+  }))).returning();
+  productIds.push(...candidates.map((product) => product.id));
+
+  const invalidTiers = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ quantityPricingTiers: [
+      { minQuantity: 1, maxQuantity: 5, unitPrice: 900 },
+      { minQuantity: 5, maxQuantity: null, unitPrice: 800 },
+    ] }),
+  });
+  assert.equal(invalidTiers.status, 400);
+  const invalidCrossSell = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ crossSellProductIds: candidates.slice(0, 2).map((product) => product.id) }),
+  });
+  assert.equal(invalidCrossSell.status, 400);
+  const invalidSubscription = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ subscriptionAllowed: true }),
+  });
+  assert.equal(invalidSubscription.status, 400);
+
+  const update = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({
+      similarProductsMode: "MANUAL",
+      similarProductIds: [candidates[1]!.id, candidates[0]!.id],
+      crossSellProductIds: candidates.map((product) => product.id),
+      quantityPricingTiers: [
+        { minQuantity: 10, maxQuantity: null, unitPrice: 700 },
+        { minQuantity: 2, maxQuantity: 9, unitPrice: 800 },
+      ],
+      minimumOrderQuantity: 2,
+      deliveryBusinessDaysOverride: 7,
+      subscriptionAllowed: true,
+      subscriptionDiscountPercent: 15,
+    }),
+  });
+  assert.equal(update.status, 200);
+  const adminProduct = await update.json() as Record<string, unknown>;
+  assert.deepEqual(adminProduct.quantityPricingTiers, [
+    { minQuantity: 2, maxQuantity: 9, unitPrice: 800 },
+    { minQuantity: 10, maxQuantity: null, unitPrice: 700 },
+  ]);
+  assert.equal(adminProduct.minimumOrderQuantity, 2);
+  assert.equal(adminProduct.deliveryBusinessDaysOverride, 7);
+  assert.equal(adminProduct.subscriptionAllowed, true);
+  assert.equal(adminProduct.subscriptionDiscountPercent, 15);
+
+  const manual = await api(`/suppliers/${supplierA.slug}/products/${conflictProduct.id}`, ownerCookie);
+  assert.equal(manual.status, 200);
+  const manualProduct = await manual.json() as { relatedProducts: Array<Record<string, unknown>> };
+  assert.deepEqual(manualProduct.relatedProducts.map((product) => product.id), [candidates[1]!.id, candidates[0]!.id]);
+
+  const supplierChange = await api(`/admin/products/${conflictProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ supplierId: supplierB.id, categoryId: supplierBRootId }),
+  });
+  assert.equal(supplierChange.status, 400);
+
+  const publicManualUpdate = await api(`/admin/products/${orderedProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({
+      variants: null,
+      similarProductsMode: "MANUAL",
+      similarProductIds: [candidates[0]!.id, conflictProduct.id],
+    }),
+  });
+  assert.equal(publicManualUpdate.status, 200);
+  const publicManual = await api(`/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`);
+  assert.equal(publicManual.status, 200);
+  const publicDetail = await publicManual.json() as { relatedProducts: Array<Record<string, unknown>> };
+  assert.deepEqual(publicDetail.relatedProducts.map((product) => product.id), [candidates[0]!.id]);
+  for (const forbidden of ["sku", "stock", "weightGrams", "variants", "supplierId", "similarProductIds", "priceAdjust"]) {
+    assert.equal(Object.hasOwn(publicDetail.relatedProducts[0]!, forbidden), false, `public related card leaked ${forbidden}`);
+  }
+  const inboundSupplierChange = await api(`/admin/products/${candidates[0]!.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ supplierId: supplierB.id, categoryId: supplierBRootId }),
+  });
+  assert.equal(inboundSupplierChange.status, 409);
+  const inboundDelete = await api(`/admin/products/${candidates[0]!.id}`, adminCookie, {
+    method: "DELETE",
+  });
+  assert.equal(inboundDelete.status, 409);
+  const [stillRelated] = await db.select({ id: productsTable.id })
+    .from(productsTable)
+    .where(eq(productsTable.id, candidates[0]!.id));
+  assert.equal(stillRelated?.id, candidates[0]!.id);
+
+  const autoUpdate = await api(`/admin/products/${orderedProduct.id}`, adminCookie, {
+    method: "PATCH",
+    body: JSON.stringify({ similarProductsMode: "AUTO_CATEGORY" }),
+  });
+  assert.equal(autoUpdate.status, 200);
+  assert.deepEqual((await autoUpdate.json() as { similarProductIds: string[] }).similarProductIds, []);
+  const auto = await api(`/suppliers/${supplierA.slug}/public-products/${orderedProduct.id}`);
+  const autoDetail = await auto.json() as { relatedProducts: Array<{ id: string }> };
+  assert.ok(autoDetail.relatedProducts.some((product) => product.id === candidates[0]!.id));
+  assert.ok(!autoDetail.relatedProducts.some((product) => product.id === b2cProduct.id));
+});
+
 test("order item supplier and commercial snapshots survive catalog edits and reject direct updates", async () => {
   await db.update(productsTable).set({ variants: null }).where(eq(productsTable.id, orderedProduct.id));
   await addToCart(orderedProduct.id);
@@ -517,7 +636,8 @@ test("admin products remain cross-supplier by default and filter supplier, marke
   assert.ok(new Set(all.items.filter((product) => markerIds.has(product.id)).map((product) => product.supplierId)).size >= 2);
 
   const bySupplier = ids(await list(`&supplierId=${supplierA.id}`));
-  assert.deepEqual(bySupplier, [conflictProduct.id]);
+  assert.ok(bySupplier.includes(conflictProduct.id));
+  assert.ok(bySupplier.every((id) => id !== b2cProduct.id));
 
   const b2b = ids(await list("&market=B2B"));
   assert.ok(b2b.includes(orderedProduct.id));

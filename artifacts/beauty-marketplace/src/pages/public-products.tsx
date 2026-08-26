@@ -301,10 +301,32 @@ export function PublicProductDetailPage() {
             <h1 className="mt-2 font-serif text-4xl font-bold tracking-tight">{product.name}</h1>
             <div className="mt-5"><ProductPrice product={product} /></div>
             <p className="mt-7 whitespace-pre-line leading-7 text-muted-foreground">{product.description}</p>
+            {product.deliveryBusinessDaysOverride != null && <p className="mt-4 text-sm text-muted-foreground" data-testid="text-public-estimated-delivery">Procenjena isporuka: {product.deliveryBusinessDaysOverride} {product.deliveryBusinessDaysOverride === 1 ? "radni dan" : "radnih dana"}</p>}
             <div className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={add} disabled={adding}>{adding ? "Dodavanje…" : "Dodaj u korpu"}</Button><Button size="lg" variant="outline" asChild><Link href="/korpa">Pogledaj korpu</Link></Button></div>
             <div className="mt-5 rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground"><strong className="block text-foreground">Bezbedna retail kupovina</strong><span className="mt-1 block">Konačna dostupnost i javna cena proveravaju se ponovo prilikom potvrde porudžbine.</span></div>
           </div>
         </section>
+        {product.relatedProducts.length > 0 && (
+          <section className="mt-14" data-testid="section-public-related-products">
+            <h2 className="mb-5 font-serif text-2xl font-bold">Slični proizvodi</h2>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {product.relatedProducts.map((related) => {
+                const relatedPrice = related.discountPrice ?? related.price;
+                return (
+                  <Link key={related.id} href={`/shop/${supplierSlug}/proizvod/${related.id}`} className="group overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md" data-testid={`public-related-product-${related.id}`}>
+                    <div className="aspect-square overflow-hidden bg-muted"><OptimizedImage src={related.imageUrl} alt={related.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" /></div>
+                    <div className="p-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{related.brand ?? "Proizvod"}</p>
+                      <h3 className="mt-1 line-clamp-2 font-serif font-semibold">{related.name}</h3>
+                      <p className="mt-3 font-semibold">{money(relatedPrice)}</p>
+                      {related.discountPrice != null && <p className="text-xs text-muted-foreground line-through">{money(related.price)}</p>}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </main>
     </Layout>
   );

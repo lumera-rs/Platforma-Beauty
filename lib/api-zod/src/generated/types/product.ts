@@ -41,4 +41,10 @@ export interface Product {
   /** @nullable */
   averageRating?: number | null;
   reviewCount: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride: number | null;
 }

@@ -6,7 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PublicProduct } from './publicProduct';
+import type { RelatedProductCard } from './relatedProductCard';
 
 export type PublicProductDetail = PublicProduct & {
-  relatedProducts: PublicProduct[];
+  relatedProducts: RelatedProductCard[];
 };

@@ -252,14 +252,13 @@ import type {
   PackagePurchase,
   PlatformTrustStats,
   PreviewRetailCheckoutParams,
-  Product,
   ProductBrand,
   ProductCategory,
   ProductDetail,
   ProductList,
+  ProductRelatedDetail,
   ProductReview,
   ProductReviewInput,
-  PublicProduct,
   PublicProductDetail,
   PublicProductList,
   PurchasePackageBody,
@@ -15679,9 +15678,9 @@ export const getGetSupplierProductUrl = (supplierSlug: string,
  * @summary Get an active B2B product from one active supplier
  */
 export const getSupplierProduct = async (supplierSlug: string,
-    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<Product> => {
+    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<ProductRelatedDetail> => {
 
-  return customFetch<Product>(getGetSupplierProductUrl(supplierSlug,productId),
+  return customFetch<ProductRelatedDetail>(getGetSupplierProductUrl(supplierSlug,productId),
   {
     ...options,
     method: 'GET'
@@ -15761,9 +15760,9 @@ export const getGetSupplierPublicProductUrl = (supplierSlug: string,
  * @summary Get an active retail product from one active supplier
  */
 export const getSupplierPublicProduct = async (supplierSlug: string,
-    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicProduct> => {
+    productId: string, options?: Parameters<typeof customFetch>[1]): Promise<PublicProductDetail> => {
 
-  return customFetch<PublicProduct>(getGetSupplierPublicProductUrl(supplierSlug,productId),
+  return customFetch<PublicProductDetail>(getGetSupplierPublicProductUrl(supplierSlug,productId),
   {
     ...options,
     method: 'GET'

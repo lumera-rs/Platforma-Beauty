@@ -5,7 +5,9 @@
  * LUMERA beauty, wellness, booking, B2B, loyalty, and education marketplace API
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminProductInputSimilarProductsMode } from './adminProductInputSimilarProductsMode';
 import type { ProductVariant } from './productVariant';
+import type { QuantityPricingTier } from './quantityPricingTier';
 
 export interface AdminProductInput {
   /** @minLength 1 */
@@ -81,4 +83,24 @@ export interface AdminProductInput {
   /** @nullable */
   variantType?: string | null;
   active?: boolean;
+  similarProductsMode?: AdminProductInputSimilarProductsMode;
+  similarProductIds?: string[];
+  /** @maxItems 5 */
+  crossSellProductIds?: string[];
+  quantityPricingTiers?: QuantityPricingTier[];
+  /** @minimum 1 */
+  minimumOrderQuantity?: number;
+  /**
+     * @minimum 1
+     * @maximum 365
+     * @nullable
+     */
+  deliveryBusinessDaysOverride?: number | null;
+  subscriptionAllowed?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 100
+     * @nullable
+     */
+  subscriptionDiscountPercent?: number | null;
 }

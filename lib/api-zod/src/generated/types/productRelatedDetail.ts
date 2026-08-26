@@ -6,10 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Product } from './product';
-import type { ProductReview } from './productReview';
 import type { RelatedProductCard } from './relatedProductCard';
 
-export type ProductDetail = Product & {
-  reviews: ProductReview[];
+export type ProductRelatedDetail = Product & {
   relatedProducts: RelatedProductCard[];
 };

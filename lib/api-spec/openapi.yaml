@@ -3400,6 +3400,10 @@ paths:
         - name: supplierId
           in: query
           schema: { type: string }
+        - name: productIds
+          in: query
+          description: Comma-separated product IDs used to hydrate already selected relationships
+          schema: { type: string }
         - name: market
           in: query
           schema: { type: string, enum: [B2B, B2C] }
@@ -3673,7 +3677,7 @@ paths:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: productId, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/ProductRelatedDetail" } } } }
         "404": { description: Product or supplier not found }
   /suppliers/{supplierSlug}/public-products/{productId}:
     get:
@@ -3684,7 +3688,7 @@ paths:
         - { name: supplierSlug, in: path, required: true, schema: { type: string } }
         - { name: productId, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProduct" } } } }
+        "200": { description: Supplier product, content: { application/json: { schema: { $ref: "#/components/schemas/PublicProductDetail" } } } }
         "404": { description: Product or supplier not found }
   /admin/service-categories:
     get:
@@ -7226,7 +7230,8 @@ components:
         variantType: { type: ["string", "null"] }
         averageRating: { type: ["number", "null"] }
         reviewCount: { type: number }
-      required: [id, supplierId, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount]
+        deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+      required: [id, supplierId, name, category, description, imageUrl, price, stock, sku, unit, isNew, isBestseller, images, variantType, reviewCount, deliveryBusinessDaysOverride]
     ProductList:
       type: object
       properties:
@@ -7259,7 +7264,19 @@ components:
         unit: { type: string }
         isNew: { type: boolean }
         isBestseller: { type: boolean }
-      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller]
+        deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+      required: [id, supplierId, name, category, description, imageUrl, images, price, unit, isNew, isBestseller, deliveryBusinessDaysOverride]
+    RelatedProductCard:
+      type: object
+      description: Channel-priced related-product allowlist; excludes inventory, SKU, weight, variants, wholesale administration and relationship IDs.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        imageUrl: { type: string }
+        brand: { type: ["string", "null"] }
+        price: { type: integer, minimum: 0 }
+        discountPrice: { type: ["integer", "null"], minimum: 0 }
+      required: [id, name, imageUrl, brand, price, discountPrice]
     PublicProductList:
       type: object
       properties:
@@ -7278,7 +7295,7 @@ components:
           properties:
             relatedProducts:
               type: array
-              items: { $ref: "#/components/schemas/PublicProduct" }
+              items: { $ref: "#/components/schemas/RelatedProductCard" }
           required: [relatedProducts]
     ProductReview:
       type: object
@@ -7306,8 +7323,17 @@ components:
               items: { $ref: "#/components/schemas/ProductReview" }
             relatedProducts:
               type: array
-              items: { $ref: "#/components/schemas/Product" }
+              items: { $ref: "#/components/schemas/RelatedProductCard" }
           required: [reviews, relatedProducts]
+    ProductRelatedDetail:
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          properties:
+            relatedProducts:
+              type: array
+              items: { $ref: "#/components/schemas/RelatedProductCard" }
+          required: [relatedProducts]
     ShopSummary:
       type: object
       properties:
@@ -8491,6 +8517,14 @@ components:
         stock: { type: number, minimum: 0, multipleOf: 1 }
         sku: { type: string, minLength: 1 }
       required: [label, value]
+    QuantityPricingTier:
+      type: object
+      additionalProperties: false
+      properties:
+        minQuantity: { type: integer, minimum: 1 }
+        maxQuantity: { type: ["integer", "null"], minimum: 1 }
+        unitPrice: { type: integer, minimum: 1 }
+      required: [minQuantity, maxQuantity, unitPrice]
     AdminProduct:
       type: object
       properties:
@@ -8526,9 +8560,26 @@ components:
           type: ["array", "null"]
           items: { $ref: "#/components/schemas/ProductVariant" }
         variantType: { type: ["string", "null"] }
+        similarProductsMode: { type: string, enum: [AUTO_CATEGORY, MANUAL] }
+        similarProductIds:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        crossSellProductIds:
+          type: array
+          uniqueItems: true
+          maxItems: 5
+          items: { type: string }
+        quantityPricingTiers:
+          type: array
+          items: { $ref: "#/components/schemas/QuantityPricingTier" }
+        minimumOrderQuantity: { type: integer, minimum: 1 }
+        deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+        subscriptionAllowed: { type: boolean }
+        subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
-      required: [id, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, active, createdAt]
+      required: [id, supplierId, name, categoryName, description, imageUrl, images, price, retailEnabled, professionalEnabled, stock, catalogReference, sku, unit, isNew, isBestseller, similarProductsMode, similarProductIds, crossSellProductIds, quantityPricingTiers, minimumOrderQuantity, deliveryBusinessDaysOverride, subscriptionAllowed, subscriptionDiscountPercent, active, createdAt]
     AdminProductList:
       type: object
       properties:
@@ -8574,6 +8625,14 @@ components:
           items: { $ref: "#/components/schemas/ProductVariant" }
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
+        similarProductsMode: { type: string, enum: [AUTO_CATEGORY, MANUAL], default: AUTO_CATEGORY }
+        similarProductIds: { type: array, uniqueItems: true, items: { type: string }, default: [] }
+        crossSellProductIds: { type: array, uniqueItems: true, maxItems: 5, items: { type: string }, default: [] }
+        quantityPricingTiers: { type: array, items: { $ref: "#/components/schemas/QuantityPricingTier" }, default: [] }
+        minimumOrderQuantity: { type: integer, minimum: 1, default: 1 }
+        deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+        subscriptionAllowed: { type: boolean, default: false }
+        subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
       required: [categoryId, name, categoryName, description, imageUrl, price, stock, sku, unit, weightGrams]
     AdminProductUpdate:
       type: object
@@ -8609,6 +8668,14 @@ components:
           items: { $ref: "#/components/schemas/ProductVariant" }
         variantType: { type: ["string", "null"] }
         active: { type: boolean }
+        similarProductsMode: { type: string, enum: [AUTO_CATEGORY, MANUAL] }
+        similarProductIds: { type: array, uniqueItems: true, items: { type: string } }
+        crossSellProductIds: { type: array, uniqueItems: true, maxItems: 5, items: { type: string } }
+        quantityPricingTiers: { type: array, items: { $ref: "#/components/schemas/QuantityPricingTier" } }
+        minimumOrderQuantity: { type: integer, minimum: 1 }
+        deliveryBusinessDaysOverride: { type: ["integer", "null"], minimum: 1, maximum: 365 }
+        subscriptionAllowed: { type: boolean }
+        subscriptionDiscountPercent: { type: ["integer", "null"], minimum: 1, maximum: 100 }
     AdminProductBulkUpdate:
       type: object
       additionalProperties: false

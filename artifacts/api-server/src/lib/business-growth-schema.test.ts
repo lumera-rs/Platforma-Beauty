@@ -537,7 +537,13 @@ async function run() {
       /employee_time_off_time_order_check/,
       "time-off bootstrap enforces chronological block times",
     );
-    for (const column of ["retail_enabled", "professional_enabled", "public_description", "public_price", "public_discount_price", "catalog_reference"]) {
+    for (const column of [
+      "retail_enabled", "professional_enabled", "public_description", "public_price",
+      "public_discount_price", "catalog_reference", "similar_products_mode",
+      "similar_product_ids", "cross_sell_product_ids", "quantity_pricing_tiers",
+      "minimum_order_quantity", "delivery_business_days_override",
+      "subscription_allowed", "subscription_discount_percent",
+    ]) {
       assert.ok(await columnExists("products", column), `products.${column} added for retail storefront`);
     }
     assert.ok(await columnExists("retail_cart_items", "product_catalog_reference"), "retail cart reference snapshot column added");

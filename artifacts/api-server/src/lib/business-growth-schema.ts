@@ -25,7 +25,7 @@ import { logger } from "./logger";
  * changes. The advisory lock key is derived from it so a new rollout version
  * takes its own lock slot.
  */
-export const BUSINESS_GROWTH_SCHEMA_VERSION = 40;
+export const BUSINESS_GROWTH_SCHEMA_VERSION = 41;
 
 /**
  * Stable 64-bit advisory lock key for the Business Growth rollout. The high word
@@ -108,6 +108,7 @@ const ENUM_LABELS: Record<string, string[]> = {
   referral_wallet_kind: ["B2B", "B2C"],
   referral_milestone_kind: ["salon_subscription_reduction", "education_commission_reduction"],
   supplier_scope: ["B2B", "B2C", "BOTH"],
+  similar_products_mode: ["AUTO_CATEGORY", "MANUAL"],
 };
 
 /**
@@ -478,6 +479,16 @@ function tableStatements(s: string): string[] {
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS public_discount_price integer`,
     `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS professional_enabled boolean NOT NULL DEFAULT true`,
+    // v41 — validated product merchandising configuration. JSONB keeps ordered
+    // relationship ids and tier rows intact; API writes enforce their invariants.
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS similar_products_mode ${s}.similar_products_mode NOT NULL DEFAULT 'AUTO_CATEGORY'`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS similar_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS cross_sell_product_ids jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS quantity_pricing_tiers jsonb NOT NULL DEFAULT '[]'::jsonb`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS minimum_order_quantity integer NOT NULL DEFAULT 1`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS delivery_business_days_override integer`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS subscription_allowed boolean NOT NULL DEFAULT false`,
+    `ALTER TABLE ${s}.products ADD COLUMN IF NOT EXISTS subscription_discount_percent integer`,
     // v39 — platform-managed supplier catalog. A single deterministic legacy
     // supplier preserves every pre-marketplace catalog row without deleting or
     // rewriting the legacy categoryName/subcategoryName compatibility fields.

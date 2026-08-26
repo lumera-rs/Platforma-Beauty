@@ -16,6 +16,10 @@ category?: string;
 subcategory?: string;
 brand?: string;
 supplierId?: string;
+/**
+ * Comma-separated product IDs used to hydrate already selected relationships
+ */
+productIds?: string;
 market?: AdminListProductsMarket;
 lowStock?: boolean;
 status?: AdminListProductsStatus;
